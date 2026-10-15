@@ -290,6 +290,7 @@ enum EnvGuard {
     ShortCircuitAnd,
     ShortCircuitOr,
     NullishCoalescing,
+    OptionalChain,
     Conditional,
     If,
     While,
@@ -303,6 +304,10 @@ impl EnvGuard {
             Self::ShortCircuitAnd => "the retained read controls a && short-circuit branch",
             Self::ShortCircuitOr => "the retained read controls a || short-circuit branch",
             Self::NullishCoalescing => "the retained read controls a ?? fallback branch",
+            Self::OptionalChain => {
+                "the retained read is the base of an optional chain, so a nullish value \
+                 short-circuits the chain"
+            }
             Self::Conditional => "the retained read controls a conditional (?:) branch",
             Self::If => "the retained read is in an if condition",
             Self::While => "the retained read is in a while condition",
@@ -345,6 +350,90 @@ struct ScanScope {
     pending_reads: Vec<usize>,
     conditional_pending: Vec<usize>,
     arrow_expression: bool,
+}
+
+/// Whether the read `[start, end)` is the direct base of the optional chain
+/// operator at `question`: only whitespace, comments and wrapping parentheses
+/// that open right at the read may sit between them. A read that is an
+/// argument, key or operand inside a larger expression is not the base.
+fn is_direct_optional_chain_base(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    question: usize,
+    ignored: &[(usize, usize)],
+) -> bool {
+    let skip_forward = |mut position: usize| {
+        while position < bytes.len()
+            && (in_ranges(ignored, position) || bytes[position].is_ascii_whitespace())
+        {
+            position += 1;
+        }
+        position
+    };
+    // Last code byte position before `position`, if any.
+    let skip_backward = |mut position: usize| {
+        while position > 0
+            && (in_ranges(ignored, position - 1) || bytes[position - 1].is_ascii_whitespace())
+        {
+            position -= 1;
+        }
+        position.checked_sub(1)
+    };
+    let (mut low, mut high) = (start, end);
+    loop {
+        let next = skip_forward(high);
+        if next == question {
+            return true;
+        }
+        if bytes.get(next) != Some(&b')') {
+            return false;
+        }
+        let Some(open) = skip_backward(low) else {
+            return false;
+        };
+        if bytes[open] != b'(' {
+            return false;
+        }
+        // A parenthesis that follows an expression is a call argument list,
+        // so the read is an argument rather than the chain base.
+        if let Some(before) = skip_backward(open) {
+            let byte = bytes[before];
+            let call_like = byte.is_ascii_alphanumeric()
+                || matches!(byte, b'_' | b'$' | b')' | b']' | b'.' | b'\'' | b'"' | b'`');
+            if call_like {
+                let mut word_start = before + 1;
+                while word_start > 0
+                    && (bytes[word_start - 1].is_ascii_alphanumeric()
+                        || matches!(bytes[word_start - 1], b'_' | b'$'))
+                {
+                    word_start -= 1;
+                }
+                let preceded_by_member = word_start > 0 && bytes[word_start - 1] == b'.';
+                let keyword = matches!(
+                    &bytes[word_start..=before],
+                    b"return"
+                        | b"throw"
+                        | b"yield"
+                        | b"await"
+                        | b"void"
+                        | b"typeof"
+                        | b"delete"
+                        | b"case"
+                        | b"else"
+                        | b"do"
+                        | b"in"
+                        | b"of"
+                        | b"instanceof"
+                );
+                if !keyword || preceded_by_member {
+                    return false;
+                }
+            }
+        }
+        low = open;
+        high = next + 1;
+    }
 }
 
 fn env_guards(
@@ -563,6 +652,28 @@ fn env_guards(
                 for &read in &scopes[current_scope].pending_reads {
                     if guards[read].is_none() {
                         guards[read] = Some(EnvGuard::NullishCoalescing);
+                    }
+                }
+            }
+            b'?' if bytes.get(index + 1) == Some(&b'.')
+                && !bytes
+                    .get(index + 2)
+                    .is_some_and(|byte| byte.is_ascii_digit()) =>
+            {
+                // `a?.b`, `a?.[k]` and `a?.()` short-circuit on a nullish
+                // base. Only the read that is the direct base qualifies; other
+                // pending reads in the scope are arguments or operands.
+                for &read in &scopes[current_scope].pending_reads {
+                    if guards[read].is_none()
+                        && is_direct_optional_chain_base(
+                            bytes,
+                            reads[read].0,
+                            reads[read].1,
+                            index,
+                            ignored,
+                        )
+                    {
+                        guards[read] = Some(EnvGuard::OptionalChain);
                     }
                 }
             }
@@ -2173,6 +2284,59 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(
             guard("if (process.env.VERSION\n) run()", "process.env.VERSION"),
             Some("the retained read is in an if condition")
+        );
+    }
+
+    #[test]
+    fn optional_chain_base_reads_are_guards() {
+        let guard = |code: &str, read: &str| {
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        let chain = Some(EnvGuard::OptionalChain.evidence());
+        assert!(chain.unwrap().contains("short-circuits"));
+        for code in [
+            "process.env.FLAG?.trim();",
+            "process.env.FLAG?.[key()];",
+            "process.env.FLAG?.();",
+            "(process.env.FLAG)?.trim();",
+            "((process.env.FLAG))?.trim();",
+            "( /* c */ process.env.FLAG /* c */ )?.trim();",
+            "process.env.FLAG\n?.trim();",
+            "x=process.env.FLAG?.trim();",
+            "return (process.env.FLAG)?.trim();",
+        ] {
+            assert_eq!(guard(code, "process.env.FLAG"), chain, "{code}");
+        }
+        assert_eq!(guard("({}).FLAG?.trim();", "({}).FLAG"), chain);
+        for code in [
+            "obj?.method(process.env.FLAG);",
+            "obj?.[process.env.FLAG];",
+            "(process.env.FLAG === \"on\")?.toString();",
+            "console.log(process.env.FLAG);",
+            "console.log(process.env.FLAG);obj?.method();",
+            "run(process.env.FLAG)?.value;",
+            "obj.run(process.env.FLAG)?.value;",
+            "process.env.FLAG.length?.toString();",
+            "const a=process.env.FLAG;b?.c();",
+            "const a=process.env.FLAG\nb?.c();",
+            "(process.env.FLAG,other)?.trim();",
+        ] {
+            assert_eq!(guard(code, "process.env.FLAG"), None, "{code}");
+        }
+        // Existing operators keep their evidence next to optional chains.
+        assert_eq!(
+            guard("process.env.FLAG&&run?.()", "process.env.FLAG"),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard("process.env.FLAG?run():stop()", "process.env.FLAG"),
+            Some("the retained read controls a conditional (?:) branch")
+        );
+        assert_eq!(
+            guard("process.env.FLAG??run?.()", "process.env.FLAG"),
+            Some("the retained read controls a ?? fallback branch")
         );
     }
 

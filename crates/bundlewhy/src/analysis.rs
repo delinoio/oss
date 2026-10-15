@@ -2398,6 +2398,141 @@ mod tests {
         }
     }
 
+    /// Rewrites the fixture's guarded env branch into `replacement(read)` in
+    /// the generated chunk, keeping the read at the same generated offset.
+    fn patch_env_branch(build: &Path, bundler: BundlerChoice, replacement: &str) {
+        let (file, guard, read) = match bundler {
+            BundlerChoice::Vite => (
+                "assets/index-BHjrzQLH.js",
+                "({}).BUNDLEWHY_FIXTURE_FLAG===`on`&&console.log(`flag branch`)",
+                "({}).BUNDLEWHY_FIXTURE_FLAG",
+            ),
+            BundlerChoice::Rspack => (
+                "main.js",
+                "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag branch\")",
+                "process.env.BUNDLEWHY_FIXTURE_FLAG",
+            ),
+        };
+        let path = build.join(file);
+        let code = std::fs::read_to_string(&path).unwrap();
+        assert!(code.contains(guard));
+        let replacement = replacement.replace("READ", read);
+        std::fs::write(&path, code.replace(guard, &replacement)).unwrap();
+    }
+
+    #[test]
+    fn optional_chain_env_reads_produce_a_nullish_short_circuit_finding() {
+        for bundler in [BundlerChoice::Vite, BundlerChoice::Rspack] {
+            let fixture = run_fixture_patched(
+                bundler,
+                true,
+                |_| {},
+                |build, _| {
+                    patch_env_branch(build, bundler, "READ?.trim();console.log(`flag branch`)")
+                },
+            );
+            let env = fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .find(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+                .unwrap_or_else(|| panic!("{bundler:?} missed the optional-chain read"));
+            assert_eq!(env.status, EvidenceStatus::Inferred);
+            assert!(env.title.contains("BUNDLEWHY_FIXTURE_FLAG"));
+            assert!(env.conditions.iter().any(|condition| {
+                condition.outcome == ConditionOutcome::Met
+                    && condition.detail.contains("short-circuits the chain")
+            }));
+        }
+    }
+
+    #[test]
+    fn optional_chain_env_reads_stay_absent_without_minification_or_data_use() {
+        let disabled = run_fixture_patched(
+            BundlerChoice::Rspack,
+            true,
+            |value| value["minifyEnabled"] = serde_json::json!(false),
+            |build, _| {
+                patch_env_branch(
+                    build,
+                    BundlerChoice::Rspack,
+                    "READ?.trim();console.log(`flag branch`)",
+                )
+            },
+        );
+        assert!(
+            !disabled
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+        );
+        for bundler in [BundlerChoice::Vite, BundlerChoice::Rspack] {
+            let fixture = run_fixture_patched(
+                bundler,
+                true,
+                |_| {},
+                |build, _| {
+                    patch_env_branch(
+                        build,
+                        bundler,
+                        "obj?.method(READ);console.log(`flag branch`)",
+                    )
+                },
+            );
+            assert!(
+                !fixture
+                    .output
+                    .analysis
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition"),
+                "{bundler:?} reported an optional-chain argument read"
+            );
+        }
+    }
+
+    #[test]
+    fn vite_optional_chain_env_reads_need_a_mapped_process_env_source() {
+        let fixture = run_fixture_patched(
+            BundlerChoice::Vite,
+            true,
+            |_| {},
+            |build, _| {
+                patch_env_branch(
+                    build,
+                    BundlerChoice::Vite,
+                    "READ?.trim();console.log(`flag branch`)",
+                );
+                let map_path = build.join("assets/index-BHjrzQLH.js.map");
+                let mut map: serde_json::Value =
+                    serde_json::from_str(&std::fs::read_to_string(&map_path).unwrap()).unwrap();
+                let source_index = map["sources"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .position(|source| source.as_str().unwrap().ends_with("/src/main.js"))
+                    .unwrap();
+                let source = map["sourcesContent"][source_index].as_str().unwrap();
+                // The mapped original line no longer reads process.env.
+                let edited = source.replace("process.env.BUNDLEWHY_FIXTURE_FLAG", "unrelated.FLAG");
+                assert_ne!(source, edited);
+                map["sourcesContent"][source_index] = serde_json::json!(edited);
+                std::fs::write(map_path, serde_json::to_vec(&map).unwrap()).unwrap();
+            },
+        );
+        assert!(
+            !fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+        );
+    }
+
     #[test]
     fn disabled_minification_suppresses_env_condition_findings() {
         let fixture = run_fixture(BundlerChoice::Rspack, |value| {
