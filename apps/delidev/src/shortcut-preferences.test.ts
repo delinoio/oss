@@ -77,7 +77,10 @@ it("validates inactive catalog scopes without rejecting exclusive screen reuse",
   ).toEqual([]);
   expect(() =>
     parseShortcutOverrides({
-      [ShortcutId.Help]: { state: "binding", chord: { key: "n", shift: false } },
+      [ShortcutId.Help]: {
+        state: "binding",
+        chord: { key: "n", shift: false },
+      },
     }),
   ).toThrow("Conflicting");
 });
@@ -185,8 +188,9 @@ it("owns unshifted N as the New session default and not as a native reservation"
     { key: "n", primary: true },
   ]);
   expect(
-    editableShortcutCatalog.find((action) => action.id === ShortcutId.NewSession)
-      ?.defaults,
+    editableShortcutCatalog.find(
+      (action) => action.id === ShortcutId.NewSession,
+    )?.defaults,
   ).toEqual([{ key: "n", primary: true }]);
   expect(
     fixedNativeShortcutCatalog.map((action) => String(action.id)),
@@ -245,7 +249,8 @@ it("matches the shared chord and override fixture table", () => {
     }
   }
   for (const { name, overrides, valid } of chordFixtures.overrides) {
-    if (valid) expect(parseShortcutOverrides(overrides), name).toEqual(overrides);
+    if (valid)
+      expect(parseShortcutOverrides(overrides), name).toEqual(overrides);
     else expect(() => parseShortcutOverrides(overrides), name).toThrow();
   }
 });

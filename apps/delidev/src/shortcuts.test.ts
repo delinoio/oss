@@ -91,7 +91,10 @@ it("resolves exact local primary modifiers and logical question marks", () => {
   ).toEqual(["⌘", "⇧", "N"]);
   const newSession = globalShortcutBindings[ShortcutId.NewSession][0];
   expect(bindingKeys(newSession, ShortcutPlatform.Mac)).toEqual(["⌘", "N"]);
-  expect(bindingKeys(newSession, ShortcutPlatform.Other)).toEqual(["Ctrl", "N"]);
+  expect(bindingKeys(newSession, ShortcutPlatform.Other)).toEqual([
+    "Ctrl",
+    "N",
+  ]);
   expect(bindingAria(newSession, ShortcutPlatform.Mac)).toBe("Meta+N");
   expect(bindingAria(newSession, ShortcutPlatform.Other)).toBe("Control+N");
   expect(

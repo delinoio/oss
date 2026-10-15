@@ -503,13 +503,15 @@ it("shows New session as Ctrl + N without a Shift keycap or a fixed New Window r
   expect(
     Array.from(row.querySelectorAll("kbd"), (node) => node.textContent),
   ).toEqual(["Ctrl", "N"]);
-  expect(
-    row.querySelector(".shortcut-binding-text")?.textContent,
-  ).toBe("Ctrl + N");
+  expect(row.querySelector(".shortcut-binding-text")?.textContent).toBe(
+    "Ctrl + N",
+  );
   expect(screen.queryByText("New Window")).toBeNull();
   expect(screen.queryByText("Close tab")).not.toBeNull();
   expect(
-    screen.getByText(/Command or Control \+ K, W, Q, H, M and 1–9 remain reserved/),
+    screen.getByText(
+      /Command or Control \+ K, W, Q, H, M and 1–9 remain reserved/,
+    ),
   ).toBeTruthy();
   const opener = screen.getByRole("button", {
     name: "Capture shortcut for New session",
