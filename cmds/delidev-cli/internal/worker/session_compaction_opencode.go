@@ -96,19 +96,21 @@ func executeOpenCodeSessionCompaction(ctx context.Context, config Config, owner 
 		return nil, domain.CompactionUncertain()
 	}
 	phase = compactionRestore
-	source, err := readOpenCodeContinuationCheckpoint(ctx, config.Root, c.Credential, i.Restore)
+	// An earlier compaction advanced the persistent profile after the ordinary
+	// checkpoint, so only the newest checkpoint's files are still comparable.
+	source, err := readOpenCodeContinuationCheckpointFiles(ctx, config.Root, c.Credential, i.Restore, i.Previous == nil)
 	if err != nil {
 		return nil, err
 	}
 	nativeSource, sourceRef := source.Native, source.NativeReference
-	sourceHome := filepath.Join(config.Root, "runtimes", string(source.Reference.Claim.ExecutionID))
+	historyOwner := source.Reference.Claim.ExecutionID
 	if i.Previous != nil {
 		prior, err := readOpenCodeSessionCompactionCheckpoint(ctx, config.Root, c.Credential, i.Restore, *i.Previous, source, 0)
 		if err != nil {
 			return nil, err
 		}
 		nativeSource, sourceRef = prior.Native, prior.NativeReference
-		sourceHome = filepath.Join(config.Root, "runtimes", string(i.Previous.ActionID))
+		historyOwner = i.Previous.ActionID
 	}
 	root, err := openCodeWorkspaceRoot(manifest, lease.WorkingDirectory())
 	if err != nil {
@@ -118,14 +120,25 @@ func executeOpenCodeSessionCompaction(ctx context.Context, config Config, owner 
 	if err != nil {
 		return nil, err
 	}
-	runtimeRoot := filepath.Join(config.Root, "runtimes")
-	if security.PrivateDir(runtimeRoot) != nil {
-		return nil, domain.CompactionUncertain()
+	// The per-action directory is only the operation journal (fresh per attempt);
+	// the compacted history stays in the conversation's persistent profile.
+	if _, err := createOperationJournal(config.Root, i.ActionID); err != nil {
+		return nil, err
 	}
-	home := filepath.Join(runtimeRoot, string(i.ActionID))
-	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
-		return nil, domain.CompactionUncertain()
+	profile, err := continuationProfile(ctx, config, i.Assignment.MachineID, domain.OpenCode, historyAccount(i.Restore), historyOwner, i.ActionID, i.Restore.Continuation.HistoryExecutionID)
+	if err != nil {
+		return nil, err
 	}
+	defer func() {
+		if err := profile.Close(); err != nil && returned == nil {
+			output, returned = nil, domain.CompactionUncertain()
+		}
+	}()
+	home, err := openCodeRuntimeRoot(profile.Info)
+	if err != nil {
+		return nil, err
+	}
+	sourceHome := home
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return nil, err
@@ -262,7 +275,7 @@ func executeOpenCodeSessionCompaction(ctx context.Context, config Config, owner 
 	if err != nil {
 		return nil, err
 	}
-	record, actions, err := opencode.InspectCompactionCheckpoint(ctx, home, native, nativeRef, sourceHome, nativeSource, sourceRef, i.ActionID)
+	record, actions, err := opencode.InspectCompactionCheckpointInPlace(ctx, home, native, nativeRef, nativeSource, sourceRef, i.ActionID, true)
 	if err != nil || record.HistoryDigest != receipt.HistorySHA256 {
 		return nil, domain.CompactionUncertain()
 	}
@@ -329,16 +342,24 @@ func readOpenCodeSessionCompactionCheckpoint(ctx context.Context, root string, c
 		return empty, domain.CompactionUncertain()
 	}
 	sourceRaw, sourceRef := source.Native, source.NativeReference
-	sourceHome := filepath.Join(root, "runtimes", string(source.Reference.Claim.ExecutionID))
+	sourceOwner := source.Reference.Claim.ExecutionID
 	if p.Input.Previous != nil {
 		prior, err := readOpenCodeSessionCompactionCheckpoint(ctx, root, credential, p.Input.Restore, *p.Input.Previous, source, depth+1)
 		if err != nil {
 			return empty, err
 		}
 		sourceRaw, sourceRef = prior.Native, prior.NativeReference
-		sourceHome = filepath.Join(root, "runtimes", string(p.Input.Previous.ActionID))
+		sourceOwner = p.Input.Previous.ActionID
 	}
-	home := filepath.Join(root, "runtimes", string(ref.ActionID))
+	machine, account := p.Input.Assignment.MachineID, p.Input.Assignment.AccountID
+	sourceHome, err := openCodeHistoryRoot(ctx, root, machine, account, sourceOwner)
+	if err != nil {
+		return empty, domain.CompactionUncertain()
+	}
+	home, err := openCodeHistoryRoot(ctx, root, machine, account, ref.ActionID)
+	if err != nil {
+		return empty, domain.CompactionUncertain()
+	}
 	registrationRaw, registrationErr := security.ReadPrivate(filepath.Join(root, "jobs", string(p.JobID), string(compactionRegistrationClaim)), 4<<10)
 	var registration sessionCompactionRegistration
 	if registrationErr != nil || domain.Decode(registrationRaw, &registration) != nil {
@@ -362,7 +383,15 @@ func readOpenCodeSessionCompactionCheckpoint(ctx context.Context, root string, c
 		return empty, domain.CompactionUncertain()
 	}
 
-	record, actions, err := opencode.InspectCompactionCheckpoint(ctx, home, p.Native, p.NativeReference, sourceHome, sourceRaw, sourceRef, ref.ActionID)
+	var record opencode.NativeContextRecord
+	var actions uint32
+	if home == sourceHome {
+		// Both checkpoints live in one persistent profile that this action
+		// advanced. Only the newest checkpoint's files can still be compared.
+		record, actions, err = opencode.InspectCompactionCheckpointInPlace(ctx, home, p.Native, p.NativeReference, sourceRaw, sourceRef, ref.ActionID, depth == 0)
+	} else {
+		record, actions, err = opencode.InspectCompactionCheckpoint(ctx, home, p.Native, p.NativeReference, sourceHome, sourceRaw, sourceRef, ref.ActionID)
+	}
 	if err != nil {
 		return empty, err
 	}

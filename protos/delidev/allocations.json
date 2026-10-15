@@ -9655,6 +9655,13 @@
       "number": 68
     },
     {
+      "issue": 3840,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1",
+      "number": 69
+    },
+    {
       "issue": 3466,
       "kind": "message",
       "declaration": "TakeSubscriptionResponse",
@@ -13544,6 +13551,13 @@
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1",
       "number": 103
+    },
+    {
+      "issue": 3840,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1",
+      "number": 104
     },
     {
       "issue": 2397,

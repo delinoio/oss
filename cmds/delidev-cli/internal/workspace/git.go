@@ -88,6 +88,16 @@ func (g Git) run(ctx context.Context, root string, args ...string) ([]byte, erro
 // statuses. Launch, ownership, cancellation and output failures return -1 and
 // must never be interpreted as an absent Git reference.
 func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byte, int, error) {
+	limit := MaxGitOutput
+	if g.branchInventory {
+		limit = domain.MaxRepositoryBranchesBytes
+	}
+	return g.runCommandWithOutputLimit(ctx, root, limit, args...)
+}
+
+// runCommandWithOutputLimit is used only by a caller with its own bounded
+// output allowance. Ordinary Git commands retain the generic output limit.
+func (g Git) runCommandWithOutputLimit(ctx context.Context, root string, outputLimit int, args ...string) ([]byte, int, error) {
 	binary := g.Executable
 	if binary == "" {
 		var err error
@@ -132,10 +142,7 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		return nil, -1, domain.Fail(domain.MissingInput, "Git requires a private execution ownership scope.", "Run this operation through its owning Worker job or session.")
 	}
 	var out limitedOutput
-	out.limit = MaxGitOutput
-	if g.branchInventory {
-		out.limit = domain.MaxRepositoryBranchesBytes
-	}
+	out.limit = outputLimit
 	environment := gitEnvironment()
 	if g.environment != nil {
 		environment = slices.Clone(g.environment)

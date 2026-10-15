@@ -217,7 +217,7 @@ func (c *Client) ConsumeExternalResetCredit(parent context.Context, operation do
 	return outcome, observed, nil, quotaErr
 }
 func (c *Client) externalQuotaCall(ctx context.Context, method string, input, output any) error {
-	response, err := c.wire.Call(ctx, domain.NewID(), method, input)
+	response, err := c.call(ctx, domain.NewID(), method, input)
 	if err != nil {
 		return err
 	}
@@ -243,7 +243,7 @@ func (c *Client) consumeResetCreditOn(ctx context.Context, key domain.ID, credit
 	if credit != "" {
 		input.Credit = &credit
 	}
-	response, err := c.wire.Call(ctx, domain.NewID(), "account/rateLimitResetCredit/consume", input)
+	response, err := c.call(ctx, domain.NewID(), "account/rateLimitResetCredit/consume", input)
 	if err != nil {
 		return "", err
 	}

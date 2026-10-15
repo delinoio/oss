@@ -566,7 +566,17 @@ console.log(words.peekTop()?.toUpperCase());
 #[test]
 fn method_devirtualization_never_runs_when_disabled() {
     let temp = project(ACCUMULATOR);
-    let report = optimize(temp.path(), &["--disable-pass", DEVIRT]);
+    // Property shortening would rename the closed class's method; keep the
+    // name so the call site shows that devirtualization did not run.
+    let report = optimize(
+        temp.path(),
+        &[
+            "--disable-pass",
+            DEVIRT,
+            "--disable-pass",
+            "property-shortening",
+        ],
+    );
     assert_eq!(applied_count(&report, DEVIRT), 0);
     let module = emitted(temp.path(), "accumulator.ts");
     assert!(module.contains("describeTotalValue("), "{module}");

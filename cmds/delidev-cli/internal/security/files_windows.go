@@ -37,6 +37,83 @@ func checkPrivate(path string, _ os.FileInfo) error {
 	if err != nil {
 		return err
 	}
+	return checkPrivateDescriptor(sd)
+}
+
+// checkPrivateHandle applies the owner-only contract to an open handle, so the
+// check cannot be redirected by a path replacement. One security-descriptor read
+// returns both the owner and the DACL: an object owned by another principal can
+// rewrite its own DACL (WRITE_DAC is implicit for the owner), so an owner-only
+// ACE list alone does not make the object private.
+func checkPrivateHandle(f *os.File, _ os.FileInfo) error {
+	sd, err := windows.GetSecurityInfo(windows.Handle(f.Fd()), windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return err
+	}
+	allowed, err := currentPrincipalSIDs()
+	if err != nil {
+		return err
+	}
+	if err := checkOwnerDescriptor(sd, allowed); err != nil {
+		return err
+	}
+	return checkPrivateDescriptor(sd)
+}
+
+// currentPrincipalSIDs lists the principals that may own an object this process
+// treats as its own: the process user and the default owner of objects the
+// process creates. They differ when the token is elevated, because an elevated
+// token creates objects owned by the Administrators group; both are the
+// principal the process runs as, never another account.
+func currentPrincipalSIDs() ([]*windows.SID, error) {
+	token := windows.GetCurrentProcessToken()
+	user, err := token.GetTokenUser()
+	if err != nil {
+		return nil, err
+	}
+	sids := []*windows.SID{user.User.Sid}
+	var size uint32
+	if err := windows.GetTokenInformation(token, windows.TokenOwner, nil, 0, &size); err != windows.ERROR_INSUFFICIENT_BUFFER {
+		return nil, errors.Join(errors.New("token owner size query failed"), err)
+	}
+	buffer := make([]byte, size)
+	if err := windows.GetTokenInformation(token, windows.TokenOwner, &buffer[0], size, &size); err != nil {
+		return nil, err
+	}
+	// TOKEN_OWNER is a single SID pointer into the same buffer.
+	owner := (*struct{ Owner *windows.SID })(unsafe.Pointer(&buffer[0])).Owner
+	if owner != nil {
+		sids = append(sids, owner)
+	}
+	return sids, nil
+}
+
+// checkOwnerDescriptor requires the descriptor's owner to be one of allowed. A
+// missing owner fails closed.
+func checkOwnerDescriptor(sd *windows.SECURITY_DESCRIPTOR, allowed []*windows.SID) error {
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return err
+	}
+	if !ownerAllowed(owner, allowed) {
+		return domain.Fail(domain.PermissionDenied, "State ownership is not the current user.", "Choose a DeliDev-created private data directory.")
+	}
+	return nil
+}
+
+func ownerAllowed(owner *windows.SID, allowed []*windows.SID) bool {
+	if owner == nil {
+		return false
+	}
+	for _, sid := range allowed {
+		if sid != nil && owner.Equals(sid) {
+			return true
+		}
+	}
+	return false
+}
+
+func checkPrivateDescriptor(sd *windows.SECURITY_DESCRIPTOR) error {
 	acl, _, err := sd.DACL()
 	if err != nil {
 		return err

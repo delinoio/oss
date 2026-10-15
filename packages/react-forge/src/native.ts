@@ -13,6 +13,15 @@ export interface NativeOutput {
   geometry: string;
   diagnostics: string;
 }
+export interface NativeSimplifiedGeometry {
+  bytes: Buffer;
+  inputTriangles: number;
+  outputTriangles: number;
+  inputVertices: number;
+  outputVertices: number;
+  targetReached: boolean;
+  estimatedError: number;
+}
 export interface NativeCompactedGeometry {
   bytes: Buffer;
   inputVertices: number;
@@ -29,6 +38,12 @@ interface Binding {
     bytes: Buffer,
     cancellation: Cancellation,
   ): Promise<boolean>;
+  simplifySceneGeometry(
+    bytes: Buffer,
+    targetTriangles: number,
+    maxError: number,
+    cancellation: Cancellation,
+  ): Promise<NativeSimplifiedGeometry>;
   validateFigmaImage(
     bytes: Buffer,
     cancellation: Cancellation,
@@ -130,7 +145,7 @@ function safeLocation(value: unknown): string | undefined {
 
 export async function processDocument(
   format: Format,
-  operation: "generate" | "inspect" | "update",
+  operation: "generate" | "inspect" | "analyze" | "analyze_quality" | "update",
   model: unknown,
   source: Buffer,
   assets: Map<string, Buffer>,
@@ -140,10 +155,12 @@ export async function processDocument(
   fontOptions: { system: boolean; ids: string[] } = { system: true, ids: [] },
   onDiagnostic?: (event: Diagnostic) => void,
 ): Promise<NativeOutput> {
-  // Scene inspection measures authored geometry; document inspection imports
+  // Scene inspection and analysis use layout; document inspection imports
   // existing bytes. Derive the stage from trusted call metadata, not native text.
   const stage =
-    operation === "inspect"
+    operation === "inspect" ||
+    operation === "analyze" ||
+    operation === "analyze_quality"
       ? format === Format.Glb || format === Format.Fbx
         ? Stage.Layout
         : Stage.Import
@@ -157,7 +174,7 @@ export async function processDocument(
         format,
         revision,
         stage,
-        operation,
+        operation: operation === "analyze_quality" ? "analyze" : operation,
         status: ["started", "completed", "failed"].includes(event.status)
           ? event.status
           : undefined,
@@ -307,6 +324,38 @@ export async function validateSceneAsset(
       /* Redact native details. */
     }
     throw new ForgeError(code, "Scene asset validation failed.");
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
+export async function simplifySceneGeometry(
+  bytes: Buffer,
+  targetTriangles: number,
+  maxError: number,
+  signal: AbortSignal,
+): Promise<NativeSimplifiedGeometry> {
+  const native = load();
+  const cancellation = new native.Cancellation();
+  const cancel = () => cancellation.cancel();
+  signal.addEventListener("abort", cancel, { once: true });
+  if (signal.aborted) cancel();
+  try {
+    return await native.simplifySceneGeometry(
+      bytes,
+      targetTriangles,
+      maxError,
+      cancellation,
+    );
+  } catch (error) {
+    let code = ErrorCode.MalformedInput;
+    try {
+      const detail = JSON.parse((error as Error).message);
+      code = codes[detail.code] ?? code;
+    } catch {
+      /* Native errors may contain host details; never forward them. */
+    }
+    throw new ForgeError(code, "Scene geometry simplification failed.");
   } finally {
     signal.removeEventListener("abort", cancel);
   }

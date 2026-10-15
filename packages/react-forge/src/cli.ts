@@ -1,10 +1,10 @@
-import type { SceneSession } from "./scene/session.js";
+import type { SceneSession, SceneBudgetWarning } from "./scene/session.js";
 import { matchesOutputExtension } from "./output-extension.js";
 import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tsImport } from "tsx/esm/api";
 import { ForgeError, abortable } from "./errors.js";
-import { ErrorCode, limits } from "./types.js";
+import { ErrorCode, Format, limits } from "./types.js";
 import type { FigmaSession } from "./figma/session.js";
 import type { DocumentSession } from "./session.js";
 import packageManifest from "../package.json" with { type: "json" };
@@ -13,6 +13,7 @@ const help = `React Forge ${packageManifest.version}
 
 Usage:
   react-forge run <entry.tsx> --output <file> [--data <json>] [--overwrite] [--json]
+  react-forge analyze <entry.tsx> [--data <json>] [--json] [--geometry-quality]
   react-forge mcp [--cwd <directory>]
   react-forge --help
   react-forge --version
@@ -20,7 +21,7 @@ Usage:
 The module's default task receives { data, signal } and returns a document session.
 Output must have the session's format extension (.sprite.zip for sprites; .figma.json for a remote Figma receipt). Existing output requires --overwrite.
 Imported source files cannot be overwritten; choose a separate output path.
-Tasks execute trusted code with your permissions. No automatic timeout is applied.
+Tasks execute trusted code with your permissions and may have explicit caller-authored effects. Analysis itself does not export or publish. No automatic timeout is applied.
 `;
 
 function write(stream: NodeJS.WriteStream, value: string): Promise<void> {
@@ -70,6 +71,8 @@ export async function main(args: string[]): Promise<number> {
     controller.abort();
   };
   let session: DocumentSession | FigmaSession | SceneSession | undefined;
+  let unsubscribeWarning: (() => void) | undefined;
+  const warnings: SceneBudgetWarning[] = [];
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
   if (process.platform === "win32") process.on("SIGBREAK", interrupt);
@@ -83,22 +86,28 @@ export async function main(args: string[]): Promise<number> {
       return 0;
     }
     if (
-      args[0] !== "run" ||
+      (args[0] !== "run" && args[0] !== "analyze") ||
       !args[1] ||
       args[1].startsWith("-") ||
       extname(args[1]) !== ".tsx"
     ) {
       throw new ForgeError(
         ErrorCode.MalformedInput,
-        "Expected run <entry.tsx>. Use --help for usage.",
+        "Expected run or analyze <entry.tsx>. Use --help for usage.",
       );
     }
     const flags = new Map<string, string | boolean>();
+    const analyzing = args[0] === "analyze";
     for (let at = 2; at < args.length; at++) {
       const flag = args[at]!;
       if (flags.has(flag))
         throw new ForgeError(ErrorCode.MalformedInput, "Duplicate CLI option.");
-      if (flag === "--json" || flag === "--overwrite") flags.set(flag, true);
+      if (
+        flag === "--json" ||
+        flag === "--overwrite" ||
+        flag === "--geometry-quality"
+      )
+        flags.set(flag, true);
       else if (flag === "--output" || flag === "--data") {
         const value = args[++at];
         if (!value || value.startsWith("--"))
@@ -114,7 +123,17 @@ export async function main(args: string[]): Promise<number> {
         );
     }
     const output = flags.get("--output");
-    if (typeof output !== "string")
+    if (!analyzing && flags.has("--geometry-quality"))
+      throw new ForgeError(
+        ErrorCode.MalformedInput,
+        "--geometry-quality requires analyze.",
+      );
+    if (analyzing && (output !== undefined || flags.has("--overwrite")))
+      throw new ForgeError(
+        ErrorCode.MalformedInput,
+        "Analyze accepts only --data, --json and --geometry-quality.",
+      );
+    if (!analyzing && typeof output !== "string")
       throw new ForgeError(ErrorCode.MalformedInput, "--output is required.");
     let data: unknown;
     const rawData = flags.get("--data");
@@ -177,15 +196,61 @@ export async function main(args: string[]): Promise<number> {
         "Task must return a document session.",
       );
     session = returned;
-    if (!matchesOutputExtension(session.format, output))
+    if (analyzing) {
+      if (
+        (session.format !== Format.Glb && session.format !== Format.Fbx) ||
+        !("analyze" in session)
+      )
+        throw new ForgeError(
+          ErrorCode.UnsupportedEdit,
+          "Analyze requires a GLB or FBX scene session.",
+        );
+      const report = await session.analyze({
+        signal: controller.signal,
+        geometryQuality: flags.has("--geometry-quality"),
+      });
+      const summary = `Scene revision ${report.revision}: ${report.meshCount} meshes, ${report.referencedGeometryCount} referenced geometries, ${report.unusedGeometryCount} unused geometries; unique ${report.uniqueVertexCount} vertices/${report.uniqueTriangleCount} triangles; instances ${report.instanceVertexCount} vertices/${report.instanceTriangleCount} triangles; geometry bytes ${report.referencedGeometryBytes} referenced/${report.registeredGeometryBytes} registered.\n`;
+      const rows = report.meshes
+        .slice(0, 10)
+        .map(
+          (mesh) =>
+            `${mesh.nodeId}: ${mesh.vertexCount} vertices, ${mesh.triangleCount} triangles, ${mesh.geometryInstanceCount} instances\n`,
+        )
+        .join("");
+      const quality =
+        report.geometryQuality
+          ?.map(
+            (row) =>
+              `${row.geometryId}: ${row.findings.map((finding) => `${finding.code}=${finding.count}${finding.truncated ? " (samples truncated)" : ""}`).join(", ")}\n`,
+          )
+          .join("") ?? "";
+      await write(
+        process.stdout,
+        json ? `${JSON.stringify(report)}\n` : summary + rows + quality,
+      );
+      return 0;
+    }
+    if (!matchesOutputExtension(session.format, output as string))
       throw new ForgeError(
         ErrorCode.MalformedInput,
         "Output extension must match the document session format.",
       );
-    const result = await session.exportFile(output, {
+    if (session.format === Format.Glb || session.format === Format.Fbx)
+      unsubscribeWarning = (session as SceneSession).onSceneWarning(
+        (warning) => {
+          warnings.push(warning);
+        },
+      );
+    const result = await session.exportFile(output as string, {
       overwrite: flags.has("--overwrite"),
       signal: controller.signal,
     });
+    if (!json)
+      for (const warning of warnings)
+        await write(
+          process.stderr,
+          `scene_budget_exceeded: ${warning.metric} ${warning.actual} exceeds ${warning.limit}${warning.nodeId ? ` at ${warning.nodeId}` : ""} (revision ${warning.revision}).\n`,
+        );
     await write(
       process.stdout,
       json
@@ -201,14 +266,21 @@ export async function main(args: string[]): Promise<number> {
             ErrorCode.Render,
             "Task execution failed. Correct the task and retry.",
           );
+    if (!json)
+      for (const warning of warnings)
+        await write(
+          process.stderr,
+          `scene_budget_exceeded: ${warning.metric} ${warning.actual} exceeds ${warning.limit}${warning.nodeId ? ` at ${warning.nodeId}` : ""} (revision ${warning.revision}).\n`,
+        );
     await write(
       json ? process.stdout : process.stderr,
       json
-        ? `${JSON.stringify({ ok: false, error: safe.toJSON() })}\n`
+        ? `${JSON.stringify({ ok: false, error: safe.toJSON(), ...(warnings.length > 0 && { warnings }) })}\n`
         : `${safe.code}: ${safe.message}\n`,
     );
     return cancelled || 1;
   } finally {
+    unsubscribeWarning?.();
     await session?.dispose();
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", terminate);

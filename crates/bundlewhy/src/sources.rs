@@ -280,7 +280,7 @@ pub fn is_generated_asset_module(path: &str, snapshot: &str) -> bool {
 /// derived module; the query is not part of the file name. The literal path
 /// wins when it exists (a file name can contain `?` or `#`); otherwise the path
 /// without its query, then without its fragment, is used. When none exists the
-/// query-free path is returned so a removed file is still looked up by its real
+/// fragment-free path is returned so a restored file is looked up by its real
 /// name. The module identity keeps the literal path.
 pub fn filesystem_path(path: &Path) -> PathBuf {
     let text = path.to_string_lossy();
@@ -297,7 +297,7 @@ pub fn filesystem_path(path: &Path) -> PathBuf {
             return PathBuf::from(candidate);
         }
     }
-    PathBuf::from(without_query)
+    PathBuf::from(without_fragment)
 }
 
 /// Returns the text of `bytes` when they are valid UTF-8 without NUL bytes.
@@ -1433,12 +1433,12 @@ mod tests {
             ("C#.js", "C#.js"),
             ("C#.js?raw", "C#.js"),
             ("hash#frag.js?raw", "hash#frag.js"),
-            // Nothing exists: the query is dropped, a fragment is kept as it
-            // may be part of the name.
+            // Nothing exists: query and fragment suffixes are dropped so a
+            // restored backing file can be found.
             ("gone.js", "gone.js"),
             ("gone.js?raw", "gone.js"),
             ("gone.js?raw#frag", "gone.js"),
-            ("gone#name.js", "gone#name.js"),
+            ("gone#name.js", "gone"),
         ];
         for (module, expected) in cases {
             assert_eq!(
@@ -1446,6 +1446,34 @@ mod tests {
                 root.join(expected),
                 "{module}"
             );
+        }
+    }
+
+    #[test]
+    fn legacy_source_missing_fragment_records_the_backing_file() {
+        for (module, snapshot, existence_only) in [
+            ("src/a.js#component", "export const a = 1;", false),
+            (
+                "src/a.js?raw#component",
+                "export default \"export const a = 1;\"",
+                true,
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::create_dir(dir.path().join("src")).unwrap();
+            let path = dir.path().join(module);
+            let mut store = SourceStore::new(true);
+            store
+                .snapshots
+                .insert(normalize(&path), snapshot.to_owned());
+            let (id, _) = store.add_file(dir.path(), &path).unwrap();
+            let backing = if existence_only {
+                &store.existence_relative
+            } else {
+                &store.project_relative
+            };
+            assert_eq!(backing.get(&id).map(String::as_str), Some("src/a.js"));
+            assert_eq!(store.into_files()[0].path, module);
         }
     }
 

@@ -13,19 +13,16 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 )
 
 func TestManualNativeOpenCodePermissionRejectionCascade(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode permission cascade")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	nativePermissionCascadeFixture(t, PermissionReject)
 }
 
 func TestManualNativeOpenCodePermissionAlwaysCascade(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode always cascade and later Read")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	nativePermissionCascadeFixture(t, PermissionAlways)
 }
 
@@ -35,9 +32,7 @@ func nativePermissionCascadeFixture(t *testing.T, decision PermissionDecision) {
 }
 
 func TestManualNativeOpenCodeCorrectionCascade(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode correction cascade")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	feedback := "Private cascade correction: leave both files unread."
 	for _, policy := range []RejectionPolicy{StopOnInteractionRejection, ContinueOnInteractionRejection} {
 		t.Run(string(policy), func(t *testing.T) { nativePermissionCascadeWithPolicy(t, PermissionReject, policy, &feedback) })
