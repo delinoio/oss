@@ -411,6 +411,10 @@ export function useSkillCompletion({
     (!retainTransportContext && previousScope.current.transport !== transport);
   useEffect(() => {
     if (contextChanged && machineId && agentId) {
+      // Opaque selections belong to one transport. History compares only text
+      // and scope, so an equal-text snapshot from the previous transport could
+      // otherwise restore a binding that looks current.
+      if (previousScope.current.transport !== transport) history.current.reset();
       previousScope.current = { scope, transport };
       setBindings((prior) =>
         prior.map((binding) => ({ ...binding, stale: true })),

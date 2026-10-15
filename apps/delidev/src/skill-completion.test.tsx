@@ -1341,6 +1341,45 @@ it("leaves unsupported inventory unknown without reads and fences replacement tr
   expect(status.firstChild).toBe(announcement);
 });
 
+it("does not restore a previous transport's binding as valid through equal-text undo history", async () => {
+  const send = vi.fn(),
+    client = new QueryClient();
+  const makeTransport = () =>
+    createRouterTransport((router) =>
+      router.service(SkillService, {
+        listSkills: async () => ({ skills: entries }),
+      }),
+    );
+  const oldTransport = makeTransport(),
+    freshTransport = makeTransport();
+  const tree = (transport: typeof oldTransport) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <Composer send={send} />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const view = render(tree(oldTransport));
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: "$add-iss", selectionStart: 8 } });
+  await screen.findByRole("option");
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input.value).toBe("$add-issue ");
+  view.rerender(tree(freshTransport));
+  await screen.findByText(
+    "The selected skills need reselection before sending.",
+  );
+  expect((screen.getByText("Send") as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(input, {
+    target: { value: "$add-issue x", selectionStart: 12 },
+  });
+  fireEvent.keyDown(input, { key: "z", ctrlKey: true });
+  // Undo restores the text but must never revive the old transport's binding.
+  expect(input.value).toBe("$add-issue ");
+  expect((screen.getByText("Send") as HTMLButtonElement).disabled).toBe(true);
+  expect(send).not.toHaveBeenCalled();
+});
+
 function RecalledSkillComposer() {
   const [value, change] = useState("$add-issue"),
     textarea = useRef<HTMLTextAreaElement>(null);
