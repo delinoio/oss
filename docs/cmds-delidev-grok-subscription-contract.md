@@ -677,7 +677,7 @@ whose exchange was never claimed; a claim is never released automatically.
 | leased, no claim                    | restart                                                                       | fenced, then settled `FAILED` by the scanner                                                                                                                                                                                                                                             | automatic                  | `unavailable`                         |
 | leased, no claim                    | failure before the claim (vault, discovery, listener)                         | `FAILED`, credential untouched                                                                                                                                                                                                                                                           | none                       | the failure code                      |
 | claimed device login, between polls | server shutdown                                                               | fenced, the claim is retained                                                                                                                                                                                                                                                            | manual, never resent       | `recovery_required`                   |
-| claimed device login, between polls | user cancel                                                                   | `CANCELED`, the claim stays recorded and no further poll is sent                                                                                                                                                                                                                         | none                       | none                                  |
+| claimed device login, between polls | user cancel (including one committed after the last store check)             | `CANCELED`, the claim stays recorded and no further poll is sent; the durable operation is re-read immediately before every poll, so a cancellation that precedes a poll never lets it go out                                                                                                                                                                                                                         | none                       | none                                  |
 | claimed, request not sent           | restart or crash                                                              | fenced, the claim is retained                                                                                                                                                                                                                                                            | manual, never resent       | `recovery_required`                   |
 | claimed, request sent               | transport failure, timeout, shutdown, cancel, unparsed or unexpected response | fenced                                                                                                                                                                                                                                                                                   | manual, never resent       | `recovery_required`                   |
 | claimed, request sent               | definitive refusal (see the [response table](#token-endpoint-response-table)) | `FAILED` (refresh also sets health `expired`)                                                                                                                                                                                                                                            | none                       | `unauthenticated` or the refusal code |
@@ -688,6 +688,27 @@ whose exchange was never claimed; a claim is never released automatically.
 | claimed, response verified          | settlement write failed before the commit                                     | fenced, staged generation retired                                                                                                                                                                                                                                                        | manual                     | `recovery_required`                   |
 | any stage                           | settlement commit acknowledgement lost after the commit                       | the committed outcome stands, nothing is rewritten                                                                                                                                                                                                                                       | none                       | as committed                          |
 | any stage                           | cancel after a claim (login)                                                  | an uncertain claimed outcome stays fenced; a successful claimed exchange publishes, because the tokens are issued and the cancellation is too late; a failed one stays failed; a vanished actor fences a success (`TestGrokCancelRacingTheSettlementOfASuccessfulClaimedLoginIsTooLate`) | manual only when uncertain | `recovery_required` when fenced       |
+
+### Late cancellation and actor loss
+
+A cancellation (or a vanished actor) that is durable when a login settles changes
+the settled outcome only where it stopped the operation. `grokLateCancelOutcome`
+is the one table, applied once before the vault write and again inside the
+settlement transaction; `TestGrokLateCancelOutcomeTable` pins every cell.
+
+| Settled outcome       | Claimed, cancel                | Claimed, actor gone | Unclaimed, cancel or actor gone |
+| --------------------- | ------------------------------ | ------------------- | ------------------------------- |
+| succeeded             | published (too late to cancel) | fenced (recovery)   | canceled                        |
+| failed (own failure)  | failed, diagnostic kept        | failed              | canceled                        |
+| expired               | expired                        | expired             | canceled                        |
+| canceled              | canceled                       | canceled            | canceled                        |
+| recovery (uncertain)  | recovery                       | recovery            | recovery                        |
+
+A claimed failure (a provider refusal such as `access_denied` or a failed
+verification) is a complete outcome of its own, so a cancellation that lands
+before the write never rewrites it and its diagnostic stays. Before the claim
+nothing was redeemed, and the claim refusal and the steps report a stop as a
+failure, so it settles as canceled.
 
 ### Commit acknowledgement ambiguity
 

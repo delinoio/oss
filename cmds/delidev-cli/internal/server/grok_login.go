@@ -325,6 +325,25 @@ func (s *Service) logGrok(ctx context.Context, level slog.Level, message string,
 	s.logger.Log(ctx, level, message, append(base, attrs...)...)
 }
 
+// grokLoginStopped reports whether the durable operation can no longer continue:
+// it was canceled, fenced, removed or replaced, or its actor vanished. It is the
+// same predicate as the store watcher's, evaluated on demand, and it reports a
+// read failure as stopped because a step must not send a claimed request on
+// state it could not confirm.
+func (s *Service) grokLoginStopped(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation) bool {
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := grokSubscriptionAccount(tx, id, 0)
+		if err != nil {
+			return err
+		}
+		if a.Subscription == nil || a.Subscription.RecoveryRequired || a.Subscription.Pending == nil || a.Subscription.Pending.ID != o.ID || a.Subscription.Pending.Canceled || subscriptionActorValid(tx, o.Actor) != nil {
+			return subscriptionDenied()
+		}
+		return nil
+	})
+	return err != nil
+}
+
 // runGrokLogin owns one server-owned Grok browser login from claim to its
 // settled outcome. It never sends a token request without a persisted claim and
 // never sends one twice.
@@ -401,17 +420,7 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for {
-			err := s.Store.Read(ctx, func(tx *store.Tx) error {
-				_, a, err := grokSubscriptionAccount(tx, id, 0)
-				if err != nil {
-					return err
-				}
-				if a.Subscription == nil || a.Subscription.RecoveryRequired || a.Subscription.Pending == nil || a.Subscription.Pending.ID != original.ID || a.Subscription.Pending.Canceled || subscriptionActorValid(tx, original.Actor) != nil {
-					return subscriptionDenied()
-				}
-				return nil
-			})
-			if err != nil {
+			if s.grokLoginStopped(ctx, id, original) {
 				cancel()
 				return
 			}
@@ -664,10 +673,19 @@ func grokLoginDiagnostic(operation domain.ID, code domain.Code) *domain.GrokDiag
 }
 
 // grokLateCancelOutcome applies a cancellation or a vanished actor to the settled
-// outcome of a login. Before the exchange claim, or for an outcome that already
-// failed, it is an ordinary cancellation. A successful claimed exchange is
-// published (the cancellation came too late) unless the actor is gone, which fences
-// it; an uncertain outcome stays as it is.
+// outcome of a login. The cancellation changes the outcome only where it stopped
+// the operation; an outcome that settled on its own is final:
+//
+//	settled outcome         | claimed, cancel | claimed, actor gone | unclaimed, cancel or actor gone
+//	succeeded               | published (too late to cancel) | fenced (recovery) | canceled
+//	failed                  | failed          | failed              | canceled (the claim refusal and the steps report a stop as a failure)
+//	expired                 | expired         | expired             | canceled
+//	canceled                | canceled        | canceled            | canceled
+//	recovery (uncertain)    | recovery        | recovery            | recovery
+//
+// A claimed failure (a provider refusal or a failed verification) or expiry is a
+// complete outcome of its own, so it keeps its state and diagnostic. Before the
+// claim nothing was redeemed, so a stop reported as a failure is canceled.
 func grokLateCancelOutcome(claimed, success bool, result domain.SubscriptionLoginState, code domain.Code, canceled, actorGone bool) (bool, domain.SubscriptionLoginState, domain.Code) {
 	if result == domain.SubscriptionRecovery {
 		return success, result, code
@@ -675,7 +693,7 @@ func grokLateCancelOutcome(claimed, success bool, result domain.SubscriptionLogi
 	switch {
 	case claimed && success && actorGone:
 		return false, domain.SubscriptionRecovery, domain.RecoveryRequired
-	case claimed && success:
+	case claimed:
 		return success, result, code
 	case canceled || actorGone:
 		return false, domain.SubscriptionCanceled, domain.Canceled
