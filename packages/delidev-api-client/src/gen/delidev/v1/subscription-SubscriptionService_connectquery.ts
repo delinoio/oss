@@ -91,7 +91,7 @@ export const finishSubscription = SubscriptionService.method.finishSubscription;
 
 /**
  * Worker-only ChatGPT execution recovery lane negotiated by
- * WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1 (issue 3992). None of these
+ * WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1. None of these
  * methods grants authentication to a new execution.
  *
  * @generated from rpc delidev.v1.SubscriptionService.SyncSubscriptionRecoveryCapture

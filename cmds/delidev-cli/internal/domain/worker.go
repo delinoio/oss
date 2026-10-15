@@ -133,7 +133,7 @@ const (
 	ManagedClaudeExecutionV1       WorkerCapability = "managed-claude-execution-v1"
 	// ManagedCodexRecoveryV1 negotiates the Worker-only ChatGPT Execute recovery
 	// lane: protected latest-credential capture and reconciliation of a fenced
-	// lease by its original Worker (issue 3992). Older peers keep the fence.
+	// lease by its original Worker. Older peers keep the fence.
 	ManagedCodexRecoveryV1    WorkerCapability = "managed-codex-recovery-v1"
 	CodexQuotaBlockV1         WorkerCapability = "codex-quota-block-v1"
 	SubscriptionPaidCreditsV1 WorkerCapability = "subscription-paid-credits-v1"

@@ -51,8 +51,8 @@ type SubscriptionState struct {
 	// singleton accounts omit them.
 	Members []SubscriptionMember `json:"members,omitempty"`
 	// RecoveryCapture is the non-secret metadata of the protected server-vault
-	// capture of the latest validated authentication of the live Execute lease
-	// (issue 3992). The secret bytes live only in the vault. Historical accounts
+	// capture of the latest validated authentication of the live Execute lease.
+	// The secret bytes live only in the vault. Historical accounts
 	// and unsupported peers omit it.
 	RecoveryCapture *SubscriptionRecoveryCapture `json:"recovery_capture,omitempty"`
 	// RecoveryReason is the closed diagnostic of a fenced Execute lease whose

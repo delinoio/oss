@@ -17,7 +17,7 @@ directory is the secure-storage namespace. Backup, deletion and Doctor treat the
 whole owner/member set as live ownership. See the
 [subscription contract](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members).
 
-ChatGPT execution recovery (issue 3992) adds only non-secret optional fields.
+ChatGPT execution recovery adds only non-secret optional fields.
 Worker `managed-auth/<lease>.json` journals gain `native_home` (the canonical
 retained native home), `capture_request`/`capture_confirmed` (the durable
 protected-capture identity and its acknowledgement), `recovery_request` (the

@@ -2,8 +2,8 @@
 
 ## ChatGPT execution recovery lane
 
-Issue 3992 activates Worker `MANAGED_CODEX_RECOVERY_V1 = 72` and three Worker-only
-`SubscriptionService` methods, all recorded in `allocations.json` under issue 3992:
+This protocol activates Worker `MANAGED_CODEX_RECOVERY_V1 = 72` and three Worker-only
+`SubscriptionService` methods, all recorded in `allocations.json`:
 `SyncSubscriptionRecoveryCapture` (`mutation` 1, `lease_id` 2, `machine_id` 3,
 `instance_id` 4, `generation_id` 5, `bundle` 6; response `capture_id` 1, `replayed` 2),
 `ReadSubscriptionRecoveryCapture` (`account_id` 1, `lease_id` 2, `machine_id` 3,

@@ -16,7 +16,7 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-// The ChatGPT (managed Codex) Execute recovery lane (issue 3992).
+// The ChatGPT (managed Codex) Execute recovery lane.
 //
 // A fenced Execute lease (RecoveryRequired) is reconciled only by the original
 // Worker device through three Worker-only methods:

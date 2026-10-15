@@ -23,8 +23,8 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
-// The Worker side of the ChatGPT (managed Codex) Execute recovery lane
-// (issue 3992). A negotiated Worker
+// The Worker side of the ChatGPT (managed Codex) Execute recovery lane.
+// A negotiated Worker
 //
 //   - records the retained native home in the lease's durable journal before it
 //     writes the transient auth.json,

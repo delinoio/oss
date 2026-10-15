@@ -201,7 +201,7 @@ not performed.
 
 ## ChatGPT execution authentication recovery
 
-Issue 3992. A managed ChatGPT (Codex) Execute lease whose Worker reports
+A managed ChatGPT (Codex) Execute lease whose Worker reports
 `CleanupConfirmed=false`, or whose Worker connection is lost, carries
 `recovery_required=true` and keeps its lease and old generation denied. The
 original Worker device reconciles that fence automatically through a
