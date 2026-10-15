@@ -34,7 +34,7 @@ import {
 import { App } from "./App";
 import { encode } from "./documents";
 
-function fixture() {
+function fixture(modalities: string[] = ["text", "image"]) {
   const machine = newRequestId(),
     agent = newRequestId();
   const make = (name: string) => {
@@ -142,6 +142,7 @@ function fixture() {
                       model: {
                         provider_id: newRequestId(),
                         native_id: "fixture-native",
+                        input_modalities: modalities,
                       },
                       accounts: [{ id: newRequestId() }],
                     },
@@ -206,6 +207,7 @@ function fixture() {
     select,
     returnToOriginal,
     writes,
+    uploads,
     holdPreparation: (promise: Promise<void>) => {
       preparation = promise;
     },
@@ -346,6 +348,63 @@ it(
       "value",
       "",
     );
+  },
+  mixedDraftTimeoutMs,
+);
+
+it(
+  "keeps a Codex image draft unsent without uploads when the Agent model is text-only",
+  async () => {
+    vi.stubGlobal("crypto", webcrypto);
+    vi.stubGlobal("createImageBitmap", async () => ({
+      width: 1,
+      height: 1,
+      close: () => {},
+    }));
+    const BaseURL = URL;
+    vi.stubGlobal(
+      "URL",
+      class extends BaseURL {
+        static createObjectURL = vi.fn(() => "blob:text-only");
+        static revokeObjectURL = vi.fn();
+      },
+    );
+    const bytes = Uint8Array.from(
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9d8AAAAASUVORK5CYII=",
+        "base64",
+      ),
+    );
+    const file = new File([bytes], "fixture.png", { type: "image/png" });
+    Object.defineProperty(file, "arrayBuffer", {
+      value: async () => bytes.buffer,
+    });
+    const f = fixture(["text"]);
+    render(<App transport={f.transport} />);
+    const input = await f.select();
+    fireEvent.paste(input, { clipboardData: { files: [file] } });
+    // The draft is retained and submission stays disabled.
+    await screen.findByRole("img", { name: "Image 1" });
+    await new Promise((done) => setTimeout(done, 200));
+    expect(
+      screen.getByRole("button", { name: "Queue message" }),
+    ).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    expect(f.enqueue).not.toHaveBeenCalled();
+    expect(f.uploads.size).toBe(0);
+    expect(f.writes).toHaveLength(0);
+    expect(screen.getByRole("img", { name: "Image 1" })).toBeDefined();
+    // Removing the image restores text-only submission.
+    fireEvent.click(screen.getByRole("button", { name: /Remove image 1/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Queue message" }),
+      ).toHaveProperty("disabled", false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
+    expect(f.enqueue.mock.calls[0]![0].attachments).toHaveLength(0);
+    expect(f.uploads.size).toBe(0);
   },
   mixedDraftTimeoutMs,
 );
