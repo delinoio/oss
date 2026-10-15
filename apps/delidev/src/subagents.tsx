@@ -5,7 +5,11 @@ import {
   useSessionQuery as useQuery,
 } from "./session-activity";
 
-import { paginationIdentity, paginationRevision } from "./scroll-pagination";
+import {
+  paginationIdentity,
+  paginationRevision,
+  ReadStage,
+} from "./scroll-pagination";
 import { useConversationPages } from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
@@ -575,24 +579,47 @@ export function Subagents({
   }, [query.loaded, query.payloadPages, sessionId]);
   const labels = useRef(new Map<string, number>());
   retainSubagentLabels(labels.current, rows ?? []);
+  // The section is hidden only for a confirmed complete empty result: a
+  // supported owner holds an accepted, current, single-page empty snapshot. A
+  // healthy background Refresh over that snapshot keeps it hidden, so every
+  // session revision does not flash the section. Initial, Reload, Retry and
+  // Additional reads, any error, the failed-read latch (`unrecovered`, which
+  // outlives `error` while Retry/Reload is pending), a continuation token and a
+  // multi-page chain (an empty terminal page reached through Additional leaves
+  // no token or rows but is not a single-page snapshot) never count as
+  // confirmed empty.
+  const confirmedEmpty =
+    supported &&
+    query.loaded &&
+    !query.error &&
+    !query.unrecovered &&
+    !query.nextPageToken &&
+    query.pages.length === 1 &&
+    query.rows.length === 0 &&
+    (!query.loading || query.loading === ReadStage.Refresh);
   useEffect(() => {
-    emptyChanged?.(
-      supported &&
-        query.loaded &&
-        !query.error &&
-        !query.loading &&
-        !query.nextPageToken &&
-        query.rows.length === 0,
-    );
-  }, [
-    supported,
-    query.loaded,
-    query.error,
-    query.loading,
-    query.nextPageToken,
-    query.rows.length,
-    emptyChanged,
-  ]);
+    console.debug("delidev.subagents.empty_presentation", {
+      confirmedEmpty,
+      loading: query.loading ?? null,
+      unrecovered: Boolean(query.unrecovered),
+    });
+    emptyChanged?.(confirmedEmpty);
+  }, [confirmedEmpty, query.loading, query.unrecovered, emptyChanged]);
+  // Presentation belongs to the current session owner. Disposing or replacing
+  // that owner makes the section visible again so earlier emptiness never hides
+  // the next owner's initial state; a stale response cannot publish because the
+  // old chain is reset and the new chain starts unloaded.
+  const emptyChangedRef = useRef(emptyChanged);
+  emptyChangedRef.current = emptyChanged;
+  useEffect(
+    () => () => {
+      console.debug("delidev.subagents.empty_presentation_reset", {
+        sessionId,
+      });
+      emptyChangedRef.current?.(false);
+    },
+    [sessionId],
+  );
   // Derive from every accepted reached row so the warning survives eviction of
   // the payload page holding the only OpenCode child.
   const needsOpenCodeUpdate =

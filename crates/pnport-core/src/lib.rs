@@ -8,7 +8,11 @@ pub mod launch;
 #[cfg(unix)]
 pub mod native_path;
 pub mod node;
+pub mod pe;
 pub mod view;
+
+#[cfg(windows)]
+pub mod windows;
 
 #[cfg(target_os = "macos")]
 pub mod macos_process;

@@ -6,6 +6,7 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { expect, it } from "vitest";
+import { Harness } from "./configuration-fields";
 import { encode } from "./documents";
 import {
   ConversationKind,
@@ -136,4 +137,60 @@ it("traverses deep loaded lineage without a recursive graph walk or inventory cu
   const collapsed = new Set(rows.slice(0, -1).map((r) => r.id));
   expect(revealConversation(roots, rows.at(-1)!.id, collapsed)).toBe(true);
   expect(collapsed.size).toBe(0);
+});
+
+const initialHarness = (harness: unknown) => ({
+  initial_execution: { configuration: { harness } },
+});
+it.each(Object.values(Harness))(
+  "projects the closed %s harness enum only for ordinary conversations",
+  (harness) => {
+    const parent = newRequestId();
+    expect(row(initialHarness(harness)).harness).toBe(harness);
+    expect(
+      row({ workspace: "worktree", ...initialHarness(harness) }).harness,
+    ).toBe(harness);
+    expect(
+      row({
+        ...initialHarness(harness),
+        fork: { source_session_id: parent, snapshot: {} },
+      }).harness,
+    ).toBeUndefined();
+    expect(
+      row({
+        ...initialHarness(harness),
+        fork: {
+          source_session_id: parent,
+          sidechat_parent_snapshot: { configuration: {} },
+        },
+      }).harness,
+    ).toBeUndefined();
+    expect(
+      row({ workspace: "future", ...initialHarness(harness) }).harness,
+    ).toBeUndefined();
+  },
+);
+it("omits the harness for absent, unknown and malformed metadata without a fork fallback", () => {
+  for (const values of [
+    {},
+    initialHarness("future-harness"),
+    initialHarness(7),
+    { initial_execution: null },
+    { initial_execution: [] },
+    { initial_execution: { configuration: [] } },
+    { initial_execution: { configuration: {} } },
+  ]) {
+    const entry = row(values);
+    expect(entry.harness).toBeUndefined();
+    expect(Object.hasOwn(entry, "harness")).toBe(false);
+  }
+});
+it("ignores current execution, Agent and account settings when projecting the harness", () => {
+  const entry = row({
+    ...initialHarness(Harness.Codex),
+    current_execution: { configuration: { harness: Harness.Grok } },
+    agent: { harness: Harness.OpenCode },
+    account_id: "changed",
+  });
+  expect(entry.harness).toBe(Harness.Codex);
 });

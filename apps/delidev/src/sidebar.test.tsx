@@ -32,6 +32,7 @@ import {
 import { encode } from "./documents";
 import { Surface } from "./views";
 import { Sidebar } from "./sidebar";
+import { Harness as HarnessId } from "./configuration-fields";
 import type { ComponentProps } from "react";
 import { i18n, SupportedLanguage } from "./localization";
 import {
@@ -2987,3 +2988,83 @@ it("presents a failure from the open More list inside the list and moves it to t
   const moved = screen.getByRole("alert");
   expect(moved.textContent).toBe(failureText);
 });
+
+const retainedHarness = (harness: unknown) => ({
+  initial_execution: { configuration: { harness } },
+});
+for (const compact of [false, true]) {
+  it(`shows retained harness marks only on ordinary conversation rows (compact=${compact})`, async () => {
+    stubViewport(compact);
+    const project = resource(EntityKind.PROJECT, "Marked project");
+    const base = { outcome: "running", archive: "active" };
+    const named = resource(EntityKind.SESSION, "Named work", project.id, {
+      ...base,
+      workspace: "worktree",
+      ...retainedHarness(HarnessId.Claude),
+      // Current settings never change the retained mark.
+      current_execution: { configuration: { harness: HarnessId.Grok } },
+    });
+    const chats = [HarnessId.Codex, HarnessId.OpenCode, HarnessId.Grok].map(
+      (harness) =>
+        resource(EntityKind.SESSION, `Chat ${harness}`, "", {
+          ...base,
+          workspace: "general-chat",
+          ...retainedHarness(harness),
+        }),
+    );
+    const plain = resource(EntityKind.SESSION, "Chat plain", "", {
+      ...base,
+      workspace: "general-chat",
+      ...retainedHarness("future-harness"),
+    });
+    const forked = resource(EntityKind.SESSION, "Chat forked", "", {
+      ...base,
+      workspace: "general-chat",
+      ...retainedHarness(HarnessId.Codex),
+      fork: { source_session_id: chats[0].id, snapshot: {} },
+    });
+    const value = mountSidebar({
+      projects: () => ({ resources: [project] }),
+      sessions: ({ projectId }) => ({
+        sessions:
+          projectId === project.id
+            ? [named]
+            : projectId
+              ? []
+              : [...chats, plain, forked],
+      }),
+      props: { drawerOpen: compact },
+    });
+    await screen.findByRole("button", { name: /Chat plain/ });
+    if (!screen.queryByRole("button", { name: /Named work/ }))
+      fireEvent.click(
+        screen.getAllByRole("button", { name: /Marked project/ })[0],
+      );
+    await screen.findByRole("button", { name: /Named work/ });
+    const rowFor = (id: string) =>
+      value.container.querySelector(`[data-session-id="${id}"]`)!;
+    const expected: [typeof named, HarnessId][] = [
+      [named, HarnessId.Claude],
+      [chats[0], HarnessId.Codex],
+      [chats[1], HarnessId.OpenCode],
+      [chats[2], HarnessId.Grok],
+    ];
+    for (const [entry, harness] of expected) {
+      const mark = rowFor(entry.id).querySelector(".worker-harness-mark")!;
+      expect(mark.classList.contains(`worker-harness-mark-${harness}`)).toBe(
+        true,
+      );
+      expect(mark.classList.contains("sidebar-harness-mark")).toBe(true);
+      expect(mark.getAttribute("aria-hidden")).toBe("true");
+      expect(
+        rowFor(entry.id).querySelector("svg.sidebar-workspace-icon"),
+      ).toBeNull();
+    }
+    for (const entry of [plain, forked]) {
+      expect(rowFor(entry.id).querySelector(".worker-harness-mark")).toBeNull();
+      expect(
+        rowFor(entry.id).querySelector("svg.sidebar-workspace-icon"),
+      ).not.toBeNull();
+    }
+  });
+}

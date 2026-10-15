@@ -8,10 +8,18 @@ export function knownHarness(value: unknown): Harness | undefined {
   return Object.values(Harness).find((harness) => harness === value);
 }
 
-export function HarnessMark({ harness }: { harness?: Harness }) {
+export function HarnessMark({
+  harness,
+  className,
+}: {
+  harness?: Harness;
+  className?: string;
+}) {
   return harness ? (
     <span
-      className={`worker-harness-mark worker-harness-mark-${harness}`}
+      className={`worker-harness-mark worker-harness-mark-${harness}${
+        className ? ` ${className}` : ""
+      }`}
       data-harness={harness}
       aria-hidden="true"
     />

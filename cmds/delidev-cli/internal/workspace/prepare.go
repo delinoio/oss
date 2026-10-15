@@ -125,6 +125,7 @@ type Manager struct {
 	storageBeforeRemovalUnlink    func(string)
 	storageAfterRemovalClaim      func(string)
 	storageFinalRootFault         func(storageFinalRootStage) error
+	storageClaimTempFile          func(*os.File) claimTempFile
 	storageAfterSnapshot          func()
 	sidechatBeforeMetadataPublish func()
 	sidechatAfterMetadataPublish  func()
