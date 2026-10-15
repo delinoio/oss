@@ -3584,6 +3584,27 @@ fn refreshes_nested_precache_manifests_in_dependency_order() {
     assert!(!z_sw.contains("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), "{z_sw}");
 }
 
+#[test]
+fn rejects_cyclic_precache_manifest_dependencies() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push((
+        "a-sw.js",
+        r#"self.workbox.precaching.precacheAndRoute([{url:"b-sw.js",revision:"a"}]);"#,
+    ));
+    chunks.push((
+        "b-sw.js",
+        r#"self.workbox.precaching.precacheAndRoute([{url:"a-sw.js",revision:"b"}]);"#,
+    ));
+    let temp = bundle(&chunks);
+    let output = run_typeopt(temp.path(), &[]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("cyclic precache manifest dependency"),
+        "{stderr}"
+    );
+}
+
 /// A precache URL that leaves the bundle directory is ignored: typeopt never
 /// reads outside the staged output for it.
 #[test]

@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use swc_core::{
     common::{FileName, GLOBALS, Globals, SourceMap, sync::Lrc},
     ecma::{
@@ -1651,21 +1651,25 @@ fn refresh_precache_revisions(
         visiting: &mut BTreeSet<PathBuf>,
         visited: &mut BTreeSet<PathBuf>,
         order: &mut Vec<PathBuf>,
-    ) {
+    ) -> Result<()> {
         if visited.contains(file) {
-            return;
+            return Ok(());
         }
         if !visiting.insert(file.to_path_buf()) {
-            return;
+            bail!(
+                "cyclic precache manifest dependency involving {}",
+                file.display()
+            );
         }
         if let Some(targets) = dependencies.get(file) {
             for target in targets {
-                visit_manifest(target, dependencies, visiting, visited, order);
+                visit_manifest(target, dependencies, visiting, visited, order)?;
             }
         }
         visiting.remove(file);
         visited.insert(file.to_path_buf());
         order.push(file.to_path_buf());
+        Ok(())
     }
 
     let mut ordered = Vec::with_capacity(eligible.len());
@@ -1678,7 +1682,7 @@ fn refresh_precache_revisions(
             &mut visiting,
             &mut visited,
             &mut ordered,
-        );
+        )?;
     }
 
     let mut refreshed = 0;
