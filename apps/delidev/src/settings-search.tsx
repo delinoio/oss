@@ -69,7 +69,6 @@ export enum SettingsSearchTarget {
   TailscaleDevices = "tailscale-devices",
   TailscaleRequests = "tailscale-requests",
   GitProfiles = "git-profiles",
-  CurrentConnection = "current-connection",
   AppInformation = "app-information",
   AppUpdates = "app-updates",
   AppRecovery = "app-recovery",
@@ -349,12 +348,6 @@ export const settingsSearchTargets: Partial<
     target(
       SettingsSearchTarget.GitProfiles,
       "integrations.githubProfiles_e47e4e",
-    ),
-  ],
-  [Category.Diagnostics]: [
-    target(
-      SettingsSearchTarget.CurrentConnection,
-      "settings.connections.current",
     ),
   ],
 };

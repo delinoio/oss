@@ -178,9 +178,27 @@ function NativeManagedSubscriptionAccount({
     status.data?.capabilities.includes(
       SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
     ) === true;
+  // Grok joins the lifecycle under its own negotiated System capability 39
+  // (Grok browser login). It has no separate refresh or logout capability, so a
+  // connected Grok account's Refresh login and Log out follow capability 39
+  // alone; without it they stay unavailable behind Grok-specific guidance, never
+  // behind the generic unsupported-service remediation. Capabilities 30 and 38
+  // belong to ChatGPT and Claude.
   const serviceSupported =
     service === SubscriptionServiceId.ChatGPT ||
-    service === SubscriptionServiceId.Claude;
+    service === SubscriptionServiceId.Claude ||
+    service === SubscriptionServiceId.Grok;
+  // Like Add account, the capability counts only from a settled, error-free
+  // status read: React Query keeps the previous data during a refetch and after
+  // a failed one, and a stale advertisement must not enable a Grok mutation.
+  const grokLifecycle =
+    service === SubscriptionServiceId.Grok &&
+    status.isSuccess &&
+    !status.error &&
+    !status.isFetching &&
+    status.data?.capabilities.includes(
+      SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1,
+    ) === true;
   // A server-token Claude account depends only on the server capability; a
   // device-owned account keeps the Runner-bound native capability.
   const managedClaude =
@@ -236,7 +254,9 @@ function NativeManagedSubscriptionAccount({
         : status.data?.capabilities.includes(
             SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
           ) === true
-      : capable);
+      : service === SubscriptionServiceId.Grok
+        ? grokLifecycle
+        : capable);
   const ownerMachine = text(state.owner_machine_id);
   const owner = useQuery(
     ResourceQuery.getResource,
@@ -400,7 +420,13 @@ function NativeManagedSubscriptionAccount({
         (status.isSuccess && !status.error && !status.isFetching)) ? (
         <InlineRemediation
           summary={
-            <p>{copy("account-connection.inline.subscriptionUnsupported")}</p>
+            <p>
+              {copy(
+                service === SubscriptionServiceId.Grok
+                  ? "grok-subscription.lifecycle.unavailable"
+                  : "account-connection.inline.subscriptionUnsupported",
+              )}
+            </p>
           }
           actions={
             <SettingsActionButton
@@ -420,7 +446,7 @@ function NativeManagedSubscriptionAccount({
       !status.error &&
       !status.isFetching &&
       !claudeServerLogin ? (
-        <p>{copy("claude-subscription.serverUpdateRequired")}</p>
+        <p>{copy("claude-subscription.serverUpdateRequiredClaudeOnly")}</p>
       ) : null}
       {state.recovery_required === true ? (
         <InlineRemediation
@@ -451,32 +477,36 @@ function NativeManagedSubscriptionAccount({
             {copy("claude-subscription.server.connectNew")}
           </SettingsActionButton>
         ) : !connected ? (
-          <SettingsActionButton
-            icon={SettingsActionIcon.Connect}
-            type="button"
-            disabled={
-              !ready ||
-              !flow.available ||
-              (service === SubscriptionServiceId.Claude && !claudeServerLogin)
-            }
-            onClick={() => {
-              if (
+          // An existing disconnected Grok account has no sign-in action: the
+          // Grok flow always creates a separate account (Add account).
+          service === SubscriptionServiceId.Grok ? null : (
+            <SettingsActionButton
+              icon={SettingsActionIcon.Connect}
+              type="button"
+              disabled={
                 !ready ||
                 !flow.available ||
-                (service === SubscriptionServiceId.Claude &&
-                  !claudeServerLogin) ||
-                refreshLock.current
-              )
-                return;
-              // Only a never-used Claude account takes the server-owned flow.
-              flow.begin(service, current);
-            }}
-          >
-            <LocalizedText
-              id="subscription-accounts.signInTo_fa4edf"
-              components={{ s0: <>{subscriptionServiceNames[service]}</> }}
-            />
-          </SettingsActionButton>
+                (service === SubscriptionServiceId.Claude && !claudeServerLogin)
+              }
+              onClick={() => {
+                if (
+                  !ready ||
+                  !flow.available ||
+                  (service === SubscriptionServiceId.Claude &&
+                    !claudeServerLogin) ||
+                  refreshLock.current
+                )
+                  return;
+                // Only a never-used Claude account takes the server-owned flow.
+                flow.begin(service, current);
+              }}
+            >
+              <LocalizedText
+                id="subscription-accounts.signInTo_fa4edf"
+                components={{ s0: <>{subscriptionServiceNames[service]}</> }}
+              />
+            </SettingsActionButton>
+          )
         ) : (
           <>
             {service === SubscriptionServiceId.Claude ? null : (
@@ -722,11 +752,6 @@ export function SubscriptionAccounts({
   // actions and Refresh all keep the generic notice, so a missing Claude
   // capability never reads as the reason a ChatGPT quota refresh or another
   // service's disconnect is unavailable.
-  const lifecycleNotice = copy(
-    claudeUpdateRequired
-      ? "claude-subscription.serverUpdateRequired"
-      : "claude-subscription.availability",
-  );
   const actionUnavailable = copy("subscription-settings.extra.f874aed4a97c");
   const refreshInventory = useRef<() => void>(() => {});
   // Login/status authority stays active while its own presentation pauses only
@@ -806,6 +831,31 @@ export function SubscriptionAccounts({
     status.data?.capabilities.includes(
       SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
     ) === true;
+  // Capability 39 counts only from a settled, error-free status read. React
+  // Query keeps the previous data during a refetch and after a failed one, so a
+  // stale advertisement must not keep Grok Add account enabled (it would create
+  // an account before the server could refuse the login).
+  const grokLoginCapable =
+    status.isSuccess &&
+    !status.error &&
+    !status.isFetching &&
+    status.data?.capabilities.includes(
+      SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1,
+    ) === true;
+  // The connect notice names each provider's real state: Claude needs System
+  // capability 67, and Grok needs capability 39 plus the same inventory
+  // capability 17 and native browser control that enable its Add account row
+  // (selectService and serviceLoginAvailable below).
+  const grokSignInAvailable = capable && grokLoginCapable && flow.available;
+  const lifecycleNotice = copy(
+    claudeUpdateRequired
+      ? grokSignInAvailable
+        ? "claude-subscription.serverUpdateRequiredGrokAvailable"
+        : "claude-subscription.serverUpdateRequired"
+      : grokSignInAvailable
+        ? "claude-subscription.availabilityGrokAvailable"
+        : "claude-subscription.availability",
+  );
   const accountOperationsBlocked = Boolean(
     selected ||
     goIntent ||
@@ -1125,12 +1175,38 @@ export function SubscriptionAccounts({
                   setGoIntent(true);
                   setGoCreate(true);
                 } else if (
+                  service === SubscriptionServiceId.Grok &&
+                  !grokLoginCapable
+                ) {
+                  // Without capability 39 the Grok row keeps its unsupported
+                  // presentation and starts nothing.
+                  return;
+                } else if (
                   service === SubscriptionServiceId.Claude &&
                   claudeServerLoginAdvertised !== true
                 ) {
                   // Without capability 67 there is no Claude sign-in path.
                   return;
                 } else if (service && flow.available) flow.begin(service);
+              }
+            : undefined
+        }
+        deviceCodeAvailable={(brand) =>
+          brand === SubscriptionBrand.Grok && grokSignInAvailable
+        }
+        selectDeviceCode={
+          capable && !blocked
+            ? (brand) => {
+                if (
+                  subscriptionService(brand) !== SubscriptionServiceId.Grok ||
+                  !grokLoginCapable ||
+                  !flow.available ||
+                  !cleanup.canMutate()
+                )
+                  return;
+                // One deliberate click starts the device-code method; it never
+                // falls back to or from browser login automatically.
+                flow.begin(SubscriptionServiceId.Grok, undefined, true);
               }
             : undefined
         }
@@ -1141,11 +1217,13 @@ export function SubscriptionAccounts({
               ) === true
             : brand === SubscriptionBrand.ChatGPT
               ? loginCapable && flow.available
-              : brand === SubscriptionBrand.Claude &&
-                flow.available &&
-                status.data?.capabilities.includes(
-                  SystemCapability.CLAUDE_SERVER_LOGIN_V1,
-                ) === true
+              : brand === SubscriptionBrand.Grok
+                ? grokSignInAvailable
+                : brand === SubscriptionBrand.Claude &&
+                  flow.available &&
+                  status.data?.capabilities.includes(
+                    SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+                  ) === true
         }
         pagination={
           <ScrollContinuation
