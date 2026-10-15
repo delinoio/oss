@@ -1,9 +1,28 @@
 package claude
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
+	"strings"
 	"testing"
 )
+
+func TestRejectedProgressLogsOnlyClosedClassification(t *testing.T) {
+	b := contentFixture(t)
+	var logs bytes.Buffer
+	b.logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	event := lifecycleMessage(t, b, "system", map[string]any{
+		"subtype": "api_retry", "attempt": 1, "max_retries": 2,
+		"retry_delay_ms": 0, "error_status": nil, "error": "private-progress-sentinel",
+	})
+	if _, err := b.Observe(event); err == nil {
+		t.Fatal("invalid retry was accepted")
+	}
+	if !strings.Contains(logs.String(), `"api_retry":true`) || strings.Contains(logs.String(), "private-progress-sentinel") {
+		t.Fatal("progress diagnostic lost its classification or exposed native content")
+	}
+}
 
 func TestThinkingEstimatesRemainSeparateFromUsage(t *testing.T) {
 	for _, name := range []string{"zero", "observed", "large", "missing", "null", "negative", "fraction", "extra", "unaccepted", "foreign", "duplicate"} {

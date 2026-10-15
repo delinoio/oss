@@ -33,7 +33,17 @@ func (b *ExecutionBinding) observeRunState(raw []byte) (*NativeRunObservation, e
 		UUID    string         `json:"uuid"`
 		State   NativeRunState `json:"state"`
 	}
-	if decodeNativeObject(raw, &value) != nil || value.Subtype != "session_state_changed" || value.State == b.runState {
+	shapeValid := decodeNativeObject(raw, &value) == nil
+	if b.logger != nil {
+		b.logger.Info("claude_run_state_validation", "owner_id", b.owner,
+			"shape_valid", shapeValid, "running", value.State == RunRunning,
+			"requires_action", value.State == RunRequiresAction, "idle", value.State == RunIdle,
+			"same_state", value.State == b.runState, "previous_running", b.runState == RunRunning,
+			"initialized", b.initialized, "finished", b.finished,
+			"command_completed", b.command == CommandCompleted, "command_cancelled", b.command == CommandCancelled,
+			"active_content", len(b.content.active), "open_tools", b.content.openTools)
+	}
+	if !shapeValid || value.Subtype != "session_state_changed" || value.State == b.runState {
 		return nil, lifecycleUncertain()
 	}
 	switch value.State {

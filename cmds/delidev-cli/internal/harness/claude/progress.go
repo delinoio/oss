@@ -95,7 +95,22 @@ type NativeProgressObservation struct {
 	PrecedingTools []string
 }
 
-func (b *ExecutionBinding) observeProgress(event StreamEvent) (*NativeProgressObservation, error) {
+func (b *ExecutionBinding) observeProgress(event StreamEvent) (observation *NativeProgressObservation, returned error) {
+	defer func() {
+		if returned == nil || b.logger == nil {
+			return
+		}
+		var header struct {
+			Subtype string `json:"subtype"`
+		}
+		_ = json.Unmarshal(event.Body, &header)
+		b.logger.Warn("Claude Code progress validation rejected", "owner_id", b.owner,
+			"initialized", b.initialized, "accepted", b.accepted,
+			"status", event.Type == "system" && header.Subtype == "status",
+			"thinking", event.Type == "system" && header.Subtype == "thinking_tokens",
+			"api_retry", event.Type == "system" && header.Subtype == "api_retry",
+			"tool_progress", event.Type == "tool_progress", "tool_summary", event.Type == "tool_use_summary")
+	}()
 	// Native requesting status precedes the original user replay. It is an
 	// activity observation and must never acknowledge that input.
 	if !b.initialized || (event.Type != "system" && !b.accepted) {
