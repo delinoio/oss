@@ -199,8 +199,11 @@ export function ScrollPayloadWindow<Row extends PaginationRow, Payload>({
   const priorFocus =
     typeof document === "undefined" ? null : document.activeElement;
   useLayoutEffect(() => {
+    // A single page has no preceding payload to compensate. Its surrounding
+    // layout can move during dialog dismissal without changing list scroll.
     if (
       container &&
+      query.pages.length > 1 &&
       anchorToken !== undefined &&
       anchorToken !== null &&
       anchorTop !== undefined

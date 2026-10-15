@@ -231,22 +231,6 @@
 .appearance-settings [role="alert"] {
   color: var(--danger-text);
 }
-.appearance-notice {
-  position: fixed;
-  z-index: 1100;
-  inset: auto 16px 16px;
-  max-width: 680px;
-  margin: 0 auto;
-  padding: 12px;
-  border: 1px solid var(--danger-border);
-  border-radius: 8px;
-  background: var(--danger-background);
-  color: var(--danger-text);
-  font-size: 13px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-  pointer-events: none;
-}
 
 /* Appearance v2 presentation remains bundled; only color tokens use CSSOM. */
 .appearance-settings {

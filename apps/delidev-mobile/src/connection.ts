@@ -29,6 +29,7 @@ export class Connection {
     },
   });
   private generation = 0;
+  observationEpoch = 0;
   private controller?: AbortController;
   active = false;
   status = Status.Connecting;
@@ -46,21 +47,35 @@ export class Connection {
     this.status = status;
     this.changed(status);
   }
-  suspend(): void {
+  private retire(): Promise<void> {
     this.active = false;
     this.generation++;
+    this.observationEpoch++;
     this.controller?.abort();
-    void this.cache.cancelQueries();
+    const canceled = this.cache.cancelQueries();
     this.cache.clear();
+    return canceled;
+  }
+  suspend(): void {
+    void this.retire();
     this.set(Status.Suspended);
   }
+  isCurrent(epoch: number): boolean {
+    return (
+      this.observationEpoch === epoch &&
+      this.active &&
+      this.status === Status.Live
+    );
+  }
   async resume(): Promise<void> {
-    this.controller?.abort();
-    const generation = ++this.generation;
+    const canceled = this.retire();
+    const generation = this.generation;
     const controller = (this.controller = new AbortController());
-    this.active = true;
     this.set(Status.Connecting);
     try {
+      await canceled;
+      if (generation !== this.generation || controller.signal.aborted) return;
+      this.cache.clear();
       const transport = this.state.transport(this.id);
       const status = await createClient(SystemService, transport).getStatus(
         {},
@@ -71,10 +86,15 @@ export class Connection {
         status.serverId !== this.state.profile(this.id).serverId ||
         status.protocolVersion !== 2
       ) {
-        this.active = false;
+        console.warn({
+          component: "mobile-connection",
+          operation: "verify",
+          outcome: "version-mismatch",
+        });
         this.set(Status.Version);
         return;
       }
+      this.active = true;
       this.set(Status.Live);
       await this.cache.invalidateQueries();
       for await (const update of synchronizeResources(

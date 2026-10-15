@@ -1671,7 +1671,7 @@ The native File menu item New Window has no keyboard accelerator: it is activate
 
 One native tray owns one quota-first auxiliary status panel and projects the original ready Local/Saved product windows. TypeScript reads `SystemService.GetOverview`, today's existing usage summary and bounded account pages directly through Connect Query. Overview and today's usage summary poll every 15 seconds, and account reads every 30 seconds while the app process runs, including hidden windows. A failed or missing usage read remains unavailable on publication instead of carrying an old total forward. Rust receives only a validated presentation projection, never RPC authority, account credentials, prompts, native tool identities or paths.
 
-Show server observation time, exact active-session and unanswered-request counts, connected/registered Workers, known UTC-day tokens with incomplete telemetry, and separate account quota windows. Preserve zero and decimal precision; failed or missing evidence is unavailable. Today's half-open UTC range comes from the server. A quota cannot become pooled remaining capacity: preserve its own state, observation/reset times and stale result. At most 20 account aliases and eight windows per account are shown, with explicit Settings links for additional records. Email-shaped aliases are masked before native IPC and again before native menu rendering.
+Show server observation time, exact active-session and unanswered-request counts, connected/registered Workers, known UTC-day tokens with incomplete telemetry, and separate account quota windows. Preserve zero and decimal precision; failed or missing evidence is unavailable. Today's half-open UTC range comes from the server. A quota cannot become pooled remaining capacity: preserve its own state, observation/reset times and stale result. At most 20 account aliases and eight windows per account are shown, with explicit Settings links for additional records. Email-shaped aliases are masked before native IPC and again before native menu rendering. The product window renders no status text for a tray publication, activation-listener or retained-action read failure; the publisher, the `tray-activate` listener and ticket acknowledgment keep their behavior.
 
 Each publication uses the calling window's fresh scope and a strictly increasing revision. Stale scopes, another window's scope and reordered revisions cannot overwrite the current presentation. A native monotonic timer marks unrefreshed data stale after 45 seconds even if renderer timers are suspended. Cached read failures are also visibly stale. Native menus use only closed Sessions, Inbox, Usage and Settings destinations; opening them does not enqueue input, resolve/read a request or grant execution authority. Activation rechecks the original saved-window instance, retains a ticket in memory until the receiving view acknowledges that exact ticket and rejects an older acknowledgment that would erase newer navigation. This preserves activation across delayed mounts and React Strict Mode cleanup.
 
@@ -1767,7 +1767,88 @@ Permission reads have a five-second deadline and never prompt. Only the explicit
 - Windows uses pinned `windows` 0.62.2 WinRT notifications under `io.delino.delidev`; it never borrows PowerShell or another application's identity. Retain activation/dismissal registrations, distinguish application/user/policy/manifest disablement, keep Action Center activation after banner timeout and unregister callbacks during cleanup. Installed AppUserModelID registration and actual supported-system delivery require packaging acceptance.
 - Linux uses pinned `zbus` 5.19.0 with the Freedesktop notification service. Require actions, subscribe before Notify, bind signals and CloseNotification to the original unique bus owner and numeric ID, and use the pinned bundler's `DeliDev.desktop` basename. A replacement daemon cannot activate or close another notification with a reused ID. The interface has no standard user-permission query: display service-available without claiming permission or actual banner visibility.
 
-Native status uses a connection-scoped React Query cache and 30-second reads. Disabled/unavailable permission does not claim candidates. Settings explicitly distinguishes unrequested permission, denial, bundle/action/service/capacity failures and Linux service availability. API submission, platform permission and actual displayed/seen notifications are separate evidence. No browser notification API, network broker, arbitrary native payload or OS-permission request from a timer is allowed. Component tests, cross compilation and native host initialization do not establish real notification acceptance on any platform.
+Native status uses a connection-scoped React Query cache and 30-second reads. The product window renders no status text for a readiness, candidate or presentation-pump failure; requests remain in the inbox and the Settings notification status keeps the truthful native availability. Disabled/unavailable permission does not claim candidates. Settings explicitly distinguishes unrequested permission, denial, bundle/action/service/capacity failures and Linux service availability. API submission, platform permission and actual displayed/seen notifications are separate evidence. No browser notification API, network broker, arbitrary native payload or OS-permission request from a timer is allowed. Component tests, cross compilation and native host initialization do not establish real notification acceptance on any platform.
+
+#### Sidebar, tray and notification failure diagnostics
+
+The product window renders nothing for a sidebar-preference, tray or
+desktop-notification failure, so the renderer records each failing phase as one
+structured console warning. The record has the stable event name
+`delidev.presentation.outcome` and exactly two fields: a closed phase and the
+outcome `failed` or `recovered`. It never contains raw error text, identifiers,
+paths, summaries, payloads or the sidebar problem classification. Every
+reporter (sidebar provider, tray presentation, notification presentation and
+the tray publisher and notification pump it owns) feeds one pure reducer in
+`presentation-diagnostics.ts`; no reporter keeps its own failing flags.
+
+A phase is one operation. Its failure records once on the healthy-to-failing
+transition, so a repeating failure and bounded retries add no further warning;
+its next success records one `recovered` info record. An operation that was not
+attempted changes nothing. Phases never affect each other: a success of one
+phase never recovers another phase, and two phases that fail in the same batch
+each record their own warning.
+
+One log belongs to one lifetime: the sidebar provider, one mounted tray
+presentation or one notification connection. Disposal ends the log and a
+disposed log ignores every later event. A replaced connection or a newly
+mounted tray starts a new log with every phase healthy, so it reports its own
+first failure.
+
+Reducer table (`P` is one phase, `Q` any other phase):
+
+| State of `P`  | Failure of `P`               | Success of `P`                      | Disposal of the log                  |
+| ------------- | ---------------------------- | ----------------------------------- | ------------------------------------ |
+| healthy       | warn; `P` is failing         | no record                           | the log is disposed                  |
+| failing       | no record; `P` stays failing | one `recovered` record; `P` healthy | the log is disposed; failing cleared |
+| any, `Q` fail | independent of `Q`           | independent of `Q`                  | not applicable                       |
+| disposed log  | no record                    | no record                           | no record                            |
+
+| Phase                            | Failure event                                                                                                           | Result                                                                                                                          | Recovery event                                       |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `sidebar-read`                   | a snapshot with problem Unavailable, ReadFailed, InvalidDocument or UnsupportedVersion, including the first native read | warn; saves stay fenced until Reload                                                                                            | a healthy snapshot                                   |
+| `sidebar-save`                   | a snapshot with problem WriteFailed, OutcomeUnknown or Changed                                                          | warn; saves stay fenced and the original save is never replayed                                                                 | a healthy snapshot                                   |
+| `tray-begin`                     | `begin_tray` rejects                                                                                                    | warn; the next summary refresh begins again                                                                                     | `begin_tray` resolves                                |
+| `tray-publish`                   | `publish_tray` rejects                                                                                                  | warn; the scope is dropped and the next refresh begins again                                                                    | a completed publication                              |
+| `tray-action-read`               | `read_tray_action` or `acknowledge_tray_action` rejects or is invalid                                                   | warn once; bounded retry continues unchanged                                                                                    | a completed read or acknowledgment                   |
+| `tray-activation-listener`       | the `tray-activate` listener cannot be registered                                                                       | warn; the tray still publishes and no activation is received                                                                    | none until the tray is mounted again                 |
+| `notification-readiness`         | the permission read rejects                                                                                             | warn; no candidate is read and Settings keeps native availability                                                               | a later successful read                              |
+| `notification-candidate-read`    | the candidate list read rejects                                                                                         | warn; the pump keeps its previous page and presents nothing new                                                                 | a later successful read                              |
+| `notification-scope-begin`       | `begin_notifications` rejects or returns an invalid scope                                                               | warn; nothing is claimed and the next page begins again after a rejection                                                       | a valid scope                                        |
+| `notification-candidate-invalid` | the page exceeds 50 entries or carries an invalid target                                                                | warn; the page is dropped before native initialization                                                                          | the next valid page                                  |
+| `notification-present`           | native display is denied, failed or uncertain                                                                           | warn when the display result is known, before its report is sent; the batch stops after the report and display is never retried | a submitted display                                  |
+| `notification-pump`              | claim verification or the claim request fails                                                                           | warn; pending work is dropped and a submitted notice is not repeated                                                            | a verified claim, including one that may not present |
+| `notification-report`            | the report request rejects                                                                                              | warn; pending work is dropped and display is never retried                                                                      | a completed report                                   |
+
+Notification pump cells. A page is one batch; each row lists the records the
+batch produces in order, and every phase not named keeps its state. A claim that
+is aborted or not found is neither a failure nor a success of `notification-pump`.
+
+| Batch outcome                                         | Records                                                                                                                                               |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| valid page, display submitted, report completes       | recovers each of `notification-scope-begin`, `-pump`, `-present`, `-report` that was failing, and `notification-candidate-invalid` at page validation |
+| page invalid                                          | fails `notification-candidate-invalid`; no native call                                                                                                |
+| `begin_notifications` rejects                         | fails `notification-scope-begin`; nothing is claimed                                                                                                  |
+| scope invalid                                         | fails `notification-scope-begin`; nothing is claimed                                                                                                  |
+| claim rejects or cannot be verified                   | fails `notification-pump`; no display; scope-begin recovered earlier in the same drain                                                                |
+| display denied, failed or uncertain, report completes | fails `notification-present`; recovers every other failing pump phase                                                                                 |
+| display submitted, report rejects                     | fails `notification-report` only                                                                                                                      |
+| display denied, failed or uncertain, report rejects   | fails `notification-present`, then `notification-report`, in that order                                                                               |
+| display or report settles after the pump closed       | no record; the report request is not sent after a closed display                                                                                      |
+| connection replaced                                   | the new pump and its new log report their own first failure                                                                                           |
+
+The sidebar provider does not record its loading placeholder: the initial
+Unavailable value is not an observation. The first native read, even when it is
+a real Unavailable snapshot, is recorded like any other snapshot. A problem in
+the same phase as a failing one adds no record, a problem in the other phase
+adds its own record, and a healthy snapshot recovers both sidebar phases.
+
+Every phase leaves the product UI empty. The tray publisher and the
+notification pump report only the phase and whether its operation failed; the
+presentation component owns the log and decides what is recorded. A closed
+tray publisher or notification pump reports nothing, so an operation that
+settles after unmount, Strict Mode cleanup or connection replacement (for
+example a pending `begin_notifications` that later rejects) adds no record to
+the new lifetime.
 
 #### Notifications settings presentation
 
@@ -2267,7 +2348,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Skill availability presentation follows the desktop explicit skill completion contract. Only complete successful current authenticated scope inventory confirms absence; retain unknown on loading/error/unsupported scope. Keep native textarea overlays aligned and noninteractive; the mirror recopies textarea typography when the acknowledged appearance preferences `composer_size`, `composer_layout` or `density` change (including notifications from another window through the existing appearance provider) in a passive effect after the provider's layout effect applies the data attributes, with no document observer or polling and no textarea remount, skip disabled retained rows, bound panel retention to 256 and discard on dismissal/scope change. Prompt history remains text-only and supplies no completion candidates or binding authority.
 
-- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only primary+B shortcut with no shell toggle or spacer, compact drawer independence and explicit failure reload. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
+- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only primary+B shortcut with no shell toggle or spacer, compact drawer independence and failure fencing with shortcut-driven recovery and no window notice. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
 
 - Reset-credit row names follow the subscription Settings contract: localized one-based ordinals include unavailable returned details, full original IDs remain secondary, and confirmation captures the selected ordinal with the original identity and revision bindings. Reorder and locale changes cannot transfer selection or grant consumption authority. Preserve count-only native-next, once-only confirmation, exact uncertain requests, cleanup gates and native title privacy; add no durable identity or protocol field.
 
@@ -3379,7 +3460,7 @@ The Schedules list and Occurrence history page adapters (`schedulePage`, `occurr
 
 - The feature image startup guidance requires validated closed settled provenance. Present the exact original rejected input and images. English/Korean guidance directs users to start a new session with an explicitly image-capable Agent Worker and Runner Device, or start a new text-only session; retrying the rejected session retains its original input and selection. Queuing text in that session does not repair its startup retry admission. Keep generic/unverified failures under existing generic guidance; preserve current drafts, attachment identities and explicit retry/recovery guards. Missing or mixed metadata cannot offer image-specific retry. Follow the image-input and direct startup contracts.
 
-- Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The fixed primary+B shortcut shares dispatch/help/ARIA, ordinary-input admission and existing exclusions; the shell has no expand/collapse toggle or replacement spacer. Preserve focus/caret, compact drawer independence, visible navigation handoffs and explicit reload after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
+- Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The fixed primary+B shortcut shares dispatch/help/ARIA, ordinary-input admission and existing exclusions; the shell has no expand/collapse toggle or replacement spacer. Preserve focus/caret, compact drawer independence, visible navigation handoffs and shortcut-driven recovery (no window notice) after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
 
 - The feature per-turn timing uses bounded original owner/input/timestamp metadata and one mounted active timer isolated from transcript payload rendering. Anchor a pre-user line before the first bounded original matching native record, then relocate it before the primary input; reject foreign/earlier/inherited scope. Freeze retained terminal timing and unconfirmed disconnect estimates, preserve zero/unavailable, inherited source attribution, Steer identity, three-page anchors/tokens/scroll/focus and drafts. READY/pre-send states cannot create timing. Keep localized semantic wrapping and aria-live off; display timing grants no control/native authority.
 
@@ -3797,6 +3878,97 @@ through existing APIs, but need an account before wizard resaving. Retired model
 remain inert; affected Workers require explicit current account and model
 reconfiguration without rewriting historical executions.
 
+#### Worker wizard step indicator
+
+The four-item step indicator (Harness, Accounts, Model, Configure) is also
+navigation among steps the user has already reached. The wizard keeps one
+`visited` limit, the highest step reached in the current opened wizard session.
+It starts at Harness (an edit also starts there and reaches later steps through
+Next), only grows when a step is selected, and is never persisted or saved.
+
+- A visited or current item is one `button type=button` holding the number and
+  label together, with a 36px minimum hit area, a pale selected-surface hover and
+  a visible `focus-visible` ring. The current item's button carries
+  `aria-current="step"`. Items after the visited limit are plain non-focusable
+  content with no hover or focus affordance.
+- Selection never saves, submits the form or starts login, connection
+  verification, endpoint model discovery or inference work. It starts only the
+  read-only reads that reaching the target step with footer Back or Next starts
+  (see the read table below), and nothing for a step it jumps over.
+  Back/Next, harness confirmation, the final Save and Settings dismissal are
+  unchanged.
+- English and Korean labels, the four-item layout and wrapping on narrow widths
+  are unchanged. The styles are scoped to `.worker-steps`; other wizards keep
+  the shared `wizard-progress` presentation.
+
+Step strip hit areas. The strip never lets two adjacent step hit areas overlap,
+so the visible edge of a step always activates that step. Step spacing is owned
+by the shared `wizard-progress` rule (24px between steps at every width) and the
+worker stylesheet declares no gap, because the shared rule's higher specificity
+would silently override one. Each button reaches 8px past its item on both
+sides horizontally and 4px vertically, and keeps a 36px minimum height. Overlap
+is the facing reaches minus the gap; a negative value is the clearance left
+between the hit areas.
+
+| Viewport width  | Placement              | Gap  | Reach of each facing pair | Overlap | Minimum hit height |
+| --------------- | ---------------------- | ---- | ------------------------- | ------- | ------------------ |
+| 761px and wider | Same row               | 24px | 8px + 8px                 | -8px    | 36px               |
+| 761px and wider | Wrapped onto a new row | 24px | 4px + 4px                 | -16px   | 36px               |
+| 641px to 760px  | Same row               | 24px | 8px + 8px                 | -8px    | 36px               |
+| 641px to 760px  | Wrapped onto a new row | 24px | 4px + 4px                 | -16px   | 36px               |
+| 640px and below | Same row               | 24px | 8px + 8px                 | -8px    | 36px               |
+| 640px and below | Wrapped onto a new row | 24px | 4px + 4px                 | -16px   | 36px               |
+
+`step-hit-area-css.test.ts` evaluates the committed stylesheets (media
+conditions, specificity and load order) at every width threshold and fails when
+any row's overlap is zero or positive, when the worker sheet declares a gap on
+the strip, or when a rule the evaluator skips targets the strip. Other control
+strips keep adjacent targets non-overlapping the same way: the shared tab strip
+has no gap and no negative margins, and the only other negative inline margin
+in the desktop stylesheets is the sole dismiss button of an inline error row,
+which has no neighbouring control. The same test fails on any new negative
+inline margin or pseudo-element offset until it is documented there.
+
+| Target item                                     | Wizard state                                                              | Result                                                                                                                                                |
+| ----------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| After the visited limit                         | any                                                                       | Not a button, not focusable, click does nothing.                                                                                                      |
+| Any item                                        | pending save, uncertain save, pending account evidence or inactive wizard | Button is disabled; no step change, no second write.                                                                                                  |
+| Current step                                    | idle                                                                      | Enabled. Focuses the step heading; no entrance motion; drafts and any shown error stay.                                                               |
+| Before the current step                         | idle                                                                      | Enabled. Selects it with the entrance motion, focuses the heading, clears the error and retains compatible drafts.                                    |
+| After the current step, up to the visited limit | idle, preceding stages valid                                              | Enabled. Selects it with the entrance motion and focuses the heading.                                                                                 |
+| After the current step, up to the visited limit | idle, a preceding stage invalid                                           | Enabled. Does not select the target: it shows the first invalid stage without entrance motion, shows its error and focuses the first invalid control. |
+
+Read table. A step's reads belong to arriving at that step, whichever control
+caused the arrival, so selecting an item and pressing footer Back or Next start
+the same requests. Leaving Accounts discards its pages and inventory can change
+while another step is shown, so Accounts is read again on every arrival instead
+of reusing retained rows. A step the selection jumps over starts no read.
+
+| Target item                             | Earlier state of the target's data                                                              | Requests started by the selection                                                                                          |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Harness                                 | any                                                                                             | None.                                                                                                                      |
+| Current step or an item after the limit | any                                                                                             | None.                                                                                                                      |
+| Accounts, from Model or Configure       | pages loaded, or the last read failed                                                           | One provider inventory read per source group and one account read per source group that has a source, as Back starts them. |
+| Model, API source                       | any                                                                                             | None. Endpoint models are read only by the explicit Refresh models from endpoint action.                                   |
+| Model, subscription source              | known catalog loaded and fresh in the shared query cache                                        | None.                                                                                                                      |
+| Model, subscription source              | known catalog not loaded, stale (older than the cache freshness window) or its last read failed | One known catalog read for that source, as Next starts it.                                                                 |
+| Configure                               | any                                                                                             | The one Configure field read that Next starts. No Accounts or Model read and no save.                                      |
+| Any item blocked by forward validation  | any                                                                                             | Those of the first invalid stage it routes to, from the rows above.                                                        |
+| Any item while disabled                 | pending save, uncertain save, pending evidence, inactive wizard                                 | None.                                                                                                                      |
+
+`agent-worker-wizard.test.tsx` records every request through the transport and
+covers each row, including a multi-source draft, a failed earlier read and equality
+with the Back/Next arrival.
+
+Clamping: choosing a different harness clamps the limit to Harness (confirming
+then reopens Accounts). Committing a different source for a group, or adding a
+source group, clamps it to Accounts, so Model and Configure become inactive until
+reached again with Next. Reselecting the same harness or source, reordering,
+removing a group and editing accounts, the model or the name keep the limit;
+the forward validation above covers those drafts. `agent-worker-wizard.test.tsx`
+covers every row and clamp, and `agent-worker-wizard-steps-css.test.ts` covers the
+markup-dependent geometry, hover and focus rules.
+
 The Model step uses source-scoped server catalog autocomplete and permits exact
 native ID input after loading, empty, failed or unsupported discovery results.
 Both wizard generations reserve an always-mounted 280 CSS-pixel result area
@@ -3845,7 +4017,7 @@ Use the shared 1040px left column and 960px workflow task shell with fixed heade
 
 Selected account rows lead eligible choices and remain visible outside current pages. Failed-read display retention keeps only selected identity/name/status metadata; current independent reads remain the only account proof, and complete visited Resource documents are never retained for labels. The source picker is always visible; only a committed different source resets that group's accounts/model/cursors. Account choices are directly available without Choose accounts. Required selected-provider failures and their exact read-only retry remain visible in the detail panel beside the source picker. Retry reads that provider without changing the source, account selection or draft, and admits no mutation. Remove Change source, Refresh accounts and source Move up/down buttons. Preserve exact explicit failed-read retry/reload, complete server filtering, invalid/stale/empty states and selected-account counts. Routing stays visible with an empty helper and all original account weight/order controls. Only a complete valid exhausted empty inventory shows Add account in AI API Keys for its selected provider, or Add account in AI Subscription for its selected service. These links use ordinary Settings navigation, dispose the wizard draft and start no login, discovery, save or native operation. Partial, failed, incompatible, malformed or hidden-only nonempty pages never establish empty inventory. Pagination follows the shared continuation contract and never changes account authority. Validation selects the affected panel and reveals/focuses its invalid control. Hidden panels expose no keyboard/accessibility controls. Language changes and reflow never remount controllers or steal focus.
 
-Both wizard generations place Back/Next/final Save in the Settings task footer, associated with the original form. The header owns the create/edit title and top-level dismissal; omit duplicate title and Cancel in a task, retaining standalone page cancellation. Harness has no Next action. X/Escape and original opener restoration retain their existing ownership. The Accounts step shows the selected harness name as plain text without a change control; footer Back is the only route back to Harness. It focuses the step heading, confirming the same harness returns to Accounts with the draft kept, and choosing a different harness applies the harness-change reset above.
+Both wizard generations place Back/Next/final Save in the Settings task footer, associated with the original form. The header owns the create/edit title and top-level dismissal; omit duplicate title and Cancel in a task, retaining standalone page cancellation. Harness has no Next action. X/Escape and original opener restoration retain their existing ownership. The Accounts step shows the selected harness name as plain text without a change control; footer Back and the visited Harness stepper item are the routes back to Harness. Either focuses the step heading, confirming the same harness returns to Accounts with the draft kept, and choosing a different harness applies the harness-change reset above.
 
 The Harness step replaces its select with
 four equal selectable cards in Codex, Claude Code, OpenCode, Grok Build order.
@@ -3938,6 +4110,10 @@ events cannot restore older state. Equal unchanged inspections retain the revisi
 Brief saved-window binding contention receives bounded event-admission retries.
 A healthy retained window reinspects when focused or made visible to reconcile a
 missed event; an error or uncertain save still requires explicit Reload appearance.
+The failure text and the Reload action live only in the Appearance settings
+category. The provider renders no window-level alert, so the product window
+reserves no space for an Appearance problem. The same rule applies to the Language
+provider: its failure text and Reload action live only in the Language settings.
 
 The original native controller inspects `appearance.json` once during startup
 setup, before any product window or the tray is created or admitted, using the
@@ -4125,7 +4301,7 @@ Desktop only. `entranceCategories` in `settings.tsx` maps each opted-in `Setting
 - `Surface` moves the category content column, which holds the heading and body. `SettingsTaskWindow` also plays one entrance for every Settings task opened inside any opted-in category, through `SettingsTaskEntranceContext` provided by `SettingsWorkspace`. The task entrance moves only the task `header`, never the native task `<dialog>` host or its body: a transform would make the dialog the containing block of fixed descendants (for example portaled tooltips) and the contract above excludes native positioning hosts. Tasks outside an opted-in category never animate. Opening, editing, saving, cancelling, refresh, polling, pagination, async progress, errors, permission changes and job or history updates never restart it, dismissal is immediate with no exit animation, and focus return, dismissal, disposal and request ownership never wait for it.
 - `Heading` moves only the static `.settings-category-heading`; tasks always move only their own task heading. Runner Devices, Tailscale, Connections and App information contain persistent portal hosts, native controllers and update or connection callbacks (Tailscale hosts the This computer, Devices on your tailnet and Connection requests portals); no ancestor of those hosts receives a transform, and their controllers, original version evidence, pending update checks, connect, re-pair and retry requests keep their identity. `Modal` takes `headingEntrance` for desktop-owned Connections and Runner Devices tasks (Saved server add, rename and removal presentation, Tailscale enable and device selection, and local re-registration). It plays one entrance on the dialog `header` and never on the dialog. The owner supplies `presentationRequest` for retained tasks: a Modal that mounts visible is one presentation, and afterwards only a changed request that becomes visible (a user action that opens the task, Continue after a dismissal, or a new Add generation) adds one. Visibility changes without a new request, such as a Connections host slot appearing or the page becoming active again, stay immediate. Incoming Tailscale approval prompts and slot-driven Saved servers presentation never animate.
 - Import / Export (`configuration-transfer.tsx`) additionally animates the Map fieldset and the Review preview section once when the user explicitly requests that stage (Load configuration document, Preview configuration changes). `requestedStage` records only that request and is cleared by edits, invalidation and stage arrival. The Map activation is an explicit Load request counter, not the `loaded` visibility: loading again while a document is already mapped replaces it in one event batch and still plays one entrance (the shared hook restarts a running animation for the new key). Stage changes that are derived from asynchronous results (apply progress, uncertain-request recovery, import result) stay immediate. Exact transfer bytes, mappings, original request IDs and protected state are untouched.
-- Agent Workers animates the category and both owned task windows (Worker wizard create and edit, and Preview routing), each once per opened window through the `Surface` rules above. Inside the Worker wizard (`agent-worker-source-wizard.tsx`) the static step `h3` heading additionally plays one entrance per user-selected step change: harness confirmation, Next and Back. `stepRequests` counts only those handlers and is the activation key through `selectStep`; the first step shown when the task opens and automatic routing through `fail()` (validation failures that return the user to Harness, Accounts, Model or Configure) never animate. The entrance moves only the heading, never the form, fieldset, step sections, model combobox popup or scroll-picker popovers. Model refresh, endpoint or subscription discovery, account inspection, typing, polling, refetch and pagination never replay it and never advance a step. Chosen sources, permission settings, exact model IDs, request counts and the original uncertain save request are untouched. `agent-worker-wizard.test.tsx` and `settings.test.tsx` cover this with synthetic fixtures.
+- Agent Workers animates the category and both owned task windows (Worker wizard create and edit, and Preview routing), each once per opened window through the `Surface` rules above. Inside the Worker wizard (`agent-worker-source-wizard.tsx`) the static step `h3` heading additionally plays one entrance per user-selected step change: harness confirmation, Next, Back and selecting a different step in the step indicator. `stepRequests` counts only those handlers and is the activation key through `selectStep`; the first step shown when the task opens and automatic routing through `fail()` (validation failures that return the user to Harness, Accounts, Model or Configure) never animate. The entrance moves only the heading, never the form, fieldset, step sections, model combobox popup or scroll-picker popovers. Model refresh, endpoint or subscription discovery, account inspection, typing, polling, refetch and pagination never replay it and never advance a step. Chosen sources, permission settings, exact model IDs, request counts and the original uncertain save request are untouched. `agent-worker-wizard.test.tsx` and `settings.test.tsx` cover this with synthetic fixtures.
 - Keyboard shortcuts animates the category only. Key capture, shortcut dispatch, typing and validation never restart it. The category has no separate task dialog at present, and any future owned task must opt in with its own contract text.
 - Paired devices animates the category, the pairing task and the revocation confirmation. Disclosures such as Details stay instantaneous. Pairing codes, device credentials and confirmed-revocation state are not read or logged by the motion.
 - AI API Keys (`SettingsCategory.ApiAccounts`) animates the category and every owned task window: Add account, Manage connection (format and details) and Edit preferences. `AccountSettings` renders its own heading, so `Surface` moves the content column that holds it. Each opened task window plays one entrance on its task header only; stage advance inside the wizard (provider choice, key entry), typing, format selection, validation requests and replies, retries, status or health changes, inventory refetches and pagination never restart it. The key, format and source drafts, the original save and connection requests and their request identities, and the clear-on-dismiss credential lifecycle are untouched, and the secret input, its mask and its value are never inside an animated element or read, logged or stored by the motion. A new Add account window opens with an empty key and plays a fresh entrance. `settings-credential-motion.test.tsx` covers this with a synthetic credential and a held connection reply; it grants no account or native acceptance.
@@ -6555,7 +6731,7 @@ page navigation and connection changes settle the latest valid endpoint directly
 Initial preference hydration and breakpoint restoration never animate. Reduced
 motion reaches endpoints immediately. Motion has no preference-write or execution
 authority; pending, failed and uncertain saves retain committed presentation and
-their original recovery controls. Rejected toggles are never queued.
+the recovery path in the sidebar preference table. Rejected toggles are never queued.
 
 Below 760px retain the purpose-named compact opener and modal drawer. Deactivate
 primary+B. Drawer opening/closing never saves the wide preference. On return to
@@ -6690,8 +6866,29 @@ and product-window events remain process-local. Publish ordered
 `sidebar-preference-changed` snapshots only to authorized product windows;
 external, tray and child views have no storage/event authority. Invalid, linked,
 oversized and newer documents remain unchanged. Failure retains committed layout;
-uncertain writes are never automatically replayed. A persistent localized notice
-and explicit Reload sidebar preference action inspect before further saves.
+uncertain writes are never automatically replayed. The product window renders no
+sidebar notice, alert or Reload button for any sidebar problem. In this
+contract Reload is the controller's recovery inspection: a read of the stored
+preference that never saves, queues or replays a change. The only product caller
+is the Toggle sidebar shortcut (primary+B, wide layout), which stays enabled
+while a problem fences saves. Every problem and event has one result:
+
+| State (idle unless stated)     | Event                               | Result                                                                                      |
+| ------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------- |
+| No problem                     | toggle shortcut                     | save the opposite committed value                                                           |
+| Reading or Saving              | toggle shortcut                     | ignored and never queued; no second read or save starts                                     |
+| Any problem                    | toggle shortcut                     | one Reload; the requested change is not saved or queued                                     |
+| Any problem                    | Reload returns a healthy snapshot   | clear the fence without replaying the original save; the next press saves                   |
+| Any problem                    | Reload returns a problem or rejects | keep the fence (ReadFailed when the revision did not advance); the next press reloads again |
+| Any problem, compact layout    | toggle shortcut                     | inactive; no read or save, and the fence waits for the wide layout                          |
+| Any problem                    | focus or visibility                 | no inspection                                                                               |
+| Any problem except Unavailable | event from another window           | ignored; a later delivery never proves an uncertain write                                   |
+| Unavailable                    | event from another window           | accepted                                                                                    |
+
+Unavailable, ReadFailed, InvalidDocument, UnsupportedVersion, WriteFailed,
+OutcomeUnknown and Changed all follow the Any problem rows. Each press is
+bounded to one read and no timer retries. The controller records only the
+`sidebar-read` and `sidebar-save` phases of the diagnostics table above.
 Renderer response/events are monotonic, contradictory snapshots are rejected and
 pending/failed/uncertain writes remain fenced. A structured problem reply
 (Changed, WriteFailed or OutcomeUnknown) to the original save fences the latest
@@ -6699,12 +6896,12 @@ committed presentation even when its revision is older than an already accepted
 newer event; the committed revision and selection never regress to the older
 reply, ordinary older healthy replies and older inspection classifications
 (InvalidDocument, UnsupportedVersion, ReadFailed or Unavailable) stay ignored,
-and only a successful explicit Reload clears the fence without replaying the
+and only a successful Reload clears the fence without replaying the
 save. Logs contain only stable operations,
 revision and outcome classifications. No business RPC, protocol allocation,
 migration, feature flag, dependency or OS-global keyboard bridge is added.
 
-Primary+B works in ordinary editable inputs and consumes an accepted press once.
+Primary+B works in ordinary editable inputs and consumes an accepted press once, including a press that only performs the recovery Reload.
 Preserve handled/repeated/composing/AltGraph/extra-modifier, hidden/inert,
 terminal-passthrough (except fixed `SessionCloseTab`) and modal exclusions, including compact navigation. The owned
 help dialog retains existing eligible action dismissal. B is a fixed product
@@ -7375,7 +7572,7 @@ list/selection owners. At available body width 900 CSS pixels or more, list/deta
 use 40/60 independent scrolling; compact Back restores list scroll and row focus.
 While the standalone Pull requests page is visible, `main` is a vertical flex
 container and the page takes the `main` height left after its preceding siblings,
-including the compact context trigger and the sidebar-preference notice, rather
+including the compact context trigger, rather
 than a full `main` height that those siblings would overflow. The page is itself a
 vertical layout, and the workspace panes use the page height left after the
 header, notices and pending actions down to the page's 32 CSS pixel bottom

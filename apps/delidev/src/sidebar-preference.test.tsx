@@ -7,20 +7,28 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import {
   SidebarPreference,
   SidebarProblem,
   SidebarProvider,
-  SidebarPreferenceNotice,
   memorySidebarBridge,
   parseSidebar,
   useSidebarPreference,
   type SidebarBridge,
   type SidebarSnapshot,
 } from "./sidebar-preference";
+import {
+  PresentationOutcome,
+  PresentationPhase,
+} from "./presentation-diagnostics";
+// The product window renders no sidebar notice; the controller state is read
+// through test-local controls instead.
+const shownProblem = () => screen.getByLabelText("Problem").textContent;
+const problemSettled = () =>
+  waitFor(() => expect(shownProblem()).not.toBe("none"));
 function Controls() {
-  const { snapshot, operation, select } = useSidebarPreference();
+  const { snapshot, operation, select, reload } = useSidebarPreference();
   return (
     <>
       <button
@@ -36,7 +44,8 @@ function Controls() {
         Toggle
       </button>
       <output>{snapshot.sidebar_preference}</output>
-      <SidebarPreferenceNotice />
+      <button onClick={reload}>Reload</button>
+      <output aria-label="Problem">{snapshot.problem ?? "none"}</output>
       <textarea aria-label="Draft" defaultValue="retained" />
     </>
   );
@@ -134,9 +143,8 @@ test("pending and uncertain writes never replay; unrelated events cannot clear r
     1,
   );
   await act(async () => reject(new Error("private storage detail")));
-  const reload = await screen.findByRole("button", {
-    name: "Reload sidebar preference",
-  });
+  await problemSettled();
+  const reload = screen.getByRole("button", { name: "Reload" });
   act(() =>
     value.publish({
       revision: 2,
@@ -190,7 +198,7 @@ test("old responses and contradictory same-generation events cannot overwrite ve
     }),
   );
   expect(screen.getByText("collapsed")).toBeTruthy();
-  await screen.findByRole("button", { name: "Reload sidebar preference" });
+  await problemSettled();
 });
 test.each([
   SidebarProblem.Changed,
@@ -234,10 +242,9 @@ test.each([
         problem,
       }),
     );
-    const reload = await screen.findByRole("button", {
-      name: "Reload sidebar preference",
-    });
-    expect(screen.getByRole("alert")).toBeTruthy();
+    await problemSettled();
+    const reload = screen.getByRole("button", { name: "Reload" });
+    expect(shownProblem()).toBe(problem);
     // The committed presentation keeps the newer revision.
     expect(screen.getByText("collapsed")).toBeTruthy();
     expect(toggle.getAttribute("aria-disabled")).toBe("true");
@@ -255,9 +262,9 @@ test.each([
         problem: null,
       }),
     );
-    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(shownProblem()).toBe(problem);
     fireEvent.click(reload);
-    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    await waitFor(() => expect(shownProblem()).toBe("none"));
     expect(value.bridge.read).toHaveBeenCalledTimes(reads + 1);
     // Reload never replays the original save.
     expect(value.bridge.update).toHaveBeenCalledTimes(1);
@@ -313,7 +320,7 @@ test.each([
       }),
     );
     expect(screen.getByText("collapsed")).toBeTruthy();
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(shownProblem()).toBe("none");
     await waitFor(() =>
       expect(toggle.getAttribute("aria-disabled")).toBe("false"),
     );
@@ -352,7 +359,7 @@ test("an older healthy reply to the original save stays ignored and a disposed g
     }),
   );
   expect(screen.getByText("collapsed")).toBeTruthy();
-  expect(screen.queryByRole("alert")).toBeNull();
+  expect(shownProblem()).toBe("none");
   view.unmount();
   const late = fixture();
   let resolveLate!: (reply: unknown) => void;
@@ -392,7 +399,7 @@ test("an older healthy reply to the original save stays ignored and a disposed g
       problem: SidebarProblem.WriteFailed,
     }),
   );
-  expect(screen.queryByRole("alert")).toBeNull();
+  expect(shownProblem()).toBe("none");
 });
 test("closed snapshots reject malformed documents, revisions, enums and fields", () => {
   const valid = { revision: 1, sidebar_preference: "expanded", problem: null };
@@ -485,4 +492,171 @@ test("primary+B accepts ordinary inputs on each platform while retaining all dis
     input.removeAttribute("inert");
     expect(run).toHaveBeenCalledTimes(1);
   }
+});
+
+// Cells of the sidebar rows in the diagnostics table of the desktop contract.
+// The provider records phase transitions only and never its loading placeholder.
+afterEach(() => vi.restoreAllMocks());
+const sidebarRecords = (spy: { mock: { calls: unknown[][] } }) =>
+  spy.mock.calls
+    .filter(([name]) => name === "delidev.presentation.outcome")
+    .map(([, record]) => record);
+const sidebarFailed = (phase: PresentationPhase) => ({
+  phase,
+  outcome: PresentationOutcome.Failed,
+});
+const sidebarRecovered = (phase: PresentationPhase) => ({
+  phase,
+  outcome: PresentationOutcome.Recovered,
+});
+const healthy = (revision: number): SidebarSnapshot => ({
+  revision,
+  sidebar_preference: SidebarPreference.Expanded,
+  problem: null,
+});
+const withProblem = (problem: SidebarProblem): SidebarSnapshot => ({
+  revision: 1,
+  sidebar_preference: SidebarPreference.Expanded,
+  problem,
+});
+function diagnosticsFixture(
+  read: () => Promise<unknown>,
+  update: () => Promise<unknown> = async () => healthy(2),
+) {
+  const bridge: SidebarBridge = {
+    read: vi.fn(read),
+    update: vi.fn(update),
+    subscribe: async () => () => {},
+  };
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const view = render(
+    <SidebarProvider bridge={bridge}>
+      <Controls />
+    </SidebarProvider>,
+  );
+  return { bridge, warn, info, view };
+}
+test("a healthy first read records nothing", async () => {
+  const value = diagnosticsFixture(async () => healthy(1));
+  const toggle = screen.getByRole("button", { name: "Toggle" });
+  await waitFor(() =>
+    expect(toggle.getAttribute("aria-disabled")).toBe("false"),
+  );
+  expect(value.warn).not.toHaveBeenCalled();
+  expect(value.info).not.toHaveBeenCalled();
+});
+test.each([
+  SidebarProblem.Unavailable,
+  SidebarProblem.ReadFailed,
+  SidebarProblem.InvalidDocument,
+  SidebarProblem.UnsupportedVersion,
+])(
+  "a first native read that returns the real %s problem records one sidebar-read warning",
+  async (problem) => {
+    const value = diagnosticsFixture(async () => withProblem(problem));
+    await waitFor(() => expect(value.warn).toHaveBeenCalledTimes(1));
+    await problemSettled();
+    expect(shownProblem()).toBe(problem);
+    expect(sidebarRecords(value.warn)).toEqual([
+      sidebarFailed(PresentationPhase.SidebarRead),
+    ]);
+    expect(JSON.stringify(value.warn.mock.calls)).not.toContain(problem);
+    // Reload that returns the same problem adds no record.
+    vi.mocked(value.bridge.read).mockResolvedValueOnce(withProblem(problem));
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(value.bridge.read).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(value.warn).toHaveBeenCalledTimes(1);
+    // A healthy Reload records one recovery.
+    vi.mocked(value.bridge.read).mockResolvedValueOnce(healthy(2));
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(shownProblem()).toBe("none"));
+    expect(sidebarRecords(value.info)).toEqual([
+      sidebarRecovered(PresentationPhase.SidebarRead),
+    ]);
+  },
+);
+test("a rejected first read records one sidebar-read warning without raw error text", async () => {
+  const value = diagnosticsFixture(async () => {
+    throw new Error("private storage detail");
+  });
+  await waitFor(() => expect(value.warn).toHaveBeenCalledTimes(1));
+  expect(sidebarRecords(value.warn)).toEqual([
+    sidebarFailed(PresentationPhase.SidebarRead),
+  ]);
+  expect(JSON.stringify(value.warn.mock.calls)).not.toContain("private");
+});
+test.each([
+  [
+    "a rejected save",
+    () => Promise.reject(new Error("private storage detail")),
+  ],
+  [
+    "a WriteFailed reply",
+    async () => ({ ...healthy(1), problem: SidebarProblem.WriteFailed }),
+  ],
+  [
+    "a Changed reply",
+    async () => ({ ...healthy(1), problem: SidebarProblem.Changed }),
+  ],
+])(
+  "%s records one sidebar-save warning and its recovery",
+  async (_name, update) => {
+    const value = diagnosticsFixture(async () => healthy(1), update);
+    const toggle = screen.getByRole("button", { name: "Toggle" });
+    await waitFor(() =>
+      expect(toggle.getAttribute("aria-disabled")).toBe("false"),
+    );
+    fireEvent.click(toggle);
+    await waitFor(() => expect(value.warn).toHaveBeenCalledTimes(1));
+    expect(sidebarRecords(value.warn)).toEqual([
+      sidebarFailed(PresentationPhase.SidebarSave),
+    ]);
+    expect(JSON.stringify(value.warn.mock.calls)).not.toContain("private");
+    await waitFor(() => expect(shownProblem()).not.toBe("none"));
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(shownProblem()).toBe("none"));
+    expect(sidebarRecords(value.info)).toEqual([
+      sidebarRecovered(PresentationPhase.SidebarSave),
+    ]);
+  },
+);
+test("a failed Reload after a save problem records the read phase and a healthy Reload recovers both", async () => {
+  const value = diagnosticsFixture(
+    async () => healthy(1),
+    async () => ({ ...healthy(1), problem: SidebarProblem.OutcomeUnknown }),
+  );
+  const toggle = screen.getByRole("button", { name: "Toggle" });
+  await waitFor(() =>
+    expect(toggle.getAttribute("aria-disabled")).toBe("false"),
+  );
+  fireEvent.click(toggle);
+  await waitFor(() => expect(value.warn).toHaveBeenCalledTimes(1));
+  vi.mocked(value.bridge.read).mockRejectedValueOnce(new Error("busy"));
+  fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+  await waitFor(() => expect(value.warn).toHaveBeenCalledTimes(2));
+  expect(sidebarRecords(value.warn)).toEqual([
+    sidebarFailed(PresentationPhase.SidebarSave),
+    sidebarFailed(PresentationPhase.SidebarRead),
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+  await waitFor(() => expect(value.info).toHaveBeenCalledTimes(2));
+  expect(sidebarRecords(value.info)).toEqual([
+    sidebarRecovered(PresentationPhase.SidebarRead),
+    sidebarRecovered(PresentationPhase.SidebarSave),
+  ]);
+});
+test("a read that settles after the provider unmounts records nothing", async () => {
+  let reject!: (error: Error) => void;
+  const value = diagnosticsFixture(
+    () =>
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+  );
+  await waitFor(() => expect(value.bridge.read).toHaveBeenCalledTimes(1));
+  value.view.unmount();
+  await act(async () => reject(new Error("late")));
+  expect(value.warn).not.toHaveBeenCalled();
 });

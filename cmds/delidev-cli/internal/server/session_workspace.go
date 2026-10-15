@@ -321,6 +321,23 @@ func (s *Service) PrepareSessionWorkspace(ctx context.Context, req *connect.Requ
 				return nil, err
 			}
 		}
+		var first domain.SessionInput
+		queued, err := tx.OldestQueuedInput(r.ID)
+		switch {
+		case err == nil:
+			value, err := store.Decode[domain.QueuedInput](queued)
+			if err != nil {
+				return nil, err
+			}
+			first = domain.SessionInput{Prompt: value.Prompt, Mode: value.Mode, Skills: value.Skills, Attachments: value.Attachments}
+		case domain.SafeError(err).Code != domain.MissingInput:
+			// Queue-storage or decode failures must not run preparation before
+			// dispatch can be blocked; only an empty queue means no first input.
+			return nil, err
+		}
+		if err := requireExecutionJobBudget(tx, session, input, first); err != nil {
+			return nil, err
+		}
 		if err := queueSessionWorkspace(tx, r.ID, &session, input); err != nil {
 			return nil, err
 		}
