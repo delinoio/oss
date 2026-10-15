@@ -136,6 +136,7 @@ pub fn engine_identity(bundler: BundlerChoice, collection: &Collection) -> Engin
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn coverage(
     collection: &Collection,
     missing_maps: usize,
@@ -143,6 +144,7 @@ fn coverage(
     unreadable_sources: usize,
     unverified_sources: usize,
     vite_env_source_gaps: usize,
+    vite_env_unmapped_candidates: usize,
     unsupported_engine: Option<&str>,
 ) -> Vec<CategoryCoverage> {
     let rules = rules::rules_by_category(&collection.bundler);
@@ -227,15 +229,24 @@ fn coverage(
                 // Vite's generated env expression needs confirmation from the
                 // build's original source; Rspack's detector does not.
                 OptimizationCategory::DeadCodeElimination
-                    if collection.bundler == "vite" && vite_env_source_gaps > 0 =>
+                    if collection.bundler == "vite"
+                        && (vite_env_source_gaps > 0 || vite_env_unmapped_candidates > 0) =>
                 {
-                    (
-                        CoverageState::Partial,
-                        format!(
+                    let mut notes: Vec<String> = Vec::new();
+                    if vite_env_source_gaps > 0 {
+                        notes.push(format!(
                             "{vite_env_source_gaps} source file(s) lack verifiable build text; \
                              Vite environment-variable findings in them may be missing."
-                        ),
-                    )
+                        ));
+                    }
+                    if vite_env_unmapped_candidates > 0 {
+                        notes.push(format!(
+                            "{vite_env_unmapped_candidates} guarded environment candidate(s) have \
+                             no source mapping; Vite environment-variable findings for them may \
+                             be missing."
+                        ));
+                    }
+                    (CoverageState::Partial, notes.join(" "))
                 }
                 // The direct-eval detector also reads original source text.
                 OptimizationCategory::NameMangling if source_gaps > 0 => (
@@ -356,11 +367,20 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             }
         }
     }
-    let missing_maps: Vec<String> = chunks
-        .iter()
-        .filter(|chunk| chunk.map.is_none())
-        .map(|chunk| chunk.file.clone())
-        .collect();
+    // Chunks made only of bundler-owned virtual helpers have no source-backed
+    // candidate a map could attribute; they are neither a problem nor a
+    // coverage penalty. Their generated-location findings stay available.
+    let mut missing_maps: Vec<String> = Vec::new();
+    for chunk in chunks.iter().filter(|chunk| chunk.map.is_none()) {
+        if collection.is_virtual_only_chunk(&chunk.file) {
+            tracing::debug!(
+                chunk = chunk.file.as_str(),
+                "virtual-only helper chunk has no source map; not counted as missing"
+            );
+        } else {
+            missing_maps.push(chunk.file.clone());
+        }
+    }
     if !missing_maps.is_empty() {
         problems.push(problem(
             ErrorCode::SourceMapMissing,
@@ -458,6 +478,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     let unreadable_sources = context.sources.unreadable.len();
     let unverified_sources = context.sources.unverified.len();
     let vite_env_source_gaps = context.vite_env_source_gaps.len();
+    let vite_env_unmapped_candidates = context.vite_env_unmapped_candidates.len();
     if !context.sources.changed_since_build.is_empty() {
         problems.push(problem(
             ErrorCode::SourceStale,
@@ -537,6 +558,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             unreadable_sources,
             unverified_sources,
             vite_env_source_gaps,
+            vite_env_unmapped_candidates,
             (!input
                 .bundler
                 .spec()
@@ -570,6 +592,8 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
 
 #[cfg(test)]
 mod tests {
+    use sourcemap::SourceMap;
+
     use super::*;
     use crate::model::{ConditionOutcome, Diagnostic, EvidenceStatus, SourceRevisionEvidence};
 
@@ -780,7 +804,7 @@ mod tests {
         )
         .unwrap();
         let collection: Collection = serde_json::from_value(value).unwrap();
-        let rspack = coverage(&collection, 0, 0, 1, 0, 0, None);
+        let rspack = coverage(&collection, 0, 0, 1, 0, 0, 0, None);
         assert_eq!(
             rspack
                 .iter()
@@ -798,7 +822,7 @@ mod tests {
         )
         .unwrap();
         let collection: Collection = serde_json::from_value(value).unwrap();
-        let unrelated = coverage(&collection, 0, 0, 0, 1, 0, None);
+        let unrelated = coverage(&collection, 0, 0, 0, 1, 0, 0, None);
         assert_eq!(
             unrelated
                 .iter()
@@ -807,7 +831,7 @@ mod tests {
                 .state,
             CoverageState::Covered
         );
-        let relevant = coverage(&collection, 0, 0, 0, 1, 1, None);
+        let relevant = coverage(&collection, 0, 0, 0, 1, 1, 0, None);
         assert_eq!(
             relevant
                 .iter()
@@ -815,6 +839,256 @@ mod tests {
                 .unwrap()
                 .state,
             CoverageState::Partial
+        );
+    }
+
+    const VITE_INDEX_CHUNK: &str = "assets/index-BHjrzQLH.js";
+    const GUARDED_FLAG_READ: &str =
+        "({}).BUNDLEWHY_FIXTURE_FLAG===`on`&&console.log(`flag branch`)";
+    const VALUE_ONLY_FLAG_READ: &str = "console.log(({}).BUNDLEWHY_FIXTURE_FLAG)";
+
+    /// Where a generated-only segment replaces the source-bearing mapping.
+    #[derive(Clone, Copy)]
+    enum UnmappedAt {
+        /// The `{}` replacement of the flag read.
+        FlagRead,
+        /// Fifty columns before the flag read, leaving its own segment intact.
+        BeforeFlagRead,
+        /// No segment starts on the flag's generated line at or before the
+        /// flag read, while an earlier generated line ends in a source-bearing
+        /// segment.
+        AfterEarlierLineMapping,
+    }
+
+    /// Rewrites the Vite index chunk map so one position lies in a segment
+    /// with no source while every other segment keeps its mapping. The
+    /// optional text edit replaces the guarded flag read in the chunk first.
+    fn unmap_flag_segment(build: &Path, replacement: Option<&str>, at: UnmappedAt) {
+        let chunk_path = build.join(VITE_INDEX_CHUNK);
+        let mut code = std::fs::read_to_string(&chunk_path).unwrap();
+        if let Some(replacement) = replacement {
+            assert!(code.contains(GUARDED_FLAG_READ));
+            code = code.replace(GUARDED_FLAG_READ, replacement);
+            std::fs::write(&chunk_path, &code).unwrap();
+        }
+        let flag_offset = code.find("({}).BUNDLEWHY_FIXTURE_FLAG").unwrap();
+        // The opening parenthesis belongs to the previous segment.
+        let replacement_offset = flag_offset + 1;
+        let line = u32::try_from(code[..replacement_offset].matches('\n').count()).unwrap();
+        let line_start = code[..replacement_offset].rfind('\n').map_or(0, |i| i + 1);
+        let column = u32::try_from(replacement_offset - line_start).unwrap();
+        let (gap_column, drop_existing) = match at {
+            UnmappedAt::FlagRead => (column, true),
+            UnmappedAt::BeforeFlagRead => (column - 50, false),
+            UnmappedAt::AfterEarlierLineMapping => (column, true),
+        };
+        let earlier_line = matches!(at, UnmappedAt::AfterEarlierLineMapping);
+        assert!(
+            !earlier_line || line > 0,
+            "an earlier generated line must exist"
+        );
+
+        let map_path = build.join(format!("{VITE_INDEX_CHUNK}.map"));
+        let map = SourceMap::from_slice(&std::fs::read(&map_path).unwrap()).unwrap();
+        let mut builder = sourcemap::SourceMapBuilder::new(map.get_file());
+        for id in 0..map.get_source_count() {
+            let source = builder.add_source(map.get_source(id).unwrap());
+            builder.set_source_contents(source, map.get_source_contents(id));
+        }
+        for id in 0..map.get_name_count() {
+            builder.add_name(map.get_name(id).unwrap());
+        }
+        let mut inserted = false;
+        if earlier_line {
+            builder.add_raw(0, 0, 0, 0, Some(0), None, false);
+            inserted = true;
+        }
+        for token in map.tokens() {
+            let position = (token.get_dst_line(), token.get_dst_col());
+            if earlier_line && position.0 == line && position.1 <= gap_column {
+                continue;
+            }
+            if !inserted && position >= (line, gap_column) {
+                builder.add_raw(line, gap_column, 0, 0, None, None, false);
+                inserted = true;
+            }
+            if drop_existing && position == (line, gap_column) {
+                continue;
+            }
+            builder.add_raw(
+                position.0,
+                position.1,
+                token.get_src_line(),
+                token.get_src_col(),
+                token.has_source().then(|| token.get_src_id()),
+                token.get_name().map(|_| token.get_raw_token().name_id),
+                token.is_range(),
+            );
+        }
+        assert!(inserted, "the generated-only segment must be placed");
+        let mut bytes = Vec::new();
+        builder.into_sourcemap().to_writer(&mut bytes).unwrap();
+        std::fs::write(&map_path, bytes).unwrap();
+    }
+
+    fn vite_with_unmapped_flag(
+        replacement: Option<&'static str>,
+        at: UnmappedAt,
+        edit: impl Fn(&mut serde_json::Value),
+    ) -> Fixture {
+        run_fixture_patched(BundlerChoice::Vite, true, edit, move |build, _| {
+            unmap_flag_segment(build, replacement, at);
+        })
+    }
+
+    fn has_unresolved_env_diagnostic(analysis: &Analysis) -> bool {
+        analysis
+            .diagnostics
+            .iter()
+            .any(|entry| entry.rule == "minifier/unresolved-env-condition")
+    }
+
+    #[test]
+    fn vite_unmapped_guarded_candidate_keeps_coverage_partial() {
+        let control = run_fixture(BundlerChoice::Vite, |_| {});
+        assert!(has_unresolved_env_diagnostic(&control.output.analysis));
+        assert_eq!(
+            dead_code_coverage(&control.output.analysis).state,
+            CoverageState::Covered
+        );
+
+        let fixture = vite_with_unmapped_flag(None, UnmappedAt::FlagRead, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(!has_unresolved_env_diagnostic(analysis));
+        let coverage = dead_code_coverage(analysis);
+        assert_eq!(coverage.state, CoverageState::Partial);
+        assert!(coverage.note.contains("1 guarded environment candidate(s)"));
+        assert!(coverage.note.contains("no source mapping"));
+        assert!(!coverage.note.contains("lack verifiable build text"));
+        // The map stays usable and every readable source keeps its snapshot,
+        // so the gap is not reported as a source or map problem.
+        assert!(
+            !analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_SOURCE_UNREADABLE"
+                    || entry.code == "BW_SOURCE_UNVERIFIED"
+                    || entry.code == "BW_SOURCE_MAP_MISSING")
+        );
+    }
+
+    #[test]
+    fn vite_candidate_is_not_covered_by_a_segment_from_an_earlier_line() {
+        let fixture = vite_with_unmapped_flag(None, UnmappedAt::AfterEarlierLineMapping, |_| {});
+        let analysis = &fixture.output.analysis;
+        // The earlier line's source-bearing segment must not attribute the
+        // candidate to that line's source.
+        assert!(!has_unresolved_env_diagnostic(analysis));
+        let coverage = dead_code_coverage(analysis);
+        assert_eq!(coverage.state, CoverageState::Partial);
+        assert!(coverage.note.contains("1 guarded environment candidate(s)"));
+        assert!(coverage.note.contains("no source mapping"));
+    }
+
+    #[test]
+    fn vite_unrelated_unmapped_text_is_not_a_coverage_gap() {
+        let fixture = vite_with_unmapped_flag(None, UnmappedAt::BeforeFlagRead, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(has_unresolved_env_diagnostic(analysis));
+        let coverage = dead_code_coverage(analysis);
+        assert_eq!(coverage.state, CoverageState::Covered);
+        assert!(coverage.note.is_empty());
+    }
+
+    #[test]
+    fn vite_unmapped_value_only_read_is_not_a_coverage_gap() {
+        let fixture =
+            vite_with_unmapped_flag(Some(VALUE_ONLY_FLAG_READ), UnmappedAt::FlagRead, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(!has_unresolved_env_diagnostic(analysis));
+        let coverage = dead_code_coverage(analysis);
+        assert_eq!(coverage.state, CoverageState::Covered);
+        assert!(coverage.note.is_empty());
+    }
+
+    #[test]
+    fn vite_unmapped_candidate_keeps_minifier_precedence() {
+        for (edit, expected) in [
+            (false, CoverageState::NotApplicable),
+            (true, CoverageState::Unavailable),
+        ] {
+            let fixture = vite_with_unmapped_flag(None, UnmappedAt::FlagRead, |value| {
+                if edit {
+                    value["defaultMinifier"] = false.into();
+                } else {
+                    value["minifyEnabled"] = false.into();
+                }
+            });
+            assert_eq!(dead_code_coverage(&fixture.output.analysis).state, expected);
+        }
+    }
+
+    #[test]
+    fn vite_missing_map_uses_the_missing_map_note_not_the_mapping_gap_note() {
+        let fixture = run_fixture_patched(
+            BundlerChoice::Vite,
+            true,
+            |_| {},
+            |build, _| {
+                std::fs::remove_file(build.join(format!("{VITE_INDEX_CHUNK}.map"))).unwrap();
+            },
+        );
+        let coverage = dead_code_coverage(&fixture.output.analysis);
+        assert_eq!(coverage.state, CoverageState::Partial);
+        assert!(coverage.note.contains("no usable source map"));
+        assert!(!coverage.note.contains("no source mapping"));
+    }
+
+    #[test]
+    fn vite_coverage_reports_unmapped_candidates_and_source_gaps_together() {
+        let value: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(manifest_dir().join("tests/fixtures/vite/collect.json")).unwrap(),
+        )
+        .unwrap();
+        let collection: Collection = serde_json::from_value(value).unwrap();
+        let find_dead_code = |coverage: Vec<CategoryCoverage>| {
+            coverage
+                .into_iter()
+                .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+                .unwrap()
+        };
+        let both = find_dead_code(coverage(&collection, 0, 0, 0, 1, 1, 2, None));
+        assert_eq!(both.state, CoverageState::Partial);
+        assert!(
+            both.note
+                .contains("1 source file(s) lack verifiable build text")
+        );
+        assert!(both.note.contains("2 guarded environment candidate(s)"));
+        let only_source = find_dead_code(coverage(&collection, 0, 0, 0, 1, 1, 0, None));
+        assert!(!only_source.note.contains("no source mapping"));
+        // Name mangling does not depend on the Vite environment detector.
+        let mangling = coverage(&collection, 0, 0, 0, 0, 0, 2, None)
+            .into_iter()
+            .find(|entry| entry.category == OptimizationCategory::NameMangling)
+            .unwrap();
+        assert_eq!(mangling.state, CoverageState::Covered);
+    }
+
+    #[test]
+    fn rspack_dead_code_coverage_ignores_unmapped_candidates() {
+        let value: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(manifest_dir().join("tests/fixtures/rspack/collect.json")).unwrap(),
+        )
+        .unwrap();
+        let collection: Collection = serde_json::from_value(value).unwrap();
+        let rspack = coverage(&collection, 0, 0, 0, 0, 0, 3, None);
+        assert_eq!(
+            rspack
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+                .unwrap()
+                .state,
+            CoverageState::Covered
         );
     }
 
@@ -3132,6 +3406,141 @@ mod tests {
         assert!(env_diagnostics(&fixture.output).is_empty());
     }
 
+    /// Rewrites the fixture's guarded env branch into `replacement(read)` in
+    /// the generated chunk, keeping the read at the same generated offset.
+    fn patch_env_branch(build: &Path, bundler: BundlerChoice, replacement: &str) {
+        let (file, guard, read) = match bundler {
+            BundlerChoice::Vite => (
+                "assets/index-BHjrzQLH.js",
+                "({}).BUNDLEWHY_FIXTURE_FLAG===`on`&&console.log(`flag branch`)",
+                "({}).BUNDLEWHY_FIXTURE_FLAG",
+            ),
+            BundlerChoice::Rspack => (
+                "main.js",
+                "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag branch\")",
+                "process.env.BUNDLEWHY_FIXTURE_FLAG",
+            ),
+        };
+        let path = build.join(file);
+        let code = std::fs::read_to_string(&path).unwrap();
+        assert!(code.contains(guard));
+        let replacement = replacement.replace("READ", read);
+        std::fs::write(&path, code.replace(guard, &replacement)).unwrap();
+    }
+
+    #[test]
+    fn optional_chain_env_reads_produce_a_nullish_short_circuit_finding() {
+        for bundler in [BundlerChoice::Vite, BundlerChoice::Rspack] {
+            let fixture = run_fixture_patched(
+                bundler,
+                true,
+                |_| {},
+                |build, _| {
+                    patch_env_branch(build, bundler, "READ?.trim();console.log(`flag branch`)")
+                },
+            );
+            let env = fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .find(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+                .unwrap_or_else(|| panic!("{bundler:?} missed the optional-chain read"));
+            assert_eq!(env.status, EvidenceStatus::Inferred);
+            assert!(env.title.contains("BUNDLEWHY_FIXTURE_FLAG"));
+            assert!(env.conditions.iter().any(|condition| {
+                condition.outcome == ConditionOutcome::Met
+                    && condition.detail.contains("short-circuits the chain")
+            }));
+        }
+    }
+
+    #[test]
+    fn optional_chain_env_reads_stay_absent_without_minification_or_data_use() {
+        let disabled = run_fixture_patched(
+            BundlerChoice::Rspack,
+            true,
+            |value| value["minifyEnabled"] = serde_json::json!(false),
+            |build, _| {
+                patch_env_branch(
+                    build,
+                    BundlerChoice::Rspack,
+                    "READ?.trim();console.log(`flag branch`)",
+                )
+            },
+        );
+        assert!(
+            !disabled
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+        );
+        for bundler in [BundlerChoice::Vite, BundlerChoice::Rspack] {
+            let fixture = run_fixture_patched(
+                bundler,
+                true,
+                |_| {},
+                |build, _| {
+                    patch_env_branch(
+                        build,
+                        bundler,
+                        "obj?.method(READ);console.log(`flag branch`)",
+                    )
+                },
+            );
+            assert!(
+                !fixture
+                    .output
+                    .analysis
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition"),
+                "{bundler:?} reported an optional-chain argument read"
+            );
+        }
+    }
+
+    #[test]
+    fn vite_optional_chain_env_reads_need_a_mapped_process_env_source() {
+        let fixture = run_fixture_patched(
+            BundlerChoice::Vite,
+            true,
+            |_| {},
+            |build, _| {
+                patch_env_branch(
+                    build,
+                    BundlerChoice::Vite,
+                    "READ?.trim();console.log(`flag branch`)",
+                );
+                let map_path = build.join("assets/index-BHjrzQLH.js.map");
+                let mut map: serde_json::Value =
+                    serde_json::from_str(&std::fs::read_to_string(&map_path).unwrap()).unwrap();
+                let source_index = map["sources"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .position(|source| source.as_str().unwrap().ends_with("/src/main.js"))
+                    .unwrap();
+                let source = map["sourcesContent"][source_index].as_str().unwrap();
+                // The mapped original line no longer reads process.env.
+                let edited = source.replace("process.env.BUNDLEWHY_FIXTURE_FLAG", "unrelated.FLAG");
+                assert_ne!(source, edited);
+                map["sourcesContent"][source_index] = serde_json::json!(edited);
+                std::fs::write(map_path, serde_json::to_vec(&map).unwrap()).unwrap();
+            },
+        );
+        assert!(
+            !fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+        );
+    }
+
     #[test]
     fn env_reads_inside_invalid_containers_do_not_produce_a_branch_diagnostic() {
         let guard = "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag branch\")";
@@ -3596,6 +4005,444 @@ mod tests {
         let engine = fixture.output.analysis.engine.unwrap();
         assert_eq!(engine.support, EngineSupport::UnsupportedSelected);
         assert_eq!(engine.supported_versions, "vite 8.3.4");
+    }
+
+    /// One extra chunk appended to the Vite fixture: its emitted text, the
+    /// collected module ids it lists and whether a map file is written.
+    struct ExtraChunk {
+        file: &'static str,
+        code: &'static str,
+        modules: Vec<&'static str>,
+        map: ExtraMap,
+    }
+
+    #[derive(Clone, Copy)]
+    enum ExtraMap {
+        Absent,
+        EmptyMappings,
+    }
+
+    const PRELOAD_HELPER: &str = "\u{0}vite/preload-helper.js";
+    const ROLLDOWN_RUNTIME: &str = "\u{0}rolldown/runtime.js";
+    const HELPER_CODE: &str = "var e=Object.create;export{e as t};\n";
+    const APP_MODULE: &str = "/__bundlewhy_project__/src/lazy/common.js";
+
+    fn helper_chunks() -> Vec<ExtraChunk> {
+        vec![
+            ExtraChunk {
+                file: "assets/preload-helper-HclGiUj8.js",
+                code: HELPER_CODE,
+                modules: vec![PRELOAD_HELPER],
+                map: ExtraMap::Absent,
+            },
+            ExtraChunk {
+                file: "assets/rolldown-runtime-QTnfLwEv.js",
+                code: HELPER_CODE,
+                modules: vec![ROLLDOWN_RUNTIME],
+                map: ExtraMap::Absent,
+            },
+        ]
+    }
+
+    fn vite_with_extra_chunks(
+        extra: &[ExtraChunk],
+        edit: impl Fn(&mut serde_json::Value),
+    ) -> Fixture {
+        fixture_with_extra_chunks(BundlerChoice::Vite, extra, edit)
+    }
+
+    /// Appends `extra` to the fixture of `bundler`. Every listed bundler-owned
+    /// virtual helper is also registered as a pathless virtual module so the
+    /// chunk shape is identical for both bundlers and only the bundler differs.
+    fn fixture_with_extra_chunks(
+        bundler: BundlerChoice,
+        extra: &[ExtraChunk],
+        edit: impl Fn(&mut serde_json::Value),
+    ) -> Fixture {
+        run_fixture_patched(
+            bundler,
+            true,
+            |value| {
+                for chunk in extra {
+                    for id in &chunk.modules {
+                        if !id.starts_with('\u{0}') {
+                            continue;
+                        }
+                        let modules = value["modules"].as_array_mut().unwrap();
+                        if modules.iter().any(|module| module["id"] == *id) {
+                            continue;
+                        }
+                        modules.push(serde_json::json!({
+                            "id": id,
+                            "path": null,
+                            "virtual": true,
+                            "included": true,
+                        }));
+                    }
+                }
+                let chunks = value["chunks"].as_array_mut().unwrap();
+                for chunk in extra {
+                    chunks.push(serde_json::json!({
+                        "file": chunk.file,
+                        "isEntry": false,
+                        "isDynamicEntry": false,
+                        "facadeModuleId": null,
+                        "modules": chunk.modules,
+                    }));
+                }
+                edit(value);
+            },
+            |build, _| {
+                for chunk in extra {
+                    let path = build.join(chunk.file);
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    std::fs::write(&path, chunk.code).unwrap();
+                    if let ExtraMap::EmptyMappings = chunk.map {
+                        let map = serde_json::json!({
+                            "version": 3,
+                            "sources": [],
+                            "names": [],
+                            "mappings": "",
+                        });
+                        std::fs::write(
+                            build.join(format!("{}.map", chunk.file)),
+                            serde_json::to_vec(&map).unwrap(),
+                        )
+                        .unwrap();
+                    }
+                }
+            },
+        )
+    }
+
+    fn missing_map_problems(analysis: &Analysis) -> Vec<&Problem> {
+        analysis
+            .problems
+            .iter()
+            .filter(|entry| entry.code == "BW_SOURCE_MAP_MISSING")
+            .collect()
+    }
+
+    #[test]
+    fn virtual_only_chunks_without_maps_are_not_missing_maps() {
+        let baseline = run_fixture(BundlerChoice::Vite, |_| {});
+        let fixture = vite_with_extra_chunks(&helper_chunks(), |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(missing_map_problems(analysis).is_empty());
+        assert_eq!(analysis.status, baseline.output.analysis.status);
+        for (left, right) in analysis
+            .coverage
+            .iter()
+            .zip(baseline.output.analysis.coverage.iter())
+        {
+            assert_eq!(left.state, right.state, "{:?}", left.category);
+            assert_eq!(left.note, right.note, "{:?}", left.category);
+        }
+        assert!(
+            !dead_code_coverage(analysis)
+                .note
+                .contains("no usable source map")
+        );
+    }
+
+    #[test]
+    fn source_backed_chunk_without_map_is_still_missing() {
+        let fixture = vite_with_extra_chunks(&helper_chunks(), |value| {
+            for chunk in value["chunks"].as_array_mut().unwrap() {
+                if chunk["file"] == "assets/common-DMiq4WEy.js" {
+                    chunk["map"] = "missing.map".into();
+                }
+            }
+        });
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].message.contains("assets/common-DMiq4WEy.js"));
+        assert!(!problems[0].message.contains("preload-helper"));
+        assert!(!problems[0].message.contains("rolldown-runtime"));
+        let dce = dead_code_coverage(analysis);
+        assert_eq!(dce.state, CoverageState::Partial);
+        assert!(dce.note.contains("1 chunk(s) have no usable source map"));
+    }
+
+    #[test]
+    fn look_alike_virtual_chunk_keeps_the_map_requirement() {
+        let custom = vec![ExtraChunk {
+            file: "assets/custom-AAAA.js",
+            code: HELPER_CODE,
+            modules: vec!["\u{0}vite/custom-runtime.js"],
+            map: ExtraMap::Absent,
+        }];
+        let fixture = vite_with_extra_chunks(&custom, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].message.contains("assets/custom-AAAA.js"));
+    }
+
+    #[test]
+    fn mixed_virtual_and_source_chunk_keeps_the_map_requirement() {
+        let mixed = vec![ExtraChunk {
+            file: "assets/mixed-AAAA.js",
+            code: HELPER_CODE,
+            modules: vec![ROLLDOWN_RUNTIME, APP_MODULE],
+            map: ExtraMap::Absent,
+        }];
+        let fixture = vite_with_extra_chunks(&mixed, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].message.contains("assets/mixed-AAAA.js"));
+    }
+
+    #[test]
+    fn virtual_only_helpers_keep_the_unsupported_engine_note() {
+        let fixture = vite_with_extra_chunks(&helper_chunks(), |value| {
+            value["bundlerVersion"] = serde_json::Value::String("8.0.0".to_owned());
+        });
+        let analysis = &fixture.output.analysis;
+        assert!(missing_map_problems(analysis).is_empty());
+        let dce = dead_code_coverage(analysis);
+        assert_eq!(dce.state, CoverageState::Partial);
+        assert!(dce.note.contains("unsupported engine"), "{}", dce.note);
+        assert!(!dce.note.contains("no usable source map"));
+    }
+
+    #[test]
+    fn mixed_helper_and_source_chunks_warn_only_for_source_backed_names() {
+        let mut chunks = helper_chunks();
+        chunks.extend([
+            ExtraChunk {
+                file: "assets/components-CVP2oapY.js",
+                code: HELPER_CODE,
+                modules: vec![APP_MODULE],
+                map: ExtraMap::Absent,
+            },
+            ExtraChunk {
+                file: "assets/shared-DGKhew9c.js",
+                code: HELPER_CODE,
+                modules: vec![APP_MODULE],
+                map: ExtraMap::Absent,
+            },
+            ExtraChunk {
+                file: "assets/components-DPIrGkNp.js",
+                code: HELPER_CODE,
+                modules: vec![APP_MODULE],
+                map: ExtraMap::EmptyMappings,
+            },
+        ]);
+        let fixture = vite_with_extra_chunks(&chunks, |value| {
+            value["bundlerVersion"] = serde_json::Value::String("8.2.2".to_owned());
+        });
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert_eq!(
+            problems[0].message,
+            "No usable source map for: assets/components-CVP2oapY.js, assets/shared-DGKhew9c.js, \
+             assets/components-DPIrGkNp.js"
+        );
+        assert!(
+            dead_code_coverage(analysis)
+                .note
+                .contains("3 chunk(s) have no usable source map")
+        );
+    }
+
+    #[test]
+    fn virtual_only_helper_chunks_stay_analyzed_with_generated_attribution() {
+        let fixture = vite_with_extra_chunks(&helper_chunks(), |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(missing_map_problems(analysis).is_empty());
+        // Suppressing the warning must not drop the chunk from the analysis:
+        // detectors still scan its generated text and sizes are still
+        // reported, with attribution honestly marked unavailable.
+        for file in [
+            "assets/preload-helper-HclGiUj8.js",
+            "assets/rolldown-runtime-QTnfLwEv.js",
+        ] {
+            let chunk = analysis
+                .chunks
+                .iter()
+                .find(|chunk| chunk.file == file)
+                .unwrap();
+            assert!(chunk.raw_bytes > 0);
+            assert_eq!(
+                chunk.attribution,
+                crate::model::AttributionState::Unavailable
+            );
+        }
+    }
+
+    #[test]
+    fn rspack_virtual_only_chunks_keep_the_map_requirement() {
+        let baseline = run_fixture(BundlerChoice::Rspack, |_| {});
+        let fixture = fixture_with_extra_chunks(BundlerChoice::Rspack, &helper_chunks(), |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert_eq!(
+            problems[0].message,
+            "No usable source map for: assets/preload-helper-HclGiUj8.js, \
+             assets/rolldown-runtime-QTnfLwEv.js"
+        );
+        let dce = dead_code_coverage(analysis);
+        assert_eq!(dce.state, CoverageState::Partial);
+        assert!(
+            dce.note.contains("2 chunk(s) have no usable source map"),
+            "{}",
+            dce.note
+        );
+        assert_ne!(
+            dce.state,
+            dead_code_coverage(&baseline.output.analysis).state
+        );
+    }
+
+    #[test]
+    fn unsupported_bundler_collections_keep_the_map_requirement() {
+        for bundler in ["", "webpack", "Vite", "rollup"] {
+            let fixture = vite_with_extra_chunks(&helper_chunks(), |value| {
+                value["bundler"] = serde_json::Value::String(bundler.to_owned());
+            });
+            let problems = missing_map_problems(&fixture.output.analysis);
+            let reported = problems
+                .iter()
+                .any(|problem| problem.message.contains("preload-helper"));
+            assert!(
+                reported,
+                "bundler {bundler:?} must keep the map requirement"
+            );
+        }
+    }
+
+    #[test]
+    fn virtual_only_chunk_predicate_requires_a_vite_collection_with_pathless_helpers() {
+        let collection =
+            |bundler: &str, chunk_modules: Vec<&str>, modules: Vec<(&str, bool, Option<&str>)>| {
+                Collection {
+                    bundler: bundler.to_owned(),
+                    chunks: vec![crate::collect::CollectedChunk {
+                        file: "a.js".to_owned(),
+                        modules: chunk_modules.into_iter().map(str::to_owned).collect(),
+                        ..Default::default()
+                    }],
+                    modules: modules
+                        .into_iter()
+                        .map(|(id, is_virtual, path)| crate::collect::CollectedModule {
+                            id: id.to_owned(),
+                            is_virtual,
+                            path: path.map(str::to_owned),
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                }
+            };
+        let helper = (PRELOAD_HELPER, true, None);
+        let runtime = (ROLLDOWN_RUNTIME, true, None);
+        let plugin = ("\u{0}virtual:routes", true, None);
+        let pathed = (PRELOAD_HELPER, true, Some("/x/helper.js"));
+        let real = (PRELOAD_HELPER, false, None);
+        let app = (APP_MODULE, false, Some("/x/common.js"));
+
+        // Chunk shape x bundler: only a Vite collection may suppress.
+        type Shape = (
+            &'static str,
+            Vec<&'static str>,
+            Vec<(&'static str, bool, Option<&'static str>)>,
+        );
+        let shapes: Vec<(Shape, bool)> = vec![
+            (
+                ("vite helper only", vec![PRELOAD_HELPER], vec![helper]),
+                true,
+            ),
+            (
+                (
+                    "rolldown runtime only",
+                    vec![ROLLDOWN_RUNTIME],
+                    vec![runtime],
+                ),
+                true,
+            ),
+            (
+                (
+                    "both helpers",
+                    vec![PRELOAD_HELPER, ROLLDOWN_RUNTIME],
+                    vec![helper, runtime],
+                ),
+                true,
+            ),
+            (
+                (
+                    "look-alike vite namespace id",
+                    vec!["\u{0}vite/custom-runtime.js"],
+                    vec![("\u{0}vite/custom-runtime.js", true, None)],
+                ),
+                false,
+            ),
+            (
+                (
+                    "look-alike rolldown namespace id",
+                    vec!["\u{0}rolldown/plugin-helper.js"],
+                    vec![("\u{0}rolldown/plugin-helper.js", true, None)],
+                ),
+                false,
+            ),
+            (
+                (
+                    "built-in helper plus look-alike",
+                    vec![PRELOAD_HELPER, "\u{0}vite/custom-runtime.js"],
+                    vec![helper, ("\u{0}vite/custom-runtime.js", true, None)],
+                ),
+                false,
+            ),
+            (("no listed modules", vec![], vec![helper]), false),
+            (("id not collected", vec![PRELOAD_HELPER], vec![]), false),
+            (
+                ("plugin virtual", vec!["\u{0}virtual:routes"], vec![plugin]),
+                false,
+            ),
+            (
+                ("helper with file path", vec![PRELOAD_HELPER], vec![pathed]),
+                false,
+            ),
+            (
+                ("non-virtual module", vec![PRELOAD_HELPER], vec![real]),
+                false,
+            ),
+            (
+                (
+                    "helper plus source",
+                    vec![PRELOAD_HELPER, APP_MODULE],
+                    vec![helper, app],
+                ),
+                false,
+            ),
+        ];
+        for ((name, chunk_modules, modules), vite_expected) in shapes {
+            for (bundler, choice) in [
+                ("vite", Some(BundlerChoice::Vite)),
+                ("rspack", Some(BundlerChoice::Rspack)),
+                ("webpack", None),
+                ("", None),
+            ] {
+                let built = collection(bundler, chunk_modules.clone(), modules.clone());
+                assert_eq!(built.bundler_choice(), choice, "{bundler:?}");
+                let expected = vite_expected && choice == Some(BundlerChoice::Vite);
+                assert_eq!(
+                    built.is_virtual_only_chunk("a.js"),
+                    expected,
+                    "{name} with bundler {bundler:?}"
+                );
+                assert!(!built.is_virtual_only_chunk("b.js"), "{name}: unknown file");
+            }
+        }
     }
 
     #[test]

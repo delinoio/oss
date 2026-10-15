@@ -23,6 +23,7 @@ pub(super) enum EnvGuard {
     ShortCircuitAnd,
     ShortCircuitOr,
     NullishCoalescing,
+    OptionalChain,
     Conditional,
     If,
     While,
@@ -36,6 +37,10 @@ impl EnvGuard {
             Self::ShortCircuitAnd => "the retained read controls a && short-circuit branch",
             Self::ShortCircuitOr => "the retained read controls a || short-circuit branch",
             Self::NullishCoalescing => "the retained read controls a ?? fallback branch",
+            Self::OptionalChain => {
+                "the retained read is the base of an optional chain, so a nullish value \
+                 short-circuits the chain"
+            }
             Self::Conditional => "the retained read controls a conditional (?:) branch",
             Self::If => "the retained read is in an if condition",
             Self::While => "the retained read is in a while condition",
@@ -1439,6 +1444,14 @@ impl<'a> Parser<'a> {
                     }
                     "?." => {
                         self.bump();
+                        // A nullish base short-circuits the chain. Only the
+                        // read itself (possibly parenthesized) is the base;
+                        // a member, call or operand built from it is not.
+                        if let Some(base) = expr
+                            && matches!(self.nodes[base], Node::Read(_))
+                        {
+                            self.site(EnvGuard::OptionalChain, expr);
+                        }
                         if self.is_punct("(") {
                             expr = self.call(expr);
                         } else if self.is_punct("[") {
@@ -1877,7 +1890,10 @@ impl<'a> Parser<'a> {
     fn resolve(mut self, count: usize) -> Vec<Option<EnvGuard>> {
         let mut guards = vec![None; count];
         let mut done = vec![false; self.nodes.len() * 2];
-        let sites = std::mem::take(&mut self.sites);
+        let mut sites = std::mem::take(&mut self.sites);
+        // An optional chain is the weakest evidence: any other branch that
+        // tests the read keeps its own guard, whatever the source order.
+        sites.sort_by_key(|(guard, _)| *guard == EnvGuard::OptionalChain);
         let mut reads = Vec::new();
         let mut paths = Vec::new();
         for (guard, root) in sites {
@@ -2276,6 +2292,120 @@ mod tests {
             guard("if (process.env.VERSION\n) run()", "process.env.VERSION"),
             Some("the retained read is in an if condition")
         );
+    }
+
+    #[test]
+    fn optional_chain_base_reads_are_guards() {
+        let guard = |code: &str, read: &str| {
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        let chain = Some(EnvGuard::OptionalChain.evidence());
+        assert!(
+            EnvGuard::OptionalChain
+                .evidence()
+                .contains("short-circuits")
+        );
+        for code in [
+            "process.env.FLAG?.trim();",
+            "process.env.FLAG?.[key()];",
+            "process.env.FLAG?.();",
+            "(process.env.FLAG)?.trim();",
+            "((process.env.FLAG))?.trim();",
+            "( /* c */ process.env.FLAG /* c */ )?.trim();",
+            "process.env.FLAG\n?.trim();",
+            "x=process.env.FLAG?.trim();",
+            "return (process.env.FLAG)?.trim();",
+            // The statement parser knows a block ends before the parenthesis.
+            "if (a) {}\n(process.env.FLAG)?.value;",
+        ] {
+            assert_eq!(guard(code, "process.env.FLAG"), chain, "{code}");
+        }
+        assert_eq!(guard("({}).FLAG?.trim();", "({}).FLAG"), chain);
+        for code in [
+            "obj?.method(process.env.FLAG);",
+            "obj?.[process.env.FLAG];",
+            "(process.env.FLAG === \"on\")?.toString();",
+            "console.log(process.env.FLAG);",
+            "console.log(process.env.FLAG);obj?.method();",
+            "run(process.env.FLAG)?.value;",
+            "obj.run(process.env.FLAG)?.value;",
+            "const x = function(){}(process.env.FLAG)?.value;",
+            "const x = class{}(process.env.FLAG)?.value;",
+            "const x = {}(process.env.FLAG)?.value;",
+            "process.env.FLAG.length?.toString();",
+            "const a=process.env.FLAG;b?.c();",
+            "const a=process.env.FLAG\nb?.c();",
+            "(process.env.FLAG,other)?.trim();",
+        ] {
+            assert_eq!(guard(code, "process.env.FLAG"), None, "{code}");
+        }
+        // Existing operators keep their evidence next to optional chains.
+        assert_eq!(
+            guard("process.env.FLAG&&run?.()", "process.env.FLAG"),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard("process.env.FLAG?run():stop()", "process.env.FLAG"),
+            Some("the retained read controls a conditional (?:) branch")
+        );
+        assert_eq!(
+            guard("process.env.FLAG??run?.()", "process.env.FLAG"),
+            Some("the retained read controls a ?? fallback branch")
+        );
+    }
+
+    #[test]
+    fn literal_before_parenthesized_read_is_a_callee() {
+        let guard = |code: &str| {
+            let start = code.find("process.env.FLAG").unwrap();
+            env_guard(
+                code,
+                start,
+                start + "process.env.FLAG".len(),
+                &non_code_ranges(code),
+            )
+            .map(EnvGuard::evidence)
+        };
+        let chain = Some(EnvGuard::OptionalChain.evidence());
+        for literal in ["/x/", "/x/gi", "/[/]/", "\"s\"", "'s'", "`t`", "`a${b}c`"] {
+            for template in [
+                "try{LIT(process.env.FLAG)?.value}catch{}",
+                "x=LIT(process.env.FLAG)?.value;",
+                "x=LIT /* c */ (process.env.FLAG)?.value;",
+                "x=LIT // c\n(process.env.FLAG)?.value;",
+            ] {
+                let code = template.replace("LIT", literal);
+                assert_eq!(guard(&code), None, "{code}");
+            }
+        }
+        // Comments between the operator and the read are still skipped.
+        for code in [
+            "x=/* c */(process.env.FLAG)?.value;",
+            "x=// c\n(process.env.FLAG)?.value;",
+            "x=`${(process.env.FLAG)?.value}`;",
+        ] {
+            assert_eq!(guard(code), chain, "{code}");
+        }
+    }
+
+    #[test]
+    fn optional_chain_scan_marks_every_read_among_many() {
+        let mut code = String::new();
+        let mut reads = Vec::new();
+        for index in 0..200 {
+            if index > 0 {
+                code.push_str("&&");
+            }
+            let start = code.len();
+            code.push_str(&format!("process.env.F{index}"));
+            reads.push((start, code.len()));
+            code.push_str("?.x");
+        }
+        let ignored = non_code_ranges(&code);
+        let guards = env_guards(&code, &reads, &ignored);
+        assert!(guards.iter().all(Option::is_some));
     }
 
     #[test]
@@ -2850,6 +2980,7 @@ mod tests {
             EnvGuard::ShortCircuitAnd => "and",
             EnvGuard::ShortCircuitOr => "or",
             EnvGuard::NullishCoalescing => "nullish",
+            EnvGuard::OptionalChain => "chain",
             EnvGuard::Conditional => "conditional",
             EnvGuard::If => "if",
             EnvGuard::While => "while",
