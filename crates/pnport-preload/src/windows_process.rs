@@ -163,6 +163,10 @@ unsafe fn discard(info: LPPROCESS_INFORMATION) {
     SetLastError(error);
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Retain the native CreateProcess parameter contract"
+)]
 unsafe fn create(
     application: LPCWSTR,
     command: LPWSTR,
@@ -199,6 +203,31 @@ unsafe fn create(
             .ok_or(std::io::ErrorKind::Other)?
             .lock()
             .map_err(|_| std::io::ErrorKind::Other)?;
+        if inherit != 0 {
+            // Cross-process managed directory cursors and peer provenance do
+            // not yet have a shared native representation. Refuse transfer
+            // before birth instead of silently exposing physical cache names.
+            for (handle, file) in &runtime.handles {
+                if file.translation.readonly
+                    || file.translation.logical != file.translation.physical
+                {
+                    let mut attributes = 0;
+                    if winapi::um::handleapi::GetHandleInformation(
+                        *handle as HANDLE,
+                        &mut attributes,
+                    ) != 0
+                        && attributes & 1 != 0
+                    {
+                        tracing::debug!(
+                            action = "windows_child_rejected",
+                            reason = "managed_handle_inheritance",
+                            "Rejected unsupported inherited managed handles"
+                        );
+                        return Err(std::io::ErrorKind::Unsupported.into());
+                    }
+                }
+            }
+        }
         let mut context = runtime.context.clone();
         context.launch = format!("pnport-{}", uuid::Uuid::now_v7());
         let loader = pnport_core::node::Loader::from_snapshot(&runtime.view.graph.snapshot);

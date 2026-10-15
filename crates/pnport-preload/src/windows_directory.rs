@@ -53,6 +53,18 @@ fn matching(pattern: &[u16], name: &[u16]) -> bool {
 fn listing(file: &OpenFile, pattern: Vec<u16>) -> std::result::Result<Listing, NTSTATUS> {
     let mut items = Vec::new();
     let physical = &file.translation.physical;
+    for (name, path) in [
+        (".", physical.as_path()),
+        ("..", physical.parent().unwrap_or(physical)),
+    ] {
+        let name: Vec<_> = name.encode_utf16().collect();
+        if matching(&pattern, &name) {
+            items.push(Item {
+                name,
+                metadata: fs::metadata(path).map_err(|_| IO_ERROR)?,
+            });
+        }
+    }
     for entry in fs::read_dir(physical).map_err(|_| MISSING)? {
         let entry = entry.map_err(|_| IO_ERROR)?;
         let name: Vec<_> = entry.file_name().encode_wide().collect();
@@ -110,6 +122,10 @@ fn put64(buffer: &mut [u8], offset: usize, value: u64) {
     buffer[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Retain the native directory query parameter contract"
+)]
 unsafe fn query(
     file: HANDLE,
     event: HANDLE,

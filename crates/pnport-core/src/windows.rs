@@ -171,6 +171,10 @@ impl WideAscii for [u16] {
     }
 }
 
+#[allow(
+    clippy::not_unsafe_ptr_arg_deref,
+    reason = "Windows validates opaque kernel handles; no caller memory is dereferenced"
+)]
 pub fn file_path(handle: HANDLE) -> io::Result<PathBuf> {
     let mut capacity = 512;
     for _ in 0..4 {
@@ -195,6 +199,7 @@ pub fn file_path(handle: HANDLE) -> io::Result<PathBuf> {
 pub struct User {
     _token: Handle,
     bytes: Vec<usize>,
+    owner: Vec<usize>,
 }
 impl User {
     pub fn current() -> io::Result<Self> {
@@ -203,34 +208,38 @@ impl User {
             return Err(io::Error::last_os_error());
         }
         let token = Handle(token);
-        let mut size = 0;
-        unsafe {
-            GetTokenInformation(token.0, TokenUser, ptr::null_mut(), 0, &mut size);
-        }
-        if size == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        let mut bytes = vec![0usize; (size as usize).div_ceil(size_of::<usize>())];
-        if unsafe {
-            GetTokenInformation(
-                token.0,
-                TokenUser,
-                bytes.as_mut_ptr().cast(),
-                size,
-                &mut size,
-            )
-        } == 0
-        {
-            return Err(io::Error::last_os_error());
-        }
+        let query = |class| -> io::Result<Vec<usize>> {
+            let mut size = 0;
+            unsafe {
+                GetTokenInformation(token.0, class, ptr::null_mut(), 0, &mut size);
+            }
+            if size == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let mut bytes = vec![0usize; (size as usize).div_ceil(size_of::<usize>())];
+            if unsafe {
+                GetTokenInformation(token.0, class, bytes.as_mut_ptr().cast(), size, &mut size)
+            } == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(bytes)
+        };
+        let bytes = query(TokenUser)?;
+        let owner = query(TokenOwner)?;
         Ok(Self {
             _token: token,
             bytes,
+            owner,
         })
     }
 
     pub fn sid(&self) -> PSID {
         unsafe { (*self.bytes.as_ptr().cast::<TOKEN_USER>()).User.Sid }
+    }
+
+    fn owner(&self) -> PSID {
+        unsafe { (*self.owner.as_ptr().cast::<TOKEN_OWNER>()).Owner }
     }
 
     fn text(&self) -> io::Result<String> {
@@ -338,7 +347,14 @@ pub fn validate_private(file: &File, directory: bool) -> io::Result<()> {
         return Err(io::Error::from_raw_os_error(status as i32));
     }
     let _allocation = Local(descriptor);
-    if owner.is_null() || dacl.is_null() || unsafe { EqualSid(owner, user.sid()) } == 0 {
+    // Elevated tokens can default new file ownership to their owner group.
+    // Accept only this token's own owner SID; grants still must name the
+    // invoking user's SID exclusively, including for such group-owned files.
+    if owner.is_null()
+        || dacl.is_null()
+        || (unsafe { EqualSid(owner, user.sid()) } == 0
+            && unsafe { EqualSid(owner, user.owner()) } == 0)
+    {
         return Err(denied());
     }
     let count = unsafe { (*dacl).AceCount };
@@ -377,7 +393,7 @@ mod tests {
         }
     }
     #[test]
-    fn private_creation_rejects_an_existing_shared_directory() {
+    fn private_files_reject_hardlink_aliases() {
         let parent = tempfile::tempdir().unwrap();
         let private = parent.path().join("private");
         private_directory(&private).unwrap();
@@ -388,5 +404,72 @@ mod tests {
         let alias = private.join("alias");
         fs::hard_link(&file, &alias).unwrap();
         assert!(validate_private(&File::open(&file).unwrap(), false).is_err());
+    }
+
+    #[test]
+    fn existing_shared_directory_is_rejected_without_changing_its_acl() {
+        let parent = tempfile::tempdir().unwrap();
+        let shared = parent.path().join("shared");
+        fs::create_dir(&shared).unwrap();
+        let user = User::current().unwrap();
+        let sddl: Vec<_> = format!("D:P(A;OICI;FA;;;{})(A;OICI;FR;;;WD)", user.text().unwrap())
+            .encode_utf16()
+            .chain([0])
+            .collect();
+        let mut descriptor = ptr::null_mut();
+        assert_ne!(
+            unsafe {
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    sddl.as_ptr(),
+                    1,
+                    &mut descriptor,
+                    ptr::null_mut(),
+                )
+            },
+            0
+        );
+        let _allocation = Local(descriptor);
+        assert_ne!(
+            unsafe {
+                SetFileSecurityW(
+                    wide(&shared).unwrap().as_ptr(),
+                    DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                    descriptor,
+                )
+            },
+            0
+        );
+        assert_eq!(
+            private_directory(&shared).unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        let file = OpenOptions::new()
+            .access_mode(FileSystem::READ_CONTROL)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(&shared)
+            .unwrap();
+        let mut acl = ptr::null_mut();
+        let mut observed = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                GetSecurityInfo(
+                    file.as_raw_handle(),
+                    SE_FILE_OBJECT,
+                    DACL_SECURITY_INFORMATION,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    &mut acl,
+                    ptr::null_mut(),
+                    &mut observed,
+                )
+            },
+            0
+        );
+        let _observed = Local(observed);
+        assert_eq!(
+            unsafe { (*acl).AceCount },
+            2,
+            "validation rewrote caller-owned access grants"
+        );
     }
 }

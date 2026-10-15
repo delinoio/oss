@@ -9,7 +9,7 @@ investigations, separate root clibox watch failure and full-acceptance review.
 Keep those limits visible; this exception does not establish a fix or passing
 skipped checks. Require `pnportReleaseReady: true` and exact
 `pnportReleaseVersion: "0.1.0"`, preserve signing/integrity and immutable retries,
-and keep and the complete Windows 0.2.0 requirements open. This amendment
+and keep the complete Windows 0.2.0 requirements open. This amendment
 takes precedence over earlier full-acceptance prerequisites for exactly 0.1.0.
 
 Stable 0.1.0 is published for all four macOS/glibc Linux targets. The retained
@@ -50,13 +50,32 @@ Reject reparse state leaves and multiply linked state files using opened native
 handles. Execution snapshots inherit the private cache boundary, never a shared
 temporary-directory ACL. Windows capability additions preserve doctor JSON v1.
 
+The Windows adapter covers direct and handle-relative reads, metadata, logical
+final names, same-process handle duplication, merged synchronous enumeration,
+read-only mutation controls, native read mappings, ZIP DLL/package-bin loading,
+source watches and hidden tool-cache creation. Native input identities include
+the volume/file index and change time so restored mtime does not hide rewrites.
+Cross-volume locator lookup avoids the pinned resolver's drive-relative panic;
+registered aliases and fallback bindings retain the admitted graph context.
+Windows fixtures compile a no-entrypoint DLL with the native MSVC compiler;
+cross-built local fixtures may supply the same-architecture DLL explicitly.
+Exact native control endpoints used by the DLL loader, console, Node crypto
+provider and Winsock retain their operating-system semantics. This does not
+admit raw disk-device paths past package classification.
+
+Merged enumeration with APC/completion-port callbacks and inherited managed
+handles across processes are not yet supported. Reject these operations before
+dispatch/child birth instead of losing completion semantics or peer provenance.
+Unclassified disk-device namespaces and lossily encoded Detours DLL paths also
+fail explicitly. These limits remain part of complete Windows acceptance.
+
 The implementation is distinct from acceptance: both architectures require
 actual filesystem, lifecycle, installed-package, TypeScript, watch and loader
 conformance, plus separate Windows 10 22H2 minimum-OS evidence. Keep the
 PowerShell installation and published-support gates closed until that evidence
 exists. Existing 0.1.x publication exceptions do not authorize Windows or 0.2.0.
 
-Rust on the root nightly-2026-01-01 toolchain; explicit Cargo workspace membership, publish = false. Native interception must not upgrade the toolchain or alter protected dependencies. Retain upstream fspy attribution for adapted code.
+Rust on the root nightly-2026-09-28 toolchain; explicit Cargo workspace membership, publish = false. Native interception must not upgrade the toolchain or alter protected dependencies. Retain upstream fspy attribution for adapted code.
 
 ## Users and Operators
 
@@ -416,7 +435,7 @@ Root `cargo test` on this host needs a canonical `TMPDIR` because existing binpm
 
 On 2026-09-23, baseline source revision `d55f0db425d369c63744ec41be5318833a81c53a` was reviewed in an isolated Docker container before the Linux implementation below. This historical review did not enable Linux execution or satisfy a release gate.
 
-The environment was Ubuntu 22.04.5 arm64, glibc 2.35, Docker Desktop's `7.0.12-linuxkit` kernel, Rust `nightly-2026-01-01` (`1.94.0-nightly`, `8d670b93d`), and Node 24.21.0. The Ubuntu base image was `ubuntu@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02`; Node came from `node@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0`. The repository was copied with `git archive`; the source, platform gate, toolchain pin, and compiler bytes were unchanged. Preparation used the committed Yarn 4.18.0 lockfile and `typescript@7.1.0-dev.20260812.1`. Docker's bridge network was disconnected before the execution probes.
+The environment was Ubuntu 22.04.5 arm64, glibc 2.35, Docker Desktop's `7.0.12-linuxkit` kernel, Rust `nightly-2026-09-28` (`1.94.0-nightly`, `8d670b93d`), and Node 24.21.0. The Ubuntu base image was `ubuntu@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02`; Node came from `node@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0`. The repository was copied with `git archive`; the source, platform gate, toolchain pin, and compiler bytes were unchanged. Preparation used the committed Yarn 4.18.0 lockfile and `typescript@7.1.0-dev.20260812.1`. Docker's bridge network was disconnected before the execution probes.
 
 - `cargo build --locked -p pnport -p pnport-preload` succeeded and produced the CLI and matching `.so`.
 - `cargo test --locked -p pnport` passed 13 tests (two library, two CLI-module, and nine integration tests). The macOS-only native execution tests were excluded by their existing target guards. The four package-owned Node tests also passed.

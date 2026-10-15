@@ -18,6 +18,8 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) {
 }
 Write-Output (@{ event = "pnport_windows_development_validation"; target = $Target; revision = (& git rev-parse HEAD).Trim(); acceptance = "development-only" } | ConvertTo-Json -Compress)
 Invoke-Checked "cargo" @("build", "--locked", "-p", "pnport", "-p", "pnport-preload", "--target", $Target)
+Invoke-Checked "cargo" @("test", "--locked", "-p", "pnport-core", "--lib", "--target", $Target)
+Invoke-Checked "cargo" @("test", "--locked", "-p", "pnport", "--bin", "pnport", "--target", $Target)
 Invoke-Checked "cargo" @("test", "--locked", "-p", "pnport", "--test", "windows", "--target", $Target)
 Invoke-Checked "cargo" @("build", "--locked", "--release", "-p", "pnport", "-p", "pnport-preload", "--target", $Target)
 $binary = Join-Path $PWD "target/$Target/release/pnport.exe"

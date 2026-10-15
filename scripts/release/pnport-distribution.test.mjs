@@ -51,6 +51,7 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 const require = createRequire(import.meta.url);
 const {
   targets,
+  allTargets,
   selectTarget,
 } = require("../../packages/pnport/src/platforms.cjs");
 const revision = "a".repeat(40);
@@ -62,10 +63,7 @@ function fixture(t) {
 }
 
 test("Homebrew pnport formula declares the macOS 15 floor and version test", () => {
-  let formula = readFileSync(
-    path.join(root, "packaging/homebrew/templates/pnport.rb.tmpl"),
-    "utf8",
-  );
+  let formula = sourceText("packaging/homebrew/templates/pnport.rb.tmpl");
   const replacements = { __VERSION__: "0.1.0" };
   for (const platform of [
     "darwin-amd64",
@@ -227,9 +225,9 @@ test("macOS native package inspection rejects companions without constructor lea
 });
 
 test("native release archives contain one matched pair and exact license notices", () => {
-  const pnportLicense = readFileSync(path.join(root, "crates/pnport/LICENSE"));
-  const fspyLicense = readFileSync(path.join(root, "crates/fspy/LICENSE"));
-  for (const target of targets) {
+  const pnportLicense = Buffer.from(sourceText("crates/pnport/LICENSE"));
+  const fspyLicense = Buffer.from(sourceText("crates/fspy/LICENSE"));
+  for (const target of allTargets) {
     const archive = tarEntries(
       nativeArchive(target, Buffer.from("binary"), Buffer.from("preload")),
       "",
@@ -241,7 +239,9 @@ test("native release archives contain one matched pair and exact license notices
           ? "pnport_preload.dll"
           : "libpnport_preload.so";
     const notices =
-      target.os === "win32" ? ["LICENSE"] : ["LICENSE", "LICENSE.fspy"];
+      target.os === "win32"
+        ? ["LICENSE", "LICENSE.fspy", "LICENSE.detours"]
+        : ["LICENSE", "LICENSE.fspy"];
     assert.deepEqual(
       [...archive.keys()].sort(),
       [target.binary, companion, ...notices].sort(),
@@ -252,8 +252,15 @@ test("native release archives contain one matched pair and exact license notices
     );
     assert.equal(archive.get(companion).bytes.toString(), "preload");
     assert.ok(archive.get("LICENSE").bytes.equals(pnportLicense));
-    if (target.os !== "win32")
-      assert.ok(archive.get("LICENSE.fspy").bytes.equals(fspyLicense));
+    assert.ok(archive.get("LICENSE.fspy").bytes.equals(fspyLicense));
+    if (target.os === "win32")
+      assert.ok(
+        archive
+          .get("LICENSE.detours")
+          .bytes.equals(
+            Buffer.from(sourceText("crates/fspy_detours_sys/detours/LICENSE")),
+          ),
+      );
   }
 });
 
@@ -606,77 +613,85 @@ test("native channel confirmation failure prevents launcher publication", async 
   assert.deepEqual(writes, [artifacts[0].name]);
 });
 
-test("an older pnport retry cannot downgrade the Homebrew tap", (t) => {
-  const directory = fixture(t);
-  const remote = path.join(directory, "tap.git");
-  const checkout = path.join(directory, "tap");
-  execFileSync("git", ["init", "--bare", "--initial-branch=main", remote], {
-    stdio: "pipe",
-  });
-  execFileSync("git", ["clone", remote, checkout], { stdio: "pipe" });
-  execFileSync("git", ["config", "user.name", "Fixture"], { cwd: checkout });
-  execFileSync("git", ["config", "user.email", "fixture@example.invalid"], {
-    cwd: checkout,
-  });
-  mkdirSync(path.join(checkout, "Formula"));
-  const current = 'class Pnport < Formula\n  version "0.2.0"\nend\n';
-  writeFileSync(path.join(checkout, "Formula/pnport.rb"), current);
-  execFileSync("git", ["add", "Formula/pnport.rb"], { cwd: checkout });
-  execFileSync("git", ["commit", "-m", "newer pnport release"], {
-    cwd: checkout,
-    stdio: "pipe",
-  });
-  execFileSync("git", ["push", "origin", "HEAD:main"], {
-    cwd: checkout,
-    stdio: "pipe",
-  });
-  const args = [
-    "scripts/release/update-homebrew.sh",
-    "--project",
-    "pnport",
-    "--version",
-    "0.1.0",
-    "--tap-repo",
-    "fixture/pnport-tap",
-  ];
-  for (const platform of [
-    "darwin-amd64",
-    "darwin-arm64",
-    "linux-amd64",
-    "linux-arm64",
-  ]) {
-    args.push(
-      `--${platform}-url`,
-      `https://example.invalid/pnport-${platform}.tar.gz`,
-      `--${platform}-sha256`,
-      "a".repeat(64),
-    );
-  }
-  const env = {
-    ...process.env,
-    GH_TOKEN: "fixture",
-    GIT_CONFIG_COUNT: "1",
-    GIT_CONFIG_KEY_0: "url.file://" + remote + ".insteadOf",
-    GIT_CONFIG_VALUE_0: "https://github.com/fixture/pnport-tap.git",
-  };
-  const result = spawnSync("bash", args, { cwd: root, env, encoding: "utf8" });
-  assert.notEqual(
-    result.status,
-    0,
-    "older release unexpectedly updated the tap",
-  );
-  assert.match(
-    result.stderr,
-    /refusing pnport Homebrew downgrade from 0\.2\.0 to 0\.1\.0/u,
-  );
-  assert.equal(
-    execFileSync("git", ["show", "main:Formula/pnport.rb"], {
-      cwd: remote,
+test(
+  "an older pnport retry cannot downgrade the Homebrew tap",
+  { skip: process.platform === "win32" },
+  (t) => {
+    const directory = fixture(t);
+    const remote = path.join(directory, "tap.git");
+    const checkout = path.join(directory, "tap");
+    execFileSync("git", ["init", "--bare", "--initial-branch=main", remote], {
+      stdio: "pipe",
+    });
+    execFileSync("git", ["clone", remote, checkout], { stdio: "pipe" });
+    execFileSync("git", ["config", "user.name", "Fixture"], { cwd: checkout });
+    execFileSync("git", ["config", "user.email", "fixture@example.invalid"], {
+      cwd: checkout,
+    });
+    mkdirSync(path.join(checkout, "Formula"));
+    const current = 'class Pnport < Formula\n  version "0.2.0"\nend\n';
+    writeFileSync(path.join(checkout, "Formula/pnport.rb"), current);
+    execFileSync("git", ["add", "Formula/pnport.rb"], { cwd: checkout });
+    execFileSync("git", ["commit", "-m", "newer pnport release"], {
+      cwd: checkout,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["push", "origin", "HEAD:main"], {
+      cwd: checkout,
+      stdio: "pipe",
+    });
+    const args = [
+      "scripts/release/update-homebrew.sh",
+      "--project",
+      "pnport",
+      "--version",
+      "0.1.0",
+      "--tap-repo",
+      "fixture/pnport-tap",
+    ];
+    for (const platform of [
+      "darwin-amd64",
+      "darwin-arm64",
+      "linux-amd64",
+      "linux-arm64",
+    ]) {
+      args.push(
+        `--${platform}-url`,
+        `https://example.invalid/pnport-${platform}.tar.gz`,
+        `--${platform}-sha256`,
+        "a".repeat(64),
+      );
+    }
+    const env = {
+      ...process.env,
+      GH_TOKEN: "fixture",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "url.file://" + remote + ".insteadOf",
+      GIT_CONFIG_VALUE_0: "https://github.com/fixture/pnport-tap.git",
+    };
+    const result = spawnSync("bash", args, {
+      cwd: root,
+      env,
       encoding: "utf8",
-    }),
-    current,
-  );
-});
+    });
+    assert.notEqual(
+      result.status,
+      0,
+      "older release unexpectedly updated the tap",
+    );
+    assert.match(
+      result.stderr,
+      /refusing pnport Homebrew downgrade from 0\.2\.0 to 0\.1\.0/u,
+    );
+    assert.equal(
+      execFileSync("git", ["show", "main:Formula/pnport.rb"], {
+        cwd: remote,
+        encoding: "utf8",
+      }),
+      current,
+    );
+  },
+);
 
 for (const version of ["0.1.0", "0.1.2", "0.1.0-next.1"])
   test(`signed GitHub ${version} resumes an identical partial draft and rejects conflicting bytes`, async () => {

@@ -46,7 +46,7 @@ hook!(FINAL_W, winapi::um::fileapi::GetFinalPathNameByHandleW, c"GetFinalPathNam
     let Some(_guard) = Guard::enter() else { return (FINAL_W.real())(file,buffer,capacity,flags); };
     let Some(owned) = handle(file) else { return (FINAL_W.real())(file,buffer,capacity,flags); };
     if owned.translation.logical == owned.translation.physical { return (FINAL_W.real())(file,buffer,capacity,flags); }
-    if flags & !12 != 0 { SetLastError(50); return 0; }
+    if flags & !12 != 0 { tracing::debug!(action="windows_final_path_rejected",flags,"Rejected an unsupported final-path volume mode"); SetLastError(50); return 0; }
     let value = if flags & 4 != 0 { volume_relative(&owned.translation.logical) } else {
         let name: Vec<_> = owned.translation.logical.as_os_str().encode_wide().collect();
         let mut value: Vec<_> = r"\\?\".encode_utf16().collect();
@@ -77,7 +77,38 @@ hook!(FSCTL, ntapi::ntioapi::NtFsControlFile, c"NtFsControlFile", (file: HANDLE,
     (FSCTL.real())(file,event,apc,context,ios,code,input,input_size,output,output_size)
 });
 
+// Resolve this newer entry point dynamically so Windows 10 can load the DLL
+// without importing a Windows 11-only ntdll export.
+static INFO_BY_NAME: Detour<
+    unsafe extern "system" fn(
+        POBJECT_ATTRIBUTES,
+        PIO_STATUS_BLOCK,
+        PVOID,
+        ULONG,
+        FILE_INFORMATION_CLASS,
+    ) -> NTSTATUS,
+> = unsafe {
+    Detour::dynamic(c"NtQueryInformationByName", {
+        unsafe extern "system" fn replacement(
+            attrs: POBJECT_ATTRIBUTES,
+            ios: PIO_STATUS_BLOCK,
+            buffer: PVOID,
+            length: ULONG,
+            class: FILE_INFORMATION_CLASS,
+        ) -> NTSTATUS {
+            let Some(_guard) = Guard::enter() else {
+                return (INFO_BY_NAME.real())(attrs, ios, buffer, length, class);
+            };
+            mapped(attrs, false, |attrs, _| {
+                (INFO_BY_NAME.real())(attrs, ios, buffer, length, class)
+            })
+        }
+        replacement
+    })
+};
+
 pub(super) const DETOURS: &[DetourAny] = &[
+    INFO_BY_NAME.as_any(),
     INFO.as_any(),
     FINAL_W.as_any(),
     SET_EA.as_any(),

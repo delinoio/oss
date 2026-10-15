@@ -126,7 +126,7 @@ unsafe fn unicode(value: PUNICODE_STRING) -> std::result::Result<Vec<u16>, NTSTA
         return Err(INVALID);
     }
     let value = &*value;
-    if value.Length % 2 != 0
+    if !value.Length.is_multiple_of(2)
         || value.Length > value.MaximumLength
         || (value.Length != 0 && value.Buffer.is_null())
     {
@@ -174,13 +174,34 @@ unsafe fn object_path(
     // namespaces cannot bypass graph classification by spelling a disk path
     // as a raw NT device; reject them before native execution.
     let spelling = String::from_utf16_lossy(&name);
-    if spelling.starts_with(r"\Device\NamedPipe\")
-        || spelling == r"\??\NUL"
-        || spelling.starts_with(r"\Device\ConDrv")
+    let starts = |prefix: &str| {
+        spelling
+            .get(..prefix.len())
+            .is_some_and(|value| value.eq_ignore_ascii_case(prefix))
+    };
+    if starts(r"\Device\NamedPipe\")
+        || spelling.eq_ignore_ascii_case(r"\??\NUL")
+        || spelling.eq_ignore_ascii_case(r"\Device\ConDrv")
+        || starts(r"\Device\ConDrv\")
+        // The native DLL loader opens this control endpoint on Windows. Keep
+        // its policy checks/errors native; it does not name a package file.
+        // Replace this exact exception when generic device classification can
+        // prove non-filesystem endpoints before opening them.
+        || spelling.eq_ignore_ascii_case(r"\Device\SrpDevice")
+        // Node's Windows crypto provider and Winsock use these non-filesystem
+        // control endpoints. Keep their native access checks and completion
+        // semantics. Remove these exact exceptions when endpoint classification
+        // can distinguish control devices from raw filesystem paths.
+        || spelling.eq_ignore_ascii_case(r"\Device\KsecDD")
+        || spelling.eq_ignore_ascii_case(r"\Device\Afd\Endpoint")
     {
         return Ok(None);
     }
-    if spelling.starts_with(r"\Device\") {
+    if starts(r"\Device\") {
+        tracing::debug!(
+            action = "windows_namespace_rejected",
+            "Rejected an unclassified NT device path"
+        );
         return Err(UNSUPPORTED);
     }
     let path = dos_path(&name);

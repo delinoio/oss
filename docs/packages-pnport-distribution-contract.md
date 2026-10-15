@@ -9,7 +9,7 @@ investigations, separate root clibox watch failure and full-acceptance review.
 Keep those limits visible; this exception does not establish a fix or passing
 skipped checks. Require `pnportReleaseReady: true` and exact
 `pnportReleaseVersion: "0.1.0"`, preserve signing/integrity and immutable retries,
-and keep and the complete Windows 0.2.0 requirements open. This amendment
+and keep the complete Windows 0.2.0 requirements open. This amendment
 takes precedence over earlier full-acceptance prerequisites for exactly 0.1.0.
 
 Public README/release notes disclose platforms and unresolved user-facing failures;

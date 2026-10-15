@@ -237,6 +237,11 @@ export function inspectTarball(file, version, sourceRevision) {
         preload.includes(Buffer.from("PNPORT_PRELOAD_0.1.0_FORMAT_3_READY")),
         "fspy companion ABI mismatch",
       );
+    if (target.os === "win32")
+      ensure(
+        preload.includes(Buffer.from("PNPORT_PRELOAD_0.1.0_FORMAT_1_READY")),
+        "Windows companion ABI mismatch",
+      );
   } else
     for (const name of mainFiles)
       ensure(

@@ -8,6 +8,13 @@ mod windows;
 // a second trampoline implementation. Generic fspy remains an observer.
 #[cfg(windows)]
 #[path = "../../fspy_preload_windows/src/windows/detour.rs"]
+// The borrowed module is formatted by its owning crate's Rust edition.
+#[rustfmt::skip]
+#[allow(
+    dead_code,
+    reason = "The pinned helper also serves generic fspy's detach path; pnport relies on process \
+              teardown"
+)]
 mod windows_detour;
 #[cfg(windows)]
 #[path = "../../pnport/src/windows_launch.rs"]

@@ -105,6 +105,9 @@ test("Windows installer rejects requests before network, file, or process side e
     "& $executable",
   ])
     assert.ok(gate < source.indexOf(effect), effect);
+  assert.match(source, /LICENSE\.fspy/u);
+  assert.match(source, /LICENSE\.detours/u);
+  assert.match(source, /Windows packages require pnport 0\.2\.0 or newer/u);
 });
 
 test("Windows source gates use native hosts and installed archives without publication authority", () => {

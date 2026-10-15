@@ -116,6 +116,10 @@ pub fn dll_path(path: &Path) -> io::Result<CString> {
     })
 }
 
+#[allow(
+    clippy::not_unsafe_ptr_arg_deref,
+    reason = "Windows validates opaque process handles; no caller memory is dereferenced"
+)]
 pub fn inject(process: HANDLE, context: &LaunchContext) -> io::Result<()> {
     let mut name = vec![0; 32768];
     let mut size = name.len() as u32;

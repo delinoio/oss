@@ -27,6 +27,7 @@ if ($Version -eq "latest") {
   $Version = $versions | Sort-Object { [version]$_ } -Descending | Select-Object -First 1
 }
 if ($Version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw "[install.pnport] exact stable version required" }
+if ([version]$Version -lt [version]"0.2.0") { throw "[install.pnport] Windows packages require pnport 0.2.0 or newer" }
 if (-not $InstallDir) { throw "[install.pnport] install directory required" }
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 if ($arch -notin @("x64", "arm64")) { throw "[install.pnport] unsupported architecture" }
@@ -50,7 +51,8 @@ try {
   $expected = $entries[0].Substring(0, 64)
   if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw "[install.pnport] checksum mismatch" }
   $inventory = @(tar.exe -tzf $archive)
-  if ($LASTEXITCODE -ne 0 -or $inventory.Count -ne 3 -or -not ($inventory -ccontains "pnport.exe") -or -not ($inventory -ccontains "pnport_preload.dll") -or -not ($inventory -ccontains "LICENSE")) { throw "[install.pnport] invalid native archive inventory" }
+  $nativeFiles = @("pnport.exe", "pnport_preload.dll", "LICENSE", "LICENSE.fspy", "LICENSE.detours")
+  if ($LASTEXITCODE -ne 0 -or $inventory.Count -ne $nativeFiles.Count -or @($nativeFiles | Where-Object { $inventory -cnotcontains $_ }).Count -ne 0) { throw "[install.pnport] invalid native archive inventory" }
   tar.exe -xzf $archive -C $temporary
   if ($LASTEXITCODE -ne 0) { throw "[install.pnport] archive extraction failed" }
   $executable = Join-Path $temporary "pnport.exe"
@@ -63,9 +65,9 @@ try {
   $destination = Join-Path $versions $Version
   $stage = Join-Path $versions (".stage-" + [guid]::NewGuid().ToString("N"))
   New-Item -Path $stage -ItemType Directory | Out-Null
-  Copy-Item -LiteralPath $executable,$preload,(Join-Path $temporary "LICENSE") -Destination $stage
+  foreach ($name in $nativeFiles) { Copy-Item -LiteralPath (Join-Path $temporary $name) -Destination $stage }
   if (Test-Path -LiteralPath $destination) {
-    foreach ($name in @("pnport.exe", "pnport_preload.dll", "LICENSE")) {
+    foreach ($name in $nativeFiles) {
       if ((Get-FileHash -LiteralPath (Join-Path $stage $name) -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath (Join-Path $destination $name) -Algorithm SHA256).Hash) { throw "[install.pnport] conflicting installed version" }
     }
   } else {

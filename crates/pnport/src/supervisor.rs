@@ -29,8 +29,7 @@ pub fn platform() -> Result<()> {
     )) {
         return Err(Error::new(
             Code::PnportUnsupportedOperation,
-            "This release supports macOS 15+ and glibc Linux on x64/arm64. Windows support is \
-             planned for pnport 0.2.0.",
+            "This build requires macOS 15+, glibc Linux, or Windows 10 22H2+ MSVC on x64/arm64.",
         ));
     }
     #[cfg(windows)]

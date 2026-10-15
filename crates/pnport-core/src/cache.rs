@@ -84,7 +84,7 @@ pub fn default_path() -> Result<PathBuf> {
 pub fn private_dir(path: &Path) -> Result<()> {
     #[cfg(windows)]
     {
-        return crate::windows::private_directory(path).map_err(|_| cache_error());
+        crate::windows::private_directory(path).map_err(|_| cache_error())
     }
     #[cfg(not(windows))]
     {

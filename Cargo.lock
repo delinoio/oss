@@ -7496,6 +7496,7 @@ dependencies = [
 name = "pnport"
 version = "0.1.2"
 dependencies = [
+ "cc",
  "clap",
  "core-foundation 0.10.1",
  "dirs",
