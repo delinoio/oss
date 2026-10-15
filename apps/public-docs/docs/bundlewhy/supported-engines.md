@@ -25,6 +25,12 @@ If the build uses a JavaScript minifier other than the default in the matrix, bu
 
 If minification is disabled, bundlewhy reports a confirmed configuration diagnostic and `BW_MINIFICATION_DISABLED`.
 
+## Name mangling setting
+
+For Vite, bundlewhy records whether the Oxc minifier mangles names. It reads the setting from the final output options of the analyzed build, after every plugin `outputOptions` hook ran, and shows it in the configuration summary as `build.rolldownOptions.output.minify.mangle` (`enabled` or `disabled`). Name mangling is disabled when the final `minify` option is `false`, `"dce-only"` or has no `mangle` step (for example `mangle: false` in your configuration, or a plugin that removes it), and when `build.minify` is `false`. With `build.minify: 'terser'` or `'esbuild'`, the Rolldown output option does not apply and the setting is `enabled`. When mangling is disabled, bundlewhy reports no `minifier/direct-eval-blocks-mangling` finding and marks name mangling not applicable. Rspack builds do not report this setting, so bundlewhy reads it as `enabled`.
+
+The Vite collector (adapter version `2`) writes this setting. Reports from earlier collector versions do not contain it and are read as `enabled`.
+
 ## The diagnostic build
 
 bundlewhy never substitutes another engine. The diagnostic build always uses your project's installed engine, with collection overrides:
