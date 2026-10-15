@@ -184,3 +184,61 @@ describe("initial route claim", () => {
     expect(readInitialRoute("server-a")?.surface).toBe(Surface.Inbox);
   });
 });
+
+describe("destination window initial route", () => {
+  const session = "018f0000-0000-7000-8000-000000000001";
+  const sidechat = "018f0000-0000-7000-8000-000000000002";
+
+  // The native host serializes these exact queries for a new product window
+  // (see destination_route.rs); the new renderer reads them before its first
+  // route read and restores them through its own authenticated reads.
+  const nativeQueries: [string, ProductRoute][] = [
+    ["?screen=sessions", { surface: Surface.Sessions }],
+    [
+      `?screen=sessions&session=${session}`,
+      { surface: Surface.Sessions, session },
+    ],
+    [
+      `?screen=sessions&session=${session}&sidechat=${sidechat}`,
+      { surface: Surface.Sessions, session, sidechat },
+    ],
+    [
+      `?screen=inbox&item=${session}`,
+      { surface: Surface.Inbox, item: session },
+    ],
+    [
+      `?screen=schedules&item=${session}`,
+      { surface: Surface.Schedules, item: session },
+    ],
+    [
+      `?screen=pull-requests&item=${session}`,
+      { surface: Surface.PullRequests, item: session },
+    ],
+    [
+      "?screen=settings&category=app-information",
+      { surface: Surface.Settings, category: SettingsCategory.AppInformation },
+    ],
+    [
+      "?screen=usage&tab=prices",
+      { surface: Surface.Usage, tab: UsageTab.Prices },
+    ],
+    ["?screen=search", { surface: Surface.Search }],
+  ];
+
+  for (const [query, route] of nativeQueries) {
+    it(`reads ${query.replace(/[0-9a-f-]{36}/g, "<id>")} as its typed route`, () => {
+      window.history.replaceState(null, "", `/index.html${query}`);
+      expect(readInitialRoute("scope")).toEqual(route);
+      // The renderer's serializer produces the same query the host supplies.
+      expect(serializeProductRoute(route, "")).toBe(query);
+    });
+  }
+
+  it("carries no state besides the route: unrelated parameters are absent", () => {
+    for (const [query] of nativeQueries) {
+      const keys = [...new URLSearchParams(query).keys()];
+      for (const key of keys)
+        expect(Object.values(ProductRouteParam)).toContain(key);
+    }
+  });
+});

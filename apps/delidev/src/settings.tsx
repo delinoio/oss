@@ -146,6 +146,8 @@ import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
+import { useDestinationDispatch } from "./destination-window";
+import { Surface } from "./surface";
 import { PairingGrant, type PairingAuthority } from "./pairing-grant";
 import {
   AccountSettings,
@@ -2285,6 +2287,7 @@ function SettingsVisit({
   useLocale();
   const closeDrawer = useCloseSidebarDrawer();
   const navigationIntent = useNavigationIntent();
+  const dispatch = useDestinationDispatch();
   const [searchRequest, setSearchRequest] = useState<SettingsSearchRequest>();
   // Only the original local desktop window supplies the Tailscale presentation
   // publisher; saved-server windows list no Tailscale category at all.
@@ -2426,7 +2429,13 @@ function SettingsVisit({
                       selection.category === category ? "page" : undefined
                     }
                     aria-pressed={selection.category === category}
-                    onClick={() => navigate(category)}
+                    onClick={(event) =>
+                      dispatch(
+                        event,
+                        { surface: Surface.Settings, category },
+                        () => navigate(category),
+                      )
+                    }
                   >
                     <SettingsIcon category={category} />
                     <span>{settingsCategories[category].label}</span>

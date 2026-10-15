@@ -7,6 +7,7 @@ use std::sync::{
 
 use delidev_desktop::{
     NativeFailure, SavedConnection, SavedConnectionState,
+    destination_route::{DestinationPhase, DestinationRoute, PendingDestinations},
     window_registry::{Entry, Role},
 };
 use tauri::{
@@ -28,6 +29,7 @@ const CLOSE_WINDOW: &str = "delidev-close-window";
 #[derive(Default)]
 pub struct WindowActions {
     stopping: AtomicBool,
+    destinations: PendingDestinations,
     tasks: Mutex<Vec<tauri::async_runtime::JoinHandle<()>>>,
 }
 
@@ -39,11 +41,19 @@ pub fn title(entry: &Entry, name: Option<&str>) -> String {
     }
 }
 
+/// Creates one admitted product window. `destination` is a validated initial
+/// route query ("?screen=...") that the new renderer reads before its first
+/// route read; it never selects the native document or grants authority.
 pub fn create(
     app: &AppHandle<CefRuntime>,
     profile: Option<SavedConnection>,
     initial: bool,
+    destination: Option<&str>,
 ) -> Result<WebviewWindow<CefRuntime>, NativeFailure> {
+    let entry_url = destination.map_or_else(
+        || "index.html".to_owned(),
+        |query| format!("index.html{query}"),
+    );
     let windows = app.state::<Arc<ProductWindows>>();
     let role = profile
         .as_ref()
@@ -96,14 +106,21 @@ pub fn create(
             let mut config = app.config().app.windows[0].clone();
             config.label = entry.label.clone();
             config.title = title(&entry, None);
+            if destination.is_some() {
+                config.url = WebviewUrl::App(entry_url.as_str().into());
+            }
             WebviewWindowBuilder::from_config(app, &config)?
         } else {
-            WebviewWindowBuilder::new(app, &entry.label, WebviewUrl::App("index.html".into()))
-                .title(title(&entry, profile.as_ref().map(|v| v.name.as_str())))
-                .inner_size(1280.0, 820.0)
-                .min_inner_size(960.0, 640.0)
-                .decorations(true)
-                .maximized(true)
+            WebviewWindowBuilder::new(
+                app,
+                &entry.label,
+                WebviewUrl::App(entry_url.as_str().into()),
+            )
+            .title(title(&entry, profile.as_ref().map(|v| v.name.as_str())))
+            .inner_size(1280.0, 820.0)
+            .min_inner_size(960.0, 640.0)
+            .decorations(true)
+            .maximized(true)
         };
         let saved = profile.is_some();
         builder
@@ -233,6 +250,7 @@ pub async fn create_on_loop(
     app: &AppHandle<CefRuntime>,
     profile: Option<SavedConnection>,
     source: Option<WindowAuthority>,
+    destination: Option<String>,
 ) -> Result<WebviewWindow<CefRuntime>, NativeFailure> {
     let capture_epoch = app
         .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
@@ -261,7 +279,7 @@ pub async fn create_on_loop(
         let result = source
             .as_ref()
             .map_or(Ok(()), |original| recheck_registered(&target, original))
-            .and_then(|()| create(&target, profile, false));
+            .and_then(|()| create(&target, profile, false, destination.as_deref()));
         if let Ok(window) = &result {
             let retained = {
                 let mut state = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -305,7 +323,9 @@ pub async fn show_local(
     {
         return show(&window);
     }
-    create_on_loop(app, None, Some(original)).await.map(|_| ())
+    create_on_loop(app, None, Some(original), None)
+        .await
+        .map(|_| ())
 }
 
 pub fn restore_recent(app: &AppHandle<CefRuntime>) {
@@ -458,7 +478,9 @@ fn enqueue_new(app: &AppHandle<CefRuntime>) {
             {
                 return Err(NativeFailure::Busy);
             }
-            create_on_loop(&app, profile, source).await.map(|_| ())
+            create_on_loop(&app, profile, source, None)
+                .await
+                .map(|_| ())
         }
         .await;
         if let Err(code) = result {
@@ -473,6 +495,114 @@ fn enqueue_new(app: &AppHandle<CefRuntime>) {
             }
         }
     }));
+}
+
+/// Opens one new product window at a typed destination for the invoking
+/// registered window. The caller is the IPC window itself, never the most
+/// recently focused window; its original Local/Saved authority is captured,
+/// rechecked after asynchronous work and rechecked again on the main thread
+/// before creation. The destination carries only closed route enums and
+/// canonical opaque IDs and is validated here independently of the renderer.
+#[tauri::command]
+pub async fn open_destination_window(
+    window: WebviewWindow<CefRuntime>,
+    app: AppHandle<CefRuntime>,
+    destination: DestinationRoute,
+) -> Result<(), NativeFailure> {
+    tracing::info!(operation = "destination_window", phase = ?DestinationPhase::Requested);
+    let result = open_destination(window, app, destination).await;
+    if let Err(code) = &result {
+        tracing::warn!(operation = "destination_window", phase = ?DestinationPhase::Failed, ?code);
+    }
+    result
+}
+
+async fn open_destination(
+    window: WebviewWindow<CefRuntime>,
+    app: AppHandle<CefRuntime>,
+    destination: DestinationRoute,
+) -> Result<(), NativeFailure> {
+    let query = destination.query()?;
+    let actions = Arc::clone(app.state::<Arc<WindowActions>>().inner());
+    let capture_epoch = app
+        .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+        .epoch();
+    if actions.stopping.load(Ordering::Acquire) {
+        return Err(NativeFailure::Stopped);
+    }
+    if !app
+        .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+        .allowed(capture_epoch)
+    {
+        return Err(NativeFailure::Busy);
+    }
+    let caller = window.clone();
+    let original = tauri::async_runtime::spawn_blocking(move || capture_authority(&caller))
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+    let admission = actions.destinations.admit(&format!(
+        "{}:{}",
+        original.entry.label, original.entry.instance
+    ))?;
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let worker = Arc::clone(&actions);
+    let task_app = app.clone();
+    // The task is owned by the shutdown fence: Quit stops and joins it, and
+    // a canceled renderer request cannot orphan a partially created window.
+    {
+        let mut tasks = actions.tasks.lock().unwrap_or_else(|e| e.into_inner());
+        if actions.stopping.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        tasks.retain(|task| !task.inner().is_finished());
+        tasks.push(tauri::async_runtime::spawn(async move {
+            let _admission = admission;
+            let result = async {
+                let profile = if let Some(expected) = &original.saved {
+                    let connector = Arc::clone(
+                        task_app.state::<Arc<delidev_desktop::Connector>>().inner(),
+                    );
+                    let id = expected.id.clone();
+                    let current =
+                        tauri::async_runtime::spawn_blocking(move || connector.inspect_saved(&id))
+                            .await
+                            .map_err(|_| NativeFailure::SidecarFailed)??;
+                    if !current.same_authority(expected) {
+                        return Err(NativeFailure::InvalidEvidence);
+                    }
+                    Some(current)
+                } else {
+                    None
+                };
+                let checked = original.clone();
+                let source = window.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    recheck_authority(&source, &checked)
+                })
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)??;
+                tracing::info!(operation = "destination_window", phase = ?DestinationPhase::Authorized);
+                if worker.stopping.load(Ordering::Acquire) {
+                    return Err(NativeFailure::Stopped);
+                }
+                if !task_app
+                    .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+                    .allowed(capture_epoch)
+                {
+                    return Err(NativeFailure::Busy);
+                }
+                create_on_loop(&task_app, profile, Some(original), Some(query))
+                    .await
+                    .map(|_| ())
+            }
+            .await;
+            if result.is_ok() {
+                tracing::info!(operation = "destination_window", phase = ?DestinationPhase::Created);
+            }
+            let _ = send.send(result);
+        }));
+    }
+    receive.await.map_err(|_| NativeFailure::Stopped)?
 }
 
 impl WindowActions {

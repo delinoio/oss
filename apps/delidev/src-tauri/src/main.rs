@@ -1641,7 +1641,7 @@ async fn open_connection(
             update_saved_label(&app, &windows, profile)?;
             return show(&existing);
         }
-        window_host::create_on_loop(&app, Some(profile), Some(original))
+        window_host::create_on_loop(&app, Some(profile), Some(original), None)
             .await
             .map(|_| ())
     }
@@ -2252,6 +2252,7 @@ fn run() -> Result<(), NativeFailure> {
                 saved_worker_proof,
                 saved_worker_control,
                 show_connection_manager,
+                window_host::open_destination_window,
                 begin_tray,
                 publish_tray,
                 read_tray_action,
@@ -2428,7 +2429,7 @@ fn run() -> Result<(), NativeFailure> {
             let result = (|| -> Result<(), NativeFailure> {
                 window_host::install_menu(app.handle())
                     .map_err(|_| NativeFailure::SidecarFailed)?;
-                window_host::create(app.handle(), None, true)?;
+                window_host::create(app.handle(), None, true, None)?;
                 if app.state::<Arc<TrayHost>>().install(app.handle()).is_err() {
                     tracing::warn!(
                         operation = "tray_install",

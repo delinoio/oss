@@ -36,6 +36,12 @@ import {
   type GetUsageSummaryRequest,
 } from "@delinoio/delidev-api-client";
 import { Usage } from "./usage";
+import {
+  fakeDestinationWindow,
+  primaryClick,
+} from "./destination-window-test-support";
+import { Surface } from "./surface";
+import { UsageTab } from "./usage-tab";
 import { priceIdentity } from "./pricing";
 import { i18n, SupportedLanguage } from "./localization";
 import { SidebarOutletProvider } from "./sidebar-context";
@@ -2044,4 +2050,25 @@ it("keeps duplicate numbering stable across reorder and updates labels on locale
     "Same session \u00b7 1",
   ]);
   await i18n.changeLanguage(SupportedLanguage.English);
+});
+
+it("opens a Usage tab in a new window on a primary modified click and keeps the selected tab here", async () => {
+  const destination = fakeDestinationWindow();
+  const f = fixture();
+  render(destination.wrap(f.view()));
+  await screen.findByText("Incomplete coverage");
+  const overview = screen.getByRole("tab", { name: "Overview" });
+  const history = screen.getByRole("tab", { name: "Usage history" });
+  expect(overview.getAttribute("aria-selected")).toBe("true");
+  fireEvent.click(history, primaryClick);
+  expect(destination.opened).toHaveBeenCalledExactlyOnceWith({
+    surface: Surface.Usage,
+    tab: UsageTab.History,
+  });
+  expect(overview.getAttribute("aria-selected")).toBe("true");
+  expect(history.getAttribute("aria-selected")).toBe("false");
+  // A plain click and a keyboard-style click select the tab in place.
+  fireEvent.click(history, { detail: 0, ctrlKey: true });
+  expect(history.getAttribute("aria-selected")).toBe("true");
+  expect(destination.opened).toHaveBeenCalledTimes(1);
 });

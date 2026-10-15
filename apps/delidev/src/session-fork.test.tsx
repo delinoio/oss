@@ -10,6 +10,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
@@ -26,6 +27,11 @@ import {
 } from "@delinoio/delidev-api-client";
 import { document, encode, object } from "./documents";
 import { ProductIdentityProvider } from "./product-identity-labels";
+import {
+  fakeDestinationWindow,
+  primaryClick,
+} from "./destination-window-test-support";
+import { Surface } from "./surface";
 import { MutationIntents } from "./mutation";
 import {
   SessionCreationAction,
@@ -616,21 +622,23 @@ it("retains exact fork retry and accepted job while navigation changes, publishi
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const view = (active: boolean) => (
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={client}>
-        <MutationIntents>
-          <SessionForkProvider openSession={open}>
-            {active ? (
-              <SessionForkAction source={source} />
-            ) : (
-              <p>Other conversation</p>
-            )}
-          </SessionForkProvider>
-        </MutationIntents>
-      </QueryClientProvider>
-    </TransportProvider>
-  );
+  const destination = fakeDestinationWindow();
+  const view = (active: boolean) =>
+    destination.wrap(
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <MutationIntents>
+            <SessionForkProvider openSession={open}>
+              {active ? (
+                <SessionForkAction source={source} />
+              ) : (
+                <p>Other conversation</p>
+              )}
+            </SessionForkProvider>
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
   const rendered = render(view(true));
   fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
   expect(
@@ -673,10 +681,44 @@ it("retains exact fork retry and accepted job while navigation changes, publishi
   await act(async () => {
     await client.invalidateQueries();
   });
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Open forked session" }),
+  const openFork = await screen.findByRole("button", {
+    name: "Open forked session",
+  });
+  // A primary modified click opens the child in a new window and leaves this
+  // window, the retained operation and its dialog unchanged.
+  fireEvent.click(openFork, primaryClick);
+  expect(destination.opened).toHaveBeenCalledExactlyOnceWith({
+    surface: Surface.Sessions,
+    session: child.id,
+  });
+  expect(open).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Open forked session" })).toBe(
+    openFork,
   );
+  // The dialog is modal, so a native rejection is presented inside it: the
+  // page behind it is inert and could not expose the notice or its dismissal.
+  destination.reject();
+  fireEvent.click(openFork, primaryClick);
+  const dialog = openFork.closest("dialog")!;
+  const notice = screen.getByText(
+    "The destination could not be opened in a new window. This window is unchanged.",
+  );
+  expect(notice.getAttribute("role")).toBe("alert");
+  expect(dialog.contains(notice)).toBe(true);
+  expect(
+    screen
+      .getAllByRole("alert")
+      .filter((alert) => alert.textContent === notice.textContent),
+  ).toHaveLength(1);
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Dismiss new window error" }),
+  );
+  expect(screen.queryByText(notice.textContent!)).toBeNull();
+  expect(open).not.toHaveBeenCalled();
+  destination.resolve();
+  fireEvent.click(openFork);
   await waitFor(() => expect(open).toHaveBeenCalledWith(child.id));
+  expect(destination.opened).toHaveBeenCalledTimes(2);
   expect(fork).toHaveBeenCalledTimes(2);
 });
 

@@ -35,6 +35,8 @@ import { JobState, OperationStatus } from "./jobs";
 import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
 import { useRetainedMutation } from "./mutation";
 import { ServiceProblem, Modal, Problem } from "./ui";
+import { useDestinationDispatch } from "./destination-window";
+import { Surface } from "./surface";
 import { SessionIcon, SessionIconKind } from "./session-presentation";
 import {
   useSessionTabsStore,
@@ -305,6 +307,7 @@ export function SessionForkProvider({
   sessionNavigationGeneration?: Readonly<{ current: number }>;
 }) {
   const productLabel = useProductLabels();
+  const dispatch = useDestinationDispatch();
   useLocale();
   const tabs = useSessionTabsStore();
   const [direct, setDirect] = useState<DirectSidechat>();
@@ -890,16 +893,28 @@ export function SessionForkProvider({
                   </p>
                 ) : (
                   <button
-                    onClick={() => {
-                      if (sidechat && source && openSidechat) {
-                        const parent = source.id;
-                        reset();
-                        openSidechat(parent, child);
-                      } else {
-                        reset();
-                        openSession(child.id);
-                      }
-                    }}
+                    onClick={(event) =>
+                      dispatch(
+                        event,
+                        sidechat && source && openSidechat
+                          ? {
+                              surface: Surface.Sessions,
+                              session: source.id,
+                              sidechat: child.id,
+                            }
+                          : { surface: Surface.Sessions, session: child.id },
+                        () => {
+                          if (sidechat && source && openSidechat) {
+                            const parent = source.id;
+                            reset();
+                            openSidechat(parent, child);
+                          } else {
+                            reset();
+                            openSession(child.id);
+                          }
+                        },
+                      )
+                    }
                   >
                     {copy("session-fork.openForkedSession_0a254e")}
                   </button>
