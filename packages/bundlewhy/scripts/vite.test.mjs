@@ -170,6 +170,48 @@ test("Vite diagnostic keeps an absolute root outside the selected project", (t) 
   assert.ok(!fs.existsSync(path.join(externalRoot, "dist")));
 });
 
+test("Vite protection is announced before configResolved hooks run", (t) => {
+  const { work, projectRoot } = makeProject(t);
+  const externalRoot = path.join(work, "external");
+  writeEntry(externalRoot, "external-entry");
+  fs.writeFileSync(
+    path.join(externalRoot, "package.json"),
+    JSON.stringify({ name: "before-hook" }),
+  );
+  const configFile = path.join(projectRoot, "vite.config.js");
+  fs.writeFileSync(
+    configFile,
+    `import fs from "node:fs";
+export default {
+  root: ${JSON.stringify(externalRoot)},
+  plugins: [{
+    name: "mutate-protected-root",
+    configResolved() {
+      fs.writeFileSync(${JSON.stringify(path.join(externalRoot, "package.json"))}, JSON.stringify({ name: "after-hook" }));
+    },
+  }],
+};
+`,
+  );
+
+  const { events } = runDiagnostic(work, projectRoot, configFile);
+  const protectionIndex = events.findIndex(
+    (event) => event.event === "protection",
+  );
+  const buildingIndex = events.findIndex(
+    (event) => event.event === "progress" && event.stage === "building",
+  );
+  assert.ok(protectionIndex >= 0);
+  assert.ok(buildingIndex >= 0);
+  assert.ok(protectionIndex < buildingIndex);
+  assert.deepEqual(
+    JSON.parse(
+      fs.readFileSync(path.join(externalRoot, "package.json"), "utf8"),
+    ),
+    { name: "after-hook" },
+  );
+});
+
 test("Vite diagnostic falls back to the selected project root", (t) => {
   const { work, projectRoot } = makeProject(t);
   writeEntry(projectRoot, "project-entry");

@@ -98,7 +98,6 @@ function collectorPlugin(state) {
         config.root,
         config.resolve?.preserveSymlinks === true,
       );
-      emit({ event: "protection", root: state.root });
       const treeshakeOption =
         config.build.rolldownOptions?.treeshake ??
         config.build.rollupOptions?.treeshake;
@@ -277,6 +276,20 @@ await runAdapter(async (request) => {
       );
     }
   }
+
+  // Capture protected project inputs before Vite invokes user plugin hooks.
+  // configResolved runs in parallel with user hooks, so announcing the root
+  // from that hook can snapshot files after a plugin has changed them.
+  const configuredRoot =
+    typeof userConfig.root === "string" ? userConfig.root : request.projectRoot;
+  const root = path.isAbsolute(configuredRoot)
+    ? configuredRoot
+    : path.resolve(request.projectRoot, configuredRoot);
+  state.root = normalizeCollectionRoot(
+    root,
+    userConfig.resolve?.preserveSymlinks === true,
+  );
+  emit({ event: "protection", root: state.root });
 
   progress("building", `Running vite build with Vite ${vite.version}`);
   try {
