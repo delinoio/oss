@@ -381,7 +381,10 @@ const provider = create(ResourceSchema, {
     name: apiUsage ? "OpenRouter" : "Fixture provider",
     enabled: true,
     endpoint: "http://127.0.0.1:11434/v1",
-    protocol: "openai-chat",
+    protocol:
+      hiddenWorkerChoices || args.get("codexCompatibleAccounts") === "true"
+        ? "openai-responses"
+        : "openai-chat",
     authentication: "keyless",
     discovery: false,
   }),
@@ -480,7 +483,7 @@ const records = populated
         create(ResourceSchema, {
           id: newRequestId(),
           kind,
-          schemaVersion: 1,
+          schemaVersion: kind === EntityKind.AGENT ? 4 : 1,
           revision: 1n,
           documentJson: encode({
             name:
@@ -493,7 +496,20 @@ const records = populated
             contents:
               "Complete fixture instruction text.\nSecond line retained.",
             repositories: [],
-            accounts: [],
+            ...(kind === EntityKind.AGENT
+              ? {
+                  routes: [
+                    {
+                      model: {
+                        subscription_service: "chatgpt",
+                        native_id: "fixture-model",
+                      },
+                      accounts: [{ id: subscription.id, weight: 1 }],
+                    },
+                  ],
+                  options: { permission: "default" },
+                }
+              : { accounts: [] }),
             templates: [],
           }),
         }),
@@ -1208,7 +1224,7 @@ const fixtureTransport = createRouterTransport((router) => {
   router.service(SystemService, {
     getStatus: () => ({
       serverId,
-      protocolVersion: 1,
+      protocolVersion: 2,
       capabilities: [
         ...(networkFixture
           ? [
@@ -1228,6 +1244,7 @@ const fixtureTransport = createRouterTransport((router) => {
             ]
           : []),
         SystemCapability.AGENT_WORKER_WIZARD_V1,
+        SystemCapability.INLINE_WORKER_MODELS_V1,
         ...(args.get("sourceRoutes") === "true"
           ? [SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]
           : []),
