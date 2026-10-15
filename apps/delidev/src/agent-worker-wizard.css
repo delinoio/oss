@@ -24,23 +24,58 @@
 .worker-steps li {
   display: flex;
   align-items: center;
-  gap: 8px;
   color: var(--muted);
 }
-.worker-steps li > span:first-child {
-  border: 1px solid var(--border);
+/* One target holds the number and label: a button for the current and visited
+   steps, a plain span for unvisited steps. */
+.worker-steps .worker-step-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+.worker-steps button.worker-step-target {
+  min-height: 36px;
+  /* Negative margins grow the hit area without changing the strip layout. */
+  margin: -4px -8px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.worker-steps button.worker-step-target:hover:not(:disabled) {
+  background: var(--selected-background);
+}
+.worker-steps button.worker-step-target:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.worker-steps button.worker-step-target:disabled {
+  cursor: default;
+}
+.worker-steps .wizard-step-number {
+  border: 1px solid var(--control-border);
   border-radius: 50%;
   width: 28px;
   height: 28px;
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
-.worker-steps li[aria-current="step"] {
-  color: var(--selected-text);
+.worker-steps li[data-current="true"] {
+  color: var(--text);
   font-weight: 600;
 }
-.worker-steps li[aria-current="step"] > span:first-child {
+.worker-steps li[data-current="true"] .wizard-step-number {
   background: var(--accent);
   color: var(--on-accent);
   border-color: var(--accent);

@@ -12,6 +12,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
@@ -858,4 +859,301 @@ it("suppresses the step entrance when Animation is Off and settles it mid-flight
     await Promise.resolve();
   });
   expect(heading.getAttribute("data-entrance")).toBeNull();
+});
+
+// Stepper selection. Rows of the contract state table are named in each test:
+// target unvisited, target is the current step, target before the current
+// step, target after the current step with passing or failing validation,
+// blocked save, inactive wizard, and visited-limit clamping.
+const stepper = () =>
+  within(screen.getByRole("list", { name: "Worker configuration steps" }));
+const stepButton = (name: string) =>
+  stepper().getByRole("button", { name }) as HTMLButtonElement;
+const stepButtons = () =>
+  stepper()
+    .queryAllByRole("button")
+    .map((button) => button.textContent!.replace(/^\d/, ""));
+const currentStepName = () =>
+  stepper()
+    .getAllByRole("button")
+    .find((button) => button.getAttribute("aria-current") === "step")
+    ?.textContent?.replace(/^\d/, "");
+const sideEffectFree = (f: ReturnType<typeof fixture>) => {
+  expect(f.save).not.toHaveBeenCalled();
+  expect(f.endpoint).not.toHaveBeenCalled();
+  expect(f.known).not.toHaveBeenCalled();
+};
+
+it("renders only the opening step as a button and keeps later steps inactive", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findByRole("radio", { name: "Codex" });
+  expect(stepButtons()).toEqual(["Harness"]);
+  expect(stepButton("Harness").getAttribute("aria-current")).toBe("step");
+  expect(stepButton("Harness").type).toBe("button");
+  const items = stepper().getAllByRole("listitem");
+  expect(items).toHaveLength(4);
+  for (const label of ["Accounts", "Model", "Configure"]) {
+    const item = items.find((node) => node.textContent?.endsWith(label))!;
+    // Unvisited steps expose no button, tab stop or press handler target.
+    expect(item.querySelector("button, a, [tabindex]")).toBeNull();
+    fireEvent.click(item);
+  }
+  expect(stepHeading("Harness")).toBeTruthy();
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  expect(stepButtons()).toEqual(["Harness", "Accounts"]);
+  expect(currentStepName()).toBe("Accounts");
+  // Clicking an unvisited item does not change the step.
+  fireEvent.click(
+    stepper()
+      .getAllByRole("listitem")
+      .find((node) => node.textContent?.endsWith("Model"))!,
+  );
+  expect(stepHeading("Accounts")).toBeTruthy();
+  sideEffectFree(f);
+});
+
+it("moves among current and visited steps, focuses the heading and keeps drafts", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  fireEvent.change(input, { target: { value: "typed-exact" } });
+  const heading = stepHeading("Model");
+  settleEntrance(heading);
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
+  expect(currentStepName()).toBe("Model");
+  // Target before the current step, by keyboard focus then activation.
+  const accountsButton = stepButton("Accounts");
+  accountsButton.focus();
+  expect(globalThis.document.activeElement).toBe(accountsButton);
+  expect(accountsButton.tabIndex).toBe(0);
+  fireEvent.click(accountsButton);
+  expect(stepHeading("Accounts")).toBe(heading);
+  expect(globalThis.document.activeElement).toBe(heading);
+  expect(heading.getAttribute("data-entrance")).toBe("y4");
+  settleEntrance(heading);
+  expect(selectedAccountNames()).toHaveLength(1);
+  expect(currentStepName()).toBe("Accounts");
+  // Back to Harness keeps the confirmed harness and later visits.
+  fireEvent.click(stepButton("Harness"));
+  expect(stepHeading("Harness")).toBe(heading);
+  expect(globalThis.document.activeElement).toBe(heading);
+  expect(
+    (screen.getByRole("radio", { name: "Codex" }) as HTMLInputElement)
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
+  settleEntrance(heading);
+  // Forward over a visited step re-runs validation, passes and keeps the draft.
+  fireEvent.click(stepButton("Model"));
+  expect(stepHeading("Model")).toBe(heading);
+  expect(globalThis.document.activeElement).toBe(heading);
+  expect(
+    (screen.getByRole("combobox", { name: /^Model for / }) as HTMLInputElement)
+      .value,
+  ).toBe("typed-exact");
+  settleEntrance(heading);
+  // The current step refocuses the heading without replaying the entrance.
+  screen.getByRole("combobox", { name: /^Model for / }).focus();
+  fireEvent.click(stepButton("Model"));
+  expect(globalThis.document.activeElement).toBe(heading);
+  expect(heading.getAttribute("data-entrance")).toBeNull();
+  expect(currentStepName()).toBe("Model");
+  sideEffectFree(f);
+});
+
+it("routes a blocked forward step to the first invalid earlier stage and control", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  await configure(input);
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model", "Configure"]);
+  // Invalid Model draft: Configure is blocked and Model is shown with focus.
+  fireEvent.click(stepButton("Model"));
+  fireEvent.change(screen.getByRole("combobox", { name: /^Model for / }), {
+    target: { value: "x".repeat(257) },
+  });
+  fireEvent.click(stepButton("Accounts"));
+  expect(stepHeading("Accounts")).toBeTruthy();
+  const heading = stepHeading("Accounts");
+  settleEntrance(heading);
+  fireEvent.click(stepButton("Configure"));
+  expect(stepHeading("Model")).toBe(heading);
+  expect(heading.getAttribute("data-entrance")).toBeNull();
+  expect(screen.getByRole("alert").textContent).not.toBe("");
+  expect(globalThis.document.activeElement).toBe(
+    screen.getByRole("combobox", { name: /^Model for / }),
+  );
+  expect(currentStepName()).toBe("Model");
+  // Invalid Accounts draft: the first invalid stage is Accounts.
+  fireEvent.click(stepButton("Accounts"));
+  fireEvent.click(
+    screen.getAllByRole("checkbox", { checked: true })[0] as HTMLElement,
+  );
+  await screen.findAllByRole("checkbox", { checked: false });
+  await act(async () => {});
+  fireEvent.click(stepButton("Model"));
+  expect(stepHeading("Accounts")).toBe(heading);
+  const control = globalThis.document.activeElement as HTMLElement;
+  expect(control.getAttribute("data-wizard-field")).toBeTruthy();
+  expect(screen.getByRole("alert")).toBeTruthy();
+  expect(currentStepName()).toBe("Accounts");
+  sideEffectFree(f);
+});
+
+it("clamps the visited limit when the harness changes", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f);
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
+  fireEvent.click(stepButton("Harness"));
+  // Keyboard selection of a different harness clears dependent choices.
+  const codex = screen.getByRole("radio", { name: "Codex" });
+  codex.focus();
+  fireEvent.keyDown(codex, { key: "ArrowRight" });
+  expect(stepButtons()).toEqual(["Harness"]);
+  expect(screen.queryByRole("checkbox", { checked: true })).toBeNull();
+  // Confirming reopens only Accounts.
+  fireEvent.click(screen.getByRole("radio", { name: "Claude Code" }));
+  expect(stepButtons()).toEqual(["Harness", "Accounts"]);
+  expect(currentStepName()).toBe("Accounts");
+  sideEffectFree(f);
+});
+
+it("keeps the visited limit when the same harness is confirmed again", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f);
+  fireEvent.click(stepButton("Harness"));
+  fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
+  expect(currentStepName()).toBe("Accounts");
+  sideEffectFree(f);
+});
+
+it("clamps the visited limit when an account source changes or a source is added", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f);
+  fireEvent.click(stepButton("Accounts"));
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
+  await chooseScrollOption(
+    screen.getByRole("combobox", { name: "Account source 1" }),
+    "subscription:chatgpt",
+  );
+  expect(stepButtons()).toEqual(["Harness", "Accounts"]);
+  // Reach Model again, then add a source.
+  fireEvent.click(
+    await screen.findByRole("checkbox", { name: /Original subscription/ }),
+  );
+  await waitFor(() =>
+    expect(
+      f.client
+        .getQueryCache()
+        .getAll()
+        .some(
+          (q) =>
+            (q.state.data as { resource?: Resource } | undefined)?.resource
+              ?.id === f.subscription.id &&
+            q.state.status === "success" &&
+            q.state.fetchStatus === "idle",
+        ),
+    ).toBe(true),
+  );
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("heading", { name: "Model", level: 3 });
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
+  fireEvent.click(stepButton("Accounts"));
+  fireEvent.click(screen.getByRole("button", { name: /Add account source/ }));
+  expect(stepButtons()).toEqual(["Harness", "Accounts"]);
+  // Model entry on a subscription source reads the known catalog itself.
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("ignores stepper selection while a save is pending", async () => {
+  const f = fixture();
+  f.save.mockImplementationOnce(() => new Promise(() => {}));
+  render(f.view());
+  const input = await accounts(f);
+  await configure(input);
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  for (const name of ["Harness", "Accounts", "Model", "Configure"]) {
+    expect(stepButton(name).disabled).toBe(true);
+    fireEvent.click(stepButton(name));
+  }
+  expect(stepHeading("Configure")).toBeTruthy();
+  expect(f.save).toHaveBeenCalledTimes(1);
+});
+
+it("ignores stepper selection while a save is uncertain", async () => {
+  const f = fixture();
+  f.save.mockRejectedValueOnce(
+    new ConnectError("Lost receipt", Code.Unavailable),
+  );
+  render(f.view());
+  const input = await accounts(f);
+  await configure(input);
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await screen.findByRole("button", { name: "Retry the same Worker save" });
+  for (const name of ["Harness", "Accounts", "Model", "Configure"]) {
+    expect(stepButton(name).disabled).toBe(true);
+    fireEvent.click(stepButton(name));
+  }
+  expect(stepHeading("Configure")).toBeTruthy();
+  expect(f.save).toHaveBeenCalledTimes(1);
+});
+
+it("disables stepper buttons while the wizard is inactive", async () => {
+  const f = fixture();
+  const view = render(f.view());
+  await accounts(f);
+  view.rerender(f.view(false));
+  for (const name of ["Harness", "Accounts", "Model"]) {
+    expect(stepButton(name).disabled).toBe(true);
+    fireEvent.click(stepButton(name));
+  }
+  expect(stepHeading("Model")).toBeTruthy();
+  view.rerender(f.view());
+  expect(stepButton("Harness").disabled).toBe(false);
+  sideEffectFree(f);
+});
+
+it("starts an edit with only the Harness step visited", async () => {
+  const f = fixture();
+  const first = render(f.view());
+  const model = await accounts(f);
+  await configure(model);
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  const { resource } = await f.save.mock.results[0]!.value;
+  first.unmount();
+  render(f.view(true, resource));
+  await screen.findByRole("radio", { name: "Codex" });
+  expect(stepButtons()).toEqual(["Harness"]);
+  expect(currentStepName()).toBe("Harness");
+});
+
+it("keeps four localized labels as buttons and plain items in Korean", async () => {
+  const { i18n } = await import("./localization");
+  const f = fixture();
+  render(f.view());
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  try {
+    await act(() => i18n.changeLanguage("ko"));
+    const list = within(screen.getByRole("list", { name: "워커 구성 단계" }));
+    expect(list.getAllByRole("listitem")).toHaveLength(4);
+    expect(
+      list.getAllByRole("button").map((b) => b.textContent!.replace(/^\d/, "")),
+    ).toEqual(["하네스", "계정"]);
+    expect(
+      list.getAllByRole("listitem").map((n) => n.textContent!.replace(/^\d/, "")),
+    ).toEqual(["하네스", "계정", "모델", "구성"]);
+    expect(
+      list.getByRole("button", { name: "계정" }).getAttribute("aria-current"),
+    ).toBe("step");
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+  }
 });
