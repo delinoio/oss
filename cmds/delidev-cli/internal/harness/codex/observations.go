@@ -23,6 +23,7 @@ const (
 	NativeGoalAbsent                 MetadataKind = "native-goal-absent"
 	ModelVerificationAbsent          MetadataKind = "model-verification-absent"
 	CodexAppsStartupObserved         MetadataKind = "codex-apps-startup-observed"
+	MCPStartupObserved               MetadataKind = "mcp-startup-observed"
 	SkillsChangedDiscarded           MetadataKind = "skills-changed-discarded"
 	FilesystemChangedDiscarded       MetadataKind = "filesystem-changed-discarded"
 	FuzzySearchDiscarded             MetadataKind = "fuzzy-search-discarded"
@@ -153,13 +154,22 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 		default:
 			return Event{}, incompatible()
 		}
-		// Official Codex injects this connector for ChatGPT accounts. Its passive
-		// startup status is independent of account authentication and tool calls;
-		// preserve the dedicated boundaries for all other MCP activity.
-		if c.managedHome == "" || params.Name != "codex_apps" || params.ThreadID == nil || *params.ThreadID != c.thread {
+		// Project configuration can start MCP servers before an ordinary ChatGPT
+		// turn. Their status is passive metadata, not a tool call or account
+		// authentication result. Keep isolated profiles and foreign threads private.
+		if c.managedHome == "" || params.ThreadID == nil || *params.ThreadID != c.thread {
 			return privateNative(native), nil
 		}
-		return c.metadata(CodexAppsStartupObserved), nil
+		if params.Name == "codex_apps" {
+			return c.metadata(CodexAppsStartupObserved), nil
+		}
+		if c.managedTitle || c.sidechat != "" || c.modelObservation != "" {
+			return privateNative(native), nil
+		}
+		if c.logger != nil {
+			c.logger.Info("Codex passive MCP startup observed", "owner_id", c.ownerID, "status", params.Status, "has_error", params.Error != nil)
+		}
+		return c.metadata(MCPStartupObserved), nil
 	case "model/verification", "model/safetyBuffering/updated", "turn/moderationMetadata", "model/rerouted":
 		return c.observeSafetyLocked(native)
 	case "thread/goal/cleared":
