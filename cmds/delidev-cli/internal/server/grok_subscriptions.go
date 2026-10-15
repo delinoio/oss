@@ -199,10 +199,19 @@ func (s *Service) grokStaleLease(l *domain.SubscriptionLease) bool {
 }
 
 // grokHealthAfterStaleRelease is the health an account returns to once its stale
-// lease is released and the fence is cleared.
+// lease is released and the fence is cleared. The operation that queued behind
+// the lease decides it, whichever way the restart or a client revocation settled
+// it:
+//
+//	operation queued behind the lease   | settled as | health after the release
+//	logout                              | failed     | revoked (the accepted logout stands)
+//	logout                              | canceled   | revoked (a revoked initiator never undoes the accepted logout)
+//	refresh                             | failed     | the health it was admitted under
+//	refresh                             | canceled   | the health it was admitted under
+//	none, or any other state or epoch   | any        | ready
 func grokHealthAfterStaleRelease(st *domain.SubscriptionState, lease domain.SubscriptionLease) domain.AccountHealth {
 	o := st.ServerOperation
-	if o != nil && o.Epoch == lease.Epoch && o.State == domain.SubscriptionFailed && (o.Action == domain.SubscriptionLogout || o.Action == domain.SubscriptionRefresh) {
+	if o != nil && o.Epoch == lease.Epoch && (o.State == domain.SubscriptionFailed || o.State == domain.SubscriptionCanceled) && (o.Action == domain.SubscriptionLogout || o.Action == domain.SubscriptionRefresh) {
 		return grokHealthAfterQueuedFence(*o)
 	}
 	return domain.AccountReady
