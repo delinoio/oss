@@ -183,6 +183,10 @@ const BINARY_ASSET_EXTENSIONS: &[&str] = &[
     "otf", "eot", "mp3", "mp4", "webm", "ogg", "wav", "flac", "aac", "pdf",
 ];
 
+/// Text assets that Vite imports as URL modules by default. Their file text
+/// is not the JavaScript module executed by the browser.
+const TEXT_ASSET_EXTENSIONS: &[&str] = &["svg"];
+
 /// Import query keys after which Vite turns a file into a string module: the
 /// file URL (`?url`, `?no-inline`), the inlined data URL (`?inline`) or the
 /// file text (`?raw`).
@@ -243,6 +247,13 @@ fn is_asset_module_path(path: &str) -> bool {
     has_asset_query(path)
         || extension_of(path)
             .is_none_or(|extension| !SCRIPT_EXTENSIONS.contains(&extension.as_str()))
+}
+
+fn is_known_asset_path(path: &str) -> bool {
+    has_asset_query(path)
+        || is_binary_asset_path(path)
+        || extension_of(path)
+            .is_some_and(|extension| TEXT_ASSET_EXTENSIONS.contains(&extension.as_str()))
 }
 
 /// True when `snapshot` is the module code a bundler generated for an imported
@@ -438,6 +449,10 @@ impl SourceStore {
                 derived,
             ),
             (None, LiveRead::Bytes(bytes)) => match as_text(&bytes) {
+                Some(_) if is_known_asset_path(&classified.display) => {
+                    tracing::debug!(path = %classified.display, "asset source has no build snapshot; retaining existence only");
+                    (None, String::new(), false, true)
+                }
                 Some(_) => {
                     tracing::debug!(path = %classified.display, "live source has no build snapshot");
                     self.readable_without_snapshot
@@ -768,6 +783,24 @@ mod tests {
         let second = store.add_file(dir.path(), &file).unwrap();
         assert_eq!(second.0, first.0);
         assert!(store.unverified.is_empty());
+    }
+
+    #[test]
+    fn text_assets_without_snapshots_do_not_create_detector_coverage_gaps() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["logo.svg", "source.js?raw", "source.js?url"] {
+            let file = dir.path().join(name);
+            let backing = filesystem_path(&file);
+            std::fs::write(&backing, "eval('not executable as imported')").unwrap();
+            let mut store = SourceStore::new(true);
+            let (id, content) = store.add_file(dir.path(), &file).unwrap();
+            assert!(content.is_none(), "{name}");
+            assert!(store.unverified.is_empty(), "{name}");
+            store.add_file(dir.path(), &file).unwrap();
+            assert!(store.unverified.is_empty(), "{name}");
+            assert!(store.readable_without_snapshot.is_empty(), "{name}");
+            assert!(store.existence_relative.contains_key(&id), "{name}");
+        }
     }
 
     #[cfg(unix)]
