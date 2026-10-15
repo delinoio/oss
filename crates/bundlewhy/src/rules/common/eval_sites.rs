@@ -56,6 +56,7 @@ pub(super) fn classify_eval_sites(source: &str, ignored: &[(usize, usize)]) -> V
         stack: vec![Frame::new(FrameKind::Block, TypeMode::None, false)],
         sites: Vec::new(),
         closing_tags: closing_tags(&tokens),
+        closed_operand: None,
     };
     for index in 0..tokens.len() {
         scanner.step(index);
@@ -577,6 +578,9 @@ struct Scanner<'a> {
     /// Token index of every `</name` by the first word of its name; a closing
     /// fragment `</>` is listed under the empty name.
     closing_tags: HashMap<&'a str, Vec<usize>>,
+    /// Index of the `>` that ended a whole JSX element in code. Such a `>`
+    /// ends an operand, not a comparison operator.
+    closed_operand: Option<usize>,
 }
 
 /// The longest JSX tag, in tokens, whose end is searched for.
@@ -655,9 +659,9 @@ impl<'a> Scanner<'a> {
     /// the expression.
     fn apply_line_break(&mut self, index: usize) {
         let token = self.token(index);
-        let Some(previous) = self.previous(index) else {
+        if index == 0 {
             return;
-        };
+        }
         let top = self.top();
         if !token.line_break_before
             || !matches!(
@@ -667,9 +671,24 @@ impl<'a> Scanner<'a> {
         {
             return;
         }
-        if !continues_after(&previous, top.in_type()) && !continues_before(&token) {
+        if !self.continues_after_previous(index, top.in_type()) && !continues_before(&token) {
             self.top_mut().start_statement();
         }
+    }
+
+    /// Reports whether the token before `index` needs an operand after it, so
+    /// a line break does not end the member or statement. Two tokens look
+    /// like operators but end an operand here: a `>` that closes a type
+    /// argument list in a type and a `>` that ends a JSX element.
+    fn continues_after_previous(&self, index: usize, in_type: bool) -> bool {
+        let previous = self.tokens[index - 1];
+        if self.closed_operand == Some(index - 1) {
+            return false;
+        }
+        if in_type && previous.is_punct(">") {
+            return false;
+        }
+        continues_after(&previous, in_type)
     }
 
     /// Counts `token` in the current statement and returns how many tokens
@@ -1121,6 +1140,7 @@ impl<'a> Scanner<'a> {
                 .previous(index)
                 .is_some_and(|previous| previous.is_punct("/"));
         if self_closing {
+            self.mark_closed_element(index);
             return;
         }
         if !tag.jsx_closing {
@@ -1143,6 +1163,16 @@ impl<'a> Scanner<'a> {
         }
         if let Some(position) = found {
             self.stack.truncate(position);
+            self.mark_closed_element(index);
+        }
+    }
+
+    /// Records the `>` at `index` as the end of an operand when no JSX tag or
+    /// element encloses it, that is, when the element it ends is a whole
+    /// expression in code.
+    fn mark_closed_element(&mut self, index: usize) {
+        if !matches!(self.top().kind, FrameKind::JsxChildren | FrameKind::JsxTag) {
+            self.closed_operand = Some(index);
         }
     }
 
@@ -1881,6 +1911,55 @@ mod tests {
                 "type X = { eval(value: string): void }; eval(code)",
                 &[SIGNATURE, CALL],
             ),
+        ]);
+    }
+
+    #[test]
+    fn closing_angles_end_a_member() {
+        assert_table(&[
+            // A `>` that closes type arguments in a type ends the member.
+            (
+                "interface X { run(): Promise<void>\n eval(x: string): void }",
+                &[SIGNATURE],
+            ),
+            (
+                "interface X { run(): Map<string, Set<number>>\n eval(x: string): void }",
+                &[SIGNATURE],
+            ),
+            (
+                "type X = { run(): Promise<void>\n eval(x: string): void }",
+                &[SIGNATURE],
+            ),
+            (
+                "class C { value: Promise<void>\n eval(x) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "class C { run(): Promise<void>\n eval(x) {} }",
+                &[DECLARATION],
+            ),
+            // A `>` that ends a JSX element in code ends the field.
+            ("class C { view = <div />\n eval(x) {} }", &[DECLARATION]),
+            (
+                "class C { view = <div>text</div>\n eval(x) {} }",
+                &[DECLARATION],
+            ),
+            ("class C { view = <><b /></>\n eval(x) {} }", &[DECLARATION]),
+            (
+                "class C { view = <a><b /></a>\n eval(x) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "class C { view = <a b={<i />}>x</a>\n eval(x) {} }",
+                &[DECLARATION],
+            ),
+            // A comparison `>` still needs an operand.
+            ("class C { value = a >\n eval(code) }", &[CALL]),
+            ("class C { value = a <\n eval(code) }", &[CALL]),
+            ("class C { value = a !=\n eval(code) }", &[CALL]),
+            ("class C { value = a >=\n eval(code) }", &[CALL]),
+            // Other statements keep their reading.
+            ("const v = <a />\neval(code)", &[CALL]),
         ]);
     }
 
