@@ -76,6 +76,26 @@ impl MinifyOverride {
     pub fn by_hook(self) -> bool {
         matches!(self, Self::OutputHookDisabled | Self::OutputHookDceOnly)
     }
+
+    /// The corrective action for an output option or hook that turned the
+    /// minifier off, shared by the finding and the run problem. `None` when
+    /// `build.minify` or the engine configuration decided.
+    pub fn direction(self) -> Option<&'static str> {
+        match (self, self.by_hook(), self.dce_only()) {
+            (Self::None, _, _) => None,
+            (_, true, true) => Some(
+                "Remove the plugin outputOptions change that limits minify to dead-code \
+                 elimination, or enable it for production builds.",
+            ),
+            (_, true, false) => Some(
+                "Remove the plugin outputOptions change that disables minify, or enable it for \
+                 production builds.",
+            ),
+            (_, false, _) => Some(
+                "Remove build.rolldownOptions.output.minify or enable it for production builds.",
+            ),
+        }
+    }
 }
 
 /// Whether the minifier mangles names for the analyzed output.

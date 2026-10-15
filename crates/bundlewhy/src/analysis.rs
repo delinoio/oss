@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     chunks::{Chunk, measure},
-    collect::{Collection, ManglingSetting},
+    collect::{Collection, ManglingSetting, MinifyOverride},
     engine::BundlerChoice,
     error::{ErrorCode, problem},
     model::{
@@ -131,6 +131,35 @@ pub fn engine_identity(bundler: BundlerChoice, collection: &Collection) -> Engin
         ),
         overrides: collection.overrides.clone(),
     }
+}
+
+/// The message and recovery of the run problem for disabled minification. An
+/// output option or a plugin hook that turned the minifier off is named, so the
+/// recovery never tells the project to enable a `build.minify` that is on.
+fn minification_disabled_problem(override_kind: MinifyOverride) -> (String, String) {
+    let Some(direction) = override_kind.direction() else {
+        return (
+            "JavaScript minification is disabled in the selected configuration".to_owned(),
+            "Enable minification for production builds to analyze minifier optimizations."
+                .to_owned(),
+        );
+    };
+    let value = if override_kind.dce_only() {
+        "\"dce-only\""
+    } else {
+        "false"
+    };
+    let cause = if override_kind.by_hook() {
+        format!("A plugin outputOptions hook set the final output minify option to {value}")
+    } else {
+        format!("build.rolldownOptions.output.minify is {value}")
+    };
+    let effect = if override_kind.dce_only() {
+        "compression and name mangling do not run; Rolldown still removes dead code in this mode"
+    } else {
+        "minification does not run although build.minify enables it"
+    };
+    (format!("{cause}, so {effect}"), direction.to_owned())
 }
 
 fn coverage(
@@ -369,11 +398,12 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         ));
     }
     if !collection.minify_enabled {
+        let (message, recovery) = minification_disabled_problem(collection.minify_override);
         problems.push(problem(
             ErrorCode::MinificationDisabled,
             ProblemSeverity::Warning,
-            "JavaScript minification is disabled in the selected configuration",
-            "Enable minification for production builds to analyze minifier optimizations.",
+            message,
+            recovery,
         ));
     }
 
@@ -2794,6 +2824,91 @@ mod tests {
                 "{override_kind}"
             );
         }
+    }
+
+    #[test]
+    fn output_minify_overrides_are_attributed_in_the_run_problem() {
+        // (collection value, cause named in the message, value text, whether
+        // the message says that dead code is still removed)
+        let hook = "A plugin outputOptions hook set the final output minify option to";
+        let option = "build.rolldownOptions.output.minify is";
+        let cases = [
+            ("output-hook-disabled", hook, "false", false),
+            ("output-hook-dce-only", hook, "\"dce-only\"", true),
+            ("output-option-disabled", option, "false", false),
+            ("output-option-dce-only", option, "\"dce-only\"", true),
+        ];
+        for (override_kind, cause, value, dead_code_kept) in cases {
+            let fixture = run_fixture(BundlerChoice::Vite, |collection| {
+                collection["minifyEnabled"] = serde_json::json!(false);
+                collection["minifyOverride"] = serde_json::json!(override_kind);
+            });
+            let problem = fixture
+                .output
+                .analysis
+                .problems
+                .iter()
+                .find(|entry| entry.code == "BW_MINIFICATION_DISABLED")
+                .unwrap_or_else(|| panic!("{override_kind}: missing run problem"));
+            assert!(
+                problem.message.contains(cause) && problem.message.contains(value),
+                "{override_kind}: {}",
+                problem.message
+            );
+            assert_eq!(
+                problem.message.contains("still removes dead code"),
+                dead_code_kept,
+                "{override_kind}: {}",
+                problem.message
+            );
+            // `build.minify` is already enabled, so the recovery never tells
+            // the project to enable minification; a hook is blamed only when
+            // one set the value.
+            assert!(
+                !problem.recovery.contains("Enable minification")
+                    && !problem
+                        .message
+                        .contains("disabled in the selected configuration"),
+                "{override_kind}: {}",
+                problem.recovery
+            );
+            assert_eq!(
+                problem.recovery.contains("plugin outputOptions"),
+                override_kind.contains("hook"),
+                "{override_kind}: {}",
+                problem.recovery
+            );
+            // The run problem and the finding give the same corrective action.
+            let finding = fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .find(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
+                .unwrap();
+            assert_eq!(
+                finding.corrective_action.as_ref().unwrap().direction,
+                problem.recovery,
+                "{override_kind}"
+            );
+        }
+        // Without an override the configuration is the cause.
+        let fixture = run_fixture(BundlerChoice::Vite, |collection| {
+            collection["minifyEnabled"] = serde_json::json!(false);
+        });
+        let problem = fixture
+            .output
+            .analysis
+            .problems
+            .iter()
+            .find(|entry| entry.code == "BW_MINIFICATION_DISABLED")
+            .unwrap();
+        assert!(
+            problem
+                .message
+                .contains("disabled in the selected configuration")
+        );
+        assert!(problem.recovery.contains("Enable minification"));
     }
 
     #[test]

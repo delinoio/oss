@@ -996,19 +996,7 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
         } else {
             "dead-code elimination, name mangling and other minifier optimizations do not run."
         };
-        let direction = match (override_kind.by_hook(), override_kind.dce_only()) {
-            (true, true) => {
-                "Remove the plugin outputOptions change that limits minify to dead-code \
-                 elimination, or enable it for production builds."
-            }
-            (true, false) => {
-                "Remove the plugin outputOptions change that disables minify, or enable it for \
-                 production builds."
-            }
-            (false, _) => {
-                "Remove build.rolldownOptions.output.minify or enable it for production builds."
-            }
-        };
+        let direction = override_kind.direction().unwrap_or_default();
         (
             format!(
                 "{cause} although build.minify is {}, so {effect}",
