@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { copy, useLocale } from "./localization";
+import { useDestinationDispatch } from "./destination-window";
+import { Surface } from "./surface";
 import {
   NavigationPreferenceNotice,
   useNavigationPreference,
@@ -71,6 +73,7 @@ export function SidebarMore({
   drawerOpen?: boolean;
 }) {
   useLocale();
+  const dispatch = useDestinationDispatch();
   const navigation = useNavigationPreference();
   const pinned = navigation.snapshot.usage_pinned;
   const [open, setOpen] = useState(false);
@@ -212,10 +215,12 @@ export function SidebarMore({
               // The rail control (More or the pinned Usage button) carries
               // aria-current, so the row marks the destination visually only.
               data-current={usageActive ? "true" : undefined}
-              onClick={() => {
-                close(true);
-                openUsage();
-              }}
+              onClick={(event) =>
+                dispatch(event, { surface: Surface.Usage }, () => {
+                  close(true);
+                  openUsage();
+                })
+              }
             >
               <Glyph name={MoreGlyph.Usage} />
               <span>{copy("sidebar.usage_8d5982")}</span>

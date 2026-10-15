@@ -24,6 +24,11 @@ import {
 } from "@delinoio/delidev-api-client";
 import { document, encode } from "./documents";
 import { Inbox } from "./inbox";
+import {
+  fakeDestinationWindow,
+  primaryClick,
+} from "./destination-window-test-support";
+import { Surface } from "./surface";
 import { MutationIntents } from "./mutation";
 
 function fixture() {
@@ -1391,4 +1396,35 @@ describe("Inbox detail entrance", () => {
     await screen.findByText("Which methods should be supported?");
     expect(entering()).toBeNull();
   });
+});
+
+it("opens an Inbox entry and its Session in a new window without selecting or reading here", async () => {
+  const destination = fakeDestinationWindow();
+  const value = fixture();
+  render(destination.wrap(value.renderInbox()));
+  const row = await screen.findByRole("button", {
+    name: /Agent question, Refactor authentication, Unread/,
+  });
+  fireEvent.click(row, primaryClick);
+  expect(destination.opened).toHaveBeenCalledExactlyOnceWith({
+    surface: Surface.Inbox,
+    item: value.entry.id,
+  });
+  expect(row.getAttribute("aria-current")).toBeNull();
+  expect(value.get).not.toHaveBeenCalled();
+  expect(value.setRead).not.toHaveBeenCalled();
+  expect(
+    screen.getByText("Select an item to view its request or result."),
+  ).toBeTruthy();
+  // A plain click still selects the entry in this window.
+  fireEvent.click(row, { detail: 1 });
+  await screen.findByText("Which methods should be supported?");
+  expect(destination.opened).toHaveBeenCalledTimes(1);
+  const open = screen.getByRole("button", { name: "Open session" });
+  fireEvent.click(open, primaryClick);
+  expect(destination.opened).toHaveBeenLastCalledWith({
+    surface: Surface.Sessions,
+    session: value.entry.sessionId,
+  });
+  expect(destination.opened).toHaveBeenCalledTimes(2);
 });

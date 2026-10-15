@@ -73,6 +73,13 @@ import {
   SearchSessionRoute,
 } from "./search-session-routing";
 import { Search, Settings, Surface } from "./views";
+import {
+  type DestinationClick,
+  DestinationWindowNotice,
+  DestinationWindowProvider,
+  useDestinationWindowController,
+} from "./destination-window";
+import { openDestinationWindow } from "./navigation-disposition";
 import { NewSession, NewSessionKind } from "./new-session";
 import { Inbox } from "./inbox";
 import { Usage } from "./usage";
@@ -321,6 +328,7 @@ function Shell({
     setPendingSelection(undefined);
   }, []);
 
+  const destinationWindow = useDestinationWindowController();
   const searchIntent = useRef(0);
   const searchAbort = useRef<AbortController>(undefined);
   const searchMounted = useRef(false);
@@ -785,7 +793,56 @@ function Shell({
   };
   // A never-visited Sidechat result carries only its child ID, so its original
   // parent is read from retained metadata before the host is chosen.
-  const openSearchResult = (id: string) => {
+  // A modified click opens the result in a new window on this connection. The
+  // opening shares the Search status presentation and cancellation rules, but
+  // never changes this window's selection, surface or drawer.
+  const openSearchResultInWindow = (id: string) =>
+    destinationWindow.run(async () => {
+      supersedeSearchOpening();
+      const token = searchIntent.current;
+      const parent = tabs.parent(id);
+      let route: ProductRoute;
+      if (parent) {
+        route = { surface: Surface.Sessions, session: parent, sidechat: id };
+      } else {
+        const controller = new AbortController();
+        searchAbort.current = controller;
+        const owner = transport;
+        setSearchOpening({ id, status: SearchOpenStatus.Pending });
+        const resolution = await resolveSearchSession(
+          queryClient,
+          owner,
+          id,
+          controller.signal,
+        );
+        if (searchAbort.current === controller) searchAbort.current = undefined;
+        if (
+          !searchMounted.current ||
+          searchIntent.current !== token ||
+          latestTransport.current !== owner
+        )
+          return;
+        if (resolution.route === SearchSessionRoute.Unavailable) {
+          setSearchOpening({ id, status: SearchOpenStatus.Unavailable });
+          return;
+        }
+        setSearchOpening(undefined);
+        route =
+          resolution.route === SearchSessionRoute.Sidechat
+            ? {
+                surface: Surface.Sessions,
+                session: resolution.parent,
+                sidechat: id,
+              }
+            : { surface: Surface.Sessions, session: id };
+      }
+      await openDestinationWindow(route);
+    });
+  const openSearchResult = (id: string, event?: DestinationClick) => {
+    if (event && destinationWindow.claim(event)) {
+      void openSearchResultInWindow(id);
+      return;
+    }
     userNavigated(NavigationIntentSource.SearchResult);
     if (tabs.parent(id)) {
       open(id);
@@ -1029,6 +1086,7 @@ function Shell({
   }, [surface, drawerOpen, settingsEntry]);
   return (
     <NavigationIntentProvider value={userNavigated}>
+      <DestinationWindowProvider value={destinationWindow}>
       <LocalConnectionPresentationProvider
         target={connectionTarget}
         inline={!connectionReady}
@@ -1139,6 +1197,7 @@ function Shell({
                         }
                       >
                         <SidebarPreferenceNotice />
+                        <DestinationWindowNotice />
                         <button
                           ref={contextOpener}
                           type="button"
@@ -1373,6 +1432,7 @@ function Shell({
           </RunnerPreferenceProvider>
         </RunnerRemediationProvider>
       </LocalConnectionPresentationProvider>
+      </DestinationWindowProvider>
     </NavigationIntentProvider>
   );
 }

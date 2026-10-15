@@ -42,6 +42,12 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
+import {
+  fakeDestinationWindow,
+  primaryClick,
+} from "./destination-window-test-support";
+import { Surface } from "./surface";
+import { SettingsCategory } from "./settings-category";
 import { AgentWorkerWizard } from "./agent-worker-wizard";
 import { copy, i18n, SupportedLanguage } from "./localization";
 import { RepositoryRow } from "./repository-list";
@@ -5153,4 +5159,26 @@ it("plays one entrance for the Agent Workers category and for each owned task wi
   });
   expect(step.getAttribute("data-entrance")).toBeNull();
   expect(column.getAttribute("data-entrance")).toBeNull();
+});
+
+it("opens a Settings category in a new window on a primary modified click and keeps the selected category here", async () => {
+  const destination = fakeDestinationWindow();
+  const value = fixture([]);
+  render(destination.wrap(value.view(<Settings />)));
+  const agents = screen.getByRole("button", { name: "Agent Workers" });
+  const current = document.querySelector(
+    ".settings-category-button[aria-current='page']",
+  )!;
+  fireEvent.click(agents, primaryClick);
+  expect(destination.opened).toHaveBeenCalledExactlyOnceWith({
+    surface: Surface.Settings,
+    category: SettingsCategory.AgentWorkers,
+  });
+  expect(agents.getAttribute("aria-current")).toBeNull();
+  expect(
+    document.querySelector(".settings-category-button[aria-current='page']"),
+  ).toBe(current);
+  fireEvent.click(agents, { detail: 1 });
+  expect(agents.getAttribute("aria-current")).toBe("page");
+  expect(destination.opened).toHaveBeenCalledTimes(1);
 });

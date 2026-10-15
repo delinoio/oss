@@ -38,6 +38,7 @@ import {
   useSidebarPresentation,
 } from "./sidebar-context";
 import { Surface } from "./surface";
+import type { DestinationClick } from "./destination-window";
 import {
   EntranceMotion,
   useActivationCount,
@@ -95,7 +96,7 @@ export function Search({
   submitted,
 }: {
   active: boolean;
-  open: (id: string) => void;
+  open: (id: string, event?: DestinationClick) => void;
   opening?: { id: string; status: SearchOpenStatus };
   // Called when a submission replaces the result set, so an opening started
   // from the previous results cannot navigate or report on unrelated rows.
@@ -445,7 +446,7 @@ export function Search({
               <article key={hit.message?.id} className="result">
                 <button
                   disabled={!hit.message?.sessionId}
-                  onClick={() => open(hit.message!.sessionId)}
+                  onClick={(event) => open(hit.message!.sessionId, event)}
                 >
                   {hit.sessionName}
                 </button>

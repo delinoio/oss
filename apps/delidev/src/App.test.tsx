@@ -17,7 +17,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ConfigurationService,
   EntityKind,
@@ -39,6 +39,21 @@ import {
 } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { encode } from "./documents";
+import { primaryClick } from "./destination-window-test-support";
+import { Surface } from "./surface";
+
+// Destination windows: the real controller and click classifier run; only the
+// native request is observed. Availability is off unless a test turns it on, so
+// every other test keeps the web-preview behavior.
+const destinationWindow = vi.hoisted(() => ({
+  available: false,
+  open: vi.fn<(route: unknown) => Promise<void>>(),
+}));
+vi.mock("./navigation-disposition", async (original) => ({
+  ...(await original<typeof import("./navigation-disposition")>()),
+  destinationWindowAvailable: () => destinationWindow.available,
+  openDestinationWindow: (route: unknown) => destinationWindow.open(route),
+}));
 
 // Full Settings mounts and sequential navigation share this aggregate fixture
 // budget. Per-observation waits and product RPC/native deadlines remain unchanged.
@@ -5167,4 +5182,168 @@ it("discards a pending Search read after another target is opened", async () => 
   expect(sidechatTabs()).toHaveLength(0);
   expect(screen.getByRole("heading", { name: "Other session" })).toBeTruthy();
   info.mockRestore();
+});
+
+describe("destination windows", () => {  const enable = () => {
+    destinationWindow.available = true;
+    destinationWindow.open.mockReset();
+    destinationWindow.open.mockResolvedValue(undefined);
+  };
+  afterEach(() => {
+    destinationWindow.available = false;
+  });
+
+  it("opens a never-visited Sidechat search result in a new window under its original parent and leaves Search untouched", async () => {
+    enable();
+    const value = fixture([], [], [], false, true);
+    const child = sidechatOf(value.session);
+    value.extraResources.push(child);
+    value.searchHits.push(searchHit(child, "Side hit"));
+    render(<App transport={value.transport} />);
+    await searchRetained(value);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Side hit" }),
+      primaryClick,
+    );
+    await waitFor(() =>
+      expect(destinationWindow.open).toHaveBeenCalledExactlyOnceWith({
+        surface: Surface.Sessions,
+        session: value.session.id,
+        sidechat: child.id,
+      }),
+    );
+    // This window keeps the Search surface, its query and its results.
+    expect(
+      screen.getByRole("textbox", { name: "Search conversations" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Side hit" })).toBeTruthy();
+    expect(sidechatTabs()).toHaveLength(0);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("opens ordinary and Fork search results as top-level destinations", async () => {
+    enable();
+    const value = fixture([], [], [], false, true);
+    const fork = retainedSession("Independent fork", {
+      source_session_id: value.session.id,
+    });
+    value.extraResources.push(value.other, fork);
+    value.searchHits.push(
+      searchHit(value.other, "Ordinary hit"),
+      searchHit(fork, "Fork hit"),
+    );
+    render(<App transport={value.transport} />);
+    await searchRetained(value);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Ordinary hit" }),
+      primaryClick,
+    );
+    await waitFor(() => expect(destinationWindow.open).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Fork hit" }), {
+      ...primaryClick,
+      shiftKey: true,
+    });
+    await waitFor(() => expect(destinationWindow.open).toHaveBeenCalledTimes(2));
+    expect(destinationWindow.open.mock.calls).toEqual([
+      [{ surface: Surface.Sessions, session: value.other.id }],
+      [{ surface: Surface.Sessions, session: fork.id }],
+    ]);
+    expect(
+      screen.getByRole("textbox", { name: "Search conversations" }),
+    ).toBeTruthy();
+  });
+
+  it("shows the existing unavailable alert for an unreadable result and opens no window or fallback", async () => {
+    enable();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const value = fixture([], [], [], false, true);
+    const child = sidechatOf(value.session);
+    value.extraResources.push(child);
+    value.searchHits.push(searchHit(child, "Side hit"));
+    value.readHook.current = async (request) => {
+      if (request.id === child.id)
+        throw new ConnectError("Read unavailable", Code.Unavailable);
+    };
+    render(<App transport={value.transport} />);
+    await searchRetained(value);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Side hit" }),
+      primaryClick,
+    );
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /could not be opened/,
+    );
+    expect(destinationWindow.open).not.toHaveBeenCalled();
+    expect(sidechatTabs()).toHaveLength(0);
+    expect(
+      screen.getByRole("textbox", { name: "Search conversations" }),
+    ).toBeTruthy();
+    warn.mockRestore();
+  });
+
+  it("reports a native failure with a localized alert, no fallback navigation and no retry", async () => {
+    enable();
+    destinationWindow.open.mockRejectedValue("permission-denied");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const value = fixture([], [], [], false, true);
+    value.extraResources.push(value.other);
+    value.searchHits.push(searchHit(value.other, "Ordinary hit"));
+    render(<App transport={value.transport} />);
+    await searchRetained(value);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Ordinary hit" }),
+      primaryClick,
+    );
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "The destination could not be opened in a new window. This window is unchanged.",
+    );
+    expect(destinationWindow.open).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("textbox", { name: "Search conversations" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "Other session" }),
+    ).toBeNull();
+    warn.mockRestore();
+  });
+
+  it("drops a repeated modified click while the first request is pending", async () => {
+    enable();
+    let finish!: () => void;
+    destinationWindow.open.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const value = fixture([], [], [], false, true);
+    value.extraResources.push(value.other);
+    value.searchHits.push(searchHit(value.other, "Ordinary hit"));
+    render(<App transport={value.transport} />);
+    await searchRetained(value);
+    const hit = await screen.findByRole("button", { name: "Ordinary hit" });
+    fireEvent.click(hit, primaryClick);
+    await waitFor(() => expect(destinationWindow.open).toHaveBeenCalledTimes(1));
+    fireEvent.click(hit, primaryClick);
+    expect(destinationWindow.open).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("heading", { name: "Other session" }),
+    ).toBeNull();
+    await act(async () => finish());
+  });
+
+  it("keeps a plain search click navigating in this window", async () => {
+    enable();
+    const value = fixture([], [], [], false, true);
+    value.extraResources.push(value.other);
+    value.searchHits.push(searchHit(value.other, "Ordinary hit"));
+    render(<App transport={value.transport} />);
+    await searchRetained(value);
+    fireEvent.click(await screen.findByRole("button", { name: "Ordinary hit" }), {
+      detail: 1,
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Other session" }),
+    ).toBeTruthy();
+    expect(destinationWindow.open).not.toHaveBeenCalled();
+  });
 });

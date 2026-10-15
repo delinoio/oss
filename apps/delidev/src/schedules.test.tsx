@@ -29,6 +29,11 @@ import {
   Schedules,
   StartingReferences,
 } from "./schedules";
+import {
+  fakeDestinationWindow,
+  primaryClick,
+} from "./destination-window-test-support";
+import { Surface } from "./surface";
 import { i18n } from "./localization";
 import { MachineSettings } from "./machine-settings";
 import {
@@ -2984,3 +2989,20 @@ it.each(["succeeded", "failed", "canceled"])(
     value.client.clear();
   },
 );
+
+it("opens a Schedule in a new window on a primary modified click and keeps the workspace unchanged", async () => {
+  const destination = fakeDestinationWindow();
+  const value = fixture();
+  render(destination.wrap(value.view(<Schedules active open={() => {}} />)));
+  const row = await screen.findByRole("button", { name: /Weekday review/ });
+  fireEvent.click(row, primaryClick);
+  expect(destination.opened).toHaveBeenCalledExactlyOnceWith({
+    surface: Surface.Schedules,
+    item: value.schedule.id,
+  });
+  expect(row.getAttribute("aria-current")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Run now" })).toBeNull();
+  fireEvent.click(row, { detail: 1 });
+  await screen.findByRole("button", { name: "Run now" });
+  expect(destination.opened).toHaveBeenCalledTimes(1);
+});

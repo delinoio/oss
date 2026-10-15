@@ -78,6 +78,8 @@ import {
   type ScheduleCreationProps,
 } from "./schedule-creation";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
+import { useDestinationDispatch } from "./destination-window";
+import { Surface } from "./surface";
 import {
   NavigationIntentSource,
   useNavigationIntent,
@@ -1299,6 +1301,7 @@ export function Schedules({
   );
   const closeDrawer = useCloseSidebarDrawer();
   const navigationIntent = useNavigationIntent();
+  const dispatch = useDestinationDispatch();
   const reviewingNotification = Boolean(notificationOccurrence);
   // The notification occurrence destination is exclusive, so the sidebar
   // interactions and list reads stop together with the hidden workspace.
@@ -1529,7 +1532,13 @@ export function Schedules({
                     type="button"
                     disabled={locked}
                     aria-current={selected?.id === row.id ? "true" : undefined}
-                    onClick={() => selectSchedule(row)}
+                    onClick={(event) =>
+                      dispatch(
+                        event,
+                        { surface: Surface.Schedules, item: row.id },
+                        () => selectSchedule(row),
+                      )
+                    }
                   >
                     <span className="schedule-row-title">
                       {scheduleName(row)}
