@@ -245,3 +245,13 @@ it("shows decoded label escapes and maps offsets across them", () => {
   const revealed = buildLayout(canonical, [link.start]);
   expect(revealed.display).toBe(canonical);
 });
+
+it("converts a URL that follows a closed fenced block", () => {
+  const text = "```\ncode\n```\nhttps://example.com";
+  expect(scanMarkdown(text).protectedRanges).toEqual([{ start: 0, end: 12 }]);
+  expect(convertBareUrls(text, 0, text.length)!.text).toBe(
+    "```\ncode\n```\n[https://example.com](https://example.com)",
+  );
+  const links = "```\ncode\n```\n[a](https://example.com)";
+  expect(scanMarkdown(links).links).toHaveLength(1);
+});
