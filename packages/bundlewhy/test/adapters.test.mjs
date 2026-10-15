@@ -716,6 +716,52 @@ test("decodeExportUsageEdges refuses graphs above the edge limit", () => {
   assert.equal(result.unattributedEdges, 0);
 });
 
+// Mirrors the edge limit table in the contract: the decoder returns the
+// unavailable result at the first distinct edge beyond the limit and never
+// reads the rest of the payload.
+test("decodeExportUsageEdges stops reading at the first edge beyond the limit", () => {
+  let tailReads = 0;
+  const tuple = (index) => [1, [`e${index}`], 2, null, String(index), null];
+  const tail = () =>
+    new Proxy([1, ["tail"], 2, null, "tail", null], {
+      get(target, key, receiver) {
+        tailReads += 1;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+  const raw = [
+    ...Array.from({ length: MAX_EXPORT_USAGE_EDGES + 1 }, (_, index) =>
+      tuple(index),
+    ),
+    ...Array.from({ length: 1000 }, tail),
+  ];
+  const result = decodeExportUsageEdges(
+    raw,
+    decodeIdentifiers,
+    decodeCollected,
+  );
+  assert.equal(result.available, false);
+  assert.equal(result.reason, ExportUsageReason.EdgeLimitExceeded);
+  assert.equal(tailReads, 0);
+});
+
+test("decodeExportUsageEdges keeps a graph at the edge limit and ignores repeats beyond it", () => {
+  const tuple = (index) => [1, [`e${index}`], 2, null, String(index), null];
+  const distinct = Array.from({ length: MAX_EXPORT_USAGE_EDGES }, (_, index) =>
+    tuple(index),
+  );
+  // Repeats of stored edges and dropped edges add no distinct edge.
+  const raw = [...distinct, tuple(0), tuple(1), [999, null, 2, null, "x", null]];
+  const result = decodeExportUsageEdges(
+    raw,
+    decodeIdentifiers,
+    decodeCollected,
+  );
+  assert.equal(result.available, true);
+  assert.equal(result.edges.length, MAX_EXPORT_USAGE_EDGES);
+  assert.equal(result.skippedEdges, 1);
+});
+
 // Projects that use a wrapper around the real @rspack/core to simulate
 // engines whose export usage API is missing or has a different shape. The
 // build itself is always the real Rspack.

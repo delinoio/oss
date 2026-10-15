@@ -352,9 +352,11 @@ export function decodeExportUsageEdges(rawEdges, identifiers, collectedIds) {
     if (seen.has(key)) continue;
     seen.add(key);
     edges.push(edge);
-  }
-  if (edges.length > MAX_EXPORT_USAGE_EDGES) {
-    return unavailableExportUsage(ExportUsageReason.EdgeLimitExceeded);
+    // Stop at the first edge beyond the limit: the decoder never holds more
+    // than the limit plus one distinct edge, whatever the payload size.
+    if (edges.length > MAX_EXPORT_USAGE_EDGES) {
+      return unavailableExportUsage(ExportUsageReason.EdgeLimitExceeded);
+    }
   }
   edges.sort((left, right) => {
     const a = JSON.stringify(left);
