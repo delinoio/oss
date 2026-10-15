@@ -223,17 +223,18 @@ keep this status separate from tool execution and authentication. API profiles,
 unscoped/foreign observations, OAuth completions, MCP event
 streams and tool calls retain their existing private adapter boundaries.
 Ordinary managed ChatGPT project executions also consume root-bound passive
-startup status for project-configured MCP servers using the same closed schema.
+startup status for project-configured and runtime-added MCP servers using the same
+closed schema.
 Before binding Start or Resume, the workspace's successful native `config/read`
 retains only enabled names from `mcp_servers` (at most 1,024 entries, bounded
-nonempty names and object descriptors). Disabled and absent entries grant no
-startup-status authority. Malformed or duplicate configuration fails validation;
-a failed fresh read discards any earlier inventory. Each external startup name
-must match that original member's verified workspace inventory exactly. Unknown
-names retain the private unsupported boundary; another member's inventory cannot
-authorize them.
+nonempty names and object descriptors). Malformed or duplicate configuration fails
+validation; a failed fresh read discards any earlier inventory. Native runtime
+connectors can report names absent from that static table. A validated original
+root notification supplies passive status only, independently of table membership;
+the table does not grant tool or authentication authority. Another member's
+inventory cannot authorize foreign-thread observations.
 The adapter discards server names and diagnostics and logs only the closed status,
-owner identity and error presence. These observations do not publish product
+owner identity, error presence and static-inventory membership. These observations do not publish product
 events, complete a turn, change account health or grant tool authority. API,
 isolated title, Sidechat and model-observation profiles retain their separate
 boundaries, as do unscoped and foreign-thread observations. External MCP tool
