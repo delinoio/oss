@@ -326,8 +326,13 @@ tests in `grok-subscription-login.test.tsx` and
 
 #### Durable operation reads
 
-Both login methods watch the durable operation while they wait, and the device
-login rereads it immediately before every poll after the claim. The read has
+Both login methods watch the durable operation while they wait. Every request
+that can redeem the claimed credential (the browser code exchange and each
+device poll, including the first one) is preceded by a durable reread
+(`grokSendGate`) that runs after the exchange claim committed: the claim
+transaction only proves the state at its own commit, and the watcher polls on a
+timer, so a cancellation committed behind the claim must still stop the request.
+The read has
 three results, and only a successful read can prove a cancellation: the
 operation was canceled, fenced, removed or replaced, or its actor vanished
 (`stopped`). A read that fails for any other reason (the store cannot answer) is
@@ -336,18 +341,21 @@ sends no further request. Which outcome it settles as depends only on whether
 the exchange was already claimed (`grokInterruptedOutcome` is the one
 classification):
 
-| Durable read or cause of the end              | Exchange claimed | Settles as                                                                        | Test                                                                           |
-| --------------------------------------------- | ---------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| readable, operation continues                 | any              | the step continues                                                                | the device and browser completion tests                                        |
-| readable, confirmed stop                      | no               | `CANCELED`, nothing claimed or sent                                               | `TestGrokDeviceLoginCancelAtEachPhaseHasADistinctOutcome`                      |
-| readable, confirmed stop                      | yes              | `CANCELED` with the claim kept; settlement rereads the durable operation          | `TestGrokDeviceLoginCancelCommittedJustBeforeAPollSendsNoFurtherPoll`          |
-| unreadable, seen by the pre-poll check        | yes              | `RECOVERY_REQUIRED`, no further poll, the claim is kept and the code never resent | `TestGrokLoginUnreadableDurableStateIsNeverACancellation`                      |
-| unreadable, seen by the watcher while waiting | yes              | `RECOVERY_REQUIRED`, no further poll                                              | `TestGrokLoginUnreadableDurableStateIsNeverACancellation`                      |
-| unreadable, seen by the watcher while waiting | no               | `CANCELED`, nothing claimed or sent, no fence                                     | `TestGrokLoginUnreadableDurableStateIsNeverACancellation`                      |
-| server shutdown (device login)                | yes              | `RECOVERY_REQUIRED`                                                               | `TestGrokDeviceLoginShutdownBetweenPollsKeepsAClaimInRecovery`                 |
-| server shutdown                               | no               | `CANCELED`                                                                        | `TestGrokDeviceLoginShutdownBetweenPollsKeepsAClaimInRecovery`                 |
-| operation window over, server alive           | any              | `EXPIRED`                                                                         | `TestGrokDeviceLoginLocalDeadlineIsTheMinimumOfExpiresInAndTheOperationWindow` |
-| request in flight when the context ends       | yes              | `RECOVERY_REQUIRED` (the request may have redeemed the credential)                | `TestGrokDeviceLoginCancelAtEachPhaseHasADistinctOutcome`                      |
+| Durable read or cause of the end                       | Exchange claimed | Settles as                                                                        | Test                                                                           |
+| ------------------------------------------------------ | ---------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| readable, operation continues                          | any              | the step continues                                                                | the device and browser completion tests                                        |
+| readable, confirmed stop                               | no               | `CANCELED`, nothing claimed or sent                                               | `TestGrokDeviceLoginCancelAtEachPhaseHasADistinctOutcome`                      |
+| readable, confirmed stop                               | yes              | `CANCELED` with the claim kept; settlement rereads the durable operation          | `TestGrokDeviceLoginCancelCommittedJustBeforeAPollSendsNoFurtherPoll`          |
+| readable, confirmed stop right after the device claim  | yes              | `CANCELED` with the claim kept, the first poll is never sent                      | `TestGrokDeviceLoginCancelCommittedJustAfterTheClaimSendsNoPoll`               |
+| readable, confirmed stop right after the browser claim | yes              | `CANCELED` with the claim kept, the code exchange is never sent                   | `TestGrokLoginCancelCommittedJustAfterTheClaimSendsNoExchange`                 |
+| unreadable, seen right after the device claim          | yes              | `RECOVERY_REQUIRED`, the first poll is never sent, the claim is kept              | `TestGrokDeviceLoginUnreadableStateJustAfterTheClaimSendsNoPollAndFences`      |
+| unreadable, seen by the pre-poll check                 | yes              | `RECOVERY_REQUIRED`, no further poll, the claim is kept and the code never resent | `TestGrokLoginUnreadableDurableStateIsNeverACancellation`                      |
+| unreadable, seen by the watcher while waiting          | yes              | `RECOVERY_REQUIRED`, no further poll                                              | `TestGrokLoginUnreadableDurableStateIsNeverACancellation`                      |
+| unreadable, seen by the watcher while waiting          | no               | `CANCELED`, nothing claimed or sent, no fence                                     | `TestGrokLoginUnreadableDurableStateIsNeverACancellation`                      |
+| server shutdown (device login)                         | yes              | `RECOVERY_REQUIRED`                                                               | `TestGrokDeviceLoginShutdownBetweenPollsKeepsAClaimInRecovery`                 |
+| server shutdown                                        | no               | `CANCELED`                                                                        | `TestGrokDeviceLoginShutdownBetweenPollsKeepsAClaimInRecovery`                 |
+| operation window over, server alive                    | any              | `EXPIRED`                                                                         | `TestGrokDeviceLoginLocalDeadlineIsTheMinimumOfExpiresInAndTheOperationWindow` |
+| request in flight when the context ends                | yes              | `RECOVERY_REQUIRED` (the request may have redeemed the credential)                | `TestGrokDeviceLoginCancelAtEachPhaseHasADistinctOutcome`                      |
 
 A refresh sends its single request right after its claim and rereads nothing in
 between, so it has no pre-send read; an interruption of that request is
@@ -1303,7 +1311,7 @@ whose exchange was never claimed; a claim is never released automatically.
 | leased, no claim                    | restart                                                                       | fenced, then settled `FAILED` by the scanner                                                                                                                                                                                                                                             | automatic                  | `unavailable`                         |
 | leased, no claim                    | failure before the claim (vault, discovery, listener)                         | `FAILED`, credential untouched                                                                                                                                                                                                                                                           | none                       | the failure code                      |
 | claimed device login, between polls | server shutdown                                                               | fenced, the claim is retained                                                                                                                                                                                                                                                            | manual, never resent       | `recovery_required`                   |
-| claimed device login, between polls | user cancel (including one committed after the last store check)              | `CANCELED`, the claim stays recorded and no further poll is sent; the durable operation is re-read immediately before every poll, so a cancellation that precedes a poll never lets it go out                                                                                            | none                       | none                                  |
+| claimed device login, between polls | user cancel (including one committed after the last store check)              | `CANCELED`, the claim stays recorded and no further poll is sent; the durable operation is re-read immediately before every poll, so a cancellation that precedes a poll never lets it go out; this includes the first poll right after the claim and the browser code exchange          | none                       | none                                  |
 | claimed, request not sent           | restart or crash                                                              | fenced, the claim is retained                                                                                                                                                                                                                                                            | manual, never resent       | `recovery_required`                   |
 | claimed, request sent               | transport failure, timeout, shutdown, cancel, unparsed or unexpected response | fenced                                                                                                                                                                                                                                                                                   | manual, never resent       | `recovery_required`                   |
 | claimed, request sent               | definitive refusal (see the [response table](#token-endpoint-response-table)) | `FAILED` (refresh also sets health `expired`)                                                                                                                                                                                                                                            | none                       | `unauthenticated` or the refusal code |

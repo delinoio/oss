@@ -56,9 +56,13 @@ const (
 	// can race the outcome.
 	grokFaultBeforeLoginFinish grokFaultPoint = "before_login_finish"
 	grokFaultAfterClaim        grokFaultPoint = "after_claim"
-	grokFaultAfterResponse     grokFaultPoint = "after_response"
-	grokFaultAfterStage        grokFaultPoint = "after_stage"
-	grokFaultAfterPersist      grokFaultPoint = "after_persist"
+	// grokFaultAfterExchangeClaim runs after the login exchange claim committed and
+	// before the pre-send durable check: the window in which a cancellation can
+	// commit although nothing has stopped the login context yet.
+	grokFaultAfterExchangeClaim grokFaultPoint = "after_exchange_claim"
+	grokFaultAfterResponse      grokFaultPoint = "after_response"
+	grokFaultAfterStage         grokFaultPoint = "after_stage"
+	grokFaultAfterPersist       grokFaultPoint = "after_persist"
 	// grokFaultDurableRead runs before every read of the durable login operation
 	// by the watcher and the pre-poll check; an error stands for an unreadable
 	// durable state.

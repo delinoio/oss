@@ -381,6 +381,27 @@ func (s *Service) grokLoginDurable(ctx context.Context, id domain.ID, o domain.S
 	return grokDurableUnreadable
 }
 
+// grokSendGate is the durable check that precedes every request that can redeem
+// the claimed credential (the browser code exchange and each device poll),
+// including the first one right after the claim committed. The store watcher
+// polls on a timer, so a cancellation, fence or actor loss committed since the
+// last tick may not have stopped the login context yet; the claim transaction
+// only proves the state at its own commit. It returns true when the request must
+// not be sent. An unreadable state sets the guard so the claimed login is fenced
+// (RECOVERY_REQUIRED) instead of settled as canceled.
+func (s *Service) grokSendGate(ctx context.Context, guard *grokLoginGuard, id domain.ID, original domain.ServerSubscriptionOperation, step grokLoginStep, event string, attrs ...any) bool {
+	switch s.grokLoginDurable(ctx, id, original) {
+	case grokDurableStopped:
+		s.logGrok(ctx, slog.LevelInfo, event, original, step, append([]any{"reason", "operation_stopped"}, attrs...)...)
+		return true
+	case grokDurableUnreadable:
+		guard.unconfirmed.Store(true)
+		s.logGrok(ctx, slog.LevelWarn, event, original, step, append([]any{"reason", "state_unreadable"}, attrs...)...)
+		return true
+	}
+	return false
+}
+
 // grokInterruptedOutcome is the one classification of the end of a wait or a
 // refused send in a login, shared by the browser and device flows. The cells,
 // first match wins:
@@ -585,6 +606,13 @@ func (s *Service) grokLoginSteps(ctx, parent context.Context, guard *grokLoginGu
 	}
 	outcome.claimed = true
 	s.logGrok(ctx, slog.LevelInfo, "grok_login_exchange_claimed", original, grokStepExchange)
+	_ = s.grokFault(grokFaultAfterExchangeClaim)
+	// A cancellation can commit right after the claim transaction and before the
+	// watcher cancels the context: recheck the durable operation before the one
+	// code exchange is sent.
+	if s.grokSendGate(ctx, guard, id, original, grokStepExchange, "grok_login_exchange_skipped") {
+		return interrupted(grokStepExchange)
+	}
 	tokens, err := client.ExchangeCode(ctx, endpoints, callback.code, authorization.Verifier, redirect)
 	clear(callback.code)
 	if err != nil {
