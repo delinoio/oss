@@ -117,6 +117,11 @@ interface PageOperation {
   /** The selected workspace tab when a Create was submitted. */
   selection?: string;
 }
+interface CloseFocus {
+  operationId: string;
+  control: Element;
+  navigation: number;
+}
 export interface BrowserHandle {
   /** Requests closure of one retained native page; descriptors close on proof. */
   closePage: (profile: string, pageId: string) => void;
@@ -507,6 +512,7 @@ function NativeSessionBrowser({
   const heldClose = useRef<{ profile: string; page: string }>(undefined);
   // Resolves once sibling product windows recorded this view's pending Close.
   const closeSynced = useRef<Promise<void>>(Promise.resolve());
+  const closeFocus = useRef<CloseFocus>(undefined);
   const releaseClose = () => {
     const held = heldClose.current;
     heldClose.current = undefined;
@@ -678,6 +684,37 @@ function NativeSessionBrowser({
         ?.focus({ preventScroll: true });
     });
   };
+  const closePageWithFocus = (original: PageOperation, profile: string) => {
+    const intent = closeFocus.current;
+    const transfer =
+      intent?.operationId === original.operation_id &&
+      activeRef.current &&
+      tabsStore.navigation(session.id) === intent.navigation &&
+      document.activeElement === intent.control;
+    tabsStore.closePageEverywhere(profile, original.page_id!);
+    if (!transfer) return;
+    const target = tabsStore.snapshot(session.id).selected;
+    requestAnimationFrame(() => {
+      if (!alive.current || !activeRef.current) return;
+      const current = tabsStore.snapshot(session.id);
+      if (current.selected !== target) return;
+      // Removing the focused control may reset activeElement to body. A later
+      // focus on any surviving control belongs to the user and wins.
+      if (
+        document.activeElement !== intent.control &&
+        document.activeElement !== document.body
+      )
+        return;
+      const index = current.tabs.findIndex(
+        (tab) => sessionTabKey(tab) === target,
+      );
+      const fallback = document.getElementById(
+        `session-tab-${session.id}-${index}`,
+      );
+      if (fallback?.isConnected && !fallback.closest("[hidden], [inert]"))
+        fallback.focus({ preventScroll: true });
+    });
+  };
   // Pages the current operation still owns keep their descriptors until the
   // original proof settles.
   const ownedPages = () =>
@@ -701,6 +738,7 @@ function NativeSessionBrowser({
   };
   const finishOperation = () => {
     releaseClose();
+    closeFocus.current = undefined;
     operationRef.current = undefined;
     setOperation(undefined);
   };
@@ -780,9 +818,8 @@ function NativeSessionBrowser({
             value.rawPageIds ?? value.state.tabs.tabs.map((page) => page.id)
           ).includes(original.page_id!)
         ) {
-          tabsStore.closePageEverywhere(profileId, original.page_id!);
+          closePageWithFocus(original, profileId);
           finishOperation();
-          focusSelectedTab();
         } else {
           finishOperation();
           setOperationFailure(
@@ -794,30 +831,11 @@ function NativeSessionBrowser({
       original.receipt = receipt;
       original.uncertain = false;
       const before = tabsStore.snapshot(session.id);
-      const closedKey =
-        original.action === PageAction.Close
-          ? sessionTabKey({
-              kind: SessionTabKind.Page,
-              profile: profileId,
-              id: original.page_id!,
-              title: "",
-            })
-          : "";
-      const closedIndex = before.tabs.findIndex(
-        (tab) => sessionTabKey(tab) === closedKey,
-      );
-      const focusClosure =
-        before.selected === closedKey ||
-        (closedIndex >= 0 &&
-          document
-            .getElementById(`session-tab-${session.id}-${closedIndex}`)
-            ?.parentElement?.contains(document.activeElement));
       observeInventory(value, profileId);
       setOperationFailure(undefined);
       if (receipt.phase === PagePhase.Completed) {
         if (original.action === PageAction.Close) {
-          tabsStore.closePageEverywhere(profileId, original.page_id!);
-          if (focusClosure) focusSelectedTab();
+          closePageWithFocus(original, profileId);
         } else {
           const page = value.state.tabs.tabs.find(
             (value) => value.id === receipt.page_id,
@@ -893,7 +911,32 @@ function NativeSessionBrowser({
   runner.current = runOperation;
   const startOperation = (next: PageOperation) => {
     releaseClose();
+    closeFocus.current = undefined;
     if (next.action === PageAction.Close && next.page_id && profileId) {
+      const snapshot = tabsStore.snapshot(session.id);
+      const key = sessionTabKey({
+        kind: SessionTabKind.Page,
+        profile: profileId,
+        id: next.page_id,
+        title: "",
+      });
+      const index = snapshot.tabs.findIndex(
+        (tab) => sessionTabKey(tab) === key,
+      );
+      const control = document.activeElement;
+      if (
+        activeRef.current &&
+        index >= 0 &&
+        control &&
+        document
+          .getElementById(`session-tab-${session.id}-${index}`)
+          ?.parentElement?.contains(control)
+      )
+        closeFocus.current = {
+          operationId: next.operation_id,
+          control,
+          navigation: tabsStore.navigation(session.id),
+        };
       heldClose.current = { profile: profileId, page: next.page_id };
       closeSynced.current = tabsStore.holdPendingClose(
         profileId,

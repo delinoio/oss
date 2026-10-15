@@ -277,6 +277,15 @@ pages are untouched. Repeated acknowledgment is idempotent, and pending, failed
 or uncertain closes retain the descriptor in every Session. The cleanup is
 store-level only and issues no extra native close.
 
+When the initiating Session's Page tab control owns keyboard focus, a proven
+Close moves focus after the tab strip commits to that Session's selected
+surviving tab control with `preventScroll`. The target is resolved from the
+retained descriptor key after the shared close selection rule runs. The same
+handoff applies to an immediate receipt and a later observation of the original
+operation. Pending or rejected Close keeps its descriptor and focus. A response
+after Session deactivation or another navigation cannot move focus into the
+old Session; focus already moved to a surviving control remains with the user.
+
 Other windows and sessions of the same account observe the inventory read-only
 and align their descriptors (append newly listed pages in inventory order,
 refresh labels from observed URLs, and drop descriptors the inventory no longer

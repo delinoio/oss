@@ -285,18 +285,27 @@ function Workspace({ f, active = true }: { f: Fixture; active?: boolean }) {
   );
 }
 function mount(f: Fixture, strict = false, active = true) {
-  const tree = (
+  const tree = (visible: boolean) => (
     <TransportProvider transport={f.transport}>
       <QueryClientProvider client={f.client}>
         <MutationIntents>
           <SessionTabsProvider>
-            <Workspace f={f} active={active} />
+            <Workspace f={f} active={visible} />
           </SessionTabsProvider>
         </MutationIntents>
       </QueryClientProvider>
     </TransportProvider>
   );
-  return render(strict ? <StrictMode>{tree}</StrictMode> : tree);
+  const view = render(
+    strict ? <StrictMode>{tree(active)}</StrictMode> : tree(active),
+  );
+  return {
+    ...view,
+    setActive: (visible: boolean) =>
+      view.rerender(
+        strict ? <StrictMode>{tree(visible)}</StrictMode> : tree(visible),
+      ),
+  };
 }
 const calls = (operation: string) =>
   native.mock.calls.filter(([name]) => name === operation);
@@ -671,9 +680,11 @@ it("keeps the page descriptor until the original close is confirmed, then select
   mount(f);
   await waitFor(() => expect(tabNames()).toHaveLength(3));
   fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Close fixture.test/2 tab" }),
-  );
+  const close = screen.getByRole("button", {
+    name: "Close fixture.test/2 tab",
+  });
+  close.focus();
+  fireEvent.click(close);
   await waitFor(() => expect(release).toBeTypeOf("function"));
   // Pending: the descriptor and its selection remain, with inline progress.
   expect(tabNames()).toHaveLength(3);
@@ -691,20 +702,124 @@ it("keeps the page descriptor until the original close is confirmed, then select
   expect(pageCalls("close")).toHaveLength(1);
 });
 
+it("focuses the actual selected tool-tab fallback after acknowledged Page close", async () => {
+  const f = fixture({ pages: 1 });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open Files fixture tab" }),
+  );
+  const dialog = await openDialog();
+  await submit(dialog, "https://fixture.test/new");
+  await waitFor(() => expect(tabNames()).toHaveLength(4));
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByRole("tab", { name: "https://fixture.test/new" }),
+    ),
+  );
+  const close = screen.getByRole("button", {
+    name: "Close fixture.test/new tab",
+  });
+  close.focus();
+  fireEvent.click(close);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  const fallback = screen.getByRole("tab", { name: "Files" });
+  await waitFor(() => expect(document.activeElement).toBe(fallback));
+  expect(fallback.getAttribute("aria-selected")).toBe("true");
+});
+
+it("uses the same focus handoff after deferred native cleanup", async () => {
+  const f = fixture({ pages: 2 });
+  f.model.outcome = "cleanup-pending";
+  f.model.settleOnObserve = false;
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  const close = screen.getByRole("button", {
+    name: "Close fixture.test/2 tab",
+  });
+  close.focus();
+  fireEvent.click(close);
+  await screen.findByRole("alert");
+  expect(document.activeElement).toBe(close);
+  f.model.settleOnObserve = true;
+  await waitFor(() => expect(tabNames()).toHaveLength(2), { timeout: 2500 });
+  const fallback = screen.getByRole("tab", {
+    name: "https://fixture.test/1",
+  });
+  await waitFor(() => expect(document.activeElement).toBe(fallback));
+});
+
+it("does not steal focus from a surviving control after Close is pending", async () => {
+  const f = fixture({ pages: 2 });
+  let release!: () => void;
+  const base = native.getMockImplementation()!;
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (operation === "browser_pages" && args.request.action === "close")
+      await new Promise<void>((resolve) => (release = resolve));
+    return base(operation, args);
+  });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  const close = screen.getByRole("button", {
+    name: "Close fixture.test/2 tab",
+  });
+  close.focus();
+  fireEvent.click(close);
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  const unrelated = screen.getByRole("button", {
+    name: "Open Files fixture tab",
+  });
+  unrelated.focus();
+  await act(async () => release());
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(document.activeElement).toBe(unrelated);
+});
+
+it("does not move focus into a session hidden before Close acknowledges", async () => {
+  const f = fixture({ pages: 2 });
+  let release!: () => void;
+  const base = native.getMockImplementation()!;
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (operation === "browser_pages" && args.request.action === "close")
+      await new Promise<void>((resolve) => (release = resolve));
+    return base(operation, args);
+  });
+  const view = mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  const close = screen.getByRole("button", {
+    name: "Close fixture.test/2 tab",
+  });
+  close.focus();
+  fireEvent.click(close);
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  view.setActive(false);
+  const unrelated = screen.getByRole("button", {
+    name: "Open Files fixture tab",
+  });
+  unrelated.focus();
+  await act(async () => release());
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(document.activeElement).toBe(unrelated);
+});
+
 it("keeps the descriptor with recovery for an unconfirmed close and settles it by observation only", async () => {
   const f = fixture({ pages: 2 });
   f.model.outcome = "cleanup-pending";
   f.model.settleOnObserve = false;
   mount(f);
   await waitFor(() => expect(tabNames()).toHaveLength(3));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
-  );
+  const close = screen.getByRole("button", {
+    name: "Close fixture.test/1 tab",
+  });
+  close.focus();
+  fireEvent.click(close);
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toContain("native view cleanup is not confirmed");
   // Metadata is committed but the descriptor remains until native proof.
   expect(f.model.pages).toHaveLength(1);
   expect(tabNames()).toHaveLength(3);
+  expect(document.activeElement).toBe(close);
   const original = pageCalls("close")[0].operation_id;
   f.model.settleOnObserve = true;
   fireEvent.click(within(alert).getByRole("button", { name: "Check status" }));
@@ -720,13 +835,16 @@ it("keeps the descriptor and shows a failure when the native close failed", asyn
   f.model.outcome = "fail";
   mount(f);
   await waitFor(() => expect(tabNames()).toHaveLength(2));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
-  );
+  const close = screen.getByRole("button", {
+    name: "Close fixture.test/1 tab",
+  });
+  close.focus();
+  fireEvent.click(close);
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toContain("The browser action failed");
   expect(tabNames()).toHaveLength(2);
   expect(f.model.pages).toHaveLength(1);
+  expect(document.activeElement).toBe(close);
   // Dismissal clears the notice, and a later close is a fresh operation.
   fireEvent.click(within(alert).getByRole("button", { name: "Dismiss" }));
   expect(screen.queryByRole("alert")).toBeNull();
