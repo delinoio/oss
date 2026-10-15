@@ -290,6 +290,10 @@ obligation (lease, generation or capture) changes or the Worker reconnects.
 after 1, 2, 4, 8, 16 and then 30 seconds per account. Shutdown cancels and joins
 every attempt. A settled obligation that the stream still offers is not
 repeated before 30 seconds.
+`WatchSubscription` offers at most four accounts per tick but scans every eligible account:
+a population larger than four rotates after the previous window's last account (ordered by
+account identifier, wrapping around), so blocked or paced accounts cannot monopolize the stream
+and later recovery or ordinary subscription work is offered within a bounded number of ticks.
 
 **Logging.** `codex_recovery_attempt`, `codex_recovery_phase`
 (`validate-journal`, `process-owners`, `credential-proof`,

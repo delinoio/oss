@@ -540,3 +540,84 @@ func TestSubscriptionRecoveryRestoreDoesNotCheckpointRetirement(t *testing.T) {
 		t.Fatal("a restore was recorded as a retirement")
 	}
 }
+
+func watchRecords(ids ...string) []store.Record {
+	records := make([]store.Record, 0, len(ids))
+	for _, id := range ids {
+		records = append(records, store.Record{ID: domain.ID(id)})
+	}
+	return records
+}
+
+func watchIDs(records []store.Record) []string {
+	ids := make([]string, 0, len(records))
+	for _, r := range records {
+		ids = append(ids, string(r.ID))
+	}
+	return ids
+}
+
+// Every cell is one candidate population of the bounded WatchSubscription
+// window. A population larger than the window rotates after the cursor, so rows
+// that the Worker skips never monopolize the stream.
+func TestWatchWindowRotatesOverEveryCandidate(t *testing.T) {
+	cells := []struct {
+		name       string
+		candidates []string
+		ticks      int
+		want       [][]string
+	}{
+		{"empty", nil, 1, [][]string{{}}},
+		{"below the window keeps the order", []string{"c", "a"}, 2, [][]string{{"c", "a"}, {"c", "a"}}},
+		{"exactly the window", []string{"a", "b", "c", "d"}, 2, [][]string{{"a", "b", "c", "d"}, {"a", "b", "c", "d"}}},
+		{"one over the window", []string{"a", "b", "c", "d", "e"}, 3, [][]string{{"a", "b", "c", "d"}, {"e", "a", "b", "c"}, {"d", "e", "a", "b"}}},
+		{"two windows", []string{"a", "b", "c", "d", "e", "f", "g", "h"}, 3, [][]string{{"a", "b", "c", "d"}, {"e", "f", "g", "h"}, {"a", "b", "c", "d"}}},
+		{"unordered input", []string{"f", "b", "d", "a", "e", "c"}, 2, [][]string{{"a", "b", "c", "d"}, {"e", "f", "a", "b"}}},
+	}
+	for _, c := range cells {
+		t.Run(c.name, func(t *testing.T) {
+			var cursor domain.ID
+			for tick := 0; tick < c.ticks; tick++ {
+				var window []store.Record
+				window, cursor = watchWindow(watchRecords(c.candidates...), cursor)
+				got := watchIDs(window)
+				if len(got) != len(c.want[tick]) {
+					t.Fatalf("tick %d: got %v want %v", tick, got, c.want[tick])
+				}
+				for i := range got {
+					if got[i] != c.want[tick][i] {
+						t.Fatalf("tick %d: got %v want %v", tick, got, c.want[tick])
+					}
+				}
+			}
+		})
+	}
+	t.Run("a candidate set that shrinks restarts cleanly", func(t *testing.T) {
+		window, cursor := watchWindow(watchRecords("a", "b", "c", "d", "e", "f"), "")
+		if len(window) != 4 || cursor != "d" {
+			t.Fatal("unexpected first window", watchIDs(window), cursor)
+		}
+		window, cursor = watchWindow(watchRecords("a", "b"), cursor)
+		if len(window) != 2 || cursor != "" {
+			t.Fatal("a window that fits did not reset the cursor", watchIDs(window), cursor)
+		}
+	})
+	t.Run("every candidate is offered within a bounded number of ticks", func(t *testing.T) {
+		ids := []string{}
+		for i := 0; i < 11; i++ {
+			ids = append(ids, "id-"+string(rune('a'+i)))
+		}
+		seen := map[string]bool{}
+		var cursor domain.ID
+		for tick := 0; tick < 3; tick++ {
+			var window []store.Record
+			window, cursor = watchWindow(watchRecords(ids...), cursor)
+			for _, id := range watchIDs(window) {
+				seen[id] = true
+			}
+		}
+		if len(seen) != len(ids) {
+			t.Fatal("a candidate was starved", len(seen))
+		}
+	})
+}

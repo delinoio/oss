@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -414,8 +415,12 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 	}()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	// cursor is the last record of the previous window. The scan covers every
+	// eligible account, and the bounded window rotates after the cursor so a
+	// Worker-blocked or paced account can never monopolize the stream.
+	var cursor domain.ID
 	for {
-		var records []store.Record
+		var candidates []store.Record
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := tx.Authorize(); err != nil {
 				return err
@@ -452,10 +457,7 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 					if !slices.Contains(machine.WorkerCapabilities, domain.ManagedClaudeExecutionV1) || a.Subscription.Lease == nil || !a.Subscription.RecoveryRequired || a.Subscription.Lease.MachineID != domain.ID(req.Msg.MachineId) {
 						continue
 					}
-					records = append(records, r)
-					if len(records) == 4 {
-						break
-					}
+					candidates = append(candidates, r)
 					continue
 				}
 				// Grok lifecycle work is not pushed to any Worker until the managed Grok
@@ -470,31 +472,19 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 				// A negotiated original Worker reconciles its own fenced ChatGPT
 				// Execute lease. Peers without the recovery capability keep the fence.
 				if state != nil && a.SubscriptionService == domain.SubscriptionChatGPT && state.RecoveryRequired && state.Lease != nil && state.Lease.Action == domain.SubscriptionExecute && state.Lease.MachineID == domain.ID(req.Msg.MachineId) && slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexRecoveryV1) {
-					records = append(records, r)
-					if len(records) == 4 {
-						break
-					}
+					candidates = append(candidates, r)
 					continue
 				}
 				if state != nil && a.SubscriptionService == domain.SubscriptionClaude && state.RecoveryRequired && state.Lease != nil && state.Lease.MachineID == domain.ID(req.Msg.MachineId) {
-					records = append(records, r)
-					if len(records) == 4 {
-						break
-					}
+					candidates = append(candidates, r)
 					continue
 				}
 				if state != nil && state.Observation != nil && state.Observation.Phase == domain.SubscriptionObservationQueued && state.Observation.MachineID == domain.ID(req.Msg.MachineId) && !state.RecoveryRequired && (state.Lease == nil || state.Lease.Action == domain.SubscriptionExecute && state.Lease.InstanceID == domain.ID(req.Msg.InstanceId)) {
-					records = append(records, r)
-					if len(records) == 4 {
-						break
-					}
+					candidates = append(candidates, r)
 					continue
 				}
 				if state != nil && state.Pending != nil && state.Pending.MachineID == domain.ID(req.Msg.MachineId) && state.Pending.Phase == domain.SubscriptionQueued && state.Lease == nil && !state.RecoveryRequired {
-					records = append(records, r)
-					if len(records) == 4 {
-						break
-					}
+					candidates = append(candidates, r)
 				}
 			}
 			return nil
@@ -502,6 +492,8 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return rpc.Error(err, c)
 		}
+		var records []store.Record
+		records, cursor = watchWindow(candidates, cursor)
 		for _, r := range records {
 			if err := stream.Send(&pb.WatchSubscriptionResponse{Account: rpc.Resource(r)}); err != nil {
 				return err
@@ -516,6 +508,35 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 		case <-ticker.C:
 		}
 	}
+}
+
+// watchSubscriptionWindow is the number of accounts one WatchSubscription tick
+// offers.
+const watchSubscriptionWindow = 4
+
+// watchWindow selects the bounded window of one tick. When every candidate fits
+// the window it is sent unchanged. Otherwise the candidates are ordered by
+// identifier and the window starts after the last record of the previous window,
+// wrapping around, so every candidate is offered within a bounded number of ticks
+// regardless of how many earlier candidates the Worker skips.
+func watchWindow(candidates []store.Record, cursor domain.ID) ([]store.Record, domain.ID) {
+	if len(candidates) <= watchSubscriptionWindow {
+		return candidates, ""
+	}
+	ordered := slices.Clone(candidates)
+	slices.SortFunc(ordered, func(a, b store.Record) int { return strings.Compare(string(a.ID), string(b.ID)) })
+	start := 0
+	for i, r := range ordered {
+		if string(r.ID) > string(cursor) {
+			start = i
+			break
+		}
+	}
+	window := make([]store.Record, 0, watchSubscriptionWindow)
+	for i := 0; i < watchSubscriptionWindow; i++ {
+		window = append(window, ordered[(start+i)%len(ordered)])
+	}
+	return window, window[len(window)-1].ID
 }
 
 // subscriptionLease resolves the stored owner-scoped lease: a historical
