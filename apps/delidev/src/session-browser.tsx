@@ -735,6 +735,10 @@ function NativeSessionBrowser({
       pageDescriptors(profile, value.state),
       ownedPages(),
     );
+    // Inactive retained Sessions do not poll, so the same authoritative proof
+    // also drops this profile's unheld Page descriptors from their snapshots.
+    if (value.state.removal_pending)
+      tabsStore.reconcileUnavailableProfile(profile, ownedPages());
   };
   const finishOperation = () => {
     releaseClose();
