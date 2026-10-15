@@ -108,13 +108,52 @@ async function ready(
   return result.current.ready;
 }
 
-it("admits Codex agents and OpenCode agents whose every route model declares image input", async () => {
-  expect(await ready({ harness: "codex", routes: [route(["text"])] })).toBe(
-    true,
-  );
+it("admits Codex and OpenCode agents whose every route model declares image input", async () => {
+  expect(
+    await ready({ harness: "codex", routes: [route(["text", "image"])] }),
+  ).toBe(true);
   expect(
     await ready({ harness: "opencode", routes: [route(["text", "image"])] }),
   ).toBe(true);
+});
+
+it("keeps Codex unsupported unless every route model declares image input", async () => {
+  expect(await ready({ harness: "codex", routes: [route(["text"])] })).toBe(
+    false,
+  );
+  expect(await ready({ harness: "codex", routes: [route([])] })).toBe(false);
+  expect(
+    await ready({
+      harness: "codex",
+      routes: [route(["text", "image"]), route(["text"])],
+    }),
+  ).toBe(false);
+  expect(
+    await ready({ harness: "codex", routes: [{ model: { native_id: "x" } }] }),
+  ).toBe(false);
+  // Version 4 Agent documents require routes, so the legacy single-model
+  // fallback never admits Codex on its own.
+  expect(
+    await ready({
+      harness: "codex",
+      model: { input_modalities: ["text", "image"] },
+    }),
+  ).toBe(false);
+  expect(
+    await ready({ harness: "codex", model: { input_modalities: ["text"] } }),
+  ).toBe(false);
+  expect(await ready({ harness: "codex" })).toBe(false);
+});
+
+it("uses only the frozen declaration for Codex follow-ups", async () => {
+  const textOnly = { harness: "codex", routes: [route(["text"])] };
+  const imageAgent = { harness: "codex", routes: [route(["text", "image"])] };
+  expect(await ready(textOnly, { harness: "codex", declared: true })).toBe(
+    true,
+  );
+  expect(await ready(imageAgent, { harness: "codex", declared: false })).toBe(
+    false,
+  );
 });
 
 it("keeps OpenCode text-only routes and the other harnesses unsupported", async () => {
@@ -144,7 +183,10 @@ it("uses the frozen execution snapshot for queued follow-ups", async () => {
   expect(await ready(agent, { harness: "opencode", declared: false })).toBe(
     false,
   );
-  expect(await ready(agent, { harness: "codex", declared: false })).toBe(true);
+  expect(await ready(agent, { harness: "codex", declared: false })).toBe(
+    false,
+  );
+  expect(await ready(agent, { harness: "codex", declared: true })).toBe(true);
   expect(await ready(agent, { harness: "claude-code", declared: true })).toBe(
     true,
   );
@@ -167,7 +209,7 @@ it("keeps OpenCode unavailable until both sides negotiate the independent pair",
     // The base pair still admits Codex without the OpenCode refinement.
     expect(
       await ready(
-        { harness: "codex", routes: [route(["text"])] },
+        { harness: "codex", routes: [route(["text", "image"])] },
         undefined,
         openCode,
       ),
