@@ -57,6 +57,7 @@ func (f *threadFixture) handleSubagentRead(id json.RawMessage, method string, ra
 		if f.subagents == nil {
 			a, b := maps.Clone(f.thread), maps.Clone(f.thread)
 			a["id"], b["id"] = domain.NewID(), domain.NewID()
+			a["sessionId"], b["sessionId"] = a["id"], b["id"]
 			a["parentThreadId"] = f.thread["id"]
 			b["parentThreadId"] = a["id"]
 			f.subagents = []map[string]any{b, a}
@@ -187,7 +188,7 @@ func TestSubagentThreadStartedRequiresPriorOwnershipEvidence(t *testing.T) {
 	c, turn := observationClient()
 	child := domain.NewID()
 	parent := c.thread
-	thread := threadWire{ID: child, ParentThreadID: &parent, SessionID: c.execution.thread.SessionID, CLIVersion: SupportedVersion, ModelProvider: c.execution.settings.Provider, Status: ThreadStatus{Type: ThreadIdle}}
+	thread := threadWire{ID: child, ParentThreadID: &parent, SessionID: domain.NewID(), CLIVersion: SupportedVersion, ModelProvider: c.execution.settings.Provider, Status: ThreadStatus{Type: ThreadIdle}}
 	for _, parentID := range []domain.ID{c.thread, domain.NewID()} {
 		parent = parentID
 		event, err := observeFixture(c, "thread/started", map[string]any{"thread": thread})
