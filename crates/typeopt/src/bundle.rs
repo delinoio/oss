@@ -1743,10 +1743,11 @@ pub fn stage(
     // A read in any chunk may stringify a callable imported from an edited
     // chunk. Keep the edited text when the bundle has no closed target proof.
     let source_reflection = crate::app::minify()
-        && outcome
-            .texts
-            .values()
-            .any(|text| crate::minify::may_observe_function_source(text));
+        && (crate::app::bundle_html_reflection()
+            || outcome
+                .texts
+                .values()
+                .any(|text| crate::minify::may_observe_function_source(text)));
     if source_reflection {
         tracing::info!("callable source reflection may be reachable; bundle minification skipped");
     }

@@ -3498,6 +3498,40 @@ export { reflected };"#,
 }
 
 #[test]
+fn observable_function_source_inline_html_script() {
+    let settings = r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module">import{reflected}from"./settings.js";console.log(reflected.toString().includes("reflection-marker"));</script><script type="module" src="./index.js"></script>"#,
+        ),
+        ("settings.js", settings),
+        (
+            "index.js",
+            r#"import{makeSettings}from"./other.js";console.log(makeSettings(3).verticalSpacing);"#,
+        ),
+        (
+            "other.js",
+            r#"function makeSettings(count){return{verticalSpacing:count,horizontalSpacing:count*2}}export{makeSettings};"#,
+        ),
+    ]);
+    let plain = optimize(temp.path(), &[]);
+    let plain_other = out(temp.path(), "other.js");
+    assert_ne!(
+        plain_other,
+        r#"function makeSettings(count){return{verticalSpacing:count,horizontalSpacing:count*2}}export{makeSettings};"#
+    );
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    let report = optimize(temp.path(), &["--minify"]);
+    assert_eq!(out(temp.path(), "other.js"), plain_other);
+    assert!(
+        report["size"]["minified"].is_null(),
+        "{report:#}; plain={plain:#}"
+    );
+}
+
+#[test]
 fn observable_function_source_safe_chunk_still_minifies() {
     let index = format!(
         "{}\nconsole.log('toString is only text', (13).toString(16));\n",
