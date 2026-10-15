@@ -162,6 +162,22 @@ has one of four actions:
   It never repeats metadata mutation; it retries only the directory fsync that
   followed a successful replacement and the idempotent native child
   reconciliation.
+  The original receipt is validated against the original operation (identity,
+  committed metadata, complete native cleanup, no failure) independently of the
+  current profile availability: a completed receipt observed while the profile is
+  removal-pending is still accepted. A Close proof requires the page to be
+  absent; a Create proof requires the page to be listed only while the profile is
+  available, because a removal-pending inventory is deliberately empty. Such a
+  Create settles without restoring a descriptor or sending a second Create. The
+  client treats a removal-pending reply as an empty inventory even when the host
+  returns the loaded tabs next to `removal_pending: true` (a committed Create can
+  race with removal): the raw listing only proves the original receipt, and
+  reconciliation and completion handling never see or open those pages.
+  A removal-pending reply whose Close or Create receipt fails any proof check
+  stays rejected: the operation remains unsettled and uncertain and the closing
+  page keeps its descriptor. The independently validated removal-pending state is
+  still reconciled as an empty inventory, so other Pages' descriptors are not left
+  stale while the bad receipt is retained.
 
 Every reply carries `{state, receipt}`. A receipt separates committed metadata
 from incomplete native cleanup (`phase` accepted, cleanup-pending, completed or
@@ -265,7 +281,47 @@ Other windows and sessions of the same account observe the inventory read-only
 and align their descriptors (append newly listed pages in inventory order,
 refresh labels from observed URLs, and drop descriptors the inventory no longer
 lists) without selecting a page or taking ownership of another window's
-operation. Existing local `tabs.json` storage remains compatible; no business RPC,
+operation. A removal-pending (empty) inventory is authoritative: it drops this
+profile's Page descriptors the same way, without any native mutation, while a
+page owned by an unsettled original Close keeps its descriptor in every Session
+and every same-origin product window (the close is profile-scoped, so the shared
+tab store records the owner and a reconciling Session never drops that page)
+until the owner observes the proof or abandons the operation. Product windows
+have independent renderer memory, so the store announces each hold, a
+heartbeat refresh and its release over a same-origin `BroadcastChannel`
+(`delidev.browser.pending-close`). A newly opened window queries the current
+holds, and windows learn each other through that exchange. Before the native
+Close is sent, the initiating window announces the hold with a unique announcement
+id and waits until every sibling window has acknowledged that exact announcement
+(an Ack echoes the id, so a delayed Ack for an earlier Close of the same page is
+never credited to a replacement Close). Siblings are the windows already seen on
+the channel plus, when Web Locks is available, every window currently holding a
+liveness lock, so a window whose handshake has not arrived yet is still awaited;
+without Web Locks the Close also waits a 100 ms discovery period for unintroduced
+windows. A silent sibling that still holds its liveness lock (for example a
+suspended renderer) keeps being awaited, because it may resume and reconcile at
+any time; it stops being awaited only after it acknowledges, announces `bye`, or
+its lock is gone (rechecked every second). Without a liveness source a window
+that stays silent for one second is presumed gone. A released or settled hold
+ends its wait. A window that is discovered (or joins) after the first broadcast is sent an acknowledgement-requesting Hold again, and a Close whose hold was withdrawn while it waited (pagehide or disposal) is cancelled before the native call and reported as a failed action. This ensures a sibling's inventory read cannot find the page unowned after
+it disappears natively. A hold whose window stopped refreshing (for example after a crash)
+expires after 15 seconds, except that when the Web Locks API is available each
+window also holds a liveness lock named after its window identity and an expired
+hold is kept while that lock is still held, because renderer timers of a hidden
+or minimized window are throttled and are not proof of death. Without Web Locks the
+15-second expiry applies. A closing window releases its holds on `pagehide`, becomes inactive (it announces no further Hold, so a Close started after `pagehide` cannot resurrect it on siblings; a `pageshow` restored from the back/forward cache reactivates it), and cancels its liveness-lock request through an `AbortSignal` so a request that was never granted cannot hold the lock after disposal. Pending lock requests of siblings count as live windows.
+A window whose `Query` arrives while a barrier is open is added to that barrier's required set before its Ack is awaited. An inconclusive liveness result is never proof of death: a failed `locks.query()` keeps an expired remote hold (it is re-probed at the next expiry), and a barrier whose liveness query keeps failing keeps awaiting silent windows for at most five one-second rechecks (a documented best-effort bound, so a permanently failing query cannot hang a Close) before presuming them gone. The registry constructor connects by default, but `deferConnect` skips that; the React provider and the `useSessionTabsStore` fallback construct the registry with `deferConnect` and call `connect()` only from a committed effect, so render never opens the channel, page listeners or liveness lock.
+When the owning window observes the original Close proof, it broadcasts a
+`settled` message in place of a plain release: every sibling window drops the
+hold and removes the exact profile/page descriptor from all of its Sessions,
+including retained or inactive ones that run no inventory poll. A rejected or
+abandoned Close only releases the hold and never removes a descriptor. A removal-pending reply is normalized to an empty inventory for reconciliation, but the raw listing is kept to prove a Close: an observation with no receipt settles the Close only when the raw reply no longer lists the page, otherwise only this operation is released.
+A discarded tab store (for example when the connection identity remounts the
+provider) disposes its registry: it releases its holds, detaches the `pagehide`
+listener and closes the channel, and a replayed mount reconnects it.
+The channel carries only an opaque window identity and the profile/page key,
+never URLs or credentials; without `BroadcastChannel` the hold stays
+window-local. Existing local `tabs.json` storage remains compatible; no business RPC,
 protocol allocation, SQLite migration, dependency or browser-engine change is
 added.
 

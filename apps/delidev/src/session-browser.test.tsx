@@ -35,6 +35,7 @@ import {
   sessionTabKey,
   useSessionTabs,
   useSessionTabsStore,
+  SessionTabsStore as SessionTabsStoreImpl,
   type SessionTabsStore,
 } from "./session-tabs";
 
@@ -142,15 +143,20 @@ function fixture(options: { registered?: boolean; pages?: number } = {}) {
       "complete" | "lose-reply" | "cleanup-pending" | "fail" | "not-admitted",
     // The receipt is settled by the next observation.
     settleOnObserve: true,
+    // The profile is being removed: native reports an empty pending inventory.
+    removalPending: false,
   };
   model.selected = model.pages[0]?.id ?? "";
-  const state = () => ({
-    tabs: {
-      tabs: model.pages.map((page) => ({ ...page })),
-      selected: model.selected,
-    },
-    removal_pending: false,
-  });
+  const state = () =>
+    model.removalPending
+      ? { tabs: { tabs: [], selected: "" }, removal_pending: true }
+      : {
+          tabs: {
+            tabs: model.pages.map((page) => ({ ...page })),
+            selected: model.selected,
+          },
+          removal_pending: false,
+        };
   const receipt = (
     request: Request,
     page_id: string,
@@ -255,6 +261,14 @@ function Workspace({ f, active = true }: { f: Fixture; active?: boolean }) {
       />
       <button type="button" onClick={() => setDialog(true)}>
         Open tool Browser
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          tabs.store.open(f.session.id, { kind: SessionTabKind.Files })
+        }
+      >
+        Open Files fixture tab
       </button>
       <SessionBrowser
         session={f.session}
@@ -888,6 +902,34 @@ it("removes the page from retained sessions when a lost Close is observed withou
     sessionTabKey(pageTab(f.profileId, second.id)),
   ]);
   expect(store.snapshot(retained).selected).toBe(SessionTabKind.Conversation);
+  expect(pageCalls("close")).toHaveLength(1);
+});
+
+it("cancels the Close without a native call when pagehide withdrew its hold during the barrier", async () => {
+  const f = fixture({ pages: 1 });
+  const captured = mountWithRetainedSession(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  // The window went inactive while the barrier was pending.
+  const holds = vi
+    .spyOn(captured.store, "holdsPendingClose")
+    .mockReturnValue(false);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  await screen.findByRole("alert");
+  expect(holds).toHaveBeenCalled();
+  expect(pageCalls("close")).toHaveLength(0);
+  expect(f.model.pages).toHaveLength(1);
+  expect(tabNames()).toHaveLength(2);
+  // A later Close is a fresh operation that proceeds once the hold stands.
+  holds.mockRestore();
+  fireEvent.click(
+    within(screen.getByRole("alert")).getByRole("button", { name: "Dismiss" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  await waitFor(() => expect(tabNames()).toHaveLength(1));
   expect(pageCalls("close")).toHaveLength(1);
 });
 
@@ -1597,6 +1639,540 @@ it("sends no page operation or presentation while the session is inactive", asyn
   expect(tabNames()).toEqual(["Conversation"]);
 });
 
+// Removal convergence waits on the one-second inventory poll.
+const SLOW_TEST = 15000;
+const EMPTY_PENDING_STATE = {
+  tabs: { tabs: [], selected: "" },
+  removal_pending: true,
+};
+/** Mutating browser_pages actions and presentation commands the host receives. */
+const nativeMutations = () =>
+  native.mock.calls.filter(
+    ([name, args]) =>
+      (name === "browser_pages" &&
+        ["create", "close"].includes(args.request.action)) ||
+      name === "open_browser" ||
+      name === "control_browser",
+  );
+/** Rewrites every Observe reply so tests can pair receipts with other state. */
+function rewriteObserve(
+  rewrite: (reply: { state: any; receipt: Receipt }) => unknown,
+) {
+  const base = native.getMockImplementation()!;
+  native.mockImplementation(async (operation: string, args: any) => {
+    const reply = await base(operation, args);
+    if (
+      operation === "browser_pages" &&
+      args.request.action === "observe" &&
+      reply.receipt
+    )
+      return rewrite(reply);
+    return reply;
+  });
+}
+const settle = (milliseconds = 60) =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, milliseconds));
+  });
+
+it(
+  "drops stale Page descriptors on a removal-pending inventory and keeps unrelated tabs",
+  async () => {
+    const f = fixture({ pages: 2 });
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(3));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Files fixture tab" }),
+    );
+    await waitFor(() => expect(tabNames()).toHaveLength(4));
+    const mutations = nativeMutations().length;
+    await act(async () => {
+      f.model.removalPending = true;
+    });
+    await waitFor(() => expect(tabNames()).toHaveLength(2), { timeout: 6000 });
+    expect(tabNames()).not.toContain("https://fixture.test/1");
+    expect(tabNames()).not.toContain("https://fixture.test/2");
+    expect(tabNames()).toContain("Conversation");
+    // Repeated observation is idempotent and sends no native mutation.
+    const settled = tabNames();
+    await settle(2200);
+    expect(tabNames()).toEqual(settled);
+    expect(pageCalls("create")).toHaveLength(0);
+    expect(pageCalls("close")).toHaveLength(0);
+    expect(nativeMutations()).toHaveLength(mutations);
+  },
+  SLOW_TEST,
+);
+
+it(
+  "falls back to Conversation when the selected Page is dropped by a removal-pending inventory",
+  async () => {
+    const f = fixture({ pages: 1 });
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(2));
+    fireEvent.click(
+      screen.getByRole("tab", { name: "https://fixture.test/1" }),
+    );
+    await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+    await act(async () => {
+      f.model.removalPending = true;
+    });
+    await waitFor(() => expect(tabNames()).toEqual(["Conversation"]), {
+      timeout: 6000,
+    });
+    expect(
+      screen
+        .getByRole("tab", { name: "Conversation" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(pageCalls("close")).toHaveLength(0);
+  },
+  SLOW_TEST,
+);
+
+it(
+  "converges two sessions of one account when the profile is removed",
+  async () => {
+    const f = fixture({ pages: 1 });
+    const other = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SESSION,
+      revision: 7n,
+    });
+    const second = { ...f, session: other } as Fixture;
+    render(
+      <TransportProvider transport={f.transport}>
+        <QueryClientProvider client={f.client}>
+          <MutationIntents>
+            <SessionTabsProvider>
+              <Workspace f={f} />
+              <Workspace f={second} />
+            </SessionTabsProvider>
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("tab", { name: "https://fixture.test/1" }),
+      ).toHaveLength(2),
+    );
+    await act(async () => {
+      f.model.removalPending = true;
+    });
+    await waitFor(
+      () =>
+        expect(
+          screen.queryAllByRole("tab", { name: "https://fixture.test/1" }),
+        ).toHaveLength(0),
+      { timeout: 6000 },
+    );
+    expect(pageCalls("close")).toHaveLength(0);
+  },
+  SLOW_TEST,
+);
+
+it(
+  "preserves the descriptor of an in-flight Close until its original proof settles under removal",
+  async () => {
+    const f = fixture({ pages: 2 });
+    f.model.outcome = "cleanup-pending";
+    f.model.settleOnObserve = false;
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(3));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+    );
+    const alert = await screen.findByRole("alert");
+    await act(async () => {
+      f.model.removalPending = true;
+    });
+    await settle(1500);
+    // The owned descriptor survives while the sibling page is dropped.
+    expect(tabNames()).toEqual(["Conversation", "https://fixture.test/1"]);
+    f.model.settleOnObserve = true;
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Check status" }),
+    );
+    await waitFor(() => expect(tabNames()).toEqual(["Conversation"]));
+    expect(pageCalls("close")).toHaveLength(1);
+  },
+  SLOW_TEST,
+);
+
+it(
+  "keeps the descriptor of another Session's unsettled Close under removal until its proof settles",
+  async () => {
+    const f = fixture({ pages: 2 });
+    f.model.outcome = "cleanup-pending";
+    f.model.settleOnObserve = false;
+    const other = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SESSION,
+      revision: 3n,
+    });
+    function OtherPages() {
+      const snapshot = useSessionTabs(other.id);
+      return (
+        <output data-testid="other-pages">
+          {snapshot.tabs
+            .filter((tab) => tab.kind === SessionTabKind.Page)
+            .map((tab) => tab.id)
+            .join(",")}
+        </output>
+      );
+    }
+    render(
+      <TransportProvider transport={f.transport}>
+        <QueryClientProvider client={f.client}>
+          <MutationIntents>
+            <SessionTabsProvider>
+              <Workspace f={f} />
+              <SessionBrowser session={other} accountId={f.accountId} />
+              <OtherPages />
+            </SessionTabsProvider>
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    const [closing, sibling] = f.model.pages.map((page) => page.id);
+    const otherPages = () => screen.getByTestId("other-pages").textContent;
+    await waitFor(() => expect(otherPages()).toBe(`${closing},${sibling}`));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+    );
+    const alert = await screen.findByRole("alert");
+    await act(async () => {
+      f.model.removalPending = true;
+    });
+    // The other Session polls the empty inventory and drops the sibling, but
+    // keeps the page whose original Close is still unsettled.
+    await waitFor(() => expect(otherPages()).toBe(closing), { timeout: 6000 });
+    await settle(3500);
+    expect(otherPages()).toBe(closing);
+    f.model.settleOnObserve = true;
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Check status" }),
+    );
+    await waitFor(() => expect(otherPages()).toBe(""));
+    expect(pageCalls("close")).toHaveLength(1);
+  },
+  SLOW_TEST,
+);
+
+it(
+  "settles a lost Close reply observed after the profile began removal without replaying it",
+  async () => {
+    const f = fixture({ pages: 2 });
+    f.model.outcome = "lose-reply";
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(3));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+    );
+    const alert = await screen.findByRole("alert");
+    await act(async () => {
+      f.model.removalPending = true;
+    });
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Check status" }),
+    );
+    await waitFor(() => expect(tabNames()).toEqual(["Conversation"]));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(pageCalls("close")).toHaveLength(1);
+    // Polling stopped: nothing further is observed once the operation settled.
+    const observed = pageCalls("observe").length;
+    await settle(2200);
+    expect(pageCalls("observe").length).toBe(observed);
+    expect(pageCalls("close")).toHaveLength(1);
+  },
+  SLOW_TEST,
+);
+
+it(
+  "settles a lost Create reply observed under removal without reviving a page or creating again",
+  async () => {
+    const f = fixture({ pages: 1 });
+    f.model.outcome = "lose-reply";
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(2));
+    const dialog = await openDialog();
+    await submit(dialog, "https://fixture.test/lost");
+    const check = await within(dialog).findByRole("button", {
+      name: "Check status",
+    });
+    await act(async () => {
+      f.model.removalPending = true;
+    });
+    fireEvent.click(check);
+    await waitFor(() =>
+      expect(
+        within(dialog).queryByRole("button", { name: "Check status" }),
+      ).toBeNull(),
+    );
+    expect(screen.queryByText("https://fixture.test/lost")).toBeNull();
+    expect(tabNames()).toEqual(["Conversation"]);
+    expect(pageCalls("create")).toHaveLength(1);
+    expect(calls("open_browser")).toHaveLength(0);
+    // A new Create stays denied while the profile is being removed.
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Address" }), {
+      target: { value: "https://fixture.test/again" },
+    });
+    expect(
+      within(dialog).getByRole("button", { name: "Open page" }),
+    ).toHaveProperty("disabled", true);
+    await settle(1500);
+    expect(pageCalls("create")).toHaveLength(1);
+  },
+  SLOW_TEST,
+);
+
+it(
+  "treats a nonempty removal-pending Create inventory as empty without reviving the created page",
+  async () => {
+    const f = fixture({ pages: 1 });
+    f.model.outcome = "lose-reply";
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(2));
+    const dialog = await openDialog();
+    await submit(dialog, "https://fixture.test/raced");
+    const check = await within(dialog).findByRole("button", {
+      name: "Check status",
+    });
+    // The host can answer a committed Create that raced with removal with the
+    // loaded tabs, including the new page, next to removal_pending.
+    const base = native.getMockImplementation()!;
+    native.mockImplementation(async (operation: string, args: any) => {
+      const reply = await base(operation, args);
+      return operation === "browser_pages" &&
+        ["observe", "inventory"].includes(args.request.action)
+        ? { ...reply, state: { ...reply.state, removal_pending: true } }
+        : reply;
+    });
+    fireEvent.click(check);
+    await waitFor(() =>
+      expect(
+        within(dialog).queryByRole("button", { name: "Check status" }),
+      ).toBeNull(),
+    );
+    expect(screen.queryByText("https://fixture.test/raced")).toBeNull();
+    expect(tabNames()).toEqual(["Conversation"]);
+    expect(pageCalls("create")).toHaveLength(1);
+    expect(calls("open_browser")).toHaveLength(0);
+    expect(
+      nativeMutations().filter(([name]) => name !== "browser_pages"),
+    ).toHaveLength(0);
+  },
+  SLOW_TEST,
+);
+
+const invalidProofs: [string, (receipt: Receipt) => Receipt][] = [
+  [
+    "native cleanup incomplete",
+    (receipt) => ({ ...receipt, native_cleanup_complete: false }),
+  ],
+  [
+    "metadata not committed",
+    (receipt) => ({ ...receipt, metadata_committed: false }),
+  ],
+  [
+    "a recorded failure",
+    (receipt) => ({ ...receipt, failure: "storage-unavailable" }),
+  ],
+  [
+    "a foreign operation",
+    (receipt) => ({ ...receipt, operation_id: newRequestId() }),
+  ],
+];
+it.each(invalidProofs)(
+  "keeps a removal-pending Close unsettled when the receipt reports %s",
+  async (_name, tamper) => {
+    const f = fixture({ pages: 1 });
+    f.model.outcome = "lose-reply";
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(2));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+    );
+    const alert = await screen.findByRole("alert");
+    f.model.removalPending = true;
+    rewriteObserve((reply) => ({
+      state: EMPTY_PENDING_STATE,
+      receipt: tamper(reply.receipt),
+    }));
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Check status" }),
+    );
+    await waitFor(() => expect(pageCalls("observe").length).toBeGreaterThan(0));
+    await settle(1500);
+    expect(tabNames()).toEqual(["Conversation", "https://fixture.test/1"]);
+    expect(screen.getByRole("button", { name: "Check status" })).toBeTruthy();
+    expect(pageCalls("close")).toHaveLength(1);
+  },
+  SLOW_TEST,
+);
+
+it.each(invalidProofs)(
+  "still drops sibling descriptors under removal when the Close receipt reports %s",
+  async (_name, tamper) => {
+    const f = fixture({ pages: 2 });
+    f.model.outcome = "lose-reply";
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(3));
+    const loaded = f.model.pages.map((page) => ({ ...page }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+    );
+    const alert = await screen.findByRole("alert");
+    f.model.removalPending = true;
+    // The host replies with the loaded tabs next to the rejected receipt.
+    rewriteObserve((reply) => ({
+      state: {
+        tabs: { tabs: loaded, selected: loaded[1].id },
+        removal_pending: true,
+      },
+      receipt: tamper(reply.receipt),
+    }));
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Check status" }),
+    );
+    // The independently validated pending inventory reconciles the sibling
+    // while the closing page stays protected and its operation unsettled.
+    await waitFor(() =>
+      expect(tabNames()).toEqual(["Conversation", "https://fixture.test/1"]),
+    );
+    await settle(1500);
+    expect(tabNames()).toEqual(["Conversation", "https://fixture.test/1"]);
+    expect(screen.getByRole("button", { name: "Check status" })).toBeTruthy();
+    expect(pageCalls("close")).toHaveLength(1);
+    expect(pageCalls("create")).toHaveLength(0);
+  },
+  SLOW_TEST,
+);
+
+it(
+  "does not settle a Close from a removal-pending reply that still lists the page",
+  async () => {
+    const f = fixture({ pages: 1 });
+    f.model.outcome = "lose-reply";
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(2));
+    const loaded = f.model.pages.map((page) => ({ ...page }));
+    const settled = vi.spyOn(
+      SessionTabsStoreImpl.prototype,
+      "closePageEverywhere",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+    );
+    const alert = await screen.findByRole("alert");
+    f.model.removalPending = true;
+    // No admission is found, and the host still lists the page next to
+    // removal_pending: the normalized empty inventory must not prove absence.
+    rewriteObserve(() => ({
+      state: {
+        tabs: { tabs: loaded, selected: loaded[0].id },
+        removal_pending: true,
+      },
+      receipt: null,
+    }));
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Check status" }),
+    );
+    await waitFor(() => expect(pageCalls("observe").length).toBeGreaterThan(0));
+    await settle(500);
+    expect(settled).not.toHaveBeenCalled();
+    settled.mockRestore();
+  },
+  SLOW_TEST,
+);
+
+it(
+  "rejects a removal-pending Close receipt for a different page",
+  async () => {
+    const f = fixture({ pages: 1 });
+    f.model.outcome = "lose-reply";
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(2));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+    );
+    const alert = await screen.findByRole("alert");
+    f.model.removalPending = true;
+    rewriteObserve((reply) => ({
+      state: EMPTY_PENDING_STATE,
+      receipt: { ...reply.receipt, page_id: newRequestId() },
+    }));
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Check status" }),
+    );
+    await settle(1500);
+    expect(tabNames()).toEqual(["Conversation", "https://fixture.test/1"]);
+    expect(screen.getByRole("button", { name: "Check status" })).toBeTruthy();
+  },
+  SLOW_TEST,
+);
+
+it(
+  "still requires Create presence and Close absence while the profile is available",
+  async () => {
+    const f = fixture({ pages: 1 });
+    f.model.outcome = "lose-reply";
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(2));
+    const dialog = await openDialog();
+    await submit(dialog, "https://fixture.test/lost");
+    const check = await within(dialog).findByRole("button", {
+      name: "Check status",
+    });
+    // An available inventory that lacks the created page contradicts the proof.
+    rewriteObserve((reply) => ({
+      state: { tabs: { tabs: [], selected: "" }, removal_pending: false },
+      receipt: reply.receipt,
+    }));
+    fireEvent.click(check);
+    await waitFor(() => expect(pageCalls("observe").length).toBeGreaterThan(0));
+    await settle(1500);
+    expect(
+      within(dialog).getByRole("button", { name: "Check status" }),
+    ).toBeTruthy();
+    expect(pageCalls("create")).toHaveLength(1);
+  },
+  SLOW_TEST,
+);
+
+it(
+  "still rejects a Close receipt while the closed page remains listed",
+  async () => {
+    const f = fixture({ pages: 1 });
+    f.model.outcome = "lose-reply";
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(2));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+    );
+    const alert = await screen.findByRole("alert");
+    rewriteObserve((reply) => ({
+      state: {
+        tabs: {
+          tabs: [{ id: reply.receipt.page_id, url: "https://fixture.test/1" }],
+          selected: reply.receipt.page_id,
+        },
+        removal_pending: false,
+      },
+      receipt: reply.receipt,
+    }));
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Check status" }),
+    );
+    await settle(1500);
+    expect(tabNames()).toEqual(["Conversation", "https://fixture.test/1"]);
+    expect(screen.getByRole("button", { name: "Check status" })).toBeTruthy();
+    expect(pageCalls("close")).toHaveLength(1);
+  },
+  SLOW_TEST,
+);
+
 function deferred<T>() {
   let resolve!: (value: T) => void, reject!: (reason: unknown) => void;
   const promise = new Promise<T>((a, b) => {
@@ -1629,10 +2205,6 @@ const openButton = (dialog: HTMLElement) =>
   within(dialog).getByRole("button", {
     name: "Open page",
   }) as HTMLButtonElement;
-const settle = () =>
-  act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 60));
-  });
 
 it("keeps Open page closed while the first profile page is pending, then registers and creates once when absence is confirmed", async () => {
   const f = fixture({ registered: false });
