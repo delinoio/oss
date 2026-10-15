@@ -298,17 +298,22 @@ async function lockedUfbxVersion() {
   );
 }
 
-export async function sourceStatus(destination) {
-  const relativeDestination = relative(root, destination);
+export async function sourceStatus(destination, repository = root) {
+  const relativeDestination = relative(repository, destination);
   const insideRepository =
     relativeDestination &&
     !isAbsolute(relativeDestination) &&
     relativeDestination !== ".." &&
     !relativeDestination.startsWith(`..${sep}`);
   const args = ["status", "--porcelain=v1", "--untracked-files=all", "--", "."];
+  // `top` anchors the pathspec to the repository root and `literal` disables
+  // glob matching, so names such as `[ab].json` or `*.json` exclude only the
+  // exact benchmark destination.
   if (insideRepository)
-    args.push(`:(exclude)${relativeDestination.split(sep).join("/")}`);
-  const { stdout } = await execFile("git", args, { cwd: root });
+    args.push(
+      `:(top,literal,exclude)${relativeDestination.split(sep).join("/")}`,
+    );
+  const { stdout } = await execFile("git", args, { cwd: repository });
   return stdout;
 }
 

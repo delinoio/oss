@@ -4,7 +4,7 @@ const { spawn } = require("node:child_process");
 const { readFileSync, statSync } = require("node:fs");
 const { createRequire } = require("node:module");
 const path = require("node:path");
-const { Platform, selectTarget } = require("./platforms.cjs");
+const { Platform, targets, selectTarget } = require("./platforms.cjs");
 
 const Failure = Object.freeze({
   Unsupported: "unsupported-platform",
@@ -26,7 +26,9 @@ function resolveBinary(
   if (!target)
     throw new LauncherError(
       Failure.Unsupported,
-      "This release supports macOS 15+ and glibc Linux on x64/arm64. Windows support is planned for pnport 0.2.0.",
+      targets.some(({ os }) => os === Platform.Windows)
+        ? "This release requires macOS 15+, glibc Linux, or Windows 10 22H2+ MSVC on x64/arm64."
+        : "This release supports macOS 15+ and glibc Linux on x64/arm64. Windows support is planned for pnport 0.2.0.",
     );
   const { version } = JSON.parse(readFileSync(manifestPath, "utf8"));
   let dependencyPath;
