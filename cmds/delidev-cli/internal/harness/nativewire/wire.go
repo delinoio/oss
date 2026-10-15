@@ -167,7 +167,8 @@ func StartJSONRPC(ctx context.Context, config process.Config) (*Connection, erro
 
 // StartImageObservations admits bounded native base64 image notifications only
 // for the explicitly selected original image adapter. Ordinary profiles retain
-// their one-MiB frame and eight-MiB aggregate queue bounds.
+// their one-MiB frame bounds, with a 32-MiB aggregate queue for Codex and
+// an eight-MiB aggregate queue for JSON-RPC.
 func StartImageObservations(ctx context.Context, config process.Config) (*Connection, error) {
 	return startBounded(ctx, config, ProfileImage)
 }
