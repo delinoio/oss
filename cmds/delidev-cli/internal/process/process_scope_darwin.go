@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -52,6 +53,15 @@ func bootIdentity() (string, error) { return unix.Sysctl("kern.bootsessionuuid")
 func prepareScope(s *processScope, _ string) error {
 	s.Label = "io.delino.delidev.execution." + string(domain.NewID())
 	s.Domain = fmt.Sprintf("user/%d", os.Getuid())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	manager := exec.CommandContext(ctx, "/bin/launchctl", "managername")
+	manager.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C"}
+	if output, err := manager.Output(); err == nil && strings.TrimSpace(string(output)) == "Aqua" {
+		// Preserve the original GUI security session so ordinary user tools can
+		// access their existing login keychain. Background Workers stay there.
+		s.Domain = fmt.Sprintf("gui/%d", os.Getuid())
+	}
 	return nil
 }
 func launchctl(args ...string) error {
@@ -77,7 +87,11 @@ func launchScope(s processScope, dir, socket string) (func() error, error) {
 	for _, arg := range []string{executable, supervisorArgument, dir, socket} {
 		fmt.Fprintf(&b, "<string>%s</string>", text(arg))
 	}
-	b.WriteString(`</array><key>LimitLoadToSessionType</key><string>Background</string><key>RunAtLoad</key><true/><key>KeepAlive</key><false/><key>ExitTimeOut</key><integer>1</integer><key>AbandonProcessGroup</key><true/><key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin:/bin</string></dict></dict></plist>`)
+	sessionType := "Background"
+	if strings.HasPrefix(s.Domain, "gui/") {
+		sessionType = "Aqua"
+	}
+	fmt.Fprintf(&b, `</array><key>LimitLoadToSessionType</key><string>%s</string><key>RunAtLoad</key><true/><key>KeepAlive</key><false/><key>ExitTimeOut</key><integer>1</integer><key>AbandonProcessGroup</key><true/><key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin:/bin</string></dict></dict></plist>`, sessionType)
 	path := filepath.Join(dir, "supervisor.plist")
 	if err = security.WriteAtomic(path, b.Bytes()); err != nil {
 		return nil, err
