@@ -42,9 +42,9 @@ var errRecoveryCaptureUnsupported = errors.New("recovery capture unsupported")
 // writeExecutionAuthentication binds the retained native home to the lease's
 // durable journal and then writes the transient auth.json. The binding precedes
 // the plaintext file, so a crash can never leave an unrecorded credential.
-func (l *managedSubscriptionLease) writeExecutionAuthentication(home string) error {
+func (l *managedSubscriptionLease) writeExecutionAuthentication(home string, profile domain.ID) error {
 	if l.recoveryCapture {
-		l.journal.NativeHome = home
+		l.journal.NativeHome, l.journal.NativeRegistryProfile = home, profile
 		if err := writeJSON(l.journalPath, l.journal); err != nil {
 			return subscription.Invalid()
 		}
@@ -349,7 +349,7 @@ func reconcileCodexExecution(ctx context.Context, config Config, client delidevv
 		// fabricated and no home is guessed.
 		return blockedRecovery(domain.RecoveryCredentialProofUnavailable)
 	}
-	home, err := recoveryNativeHome(config, original, accountID, journal.NativeHome)
+	home, err := recoveryNativeHome(config, credential.MachineID, original, accountID, journal)
 	if err != nil {
 		return blockedRecovery(domain.RecoveryOwnershipUnproven)
 	}
@@ -409,10 +409,15 @@ func reconcileCodexExecution(ctx context.Context, config Config, client delidevv
 	return codexRecoveryResult{settled: true}
 }
 
-// recoveryNativeHome validates the journaled retained home: it must be the
-// canonical private directory inside this Worker's root, and a shared owner's
-// home must be the account history home.
-func recoveryNativeHome(config Config, original *domain.SubscriptionLease, account domain.ID, recorded string) (string, error) {
+// recoveryNativeHome proves that the journaled retained home is the canonical
+// native home of the original lease. A shared owner (and a version 2 account
+// history continuation) must name the exact account history home, which is also
+// the registered shared home when one is registered. A singleton must name the
+// native home of the registered profile it recorded when it wrote the transient
+// credential: containment below the Worker root alone is never proof, so an
+// altered journal cannot redirect the scan to an unrelated directory.
+func recoveryNativeHome(config Config, machine domain.ID, original *domain.SubscriptionLease, account domain.ID, journal managedSubscriptionJournal) (string, error) {
+	recorded := journal.NativeHome
 	if !filepath.IsAbs(recorded) || filepath.Clean(recorded) != recorded {
 		return "", subscription.Invalid()
 	}
@@ -420,9 +425,24 @@ func recoveryNativeHome(config Config, original *domain.SubscriptionLease, accou
 	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", subscription.Invalid()
 	}
-	if original.Shared {
-		expected, err := codexAccountHistoryHome(config.Root, account)
-		if err != nil || expected != recorded {
+	accountHome, err := codexAccountHistoryHome(config.Root, account)
+	if err != nil {
+		return "", subscription.Invalid()
+	}
+	switch {
+	case recorded == accountHome:
+		if verifySharedCodexHome(config.Root, machine, account, accountHome) != nil {
+			return "", subscription.Invalid()
+		}
+	case original.Shared || journal.NativeRegistryProfile == "":
+		return "", subscription.Invalid()
+	default:
+		registry, err := nativeProfiles(config, machine)
+		if err != nil {
+			return "", subscription.Invalid()
+		}
+		info, ok, err := registry.PeekID(journal.NativeRegistryProfile)
+		if err != nil || !ok || info.Key.Harness != domain.Codex || filepath.Join(info.Root, "codex") != recorded {
 			return "", subscription.Invalid()
 		}
 	}

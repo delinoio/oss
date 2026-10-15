@@ -541,6 +541,21 @@ func (r *Registry) Peek(key Key) (Info, bool, error) {
 	if err != nil {
 		return Info{}, false, err
 	}
+	return r.peekWhere(func(e entry) bool { return e.Key == key })
+}
+
+// PeekID is Peek for a registered profile identifier. A recovery that holds the
+// identifier recorded by the original execution uses it to prove that a
+// recorded native path is still that exact registered profile. It takes no lock
+// and changes nothing.
+func (r *Registry) PeekID(id domain.ID) (Info, bool, error) {
+	if id.Validate() != nil {
+		return Info{}, false, invalidKey()
+	}
+	return r.peekWhere(func(e entry) bool { return e.ID == id })
+}
+
+func (r *Registry) peekWhere(match func(entry) bool) (Info, bool, error) {
 	if _, err := os.Lstat(r.base); errors.Is(err, os.ErrNotExist) {
 		return Info{}, false, nil
 	}
@@ -555,7 +570,7 @@ func (r *Registry) Peek(key Key) (Info, bool, error) {
 		return Info{}, false, err
 	}
 	for _, e := range file.Profiles {
-		if e.Key == key {
+		if match(e) {
 			return r.info(e, false), true, nil
 		}
 	}

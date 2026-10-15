@@ -137,7 +137,7 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 	// Install pre-native cleanup before the atomic write: even a synchronization
 	// error may leave the owned plaintext file committed.
 	managedPreNative = true
-	if err := managed.writeExecutionAuthentication(nativeHome); err != nil {
+	if err := managed.writeExecutionAuthentication(nativeHome, profile.ID); err != nil {
 		return nil, subscription.Invalid()
 	}
 	nativeConfig := codex.Config{

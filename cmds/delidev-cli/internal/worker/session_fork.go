@@ -381,7 +381,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 			return nil, err
 		}
 		preNative = true
-		if err := managed.writeExecutionAuthentication(nativeConfig.Home); err != nil {
+		if err := managed.writeExecutionAuthentication(nativeConfig.Home, childProfile.ID); err != nil {
 			return nil, subscription.Invalid()
 		}
 		nativeConfig.API, nativeConfig.ManagedAuthentication = nil, true

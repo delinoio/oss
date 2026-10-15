@@ -505,7 +505,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 					return nil, subscription.Invalid()
 				}
 			}
-			if err := managed.writeExecutionAuthentication(nativeHome); err != nil {
+			if err := managed.writeExecutionAuthentication(nativeHome, profile.ID); err != nil {
 				return nil, subscription.Invalid()
 			}
 		}

@@ -19,7 +19,8 @@ whole owner/member set as live ownership. See the
 
 ChatGPT execution recovery adds only non-secret optional fields.
 Worker `managed-auth/<lease>.json` journals gain `native_home` (the canonical
-retained native home), `capture_request`/`capture_confirmed` (the durable
+retained native home), `native_registry_profile` (the registered native profile that owns a
+singleton's home, so recovery re-proves the path through the profile registry), `capture_request`/`capture_confirmed` (the durable
 protected-capture identity and its acknowledgement), `recovery_request` (the
 durable recovery identity, distinct from `finish`) and `recovered`; journals
 written before the lane omit them and are never guessed from the filesystem. The

@@ -269,7 +269,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		if err := validateManagedAuthenticationHome(nativeHome, manifest.WorkspaceRoots()); err != nil {
 			return nil, err
 		}
-		if managed.writeExecutionAuthentication(nativeHome) != nil {
+		if managed.writeExecutionAuthentication(nativeHome, profile.ID) != nil {
 			return nil, subscription.Invalid()
 		}
 	}

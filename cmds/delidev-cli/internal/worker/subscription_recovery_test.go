@@ -17,6 +17,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -131,15 +132,18 @@ func newRecoveryFixture(t *testing.T) *recoveryFixture {
 	}
 	f := &recoveryFixture{t: t, root: root, account: domain.NewID(), instance: domain.NewID(), logs: &bytes.Buffer{}}
 	f.credential = Credential{MachineID: domain.NewID(), Token: "recovery-fixture-token"}
-	f.home = filepath.Join(root, "runtimes", "account-history", "codex")
-	if err := security.PrivateDir(filepath.Join(root, "runtimes")); err != nil {
+	// The default fixture is a singleton whose journaled home is the canonical
+	// account history home (a version 2 continuation); registered-profile and
+	// forged homes have their own cases.
+	home, err := codexAccountHistoryHome(root, f.account)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := security.PrivateDir(filepath.Join(root, "runtimes", "account-history")); err != nil {
-		t.Fatal(err)
-	}
-	if err := security.PrivateDir(f.home); err != nil {
-		t.Fatal(err)
+	f.home = home
+	for _, dir := range []string{filepath.Join(root, "runtimes"), filepath.Join(root, "runtimes", "accounts"), filepath.Join(root, "runtimes", "accounts", string(f.account)), f.home} {
+		if err := security.PrivateDir(dir); err != nil {
+			t.Fatal(err)
+		}
 	}
 	f.latest = workerSubscriptionBundle("second")
 	f.server = &recoveryServer{capture: bytes.Clone(f.latest)}
@@ -614,12 +618,13 @@ func TestCodexExecutionAuthenticationRecordsHomeBeforeWritingPlaintext(t *testin
 	bundle := workerSubscriptionBundle("first")
 	lease := &managedSubscriptionLease{logger: f.config.Logger, response: &pb.TakeSubscriptionResponse{LeaseId: string(f.lease.ID), Bundle: bundle}, journalPath: f.journalPath(), journal: f.journal, recoveryCapture: true}
 	lease.journal.NativeHome = ""
-	if err := lease.writeExecutionAuthentication(f.home); err != nil {
+	profileID := domain.NewID()
+	if err := lease.writeExecutionAuthentication(f.home, profileID); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := security.ReadPrivate(f.journalPath(), 16<<10)
 	var journal managedSubscriptionJournal
-	if err != nil || domain.Decode(raw, &journal) != nil || journal.NativeHome != f.home {
+	if err != nil || domain.Decode(raw, &journal) != nil || journal.NativeHome != f.home || journal.NativeRegistryProfile != profileID {
 		t.Fatal("the retained home was not journaled", err)
 	}
 	for _, secret := range [][]byte{bundle} {
@@ -688,39 +693,94 @@ func TestCodexPreNativeCleanupCapturesUnusedOriginalBeforeDeletingIt(t *testing.
 	}
 }
 
-func TestCodexRecoveryClearsTheCaptureRequestBuffer(t *testing.T) {
-	f := newRecoveryFixture(t)
-	f.writeJournal()
-	f.processOwner(f.lease.OperationID)
-	// A surviving transient file with no retained capture is captured first.
-	if err := subscription.WriteCredentialFile(filepath.Join(f.home, "auth.json"), f.latest); err != nil {
-		t.Fatal(err)
+// registeredSingletonProfile registers a real native profile for the fixture
+// account and journals it the way writeExecutionAuthentication does.
+func (f *recoveryFixture) registeredSingletonProfile() (nativeprofile.Info, string) {
+	f.t.Helper()
+	lease, err := conversationProfile(context.Background(), f.config, f.credential.MachineID, nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeConversation, Account: f.account, Conversation: domain.NewID()})
+	if err != nil {
+		f.t.Fatal(err)
 	}
-	var mu sync.Mutex
-	var buffers [][]byte
-	intercept := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			if sync, ok := req.Any().(*pb.SyncSubscriptionRecoveryCaptureRequest); ok {
-				mu.Lock()
-				buffers = append(buffers, sync.Bundle)
-				mu.Unlock()
+	info := lease.Info
+	if err := lease.Close(); err != nil {
+		f.t.Fatal(err)
+	}
+	home := filepath.Join(info.Root, "codex")
+	if err := security.PrivateDir(home); err != nil {
+		f.t.Fatal(err)
+	}
+	return info, home
+}
+
+func TestCodexRecoveryBindsSingletonHomeToItsRegisteredProfile(t *testing.T) {
+	type cell struct {
+		name    string
+		prepare func(f *recoveryFixture)
+		settled bool
+	}
+	cells := []cell{
+		{"registered-profile-home", func(f *recoveryFixture) {
+			info, home := f.registeredSingletonProfile()
+			f.journal.NativeHome, f.journal.NativeRegistryProfile = home, info.ID
+		}, true},
+		{"canonical-account-history-home", func(f *recoveryFixture) {}, true},
+		{"unrelated-private-directory-below-root", func(f *recoveryFixture) {
+			other := filepath.Join(f.root, "runtimes", "unrelated")
+			if err := security.PrivateDir(other); err != nil {
+				t.Fatal(err)
 			}
-			return next(ctx, req)
-		}
-	})
-	f.client = delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.credential.Endpoint, connect.WithInterceptors(intercept))
-	if result := f.reconcile(f.instance); !result.settled {
-		t.Fatalf("recovery did not settle: %+v", result)
+			f.journal.NativeHome = other
+		}, false},
+		{"unrelated-directory-with-a-registered-profile-id", func(f *recoveryFixture) {
+			info, _ := f.registeredSingletonProfile()
+			other := filepath.Join(f.root, "runtimes", "unrelated")
+			if err := security.PrivateDir(other); err != nil {
+				t.Fatal(err)
+			}
+			f.journal.NativeHome, f.journal.NativeRegistryProfile = other, info.ID
+		}, false},
+		{"another-registered-profile-home", func(f *recoveryFixture) {
+			info, _ := f.registeredSingletonProfile()
+			_, home := f.registeredSingletonProfile()
+			f.journal.NativeHome, f.journal.NativeRegistryProfile = home, info.ID
+		}, false},
+		{"unregistered-profile-id", func(f *recoveryFixture) {
+			_, home := f.registeredSingletonProfile()
+			f.journal.NativeHome, f.journal.NativeRegistryProfile = home, domain.NewID()
+		}, false},
+		{"registered-home-without-a-journaled-profile", func(f *recoveryFixture) {
+			_, home := f.registeredSingletonProfile()
+			f.journal.NativeHome = home
+		}, false},
+		{"another-account-history-home", func(f *recoveryFixture) {
+			other, err := codexAccountHistoryHome(f.root, domain.NewID())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(other, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			f.journal.NativeHome = other
+		}, false},
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	if len(buffers) != 1 || len(buffers[0]) == 0 {
-		t.Fatal("the capture request was not observed", len(buffers))
-	}
-	for _, b := range buffers[0] {
-		if b != 0 {
-			t.Fatal("the capture request retained the credential bundle after the RPC")
-		}
+	for _, c := range cells {
+		t.Run(c.name, func(t *testing.T) {
+			f := newRecoveryFixture(t)
+			f.withCapture()
+			c.prepare(f)
+			f.writeJournal()
+			f.processOwner(f.lease.OperationID)
+			result := f.reconcile(f.instance)
+			if c.settled {
+				if !result.settled {
+					t.Fatalf("a canonical home did not settle: %+v", result)
+				}
+				return
+			}
+			if result.settled || result.err != nil || result.blocked != domain.RecoveryOwnershipUnproven || len(f.server.recovered) != 0 || f.server.reads != 0 {
+				t.Fatalf("an unproven home reached the server: %+v", result)
+			}
+		})
 	}
 }
 
@@ -778,5 +838,41 @@ func TestCodexRecoveryRequiresJournalProofForMissingMemberIndexes(t *testing.T) 
 				t.Fatalf("a member without journal proof was accepted: %+v", result)
 			}
 		})
+	}
+}
+
+func TestCodexRecoveryClearsTheCaptureRequestBuffer(t *testing.T) {
+	f := newRecoveryFixture(t)
+	f.writeJournal()
+	f.processOwner(f.lease.OperationID)
+	// A surviving transient file with no retained capture is captured first.
+	if err := subscription.WriteCredentialFile(filepath.Join(f.home, "auth.json"), f.latest); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var buffers [][]byte
+	intercept := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			if sync, ok := req.Any().(*pb.SyncSubscriptionRecoveryCaptureRequest); ok {
+				mu.Lock()
+				buffers = append(buffers, sync.Bundle)
+				mu.Unlock()
+			}
+			return next(ctx, req)
+		}
+	})
+	f.client = delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.credential.Endpoint, connect.WithInterceptors(intercept))
+	if result := f.reconcile(f.instance); !result.settled {
+		t.Fatalf("recovery did not settle: %+v", result)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(buffers) != 1 || len(buffers[0]) == 0 {
+		t.Fatal("the capture request was not observed", len(buffers))
+	}
+	for _, b := range buffers[0] {
+		if b != 0 {
+			t.Fatal("the capture request retained the credential bundle after the RPC")
+		}
 	}
 }

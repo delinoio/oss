@@ -235,8 +235,10 @@ cleanup. A successful ordinary Finish releases the lease and retires the capture
 per account inside the existing four-account lane bound, serialized with the
 in-process account gate so concurrent active ownership is never reconciled)
 validates the original journal against the lease (account, operation, instance,
-generation, revision, action), validates the journaled home (canonical private
-directory in the Worker root; the account history home for a shared owner), joins
+generation, revision, action), validates the journaled home (a shared owner and an account history continuation must name the exact
+account history home; a singleton must name the native home of the registered profile whose
+identifier it journaled when it wrote the transient credential, so containment below the Worker
+root alone is never proof and an unregistered, foreign or unjournaled home is never scanned), joins
 the original process owners through the process owner index (the native owner,
 which must have its index, and every member's process scope; a missing native
 index is never proof; any other owner with a missing index is skipped only when its own

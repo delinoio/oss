@@ -90,6 +90,10 @@ type managedSubscriptionJournal struct {
 	// transient auth.json of this Execute lease (non-secret path). Journals written
 	// before the ChatGPT recovery lane omit it and are never guessed.
 	NativeHome string `json:"native_home,omitempty"`
+	// NativeRegistryProfile is the local native-profile registry identifier that
+	// owns NativeHome for a singleton lease. Recovery re-proves the recorded path
+	// through the registry instead of trusting containment below the Worker root.
+	NativeRegistryProfile domain.ID `json:"native_registry_profile,omitempty"`
 	// CaptureRequest is the durable request identity of the protected capture sync
 	// and CaptureConfirmed records that the server acknowledged it. Neither carries
 	// secret bytes.

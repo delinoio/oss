@@ -223,7 +223,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 			return nil, err
 		}
 		managedPreNative = true
-		if err := managed.writeExecutionAuthentication(nativeHome); err != nil {
+		if err := managed.writeExecutionAuthentication(nativeHome, profile.ID); err != nil {
 			return nil, subscription.Invalid()
 		}
 	}

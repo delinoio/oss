@@ -1073,6 +1073,7 @@ func TestRegistryLoadRejectsBrokenRegisteredOnlyEntries(t *testing.T) {
 	entryPoints := map[string]func(r *Registry, key Key, relative string) error{
 		"Lookup": func(r *Registry, key Key, _ string) error { _, _, err := r.Lookup(ctx, key); return err },
 		"Peek":   func(r *Registry, key Key, _ string) error { _, _, err := r.Peek(key); return err },
+		"PeekID": func(r *Registry, _ Key, _ string) error { _, _, err := r.PeekID(domain.NewID()); return err },
 		"Acquire": func(r *Registry, key Key, _ string) error {
 			lease, err := r.Acquire(ctx, key)
 			if err == nil {
@@ -1302,4 +1303,32 @@ func TestPeekIsReadOnlyForEveryRegistryState(t *testing.T) {
 			t.Fatalf("linked registry reason: %v", err)
 		}
 	})
+}
+
+// PeekID answers only for the exact registered profile identifier, never creates
+// anything and rejects malformed identifiers.
+func TestPeekIDResolvesOnlyTheRegisteredIdentifier(t *testing.T) {
+	root := testRoot(t)
+	r, _ := workerRegistry(t, root, nil)
+	if _, ok, err := r.PeekID(domain.NewID()); err != nil || ok {
+		t.Fatalf("absent registry: ok=%v err=%v", ok, err)
+	}
+	if _, err := os.Lstat(r.Base()); !os.IsNotExist(err) {
+		t.Fatal("PeekID created the registry directory")
+	}
+	lease, err := r.Acquire(context.Background(), Key{Harness: domain.Codex, Purpose: PurposeConversation, Account: domain.NewID(), Conversation: domain.NewID()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	info, ok, err := r.PeekID(lease.ID)
+	if err != nil || !ok || info.Root != lease.Root || info.Key != lease.Key {
+		t.Fatalf("registered identifier: info=%+v ok=%v err=%v", info, ok, err)
+	}
+	if _, ok, err := r.PeekID(domain.NewID()); err != nil || ok {
+		t.Fatalf("unregistered identifier: ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := r.PeekID(domain.ID("")); err == nil || ok {
+		t.Fatalf("malformed identifier: ok=%v err=%v", ok, err)
+	}
 }
