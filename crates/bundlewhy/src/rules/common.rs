@@ -1807,12 +1807,19 @@ mod tests {
             ..crate::collect::Collection::default()
         };
         let chunk = crate::chunks::Chunk::load(&build_dir, "main.js", None, true, root).unwrap();
+        // `module_source` reads build-backed text, so model the source-map
+        // snapshot used by a collected build instead of relying on an
+        // unverified live file.
+        let mut sources = crate::sources::SourceStore::new(true);
+        sources
+            .snapshots
+            .insert(crate::sources::normalize(&source_path), source.to_owned());
         let mut context = Context::new(
             &collection,
             root.to_path_buf(),
             "app".to_owned(),
             vec![chunk],
-            crate::sources::SourceStore::new(true),
+            sources,
         );
         let mut drafts = Vec::new();
         direct_eval_mangling(&mut context, &mut drafts);
