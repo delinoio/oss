@@ -116,6 +116,32 @@ func TestContentThinkingSignaturesRemainPrivate(t *testing.T) {
 	}
 }
 
+func TestThinkingDeltaEstimatesDoNotBecomeContent(t *testing.T) {
+	for _, estimate := range []string{"null", "0", "18446744073709551615", "-1", "1.5", `"7"`, `{}`} {
+		t.Run(estimate, func(t *testing.T) {
+			raw := []byte(`{"type":"thinking_delta","thinking":"original text","estimated_tokens":` + estimate + `}`)
+			kind, text, err := decodeContentDelta(raw)
+			valid := estimate == "null" || estimate == "0" || estimate == "18446744073709551615"
+			if valid && (err != nil || kind != ThinkingDelta || text != "original text") {
+				t.Fatal("thinking estimate changed content", err)
+			}
+			if !valid && err == nil {
+				t.Fatal("invalid estimate was accepted")
+			}
+		})
+	}
+	for _, raw := range []string{
+		`{"type":"text_delta","text":"original text","estimated_tokens":7}`,
+		`{"type":"thinking_delta","estimated_tokens":7}`,
+		`{"type":"thinking_delta","thinking":null,"estimated_tokens":7}`,
+		`{"type":"thinking_delta","thinking":"text","estimated_tokens":7,"unknown":true}`,
+	} {
+		if _, _, err := decodeContentDelta([]byte(raw)); err == nil {
+			t.Fatal("estimate bypassed original delta validation")
+		}
+	}
+}
+
 func TestContentPreservesNativeEnrichedToolAndOrderedResults(t *testing.T) {
 	b := contentFixture(t)
 	contentStart(t, b, "", "msg_plan")
