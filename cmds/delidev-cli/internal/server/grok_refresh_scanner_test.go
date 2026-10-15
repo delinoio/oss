@@ -76,3 +76,21 @@ func TestGrokRefreshRecoveryRestoresTheAdmittedHealth(t *testing.T) {
 		})
 	}
 }
+
+// A claimed operation fenced by the restart is never recovered automatically, so
+// the restart itself must record its recovery diagnostic: progress would
+// otherwise report recovery without the phase, code, guidance or correlation id.
+func TestGrokRestartRecordsTheDiagnosticOfAClaimedRefresh(t *testing.T) {
+	g := newGrokLoginFixture(t)
+	g.connected(t)
+	op := g.crashAt(t, grokFaultAfterClaim)
+	g.restart(t)
+	_, a := g.record()
+	if !a.Subscription.RecoveryRequired || !a.Subscription.ServerOperation.RefreshClaimed || grokRefreshNeedsRecovery(a) {
+		t.Fatal("the claimed refresh is not fenced for manual recovery")
+	}
+	p := g.progressFor(op.OperationId)
+	if p.GrokDiagnostic == nil || p.GrokDiagnostic.Phase != pb.GrokDiagnosticPhase_GROK_DIAGNOSTIC_PHASE_REFRESH || p.GrokDiagnostic.Code != string(domain.RecoveryRequired) || p.GrokDiagnostic.CorrelationId != op.OperationId {
+		t.Fatalf("progress lacks the refresh recovery diagnostic: %+v", p.GrokDiagnostic)
+	}
+}

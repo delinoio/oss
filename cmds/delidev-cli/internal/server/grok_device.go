@@ -146,7 +146,13 @@ func (s *Service) grokDeviceLoginSteps(ctx, parent context.Context, id domain.ID
 			s.logGrok(ctx, slog.LevelInfo, "grok_login_exchange_claimed", original, grokStepExchange)
 		}
 		polls++
-		tokens, result, err := client.PollDeviceToken(ctx, endpoints, grant.DeviceCode)
+		// The poll may not outlive the device-code deadline: a token response that
+		// arrives after the local deadline must not publish a login the provider's
+		// window (or the operation window) already closed. The poll is uncertain then,
+		// because the device code may have been redeemed.
+		pollCtx, cancelPoll := context.WithTimeout(ctx, max(deadline.Sub(clock.Now()), time.Nanosecond))
+		tokens, result, err := client.PollDeviceToken(pollCtx, endpoints, grant.DeviceCode)
+		cancelPoll()
 		if err != nil {
 			reason, _ := subscription.GrokOAuthFailure(err)
 			if reason == subscription.GrokReasonTokenRejected {

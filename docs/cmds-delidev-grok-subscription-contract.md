@@ -219,7 +219,8 @@ id with the other method is a conflict.
   string (no client secret, no `Authorization` header, no redirect following, no
   retry) to the discovered `device_authorization_endpoint` (issuer origin only),
   else the fixed `https://auth.x.ai/oauth2/device/code`. The response must carry
-  a `device_code` (printable ASCII, at most 2048 bytes, kept as owned bytes), a
+  a `device_code` (printable ASCII, at most 2048 bytes, validated on its decoded value so a legal
+  JSON escape such as `\/` or `\u0041` is accepted, kept as owned bytes), a
   `user_code` matching `[A-Z0-9-]{4,32}` (for example `XXXX-XXXX`), a
   `verification_uri_complete` and/or `verification_uri` (https, host exactly
   `accounts.x.ai`, an absolute path, no credentials or fragment; a query may carry
@@ -250,7 +251,9 @@ id with the other method is a conflict.
   (`PermissionDenied`, the same code as a denied browser login);
   `expired_token` and the local deadline end it as expired. The local deadline is
   the minimum of the provider's `expires_in` and the remaining operation window
-  (15 minutes), measured on an injectable clock; the loop waits out a remainder
+  (15 minutes),
+  and every poll is itself bounded by the time left before it (a response that would
+  arrive later is never accepted and the poll settles as uncertain), measured on an injectable clock; the loop waits out a remainder
   shorter than the interval and then expires without another poll. Any other
   OAuth error (HTTP 400 or 401) is a definitive rejection (failed,
   `PermissionDenied`).
@@ -585,7 +588,8 @@ settlement and recovery).
   pending operation, with no Worker lease. That is the account's exclusive lease:
   Take, another operation and the login/refresh/logout gates all observe it, and
   a Worker Take of the server operation is refused.
-- **Claim before send.** The stored generation is opened against this server and
+- **Claim before send.** The stored generation is read with the vault opened under the account gate
+  (concurrent runners never race to open the shared vault), opened against this server and
   account, discovery supplies the JWKS and userinfo endpoints, and only then
   `refresh_claimed` is written in its own transaction that rechecks the actor,
   epoch, window, generation and the stored identity commitment. After the claim
