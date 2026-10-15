@@ -19,6 +19,8 @@ import {
   EntityKind,
   ErrorDetailSchema,
   FailureCode,
+  GrokDiagnosticPhase,
+  GrokDiagnosticSchema,
   RequestSubscriptionRequestSchema,
   ResourceSchema,
   SaveConfigurationRequestSchema,
@@ -41,6 +43,16 @@ function typedFailure(code: Code, failure: FailureCode) {
     },
   ]);
 }
+function refusal() {
+  return create(GrokDiagnosticSchema, {
+    detectedVersion: "1.0.43",
+    supportedVersion: "1.0.46",
+    phase: GrokDiagnosticPhase.VERSION,
+    code: "unsupported",
+    message: "Grok Build 1.0.43 did not complete version validation.",
+    correlationId: newRequestId(),
+  });
+}
 function fixture(loginURL = url) {
   let current = create(ResourceSchema, {
     id: newRequestId(),
@@ -55,6 +67,7 @@ function fixture(loginURL = url) {
   });
   let state = State.WAITING,
     suggested = "fixture@example.invalid",
+    grok: ReturnType<typeof refusal> | undefined,
     operation = "";
   const generation = newRequestId(),
     nativeGeneration = newRequestId();
@@ -86,6 +99,7 @@ function fixture(loginURL = url) {
     url: state === State.WAITING ? loginURL : "",
     suggestedName: suggested,
     generation,
+    grokDiagnostic: grok,
   }));
   const cancel = vi.fn(() => {
     state = State.CANCELED;
@@ -146,6 +160,13 @@ function fixture(loginURL = url) {
   return {
     failed: () => {
       state = State.FAILED;
+      grok = undefined;
+    },
+    // Reports one state of the original operation, with or without the Grok
+    // diagnostic that marks a refused Take.
+    settle: (next: State, diagnostic?: ReturnType<typeof refusal>) => {
+      state = next;
+      grok = diagnostic;
     },
     authorization: (value: string) => {
       loginURL = value;
@@ -723,3 +744,97 @@ it("explicitly inspects a terminal original sign-in without replaying login, cal
   expect(f.native).toHaveBeenCalledTimes(before.native);
   expect(f.cancel).not.toHaveBeenCalled();
 });
+
+// Polling behavior per classified response (the client column of the Grok
+// subscription contract table "Client classification of a progress response").
+const stops = async (f: ReturnType<typeof fixture>) => {
+  const before = f.progress.mock.calls.length;
+  await new Promise((resolve) => setTimeout(resolve, 2200));
+  expect(f.progress.mock.calls.length).toBe(before);
+};
+it.each([
+  ["canceled", State.CANCELED, undefined, "Login canceled"],
+  ["expired", State.EXPIRED, undefined, "ChatGPT sign-in failed"],
+  [
+    "recovery required",
+    State.RECOVERY_REQUIRED,
+    undefined,
+    "ChatGPT sign-in failed",
+  ],
+  [
+    "failed with a Grok diagnostic",
+    State.FAILED,
+    refusal,
+    "ChatGPT sign-in failed",
+  ],
+  [
+    "unsupported without a Grok diagnostic",
+    State.UNSUPPORTED,
+    undefined,
+    "ChatGPT sign-in failed",
+  ],
+] as const)(
+  "stops polling and disposes after a terminal %s response",
+  async (_name, next, diagnostic, label) => {
+    const f = fixture();
+    await start(f);
+    f.settle(next, diagnostic?.());
+    await screen.findByText(label, {}, { timeout: 3000 });
+    await waitFor(
+      () =>
+        expect(
+          f.native.mock.calls.filter((c) => c[1] === OAuthNativeAction.Dispose),
+        ).toHaveLength(1),
+      { timeout: 3000 },
+    );
+    await stops(f);
+  },
+);
+it("keeps polling a provisional refusal and names the account once the same operation succeeds", async () => {
+  const f = fixture();
+  await start(f);
+  const operation = f.login.mock.calls[0][0].mutation.requestId;
+  f.settle(State.UNSUPPORTED, refusal());
+  await screen.findByText("ChatGPT sign-in failed", {}, { timeout: 3000 });
+  expect(
+    f.native.mock.calls.filter((c) => c[1] === OAuthNativeAction.Dispose),
+  ).toHaveLength(0);
+  const refused = f.progress.mock.calls.length;
+  await waitFor(
+    () => expect(f.progress.mock.calls.length).toBeGreaterThan(refused + 1),
+    { timeout: 4000 },
+  );
+  f.settle(State.PREPARING);
+  await waitFor(
+    () => expect(screen.queryByText("ChatGPT sign-in failed")).toBeNull(),
+    { timeout: 3000 },
+  );
+  f.success();
+  const input = await screen.findByLabelText(
+    "Account name",
+    {},
+    { timeout: 3000 },
+  );
+  expect((input as HTMLInputElement).value).toBe("fixture@example.invalid");
+  expect(screen.queryByText("ChatGPT sign-in failed")).toBeNull();
+  for (const [request] of f.progress.mock.calls)
+    expect(request).toMatchObject({ operationId: operation });
+  expect(f.login).toHaveBeenCalledTimes(1);
+  expect(f.cancel).not.toHaveBeenCalled();
+  expect(f.forward).not.toHaveBeenCalled();
+}, 20000);
+it("settles a provisional refusal into a terminal failure and stops polling", async () => {
+  const f = fixture();
+  await start(f);
+  f.settle(State.UNSUPPORTED, refusal());
+  await screen.findByText("ChatGPT sign-in failed", {}, { timeout: 3000 });
+  f.settle(State.FAILED, refusal());
+  await waitFor(
+    () =>
+      expect(
+        f.native.mock.calls.filter((c) => c[1] === OAuthNativeAction.Dispose),
+      ).toHaveLength(1),
+    { timeout: 3000 },
+  );
+  await stops(f);
+}, 20000);

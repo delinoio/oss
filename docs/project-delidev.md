@@ -54,7 +54,7 @@ Main desktop local Workers now have automatic same-owner registration/start and 
 
 The feature preserves closed private local-startup ownership/admission classifications across Go, native supervision and localized startup/Connection & diagnostics guidance. Original owners and data remain untouched; ownership and unclassified legacy conflicts retain safe inspection and explicit retry guidance under the existing supervision cadence. This adds no RPC, allocation, migration or automatic lifecycle authority. See the [desktop contract](apps-delidev-desktop-contract.md#local-startup-conflict-guidance).
 
-Failed-login subscription cleanup uses System capability 41 after main-first reservation the originating change. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and Grok 39/40 reservations retain ownership; no migration or Rust/native change is added.
+Failed-login subscription cleanup uses System capability 41 after main-first reservation the originating change. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and the declared-but-unadvertised Grok 39/40 identifiers retain ownership; no migration or Rust/native change is added.
 
 Native execution option selection follows the [catalog contract](cmds-delidev-catalog-contract.md#native-execution-option-selection). Available settings pass unchanged to native execution; unavailable saved values remain explicit, and all four Codex API/subscription permission modes preserve authentication, applied-setting and cleanup/recovery ownership. No protocol or database migration is required.
 
@@ -127,6 +127,7 @@ The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalo
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
+- [Native OpenCode testing runbook](cmds-delidev-opencode-native-testing.md)
 - [Direct execution startup](cmds-delidev-execution-startup-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
@@ -137,7 +138,7 @@ The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalo
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions and shared account owner/member ownership](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members), Worker 67 `SHARED_SUBSCRIPTION_OWNER_V1` and Worker 68 `CLAUDE_DEVICE_OWNED_MEMBERS_V1`
 - [OpenCode Go subscriptions](cmds-delidev-opencode-go-subscription-contract.md)
-- [Grok Build subscriptions (planned)](cmds-delidev-grok-subscription-contract.md)
+- [Grok Build subscriptions (storage and lease layer implemented; protocol identifiers declared but unadvertised; login, execution and advertisement planned)](cmds-delidev-grok-subscription-contract.md)
 - [API account browser OAuth](cmds-delidev-account-oauth-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
@@ -294,7 +295,7 @@ Codex subagent settings require independent server/Worker capabilities, immutabl
 
 The feature extends native subagent observation to OpenCode 1.18.32 foreground tasks under the existing subagent contract and independent System/Worker capabilities. Preserve the one-level dual task/child ownership proof, same account/model, separate usage, original Stop/cleanup and paused child-bearing completion; implementation and native/account/platform acceptance remain separately recorded in the integration PR.
 
-- Bounded Unix plain-text OpenCode General Chat Fork uses independent System 26 / Worker 15, native ID-clone/history proof, explicit no-change relocation, preparation without inference and independent copied files. The [fork contract](cmds-delidev-forks-contract.md) owns this profile; Codex support does not imply OpenCode or Sidechat authority.
+- Bounded Unix plain-text OpenCode General Chat Fork uses independent System 26 / Worker 15, native ID-clone/history proof, explicit no-change relocation, preparation without inference and independent copied files. The [fork contract](cmds-delidev-forks-contract.md) owns this profile; Codex support does not imply OpenCode or Sidechat authority. Completed plain timed reasoning history forks only under the independent System 104 / Worker 69 `OPENCODE_GENERAL_CHAT_FORK_REASONING_V1` pair and profile `opencode-general-chat-v2`; it never changes capability 26/15 or the v1 profile.
 
 - The canonical 35-ID API provider registry preserves original wire IDs and shares product ordering across RPC/CLI/desktop. Real default migration 30 follows actual 26–29, retaining existing identities and deletions. Fixed native/private inspection authority is owned by the [provider inspection](cmds-delidev-providers-contract.md), [catalog](cmds-delidev-catalog-contract.md) and [activation](cmds-delidev-provider-activation-contract.md) contracts; discovery grants no inference or subscription authority.
 
@@ -304,7 +305,7 @@ Workspace storage exposes original-job snapshot, usage preview, cleanup, inspect
 - [DeliDev signed updates](cmds-delidev-updates-contract.md)
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
 
-AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming. Claude independently selects its owning Runner under capability 38 and then uses login/name steps; Grok remains unsupported. Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in the originating change; this optional JSON amendment adds no migration.
+AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming. Claude sign-in is server-owned under capability 67 with login/name steps and never selects a Runner Device (capability 38 and the original Runner remain only for existing device-owned accounts' execution and logout); Grok remains unsupported (System 39/40, Worker 21 and progress field 10 are declared in the protos but unadvertised, with no server or Worker behavior). Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in the originating change; this optional JSON amendment adds no migration.
 
 Ordered account source routing follows the catalog, desktop, sessions, protocol and
 portable configuration contracts. One Harness retains source-specific models and
@@ -324,8 +325,8 @@ their original ownership and alone grant no support.
 The originating change established System 38, Worker 20 and the complete protocol declaration
 closure on main before implementation. The extension composes the existing
 subscription, desktop, harness, protocol and storage owners. Claude Code
-at or above the pinned `2.1.236` SemVer baseline owns login/status/logout and execution in an original account-specific
-profile on the explicitly selected local or remote Runner. The server retains
+at or above the pinned `2.1.236` SemVer baseline owns status/logout and execution of existing device-owned accounts in an original account-specific
+profile on its original local or remote Runner. Fresh machine-bound Claude login and reauthentication are rejected by the server; new Claude sign-in is server-owned (System 67). The server retains
 only opaque profile/owner/generation/operation metadata and a keyed identity
 commitment; native credentials never transfer. One exclusive lease serializes
 lifecycle and execution, and original cleanup gates logout/deletion/recovery.
@@ -337,7 +338,7 @@ The owner-approved native Claude subscription extension spans the existing
 subscription, desktop, harness, protocol and storage owners. Record System 38,
 Worker 20 and the complete login-code/progress/native-identity declarations in
 the owning feature PR. Authentication remains in an original installed
-Claude Code account profile on the selected Runner Device; server metadata does
+Claude Code account profile on the original Runner Device of an existing device-owned account (new sign-in is server-owned under System 67); server metadata does
 not grant credentials, cross-device execution or cleanup authority. The
 reservation prerequisite activates no support and adds no migration. Follow
 [the subscription contract](cmds-delidev-subscription-contract.md#native-claude-subscriptions).
@@ -501,3 +502,7 @@ the [harness](cmds-delidev-harness-contract.md#persistent-native-profiles),
 and [sessions](cmds-delidev-sessions-contract.md#native-histories-and-persistent-profiles)
 contracts. Deploy the updated server and Workers; each owner migrates only its
 own state and rejects incompatible local profile versions without rewriting them.
+Native history IDs have one owner per registry. Explicit deletion verifies the
+selected managed profile owner and binds its directory identity, while an
+original Claude logout can finish a registry-only retry after its owned
+directory was removed.

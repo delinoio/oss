@@ -38,11 +38,8 @@ func claudeReplacementFixture(t *testing.T, otherMachine bool) (*subscriptionFix
 		}
 	}
 	r, _ := f.record()
-	replacement, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{Id: string(r.ID), RequestId: string(domain.NewID()), ExpectedRevision: r.Revision}, MachineId: string(machine), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return f, original, replacement.Msg
+	replacement := claudeSeedLegacyRequest(t, f, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{Id: string(r.ID), RequestId: string(domain.NewID()), ExpectedRevision: r.Revision}, MachineId: string(machine), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN})
+	return f, original, replacement
 }
 
 func TestClaudeReplacedInitialTakeRetiresOnlyOriginalClaim(t *testing.T) {

@@ -26,7 +26,7 @@ import {
   type ImageAttachment,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, items, text } from "./documents";
+import { document, items, object, text } from "./documents";
 import {
   decodeImage,
   imageDigest,
@@ -433,12 +433,30 @@ export function useImageDraft(scope: string) {
   );
   return { ...state, controller: draft };
 }
+/** Native image routes: Codex always, OpenCode only with a declared image model. */
+enum ImageHarness {
+  Codex = "codex",
+  OpenCode = "opencode",
+}
+const imageModality = "image";
+function declaresImageInput(model: unknown): boolean {
+  return items(object(model).input_modalities).includes(imageModality);
+}
+/** An OpenCode Agent qualifies only when every source route model declares images. */
+function agentDeclaresImageInput(agent: Record<string, unknown>): boolean {
+  const routes = items(agent.routes);
+  return routes.length > 0
+    ? routes.every((route) => declaresImageInput(object(route).model))
+    : declaresImageInput(agent.model);
+}
+
 export function useImageRoute(
   machineId: string,
   agentId: string,
   active: boolean,
   needed: boolean,
   originalHarness?: string,
+  originalImageDeclared = false,
 ) {
   const status = useQuery(
     SystemQuery.getStatus,
@@ -461,6 +479,12 @@ export function useImageRoute(
   const systemSupported = Boolean(
     status.data?.capabilities.includes(SystemCapability.IMAGE_INPUTS_V1),
   );
+  // OpenCode needs its independent System/Worker pair on top of the base pair.
+  const openCodeSystemSupported = Boolean(
+    status.data?.capabilities.includes(
+      SystemCapability.OPENCODE_IMAGE_INPUTS_V1,
+    ),
+  );
   const row = machine.data?.resource,
     agentRow = agent.data?.resource;
   const machineSupported =
@@ -473,13 +497,29 @@ export function useImageRoute(
         value === WorkerCapability.IMAGE_INPUTS_V1 ||
         value === "image-inputs-v1",
     );
+  const openCodeMachineSupported =
+    row?.id === machineId &&
+    items(document(row).worker_capabilities).some(
+      (value) =>
+        value === WorkerCapability.OPENCODE_IMAGE_INPUTS_V1 ||
+        value === "opencode-image-inputs-v1",
+    );
+  const openCodePairSupported =
+    openCodeSystemSupported && openCodeMachineSupported;
+  const agentDocument = document(agentRow);
   const harnessSupported = originalHarness
-    ? originalHarness === "codex"
+    ? originalHarness === ImageHarness.Codex ||
+      (originalHarness === ImageHarness.OpenCode &&
+        originalImageDeclared &&
+        openCodePairSupported)
     : agentRow?.id === agentId &&
       agentRow.kind === EntityKind.AGENT &&
       agentRow.revision > 0n &&
       supportsResourceSchema(agentRow) &&
-      text(document(agentRow).harness) === "codex";
+      (text(agentDocument.harness) === ImageHarness.Codex ||
+        (text(agentDocument.harness) === ImageHarness.OpenCode &&
+          agentDeclaresImageInput(agentDocument) &&
+          openCodePairSupported));
   return {
     systemSupported,
     ready: systemSupported && machineSupported && harnessSupported,

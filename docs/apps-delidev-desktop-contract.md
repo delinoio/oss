@@ -420,6 +420,197 @@ store) and Settings through the read-only catalog loop, both with the effective
 platform keycaps, the existing disabled treatment and the English/Korean reason; no
 button or dialog is added.
 
+#### Product route retained across reload
+
+The whole-webview reload above keeps the current top-level screen and its selected
+item. `product-route.ts` owns a typed product route in the `index.html` URL query
+string (no server path, so no native fallback is needed). The only parameters are
+`screen` (a `Surface` value), `session` and optional `sidechat` (Sessions), `item`
+(Inbox entry, Schedule or Pull requests repository), `category` (a
+`SettingsCategory`) and `tab` (a `UsageTab`). Selections are canonical entity IDs
+(`isEntityId`) and enums only, never titles, prompts, credentials, search text or
+other user content. New session, New general chat and Search keep their screen
+only; Sessions Home and every selection-free screen write no selection, so a stale
+selection is never restored. Unrelated query parameters, the path and the `#main`
+skip-link hash are preserved.
+
+Native product-window admission checks the original local origin, entry-document
+path, registered window and role after a route update. A same-document query is
+allowed because it does not select a different document or grant native authority.
+This includes preserved unrelated query parameters. Foreign origins, other paths
+and URL credentials remain denied.
+
+`Shell` in `App.tsx` mirrors committed in-app navigation and selection into the
+query with `history.replaceState` (never `pushState`), so Back/Forward gain no
+entries; a throttled or failing write is logged (`delidev.product_route.write_failed`)
+and ignored. Each mounted screen reports its own selection to `Shell`: Inbox
+(`selectionChanged`), Schedules, Pull requests (repository), Settings
+(`categoryChanged`) and Usage (`tabChanged`, `UsageTab` in `usage-tab.ts`).
+
+On document startup `readInitialRoute` parses the URL for a connection identity
+scope (the same server, endpoint and device identity key `App` already uses; an
+unpaired connection is scoped by its transport object). The read is pure, so React
+may invoke it any number of times for one render (StrictMode lazy initializers,
+discarded renders) and every call answers the same. The `Shell` records ownership of
+the URL with `commitInitialRouteScope` from a layout effect, i.e. only when it
+commits. A different identity never receives the previous identity's route. An unknown `screen`
+falls back to Sessions Home; malformed IDs, unknown categories and tabs, and
+parameters that do not belong to the screen are dropped. Screens without a selection
+(and the Settings category and Usage tab, which need no read) open immediately, so a
+pending route never flashes Home. A Session, Sidechat, Inbox entry, Schedule or
+repository selection stays pending until the connection is ready, then
+`product-route-restore.ts` verifies it with a fresh, uncached read through the
+current transport (`GetResource` for Session and repository, `GetSchedule`,
+`GetInboxEntry`; a Sidechat must resolve to a child of the requested parent). While
+the connection is unavailable the route stays pending, the URL keeps the original
+route, and the selection resumes only when the same connection becomes ready. A
+restore read is current only for the transport and the `ConnectionEpoch` it started
+in: a same-identity reconnect keeps the transport while the peer behind it can be
+replaced or downgraded, so an epoch change aborts the read and restarts the restore. A
+deleted, denied, malformed, wrong-kind or wrong-connection selection (not found,
+permission denied, unauthenticated, invalid argument such as an ID of another entity
+kind, an unexpected shape or an invalid envelope with a non-positive revision or an
+unsupported schema version, checked the same way for every restored kind) clears the
+selection and shows the requested screen's list, default category or Sessions Home.
+Failure codes are classified once, for every restored kind, by
+`routeFailureDispositions` in `search-session-routing.ts`, an exhaustive table over
+`FailureCode`: `invalid_argument`, `not_found`, `permission_denied` and
+`unauthenticated` are definitive (clear); every other code, including
+`recovery_required` (gRPC failed precondition), `unavailable`, `server_unavailable`
+(deadline exceeded and unmapped transport errors), `canceled` and `internal`, is
+retryable (retain). A retryable read failure
+reopens the Session or repository so its own mounted retry and error state shows; a
+Schedule needs the fresh resource, so it is cleared and the list's own retry applies.
+`readRouteSession` restores a Session selection strictly from two typed decision
+tables in `product-route-restore.ts` (`sessionSlotTable`, `sidechatSlotTable`).
+Each read is classified once relative to the requested parent: `TopLevel` (a
+Session that is not a Sidechat: work Session, General Chat or Fork),
+`SidechatOfRequestedParent`, `SidechatOfOtherParent`, `Rejected` (not found,
+denied, unauthenticated, an ID of another entity kind, a resource of the wrong kind,
+an invalid envelope, or malformed or unknown provenance such as a missing workspace
+or invalid Fork metadata) and `Transient` (any retryable failure). A Sidechat is
+valid only in the `sidechat` slot under a parent that this restore itself read as
+`TopLevel`; its retained original parent is never trusted unread.
+
+| `session` slot read                               | `session` only                                          | with `sidechat`                                                                |
+| ------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| TopLevel                                          | open the Session                                        | read the `sidechat` slot (below)                                               |
+| SidechatOfRequestedParent / SidechatOfOtherParent | clear                                                   | clear (child not read)                                                         |
+| Rejected                                          | clear                                                   | clear (child not read)                                                         |
+| Transient                                         | open the Session unverified (its own retry state shows) | open the requested Sidechat under the requested parent with a placeholder name |
+
+| `sidechat` slot read (parent verified `TopLevel`) | result                                                            |
+| ------------------------------------------------- | ----------------------------------------------------------------- |
+| SidechatOfRequestedParent                         | open the Sidechat with its verified name                          |
+| TopLevel, SidechatOfOtherParent or Rejected       | open the verified parent only; the `sidechat` ID leaves the URL   |
+| Transient                                         | retain the requested Sidechat under the parent (placeholder name) |
+
+"Clear" opens nothing and removes the selection from the URL, so the requested
+screen's list shows. A `Transient` row opens its Session without a verification
+read, so the Shell remembers the pair (the top-level Session and its optional
+Sidechat) and the mounted top-level pane judges it once loaded
+(`verifyRestored`). That pane keeps its Session metadata read active for as long
+as the pair is unverified, whichever of its tabs is selected: a selected Sidechat
+tab pauses the ordinary stream, and without this read the requested parent would
+never be verified. A Sidechat, malformed provenance or an invalid envelope there,
+or a definitive failure of the read itself (not found, denied, unauthenticated,
+invalid argument), is cleared exactly like a `Rejected` row: the Session and any
+provisional Sidechat under it end and the URL drops them. The pair is the
+restore's own state, so it ends whatever the user did since; a different Session
+the user selected meanwhile is left alone. A retained Sidechat is mounted under
+the requested parent so its own retry and error state runs, and the URL keeps the
+`sidechat` ID. A Sidechat tab opened without a verified name never shows its
+internal ID in its text, `title` or accessible name: it carries a localized
+product-identity label (the Session presentation label) and is marked
+provisional. The child's own pane judges its descriptor once it loads the Session
+(`loadedSessionProvenance`, the same checks route verification applies): a
+Session that is not a Sidechat of the requested parent, including malformed or
+unknown provenance or an invalid envelope, or a definitive read failure of the
+Sidechat itself, ends the placeholder tab and its `sidechat` ID leaves the URL.
+Only the acceptance (taking the verified name) waits until the requested parent
+has been verified as a top-level Session, because a child's own retained metadata
+cannot prove that the parent it names is itself valid.
+
+The URL mirror is a typed decision table (`product-route-mirror.ts`,
+`deriveProductRoute`) over the visible surface, the Schedules mode and the restore
+state. It derives the route only from state the visible, accepted destination
+shows, so a selection that a hidden workspace retains never describes another
+destination. Each surface owns fixed slots (`surfaceSlots`): Sessions the
+`session` and `sidechat`; Inbox, Schedules and Pull requests the `item`; Settings
+the `category`; Usage the `tab`; New session, New general chat and Search none. A
+`sidechat` is written only under a selected `session`.
+
+| Restore state | Mirror                                                                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| Pending       | hold: the URL keeps the original route until the selection is verified                               |
+| Provisional   | write the visible selection as requested (unverified after a transient failure; a reload retries it) |
+| Settled       | write the visible selection                                                                          |
+
+| Schedules mode   | `item`                                                                                                                 |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Workspace        | the selected Schedule (the editor and New schedule report no selection)                                                |
+| OccurrenceReview | none: the workspace and the Schedule it retains are hidden, so a reload opens the selection-free Schedules destination |
+
+The Settings category is dropped when the Settings visit ends (Settings remounts
+for every visit and reports its own category), so a visit never starts with an
+earlier visit's category in the URL. Usage stays mounted and shows its retained
+tab, so that tab is the visible one.
+
+Restore supersession uses one monotonic navigation-intent token owned by `Shell`
+(`navigationIntent`, a ref). Every handler that actually changes the surface, the
+selection or the tab, or opens a new-item, editor, review or project destination,
+registers an intent synchronously, never from an effect, through the closed
+`NavigationIntentSource` enum in `navigation-intent.tsx`. `Shell` handlers call
+`userNavigated(source)` directly: every surface change (`setSurface`), every
+Session or Sidechat opening (`openSession`), the Search result opener and the
+project creation opener. Child screens call the same function through
+`useNavigationIntent()` from their own handlers: Session tab selection, Inbox row
+selection and closing the detail, Schedule selection, New schedule, Edit schedule
+and returning to the list, Pull requests repository selection, Settings category
+changes and Usage tab changes. There is no window-level click or key listener:
+controls that do not navigate (retry, reconnect, refresh, dismiss, copy and
+similar) never register an intent, so a selection that waits for its connection is
+not cancelled by them and resumes when the same connection becomes ready.
+Registering an intent also aborts the pending restore's read and clears the pending
+selection in the same handler, and logs `delidev.product_route.navigation_intent`
+with the closed source value. A pending restore captures the token when it starts
+and compares it when its read settles, before any side effect (state change,
+Session opening or URL write), so a read that settles in the same tick as a click,
+before React renders the choice or flushes a passive effect, still cannot override
+it. The restore itself opens the Session through `showSession` and selects the
+repository through `selectRepositoryId`, which do not register an intent.
+Selection reports from screens only feed the URL mirror; they never decide
+supersession. A new navigation handler must add a `NavigationIntentSource` value,
+call the registration from the handler and add a driver to the exhaustive
+`Record<NavigationIntentSource, ...>` in `product-route-restore.test.tsx`, which
+fails typecheck without it.
+Restoration only selects and reads: no mutation is dispatched, no pending operation
+is replayed, and drafts, filters, search text, scroll, dialogs and in-memory
+presentation reset as before. The structured log `delidev.product_route.restore`
+carries only the screen and a closed outcome (including `superseded`).
+
+The reload shortcut, its saved override policy, capture and IME/modifier guards,
+focused external Browser ownership and the English/Korean copy are unchanged. No
+native, server, RPC, storage or migration change is involved. Regression coverage:
+`product-route.test.ts` (parse, serialize, hash and history, pure identity read and
+commit),
+`product-route-restore-table.test.tsx` (both decision tables row by row, and every
+slot by resource kind by read outcome by parent outcome through `readRouteSession`),
+`product-route-mirror.test.ts` (the mirror table: surface by retained state, restore
+state, Schedules mode, Sessions slots and the URL round trip),
+`product-route-restore.test.tsx` (mirroring, restore per screen, fallbacks, pending
+routes, reload-shortcut remount, envelope validation per kind, slow-read supersession
+per kind, same-tick supersession per restore kind and for New schedule and surface
+changes, non-navigation controls that keep a waiting selection, one driver per
+`NavigationIntentSource` handler, retained Sidechat selections after transient
+failures, placeholder Sidechat labels without a raw ID, provisional Sidechat pairs
+whose requested parent is itself a Sidechat, malformed or deleted (including a
+child that loads before its parent is verified), the Schedule retained behind an
+occurrence review, the Settings category of an earlier visit, a StrictMode scope change, an epoch
+bump with a retained transport, unpaired transport replacement, and a failure-code by
+restore-kind matrix including wrong-kind IDs) and
+`search-session-routing.test.ts` (the failure classification table).
+
 Read-only shortcut defaults yield to existing editable chords through one shared
 policy, `readOnlyShortcutSuppression` in `shortcut-preferences.ts`, keyed by
 shortcut ID and the unshifted primary key it protects. OpenTool protects `t`. A new
@@ -1025,7 +1216,7 @@ independent exceptions and bounds. Files retain directory metadata only, their
 100-entry requests, 10,000-entry enumeration and digest fencing; previews remain
 separately bounded. A changed digest requires explicit list reload.
 
-Claude subscription Runner continuation retains exact ID/revision, display labels and advisory eligibility only; an independent selected-Runner read governs the existing human Start and original fixed-Runner recovery. Failed cleanup status keeps the original public receipt and polling owner, while expanded terminal result continuation retains only account ID/revision, alias, outcome and reason. Neither reader can initiate login, cleanup or a terminal retry.
+Failed cleanup status keeps the original public receipt and polling owner, while expanded terminal result continuation retains only account ID/revision, alias, outcome and reason. Neither reader can initiate login, cleanup or a terminal retry.
 
 The synthetic `test-scroll-pagination-layout.mjs` browser check exercises the actual shared chain, continuation, payload window and picker in English/Korean, both themes and narrow effective 200% reflow. Its five-page fixtures verify explicit first Load, bounded payload eviction, original-token restoration and keyboard/focus continuity. Keep generated bundles and screenshots outside the checkout; effective CSS reflow does not establish actual browser chrome zoom, real account or packaged CEF acceptance.
 
@@ -1860,7 +2051,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - CI fixture executable reuse follows `repository-workflow-contract.md`: accept only the runner-owned absolute `DELIDEV_TEST_BINARY` test input, preserve local source-build fallback and keep every server/process/credential/data lifetime private to its fixture. Client/Vitest integration is uncached; desktop CI retains the complete checks plus four-shard Vitest inventory.
 
-- Claude subscription onboarding follows the shared 720px wizard task dialog under System 38 / Worker 20: explicit Runner selection, once-only Start, conditional masked code, original browser URL, success-bound name and Later retention. Preserve hidden task lifetime, explicit cancellation, focus/scroll/responsive rules, both themes and 200% zoom. Record fixtures/builds separately from actual account and packaged macOS/Windows/Linux acceptance; do not commit the generated design preview.
+- Claude subscription onboarding follows the shared 720px wizard task dialog under System 67 with no Runner selection: once-only Add account, conditional masked code, original browser URL, success-bound name and Later retention. Preserve hidden task lifetime, explicit cancellation, focus/scroll/responsive rules, both themes and 200% zoom. Record fixtures/builds separately from actual account and packaged macOS/Windows/Linux acceptance; do not commit the generated design preview.
 
 - New Project creation follows the desktop contract's three-step repository selection, project settings and usage restrictions wizard. Existing edits retain their form structure while repository labels use names and saved values use original UUIDs. Preserve first-repository automatic naming until manual edits. Creation defaults the primary only on empty-to-nonempty repository selection; preserve valid choices through additions/reordering and require manual reselection after removal while repositories remain. Existing edits retain explicit primary selection. Preserve sequential metadata-only 50-record catalog reads, exact read/save retry, validation and Settings disposal. First creation focus is repository search; explicit later stages focus Name and the final heading, without focus changes on catalog or language updates.
 
@@ -1892,7 +2083,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Composer mode presentation uses a native localized Plan Mode checkbox in New session, New general chat and existing-session message composition. Map checked to the existing Mode.Plan and unchecked to Mode.Execute; preserve fresh defaults, creation touched/fieldset locks, session pending/uncertain guards, independent retained drafts and exact original retry identities. Keep visible keyboard focus and responsive toolbar wrapping. Schedule/local-review modes and execution authority remain unchanged. Follow the desktop and localization contracts.
 
-- Shared Runner ResourceChoice selectors and Claude onboarding contain no Inspect this Runner shortcut, replacement action or shortcut-owned dialog/view props. Keep the shared RunnerRemediationProvider/controller and exact-machine pending/uncertain consuming gates, explicit Runner Devices diagnostics and original session failure recovery. Claude excluded protocol guidance directs explicit checks through Runner Devices; the removed shortcut catalog key stays absent in both languages. Follow the desktop and subscription Settings contracts.
+- Shared Runner ResourceChoice selectors contain no Inspect this Runner shortcut, replacement action or shortcut-owned dialog/view props. Keep the shared RunnerRemediationProvider/controller and exact-machine pending/uncertain consuming gates, explicit Runner Devices diagnostics and original session failure recovery. The removed shortcut catalog key stays absent in both languages. Follow the desktop and subscription Settings contracts.
 
 - Shared timestamp presentation follows the feature and the desktop/localization contracts. Use `Timestamp` for human-facing RFC3339/Nano labels and `TimestampText` for inert localized interpolation; preserve UTC backup, exact PR-card and pinned range modes. One per-window clock changes presentation only. Device `DateFormatProvider` stays above connection/Settings state, with native version-1 closed presets, authorized atomic persistence, original revisions and explicit uncertain-save reinspection. Preserve drafts/focus/query/receipt identities; keep invalid storage and timestamp text intact.
 
@@ -2096,6 +2287,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 - Baseten Device OAuth retains original window/server/opening/generation ownership without a listener. Advertise it only with the accepted shared compiled registration and exact approval URI; BindOpen cannot receive query credentials, arbitrary paths or another provider URL. No native polling, Device code, token or public Take callback is supported.
 
 - Claude subscription browser Open/Reopen uses closed pinned original URLs and trusted main-window/server/Settings lifetime/operation/generation ownership. The native validator accepts the auth-login profile and, separately, the server-owned setup-token profile (exactly the `user:inference` scope, the manual code callback and `code=true`; never a localhost callback), matching the frontend and Go validators. Keep browser binding kinds disjoint from provider/Codex callback flows; create no listener or code receiver, never exchange or persist code. Initial replay cannot reopen; explicit reopen preserves exact original URL. Disposal or scope changes erase presentation authority under the desktop/subscription contracts.
+- Grok Build subscription browser Open/Reopen (`grok-subscription-open`, `grok-subscription-reopen`, `BrowserBindingKind::GrokSubscription`, TypeScript `OAuthNativeAction.GrokSubscriptionOpen/GrokSubscriptionReopen`) uses the same trusted main-window/server/Settings lifetime/operation/generation ownership and stays disjoint from provider, Codex and Claude kinds; it adds no `OAuthProfile`. The native validator accepts only a raw `https://auth.x.ai/oauth2/authorize` URL (no port, credentials or fragment; `url.as_str()` equal to the input) with a closed query: `response_type=code`, client `b1a00492-073a-47ea-816f-4c329264a828`, S256 with a 43-character challenge, nonempty `[A-Za-z0-9-_.~]` `state` and `nonce` (at most 512 bytes), optional `referrer=grok-build`, optional space-separated `scope`, and `redirect_uri` exactly `http://127.0.0.1:<port>/callback` with a numeric unprivileged port. Duplicate or unknown keys are refused. A valid URL opens once; initial replay never reopens; Reopen opens only the original URL once. Local login (`local=true`) binds nothing and only opens the URL because the server owns the loopback listener. Remote login is refused with `Incompatible` (after validation, before any browser or listener exists) while the server cannot forward a Grok callback: `ForwardSubscriptionCallback` accepts only the ChatGPT/Codex login (`auth.openai.com`, port 1457) and rejects Grok accounts, so a consumed one-shot code could never be delivered. The native host gates this on a private flag that stays false until the server validates and forwards Grok callbacks by service (Grok host, state and the bound dynamic port) while Codex forwarding stays unchanged. With that flag enabled, remote login binds IPv4 `127.0.0.1` on that same port only, accepts one loopback-peer `GET /callback` with exact Host `127.0.0.1:<port>` and a closed `code`/`state`/`scope` query whose state equals the original, and Take returns that query once for the existing TypeScript path to forward through `ForwardSubscriptionCallback` bound to the operation id. A bind conflict fails as `SidecarFailed` and never remaps the port; a denial or `iss` redirect is refused until the real redirect shape is recorded. Second, late, expired or post-close deliveries are dropped: the listener handler reads no longer than the attempt deadline and rechecks it immediately before the one-shot claim, so a peer accepted just before expiry cannot store a code afterwards, codes are zeroized on drop, and URLs, codes and state are never logged. The receiver joins on disposal, window close or expiry.
 
 - `credential_access.rs` retains one startup Keychain attempt and its paired client in the native Connector across renderer/window lifetimes. Reconcile the client only after successful explicit local-registration recovery for the same server; preserve the attempt/result and fail closed unless the previous client is revoked. Grant `desktop_credential_access` only to trusted Local webviews through its dedicated permission, recheck window/server/runtime authority before dispatch and response, and accept only Observe/Retry/Skip. Go owns existing vault reads and joined cancellation. Never expose credential bytes, accept account/path selectors, retry terminal failures automatically or weaken original 35-second shutdown. Follow the desktop/credential contracts.
 
@@ -2156,9 +2348,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - `entrance-motion.ts`/`.css` own the shared 160ms Y4 entrance primitive and replay-safe `useEntranceActivation` hook under `apps-delidev-desktop-contract.md#shared-restrained-entrance-motion-and-appearance`. Keep keyframes static, add no inline style or dependency, and let each Settings category opt in through the `entranceCategories` map (category to `EntranceTarget`) with its own contract text; see the Settings category entrance section.
 
-- Image composers follow `cmds-delidev-image-input-contract.md` and `apps-delidev-desktop-contract.md#image-inputs`. `image-input.ts` owns bounded original-byte validation and complete reference/receipt verification; `image-drafts.tsx` owns connection-identity drafts, exact staging/recovery and original Runner cleanup. Preserve independent first-message/General Chat/Session drafts across navigation, Settings and reconnect; dispose bytes/object URLs on identity change. Keep typed references separate from document JSON, require READY and matching ordered admission receipts, restage changed Runner/operation selections, and retain uncertain requests without edits. `image-attachments.tsx` owns ordered accessible previews and authenticated digest-verified history readback with explicit retry; queued edits retain immutable refs and image-bound Steer remains disabled. System 45/Worker 25 and the original execution harness are advisory frontend gates; native modality proof remains backend-owned. The isolated image browser fixture grants no native/account acceptance and must stay outside product bundles.
-
-- `claude-runners-layout.fixture.tsx` is isolated bounded synthetic Runner inventory evidence. Keep its marker outside product bundles; disabled options and manual steps never grant Runner eligibility or native/account acceptance.
+- Image composers follow `cmds-delidev-image-input-contract.md` and `apps-delidev-desktop-contract.md#image-inputs`. `image-input.ts` owns bounded original-byte validation and complete reference/receipt verification; `image-drafts.tsx` owns connection-identity drafts, exact staging/recovery and original Runner cleanup. Preserve independent first-message/General Chat/Session drafts across navigation, Settings and reconnect; dispose bytes/object URLs on identity change. Keep typed references separate from document JSON, require READY and matching ordered admission receipts, restage changed Runner/operation selections, and retain uncertain requests without edits. `image-attachments.tsx` owns ordered accessible previews and authenticated digest-verified history readback with explicit retry; queued edits retain immutable refs and image-bound Steer remains disabled. System 45/Worker 25 and the original execution harness are advisory frontend gates; native modality proof remains backend-owned. `useImageRoute` admits Codex Agents and OpenCode Agents whose every source route model declares the `image` input modality and whose System and Runner Device report the independent OpenCode image pair (System 105 / Worker 70); queued follow-ups use the frozen execution harness plus `image_input_declared` for OpenCode, and Sidechat, Claude Code and Grok Build stay unsupported. The en/ko creation guidance states the OpenCode 384 KiB combined limit and its required message text. The isolated image browser fixture grants no native/account acceptance and must stay outside product bundles.
 
 - `runner-observation.ts` owns bounded closed presentation evidence, without changing the original Runner eligibility predicate. The shared Runner provider retains one exact machine controller across presenter close and same-identity readiness changes; full Settings inspection preserves Updates and network tools. Exact-machine pending or uncertain inspection retains consuming-flow gates. SessionTools likewise retains one original controller; the owning conversation failure exposes its eligible recovery action and original confirmation within the same session, including Info for constrained layouts. Account reads older than retained acknowledgments cannot enable fresh lifecycle actions, while original uncertain retries and durable cleanup retain their own authority.
 
@@ -2851,7 +3041,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - SSH setup in ssh-setup.tsx belongs to Runner Devices. Verify capability and exact host identity before explicit installation. Keep write-only credentials out of React Query and mutation receipts, clear them after a send, lock the submitted setup ID against replacement host inspections, and inspect the original setup after ambiguity without resending native effects. Settings disposal rejects late results without canceling the detached Worker.
 
-- `subscription-login.tsx` owns explicit login-first Add/Sign-in events under capability 30. Accept only the exact registered localhost and 127.0.0.1 port-1457 `/auth/callback` addresses, reject duplicate query fields and retain the original URL/callback spelling through polling and reopening. Keep sensitive progress/suggestions/callbacks outside React Query caches; preserve exact retries, success-bound generation checks, once-only prefill and user edits. Alias-only JSON patching must preserve all server-owned tokens, including uint64 lease revisions. Departure disposes native callback authority without canceling accepted server work. Claude uses its separate capability 38 controller; Grok remains unsupported. Quota and API ownership do not change.
+- `subscription-login.tsx` owns explicit login-first Add/Sign-in events under capability 30. Accept only the exact registered localhost and 127.0.0.1 port-1457 `/auth/callback` addresses, reject duplicate query fields and retain the original URL/callback spelling through polling and reopening. Keep sensitive progress/suggestions/callbacks outside React Query caches; preserve exact retries, success-bound generation checks, once-only prefill and user edits. Alias-only JSON patching must preserve all server-owned tokens, including uint64 lease revisions. Departure disposes native callback authority without canceling accepted server work. Claude uses its separate server-owned capability 67 controller (`claude-subscription-login.tsx`) and never a Runner-bound or capability 38 sign-in; Grok remains unsupported. Quota and API ownership do not change.
 
 - ChatGPT native failures use the approved ordinary status/alert diagnostic presentation under the subscription Settings contract. Distinguish Not detected from Not reported, reconstruct safe text from closed metadata, retain original Settings lifetime and add no focus or retry action. Grok unsupported wording stays unchanged; Claude diagnostics follow its separate closed profile.
 
@@ -2868,7 +3058,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 - Session detail presentation follows the desktop session-workspace contract. Preserve the five tool entries, horizontal accessible tablist, one full-width selected content region, persistent original Info and retained conversation authoring. Remove dock/split coexistence from product presentation. Roving keyboard/focus-before-hide and shared reserved numeric shortcuts remain presentation-only.
 - New Project alone uses the desktop contract's three-step creation wizard: repository-name search with native multiple-selection checkboxes and ordered Up/Remove actions; automatic first-repository Name until manually edited and editable Primary repository defaulted only on empty-to-nonempty selection; preserve valid primaries on additions/reorder and require manual correction after removal while survivors remain; then existing usage restrictions and a name summary. Keep stage state in an enum, the shared 768px task header/body/footer and ConfigurationEditor save/revision/exact-retry authority. Sequential authenticated 50-record catalog reads retain only names/IDs, search all accepted pages, render 50 choices at a time and preserve selection during exact-page read retry. Edit labels resolve exact repository IDs to names without substituting missing names; duplicate names expose IDs in details while saves retain UUID/order. Keep loading/partial/failure/empty/no-match distinctions, final required-value validation, configured-empty restrictions and disposal guards. First focus is repository search after opener capture, then Name/step-3 heading on explicit navigation; reads, language changes and reflow never steal focus. Follow shared input/button focus rules and separate browser evidence from packaged CEF acceptance.
 
-- claude-subscription-login.tsx composes the existing subscription controller under capability 38. Select verified original Runner 20 before one account/login request; retain original uncertain request IDs. Keep URL/code outside React Query, state, storage and logs; clear masked DOM input on submit/hide, never resend uncertain code. Verify fresh original profile/owner/generation before name editing; Later keeps connection. Reauthentication/logout/deletion use original owner only, no quota controls. X/Escape hides retained work; category departure disposes presentation without canceling accepted native work.
+- claude-subscription-login.tsx composes the existing subscription controller under System capability 67 only. One account/login request starts the server-owned setup-token operation without a Runner Device; retain original uncertain request IDs. Keep URL/code outside React Query, state, storage and logs; clear masked DOM input on submit/hide, never resend uncertain code. Verify fresh original profile/owner/generation before name editing; Later keeps connection. There is no reauthentication; device-owned logout/deletion use the original owner only, and no Claude surface has quota controls. X/Escape hides retained work; category departure disposes presentation without canceling accepted native work.
 
 - `routing-preview.tsx` and its static stylesheet own only Agent Worker preview presentation; `routing-account-metadata.ts` owns safe task-scoped account/provider name projections through generated Connect Query reads. Validate original IDs/kinds/revisions/schemas, reject retired metadata, deduplicate providers and share four read slots across the category owner and response generations. The default hierarchy is compact read-only/Project/Refresh context, one selected summary, initially collapsed Routing details and the visible recheck note. Preserve outer disclosure state within the task without toggle-driven reads; fresh tasks start collapsed. Count only the final candidate array (including zero), distinguish unavailable counts, and lift every source/problem/fallback/unavailable/refresh notice outside details. Summary eligibility/quota require the matching final candidate. Names never change server selection or routing evidence; retain safe observed-name/presentation-number references in initially collapsed disclosures, unknown quota and all source/fallback evidence. Top-level previews use header Close/Escape with no duplicate footer action or empty footer spacing; standalone Close remains. Close and project/result changes fence old reads. Follow the desktop contract; add no credential/native/execution authority.
 
@@ -2884,7 +3074,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Settings Resource inventories, API entry lists and independent subscription lists render only the three retained full-payload pages through `ScrollPayloadWindow`. Reached metadata identities own empty/completeness gates and paired-device disclosure pruning; appending does not reset up to 50 expanded device identities. Provider creation choices retain direct action buttons inside bounded provider envelope windows and preserve exact selected hints/current provider verification. Server-owned cleanup and refresh-all remain complete independent operations; account categories do not inspect storage.
 
-- `claude-subscription-login.tsx` projects reached Runner pages to exact IDs/revisions, display labels and advisory eligibility for the shared picker. One independently read selected Runner preserves the original login/native generation and fixed-Runner recovery authority. `subscription-cleanup.tsx` keeps original mutation, public receipt and status polling separate from its terminal result chain; accumulated result projections contain account ID, revision, alias, outcome and reason only. Expanding, scrolling or restoring these readers cannot admit login or cleanup, retry a terminal batch or replace original uncertainty.
+- `claude-subscription-login.tsx` has no Runner picker or Runner reader; the server-owned operation keeps its original generation authority. `subscription-cleanup.tsx` keeps original mutation, public receipt and status polling separate from its terminal result chain; accumulated result projections contain account ID, revision, alias, outcome and reason only. Expanding, scrolling or restoring these readers cannot admit login or cleanup, retry a terminal batch or replace original uncertainty.
 
 - Settings inventory suspension beneath its original edit/delete overlay retains only its bounded three resident payload pages and mounted row/disclosure owners while stopping readers and continuation. Settings visit/category departure disposes the owner. Never unmount the opener or erase disclosures solely because the parent becomes inert.
 
@@ -3888,6 +4078,8 @@ Start local Worker is blue primary, Stop local Worker is neutral outlined with d
 
 Under **Saved runner devices**, semantic divided articles render directly on white. Preserve server order, original name/fallback, optional health/harness, safe identity labels, **Inspect installed harnesses**, unsupported-schema disabled actions and the existing MACHINE document parser fallback. Reuse only the authenticated 50-record MACHINE query and opaque token. Initial loading without data shows **Loading runner devices...** and exactly two static decorative skeleton rows excluded from the accessibility tree. Initial read/permission failure uses the existing sanitized Problem message, guidance without a UUID correlation row without success-empty copy. Successful final first-page emptiness says **No saved entries.**; continuation/later empty pages identify page scope and retain paging. Failed refresh retains the previous rows or empty observation with **Refresh failed. Showing the last successfully loaded results.** Hide pages only for successful empty first-page results without continuation; all existing token/fetching/disabled rules remain.
 
+Runner Device Settings installation rows classify each reported installation through `installationObservation` with the per-harness predicate `installationVersionAllowed` (`harness-version.ts`): Claude Code and OpenCode check the detected version against the shared minimum before any protocol state, so an under-baseline OpenCode (for example `1.18.20`) shows cause `version` with the **Detected version: X** line, while `1.18.32` and newer (including `1.19.0`) still reach the protocol and verified states and malformed versions stay `unavailable`. Codex and Grok keep protocol-only classification and the shared `machine-settings.excluded.*` copy. An installation state `incompatible` (relative explicit path, non-regular or unrunnable executable, Windows shell wrapper or unparseable version response) also maps to cause `version` but never carries a detected version. Copy keys are chosen by `installationCauseCopyKey`: Claude keeps `claude-subscription.excluded.*`; OpenCode derives one remedy cause from the observation through `openCodeInstallationCause` (`OpenCodeInstallationCause`, `runner-observation.ts`) and maps it once to copy. `BelowBaseline` (cause `version` with a detected version) uses `machine-settings.opencode.excluded.version`, which tells the user to update OpenCode on that Runner (`opencode upgrade`, or the package manager that installed it) and then inspect again. `InvalidInstallation` (cause `version` without a detected version) keeps the shared `machine-settings.excluded.version` copy, which points at the executable path instead of asking for an update. `ProtocolProfileMismatch` (cause `protocolUnsupported`, always an admitted or newer version) uses `machine-settings.opencode.excluded.protocolUnsupported`, which asks the user to select a version DeliDev has validated or correct the OpenCode configuration and never asks for an update. Every other cause keeps the shared copy. All of it is localized in English and Korean, never names a numeric baseline and never claims the detected version is old except for `BelowBaseline`. `runner-observation.test.ts` (one table over every discovery path that reports an unusable OpenCode installation, mirroring the Go discovery tests) and `machine-settings.test.tsx` cover classification, key selection and rendering. A Grok Build row whose observation carries a valid `protocol.grok_diagnostic` renders `GrokDiagnosticNotice` (`grok-diagnostic.tsx`, English and Korean copy under `grok-diagnostic.*`) instead of the shared cause copy: the same safe message, phase guidance, detected and supported versions, failed step, error code and copyable correlation ID as Settings, reconstructed from closed metadata only. A malformed or unknown diagnostic is dropped and the shared copy remains.
+
 Actual child dialogs and the shared compact drawer preserve their own contained focus, background inertness, Escape/cancel and opener restoration; page-level Escape preserves Settings. Polling cannot steal focus or redundantly announce unchanged state. All controls retain descriptive text and visible focus, all identities remain accessible, and icons are decorative. Reflow and same-identity reconnect retain only the current Settings visit; navigation away disposes it and rejects late native/RPC results without replaying accepted operations or canceling authoritative effects. This ordinary frontend rollout adds no API, schema, storage, migration, dependency, flag, telemetry, logging, query, polling, authorization or native-window change. Preview images remain untracked. Record revision, commands, results and unresolved browser/native limits in the PR, issue or CI artifacts under the current repository validation policy.
 
 The feature makes only the list-mode local Worker section a neutral bordered card with 20px padding, 12px corners, no shadow, 18px semibold heading and 14px body. Keep the existing 1040px column cap, 24px gap below the card and minimum 40px controls. Actions align right beside the summary at 1100px and above; below that boundary they wrap beneath it. Running process and management state must agree before showing **Process running · Readiness checked separately**, with truthful **Stops when you quit DeliDev.** or **Keeps running after you quit DeliDev.** ownership only when explicit Running management supplies it; missing management metadata never implies borrowed ownership. The native **Details** / **세부 정보** disclosure starts collapsed on each category visit and retains its open state across polling and reflow. It contains the full original general, lifecycle/readiness and Quit/independent-cleanup explanations and complete Execution machine ID. Keep all non-Running and blocked/uncertain corrective guidance, inspection/control errors, Stop warnings, confirmations, stale-generation protection and original-stop retry/acknowledgment outside the disclosure. Disclosure interaction adds no status/control requests, remount, controller or readiness authority. Preserve the read-only problem Modal and opener focus, original controller predicates/generations, polling/lifetime gates and saved-connections Default presentation.
@@ -4420,7 +4612,9 @@ The Session information header shows compact, noninteractive saved model and rea
 
 Keep the principal Info groups ordered Pull requests, Subagents, Context, then Usage and budget. Hide only successfully empty PR and Subagent sections. The routine Status and recovery heading and Workspace/Result/Archive summary do not appear in Info. The original SessionTools portal and recovery controllers remain mounted, with applicable failures, correction guidance, confirmations, accepted/uncertain/failed jobs and exact retries in Info. Healthy empty hosts reserve no section padding or divider. Native read-only settings and usage observations, source references and safe technical snapshot details appear in Diagnostics. Original interactive native prompts, terminal/stop controls, applied instruction disclosures and storage actions remain below the principal groups, with unchanged source ownership and guards.
 
-Usage and budget starts with a full-width input/output row: only In and Out labels are chips; exact locale-formatted integers remain plain text at opposite ends. Read the original session's response-only lifetime summary through the existing authenticated GetUsageSummary RPC. Validate creation metadata, returned bounds, profile, coverage and measures; pin the first server-default upper bound, then read older disjoint half-open ranges of at most 366 days sequentially through session creation. Add only input/output known subtotals and their measured/unavailable counts with BigInt. Missing evidence stays unavailable and measured zero remains zero. Publish only complete collections; retain the last complete result (totals and per-range Diagnostics evidence) as stale after a failed refresh with read-only Retry, including when the failed read is for a newer `execution.latest_response_usage_id` generation. The retained collection belongs to one exact owner (Session ID, the exact validated RFC 3339 creation timestamp including sub-millisecond digits, and authenticated transport); changing any of them clears it, even when the millisecond read bound is unchanged, and a successful read replaces the whole collection at once. A first read with no prior collection shows unavailable totals and the read-failed text. Keep the incomplete root-response coverage notice in Info and independent per-range evidence in Diagnostics. No native, child, cache or reasoning counts are added. Missing execution/compaction coverage counts remain per range, and separate reads do not establish an atomic ledger snapshot. Refresh on active entry, original usage invalidation and authenticated reconnect; cancellation and original-owner disposal fence delayed results.
+Usage and budget starts with a full-width input/output row: only In and Out labels are chips; exact locale-formatted integers remain plain text at opposite ends. Read the original session's response-only lifetime summary through the existing authenticated GetUsageSummary RPC. Validate creation metadata, returned bounds, profile, coverage and measures; pin the first server-default upper bound, then read older disjoint half-open ranges of at most 366 days sequentially through session creation. Add only input/output known subtotals and their measured/unavailable counts with BigInt. Missing evidence stays unavailable and measured zero remains zero. Publish only complete collections; retain the last complete result (totals and per-range Diagnostics evidence) as stale after a failed refresh with read-only Retry, including when the failed read is for a newer `execution.latest_response_usage_id` generation. The retained collection belongs to one exact owner (Session ID, the exact validated RFC 3339 creation timestamp including sub-millisecond digits, and authenticated transport); changing any of them clears it, even when the millisecond read bound is unchanged, and a successful read replaces the whole collection at once. A first read with no prior collection shows unavailable totals and the read-failed text. Default Info shows no routine coverage paragraph (including the former known-responses-only text); independent per-range evidence stays in Diagnostics. No native, child, cache or reasoning counts are added. Missing execution/compaction coverage counts remain per range, and separate reads do not establish an atomic ledger snapshot. Refresh on active entry, original usage invalidation and authenticated reconnect; cancellation and original-owner disposal fence delayed results.
+
+Session Info is concise by default. Context leads with the prominent “Context used” metric and its progress bar. Usage and budget keeps the In/Out row and budget controls; an unconfigured estimated-cost budget reads “Estimated-cost budget · Not set” with Edit session budget, and reached-budget, failed-read, stale, edit and revision-recovery states are unchanged. Applied DeliDev instructions shows “None selected” when no additional instructions exist and otherwise preserves the actual selected content, template order and existing access boundary. No routine snapshot, coverage, budget or instruction explanatory paragraph and no Details disclosure appears in default Info; Compact context keeps its eligibility, pending, failure, uncertain-retry and ineligible-reason behavior. English and Korean strings cover the new presentation, and it adds no RPC, storage migration or observation read.
 
 Each visible original PR row shows the standard PR icon with a lower-right dot: green (`--success-text`) for open, purple for merged and red (`--danger-text`) for closed without merge. Merged uses the fixed `--pr-merged` token defined only in the bundled light, dark and OS-dark blocks of `themes.css`; it is independent of `--accent` and is not a customizable palette token, so accent palettes and saved themes never override it. There is no textual state badge. A localized accessible name and tooltip identify state; Diagnostics retains the current observation timestamp and read-only Retry. Existing titles, Open, unlink and original failure/recovery controls remain independent. Read only active visible associations, with at most four concurrent detail reads and no polling or inventory scan. Validate the original configured repository, authenticated detail envelope and exact remote repository/PR IDs and node IDs before coloring. Merged requires a closed observation; contradictory, unavailable, failed, stale or mismatched evidence is neutral gray. Association invalidation, authenticated reconnect and session reactivation (hidden to active) each refresh these observations exactly once without mutation or expanded authority. A successful observation stays fresh while its row remains mounted, so scrolling a row out of and back into the viewport with unchanged association, row revision and connection issues no repository or PR detail request; explicit Diagnostics Retry still refetches.
 
@@ -4559,7 +4753,7 @@ Hide an empty PR or Subagent group only after its complete successful read has n
 
 Session names open one connection-owned editor only on double-click of the sidebar name text or the conversation header name text. Ordinary single-click navigation stays immediate and unchanged. The owner prioritizes : remove Info Rename without any replacement button or menu entry. Bind retained drafts and the session-name mutation key to the original session UUID. Read its current confirmed resource before Save, preserve the captured revision through conflicts and exact original request bytes through uncertainty, and require explicit draft discard before a new revision is admitted. A verified original acknowledgment refreshes header/sidebar and closes the dialog. The modal has 480px maximum width, 24px padding, 12px corners, 40px controls, 16px viewport margins and 12% backdrop with no blur; select the full initial name, contain Tab focus, guard composing Enter, support Close/Escape and restore an available original opener. Do not close on backdrop clicks. Validate a nonempty, NUL-free valid Unicode name of at most 256 UTF-8 bytes without truncation. Closing and reopening in the same connection retains the draft; replacing the connection retires its owners.
 
-For Codex Context, use capacity only from the exact same authenticated Usage resource as the existing native context observation. Require the original ID/kind/session/schema, harness/execution/thread/turn/sequence, safe integer last_request.total equal to the original exact token numerator and a positive safe integer context_window. Missing, mismatched, zero or unsafe capacity is neutral and has no aria-valuenow; never infer a limit from model names or cumulative usage. Show the exact numerator, reported limit, one-decimal percentage, original timestamp and freshness; clamp only the visual fill. This is the latest native-reported Context snapshot relative to its reported limit, not a live/cumulative utilization claim. No RPC, migration or native/account authority changes.
+For Codex Context, use capacity only from the exact same authenticated Usage resource as the existing native context observation. Require the original ID/kind/session/schema, harness/execution/thread/turn/sequence, safe integer last_request.total equal to the original exact token numerator and a positive safe integer context_window. Missing, mismatched, zero or unsafe capacity is neutral and has no aria-valuenow; never infer a limit from model names or cumulative usage. Show the exact numerator, reported limit and one-decimal percentage as the primary “Context used” metric with a progressbar; clamp only the visual fill. Default Info omits the observation timestamp, latest/historical cue and snapshot explanation; unavailable or mismatched capacity shows only the numerator with the capacity-unavailable text and no bar. This is the latest native-reported Context snapshot relative to its reported limit, not a live/cumulative utilization claim. No RPC, migration or native/account authority changes.
 
 Closing or switching Browser releases its native presentation; hiding Terminals
 cannot close the independently Worker-owned shell.
@@ -4868,7 +5062,7 @@ Settings provides explicit export, file/pasted import, machine and checkout mapp
 
 The session transcript renders server-retained `grok_text` only after validating the complete original metadata array, exact native session/prompt namespaces, product execution identity, event/chunk ordering, role/state and absence of foreign content families. Preserve original text as inert text. Details show original first/latest events, latest native chunk and exact context estimate; response text completion is distinct from execution completion. Invalid or mixed records show unavailable rather than falling through to generic text.
 
-The existing Connect Query native-usage disclosure additionally reads Grok `1.0.41` resources under their original session/execution/thread/prompt. Validate the closed five-counter response shape and preserve canonical uint64 strings without JavaScript numeric conversion. Label product response order, measured zero, absent total/cost and separate context/input/auxiliary scopes. Retained preceding-execution and stale-read handling stays intact. Neither display starts work, changes configuration, synthesizes billing or enables unimplemented dispatch. Component/RPC rendering evidence is separate from native platform/tray acceptance.
+The existing Connect Query native-usage disclosure additionally reads Grok resources at or above `domain.GrokProtocolVersion` (`1.0.41`) under their original session/execution/thread/prompt. Validate the closed five-counter response shape and preserve canonical uint64 strings without JavaScript numeric conversion. Label product response order, measured zero, absent total/cost and separate context/input/auxiliary scopes. Retained preceding-execution and stale-read handling stays intact. Neither display starts work, changes configuration, synthesizes billing or enables unimplemented dispatch. Component/RPC rendering evidence is separate from native platform/tray acceptance.
 
 Original Grok completion details additionally require the exact `closed-first-text` terminal shape, original execution/session/prompt, default initial mode, observed model, closed one-response content and no foreign terminal family. Display native end-turn outcome and reported input total/call/duration/elapsed integers with full precision. Keep these overlapping input totals separate from individual-response usage, actual cost and auxiliary work; successful native closure cannot offer continuation or imply the final workspace cleanup report. Missing/mixed/inconsistent records show unavailable and expose no control.
 
@@ -5187,7 +5381,7 @@ API provider availability is server-owned and presence-aware under [the feature]
 
 Account type/provider list selectors are list-only Connect inputs applied by SQLite before page limiting. They do not alter coherent snapshots or event streams. Desktop account menus and the guided API account flow require `ACCOUNT_TYPE_FILTER` plus provider activation, active-provider model filtering and account-provider filtering capabilities; see the account, protocol, catalog and desktop contracts.
 
-Grok Build `1.0.41` now participates in native protocol discovery through owned private configuration inspection and ACP initialization, including its original empty startup MCP inventory. The profile rejects inherited settings/extensions and discards native host/path metadata, with no authentication, session creation or inference. Real isolated macOS arm64 discovery evidence is separate from the still-required Grok execution/account/Worker integration and other-platform acceptance; detected or protocol-verified installations retain empty execution capabilities.
+Grok Build at or above `domain.GrokProtocolVersion` (`1.0.41`) now participates in native protocol discovery through owned private configuration inspection and ACP initialization, including its original empty startup MCP inventory. The profile rejects inherited settings/extensions and discards native host/path metadata, with no authentication, session creation or inference. Real isolated macOS arm64 discovery evidence is separate from the still-required Grok execution/account/Worker integration and other-platform acceptance; detected or protocol-verified installations retain empty execution capabilities.
 
 Grok original session/input binding now composes its native observation, immutable Worker claims, durable outbox and transactional server publication. Initial Execute/Plan mode remains separately typed and visible in desktop execution configuration. Actual pinned macOS server/relay fixtures cover both modes and lost session/input acknowledgments with receipt-only replay; original text and response counters now have their own typed publication and desktop disclosure, and the separately verified closed first-text profile now publishes its native terminal plus a version-1 completion boundary. The ordinary first-text Worker runner and public initial Execute dispatch now compose workspace ownership, original native closure/history and the version-1 completion report for owned General Chat. The selected model context window and known/user-declared source are immutable and matched against native setup; unsupported selections remain queued without routing changes. User/tool/interaction/Plan/Stop publication and continuation remain unfinished. Registration is limited to the verified first-input Chat Completions/default-settings profile and cannot silently omit explicit instructions or options.
 
@@ -5404,7 +5598,7 @@ unavailable when unreported. Native summaries and continuation users do not
 replace the canonical conversation. The private OpenCode manual controller does
 not enable the desktop action before independently negotiated product support.
 
-OpenCode General Chat Fork additionally requires independent System 26/Worker 15 and a macOS/Linux Runner Device. Offer only completed Build plain-text root boundaries without children, context actions or native workspace activity; preserve exact mutation replay and the retained operation across navigation. Present inherited conversation/files and paused-child Resume in product terms; preparation cannot claim native model selection or new usage.
+OpenCode General Chat Fork additionally requires independent System 26/Worker 15 and a macOS/Linux Runner Device. Offer only completed Build plain-text root boundaries without children, context actions or native workspace activity; preserve exact mutation replay and the retained operation across navigation. A completed plain reasoning artifact record is eligible, and counts toward the two-record minimum like a text record, only when System 26 and 104 and the Runner Device's `opencode-general-chat-fork-v1` and `opencode-general-chat-fork-reasoning-v1` Worker capabilities are all reported; otherwise keep the existing unsupported-source behavior. Present inherited conversation/files and paused-child Resume in product terms; preparation cannot claim native model selection or new usage.
 
 Server-owned subscription onboarding follows [AI Subscription settings](apps-delidev-subscription-settings-contract.md) and [managed subscriptions](cmds-delidev-subscription-contract.md#server-browser-login-and-account-naming). Add starts ordinary browser login without Runner Device/code controls. Trusted native local/remote callback ownership, independent capability 30, transient success-bound naming and departure without business cancellation are cross-domain invariants. Preserve the shared Settings tokens, 720px form, 40px controls, 8px corners and narrow stacked actions.
 
@@ -5430,12 +5624,14 @@ AI Subscription offers the explicit capability-41 Auto cleanup action under the 
 
 ## Claude subscription task and native browser ownership
 
-System 38 and original Worker 20 independently enable the approved Claude
-subscription flow in the existing 960px Settings task dialog. Preserve the
-Runner Device → Sign in → Account name order, explicit once-only Start,
-conditional masked approval input, success-bound default Claude naming and
-Later retention. Management exposes the owner Runner, Sign in again and
-logout. X/Escape hide retained work; only explicit Cancel sign-in cancels it.
+System 67 enables the approved server-owned Claude sign-in flow in the existing
+960px Settings task dialog. Preserve the Sign in → Account name order, the
+once-only Add account click, conditional masked approval input, success-bound
+default Claude naming and Later retention. No Runner Device step, Runner
+reauthentication or fallback for servers without System 67 exists; System 38 and
+original Worker 20 remain only for device-owned Claude execution and logout.
+Management exposes the owner Runner of a device-owned account and logout.
+X/Escape hide retained work; only explicit Cancel sign-in cancels it.
 The existing task host owns focus, scrolling, responsive stacking and hidden
 operation restoration. See the [subscription Settings contract](apps-delidev-subscription-settings-contract.md#claude-account-onboarding-and-management).
 
@@ -5752,7 +5948,8 @@ cleanup on the original Runner. Pending or uncertain submission locks edits and
 replays only the exact original typed request and ordered references.
 
 Capability 45, Worker capability 25 and the supported original execution harness
-gate image submission. Text-only input retains its existing gates. Image-only
+gate image submission; OpenCode additionally requires System capability 105 and the
+selected Runner Device's Worker capability 70. Text-only input retains its existing gates. Image-only
 input is valid after all original transfers reach verified READY. Keep typed
 attachment references outside ordinary document JSON. Admission clears a draft
 only after the original receipt proves the full ordered references; an absent or
@@ -5944,8 +6141,9 @@ Creation attachment guidance opens only on plus hover or focus.
 Use one noninteractive role=tooltip with aria-describedby while shown, replacing
 this surface's native title. Show the exact English/Korean creation catalog copy:
 still PNG/JPEG/WebP, eight images per message, 10 MiB each, 40 MiB combined,
-40 million pixels each, supported Codex Agent Worker/model/Runner requirements
-and unsupported Claude Code/OpenCode/Grok Build image inputs. Static requirements
+40 million pixels each, supported Codex or OpenCode Agent Worker/model/Runner
+requirements, the OpenCode 384 KiB combined limit and required message text, and
+unsupported Claude Code/Grok Build image inputs. Static requirements
 never claim selection eligibility or enable reads, probes, uploads or mutations.
 Preserve hover across the trigger/content gap and focus; Escape dismisses without
 moving focus until fresh hover/focus entry. Disposal closes guidance. A disabled
@@ -6039,12 +6237,19 @@ use retained resources and never start native work, tokenization, inference or
 compaction. No RPC, allocation or migration is added. Claude/OpenCode and all
 original action, retry, account, history and cleanup boundaries remain unchanged.
 
-The existing Context presentation labels this as “Latest native-reported context
-tokens” in English and Korean and shows its observation time. It explains that
-this native snapshot may exclude later local context changes and may include a
-native context-limit estimate; it is not exact continuous occupancy or billing.
-Retained data after a failed/in-flight refresh or changed session revision is
-explicitly historical, with a visible read error on failure. Keep existing
+The Session Info Context presentation shows one prominent “Context used” metric
+in English and Korean: the exact native numerator and, only with validated
+matching capacity, `numerator / capacity`, a one-decimal derived percentage and a
+progress bar whose accessible values mirror them; the bar never replaces the
+numeric value. Unavailable or mismatched capacity shows only the reported
+numerator with the existing capacity-unavailable text and no bar or percentage,
+and a missing numerator reads “Not reported”, never zero. Default Info renders no
+latest/historical snapshot label, observation time, native-snapshot explanation
+or compaction explanation. The snapshot remains a native estimate, not exact
+continuous occupancy or billing, and the closed `latest`/`historical` status
+stays in the read contract only. A visible read error
+still reports a failed refresh, and the retained numerator is not confirmed by
+that read. Keep existing
 five-second polling and Refresh context separate from Compact context. Strict
 client decoding preserves exact decimal strings above JavaScript's safe integer
 range, source/status enums and original provenance; old absent-field replies
@@ -6810,14 +7015,67 @@ accessible text and expanded source remain available. Keep the 36px target, shar
 native keyboard behavior and visible focus. The resting row has no background,
 border, rounded box, shadow, Artifact label, raw kind or routine completion badge.
 
-Expanded content retains the same summary row and plain inert source text beside
-one subtle vertical rule with approximately 20px indentation. Show Initial
-observation, Streamed observations and Final observation only when they contain
-supplied text. Keep summary/content families, original part indices, delta kinds,
-order and exact Unicode/whitespace separate. Never merge, deduplicate, generate
-summaries, split sentences or reconstruct content from deltas. Empty records keep
-the disclosure and show **No reasoning content was supplied.** / **제공된 생각
-과정이 없습니다.** when expanded. No hidden reasoning recovery is implied.
+Expanded content retains the same summary row and shows exactly one plain inert
+text body beneath it, beside one subtle vertical rule with approximately 20px
+indentation, an 8px gap below the row, 13px neutral text, about 1.45 line height
+and wrapping with no horizontal overflow. It shows no Initial observation,
+Streamed observations or Final observation heading, no part-index label and no
+raw delta kind or index. The body comes from the first source family with
+non-whitespace text, in this order: completed content parts, streamed
+`reasoning-content` deltas in sequence order, started content parts, completed
+summary parts, streamed `reasoning-summary` deltas in sequence order, started
+summary parts. Families are never combined, so a completed content snapshot
+replaces the streamed body instead of extending it, and the UI never claims a
+snapshot was reconstructed from deltas. The selected parts are joined for display
+only: whitespace at a part boundary collapses to one space; a boundary without
+whitespace receives one space except before closing punctuation or quotes and
+after opening punctuation or quotes (best effort, so a word split across chunks
+can be separated). Punctuation roles are fixed by character:
+
+- Closing, attached to the previous part: `. , ; : ! ? ) ] } % …`, `»`, `”`
+  (U+201D) and the CJK and Korean closers `、 。 ， ． ： ； ！ ？ ） ］ ｝ 」 』 】
+〉 》 〕 〗 ｣ ｡ ､`.
+- Opening, attached to the next part: `( [ {`, `«`, `“` (U+201C), `‘`
+  (U+2018), `¡ ¿` and the CJK and Korean openers `「 『 【 〈 《 （ ［ ｛ 〔 〖 ｢`.
+- Every other character, including dashes, `/` and `・`, gets the normal space.
+- Curly double quotes follow the English convention (U+201C opens, U+201D
+  closes) and never change the straight double quote state; other quoting
+  conventions are not detected. Straight double quotes alternate between
+  opening and closing. U+2018 opens a quote unless it starts a word-initial
+  elision such as `‘tis`, where it is an apostrophe.
+
+The straight single quote and the curly closing quote U+2019 are both quotes and
+apostrophes, so they are classified by joiner state. For a part that starts with
+one of them, with `depth` as the number of unclosed single quotes:
+
+| Boundary before the part                                            | Part starts with                                                  | Result                                             |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------- |
+| Whitespace, opening punctuation, an opening quote or the body start | `'` followed by an elision                                        | apostrophe                                         |
+| Same                                                                | `'` otherwise                                                     | opens a quote                                      |
+| Same                                                                | U+2019 followed by an elision                                     | apostrophe                                         |
+| Same                                                                | U+2019 otherwise                                                  | closes a quote when `depth > 0`, else apostrophe   |
+| None, after a word or punctuation                                   | `'` or U+2019 followed by an elision                              | apostrophe, one space                              |
+| Same                                                                | `'` followed by a contraction suffix (`s t re ve ll d m`)         | no space; closes when `depth > 0`, else apostrophe |
+| Same                                                                | `'` with `depth > 0`, not followed by a word or opening character | no space; closes a quote                           |
+| Same                                                                | `'` otherwise                                                     | one space; opens a quote                           |
+| Same                                                                | U+2019 otherwise                                                  | no space; closes when `depth > 0`, else apostrophe |
+
+Elisions, introduced by `'`, U+2018 or U+2019, are `tis`, `twas`, `em`, `cause` and `til`, each not followed by a letter
+or digit, and a two-digit year such as `90s`, not followed by another digit or a
+quote, so `He wrote` + `’tis done` reads `He wrote ’tis done` and `called` + `'foo'` reads
+`called 'foo'`. Inside a part, an apostrophe between two word characters never
+opens or closes a quote. A straight single quote or U+2019 preceded by
+whitespace, opening punctuation or an opening quote is an apostrophe for an
+elision, an opening quote for `'`, and a closing quote or apostrophe for U+2019.
+Elsewhere it closes a quote when `depth > 0` and is an apostrophe otherwise.
+Apostrophes never change `depth`.
+
+Whitespace inside a part, every non-whitespace character and
+the retained record (families, original indices, sequence numbers and exact
+strings) are unchanged. The component never generates summaries, Markdown,
+translations or logs of reasoning text. When no family has text the disclosure
+shows **No reasoning content was supplied.** / **제공된 생각 과정이 없습니다.**
+when expanded. No hidden reasoning recovery is implied.
 
 The original default is collapsed; the existing `reasoning_disclosure` Expanded
 and Collapsed preferences govern initial mount. Explicit user choices and focus

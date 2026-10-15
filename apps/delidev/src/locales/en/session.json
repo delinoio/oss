@@ -148,7 +148,6 @@
   "session.usageIn": "In",
   "session.usageOut": "Out",
   "session.lifetimeUsage": "Session lifetime usage",
-  "session.usageIncompleteCoverage": "Known input and output subtotals from observed root responses. Missing, legacy and child telemetry remains unavailable.",
   "session.usageCreationUnavailable": "Session creation evidence is unavailable. Lifetime usage cannot be read safely.",
   "session.usageReading": "Reading all session usage ranges…",
   "session.usageStale": "Previous complete usage is stale. Refresh failed; retry the read.",

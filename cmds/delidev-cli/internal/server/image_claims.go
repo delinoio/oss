@@ -20,7 +20,7 @@ func requestImageAttachments(values []*pb.ImageAttachment) ([]domain.ImageAttach
 	}
 	return result, domain.ValidateImageAttachments(result)
 }
-func checkImageRoute(tx *store.Tx, agentID, machineID domain.ID, refs []domain.ImageAttachment) error {
+func checkImageRoute(tx *store.Tx, agentID, machineID domain.ID, prompt string, refs []domain.ImageAttachment) error {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -39,8 +39,11 @@ func checkImageRoute(tx *store.Tx, agentID, machineID domain.ID, refs []domain.I
 	if err != nil {
 		return err
 	}
-	if agent.Harness != domain.Codex || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) {
+	if !agent.Harness.ImageInputs() || !domain.ImageInputWorkerSupported(agent.Harness, machine.WorkerCapabilities) || !domain.ImagePromptAllowed(agent.Harness, prompt) {
 		return domain.UnsupportedImageInput()
+	}
+	if err := domain.ValidateImageAttachmentsForHarness(agent.Harness, refs); err != nil {
+		return err
 	}
 	for _, route := range agent.SourceRoutes() {
 		if route.Model == nil || !slices.Contains(route.Model.InputModalities, "image") {
@@ -97,7 +100,7 @@ func rejectDocumentAttachments(typed []*pb.ImageAttachment, document []domain.Im
 	return nil
 }
 
-func checkSessionImageRoute(tx *store.Tx, session domain.Session, refs []domain.ImageAttachment) error {
+func checkSessionImageRoute(tx *store.Tx, session domain.Session, prompt string, refs []domain.ImageAttachment) error {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -108,14 +111,17 @@ func checkSessionImageRoute(tx *store.Tx, session domain.Session, refs []domain.
 		snapshot = &session.Fork.Snapshot
 	}
 	if snapshot == nil {
-		return checkImageRoute(tx, session.AgentID, session.MachineID, refs)
+		return checkImageRoute(tx, session.AgentID, session.MachineID, prompt, refs)
 	}
 	_, machine, err := activeMachine(tx, session.MachineID)
 	if err != nil {
 		return err
 	}
-	if snapshot.Configuration.Harness != domain.Codex || !snapshot.Configuration.ImageInputDeclared || snapshot.Configuration.SidechatPolicy != "" || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) {
+	if !snapshot.Configuration.Harness.ImageInputs() || !snapshot.Configuration.ImageInputDeclared || snapshot.Configuration.SidechatPolicy != "" || !domain.ImageInputWorkerSupported(snapshot.Configuration.Harness, machine.WorkerCapabilities) || !domain.ImagePromptAllowed(snapshot.Configuration.Harness, prompt) {
 		return domain.UnsupportedImageInput()
+	}
+	if err := domain.ValidateImageAttachmentsForHarness(snapshot.Configuration.Harness, refs); err != nil {
+		return err
 	}
 	for _, ref := range refs {
 		if ref.MachineID != session.MachineID {
@@ -123,4 +129,69 @@ func checkSessionImageRoute(tx *store.Tx, session domain.Session, refs []domain.
 		}
 	}
 	return domain.ValidateImageAttachments(refs)
+}
+
+// checkQueuedImageEdit applies the text-dependent image rules to an edit of an
+// undelivered input. The immutable references were admitted with the original
+// input, so the edit never reruns catalog or Worker eligibility; it only keeps
+// the new text valid for the frozen session harness (a claimed session
+// snapshot, else the Agent harness the first execution will freeze).
+func checkQueuedImageEdit(tx *store.Tx, session domain.Session, prompt string, refs []domain.ImageAttachment) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	var harness domain.Harness
+	switch {
+	case session.InitialExecution != nil:
+		harness = session.InitialExecution.Configuration.Harness
+	case session.Fork != nil:
+		harness = session.Fork.Snapshot.Configuration.Harness
+	default:
+		row, err := tx.Get(domain.AgentKind, session.AgentID)
+		if err != nil {
+			return err
+		}
+		agent, err := store.Decode[domain.Agent](row)
+		if err != nil {
+			return err
+		}
+		harness = agent.Harness
+	}
+	if !domain.ImagePromptAllowed(harness, prompt) {
+		return domain.UnsupportedImageInput()
+	}
+	return nil
+}
+
+// queuedOpenCodeImageWorkerMissing reports whether a queued Worker job carries a
+// frozen OpenCode image declaration that the claiming Runner Device cannot
+// honor. The declaration was admitted while a Worker holding the OpenCode image
+// pair was connected, but a Worker that predates the pair can reconnect on the
+// same machine before the job is claimed and rejects every such assignment, even
+// a text-only one. The caller leaves the job queued instead of claiming it. A
+// payload that does not decode is left to the claim checks that own it.
+func queuedOpenCodeImageWorkerMissing(machine domain.Machine, job domain.Job) bool {
+	if slices.Contains(machine.WorkerCapabilities, domain.OpenCodeImageInputsV1) {
+		return false
+	}
+	declares := func(configurations ...domain.ExecutionConfiguration) bool {
+		for _, c := range configurations {
+			if c.Harness == domain.OpenCode && c.ImageInputDeclared {
+				return true
+			}
+		}
+		return false
+	}
+	switch job.Type {
+	case domain.ExecuteSessionJob:
+		var input domain.ExecutionJobInput
+		return domain.Decode(job.Input, &input) == nil && declares(input.Configuration)
+	case domain.CompactSessionJob:
+		var input domain.SessionCompactionInput
+		return domain.DecodeCompactionInput(job.Input, &input) == nil && declares(input.Restore.Configuration, input.Assignment.Configuration)
+	case domain.ForkSessionJob:
+		var input domain.ForkJobInput
+		return domain.Decode(job.Input, &input) == nil && declares(input.SourceAssignment.Configuration, input.Snapshot.Configuration)
+	}
+	return false
 }

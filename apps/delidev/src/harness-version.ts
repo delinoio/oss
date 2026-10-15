@@ -34,6 +34,15 @@ export function validInstallationVersion(value: unknown): value is string {
   );
 }
 
+/**
+ * Mirrors golang.org/x/mod/semver.IsValid for a version without the leading
+ * "v": no leading zeros in numeric components or numeric prerelease
+ * identifiers and no empty prerelease or build identifiers.
+ */
+export function validSemVer(value: unknown): value is string {
+  return typeof value === "string" && strictSemVer.test(value);
+}
+
 function parts(value: string) {
   const match = strictSemVer.exec(value);
   if (!match) return undefined;
@@ -81,6 +90,25 @@ export function versionAtLeast(version: unknown, baseline: string): boolean {
 /** Eligibility rule shared by Claude Runner selection and observations. */
 export function claudeVersionAllowed(version: unknown): boolean {
   return versionAtLeast(version, CLAUDE_BASELINE_VERSION);
+}
+
+/**
+ * Version predicate applied to a Settings installation observation before any
+ * protocol state is evaluated. Claude Code and OpenCode report an under-baseline
+ * detected version as a version problem; other harnesses keep protocol-only
+ * classification.
+ */
+export function installationVersionAllowed(
+  harness: unknown,
+): ((version: string) => boolean) | undefined {
+  switch (harness) {
+    case HarnessId.Claude:
+      return claudeVersionAllowed;
+    case HarnessId.OpenCode:
+      return (version) => harnessVersionAllowed(HarnessId.OpenCode, version);
+    default:
+      return undefined;
+  }
 }
 
 /**

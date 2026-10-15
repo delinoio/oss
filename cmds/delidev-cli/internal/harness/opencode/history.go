@@ -164,8 +164,21 @@ func (s *sessionAPI) readHistoryAt(ctx context.Context, o *inputObserver, bounda
 			return fail(observerProblem())
 		}
 		message := HistoryMessage{ID: original.value.ID, Role: original.value.Role, Digest: mutationDigest(original.raw), Parts: make([]HistoryPart, len(parts))}
+		// The native server stores parts ordered by identifier, which can differ
+		// from event arrival order for an image-bearing input. Only that one
+		// message is matched by part identity; the complete set must still match.
+		byIdentity := len(s.input.images) > 0 && original.value.ID == receipt.MessageID
+		identified := map[string]bool{}
 		for partIndex, raw := range parts {
 			part := o.parts[original.parts[partIndex]]
+			if byIdentity {
+				fields, _ := object(raw)
+				id, _ := boundedString(fields["id"], 30, true)
+				if identified[id] || !slices.Contains(original.parts, id) {
+					return fail(observerProblem())
+				}
+				identified[id], part = true, o.parts[id]
+			}
 			if part == nil || part.value.MessageID != message.ID || !bytes.Equal(canonicalNative(raw), part.raw) || part.value.Text != nil && part.text != part.value.Text.Text {
 				if s.logger != nil {
 					s.logger.WarnContext(ctx, "opencode_history_part_rejected", "owner_id", s.owner, "position", index, "part_position", partIndex, "original_present", part != nil, "bytes_match", part != nil && bytes.Equal(canonicalNative(raw), part.raw))

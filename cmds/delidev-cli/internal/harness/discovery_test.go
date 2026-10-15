@@ -152,6 +152,78 @@ func TestExplicitPathFailuresNeverFallBack(t *testing.T) {
 	}
 }
 
+// TestOpenCodeDiscoveryCausesDistinguishVersionFromIncompatibleInstallation
+// enumerates every discovery path that leaves an OpenCode installation
+// unusable and pins the record shape the desktop classifies. Only an
+// under-baseline detected version (installation detected with a version and an
+// unsupported protocol) is fixed by updating OpenCode; every `incompatible`
+// installation state carries no version, so it can never be presented as an
+// outdated OpenCode. The desktop mirror is
+// apps/delidev/src/runner-observation.test.ts.
+func TestOpenCodeDiscoveryCausesDistinguishVersionFromIncompatibleInstallation(t *testing.T) {
+	notExecutable := filepath.Join(t.TempDir(), "opencode")
+	if runtime.GOOS != "windows" {
+		if err := os.WriteFile(notExecutable, []byte("not a program\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type want struct {
+		state    domain.InstallationState
+		version  string
+		protocol domain.ProtocolState
+	}
+	for _, test := range []struct {
+		name string
+		path func(*testing.T) string
+		want want
+	}{
+		{"relative explicit path", func(*testing.T) string { return "./opencode" }, want{state: domain.InstallationIncompatible}},
+		{"non-regular executable", func(t *testing.T) string { return t.TempDir() }, want{state: domain.InstallationIncompatible}},
+		{"unparseable version output", func(t *testing.T) string { return fixture(t, "printf 'not a version\\n'\n") }, want{state: domain.InstallationIncompatible}},
+		{"unrunnable executable", func(t *testing.T) string {
+			if runtime.GOOS == "windows" {
+				t.Skip("Unix exec-format fixture")
+			}
+			return notExecutable
+		}, want{state: domain.InstallationIncompatible}},
+		{"windows shell wrapper", func(t *testing.T) string {
+			if runtime.GOOS != "windows" {
+				t.Skip("Only Windows rejects shell wrappers")
+			}
+			path := filepath.Join(t.TempDir(), "opencode.cmd")
+			if err := os.WriteFile(path, []byte("@echo off\r\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			return path
+		}, want{state: domain.InstallationIncompatible}},
+		{"below-baseline version", func(t *testing.T) string { return fixture(t, "printf '1.18.20\\n'\n") }, want{state: domain.InstallationDetected, version: "1.18.20", protocol: domain.ProtocolUnsupported}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			input := allMissing(t)
+			input.VerifyProtocol = true
+			input.Selections.Executables[2].Path = test.path(t)
+			root := discoveryRoot(t)
+			result, err := Discover(context.Background(), DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: domain.NewID()}, input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := result.Installations[2]
+			if got.Harness != domain.OpenCode || got.State != test.want.state || got.Version != test.want.version {
+				t.Fatalf("unexpected installation: %+v", got)
+			}
+			if test.want.protocol == "" {
+				if got.Protocol != nil {
+					t.Fatalf("protocol observed for an installation that was not detected: %+v", got.Protocol)
+				}
+				return
+			}
+			if got.Protocol == nil || got.Protocol.State != test.want.protocol || got.ProtocolVerified {
+				t.Fatalf("unexpected protocol: %+v", got.Protocol)
+			}
+		})
+	}
+}
+
 func TestDiscoveryBoundsAndGrokUpdateSuppression(t *testing.T) {
 	input := allMissing(t)
 	input.Selections.Executables[0].Path = fixture(t, "printf 'secret-text 1.2.3\\n'\n")

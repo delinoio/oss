@@ -27,7 +27,7 @@ func TestForkCheckpointCapacityIncludesSourceFilesBeforeNativeClaims(t *testing.
 		t.Fatal(err)
 	}
 	source.NativeRoot, source.Project = "/", "global"
-	if forkSourceProfile(source) != nil {
+	if forkSourceProfile(source, false) != nil {
 		t.Fatal("fixture is not plain General Chat")
 	}
 	directory := home
@@ -52,7 +52,7 @@ func TestForkCheckpointCapacityIncludesSourceFilesBeforeNativeClaims(t *testing.
 	if err != nil || len(raw) <= 7<<20 || len(raw) >= maxCheckpointBytes || InspectCheckpoint(ctx, home, raw, ref) != nil {
 		t.Fatal("large original private checkpoint must remain independently valid", len(raw), err)
 	}
-	if domain.SafeError(InspectForkSourceCheckpoint(ctx, home, raw, ref)).Code != domain.ResourceExhausted {
+	if domain.SafeError(InspectForkSourceCheckpoint(ctx, home, raw, ref, false)).Code != domain.ResourceExhausted {
 		t.Fatal("complete child envelope did not reject capacity before copying")
 	}
 	config := fixtureOwnedAPIConfig(t)
@@ -67,7 +67,7 @@ func TestForkCheckpointCapacityIncludesSourceFilesBeforeNativeClaims(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	requests := ForkRequests{domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()}
+	requests := ForkRequests{domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), false}
 	if _, _, err := PrepareForkAPI(ctx, config, home, raw, ref, target, requests); domain.SafeError(err).Code != domain.ResourceExhausted || claims != 0 {
 		t.Fatal("oversized child claimed or launched a native replacement", claims, err)
 	}
@@ -108,10 +108,10 @@ func TestForkCheckpointCapacityIncludesSourceFilesBeforeNativeClaims(t *testing.
 	ref = source.Reference
 	raw, _ = json.Marshal(source)
 	ref.SHA256 = mutationDigest(raw)
-	if len(raw) >= maxCheckpointBytes || InspectCheckpoint(ctx, home, raw, ref) != nil || forkSourceProfile(source) != nil {
-		t.Fatal("complete large history source must fit", len(raw), validCheckpointHistory(source.History), validCheckpointLineage(source), InspectCheckpoint(ctx, home, raw, ref), forkSourceProfile(source))
+	if len(raw) >= maxCheckpointBytes || InspectCheckpoint(ctx, home, raw, ref) != nil || forkSourceProfile(source, false) != nil {
+		t.Fatal("complete large history source must fit", len(raw), validCheckpointHistory(source.History), validCheckpointLineage(source), InspectCheckpoint(ctx, home, raw, ref), forkSourceProfile(source, false))
 	}
-	if domain.SafeError(InspectForkSourceCheckpoint(ctx, home, raw, ref)).Code != domain.ResourceExhausted {
+	if domain.SafeError(InspectForkSourceCheckpoint(ctx, home, raw, ref, false)).Code != domain.ResourceExhausted {
 		t.Fatal("duplicated child histories were omitted from reservation")
 	}
 	if err := os.RemoveAll(filepath.Join(home, strings.Repeat("&", 100))); err != nil {
@@ -123,7 +123,38 @@ func TestForkCheckpointCapacityIncludesSourceFilesBeforeNativeClaims(t *testing.
 	}
 	raw, _ = json.Marshal(source)
 	ref.SHA256 = mutationDigest(raw)
-	if InspectForkSourceCheckpoint(ctx, home, raw, ref) != nil {
+	if InspectForkSourceCheckpoint(ctx, home, raw, ref, false) != nil {
 		t.Fatal("small complete child envelope rejected")
+	}
+}
+
+// Reasoning parts are ordinary retained history entries: profile v1 still
+// rejects the source, profile v2 admits it under the same capacity reservation.
+func TestForkSourceProfileAdmitsReasoningOnlyUnderV2(t *testing.T) {
+	ctx := context.Background()
+	api, home := completedCheckpointFixture(t)
+	raw, ref, err := api.RetainCheckpoint(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := decodeCheckpoint(raw, ref, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source.NativeRoot, source.Project = "/", "global"
+	last := &source.History.Messages[len(source.History.Messages)-1]
+	last.Parts = append([]HistoryPart{{ID: "prt_000000000000abcdefghijklmn", Kind: ReasoningPartKind, Digest: strings.Repeat("d", 64)}}, last.Parts...)
+	source.History.Digest = ""
+	historyBytes, _ := json.Marshal(source.History)
+	source.History.Digest = mutationDigest(historyBytes)
+	source.Reference.HistorySHA256 = source.History.Digest
+	if domain.SafeError(forkSourceProfile(source, false)).Code != domain.Unsupported {
+		t.Fatal("profile v1 admitted a reasoning source")
+	}
+	if err := forkSourceProfile(source, true); err != nil {
+		t.Fatal("profile v2 rejected a plain reasoning source", err)
+	}
+	if err := checkForkCheckpointCapacity(source, true); err != nil {
+		t.Fatal("one reasoning part must fit the shared capacity reservation", err)
 	}
 }

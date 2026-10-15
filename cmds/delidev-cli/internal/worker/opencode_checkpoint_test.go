@@ -18,7 +18,7 @@ func openCodeCheckpointMetadataFixture(t *testing.T) (*ExecutionPublisher, openC
 	p, journal, claims := newOpenCodeClaimsFixture(t)
 	completion := domain.ExecutionCompletion{Version: 1, ExecutionID: p.input.ExecutionID, InputID: p.input.InputID, NativeThreadID: domain.NativeIdentity(claims[1].SessionID), NativeTurnID: domain.NativeIdentity(claims[1].MessageID), LastSequence: 12, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
 	claimBytes, _ := json.Marshal(claims[:2])
-	ref := openCodeCheckpointReference{Claim: journal.state.Reference, Completion: completion, InputMode: p.input.Input.Mode, PromptSHA256: executionInputDigest([]byte(p.input.Input.Prompt)), ClaimsSHA256: executionInputDigest(claimBytes)}
+	ref := openCodeCheckpointReference{Claim: journal.state.Reference, Completion: completion, InputMode: p.input.Input.Mode, PromptSHA256: openCodeInputDigest(p.input.Input), ClaimsSHA256: executionInputDigest(claimBytes)}
 	// Deliberately insufficient native bytes: valid outer metadata can never
 	// become original native persistence or process evidence in the reader.
 	native := json.RawMessage(`{}`)
@@ -120,7 +120,7 @@ func TestOpenCodeWorkerCheckpointReaderCannotManufactureNativeEvidence(t *testin
 	if err := security.WriteAtomic(path, raw); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readOpenCodeExecutionCheckpoint(context.Background(), p.config.Root, value.Reference, executionInputDigest(raw)); err == nil {
+	if _, err := readOpenCodeExecutionCheckpoint(context.Background(), p.config.Root, value.Reference, executionInputDigest(raw), true); err == nil {
 		t.Fatal("outer metadata manufactured original native proof")
 	}
 	after, err := os.ReadFile(path)
@@ -130,7 +130,7 @@ func TestOpenCodeWorkerCheckpointReaderCannotManufactureNativeEvidence(t *testin
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readOpenCodeExecutionCheckpoint(context.Background(), p.config.Root, value.Reference, executionInputDigest(raw)); err == nil {
+	if _, err := readOpenCodeExecutionCheckpoint(context.Background(), p.config.Root, value.Reference, executionInputDigest(raw), true); err == nil {
 		t.Fatal("missing checkpoint was reconstructed")
 	}
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
@@ -177,5 +177,38 @@ func TestOpenCodeWorkerCheckpointRequiresOriginalLiveCompletion(t *testing.T) {
 				t.Fatal("unproved checkpoint wrote evidence or published new events")
 			}
 		})
+	}
+}
+
+func TestOpenCodeWorkerCheckpointBindsTheAttachmentAwareInputDigest(t *testing.T) {
+	first, second := openCodeImageAttachment(t, 1), openCodeImageAttachment(t, 2)
+	withOpenCodeAttachments(t, []domain.ImageAttachment{first, second})
+	p, value := openCodeCheckpointMetadataFixture(t)
+	prompt := p.input.Input.Prompt
+	textDigest := executionInputDigest([]byte(prompt))
+	if value.Reference.PromptSHA256 == textDigest || value.Reference.PromptSHA256 != openCodeInputDigest(p.input.Input) || value.NativeReference.InputSHA256 != value.Reference.PromptSHA256 {
+		t.Fatal("image-bearing checkpoint did not retain the attachment-aware input digest")
+	}
+	// The native reference must carry the same identity as the Worker
+	// reference; the text-only digest of an image-bearing input never matches.
+	textOnly := value
+	textOnly.NativeReference.InputSHA256 = textDigest
+	if textOnly.matches(value.Reference) {
+		t.Fatal("native text digest matched an image-bearing Worker reference")
+	}
+	legacy := value.Reference
+	legacy.PromptSHA256 = textDigest
+	if value.matches(legacy) {
+		t.Fatal("Worker text digest matched an image-bearing native reference")
+	}
+	swapped := p.input.Input
+	swapped.Attachments = []domain.ImageAttachment{second, first}
+	if openCodeInputDigest(swapped) == value.Reference.PromptSHA256 {
+		t.Fatal("attachment order did not change the input digest")
+	}
+	removed := p.input.Input
+	removed.Attachments = nil
+	if openCodeInputDigest(removed) != textDigest {
+		t.Fatal("text-only input lost its historical digest")
 	}
 }

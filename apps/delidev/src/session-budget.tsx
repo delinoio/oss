@@ -265,6 +265,12 @@ export function SessionBudget({
     >
       <header>
         <h3>{copy("session-budget.estimatedCostBudget_b859b0")}</h3>
+        {view && !view.budget ? (
+          <span className="session-budget-state">
+            <span aria-hidden="true">· </span>
+            {copy("session-budget.budgetNotSet")}
+          </span>
+        ) : null}
         {result.error ? (
           <button
             disabled={result.isFetching}
@@ -405,9 +411,7 @@ export function SessionBudget({
             </p>
           )}
         </>
-      ) : view ? (
-        <p>{copy("session-budget.noEstimatedCostBudgetIsConfigured_e4cbfc")}</p>
-      ) : (
+      ) : view ? null : (
         <p role="status">
           {copy(
             result.error

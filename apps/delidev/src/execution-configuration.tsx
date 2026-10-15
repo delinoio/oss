@@ -901,11 +901,6 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                 "execution-configuration.appliedDelidevInstructions_f2bcde",
               )}
             </h3>
-            <p>
-              {copy(
-                "execution-configuration.readOnlyAdditionalInstructionsFromThis_8850cd",
-              )}
-            </p>
             {typeof configuration.instructions !== "string" ? (
               <p>
                 {copy(
@@ -913,11 +908,7 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                 )}
               </p>
             ) : configuration.instructions === "" ? (
-              <p>
-                {copy(
-                  "execution-configuration.noAdditionalDelidevInstructionsWereSelected_7b2306",
-                )}
-              </p>
+              <p>{copy("execution-configuration.noneSelected")}</p>
             ) : (
               <pre
                 aria-label={copy(

@@ -42,6 +42,10 @@ type OpenCodeTextPublisher struct {
 	usageAttached bool
 	seen          map[string]bool
 	snapshotSeen  map[string]bool
+	// inputExtras records the native expansion parts of an image-bearing
+	// original input (synthetic Read text and image file parts). They are
+	// verified by the adapter and are never published as transcript text.
+	inputExtras map[string]opencode.PartKind
 }
 
 func OpenOpenCodeTextPublisher(binding *OpenCodeBindingPublisher) (*OpenCodeTextPublisher, error) {
@@ -60,7 +64,7 @@ func OpenOpenCodeTextPublisher(binding *OpenCodeBindingPublisher) (*OpenCodeText
 		return nil, publicationUncertain()
 	}
 	binding.textAttached = true
-	return &OpenCodeTextPublisher{binding: binding, messages: map[string]*openCodeTextMessage{}, parts: map[string]*openCodeTextPart{}, revisions: map[string]*openCodeRevisionPart{}, tools: map[string]*openCodeToolPart{}, calls: map[string]string{}, seen: map[string]bool{}}, nil
+	return &OpenCodeTextPublisher{binding: binding, inputExtras: map[string]opencode.PartKind{}, messages: map[string]*openCodeTextMessage{}, parts: map[string]*openCodeTextPart{}, revisions: map[string]*openCodeRevisionPart{}, tools: map[string]*openCodeToolPart{}, calls: map[string]string{}, seen: map[string]bool{}}, nil
 }
 
 func (c *OpenCodeTextPublisher) publish(ctx context.Context, kind domain.ExecutionEventKind, message domain.ExecutionMessageUpdate, partKind opencode.PartKind) error {
@@ -138,6 +142,9 @@ func (c *OpenCodeTextPublisher) PublishObservation(ctx context.Context, observat
 				return false, nil
 			}
 			return true, c.observeTool(ctx, *observation.Part)
+		}
+		if c.inputExpansionPart(*observation.Part) {
+			return true, c.observeInputExpansion(*observation.Part)
 		}
 		if observation.Part.Kind != opencode.TextPartKind && observation.Part.Kind != opencode.ReasoningPartKind {
 			return false, nil
@@ -240,6 +247,8 @@ func (c *OpenCodeTextPublisher) observePart(ctx context.Context, native opencode
 		}
 		message := domain.ExecutionMessageUpdate{ID: domain.NewID(), NativeID: native.ID, NativeParentID: native.MessageID, Role: owner.role, Text: text.Text}
 		if owner.role == domain.UserMessage {
+			// The server binds the accepted input to its ordered image references.
+			message.Attachments = append([]domain.ImageAttachment(nil), b.publisher.input.Input.Attachments...)
 			if native.Kind != opencode.TextPartKind || native.MessageID != b.turn || native.ID != b.inputClaim.PartID || text.Text != b.publisher.input.Input.Prompt || len(owner.parts) != 0 {
 				return publicationUncertain()
 			}
@@ -295,5 +304,39 @@ func (c *OpenCodeTextPublisher) append(ctx context.Context, part *openCodeTextPa
 	}
 	part.message.Text += delta
 	c.bytes += len(delta)
+	return nil
+}
+
+// inputExpansionPart reports whether a part belongs to the native expansion of
+// the original image-bearing input: its synthetic Read text or an image file.
+func (c *OpenCodeTextPublisher) inputExpansionPart(part opencode.NativePart) bool {
+	b := c.binding
+	if len(b.publisher.input.Input.Attachments) == 0 || part.MessageID != b.turn || part.ID == b.inputClaim.PartID {
+		return false
+	}
+	return part.Kind == opencode.FilePartKind || part.Kind == opencode.TextPartKind && part.Text != nil && part.Text.Synthetic != nil && *part.Text.Synthetic
+}
+
+// observeInputExpansion accepts each expansion part exactly once. The adapter
+// already verified its exact content against the original attachments; the
+// transcript keeps only the original text with its ordered image references.
+func (c *OpenCodeTextPublisher) observeInputExpansion(part opencode.NativePart) error {
+	b := c.binding
+	owner := c.messages[part.MessageID]
+	// Each attached image expands into exactly one synthetic Read text and one
+	// file part, so neither kind may exceed the attachment count.
+	same := 0
+	for _, kind := range c.inputExtras {
+		if kind == part.Kind {
+			same++
+		}
+	}
+	if part.SessionID != b.thread || owner == nil || owner.role != domain.UserMessage || owner.finalized || c.inputExtras[part.ID] != "" || same >= len(b.publisher.input.Input.Attachments) || domain.NativeIdentity(part.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
+		return publicationUncertain()
+	}
+	c.inputExtras[part.ID] = part.Kind
+	if b.publisher.config.Logger != nil {
+		b.publisher.config.Logger.Info("opencode_image_input_expansion_observed", "job_id", b.reference.JobID, "execution_id", b.reference.ExecutionID, "part_kind", string(part.Kind), "expansion_parts", len(c.inputExtras))
+	}
 	return nil
 }
