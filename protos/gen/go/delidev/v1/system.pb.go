@@ -36,14 +36,18 @@ const (
 	// Independently negotiated OpenCode General Chat Fork profile v2: completed plain
 	// timed reasoning parts are cloned with their messages. Requires capability 26.
 	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1 SystemCapability = 104
-	SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1               SystemCapability = 90
-	SystemCapability_SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1                SystemCapability = 93
-	SystemCapability_SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1                   SystemCapability = 89
-	SystemCapability_SYSTEM_CAPABILITY_NATIVE_CODEX_REVIEW_V1                  SystemCapability = 96
-	SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_RESET_CREDIT_CONSENT_V1       SystemCapability = 77
-	SystemCapability_SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1                   SystemCapability = 80
-	SystemCapability_SYSTEM_CAPABILITY_INLINE_WORKER_MODELS_V1                 SystemCapability = 42
-	SystemCapability_SYSTEM_CAPABILITY_SESSION_STARTUP_PROGRESS_V1             SystemCapability = 74
+	// Independently negotiated OpenCode image attachments: the server freezes and
+	// dispatches them only to a Worker that holds the paired Worker capability.
+	// Requires capability 45.
+	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1          SystemCapability = 105
+	SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1         SystemCapability = 90
+	SystemCapability_SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1          SystemCapability = 93
+	SystemCapability_SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1             SystemCapability = 89
+	SystemCapability_SYSTEM_CAPABILITY_NATIVE_CODEX_REVIEW_V1            SystemCapability = 96
+	SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_RESET_CREDIT_CONSENT_V1 SystemCapability = 77
+	SystemCapability_SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1             SystemCapability = 80
+	SystemCapability_SYSTEM_CAPABILITY_INLINE_WORKER_MODELS_V1           SystemCapability = 42
+	SystemCapability_SYSTEM_CAPABILITY_SESSION_STARTUP_PROGRESS_V1       SystemCapability = 74
 	// Owner/client waiting input movement and generation-bound pagination.
 	SystemCapability_SYSTEM_CAPABILITY_WAITING_QUEUE_ORDER_V1       SystemCapability = 75
 	SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1 SystemCapability = 76
@@ -133,6 +137,7 @@ var (
 		102: "SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1",
 		103: "SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1",
 		104: "SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1",
+		105: "SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1",
 		90:  "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
 		93:  "SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1",
 		89:  "SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1",
@@ -214,6 +219,7 @@ var (
 		"SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1":                  102,
 		"SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1":               103,
 		"SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1": 104,
+		"SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1":                105,
 		"SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1":               90,
 		"SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1":                93,
 		"SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1":                   89,
@@ -3062,7 +3068,7 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xad\x1e\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xdd\x1e\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12,\n" +
 	"(SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1\x10C\x121\n" +
@@ -3070,7 +3076,8 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"+SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1\x10\\\x12,\n" +
 	"(SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1\x10f\x12/\n" +
 	"+SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1\x10g\x12=\n" +
-	"9SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1\x10h\x12/\n" +
+	"9SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1\x10h\x12.\n" +
+	"*SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1\x10i\x12/\n" +
 	"+SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1\x10Z\x12.\n" +
 	"*SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1\x10]\x12+\n" +
 	"'SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1\x10Y\x12,\n" +

@@ -29,9 +29,26 @@ func newOpenCodeClaimsFixture(t *testing.T) (*ExecutionPublisher, *openCodeClaim
 	return newOpenCodeClaimsFixtureMode(t, domain.ExecuteMode)
 }
 
+// openCodeFixtureAttachments gives the shared OpenCode fixtures an
+// image-bearing original input. Tests set it through withOpenCodeAttachments.
+var openCodeFixtureAttachments []domain.ImageAttachment
+
+func withOpenCodeAttachments(t *testing.T, attachments []domain.ImageAttachment) {
+	t.Helper()
+	openCodeFixtureAttachments = attachments
+	t.Cleanup(func() { openCodeFixtureAttachments = nil })
+}
+
 func newOpenCodeClaimsFixtureMode(t *testing.T, mode domain.SessionMode) (*ExecutionPublisher, *openCodeClaimJournal, []opencode.SessionClaim) {
 	t.Helper()
 	f := newCheckpointFixture(t)
+	if len(openCodeFixtureAttachments) > 0 {
+		for i := range openCodeFixtureAttachments {
+			openCodeFixtureAttachments[i].MachineID = f.input.MachineID
+		}
+		f.input.Input.Attachments = openCodeFixtureAttachments
+		f.input.Configuration.ImageInputDeclared = true
+	}
 	f.input.Configuration.Harness = domain.OpenCode
 	f.input.Configuration.Effort = ""
 	f.input.Configuration.Options = domain.AgentOptions{Permission: domain.PermissionDefault}
@@ -64,7 +81,7 @@ func newOpenCodeClaimsFixtureMode(t *testing.T, mode domain.SessionMode) (*Execu
 	if err != nil {
 		t.Fatal(err)
 	}
-	claims[1].BodyDigest, err = opencode.TextInputClaimDigest(requested.Session, claims[1].MessageID, claims[1].PartID, p.input.Input.Prompt)
+	claims[1].BodyDigest, err = opencode.InputClaimDigest(requested.Session, claims[1].MessageID, claims[1].PartID, p.input.Input.Prompt, openCodeClaimImages(p.input.Input.Attachments))
 	if err != nil {
 		t.Fatal(err)
 	}

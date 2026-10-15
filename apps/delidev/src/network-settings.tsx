@@ -86,7 +86,9 @@ export function NetworkSettings({
   onPresentationChange?: (open: boolean) => void;
 }) {
   useLocale();
-  const [open, setOpen] = useState(false);
+  // The inline Server preferences workspace starts expanded on each fresh
+  // mount; the Runner Device modal stays closed until the user opens it.
+  const [open, setOpen] = useState(!machine);
   const workspaceId = useId();
   const disclosure = useRef<HTMLButtonElement>(null),
     workspace = useRef<HTMLDivElement>(null);

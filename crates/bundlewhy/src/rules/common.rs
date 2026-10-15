@@ -1222,9 +1222,9 @@ fn collect_binding_names(pattern: &str, names: &mut Vec<String>) {
     }
 }
 
-/// Source ranges in which a binding named `eval` is visible: the enclosing
-/// block of a `const`/`let`/`var`/`function eval` declaration, or the body of
-/// a function or arrow whose parameter list binds `eval`.
+/// Source ranges in which a binding named `eval` is visible. Lexical
+/// declarations use their block, while `var` uses its containing function.
+/// A named function expression binds its name only inside its own body.
 fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, usize)> {
     let mut masked = source.as_bytes().to_vec();
     for (start, end) in ignored {
@@ -1256,11 +1256,36 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             .min_by_key(|(open, close)| close - open)
             .map_or((0, bytes.len()), |(open, close)| (*open, *close))
     };
+    // The lexical scan does not parse JavaScript. Match function bodies by
+    // balancing their parameter lists, then use the already paired braces.
+    // This keeps nested `var` declarations inside the nearest function.
+    let function =
+        Regex::new(r"\bfunction(?:\s*\*)?(?:\s+[A-Za-z_$][\w$]*)?").expect("static regex");
+    let function_bodies: Vec<(usize, (usize, usize))> = function
+        .find_iter(&code)
+        .filter_map(|found| {
+            // A member call such as `obj.function()` is not a declaration.
+            let preceding = code[..found.start()]
+                .bytes()
+                .rev()
+                .find(|byte| !byte.is_ascii_whitespace());
+            if preceding == Some(b'.') {
+                return None;
+            }
+            let mut cursor = found.end();
+            while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+                cursor += 1;
+            }
+            if bytes.get(cursor) != Some(&b'(') {
+                return None;
+            }
+            cursor = matching_delimiter(bytes, cursor, b'(', b')')? + 1;
+            let body = function_body_block(&code, bytes, &blocks, cursor)?;
+            Some((found.start(), body))
+        })
+        .collect();
+    let mut bodies: Vec<(usize, usize)> = function_bodies.iter().map(|(_, body)| *body).collect();
     let mut scopes = Vec::new();
-    let declaration = Regex::new(r"\b(?:const|let|var|function)\s+eval\b").expect("static regex");
-    for found in declaration.find_iter(&code) {
-        scopes.push(enclosing(found.start()));
-    }
     // Parameter lists followed by a body: `(...) {` or `(...) =>`.
     let parameters = Regex::new(r"\(([^()]*)\)\s*(?:=>|\{)").expect("static regex");
     for captures in parameters.captures_iter(&code) {
@@ -1277,7 +1302,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             .next()
             .unwrap_or("");
         if whole.as_str().ends_with('{')
-            && matches!(keyword, "if" | "while" | "for" | "switch" | "with")
+            && is_control_flow_parentheses(&code, whole.start(), keyword)
         {
             continue;
         }
@@ -1289,21 +1314,85 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
                 .trim_start_matches("...");
             collect_binding_names(target, &mut names);
         }
-        if names.iter().any(|name| name == "eval") {
-            let body = whole.end();
-            let end = if whole.as_str().ends_with('{') {
-                blocks
-                    .iter()
-                    .find(|(open, _)| *open == body - 1)
-                    .map_or(bytes.len(), |(_, close)| *close)
-            } else {
+        let body = whole.end();
+        let open = if whole.as_str().ends_with('{') {
+            Some(body - 1)
+        } else {
+            code[body..]
+                .bytes()
+                .position(|byte| !byte.is_ascii_whitespace())
+                .map(|offset| body + offset)
+                .filter(|open| bytes.get(*open) == Some(&b'{'))
+        };
+        let block = open.and_then(|open| blocks.iter().find(|(start, _)| *start == open).copied());
+        let end = block.map_or_else(
+            || {
                 code[body..]
                     .find([';', '\n'])
                     .map_or(bytes.len(), |offset| body + offset)
-            };
+            },
+            |(_, close)| close,
+        );
+        if let Some(block) = block
+            && keyword != "catch"
+        {
+            bodies.push(block);
+        }
+        if names.iter().any(|name| name == "eval") {
             scopes.push((list.start(), end));
         }
     }
+    // The compatibility regex above handles the common case. Scan balanced
+    // delimiters as well so defaults such as `value = make()` do not hide a
+    // parameter binding.
+    for (open, byte) in bytes.iter().enumerate() {
+        if *byte != b'(' {
+            continue;
+        }
+        let Some(close) = matching_delimiter(bytes, open, b'(', b')') else {
+            continue;
+        };
+        let Some((body, arrow)) = arrow_or_function_body(bytes, close) else {
+            continue;
+        };
+        let keyword = code[..open]
+            .trim_end()
+            .rsplit(|character: char| {
+                !(character.is_alphanumeric() || character == '_' || character == '$')
+            })
+            .next()
+            .unwrap_or("");
+        if !arrow && is_control_flow_parentheses(&code, open, keyword) {
+            continue;
+        }
+        let list = &code[open + 1..close];
+        let mut names = Vec::new();
+        for parameter in split_top_level(list, b',') {
+            let target = split_top_level(binding_target(parameter), b':')[0]
+                .trim()
+                .trim_end_matches('?')
+                .trim_start_matches("...");
+            collect_binding_names(target, &mut names);
+        }
+        let block = blocks.iter().find(|(start, _)| *start == body).copied();
+        let end = block.map_or_else(
+            || {
+                code[body..]
+                    .find([';', '\n'])
+                    .map_or(bytes.len(), |offset| body + offset)
+            },
+            |(_, close)| close,
+        );
+        if let Some(block) = block
+            && keyword != "catch"
+        {
+            bodies.push(block);
+        }
+        if names.iter().any(|name| name == "eval") {
+            scopes.push((open + 1, end));
+        }
+    }
+
     let single = Regex::new(r"\beval\s*=>").expect("static regex");
     for found in single.find_iter(&code) {
         let end = code[found.end()..]
@@ -1311,7 +1400,231 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             .map_or(bytes.len(), |offset| found.end() + offset);
         scopes.push((found.start(), end));
     }
+    // A single-parameter arrow does not have parentheses to identify its
+    // body. Use ECMAScript's Unicode identifier classes so names such as `λ`
+    // are scoped like their ASCII counterparts. ZWNJ and ZWJ are permitted
+    // after the first identifier character by the ECMAScript grammar.
+    let single_arrow =
+        Regex::new(r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*\s*=>\s*\{")
+            .expect("static regex");
+    for found in single_arrow.find_iter(&code) {
+        let open = found.end() - 1;
+        if let Some(body) = blocks.iter().find(|(start, _)| *start == open) {
+            bodies.push(*body);
+        }
+    }
+    let declaration = Regex::new(r"\b(const|let|var|function)\s+eval\b").expect("static regex");
+    for captures in declaration.captures_iter(&code) {
+        let (Some(found), Some(kind)) = (captures.get(0), captures.get(1)) else {
+            continue;
+        };
+        let scope = match kind.as_str() {
+            "var" => bodies
+                .iter()
+                .filter(|(open, close)| *open < found.start() && found.start() < *close)
+                .min_by_key(|(open, close)| close - open)
+                .copied()
+                .unwrap_or((0, bytes.len())),
+            "function" if named_function_is_expression(&code, found.start()) => function_bodies
+                .iter()
+                .find(|(start, _)| *start == found.start())
+                .map_or_else(
+                    || enclosing(found.start()),
+                    |(_, body)| (found.start(), body.1),
+                ),
+            _ => enclosing(found.start()),
+        };
+        scopes.push(scope);
+    }
     scopes
+}
+
+/// Finds a block-bodied function or arrow body after a parameter list.
+/// TypeScript arrow return annotations can sit between `)` and `=>`, and
+/// their nested delimiters must be skipped before locating the executable body.
+fn arrow_or_function_body(bytes: &[u8], close: usize) -> Option<(usize, bool)> {
+    let mut cursor = close + 1;
+    while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+        cursor += 1;
+    }
+    if bytes.get(cursor) == Some(&b'{') {
+        return Some((cursor, false));
+    }
+    if bytes.get(cursor..cursor.saturating_add(2)) == Some(b"=>") {
+        cursor += 2;
+        while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        return (bytes.get(cursor) == Some(&b'{')).then_some((cursor, true));
+    }
+    if bytes.get(cursor) != Some(&b':') {
+        return None;
+    }
+    cursor += 1;
+    let mut parentheses = 0i32;
+    let mut brackets = 0i32;
+    let mut braces = 0i32;
+    let mut angles = 0i32;
+    while let Some(byte) = bytes.get(cursor) {
+        if *byte == b'{' && parentheses == 0 && brackets == 0 && braces == 0 && angles == 0 {
+            // A method can have a TypeScript return annotation before its
+            // body. Object-shaped return types also use braces, so skip a
+            // brace preceded by a type delimiter and continue to the next
+            // executable block.
+            let type_brace = bytes[..cursor]
+                .iter()
+                .rev()
+                .find(|byte| !byte.is_ascii_whitespace())
+                .is_some_and(|byte| matches!(byte, b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'('))
+                || bytes[..cursor].ends_with(b"=>");
+            if !type_brace {
+                return Some((cursor, false));
+            }
+            cursor = matching_delimiter(bytes, cursor, b'{', b'}')? + 1;
+            continue;
+        }
+        if *byte == b'='
+            && bytes.get(cursor + 1) == Some(&b'>')
+            && parentheses == 0
+            && brackets == 0
+            && braces == 0
+            && angles == 0
+        {
+            cursor += 2;
+            while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+                cursor += 1;
+            }
+            return (bytes.get(cursor) == Some(&b'{')).then_some((cursor, true));
+        }
+        match *byte {
+            b'(' => parentheses += 1,
+            b')' => parentheses = parentheses.checked_sub(1)?,
+            b'[' => brackets += 1,
+            b']' => brackets = brackets.checked_sub(1)?,
+            b'{' => braces += 1,
+            b'}' => braces = braces.checked_sub(1)?,
+            b'<' => angles += 1,
+            b'>' if angles > 0 => angles -= 1,
+            _ => {}
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn is_control_flow_parentheses(code: &str, open: usize, keyword: &str) -> bool {
+    if matches!(keyword, "if" | "while" | "for" | "switch" | "with") {
+        return true;
+    }
+    if keyword != "await" {
+        return false;
+    }
+    let prefix = code[..open].trim_end();
+    let await_start = prefix.len().saturating_sub("await".len());
+    let before_await = prefix[..await_start].trim_end();
+    before_await.strip_suffix("for").is_some_and(|before_for| {
+        before_for.chars().next_back().is_none_or(|character| {
+            !(character.is_alphanumeric() || character == '_' || character == '$')
+        })
+    })
+}
+
+/// Finds the block that starts a function body after its parameter list.
+/// TypeScript return annotations can contain object types with braces of
+/// their own, so skip those before selecting the executable block.
+fn function_body_block(
+    code: &str,
+    bytes: &[u8],
+    blocks: &[(usize, usize)],
+    mut cursor: usize,
+) -> Option<(usize, usize)> {
+    let mut return_annotation = false;
+    while let Some(byte) = bytes.get(cursor) {
+        if byte.is_ascii_whitespace() {
+            cursor += 1;
+            continue;
+        }
+        if *byte == b'{' {
+            let type_brace = return_annotation
+                && code[..cursor]
+                    .bytes()
+                    .rev()
+                    .find(|byte| !byte.is_ascii_whitespace())
+                    .is_some_and(|byte| {
+                        matches!(byte, b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'(')
+                    })
+                || return_annotation && code[..cursor].trim_end().ends_with("=>");
+            if !type_brace {
+                return blocks.iter().find(|(open, _)| *open == cursor).copied();
+            }
+            let (_, close) = blocks.iter().find(|(open, _)| *open == cursor).copied()?;
+            cursor = close + 1;
+            continue;
+        }
+        if *byte == b':' {
+            return_annotation = true;
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn named_function_is_expression(code: &str, start: usize) -> bool {
+    let raw_prefix = &code[..start];
+    let prefix = raw_prefix.trim_end();
+    let prefix = prefix.strip_suffix("async").unwrap_or(prefix).trim_end();
+    if prefix.ends_with("=>") {
+        return true;
+    }
+    let preceding = prefix.as_bytes().last().copied();
+    if preceding == Some(b':') && is_case_label(prefix) {
+        return false;
+    }
+    if preceding.is_some_and(|byte| b"=([,:?!+-*/%&|^~".contains(&byte)) {
+        return true;
+    }
+    let keyword = prefix
+        .rsplit(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .next();
+    if !matches!(
+        keyword,
+        Some("return" | "throw" | "yield" | "await" | "void" | "new")
+    ) {
+        return false;
+    }
+    let keyword_start = prefix
+        .len()
+        .saturating_sub(keyword.unwrap_or_default().len());
+    !raw_prefix[keyword_start..].contains(['\n', '\r'])
+}
+
+fn matching_delimiter(bytes: &[u8], open: usize, opening: u8, closing: u8) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, byte) in bytes.iter().enumerate().skip(open) {
+        match byte {
+            byte if *byte == opening => depth += 1,
+            byte if *byte == closing => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn is_case_label(prefix: &str) -> bool {
+    let label = prefix.strip_suffix(':').unwrap_or(prefix);
+    let statement = label
+        .rsplit_once(['{', '}', ';', '\n'])
+        .map_or(label, |(_, rest)| rest)
+        .trim();
+    statement == "default"
+        || statement
+            .strip_prefix("case")
+            .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
 }
 
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
@@ -1466,6 +1779,50 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn eval_rule_drafts(source: &str, engine_reports_eval: bool) -> Vec<DiagnosticDraft> {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let source_path = root.join("src/main.js");
+        let build_dir = root.join("build");
+        std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(&build_dir).unwrap();
+        std::fs::write(&source_path, source).unwrap();
+        std::fs::write(build_dir.join("main.js"), "const longLocalName = 1;").unwrap();
+        let module_id = source_path.to_string_lossy().into_owned();
+        let collection = crate::collect::Collection {
+            default_minifier: true,
+            minify_enabled: true,
+            logs: if engine_reports_eval {
+                vec![crate::collect::EngineLog {
+                    code: Some("EVAL".to_owned()),
+                    id: Some(module_id.clone()),
+                    ..crate::collect::EngineLog::default()
+                }]
+            } else {
+                Vec::new()
+            },
+            modules: vec![CollectedModule {
+                id: module_id,
+                path: Some(source_path.to_string_lossy().into_owned()),
+                included: true,
+                chunks: vec!["main.js".to_owned()],
+                ..CollectedModule::default()
+            }],
+            ..crate::collect::Collection::default()
+        };
+        let chunk = crate::chunks::Chunk::load(&build_dir, "main.js", None, true, root).unwrap();
+        let mut context = Context::new(
+            &collection,
+            root.to_path_buf(),
+            "app".to_owned(),
+            vec![chunk],
+            crate::sources::SourceStore::new(true),
+        );
+        let mut drafts = Vec::new();
+        direct_eval_mangling(&mut context, &mut drafts);
+        drafts
+    }
 
     fn package_module(
         id: &str,
@@ -1843,6 +2200,127 @@ y=/process.env.F/.test(z),process.env.G"#;
             direct_eval_line("try {} catch (eval) { eval(code); }"),
             None
         );
+    }
+
+    #[test]
+    fn named_function_expression_eval_shadows_only_its_body() {
+        assert_eq!(
+            direct_eval_line("const helper = function eval() { return 1; }; eval(code);"),
+            Some((0, 46))
+        );
+        assert_eq!(
+            direct_eval_line("const helper = function eval() { return eval(code); };"),
+            None
+        );
+        assert_eq!(
+            direct_eval_line("function eval(code) { return code; } eval(code);"),
+            None
+        );
+        let source = "const helper = function eval() { return eval(code); };\nconst longLocalName \
+                      = 1;\neval('longLocalName');";
+        assert_eq!(direct_eval_line(source), Some((2, 0)));
+        let drafts = eval_rule_drafts(source, false);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+        assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+        assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 3);
+    }
+
+    #[test]
+    fn function_bodies_skip_typescript_return_annotations() {
+        let source = "function run(): void { var eval = helper; } eval(code);";
+        assert!(direct_eval_line(source).is_some());
+        let source = "function run(): Promise<{ ok: boolean }> { var eval = helper; } eval(code);";
+        assert!(direct_eval_line(source).is_some());
+        let source = "function run(): () => { ok: boolean } { var eval = helper; } eval(code);";
+        assert!(direct_eval_line(source).is_some());
+    }
+
+    #[test]
+    fn eval_shadowing_handles_function_scan_edge_cases() {
+        assert_eq!(
+            direct_eval_line("obj.function(); if (condition) { var eval = helper; } eval(code);"),
+            None
+        );
+        assert!(direct_eval_line("const make = () => function eval() {}; eval(code);").is_some());
+        assert!(direct_eval_line("const instance = new function eval() {}; eval(code);").is_some());
+        assert!(
+            direct_eval_line("const run = (value = make()) => { var eval = helper; }; eval(code);")
+                .is_some()
+        );
+        assert!(
+            direct_eval_line("const run = (value): void => { var eval = helper; }; eval(code);")
+                .is_some()
+        );
+        assert!(direct_eval_line("const run = λ => { var eval = helper; }; eval(code);").is_some());
+        assert!(
+            direct_eval_line("class C { run(): void { var eval = helper; } } eval(code);")
+                .is_some()
+        );
+        assert!(
+            direct_eval_line(
+                "class C { run(): Promise<{ ok: boolean }> { var eval = helper; } } eval(code);"
+            )
+            .is_some()
+        );
+        assert_eq!(
+            direct_eval_line(
+                "async function run() { for await (const item of items) { var eval = helper; } \
+                 eval(code); }"
+            ),
+            None
+        );
+        assert!(
+            direct_eval_line("function outer() { return\nfunction eval() {}; } eval(code);")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn switch_case_function_declarations_keep_their_declaration_scope() {
+        for source in [
+            "switch (value) { case 0: function eval(x) { return x; } eval(code); }",
+            "switch (value) { default: function eval(x) { return x; } eval(code); }",
+        ] {
+            assert_eq!(direct_eval_line(source), None);
+        }
+    }
+
+    #[test]
+    fn var_eval_uses_the_containing_function_scope() {
+        let shadowed = "function run() { if (condition) { var eval = helper; } eval(code); }";
+        assert_eq!(direct_eval_line(shadowed), None);
+        assert_eq!(
+            direct_eval_line(&format!("{shadowed}\nfunction other() {{ eval(code); }}")),
+            Some((1, 19))
+        );
+        assert_eq!(
+            direct_eval_line("function run() { if (true) { let eval = helper; } eval(code); }"),
+            Some((0, 50))
+        );
+        assert_eq!(
+            direct_eval_line("function run() { if (true) { const eval = helper; } eval(code); }"),
+            Some((0, 52))
+        );
+        assert_eq!(direct_eval_line("{ var eval = helper; } eval(code);"), None);
+        for source in [
+            "const run = () => { var eval = helper; eval(code); }; eval(code);",
+            "const run = value => { var eval = helper; eval(code); }; eval(code);",
+        ] {
+            assert_eq!(
+                direct_eval_line(source),
+                Some((
+                    0,
+                    u32::try_from(source.rfind("eval(code)").unwrap()).unwrap()
+                ))
+            );
+        }
+        let source = "function run() { if (condition) { var eval = helper; } const longLocalName \
+                      = 1; return eval(code); }";
+        assert!(eval_rule_drafts(source, false).is_empty());
+        let reported = eval_rule_drafts(source, true);
+        assert_eq!(reported.len(), 1);
+        assert_eq!(reported[0].status, EvidenceStatus::Confirmed);
     }
 
     #[test]
