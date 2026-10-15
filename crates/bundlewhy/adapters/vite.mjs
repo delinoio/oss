@@ -162,21 +162,48 @@ export function resolveFinalizedMangleSetting(normalizedOptions) {
   return MangleSetting.Enabled;
 }
 
+/** What the finalized output options say about the Oxc minifier. */
+export const FinalizedMinifyKind = Object.freeze({
+  Enabled: "enabled",
+  Disabled: "disabled",
+  DceOnly: "dce-only",
+});
+
+/** Why minification does not run, recorded in a collection. */
+export const MinifyOverride = Object.freeze({
+  None: "none",
+  OutputHookDisabled: "output-hook-disabled",
+  OutputHookDceOnly: "output-hook-dce-only",
+});
+
 /**
- * Reads whether the Oxc minifier runs at all from the normalized output
- * options that Rolldown passes to `generateBundle`.
+ * Reads what the normalized output options that Rolldown passes to
+ * `generateBundle` say about the Oxc minifier.
  *
- * `false` and `"dce-only"` leave the full minifier off; `true` and an options
- * object turn it on. Returns `undefined` when the engine does not report a
+ * `false` leaves the minifier off. `"dce-only"` runs dead-code elimination
+ * only, without compression or name mangling. `true` and an options object turn
+ * the full minifier on. Returns `undefined` when the engine does not report a
  * `minify` value.
  */
-export function resolveFinalizedMinifyActive(normalizedOptions) {
+export function resolveFinalizedMinifyKind(normalizedOptions) {
   if (normalizedOptions === null || typeof normalizedOptions !== "object") {
     return undefined;
   }
   const minify = normalizedOptions.minify;
   if (minify === undefined) return undefined;
-  return !(minify === false || minify === "dce-only");
+  if (minify === false) return FinalizedMinifyKind.Disabled;
+  if (minify === "dce-only") return FinalizedMinifyKind.DceOnly;
+  return FinalizedMinifyKind.Enabled;
+}
+
+/**
+ * Reads whether the full Oxc minifier runs from the normalized output options.
+ * `false` and `"dce-only"` leave it off; see `resolveFinalizedMinifyKind` for
+ * the difference between them.
+ */
+export function resolveFinalizedMinifyActive(normalizedOptions) {
+  const kind = resolveFinalizedMinifyKind(normalizedOptions);
+  return kind === undefined ? undefined : kind === FinalizedMinifyKind.Enabled;
 }
 
 /**
@@ -209,22 +236,39 @@ export function resolveEffectiveMangle({ buildMinify, configured, finalized }) {
  * does not run, for example after a hook set `minify` to `false` or
  * `"dce-only"`. `"terser"` and `"esbuild"` keep the minifier they name,
  * because the Rolldown output option says nothing about them.
+ *
+ * `override` names the finalized value when a plugin hook, not `build.minify`,
+ * turned the selected Oxc minifier off, so a diagnostic can attribute the
+ * decision to the hook. Rolldown's `"dce-only"` keeps dead-code elimination,
+ * which the other value does not.
  */
-export function resolveEffectiveMinifier({ buildMinify, finalizedActive }) {
+export function resolveEffectiveMinifier({
+  buildMinify,
+  finalizedActive,
+  finalizedKind,
+}) {
   if (buildMinify === false && finalizedActive === true) {
-    return { enabled: true, name: "oxc" };
+    return { enabled: true, name: "oxc", override: MinifyOverride.None };
   }
   const oxcSelected =
     buildMinify === true || buildMinify === undefined || buildMinify === "oxc";
+  const hookDisabled = oxcSelected && finalizedActive === false;
+  let override = MinifyOverride.None;
+  if (hookDisabled) {
+    override =
+      finalizedKind === FinalizedMinifyKind.DceOnly
+        ? MinifyOverride.OutputHookDceOnly
+        : MinifyOverride.OutputHookDisabled;
+  }
   return {
-    enabled:
-      buildMinify !== false && !(oxcSelected && finalizedActive === false),
+    enabled: buildMinify !== false && !hookDisabled,
     // Vite documents `build.minify` default as 'oxc' for client builds; `true`
     // selects the same default minifier.
     name:
       buildMinify === true || buildMinify === undefined
         ? "oxc"
         : String(buildMinify),
+    override,
   };
 }
 
@@ -373,6 +417,7 @@ function collectorPlugin(state) {
       // configResolved.
       state.finalizedMangle = resolveFinalizedMangleSetting(options);
       state.finalizedMinifyActive = resolveFinalizedMinifyActive(options);
+      state.finalizedMinifyKind = resolveFinalizedMinifyKind(options);
       const modules = new Map();
       const recordModule = (id) => {
         if (modules.has(id)) return modules.get(id);
@@ -488,6 +533,7 @@ await runAdapter(async (request) => {
     moduleSideEffectsOption: undefined,
     finalizedMangle: undefined,
     finalizedMinifyActive: undefined,
+    finalizedMinifyKind: undefined,
     collection: null,
     outputs: 0,
     warnings: [],
@@ -642,16 +688,28 @@ await runAdapter(async (request) => {
     configured: resolved.mangle,
     finalized: state.finalizedMangle,
   });
-  const { enabled: minifyEnabled, name: minifierName } =
-    resolveEffectiveMinifier({
-      buildMinify: minify,
-      finalizedActive: state.finalizedMinifyActive,
-    });
+  const {
+    enabled: minifyEnabled,
+    name: minifierName,
+    override: minifyOverride,
+  } = resolveEffectiveMinifier({
+    buildMinify: minify,
+    finalizedActive: state.finalizedMinifyActive,
+    finalizedKind: state.finalizedMinifyKind,
+  });
   const configSummary = {
     "build.minify": summarizeValue(minify),
     "build.target": resolved.target ?? "unknown",
     "build.rolldownOptions.treeshake": resolved.treeshake ?? "undefined",
     "build.rolldownOptions.output.minify.mangle": mangle,
+    ...(minifyOverride === MinifyOverride.None
+      ? {}
+      : {
+          "final build.rolldownOptions.output.minify":
+            minifyOverride === MinifyOverride.OutputHookDceOnly
+              ? "dce-only"
+              : "false",
+        }),
     "build.lib": String(Boolean(resolved.lib)),
     "build.ssr": String(Boolean(resolved.ssr)),
     "original build.sourcemap": summarizeValue(resolved.sourcemap),
@@ -670,6 +728,7 @@ await runAdapter(async (request) => {
     minifierVersion: minifierName === "oxc" ? vite.rolldownVersion : "unknown",
     defaultMinifier: minifierName === "oxc",
     minifyEnabled,
+    minifyOverride,
     mangle,
     adapterId: ADAPTER_ID,
     adapterVersion: ADAPTER_VERSION,

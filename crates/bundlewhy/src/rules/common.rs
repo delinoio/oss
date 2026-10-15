@@ -9,7 +9,7 @@ use regex::Regex;
 
 use super::{Context, DiagnosticDraft, RuleId};
 use crate::{
-    collect::{CollectedModule, ManglingSetting},
+    collect::{CollectedModule, ManglingSetting, MinifyOverride},
     model::{Condition, ConditionOutcome, Evidence, EvidenceStatus},
 };
 
@@ -942,17 +942,64 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
         return;
     }
     let vite = context.collection.bundler == "vite";
-    let option = if vite {
-        "build.minify"
-    } else {
-        "optimization.minimize"
+    let override_kind = context.collection.minify_override;
+    // A plugin output hook that turned the minifier off is named as the cause:
+    // `build.minify` still reads as enabled in that case.
+    let (option, value) = match override_kind {
+        MinifyOverride::OutputHookDisabled => (FINAL_OUTPUT_MINIFY_OPTION, "false".to_owned()),
+        MinifyOverride::OutputHookDceOnly => {
+            (FINAL_OUTPUT_MINIFY_OPTION, "\"dce-only\"".to_owned())
+        }
+        MinifyOverride::None => {
+            let option = if vite {
+                "build.minify"
+            } else {
+                "optimization.minimize"
+            };
+            let value = context
+                .collection
+                .config_summary
+                .get(option)
+                .cloned()
+                .unwrap_or_else(|| "false".to_owned());
+            (option, value)
+        }
     };
-    let value = context
-        .collection
-        .config_summary
-        .get(option)
-        .cloned()
-        .unwrap_or_else(|| "false".to_owned());
+    let (summary, direction, evidence_label) = match override_kind {
+        MinifyOverride::None => (
+            format!(
+                "{option} is {value}, so dead-code elimination, name mangling and other minifier \
+                 optimizations do not run."
+            ),
+            format!("Enable {option} for production builds."),
+            "resolved bundler configuration",
+        ),
+        MinifyOverride::OutputHookDisabled => (
+            format!(
+                "A plugin outputOptions hook set the final output minify option to {value} \
+                 although build.minify is {}, so dead-code elimination, name mangling and other \
+                 minifier optimizations do not run.",
+                build_minify_value(context)
+            ),
+            "Remove the plugin outputOptions change that disables minify, or enable it for \
+             production builds."
+                .to_owned(),
+            "final Rolldown output options",
+        ),
+        MinifyOverride::OutputHookDceOnly => (
+            format!(
+                "A plugin outputOptions hook set the final output minify option to {value} \
+                 although build.minify is {}, so compression and name mangling do not run. \
+                 Rolldown still removes dead code in this mode; bundlewhy has no verified \
+                 detector for that stage.",
+                build_minify_value(context)
+            ),
+            "Remove the plugin outputOptions change that limits minify to dead-code elimination, \
+             or enable it for production builds."
+                .to_owned(),
+            "final Rolldown output options",
+        ),
+    };
     let config_file = context.collection.config_file.clone();
     let located = match &config_file {
         Some(file) => context.original_location_without_coverage_gap(Path::new(file), 0, 0),
@@ -966,10 +1013,7 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
         rule: RuleId::MinificationDisabled,
         status: EvidenceStatus::Confirmed,
         title: "JavaScript minification is disabled".to_owned(),
-        summary: format!(
-            "{option} is {value}, so dead-code elimination, name mangling and other minifier \
-             optimizations do not run."
-        ),
+        summary,
         conditions: vec![Condition::new(
             "Minification is enabled",
             ConditionOutcome::Unmet,
@@ -982,17 +1026,29 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
             .unwrap_or_default(),
         dependency_paths: Vec::new(),
         evidence: vec![Evidence::new(
-            "resolved bundler configuration",
+            evidence_label,
             EvidenceStatus::Confirmed,
             format!("{option}: {value}"),
         )],
-        direction: format!("Enable {option} for production builds."),
+        direction,
         safety: "Minified output changes function and class names; code that depends on \
                  Function.prototype.name needs keep-names options."
             .to_owned(),
         dependency: false,
         export_usage: None,
     });
+}
+
+/// Label of the finalized Rolldown output `minify` option in diagnostics.
+const FINAL_OUTPUT_MINIFY_OPTION: &str = "final build.rolldownOptions.output.minify";
+
+fn build_minify_value(context: &Context<'_>) -> String {
+    context
+        .collection
+        .config_summary
+        .get("build.minify")
+        .cloned()
+        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 /// Every binding name of at least four characters introduced by `const`,

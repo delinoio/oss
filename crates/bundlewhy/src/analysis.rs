@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     chunks::{Chunk, measure},
-    collect::{Collection, ManglingSetting},
+    collect::{Collection, ManglingSetting, MinifyOverride},
     engine::BundlerChoice,
     error::{ErrorCode, problem},
     model::{
@@ -199,6 +199,20 @@ fn coverage(
                     CoverageState::Unavailable,
                     "No module data was collected.".to_owned(),
                 ),
+                // Rolldown's `"dce-only"` still removes dead code, so the
+                // stage is neither inapplicable nor covered by a detector.
+                OptimizationCategory::DeadCodeElimination
+                    if collection.minify_override == MinifyOverride::OutputHookDceOnly =>
+                {
+                    (
+                        CoverageState::Unavailable,
+                        "A plugin output hook limited minification to dead-code elimination \
+                         (`dce-only`). Rolldown still removes dead code in this mode and \
+                         bundlewhy has no verified detector for it. Absence of findings is not \
+                         evidence."
+                            .to_owned(),
+                    )
+                }
                 OptimizationCategory::DeadCodeElimination | OptimizationCategory::NameMangling
                     if !collection.minify_enabled =>
                 {
@@ -2690,6 +2704,91 @@ mod tests {
             diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
+        );
+    }
+
+    #[test]
+    fn output_hook_minify_overrides_are_attributed_to_the_hook() {
+        // (collection value, expected final option text, dead-code coverage)
+        let cases = [
+            (
+                "output-hook-disabled",
+                "false",
+                CoverageState::NotApplicable,
+            ),
+            (
+                "output-hook-dce-only",
+                "\"dce-only\"",
+                CoverageState::Unavailable,
+            ),
+        ];
+        for (override_kind, final_value, dce_state) in cases {
+            let fixture = run_fixture(BundlerChoice::Vite, |value| {
+                value["minifyEnabled"] = serde_json::json!(false);
+                value["minifyOverride"] = serde_json::json!(override_kind);
+            });
+            let analysis = &fixture.output.analysis;
+            let diagnostic = analysis
+                .diagnostics
+                .iter()
+                .find(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
+                .unwrap_or_else(|| panic!("{override_kind}: missing minification finding"));
+            assert!(
+                diagnostic.summary.contains("plugin outputOptions hook")
+                    && diagnostic.summary.contains(final_value)
+                    && diagnostic.summary.contains("build.minify is oxc"),
+                "{override_kind}: {}",
+                diagnostic.summary
+            );
+            let direction = &diagnostic.corrective_action.as_ref().unwrap().direction;
+            assert!(
+                !direction.contains("Enable build.minify"),
+                "{override_kind}: {direction}"
+            );
+            let coverage_of = |category: OptimizationCategory| {
+                analysis
+                    .coverage
+                    .iter()
+                    .find(|entry| entry.category == category)
+                    .unwrap()
+                    .state
+            };
+            assert_eq!(
+                coverage_of(OptimizationCategory::DeadCodeElimination),
+                dce_state,
+                "{override_kind}"
+            );
+            // Neither value mangles names.
+            assert_eq!(
+                coverage_of(OptimizationCategory::NameMangling),
+                CoverageState::NotApplicable,
+                "{override_kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn configured_disabled_minification_keeps_the_configuration_attribution() {
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            value["minifyEnabled"] = serde_json::json!(false);
+            value["configSummary"]["build.minify"] = serde_json::json!("false");
+        });
+        let diagnostic = fixture
+            .output
+            .analysis
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
+            .unwrap();
+        assert!(
+            diagnostic.summary.starts_with("build.minify is false"),
+            "{}",
+            diagnostic.summary
+        );
+        let collection: Collection = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            collection.minify_override,
+            crate::collect::MinifyOverride::None
         );
     }
 

@@ -17,6 +17,10 @@ pub struct Collection {
     pub minifier_version: String,
     pub default_minifier: bool,
     pub minify_enabled: bool,
+    /// Names the plugin output hook that turned the selected minifier off,
+    /// when one did. Collections written before the field existed, and engines
+    /// that do not report it, attribute nothing to a hook.
+    pub minify_override: MinifyOverride,
     /// Effective output name-mangling setting, read from the finalized output
     /// options after plugin hooks ran. Collections written before the field
     /// existed, and engines that do not report it (Rspack), assume mangling.
@@ -39,6 +43,21 @@ pub struct Collection {
     /// Export-to-export usage edges that the engine reported. Absent for
     /// engines and adapter versions that do not collect them.
     pub export_usage: Option<CollectedExportUsage>,
+}
+
+/// Which plugin output hook turned the selected Oxc minifier off.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MinifyOverride {
+    /// `build.minify` or the engine configuration decided, or minification
+    /// runs.
+    #[default]
+    None,
+    /// A hook set the final output `minify` option to `false`.
+    OutputHookDisabled,
+    /// A hook set the final output `minify` option to `"dce-only"`, which
+    /// keeps dead-code elimination but skips compression and name mangling.
+    OutputHookDceOnly,
 }
 
 /// Whether the minifier mangles names for the analyzed output.

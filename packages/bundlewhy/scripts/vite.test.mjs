@@ -9,12 +9,15 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  FinalizedMinifyKind,
   MangleSetting,
+  MinifyOverride,
   normalizeCollectionRoot,
   resolveEffectiveMangle,
   resolveEffectiveMinifier,
   resolveFinalizedMangleSetting,
   resolveFinalizedMinifyActive,
+  resolveFinalizedMinifyKind,
   resolveMangleSetting,
 } from "../../../crates/bundlewhy/adapters/vite.mjs";
 
@@ -166,27 +169,59 @@ test("finalized output options decide whether the Oxc minifier runs", () => {
     true,
   );
 
+  // The kind separates `false` from `"dce-only"`, which keeps dead-code
+  // elimination.
+  assert.equal(resolveFinalizedMinifyKind(undefined), undefined);
+  assert.equal(resolveFinalizedMinifyKind({}), undefined);
+  assert.equal(
+    resolveFinalizedMinifyKind({ minify: false }),
+    FinalizedMinifyKind.Disabled,
+  );
+  assert.equal(
+    resolveFinalizedMinifyKind({ minify: "dce-only" }),
+    FinalizedMinifyKind.DceOnly,
+  );
+  for (const minify of [true, { compress: {} }]) {
+    assert.equal(
+      resolveFinalizedMinifyKind({ minify }),
+      FinalizedMinifyKind.Enabled,
+    );
+  }
+
+  const none = MinifyOverride.None;
   // A plugin hook can turn minification on after `build.minify: false`.
   assert.deepEqual(
     resolveEffectiveMinifier({ buildMinify: false, finalizedActive: true }),
-    { enabled: true, name: "oxc" },
+    { enabled: true, name: "oxc", override: none },
   );
   for (const finalizedActive of [false, undefined]) {
     assert.deepEqual(
       resolveEffectiveMinifier({ buildMinify: false, finalizedActive }),
-      { enabled: false, name: "false" },
+      { enabled: false, name: "false", override: none },
     );
   }
-  // A plugin hook can turn the Oxc minifier off after it was selected.
+  // A plugin hook can turn the Oxc minifier off after it was selected, and the
+  // result names the finalized value that the hook set.
   for (const buildMinify of [undefined, true, "oxc"]) {
-    assert.deepEqual(
-      resolveEffectiveMinifier({ buildMinify, finalizedActive: false }),
-      { enabled: false, name: "oxc" },
-    );
+    const name = "oxc";
+    for (const [finalizedKind, override] of [
+      [FinalizedMinifyKind.Disabled, MinifyOverride.OutputHookDisabled],
+      [FinalizedMinifyKind.DceOnly, MinifyOverride.OutputHookDceOnly],
+    ]) {
+      assert.deepEqual(
+        resolveEffectiveMinifier({
+          buildMinify,
+          finalizedActive: false,
+          finalizedKind,
+        }),
+        { enabled: false, name, override },
+        `${String(buildMinify)} ${finalizedKind}`,
+      );
+    }
     for (const finalizedActive of [true, undefined]) {
       assert.deepEqual(
         resolveEffectiveMinifier({ buildMinify, finalizedActive }),
-        { enabled: true, name: "oxc" },
+        { enabled: true, name, override: none },
       );
     }
   }
@@ -194,7 +229,7 @@ test("finalized output options decide whether the Oxc minifier runs", () => {
   for (const finalizedActive of [true, false, undefined]) {
     assert.deepEqual(
       resolveEffectiveMinifier({ buildMinify: "terser", finalizedActive }),
-      { enabled: true, name: "terser" },
+      { enabled: true, name: "terser", override: none },
     );
   }
 });
@@ -655,6 +690,9 @@ test("Vite diagnostic reads the mangle setting from the finalized output options
       name: "plugin-disables-minify",
       config: `build: { minify: "oxc" }, plugins: [${pluginSource("false")}]`,
       expected: "disabled",
+      minifyEnabled: false,
+      minifyOverride: "output-hook-disabled",
+      finalMinify: "false",
     },
     {
       name: "plugin-reenables-mangle",
@@ -695,6 +733,7 @@ test("Vite diagnostic reads the mangle setting from the finalized output options
       config: `build: { minify: false }, plugins: [${pluginSource('"dce-only"')}]`,
       expected: "disabled",
       minifyEnabled: false,
+      minifyOverride: "none",
     },
     {
       name: "build-minify-false-noop-hook",
@@ -706,6 +745,9 @@ test("Vite diagnostic reads the mangle setting from the finalized output options
       name: "plugin-sets-dce-only",
       config: `build: { minify: "oxc" }, plugins: [${pluginSource('"dce-only"')}]`,
       expected: "disabled",
+      minifyEnabled: false,
+      minifyOverride: "output-hook-dce-only",
+      finalMinify: "dce-only",
     },
     {
       name: "plugin-sets-options-with-mangle",
@@ -718,7 +760,14 @@ test("Vite diagnostic reads the mangle setting from the finalized output options
       expected: "disabled",
     },
   ];
-  for (const { name, config, expected, minifyEnabled } of cases) {
+  for (const {
+    name,
+    config,
+    expected,
+    minifyEnabled,
+    minifyOverride,
+    finalMinify,
+  } of cases) {
     const { work, projectRoot } = makeProject(t);
     writeEntry(projectRoot, "finalized-entry");
     const configFile = path.join(projectRoot, "vite.config.js");
@@ -732,7 +781,21 @@ test("Vite diagnostic reads the mangle setting from the finalized output options
     );
     if (minifyEnabled !== undefined) {
       assert.equal(collection.minifyEnabled, minifyEnabled, name);
-      assert.equal(collection.defaultMinifier, minifyEnabled, name);
+      // A hook that turns the selected Oxc minifier off leaves it the default
+      // minifier of the build.
+      assert.equal(
+        collection.defaultMinifier,
+        minifyEnabled || (minifyOverride ?? "none") !== "none",
+        name,
+      );
     }
+    // The collection says which decision turned minification off, and the
+    // original `build.minify` value stays visible beside the final one.
+    assert.equal(collection.minifyOverride, minifyOverride ?? "none", name);
+    assert.equal(
+      collection.configSummary["final build.rolldownOptions.output.minify"],
+      finalMinify,
+      name,
+    );
   }
 });
