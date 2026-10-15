@@ -152,6 +152,14 @@ pub struct SourceStore {
     pub snapshots: std::collections::HashMap<PathBuf, String>,
     /// Display paths whose live file differs from the build snapshot.
     pub changed_since_build: Vec<String>,
+    /// Display paths that have a build snapshot but whose live file could not
+    /// be read for a reason other than removal. The snapshot stays usable and
+    /// the source is not stale: only its freshness is unverified.
+    pub freshness_unverified: Vec<String>,
+    /// Test seam: live reads of these resolved paths fail with the given
+    /// error kind instead of touching the filesystem.
+    #[cfg(test)]
+    live_read_failures: std::collections::HashMap<PathBuf, std::io::ErrorKind>,
     /// Module paths the bundler reported. Together with the project root
     /// they are the only live files read; any other path (for example one
     /// named only by a source map) relies on `sourcesContent` snapshots.
@@ -399,6 +407,7 @@ impl SourceStore {
         let derived = has_import_query(&classified.display);
         // `existence_only`: the stored hash cannot be compared with the live
         // file, so a saved run only checks that the file still exists.
+        let mut unverified_freshness = false;
         let (text, sha256, stale, existence_only): (Option<String>, String, bool, bool) = match (
             snapshot, live,
         ) {
@@ -434,14 +443,24 @@ impl SourceStore {
                 as_text(&bytes) != Some(snapshot.as_str()),
                 false,
             ),
-            (Some(_), LiveRead::Unreadable(_)) if stub => (None, sha256_hex(b""), true, true),
+            // A removed file is a change; any other read failure only means
+            // that freshness could not be checked (`classify_unreadable_snapshot`).
+            (Some(_), LiveRead::Unreadable(error)) if stub => {
+                let stale = Self::unreadable_snapshot_is_stale(&classified.display, &error);
+                unverified_freshness |= !stale;
+                (None, sha256_hex(b""), stale, true)
+            }
             (Some(_), LiveRead::NotPermitted) if stub => (None, sha256_hex(b""), false, true),
-            (Some(snapshot), LiveRead::Unreadable(_)) => (
-                Some(snapshot.clone()),
-                sha256_hex(snapshot.as_bytes()),
-                true,
-                derived,
-            ),
+            (Some(snapshot), LiveRead::Unreadable(error)) => {
+                let stale = Self::unreadable_snapshot_is_stale(&classified.display, &error);
+                unverified_freshness |= !stale;
+                (
+                    Some(snapshot.clone()),
+                    sha256_hex(snapshot.as_bytes()),
+                    stale,
+                    derived,
+                )
+            }
             (Some(snapshot), LiveRead::NotPermitted) => (
                 Some(snapshot.clone()),
                 sha256_hex(snapshot.as_bytes()),
@@ -475,6 +494,9 @@ impl SourceStore {
                 return None;
             }
         };
+        if unverified_freshness {
+            self.freshness_unverified.push(classified.display.clone());
+        }
         if stale {
             tracing::debug!(path = %classified.display, "source changed after the build read it");
             self.changed_since_build.push(classified.display.clone());
@@ -511,11 +533,37 @@ impl SourceStore {
         Some((id, text))
     }
 
+    /// Classifies a failed live read of a source that has a build snapshot and
+    /// returns whether the source counts as stale. Only a removed file
+    /// (`NotFound`) proves a change since the build; any other failure leaves
+    /// the snapshot valid, so the source is only freshness-unverified.
+    fn unreadable_snapshot_is_stale(source_path: &str, error: &std::io::Error) -> bool {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            tracing::debug!(path = %source_path, "source with a build snapshot was removed since the build");
+            return true;
+        }
+        tracing::warn!(
+            path = %source_path,
+            error_kind = ?error.kind(),
+            error = %error,
+            "live read failed; freshness of source with a build snapshot is unverified"
+        );
+        false
+    }
+
     /// Reads a live source only when it is a regular file of at most
     /// `MAX_SOURCE_BYTES` that lies inside the project root or is a module
     /// path the bundler reported. `file_path` is the backing file of the
     /// module `path`.
     fn read_live(&self, project_root: &Path, path: &Path, file_path: &Path) -> LiveRead {
+        #[cfg(test)]
+        if let Some(kind) = self
+            .live_read_failures
+            .get(&normalize(path))
+            .or_else(|| self.live_read_failures.get(&normalize(file_path)))
+        {
+            return LiveRead::Unreadable(std::io::Error::from(*kind));
+        }
         let resolved = match std::fs::canonicalize(file_path) {
             Ok(resolved) => resolved,
             Err(error) => return LiveRead::Unreadable(error),
@@ -709,6 +757,115 @@ mod tests {
             files[0].revision_evidence,
             SourceRevisionEvidence::BuildSnapshot
         );
+    }
+
+    #[test]
+    fn failed_live_read_with_a_snapshot_is_unverified_not_stale() {
+        use std::io::ErrorKind;
+        for kind in [
+            ErrorKind::PermissionDenied,
+            ErrorKind::Interrupted,
+            ErrorKind::TimedOut,
+            ErrorKind::Other,
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("a.js");
+            std::fs::write(&file, "export const a = 1;").unwrap();
+            let mut store = SourceStore::new(true);
+            store
+                .snapshots
+                .insert(normalize(&file), "export const a = 1;".to_owned());
+            store.live_read_failures.insert(normalize(&file), kind);
+            let (id, content) = store.add_file(dir.path(), &file).unwrap();
+            assert_eq!(content.as_deref(), Some("export const a = 1;"), "{kind:?}");
+            assert!(store.changed_since_build.is_empty(), "{kind:?}");
+            assert!(store.unreadable.is_empty(), "{kind:?}");
+            assert!(store.unverified.is_empty(), "{kind:?}");
+            assert_eq!(
+                store.freshness_unverified,
+                vec!["a.js".to_owned()],
+                "{kind:?}"
+            );
+            // The text source stays in the saved-run recheck map.
+            assert_eq!(store.project_relative[&id], "a.js", "{kind:?}");
+            let source = store.into_files().pop().unwrap();
+            assert!(!source.stale, "{kind:?}");
+            assert!(source.content_included, "{kind:?}");
+            assert_eq!(source.content, "export const a = 1;", "{kind:?}");
+            assert_eq!(
+                source.revision_evidence,
+                SourceRevisionEvidence::BuildSnapshot
+            );
+        }
+    }
+
+    #[test]
+    fn failed_live_read_of_an_asset_stub_snapshot_is_unverified_not_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("logo.png");
+        std::fs::write(&file, b"png").unwrap();
+        let mut store = SourceStore::new(true);
+        store.snapshots.insert(
+            normalize(&file),
+            "export default \"__VITE_ASSET__abc__\"".to_owned(),
+        );
+        store
+            .live_read_failures
+            .insert(normalize(&file), std::io::ErrorKind::PermissionDenied);
+        assert!(store.add_file(dir.path(), &file).unwrap().1.is_none());
+        assert!(store.changed_since_build.is_empty());
+        assert_eq!(store.freshness_unverified, vec!["logo.png".to_owned()]);
+        assert!(!store.into_files()[0].stale);
+    }
+
+    #[test]
+    fn removed_live_file_with_a_snapshot_is_stale_not_unverified() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.js");
+        std::fs::write(&file, "export const a = 1;").unwrap();
+        let mut store = SourceStore::new(true);
+        store
+            .snapshots
+            .insert(normalize(&file), "export const a = 1;".to_owned());
+        store
+            .live_read_failures
+            .insert(normalize(&file), std::io::ErrorKind::NotFound);
+        assert!(store.add_file(dir.path(), &file).unwrap().1.is_some());
+        assert_eq!(store.changed_since_build, vec!["a.js".to_owned()]);
+        assert!(store.freshness_unverified.is_empty());
+        assert!(store.into_files()[0].stale);
+    }
+
+    /// A real (not injected) non-`NotFound` failure: a path below a regular
+    /// file fails with a not-a-directory error.
+    #[test]
+    fn real_not_a_directory_failure_with_a_snapshot_is_unverified() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("blocker");
+        std::fs::write(&blocker, "file").unwrap();
+        let file = blocker.join("a.js");
+        let mut store = SourceStore::new(true);
+        store
+            .snapshots
+            .insert(normalize(&file), "export const a = 1;".to_owned());
+        assert!(store.add_file(dir.path(), &file).unwrap().1.is_some());
+        assert!(store.changed_since_build.is_empty());
+        assert_eq!(store.freshness_unverified.len(), 1);
+        assert!(!store.into_files()[0].stale);
+    }
+
+    #[test]
+    fn unreadable_file_without_a_snapshot_is_not_freshness_unverified() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.js");
+        std::fs::write(&file, "x").unwrap();
+        let mut store = SourceStore::new(true);
+        store
+            .live_read_failures
+            .insert(normalize(&file), std::io::ErrorKind::PermissionDenied);
+        assert!(store.add_file(dir.path(), &file).is_none());
+        assert_eq!(store.unreadable, vec!["a.js".to_owned()]);
+        assert!(store.freshness_unverified.is_empty());
     }
 
     #[test]

@@ -661,6 +661,11 @@ fn is_unverifiable_asset(source: &SourceFile, live: &[u8]) -> bool {
 /// saved stale flag. Other problems keep their order. When the project root
 /// cannot be verified, no check is possible, so saved flags and warnings are
 /// left untouched.
+///
+/// The `BW_SOURCE_FRESHNESS_UNVERIFIED` warning is recomputed the same way:
+/// earlier ones are dropped and one warning is added only for sources that
+/// exist but cannot be read during this call; a removed file is stale, not
+/// unverified.
 pub fn mark_stale(bundle: &mut ResultBundle) {
     let root = PathBuf::from(&bundle.project_root);
     if bundle.project_root.is_empty() || !root.is_absolute() {
@@ -673,6 +678,7 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
     else {
         return;
     };
+    let mut freshness_unverified = 0usize;
     for source in &mut bundle.sources {
         // A source listed for existence only (an asset module, a binary file
         // or a derived module) keeps no comparable hash: only its removal
@@ -712,14 +718,25 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
             source.stale = removed;
             continue;
         }
-        let is_stale = read_project_file(&canonical_root, &relative).map_or(removed, |bytes| {
-            if is_unverifiable_asset(source, &bytes) {
-                tracing::debug!(path = %source.path, "asset stub source is not freshness-checked");
-                false
-            } else {
-                sha256_hex(&bytes) != source.sha256
+        let is_stale = match read_project_file(&canonical_root, &relative) {
+            Some(bytes) => {
+                if is_unverifiable_asset(source, &bytes) {
+                    tracing::debug!(path = %source.path, "asset stub source is not freshness-checked");
+                    false
+                } else {
+                    sha256_hex(&bytes) != source.sha256
+                }
             }
-        });
+            None => {
+                if !removed {
+                    // Present but unreadable: no change can be claimed, only
+                    // that freshness cannot be checked.
+                    tracing::warn!(path = %source.path, "live read failed on reopen; freshness is unverified");
+                    freshness_unverified += 1;
+                }
+                removed
+            }
+        };
         source.stale = is_stale;
     }
     // Sources that were not rechecked keep their saved flag and still count.
@@ -738,7 +755,30 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
         .analysis
         .problems
         .retain(|entry| entry.code != stale_code);
-    tracing::debug!(stale, "reconciled stale source warning");
+    // The freshness warning is recomputed from this reopen: it clears when the
+    // live files are readable again and stays while a file cannot be read.
+    let unverified_code = ErrorCode::SourceFreshnessUnverified.as_str();
+    bundle
+        .analysis
+        .problems
+        .retain(|entry| entry.code != unverified_code);
+    if freshness_unverified > 0 {
+        bundle.analysis.problems.push(problem(
+            ErrorCode::SourceFreshnessUnverified,
+            ProblemSeverity::Warning,
+            format!(
+                "freshness of {freshness_unverified} source file(s) could not be checked; \
+                 analysis uses the build snapshot"
+            ),
+            "The live files could not be read, so bundlewhy cannot tell whether they changed \
+             after the build. Results use the source text from the build's source maps.",
+        ));
+    }
+    tracing::debug!(
+        stale,
+        freshness_unverified,
+        "reconciled stale source warning"
+    );
     if stale > 0 {
         bundle.analysis.problems.push(problem(
             ErrorCode::SourceStale,
@@ -1750,6 +1790,81 @@ mod tests {
                 .iter()
                 .any(|entry| entry.code == "BW_SOURCE_STALE")
         );
+    }
+
+    fn unverified_bundle(project: &Path, text: &str) -> ResultBundle {
+        let mut saved = bundle();
+        saved.project_root = project.to_string_lossy().into_owned();
+        saved.sources[0].content = text.to_owned();
+        saved.sources[0].content_included = true;
+        saved.sources[0].sha256 = sha256_hex(text.as_bytes());
+        saved
+            .project_relative
+            .insert("src-0123456789abcdef".to_owned(), "src/a.js".to_owned());
+        saved.analysis.problems.push(problem(
+            ErrorCode::SourceFreshnessUnverified,
+            ProblemSeverity::Warning,
+            "freshness of 1 source file(s) could not be checked; analysis uses the build snapshot",
+            "The live files could not be read.",
+        ));
+        saved
+    }
+
+    fn problem_count(bundle: &ResultBundle, code: &str) -> usize {
+        bundle
+            .analysis
+            .problems
+            .iter()
+            .filter(|entry| entry.code == code)
+            .count()
+    }
+
+    #[test]
+    fn reopen_clears_the_freshness_warning_when_live_bytes_are_readable_and_equal() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::write(project.join("src/a.js"), "export const a = 1;").unwrap();
+        let mut saved = unverified_bundle(&project, "export const a = 1;");
+        mark_stale(&mut saved);
+        assert!(!saved.sources[0].stale);
+        assert_eq!(problem_count(&saved, "BW_SOURCE_FRESHNESS_UNVERIFIED"), 0);
+        assert_eq!(problem_count(&saved, "BW_SOURCE_STALE"), 0);
+    }
+
+    #[test]
+    fn reopen_keeps_an_unreadable_file_unverified_without_a_changed_claim() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        // A directory in place of the file is present but cannot be read.
+        std::fs::create_dir_all(project.join("src/a.js")).unwrap();
+        let mut saved = unverified_bundle(&project, "export const a = 1;");
+        for _ in 0..2 {
+            mark_stale(&mut saved);
+            assert!(!saved.sources[0].stale);
+            assert_eq!(problem_count(&saved, "BW_SOURCE_FRESHNESS_UNVERIFIED"), 1);
+            assert_eq!(problem_count(&saved, "BW_SOURCE_STALE"), 0);
+        }
+    }
+
+    #[test]
+    fn reopen_reports_changed_and_removed_files_as_stale_not_unverified() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::write(project.join("src/a.js"), "edited").unwrap();
+        let mut saved = unverified_bundle(&project, "export const a = 1;");
+        mark_stale(&mut saved);
+        assert!(saved.sources[0].stale);
+        assert_eq!(problem_count(&saved, "BW_SOURCE_FRESHNESS_UNVERIFIED"), 0);
+        assert_eq!(problem_count(&saved, "BW_SOURCE_STALE"), 1);
+
+        std::fs::remove_file(project.join("src/a.js")).unwrap();
+        let mut saved = unverified_bundle(&project, "export const a = 1;");
+        mark_stale(&mut saved);
+        assert!(saved.sources[0].stale);
+        assert_eq!(problem_count(&saved, "BW_SOURCE_FRESHNESS_UNVERIFIED"), 0);
+        assert_eq!(problem_count(&saved, "BW_SOURCE_STALE"), 1);
     }
 
     #[test]
