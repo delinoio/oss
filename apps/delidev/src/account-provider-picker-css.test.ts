@@ -3,70 +3,9 @@
 // committed stylesheet and asserts that the API provider picker is a
 // single-column list at every container width, including the page wrappers
 // created by shared scroll continuation.
-import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { cascade, rulesFor } from "./css-test-rules";
 
-interface CssRule {
-  file: string;
-  context: string[];
-  selector: string;
-  declarations: Map<string, string>;
-}
-
-function parseRules(file: string, css: string): CssRule[] {
-  const rules: CssRule[] = [];
-  const text = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  const walk = (body: string, context: string[]) => {
-    let i = 0;
-    while (i < body.length) {
-      const open = body.indexOf("{", i);
-      if (open < 0) break;
-      const prelude = body.slice(i, open).trim();
-      let depth = 1;
-      let j = open + 1;
-      while (j < body.length && depth > 0) {
-        if (body[j] === "{") depth += 1;
-        else if (body[j] === "}") depth -= 1;
-        j += 1;
-      }
-      const inner = body.slice(open + 1, j - 1);
-      if (prelude.startsWith("@")) {
-        walk(inner, [...context, prelude]);
-      } else {
-        const declarations = new Map<string, string>();
-        for (const declaration of inner.split(";")) {
-          const colon = declaration.indexOf(":");
-          if (colon > 0)
-            declarations.set(
-              declaration.slice(0, colon).trim(),
-              declaration.slice(colon + 1).trim(),
-            );
-        }
-        rules.push({ file, context, selector: prelude, declarations });
-      }
-      i = j;
-    }
-  };
-  walk(text, []);
-  return rules;
-}
-
-const RULES = readdirSync("src")
-  .filter((name) => name.endsWith(".css"))
-  .flatMap((name) => parseRules(name, readFileSync(`src/${name}`, "utf8")));
-
-const rulesFor = (needle: string) =>
-  RULES.filter((rule) => rule.selector.includes(needle));
-
-// Merges the declarations of every rule that has a selector in its selector
-// list for which the matcher returns true.
-function cascade(match: (selector: string) => boolean): Map<string, string> {
-  const merged = new Map<string, string>();
-  for (const rule of RULES)
-    if (rule.selector.split(",").some((selector) => match(selector.trim())))
-      for (const [key, value] of rule.declarations) merged.set(key, value);
-  return merged;
-}
 const SINGLE_COLUMN = "minmax(0, 1fr)";
 
 describe("API provider picker stylesheet", () => {

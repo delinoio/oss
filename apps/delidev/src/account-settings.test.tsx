@@ -1262,9 +1262,13 @@ it("renders providers from every scroll continuation page as ordered direct butt
       (button) => button.querySelector(".account-provider-method")?.textContent,
     ),
   ).toEqual(["API key", "API key", "API key", "Local endpoint", "API key"]);
-  expect(
-    screen.getByRole("button", { name: "Load more Provider pages" }),
-  ).toBeTruthy();
+  const loadMore = screen.getByRole("button", {
+    name: "Load more Provider pages",
+  });
+  // The continuation control is outside every page wrapper, so wrapper layout
+  // rules never size it.
+  expect(choices.contains(loadMore)).toBe(false);
+  expect(loadMore.closest("[data-payload-page]")).toBeNull();
   expect(value.save).not.toHaveBeenCalled();
   expect(value.connect).not.toHaveBeenCalled();
   expect(value.other).not.toHaveBeenCalled();

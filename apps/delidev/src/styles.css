@@ -3404,6 +3404,13 @@ dialog nav {
 .account-provider-choices > [data-payload-page] {
   min-width: 0;
 }
+/* A measured placeholder applies its previous page height as min-height. Keep
+   its auto-sized rows at content height so Restore is never stretched to it. */
+.account-provider-choices
+  > [data-payload-page][data-payload-state="placeholder"] {
+  align-content: start;
+  align-items: start;
+}
 .account-provider-action {
   display: flex;
   align-items: center;
