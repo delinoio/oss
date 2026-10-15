@@ -36,6 +36,9 @@ pub(super) enum EvalSiteKind {
     MemberAccess,
     /// A private name such as `#eval(value)` or `this.#eval(value)`.
     PrivateName,
+    /// The operand of `new`, as in `new eval(code)`. The intrinsic `eval` is
+    /// not a constructor, so it throws without evaluating its argument.
+    Construction,
 }
 
 /// One classified `eval` token.
@@ -808,6 +811,7 @@ impl<'a> Scanner<'a> {
     /// | Context at the token                               | Kind          |
     /// |----------------------------------------------------|---------------|
     /// | after `.` or `?.` (a property token)                | member access |
+    /// | after the `new` operator                            | construction  |
     /// | after the `function` keyword or `function *`        | declaration   |
     /// | decorator expression                                | direct call   |
     /// | class body, outside a field initializer             | declaration   |
@@ -821,6 +825,9 @@ impl<'a> Scanner<'a> {
         // `function_at` is set only for a `function` word that was read as the
         // keyword, so a member name such as `object.function` never counts.
         let previous = self.previous(index);
+        if previous.is_some_and(|token| token.is_word("new")) {
+            return EvalSiteKind::Construction;
+        }
         let after_function = top.function_at.is_some_and(|keyword| {
             index.checked_sub(1) == Some(keyword)
                 || (previous.is_some_and(|token| token.is_punct("*"))
@@ -1568,6 +1575,7 @@ mod tests {
     const SIGNATURE: EvalSiteKind = EvalSiteKind::Signature;
     const MEMBER: EvalSiteKind = EvalSiteKind::MemberAccess;
     const PRIVATE: EvalSiteKind = EvalSiteKind::PrivateName;
+    const CONSTRUCTION: EvalSiteKind = EvalSiteKind::Construction;
 
     fn kinds(source: &str) -> Vec<EvalSiteKind> {
         classify_eval_sites(source, &non_code_ranges(source))
@@ -1590,7 +1598,11 @@ mod tests {
             ("class C { value = delete\n eval(code) }", &[CALL]),
             ("class C { value = await\n eval(code) }", &[CALL]),
             ("class C { value = yield\n eval(code) }", &[CALL]),
-            ("class C { value = new\n eval(code) }", &[CALL]),
+            // The operand of `new` is a construction; the initializer stays open.
+            (
+                "class C { value = new\n eval(code) }",
+                &[EvalSiteKind::Construction],
+            ),
             ("class C { value = a in\n eval(code) }", &[CALL]),
             ("class C { value = a instanceof\n eval(code) }", &[CALL]),
             ("class C { value = a +\n eval(code) }", &[CALL]),
@@ -2298,7 +2310,15 @@ mod tests {
             ("x = cond\n  ? eval(a)\n  : { b: 1 };", &[CALL]),
             ("return eval(this.code);", &[CALL]),
             ("typeof eval(code)", &[CALL]),
-            ("new eval(code)", &[CALL]),
+            ("new eval(code)", &[CONSTRUCTION]),
+            ("new\neval(code)", &[CONSTRUCTION]),
+            ("x = new eval(code);", &[CONSTRUCTION]),
+            ("run(new eval(code));", &[CONSTRUCTION]),
+            ("new eval(code); eval(other);", &[CONSTRUCTION, CALL]),
+            ("new (eval)(code);", &[]),
+            // A member named `new` is not the operator.
+            ("obj.new eval(code)", &[CALL]),
+            ("run(new, eval(code));", &[CALL]),
             ("await eval(code)", &[CALL]),
             ("const v = [a, eval(b)];", &[CALL]),
             ("foo(eval(code)\n)", &[CALL]),
