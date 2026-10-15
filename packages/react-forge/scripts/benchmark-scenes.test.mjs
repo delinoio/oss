@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -371,6 +371,151 @@ test("a verified sample publishes schema one atomically and an invalid destinati
   });
 });
 
+async function writeSyntheticChild(dir, launchMarker) {
+  const core = new URL("./benchmark-scenes-core.mjs", import.meta.url).href;
+  const child = join(dir, "synthetic-js.mjs");
+  await writeFile(
+    child,
+    `
+      import { appendFileSync, writeFileSync } from 'node:fs';
+      import { createHash } from 'node:crypto';
+      import { expectedTopology, fixtureHash, grid } from ${JSON.stringify(core)};
+      appendFileSync(${JSON.stringify(launchMarker)}, 'launched\\n');
+      const [, , , format, workload, output] = process.argv;
+      const e = expectedTopology(workload);
+      const bytes = Buffer.from('synthetic fixture');
+      writeFileSync(output, bytes);
+      process.stdout.write(JSON.stringify({ format, workload,
+        parameters: { cells: e.cells, geometries: e.geometries, meshes: e.meshes },
+        uniqueVertexCount: e.uniqueVertexCount, uniqueTriangleCount: e.uniqueTriangleCount,
+        instanceVertexCount: e.instanceVertexCount, instanceTriangleCount: e.instanceTriangleCount,
+        registeredGeometryBytes: e.registeredGeometryBytes,
+        fixtureSha256: fixtureHash([grid(e.cells)]),
+        outputBytes: bytes.length, outputSha256: createHash('sha256').update(bytes).digest('hex'),
+        revision: 1, prepareMs: 1, exportMs: 2, totalMs: 3, peakRssBytes: 1024,
+        eventLoopP99Ms: 0, eventLoopMaxMs: 0, eventLoopUtilization: 0.5
+      }));
+    `,
+  );
+  return child;
+}
+
+const javascriptBuild = (sourceRevision, files) => ({
+  schemaVersion: 1,
+  sourceRevision,
+  files,
+});
+
+test("JavaScript build identity is validated before any child launches and preserves the previous report", async () => {
+  await withDirectory(async (dir) => {
+    const output = join(dir, "report.json");
+    const marker = join(dir, "launched.txt");
+    await writeFile(output, "prior report");
+    const child = await writeSyntheticChild(dir, marker);
+    await assert.rejects(
+      runBenchmark(output, {
+        cases: [{ format: "glb", workload: "small" }],
+        caseFile: child,
+        verifyArtifact: () => expectedTopology("small"),
+        javascriptProvenance: () => {
+          throw new Error(
+            "React Forge JavaScript build does not match source revision.",
+          );
+        },
+        nativeProvenance: {
+          nativeBuildProfile: "test",
+          nativeBindingSha256: "0".repeat(64),
+        },
+      }),
+      /does not match source revision/i,
+    );
+    assert.equal(await readFile(output, "utf8"), "prior report");
+    assert.deepEqual((await readdir(dir)).sort(), [
+      "report.json",
+      "synthetic-js.mjs",
+    ]);
+  });
+});
+
+test("a JavaScript build replaced during sampling rejects publication and cleans temporary files", async () => {
+  await withDirectory(async (dir) => {
+    const output = join(dir, "report.json");
+    const marker = join(dir, "launched.txt");
+    await writeFile(output, "prior report");
+    const child = await writeSyntheticChild(dir, marker);
+    const options = (javascriptProvenance) => ({
+      cases: [{ format: "glb", workload: "small" }],
+      caseFile: child,
+      verifyArtifact: () => expectedTopology("small"),
+      javascriptProvenance,
+      nativeProvenance: {
+        nativeBuildProfile: "test",
+        nativeBindingSha256: "0".repeat(64),
+      },
+    });
+    const revision = "a".repeat(40);
+    for (const replaced of [
+      javascriptBuild(revision, { "index.js": "1".repeat(64) }),
+      javascriptBuild("b".repeat(40), { "index.js": "0".repeat(64) }),
+      javascriptBuild(revision, {
+        "index.js": "0".repeat(64),
+        "chunk.js": "2".repeat(64),
+      }),
+    ]) {
+      let reads = 0;
+      await assert.rejects(
+        runBenchmark(
+          output,
+          options(() =>
+            reads++ === 0
+              ? javascriptBuild(revision, { "index.js": "0".repeat(64) })
+              : replaced,
+          ),
+        ),
+        /JavaScript build changed/i,
+      );
+      assert.equal(reads, 2);
+      assert.equal(await readFile(output, "utf8"), "prior report");
+      assert.deepEqual((await readdir(dir)).sort(), [
+        "launched.txt",
+        "report.json",
+        "synthetic-js.mjs",
+      ]);
+    }
+  });
+});
+
+test("an unchanged JavaScript build publishes regardless of file key order", async () => {
+  await withDirectory(async (dir) => {
+    const output = join(dir, "report.json");
+    const child = await writeSyntheticChild(dir, join(dir, "launched.txt"));
+    const revision = "a".repeat(40);
+    let reads = 0;
+    const report = await runBenchmark(output, {
+      cases: [
+        { format: "glb", workload: "small" },
+        { format: "glb", workload: "small" },
+      ],
+      caseFile: child,
+      verifyArtifact: () => expectedTopology("small"),
+      javascriptProvenance: () =>
+        javascriptBuild(
+          revision,
+          reads++ === 0
+            ? { "a.js": "1".repeat(64), "b.js": "2".repeat(64) }
+            : { "b.js": "2".repeat(64), "a.js": "1".repeat(64) },
+        ),
+      nativeProvenance: {
+        nativeBuildProfile: "test",
+        nativeBindingSha256: "0".repeat(64),
+      },
+    });
+    assert.equal(reads, 2);
+    assert.equal(report.samples.length, 2);
+    assert.equal(JSON.parse(await readFile(output, "utf8")).samples.length, 2);
+  });
+});
+
 test("source dirtiness excludes an existing benchmark destination", async () => {
   const output = join(
     fileURLToPath(new URL("../", import.meta.url)),
@@ -461,6 +606,11 @@ test("cancellation reaps the owned child without replacing prior output", async 
       cases: [{ format: "glb", workload: "small" }],
       caseFile: child,
       signal: controller.signal,
+      javascriptProvenance: {},
+      nativeProvenance: {
+        nativeBuildProfile: "test",
+        nativeBindingSha256: "0".repeat(64),
+      },
     });
     let earlyError;
     const settled = running.catch((error) => {

@@ -137,3 +137,25 @@ func TestRunRequiresActionDoesNotAcceptInputOrFinishRun(t *testing.T) {
 	lifecycleObserve(t, b, lifecycleCommand(t, b, CommandCompleted))
 	lifecycleObserve(t, b, runStateEvent(t, b, RunIdle))
 }
+
+func TestParallelToolCallbacksMayRepeatActiveRunState(t *testing.T) {
+	for _, state := range []NativeRunState{RunRunning, RunRequiresAction} {
+		t.Run(string(state), func(t *testing.T) {
+			b, _ := lifecycleFixture(t)
+			lifecycleObserve(t, b, runStateEvent(t, b, RunRunning))
+			lifecycleReady(t, b)
+			lifecycleObserve(t, b, lifecycleReplay(t, b))
+			if state == RunRequiresAction {
+				lifecycleObserve(t, b, runStateEvent(t, b, state))
+			}
+			event := runStateEvent(t, b, state)
+			observation := lifecycleObserve(t, b, event)
+			if observation.Run == nil || observation.Run.State != state || observation.Accepted || observation.InputID != "" || b.finished {
+				t.Fatal("repeated active state changed input or completion authority")
+			}
+			if _, err := b.Observe(event); err == nil {
+				t.Fatal("replayed envelope was accepted as a fresh state observation")
+			}
+		})
+	}
+}
