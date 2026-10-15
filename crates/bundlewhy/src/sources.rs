@@ -1434,7 +1434,12 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name} must be readable"));
             assert!(text.is_none(), "{name}");
             assert!(store.unreadable.is_empty(), "{name}");
-            assert_eq!(store.unverified, vec![name.to_owned()], "{name}");
+            let expected_gap = if name.ends_with("?raw") {
+                Vec::new()
+            } else {
+                vec![name.to_owned()]
+            };
+            assert_eq!(store.unverified, expected_gap, "{name}");
             assert!(store.changed_since_build.is_empty(), "{name}");
             assert_eq!(store.existence_relative[&id], "src/a.js", "{name}");
             // The display path and module identity keep the query.
