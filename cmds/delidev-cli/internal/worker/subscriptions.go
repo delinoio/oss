@@ -120,6 +120,14 @@ type subscriptionAdmissionGate interface {
 }
 
 func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account, operation domain.ID, revision uint64, action pb.SubscriptionAction, gate subscriptionAdmissionGate) (*managedSubscriptionLease, func(), error) {
+	return takeManagedSubscriptionClaimed(ctx, config, client, credential, instance, account, operation, revision, action, gate, nil)
+}
+
+// takeManagedSubscriptionClaimed is takeManagedSubscriptionAdmitted with an
+// optional edit of the durable claim. The edit runs before the claim is first
+// written, so a fact that must be journaled before the protected delivery (for
+// example the private home a Grok execution bound) is durable before the Take.
+func takeManagedSubscriptionClaimed(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account, operation domain.ID, revision uint64, action pb.SubscriptionAction, gate subscriptionAdmissionGate, edit func(*managedSubscriptionJournal)) (*managedSubscriptionLease, func(), error) {
 	held := false
 	release := func() {
 		if held {
@@ -135,6 +143,9 @@ func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client 
 	// A durable claim precedes the protected delivery and every native side
 	// effect. Reconnect never regenerates this claim or replays the login.
 	claim := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: account, Operation: operation, Instance: instance, Finish: domain.NewID(), Action: action, State: managedClaimed}
+	if edit != nil {
+		edit(&claim)
+	}
 	journalPath := filepath.Join(root, string(leaseID)+".json")
 	if err := writeJSON(journalPath, claim); err != nil {
 		return nil, release, subscription.Invalid()

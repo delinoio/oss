@@ -838,7 +838,11 @@ blocks) is unchanged.
   in memory, and materializes `$GROK_HOME/auth.json` with mode 0600 through the
   bound handle only when the harness asks for it: after every native inspection
   of the empty profile and immediately before the native process starts. The
-  journal records the home and `execution_started` before the file is written.
+  home's stable identity must be non-empty: a home that is unsafe, replaced or
+  cannot be identified is refused before the Take, so no lease is requested and no
+  credential crosses the Worker boundary. The durable claim written before the
+  Take records the home path and identity; the journal records `execution_started`
+  before the file is written, after the owner's process index was retained.
   Registration of the execution still happens, advertises no API proxy path and
   grants no relay authority.
 - **Reflection guard.** The access and refresh values of the materialized credential
@@ -861,8 +865,13 @@ blocks) is unchanged.
   profile reuses the pinned single selected-model configuration and is an
   unverified assumption until the real-account run records it.
 - **Exit.** On every exit path (success, original Stop, crash, timeout, server
-  loss) the deferred step joins the native owner through its process index (a
-  missing owner directory proves nothing started), reads the credential once,
+  loss) the deferred step joins the native owner through its process index, which
+  the credential callback retained (a private directory) before the journal says
+  the execution started and before any credential exists. A started execution
+  whose index is missing is never joined: absence is not completion proof, as the
+  directory may have been removed while the child is alive, so cleanup stays
+  unconfirmed and the lease fenced; an execution that never started has nothing to
+  join. The step reads the credential once,
   retires `auth.json`, `auth.json.lock` and attributed temporaries through the
   bound home, and only then reports Finish: a joined process with the original
   identity returns the sealed credential, an unjoined process, a foreign
@@ -952,7 +961,7 @@ whose exchange was never claimed; a claim is never released automatically.
 | execute lease held                                    | server restart, lost Worker instance or replayed Take                             | fenced; the record is delivered only to the owning Runner Device credential, whose Worker retires the credential and Finishes with confirmed cleanup                                                                                                                                                                                                                                      | automatic on the original Worker                               | none                                  |
 | execute lease held, logout accepted during the lease  | the lease is fenced and then cleaned up by its original Worker                    | the lease is released and the account stays `revoked` while the logout is pending or after it settled as failed without success (never `ready`); after a restart the scanner settles the unclaimed logout first and the stale lease stays fenced for its Worker                                                                                                                           | automatic                                                      | none                                  |
 | execute lease held                                    | the Worker's Finish response is lost                                              | the Worker reports execution uncertainty (the primary lane closes and ownership is reconciled); the server keeps the lease fenced for the same recovery                                                                                                                                                                                                                                   | automatic on the original Worker                               | none                                  |
-| execute Take                                          | discovery replaced the installation after dispatch                                | the lease launches the installation the Take returned and the startup evidence (executable, digest and continuation journal) is re-observed for it, failing closed when it cannot be observed or contradicts a pinned digest (`TestGrokStartupEvidenceFollowsTheExecutableTheTakeAuthorized`); an unusable one releases the lease with confirmed cleanup before any credential is written | none                                                           | none                                  |
+| execute Take                                          | discovery replaced the installation after dispatch                                | the lease launches the installation the Take returned and the startup evidence (executable, digest and continuation journal) is re-observed for it, failing closed when it cannot be observed or contradicts a pinned digest (`TestGrokStartupEvidenceFollowsTheExecutableTheTakeAuthorized`); the bytes behind an unchanged canonical path are inspected again too, so a replacement between the local resolution and the Take moves the evidence before the credential is written (`TestGrokStartupRebindsAnExecutableReplacedAtTheSamePath`); an unusable one releases the lease with confirmed cleanup before any credential is written | none                                                           | none                                  |
 | claimed (login, refresh or logout)                    | the settlement fails and the recovery-fence write fails too | the operation stays native-started and unfenced with no runner; the scanner selects it (`grokOrphanedOperation`) and repeats only the fence with bounded backoff, never resending a request; a settlement that committed meanwhile is left as committed | manual, never resent | `recovery_required` once fenced |
 | any stage                                             | settlement commit acknowledgement lost after the commit                           | the committed outcome stands, nothing is rewritten                                                                                                                                                                                                                                                                                                                                        | none                                                           | as committed                          |
 | any stage                                             | cancel after a claim (login)                                                      | an uncertain claimed outcome stays fenced; a successful claimed exchange publishes, because the tokens are issued and the cancellation is too late; a failed one stays failed; a vanished actor fences a success (`TestGrokCancelRacingTheSettlementOfASuccessfulClaimedLoginIsTooLate`)                                                                                                  | manual only when uncertain                                     | `recovery_required` when fenced       |

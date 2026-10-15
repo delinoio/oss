@@ -89,14 +89,16 @@ func resolveExecutionStartup(ctx context.Context, config Config, job domain.ID, 
 // between the local startup resolution and the Take, and the lease launches the
 // installation its Take returned. The evidence the ready report inspects (the
 // executable path and its digest) and the journal a continuation resolves are
-// therefore re-observed for that executable. A pinned original digest (a
-// selection that already carried one) is never replaced: an executable that does
-// not match it fails closed. An unchanged path keeps its evidence, which the
-// ready report verifies against the bytes again. A nil attempt (a job that has
-// no direct startup) has no evidence to move.
+// therefore re-observed for that executable, whether the path changed or only
+// the bytes behind the same canonical path did: the credential must never reach
+// a binary the evidence does not describe, so the bytes are inspected again
+// before launch and the ready report verifies them once more afterwards. A
+// pinned original digest (a selection that already carried one) is never
+// replaced: an executable that does not match it fails closed. A nil attempt (a
+// job that has no direct startup) has no evidence to move.
 func (a *executionStartupAttempt) rebindExecutable(ctx context.Context, config Config, job domain.ID, input domain.ExecutionJobInput, executable, version string) (domain.Installation, error) {
 	installation := input.Installation
-	if a == nil || executable == a.executable {
+	if a == nil {
 		return installation, nil
 	}
 	digest, err := harness.InspectExecutable(ctx, executable)
@@ -105,6 +107,10 @@ func (a *executionStartupAttempt) rebindExecutable(ctx context.Context, config C
 	}
 	if input.Startup != nil && input.Startup.ExecutableSHA256 != "" && input.Startup.ExecutableSHA256 != digest {
 		return installation, domain.Fail(domain.RecoveryRequired, "The original native executable changed.", "Restore the original executable before continuing its native history.")
+	}
+	if executable == a.executable && digest == installation.ExecutableSHA256 {
+		// Same path, same bytes: the startup evidence already describes it.
+		return installation, nil
 	}
 	installation.ResolvedPath, installation.ExecutableSHA256 = executable, digest
 	if version != "" {
@@ -116,7 +122,7 @@ func (a *executionStartupAttempt) rebindExecutable(ctx context.Context, config C
 	a.executable = executable
 	a.observation.ExecutableSHA256 = digest
 	if a.config.Logger != nil {
-		a.config.Logger.Info("execution_startup_executable_rebound", "job_id", job, "phase", domain.StartupResolve)
+		a.config.Logger.Info("execution_startup_executable_rebound", "job_id", job, "phase", domain.StartupResolve, "path_changed", executable != input.Installation.ResolvedPath)
 	}
 	return installation, nil
 }

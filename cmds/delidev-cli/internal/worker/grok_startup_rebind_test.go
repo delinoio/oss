@@ -168,21 +168,73 @@ func TestGrokStartupAcceptsAnAuthorizedPathWithThePinnedDigest(t *testing.T) {
 	}
 }
 
-// An unchanged path keeps its evidence, and the ready report still fails closed
-// when the bytes at that path changed since the resolution.
-func TestGrokStartupKeepsUnchangedEvidenceAndStillFailsClosedOnChangedBytes(t *testing.T) {
+// An unchanged path with unchanged bytes keeps its evidence.
+func TestGrokStartupKeepsEvidenceOfAnUnchangedExecutable(t *testing.T) {
 	f := newStartupRebindFixture(t, false)
 	installation, err := f.attempt.rebindExecutable(context.Background(), f.config, f.job, f.input, f.resolved.ResolvedPath, f.resolved.Version)
 	if err != nil || installation.ResolvedPath != f.resolved.ResolvedPath || installation.ExecutableSHA256 != f.resolved.ExecutableSHA256 {
-		t.Fatalf("an unchanged path moved the evidence: %v", err)
+		t.Fatalf("an unchanged executable moved the evidence: %v", err)
 	}
 	f.requireUnchanged()
-	if err := os.WriteFile(f.resolved.ResolvedPath, []byte("replaced after the resolution"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.attempt.ready(context.Background(), "1.0.99"); domain.SafeError(err).Code != domain.RecoveryRequired {
-		t.Fatalf("the ready report accepted an executable whose bytes changed: %v", err)
-	}
+}
+
+// Replacing the bytes behind the same canonical path between the local
+// resolution and the Take is re-observed before launch: the evidence moves to the
+// bytes that will receive the credential, so the ready report is no longer the
+// first place the replacement is noticed. A pinned digest fails closed first.
+func TestGrokStartupRebindsAnExecutableReplacedAtTheSamePath(t *testing.T) {
+	t.Run("unpinned", func(t *testing.T) {
+		f := newStartupRebindFixture(t, false)
+		if err := os.WriteFile(f.resolved.ResolvedPath, []byte("replaced after the resolution"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		replaced, err := harness.InspectExecutable(context.Background(), f.resolved.ResolvedPath)
+		if err != nil || replaced == f.resolved.ExecutableSHA256 {
+			t.Fatalf("the fixture replacement is indistinguishable: %v", err)
+		}
+		installation, err := f.attempt.rebindExecutable(context.Background(), f.config, f.job, f.input, f.resolved.ResolvedPath, f.resolved.Version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if installation.ExecutableSHA256 != replaced || f.attempt.observation.ExecutableSHA256 != replaced || f.attempt.executable != f.resolved.ResolvedPath {
+			t.Fatal("the evidence still describes the bytes resolved before the replacement")
+		}
+		if journal := f.journal(); journal.ExecutableSHA256 != replaced {
+			t.Fatal("the continuation journal still pins the replaced bytes' predecessor")
+		}
+		// The ready report compares the inspected bytes with the observation.
+		inspected, err := harness.InspectExecutable(context.Background(), f.attempt.executable)
+		if err != nil || inspected != f.attempt.observation.ExecutableSHA256 {
+			t.Fatal("the ready report would reject the executable the evidence describes")
+		}
+		// A second replacement after the rebind is still caught by the ready report.
+		if err := os.WriteFile(f.resolved.ResolvedPath, []byte("replaced again after the rebind"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.attempt.ready(context.Background(), "1.0.99"); domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatalf("the ready report accepted bytes that changed after the rebind: %v", err)
+		}
+	})
+	t.Run("pinned", func(t *testing.T) {
+		f := newStartupRebindFixture(t, true)
+		if err := os.WriteFile(f.resolved.ResolvedPath, []byte("replaced after the resolution"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.attempt.rebindExecutable(context.Background(), f.config, f.job, f.input, f.resolved.ResolvedPath, f.resolved.Version); domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatalf("a replaced executable passed its pinned digest: %v", err)
+		}
+		f.requireUnchanged()
+	})
+	t.Run("removed", func(t *testing.T) {
+		f := newStartupRebindFixture(t, false)
+		if err := os.Remove(f.resolved.ResolvedPath); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.attempt.rebindExecutable(context.Background(), f.config, f.job, f.input, f.resolved.ResolvedPath, f.resolved.Version); domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatalf("a removed executable was accepted: %v", err)
+		}
+		f.requireUnchanged()
+	})
 }
 
 // An authorized executable that cannot be observed fails closed instead of

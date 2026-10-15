@@ -48,6 +48,9 @@ type grokExecutionServer struct {
 	// installationJSON is the verified observation an execute Take returns; nil
 	// returns none.
 	installationJSON []byte
+	// onTake inspects the durable claim a Take finds; takenClaims counts the calls.
+	onTake      func(managedSubscriptionJournal)
+	takenClaims atomic.Int32
 }
 
 func newGrokExecutionServer(t *testing.T) *grokExecutionServer {
@@ -101,6 +104,10 @@ func (f *grokExecutionServer) TakeSubscription(_ context.Context, req *connect.R
 	if err != nil || domain.Decode(raw, &claim) != nil || claim.State != managedClaimed {
 		f.t.Error("protected delivery preceded the original durable claim")
 		return nil, connect.NewError(connect.CodeFailedPrecondition, nil)
+	}
+	if f.onTake != nil {
+		f.takenClaims.Add(1)
+		f.onTake(claim)
 	}
 	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: string(lease), LeaseRevision: 3, GenerationId: string(f.generation), Bundle: bytes.Clone(f.envelope), InstallationJson: bytes.Clone(f.installationJSON)}), nil
 }
@@ -312,9 +319,54 @@ func TestGrokExecutionRefusesAHomeThatIsNotPrivateWithoutWritingAnything(t *test
 	if entries, _ := os.ReadDir(f.home); len(entries) != 0 {
 		t.Fatal("a credential reached an unsafe home")
 	}
-	// The lease is still released: nothing was ever written.
-	if request := f.onlyFinish(t); request.Succeeded || !request.CleanupConfirmed {
-		t.Fatalf("an unusable home was not released cleanly: %+v", request)
+	// The home is bound before the Take, so no lease was requested and no
+	// credential crossed the Worker boundary for a precondition already known to
+	// be invalid.
+	if len(f.takes) != 0 || len(f.finishes) != 0 {
+		t.Fatalf("an unusable home still reached the server (%d takes, %d finishes)", len(f.takes), len(f.finishes))
+	}
+}
+
+// The home identity is journaled with the durable claim before the Take, so a
+// crash between the Take and any later write still leaves the recovery evidence.
+func TestGrokExecutionJournalsTheBoundHomeBeforeTheTake(t *testing.T) {
+	f := newGrokExecutionServer(t)
+	f.onTake = func(journal managedSubscriptionJournal) {
+		if journal.GrokHome != f.home || journal.GrokHomeIdentity == "" {
+			t.Errorf("the claim preceding the Take lacks the bound home: %q %q", journal.GrokHome, journal.GrokHomeIdentity)
+		}
+	}
+	run, err := f.begin(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.takenClaims.Load() != 1 {
+		t.Fatal("the Take did not inspect its claim")
+	}
+	if run.lease.journal.GrokHome != f.home || run.lease.journal.GrokHomeIdentity == "" {
+		t.Fatal("the lease journal does not carry the bound home")
+	}
+	if err := run.finish(true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A home whose directory identity cannot be established is refused before the
+// Take and before any credential is written: recovery would reject the empty
+// identity and leave the credential and the lease fenced for good.
+func TestGrokExecutionRefusesAHomeWithoutAStableIdentityBeforeTheTake(t *testing.T) {
+	f := newGrokExecutionServer(t)
+	original := grokHomeIdentity
+	grokHomeIdentity = func(subscription.GrokHome) string { return "" }
+	defer func() { grokHomeIdentity = original }()
+	if _, err := f.begin(t); err == nil {
+		t.Fatal("a home without a stable identity was accepted")
+	}
+	if len(f.takes) != 0 || len(f.finishes) != 0 {
+		t.Fatalf("an unidentifiable home still reached the server (%d takes)", len(f.takes))
+	}
+	if entries, _ := os.ReadDir(f.home); len(entries) != 0 {
+		t.Fatal("a credential reached an unidentifiable home")
 	}
 }
 
@@ -744,5 +796,114 @@ func TestGrokPreparedCredentialReturnsItsProtectedValues(t *testing.T) {
 	}
 	if err := run.finish(true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The owner's process index is retained before the execution is journaled as
+// started and before any credential exists, so a missing index can never be read
+// as "nothing was running".
+func TestGrokPrepareRetainsTheOwnerProcessIndexBeforeAnyCredential(t *testing.T) {
+	f := newGrokExecutionServer(t)
+	run, err := f.begin(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := filepath.Join(run.processes, string(run.owner))
+	if _, err := os.Lstat(index); !os.IsNotExist(err) {
+		t.Fatal("the process index existed before the execution started")
+	}
+	if _, err := run.prepare(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.CheckPrivateDir(index); err != nil {
+		t.Fatalf("the owner process index was not retained as a private directory: %v", err)
+	}
+	if !run.lease.journal.ExecutionStarted {
+		t.Fatal("the journal does not record the started execution")
+	}
+}
+
+// Cell table of the native-join evidence of an execution that started: only a
+// present, empty-reconciling index proves the owned process gone.
+func TestGrokNativeJoinEvidenceNeverTreatsAMissingIndexAsProof(t *testing.T) {
+	processes := filepath.Join(t.TempDir(), "processes")
+	if err := security.PrivateDir(processes); err != nil {
+		t.Fatal(err)
+	}
+	owner := domain.NewID()
+	for name, test := range map[string]struct {
+		prepare func(t *testing.T)
+		started bool
+		want    bool
+	}{
+		"never started, no index":    {started: false, want: true},
+		"started, no index":          {started: true, want: false},
+		"started, retained empty":    {started: true, want: true, prepare: func(t *testing.T) { _ = security.PrivateDir(filepath.Join(processes, string(owner))) }},
+		"never started, empty index": {started: false, want: true, prepare: func(t *testing.T) { _ = security.PrivateDir(filepath.Join(processes, string(owner))) }},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_ = os.RemoveAll(filepath.Join(processes, string(owner)))
+			if test.prepare != nil {
+				test.prepare(t)
+			}
+			if got := grokNativeJoined(context.Background(), processes, owner, test.started); got != test.want {
+				t.Fatalf("joined = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+// An index removed after the execution started (while the child may still be
+// alive) leaves the cleanup unconfirmed, so the Finish keeps the lease fenced.
+func TestGrokExecutionWhoseProcessIndexDisappearedNeverConfirmsCleanup(t *testing.T) {
+	f := newGrokExecutionServer(t)
+	run, err := f.begin(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run.prepare(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(run.processes, string(run.owner))); err != nil {
+		t.Fatal(err)
+	}
+	if err := run.finish(true); err != nil {
+		t.Fatal(err)
+	}
+	if request := f.onlyFinish(t); request.CleanupConfirmed || request.Succeeded {
+		t.Fatalf("a missing process index was reported as a joined process: %+v", request)
+	}
+}
+
+// Recovery follows the same evidence: an execution journaled as started whose
+// index is gone keeps the lease; one that never started has nothing to join.
+func TestGrokRecoveryOfAStartedExecutionRequiresItsProcessIndex(t *testing.T) {
+	for name, started := range map[string]bool{"started": true, "never started": false} {
+		t.Run(name, func(t *testing.T) {
+			f := newGrokExecutionServer(t)
+			run, err := f.begin(t)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if started {
+				if _, err := run.prepare(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.RemoveAll(filepath.Join(run.processes, string(run.owner))); err != nil {
+					t.Fatal(err)
+				}
+			}
+			run.closeHTTP()
+			_ = run.lease.grokHome.Close()
+			account, _ := f.fencedAccount(t, run)
+			client := delidevv1connect.NewSubscriptionServiceClient(httptest.NewServer(nil).Client(), f.credential.Endpoint)
+			err = runGrokRecovery(context.Background(), f.config, client, f.credential, f.account, account)
+			if started && (err == nil || len(f.finishes) != 0) {
+				t.Fatalf("recovery confirmed a started execution without its process index: %v", err)
+			}
+			if !started && (err != nil || len(f.finishes) != 1 || !f.finishes[0].CleanupConfirmed) {
+				t.Fatalf("recovery of an execution that never started failed: %v", err)
+			}
+		})
 	}
 }

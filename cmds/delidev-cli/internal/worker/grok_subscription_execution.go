@@ -80,21 +80,47 @@ func (r *grokSubscriptionRun) launchTarget(ctx context.Context, config Config, o
 	return executable, version, installation, nil
 }
 
+// grokHomeIdentity reads the stable identity of a bound home. Tests replace it to
+// model a platform that cannot establish one.
+var grokHomeIdentity = func(home subscription.GrokHome) string { return home.Identity() }
+
 // beginGrokSubscriptionExecution Takes the execute lease for the claimed job and
 // binds the private native home. Nothing is written to the home yet. A failure
 // after the Take releases the lease; if that Finish is not acknowledged the
 // ownership is uncertain, never an ordinary failed job.
 func beginGrokSubscriptionExecution(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput, grokHome string) (*grokSubscriptionRun, error) {
 	connection := config.execution
-	client, closeHTTP, err := subscriptionRPC(ctx, config, connection.Credential)
+	// The private home is bound, and its stable identity journaled with the
+	// durable claim, before the server is asked for the lease. A home that is
+	// unsafe, replaced or cannot be identified is refused here, so no credential
+	// crosses the Worker boundary and no lease needs a Finish for a precondition
+	// the Worker already knew was invalid.
+	home, err := subscription.BindGrokHome(grokHome)
 	if err != nil {
 		return nil, err
 	}
-	lease, err := takeManagedSubscription(ctx, config, client, connection.Credential, connection.Instance, input.AccountID, owner, connection.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
+	identity := grokHomeIdentity(home)
+	if identity == "" {
+		_ = home.Close()
+		return nil, domain.Fail(domain.Unavailable, "The Grok private home cannot be identified.", "Repair the Worker's native home directory and retry.")
+	}
+	client, closeHTTP, err := subscriptionRPC(ctx, config, connection.Credential)
 	if err != nil {
+		_ = home.Close()
+		return nil, err
+	}
+	// The home path is retained so the original Worker can retire a credential it
+	// left behind, even after a restart.
+	lease, release, err := takeManagedSubscriptionClaimed(ctx, config, client, connection.Credential, connection.Instance, input.AccountID, owner, connection.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE, nil, func(j *managedSubscriptionJournal) {
+		j.GrokHome, j.GrokHomeIdentity = grokHome, identity
+	})
+	release()
+	if err != nil {
+		_ = home.Close()
 		closeHTTP()
 		return nil, err
 	}
+	lease.grokHome = home
 	run := &grokSubscriptionRun{lease: lease, closeHTTP: closeHTTP, logger: config.Logger, owner: owner, processes: filepath.Join(config.Root, "processes")}
 	abort := func(cause error) (*grokSubscriptionRun, error) {
 		clear(lease.response.Bundle)
@@ -111,18 +137,6 @@ func beginGrokSubscriptionExecution(ctx context.Context, config Config, owner do
 	if err != nil {
 		return abort(err)
 	}
-	home, err := subscription.BindGrokHome(grokHome)
-	if err != nil {
-		return abort(err)
-	}
-	lease.grokHome = home
-	// The home path is retained so the original Worker can retire a credential it
-	// left behind, even after a restart.
-	lease.journal.GrokHome = grokHome
-	lease.journal.GrokHomeIdentity = home.Identity()
-	if err := writeJSON(lease.journalPath, lease.journal); err != nil {
-		return abort(subscription.Invalid())
-	}
 	if config.Logger != nil {
 		config.Logger.InfoContext(ctx, "grok_subscription_execution_leased", "phase", "EXECUTION", "step", "lease", "account_id", input.AccountID, "lease_id", lease.response.LeaseId)
 	}
@@ -133,6 +147,17 @@ func beginGrokSubscriptionExecution(ctx context.Context, config Config, owner do
 // credential may exist before it is written, so recovery after a crash retires it.
 func (r *grokSubscriptionRun) prepare(ctx context.Context) ([]string, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, domain.SafeError(err)
+	}
+	// The owner's process index is retained before the journal says a native
+	// process may exist and before any credential is written. A later missing
+	// index is then never completion proof: only an index that is present and
+	// reconciles empty proves the owned process is gone.
+	owner := filepath.Join(r.processes, string(r.owner))
+	if err := security.PrivateDir(owner); err != nil {
+		return nil, domain.SafeError(err)
+	}
+	if err := security.SyncParent(owner); err != nil {
 		return nil, domain.SafeError(err)
 	}
 	r.lease.journal.ExecutionStarted = true
@@ -159,7 +184,7 @@ func (r *grokSubscriptionRun) finish(joined bool) error {
 	defer r.closeHTTP()
 	if r.attempted {
 		bounded, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		joined = joined && grokNativeJoined(bounded, r.processes, r.owner)
+		joined = joined && grokNativeJoined(bounded, r.processes, r.owner, true)
 		cancel()
 	}
 	original := r.original
@@ -178,10 +203,13 @@ func (r *grokSubscriptionRun) release(joined bool) error {
 	return nil
 }
 
-// grokNativeJoined proves that no native process owned by owner remains. An
-// owner directory that was never created proves nothing started.
-func grokNativeJoined(ctx context.Context, processes string, owner domain.ID) bool {
-	if _, err := os.Lstat(filepath.Join(processes, string(owner))); errors.Is(err, os.ErrNotExist) {
+// grokNativeJoined proves that no native process owned by owner remains. When no
+// native process could have started (the journal never recorded the start of
+// the execution) there is nothing to join. Otherwise the owner's retained
+// process index must exist and reconcile: a missing index is never completion
+// proof, because it may have been removed while the child is still alive.
+func grokNativeJoined(ctx context.Context, processes string, owner domain.ID, started bool) bool {
+	if !started {
 		return true
 	}
 	return process.ReconcileOwnerContext(ctx, processes, owner) == nil
@@ -210,7 +238,7 @@ func runGrokRecovery(ctx context.Context, config Config, client delidevv1connect
 		return subscription.Invalid()
 	}
 	processes := filepath.Join(config.Root, "processes")
-	if !grokNativeJoined(ctx, processes, journal.Operation) {
+	if !grokNativeJoined(ctx, processes, journal.Operation, journal.ExecutionStarted) {
 		return domain.Fail(domain.RecoveryRequired, "The original Grok process could not be joined.", "Retain the lease until the original Worker confirms process exit.")
 	}
 	if journal.CleanupFinish == "" {
