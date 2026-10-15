@@ -298,6 +298,35 @@ id with the other method is a conflict.
   methods yield identical bundles for the same token response. Sealing,
   duplicate-identity handling and publication are unchanged.
 
+#### Durable operation reads
+
+Both login methods watch the durable operation while they wait, and the device
+login rereads it immediately before every poll after the claim. The read has
+three results, and only a successful read can prove a cancellation: the
+operation was canceled, fenced, removed or replaced, or its actor vanished
+(`stopped`). A read that fails for any other reason (the store cannot answer) is
+`unreadable` and proves nothing. A step that ends because of an unreadable state
+sends no further request. Which outcome it settles as depends only on whether
+the exchange was already claimed (`grokInterruptedOutcome` is the one
+classification):
+
+| Durable read or cause of the end              | Exchange claimed | Settles as                                                                        | Test                                                                           |
+| --------------------------------------------- | ---------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| readable, operation continues                 | any              | the step continues                                                                | the device and browser completion tests                                        |
+| readable, confirmed stop                      | no               | `CANCELED`, nothing claimed or sent                                               | `TestGrokDeviceLoginCancelAtEachPhaseHasADistinctOutcome`                      |
+| readable, confirmed stop                      | yes              | `CANCELED` with the claim kept; settlement rereads the durable operation          | `TestGrokDeviceLoginCancelCommittedJustBeforeAPollSendsNoFurtherPoll`          |
+| unreadable, seen by the pre-poll check        | yes              | `RECOVERY_REQUIRED`, no further poll, the claim is kept and the code never resent | `TestGrokLoginUnreadableDurableStateIsNeverACancellation`                      |
+| unreadable, seen by the watcher while waiting | yes              | `RECOVERY_REQUIRED`, no further poll                                              | `TestGrokLoginUnreadableDurableStateIsNeverACancellation`                      |
+| unreadable, seen by the watcher while waiting | no               | `CANCELED`, nothing claimed or sent, no fence                                     | `TestGrokLoginUnreadableDurableStateIsNeverACancellation`                      |
+| server shutdown (device login)                | yes              | `RECOVERY_REQUIRED`                                                               | `TestGrokDeviceLoginShutdownBetweenPollsKeepsAClaimInRecovery`                 |
+| server shutdown                               | no               | `CANCELED`                                                                        | `TestGrokDeviceLoginShutdownBetweenPollsKeepsAClaimInRecovery`                 |
+| operation window over, server alive           | any              | `EXPIRED`                                                                         | `TestGrokDeviceLoginLocalDeadlineIsTheMinimumOfExpiresInAndTheOperationWindow` |
+| request in flight when the context ends       | yes              | `RECOVERY_REQUIRED` (the request may have redeemed the credential)                | `TestGrokDeviceLoginCancelAtEachPhaseHasADistinctOutcome`                      |
+
+A refresh sends its single request right after its claim and rereads nothing in
+between, so it has no pre-send read; an interruption of that request is
+uncertain (`RECOVERY_REQUIRED`).
+
 The trusted native receiver (`apps/delidev/src-tauri/src/oauth.rs`) exposes
 `grok-subscription-open` and `grok-subscription-reopen` for the server-returned
 browser URL. It validates the fixed `https://auth.x.ai/oauth2/authorize` shape

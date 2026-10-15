@@ -325,23 +325,83 @@ func (s *Service) logGrok(ctx context.Context, level slog.Level, message string,
 	s.logger.Log(ctx, level, message, append(base, attrs...)...)
 }
 
-// grokLoginStopped reports whether the durable operation can no longer continue:
-// it was canceled, fenced, removed or replaced, or its actor vanished. It is the
-// same predicate as the store watcher's, evaluated on demand, and it reports a
-// read failure as stopped because a step must not send a claimed request on
-// state it could not confirm.
-func (s *Service) grokLoginStopped(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation) bool {
+// grokDurableOperation is what a read of the durable login operation proves.
+type grokDurableOperation uint8
+
+const (
+	// grokDurableContinues: the read succeeded and the operation is still this
+	// login's to run.
+	grokDurableContinues grokDurableOperation = iota + 1
+	// grokDurableStopped: the read succeeded and confirms the operation was
+	// canceled, fenced, removed or replaced, or its actor vanished. It is the same
+	// predicate as the store watcher's, evaluated on demand.
+	grokDurableStopped
+	// grokDurableUnreadable: the read failed for any other reason, so the durable
+	// state is unknown. It is never evidence of a cancellation.
+	grokDurableUnreadable
+)
+
+// grokLoginGuard carries what the watcher and the steps of one login learned
+// about the durable operation. unconfirmed is set when the durable state could
+// not be read: a step that ends because of it must fence a claimed exchange
+// (RECOVERY_REQUIRED) and never settle it as canceled.
+type grokLoginGuard struct {
+	unconfirmed atomic.Bool
+}
+
+// grokLoginDurable reads the durable operation. A step must not send a claimed
+// request on state it could not confirm, but it must not call that state a
+// cancellation either: only a successful read that finds the operation canceled,
+// fenced, removed or replaced, or its actor gone, is grokDurableStopped. An
+// unreadable state is grokDurableUnreadable, and an ended context is reported as
+// stopped so the caller classifies it from the context.
+func (s *Service) grokLoginDurable(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation) grokDurableOperation {
+	if s.grokFault(grokFaultDurableRead) != nil {
+		return grokDurableUnreadable
+	}
+	stopped := false
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		_, a, err := grokSubscriptionAccount(tx, id, 0)
 		if err != nil {
 			return err
 		}
 		if a.Subscription == nil || a.Subscription.RecoveryRequired || a.Subscription.Pending == nil || a.Subscription.Pending.ID != o.ID || a.Subscription.Pending.Canceled || subscriptionActorValid(tx, o.Actor) != nil {
-			return subscriptionDenied()
+			stopped = true
 		}
 		return nil
 	})
-	return err != nil
+	switch {
+	case err == nil && stopped:
+		return grokDurableStopped
+	case err == nil:
+		return grokDurableContinues
+	case ctx.Err() != nil, domain.SafeError(err).Code == domain.NotFound:
+		return grokDurableStopped
+	}
+	return grokDurableUnreadable
+}
+
+// grokInterruptedOutcome is the one classification of the end of a wait or a
+// refused send in a login, shared by the browser and device flows. The cells,
+// first match wins:
+//
+//	cause of the end                                         | claimed | outcome
+//	durable state unreadable                                 | yes     | RECOVERY_REQUIRED (claim kept, nothing resent)
+//	server shutdown                                          | yes     | RECOVERY_REQUIRED, but only where recoverOnShutdown
+//	operation window over (server alive)                     | any     | EXPIRED
+//	explicit cancellation, confirmed stop, unreadable state  | any     | CANCELED (an unclaimed unreadable state
+//	                                                         |         |  sent nothing, so it is a plain stop)
+//
+// A confirmed stop of a claimed login keeps the claim: settlement rereads the
+// durable operation, so a fence or replacement stays fenced.
+func grokInterruptedOutcome(parent context.Context, guard *grokLoginGuard, original domain.ServerSubscriptionOperation, claimed, recoverOnShutdown bool, step grokLoginStep) grokOutcome {
+	switch {
+	case claimed && (guard.unconfirmed.Load() || recoverOnShutdown && parent.Err() != nil):
+		return grokOutcome{state: domain.SubscriptionRecovery, code: domain.RecoveryRequired, step: step, claimed: true}
+	case parent.Err() == nil && !time.Now().Before(original.ExpiresAt):
+		return grokOutcome{state: domain.SubscriptionExpired, code: domain.Canceled, step: step, claimed: claimed}
+	}
+	return grokOutcome{state: domain.SubscriptionCanceled, code: domain.Canceled, step: step, claimed: claimed}
 }
 
 // runGrokLogin owns one server-owned Grok browser login from claim to its
@@ -415,12 +475,21 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	ctx, cancel := context.WithDeadline(parent, original.ExpiresAt)
 	defer cancel()
 	checked := make(chan struct{})
+	guard := &grokLoginGuard{}
 	go func() {
 		defer close(checked)
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for {
-			if s.grokLoginStopped(ctx, id, original) {
+			switch s.grokLoginDurable(ctx, id, original) {
+			case grokDurableUnreadable:
+				// The durable state is unknown, not canceled: record that before the
+				// steps observe the ended context, so a claimed exchange is fenced.
+				guard.unconfirmed.Store(true)
+				s.logGrok(ctx, slog.LevelWarn, "grok_login_state_unreadable", original, grokStepPoll)
+				cancel()
+				return
+			case grokDurableStopped:
 				cancel()
 				return
 			}
@@ -433,9 +502,9 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	}()
 	var outcome grokOutcome
 	if device {
-		outcome = s.grokDeviceLoginSteps(ctx, parent, id, original)
+		outcome = s.grokDeviceLoginSteps(ctx, parent, guard, id, original)
 	} else {
-		outcome = s.grokLoginSteps(ctx, parent, id, original)
+		outcome = s.grokLoginSteps(ctx, parent, guard, id, original)
 	}
 	cancel()
 	<-checked
@@ -451,17 +520,16 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 
 // grokLoginSteps runs discovery, the loopback callback, the single exchange and
 // the identity checks. The listener is closed before it returns on every path.
-func (s *Service) grokLoginSteps(ctx, parent context.Context, id domain.ID, original domain.ServerSubscriptionOperation) (outcome grokOutcome) {
+func (s *Service) grokLoginSteps(ctx, parent context.Context, guard *grokLoginGuard, id domain.ID, original domain.ServerSubscriptionOperation) (outcome grokOutcome) {
 	fail := func(state domain.SubscriptionLoginState, code domain.Code, step grokLoginStep) grokOutcome {
 		return grokOutcome{state: state, code: code, step: step, claimed: outcome.claimed}
 	}
 	// interrupted classifies the end of the wait: server shutdown and explicit
-	// cancellation are canceled, the 15-minute window is expired.
+	// cancellation are canceled, the 15-minute window is expired, and an
+	// unreadable durable state after the claim is recovery. The browser exchange
+	// follows its claim at once, so no wait ends between them.
 	interrupted := func(step grokLoginStep) grokOutcome {
-		if parent.Err() == nil && !time.Now().Before(original.ExpiresAt) {
-			return fail(domain.SubscriptionExpired, domain.Canceled, step)
-		}
-		return fail(domain.SubscriptionCanceled, domain.Canceled, step)
+		return grokInterruptedOutcome(parent, guard, original, outcome.claimed, false, step)
 	}
 	transport, closeTransport := s.grokOAuthRoundTripper()
 	defer closeTransport()
