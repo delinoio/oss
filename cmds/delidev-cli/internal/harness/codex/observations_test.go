@@ -90,8 +90,8 @@ func TestManagedCodexAppsStartupIsPrivatePassiveMetadata(t *testing.T) {
 		}
 		params["name"] = "foreign-server"
 		event, err = observeFixture(c, "mcpServer/startupStatus/updated", params)
-		if err != nil || event.Kind != NativeExtensionEvent {
-			t.Fatal("external MCP server gained support", err)
+		if err != nil || event.Kind != MetadataEvent || event.Metadata != MCPStartupObserved || event.Native != nil || !event.Correlated || c.execution.active != turn || c.execution.paused != paused {
+			t.Fatal("project MCP startup changed execution authority", err)
 		}
 	}
 	for _, scenario := range []string{"api", "unscoped", "foreign", "unknown-field", "unknown-state", "unknown-reason", "unexpected-error", "missing-name"} {
@@ -127,6 +127,55 @@ func TestManagedCodexAppsStartupIsPrivatePassiveMetadata(t *testing.T) {
 		if !private && err == nil {
 			t.Fatal("malformed connector metadata accepted", scenario)
 		}
+	}
+}
+
+func TestProjectMCPStartupRetainsIsolatedAndForeignBoundaries(t *testing.T) {
+	for _, scenario := range []string{"ordinary", "api", "title", "sidechat", "model-observation", "unscoped", "foreign", "unknown-state", "unknown-field"} {
+		t.Run(scenario, func(t *testing.T) {
+			c, turn := observationClient()
+			c.managedHome = "/fixture-managed-home"
+			params := map[string]any{"threadId": c.thread, "name": "private-project-server", "status": nativeMCPReady}
+			switch scenario {
+			case "api":
+				c.managedHome = ""
+			case "title":
+				c.managedTitle = true
+			case "sidechat":
+				c.sidechat = ReadOnlySidechatV1
+			case "model-observation":
+				c.modelObservation = "fixture"
+			case "unscoped":
+				params["threadId"] = nil
+			case "foreign":
+				params["threadId"] = domain.NewID()
+			case "unknown-state":
+				params["status"] = "healthy"
+			case "unknown-field":
+				params["token"] = "private"
+			}
+			event, err := observeFixture(c, "mcpServer/startupStatus/updated", params)
+			if scenario == "unknown-state" || scenario == "unknown-field" {
+				if err == nil {
+					t.Fatal("malformed project MCP status accepted")
+				}
+				return
+			}
+			if err != nil || c.execution.active != turn {
+				t.Fatal("passive status changed the native turn", err)
+			}
+			if scenario == "ordinary" {
+				if event.Kind != MetadataEvent || event.Metadata != MCPStartupObserved || !event.Correlated || event.Native != nil {
+					t.Fatal("project startup did not become passive metadata")
+				}
+			} else if event.Kind != NativeExtensionEvent {
+				t.Fatal("isolated or foreign startup escaped its private boundary")
+			}
+			raw, _ := json.Marshal(event)
+			if strings.Contains(string(raw), "private-project-server") {
+				t.Fatal("project MCP descriptor escaped")
+			}
+		})
 	}
 }
 
