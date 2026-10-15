@@ -565,10 +565,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
     await waitFor(() => expect(saveBudget.disabled).toBe(false));
     expect(enableBudget.checked).toBe(false);
   }
-  await saveBudgetAndRecoverRevision(
-    "No estimated-cost budget is configured.",
-    undefined,
-  );
+  await saveBudgetAndRecoverRevision("Not set", undefined);
   expect(
     (await budgetClient.getSessionBudget({ sessionId: budgetSession.id })).view
       ?.state,

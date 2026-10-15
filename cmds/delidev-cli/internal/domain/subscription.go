@@ -194,6 +194,9 @@ func (s SubscriptionState) Validate(account Account) error {
 		if o.Diagnostic != nil && (o.Diagnostic.Validate() != nil || o.Diagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
 			return invalid()
 		}
+		if o.GrokDiagnostic != nil && (account.SubscriptionService != SubscriptionGrok || o.Diagnostic != nil || o.GrokDiagnostic.Validate() != nil || o.GrokDiagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionCanceled || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
+			return invalid()
+		}
 		if o.CleanupPhase == SubscriptionCredentialCleanupPending && !account.ManagedClaudeAccount() {
 			return invalid()
 		}
@@ -236,7 +239,10 @@ type ServerSubscriptionOperation struct {
 	StartedAt        time.Time                     `json:"started_at"`
 	ExpiresAt        time.Time                     `json:"expires_at"`
 	Diagnostic       *CodexDiagnostic              `json:"diagnostic,omitempty"`
-	CleanupPhase     SubscriptionCleanupPhase      `json:"cleanup_phase,omitempty"`
+	// GrokDiagnostic is the Grok Build counterpart of Diagnostic. At most one of
+	// the two is set, selected by the account's subscription service.
+	GrokDiagnostic *GrokDiagnostic          `json:"grok_diagnostic,omitempty"`
+	CleanupPhase   SubscriptionCleanupPhase `json:"cleanup_phase,omitempty"`
 }
 
 // Cleanup checkpoints release only a failed initial server login. They cannot

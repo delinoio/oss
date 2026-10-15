@@ -31,6 +31,11 @@ const (
 // QuotaExhaustedCause is presentation metadata for complete exhaustion proof.
 const QuotaExhaustedCause = "quota_exhausted"
 
+// TimeoutCause marks an Unavailable error that was produced by an expired
+// deadline. It survives normalization to a safe error, so later consumers can
+// still tell a timeout from other Unavailable failures.
+const TimeoutCause = "timeout"
+
 type Error struct {
 	Code          Code   `json:"code"`
 	Message       string `json:"message"`
@@ -44,6 +49,13 @@ func (e *Error) IsQuotaExhausted() bool {
 }
 
 func (e *Error) Error() string { return string(e.Code) + ": " + e.Message }
+
+// Is lets a timeout-marked error match context.DeadlineExceeded after it has
+// been normalized by SafeTimeoutError.
+func (e *Error) Is(target error) bool {
+	return target == context.DeadlineExceeded && e.Code == Unavailable && e.Cause == TimeoutCause
+}
+
 func Fail(code Code, message, guidance string) *Error {
 	return &Error{Code: code, Message: message, Guidance: guidance}
 }
@@ -62,6 +74,20 @@ func SafeError(err error) *Error {
 		return Fail(Unavailable, "The operation timed out.", "Inspect the operation and connection, then retry with the same request ID.")
 	}
 	return Fail(Internal, "The operation failed.", "Inspect doctor and the correlated server diagnostic.")
+}
+
+// SafeTimeoutError is SafeError that keeps timeout identity: an Unavailable
+// result of an expired deadline carries TimeoutCause and matches
+// context.DeadlineExceeded with errors.Is. Every other error, including an
+// Unavailable error with its own cause, is normalized exactly like SafeError.
+func SafeTimeoutError(err error) *Error {
+	safe := SafeError(err)
+	if safe.Code != Unavailable || safe.Cause != "" || !errors.Is(err, context.DeadlineExceeded) {
+		return safe
+	}
+	marked := *safe
+	marked.Cause = TimeoutCause
+	return &marked
 }
 
 func (e *Error) ExitCode() int {
