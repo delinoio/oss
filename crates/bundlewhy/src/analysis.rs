@@ -2813,6 +2813,9 @@ mod tests {
             "while (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
             "switch (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { default: use(); }",
             "async function gate() { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } }",
+            "const gate = async () => { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } \
+             }",
+            "export {}; if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
         ] {
             let fixture = run_fixture_patched(
                 BundlerChoice::Rspack,
@@ -2847,6 +2850,10 @@ mod tests {
             "if (check(typeof(process.env.BUNDLEWHY_FIXTURE_FLAG))) { use(); }",
             "if (obj.typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
             "if (mytypeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "function gate(await) { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } }",
+            "async function outer() { function gate() { if \
+             (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } } }",
             "if (obj.\u{3bb}typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
             "if (\u{3bb}typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
             "if (obj.\u{301}typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
