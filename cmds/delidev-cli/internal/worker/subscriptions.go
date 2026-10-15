@@ -88,6 +88,12 @@ type managedSubscriptionJournal struct {
 	// of re-resolving an installation from a later inventory. Journals written
 	// before this field existed omit it.
 	Installation *domain.Installation `json:"installation,omitempty"`
+	// InstallationRetention marks a journal written by a Worker that retains
+	// Installation before any native profile side effect. It is set with the
+	// durable claim, before the lease is taken, so a current-schema journal
+	// without Installation proves the native profile was never opened, while a
+	// journal without this marker predates retention and proves nothing.
+	InstallationRetention bool `json:"installation_retention,omitempty"`
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {
@@ -134,7 +140,7 @@ func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client 
 	}
 	// A durable claim precedes the protected delivery and every native side
 	// effect. Reconnect never regenerates this claim or replays the login.
-	claim := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: account, Operation: operation, Instance: instance, Finish: domain.NewID(), Action: action, State: managedClaimed}
+	claim := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: account, Operation: operation, Instance: instance, Finish: domain.NewID(), Action: action, State: managedClaimed, InstallationRetention: true}
 	journalPath := filepath.Join(root, string(leaseID)+".json")
 	if err := writeJSON(journalPath, claim); err != nil {
 		return nil, release, subscription.Invalid()

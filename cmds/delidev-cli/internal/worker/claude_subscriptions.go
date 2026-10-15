@@ -724,7 +724,7 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 			return err
 		}
 		_, statErr := os.Lstat(root)
-		noNative := !original.Shared && !journal.NativeStarted && original.Action == domain.SubscriptionLogin && errors.Is(statErr, os.ErrNotExist)
+		noNative := claudeNativeNeverTouched(original, journal, statErr)
 		originalCleanupAction := (original.Action == domain.SubscriptionLogout && journal.Action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT) ||
 			(original.Shared && original.Action == domain.SubscriptionExecute && journal.Action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
 		removedOriginal := errors.Is(statErr, os.ErrNotExist) && journal.NativeStarted && journal.NativeProfileID == state.NativeProfileID && originalCleanupAction
@@ -769,6 +769,24 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 		return nil
 	}
 	return lease.finishClaude(nil, true, false)
+}
+
+// claudeNativeNeverTouched is the one rule that settles a device-owned lease
+// without any native cleanup because the Worker provably never opened its
+// profile. Two independent proofs exist. A LOGIN whose profile directory does not
+// exist never created it. A current-schema journal (InstallationRetention) that
+// still lacks the retained installation never reached the retention that
+// precedes every profile open, so a crash right after Take leaves the existing
+// account profile untouched for a non-LOGOUT action. A LOGOUT must still remove
+// the profile, and journals without the marker are ambiguous legacy evidence.
+func claudeNativeNeverTouched(original *domain.SubscriptionLease, journal managedSubscriptionJournal, statErr error) bool {
+	if original.Shared || journal.NativeStarted {
+		return false
+	}
+	if original.Action == domain.SubscriptionLogin && errors.Is(statErr, os.ErrNotExist) {
+		return true
+	}
+	return journal.InstallationRetention && journal.Installation == nil && original.Action != domain.SubscriptionLogout
 }
 
 // runManagedClaudeRecovery consumes the original local claim of a server-token

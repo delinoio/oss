@@ -98,7 +98,13 @@ private journal before the native profile is created or touched, so only
 journals written before that field existed lack it. Historical device-owned
 cleanup reuses that retained installation; only such legacy journals fall back
 to the single fully verified entry of the current attach inventory, and
-ambiguous or missing evidence fails closed as invalid. The single profile open
+ambiguous or missing evidence fails closed as invalid. The claim is written with
+an installation-retention marker before the lease is taken, so a marked journal
+that still lacks the installation proves the Worker crashed before any profile
+open: recovery of such a non-logout, device-owned lease settles it without native
+cleanup and never logs out an account profile the attempt did not open. Unmarked
+journals stay ambiguous legacy evidence, and a logout always completes its
+removal. The single profile open
 that every profile-bearing launch passes through (execution, login, logout and
 cleanup) re-inspects the executable and compares any retained digest before
 creating or touching a profile directory or launching a process with the profile

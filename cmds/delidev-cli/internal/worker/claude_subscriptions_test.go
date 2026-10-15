@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http/httptest"
 	"net/url"
@@ -599,5 +600,112 @@ func TestNativeClaudeProfileAdmitsBaselineSemVerOnly(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+	}
+}
+
+// A crash after Take but before the installation is retained leaves the
+// account's existing profile untouched. Recovery must settle only the
+// current-schema journals that prove this, and never guess for legacy ones.
+func TestClaudeRecoverySettlesUnstartedCurrentSchemaJournalsWithoutNativeCleanup(t *testing.T) {
+	exec := pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE
+	login := pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN
+	logout := pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT
+	for _, tc := range []struct {
+		name       string
+		action     domain.SubscriptionAction
+		wire       pb.SubscriptionAction
+		retention  bool
+		started    bool
+		profileOn  bool
+		retained   bool
+		wantSettle bool
+	}{
+		{"current execute before retention", domain.SubscriptionExecute, exec, true, false, true, false, true},
+		{"current login before retention with a profile", domain.SubscriptionLogin, login, true, false, true, false, true},
+		{"current login before retention without a profile", domain.SubscriptionLogin, login, true, false, false, false, true},
+		{"legacy login without a profile", domain.SubscriptionLogin, login, false, false, false, false, true},
+		{"legacy execute is ambiguous", domain.SubscriptionExecute, exec, false, false, true, false, false},
+		{"legacy login with a profile is ambiguous", domain.SubscriptionLogin, login, false, false, true, false, false},
+		{"current logout still removes the profile", domain.SubscriptionLogout, logout, true, false, true, false, false},
+		{"current execute after native start", domain.SubscriptionExecute, exec, true, true, true, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			config := Config{Root: root, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
+			credential := Credential{ServerID: domain.NewID(), MachineID: domain.NewID()}
+			account, profileID, generation := domain.NewID(), domain.NewID(), domain.NewID()
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			executable, err = filepath.EvalSymlinks(executable)
+			if err != nil {
+				t.Fatal(err)
+			}
+			installation := domain.Installation{Harness: domain.ClaudeCode, Version: domain.ClaudeProtocolVersion, ResolvedPath: executable}
+			profileRoot, err := claudeProfileRoot(root, credential, account, profileID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.profileOn {
+				profile, err := openClaudeProfile(config, credential, account, profileID, installation, domain.NewID(), true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := profile.close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// The fixture server locks the profile path, so its parent must exist
+			// even when no profile does.
+			for _, dir := range []string{filepath.Join(root, "native-claude"), filepath.Join(root, "native-claude", string(credential.ServerID)), filepath.Dir(profileRoot)} {
+				if err := security.PrivateDir(dir); err != nil {
+					t.Fatal(err)
+				}
+			}
+			leaseID, operation, instance := domain.NewID(), domain.NewID(), domain.NewID()
+			journal := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: account, Operation: operation, Instance: instance, Finish: domain.NewID(), Generation: generation, NativeProfileID: profileID, NativeStarted: tc.started, InstallationRetention: tc.retention, Action: tc.wire, State: managedClaimed}
+			journalDir := filepath.Join(root, "managed-auth")
+			if err := security.PrivateDir(journalDir); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeJSON(filepath.Join(journalDir, string(leaseID)+".json"), journal); err != nil {
+				t.Fatal(err)
+			}
+			if tc.started {
+				if err := security.PrivateDir(filepath.Join(root, "processes", string(leaseID))); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f := &nativeClaudeLifecycleFixture{t: t, config: config, credential: credential, account: account, profile: profileID, generation: generation, lease: leaseID}
+			_, handler := delidevv1connect.NewSubscriptionServiceHandler(f)
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			credential.Endpoint = server.URL
+			f.credential = credential
+			client := delidevv1connect.NewSubscriptionServiceClient(server.Client(), server.URL)
+			state := &domain.SubscriptionState{RecoveryRequired: true, NativeProfileID: profileID, OwnerMachineID: credential.MachineID, Generation: generation, Lease: &domain.SubscriptionLease{ID: leaseID, OperationID: operation, InstanceID: instance, Generation: generation, Revision: 3, Action: tc.action}}
+			err = runClaudeRecovery(context.Background(), config, client, credential, account, domain.Account{Subscription: state})
+			if !tc.wantSettle {
+				if err == nil {
+					t.Fatal("ambiguous journal was settled without native cleanup")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal("unstarted journal needed native cleanup", err)
+			}
+			if len(f.finishes) != 1 || !f.finishes[0].CleanupConfirmed {
+				t.Fatal("recovery did not settle the lease")
+			}
+			if tc.profileOn {
+				if _, statErr := os.Lstat(profileRoot); statErr != nil {
+					t.Fatal("recovery removed a profile this attempt never opened", statErr)
+				}
+			}
+		})
 	}
 }
