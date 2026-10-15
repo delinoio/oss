@@ -2832,10 +2832,38 @@ mod tests {
         extra: &[ExtraChunk],
         edit: impl Fn(&mut serde_json::Value),
     ) -> Fixture {
+        fixture_with_extra_chunks(BundlerChoice::Vite, extra, edit)
+    }
+
+    /// Appends `extra` to the fixture of `bundler`. Every listed bundler-owned
+    /// virtual helper is also registered as a pathless virtual module so the
+    /// chunk shape is identical for both bundlers and only the bundler differs.
+    fn fixture_with_extra_chunks(
+        bundler: BundlerChoice,
+        extra: &[ExtraChunk],
+        edit: impl Fn(&mut serde_json::Value),
+    ) -> Fixture {
         run_fixture_patched(
-            BundlerChoice::Vite,
+            bundler,
             true,
             |value| {
+                for chunk in extra {
+                    for id in &chunk.modules {
+                        if !id.starts_with('\u{0}') {
+                            continue;
+                        }
+                        let modules = value["modules"].as_array_mut().unwrap();
+                        if modules.iter().any(|module| module["id"] == *id) {
+                            continue;
+                        }
+                        modules.push(serde_json::json!({
+                            "id": id,
+                            "path": null,
+                            "virtual": true,
+                            "included": true,
+                        }));
+                    }
+                }
                 let chunks = value["chunks"].as_array_mut().unwrap();
                 for chunk in extra {
                     chunks.push(serde_json::json!({
@@ -2851,6 +2879,7 @@ mod tests {
             |build, _| {
                 for chunk in extra {
                     let path = build.join(chunk.file);
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
                     std::fs::write(&path, chunk.code).unwrap();
                     if let ExtraMap::EmptyMappings = chunk.map {
                         let map = serde_json::json!({
@@ -3018,49 +3047,146 @@ mod tests {
     }
 
     #[test]
-    fn virtual_only_chunk_predicate_requires_bundler_owned_pathless_modules() {
+    fn rspack_virtual_only_chunks_keep_the_map_requirement() {
+        let baseline = run_fixture(BundlerChoice::Rspack, |_| {});
+        let fixture = fixture_with_extra_chunks(BundlerChoice::Rspack, &helper_chunks(), |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert_eq!(
+            problems[0].message,
+            "No usable source map for: assets/preload-helper-HclGiUj8.js, \
+             assets/rolldown-runtime-QTnfLwEv.js"
+        );
+        let dce = dead_code_coverage(analysis);
+        assert_eq!(dce.state, CoverageState::Partial);
+        assert!(
+            dce.note.contains("2 chunk(s) have no usable source map"),
+            "{}",
+            dce.note
+        );
+        assert_ne!(
+            dce.state,
+            dead_code_coverage(&baseline.output.analysis).state
+        );
+    }
+
+    #[test]
+    fn unsupported_bundler_collections_keep_the_map_requirement() {
+        for bundler in ["", "webpack", "Vite", "rollup"] {
+            let fixture = vite_with_extra_chunks(&helper_chunks(), |value| {
+                value["bundler"] = serde_json::Value::String(bundler.to_owned());
+            });
+            let problems = missing_map_problems(&fixture.output.analysis);
+            let reported = problems
+                .iter()
+                .any(|problem| problem.message.contains("preload-helper"));
+            assert!(
+                reported,
+                "bundler {bundler:?} must keep the map requirement"
+            );
+        }
+    }
+
+    #[test]
+    fn virtual_only_chunk_predicate_requires_a_vite_collection_with_pathless_helpers() {
         let collection =
-            |chunk_modules: Vec<&str>, modules: Vec<(&str, bool, Option<&str>)>| Collection {
-                chunks: vec![crate::collect::CollectedChunk {
-                    file: "a.js".to_owned(),
-                    modules: chunk_modules.into_iter().map(str::to_owned).collect(),
-                    ..Default::default()
-                }],
-                modules: modules
-                    .into_iter()
-                    .map(|(id, is_virtual, path)| crate::collect::CollectedModule {
-                        id: id.to_owned(),
-                        is_virtual,
-                        path: path.map(str::to_owned),
+            |bundler: &str, chunk_modules: Vec<&str>, modules: Vec<(&str, bool, Option<&str>)>| {
+                Collection {
+                    bundler: bundler.to_owned(),
+                    chunks: vec![crate::collect::CollectedChunk {
+                        file: "a.js".to_owned(),
+                        modules: chunk_modules.into_iter().map(str::to_owned).collect(),
                         ..Default::default()
-                    })
-                    .collect(),
-                ..Default::default()
+                    }],
+                    modules: modules
+                        .into_iter()
+                        .map(|(id, is_virtual, path)| crate::collect::CollectedModule {
+                            id: id.to_owned(),
+                            is_virtual,
+                            path: path.map(str::to_owned),
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                }
             };
         let helper = (PRELOAD_HELPER, true, None);
-        assert!(collection(vec![PRELOAD_HELPER], vec![helper]).is_virtual_only_chunk("a.js"));
-        assert!(!collection(vec![PRELOAD_HELPER], vec![helper]).is_virtual_only_chunk("b.js"));
-        // No listed modules: treated as source-backed.
-        assert!(!collection(vec![], vec![helper]).is_virtual_only_chunk("a.js"));
-        // Listed id is not in the collected modules.
-        assert!(!collection(vec![PRELOAD_HELPER], vec![]).is_virtual_only_chunk("a.js"));
-        // Plugin virtual modules are not bundler-owned.
+        let runtime = (ROLLDOWN_RUNTIME, true, None);
         let plugin = ("\u{0}virtual:routes", true, None);
-        assert!(
-            !collection(vec!["\u{0}virtual:routes"], vec![plugin]).is_virtual_only_chunk("a.js")
-        );
-        // A bundler-owned id that has a file path is source-backed.
         let pathed = (PRELOAD_HELPER, true, Some("/x/helper.js"));
-        assert!(!collection(vec![PRELOAD_HELPER], vec![pathed]).is_virtual_only_chunk("a.js"));
-        // A non-virtual module is source-backed.
         let real = (PRELOAD_HELPER, false, None);
-        assert!(!collection(vec![PRELOAD_HELPER], vec![real]).is_virtual_only_chunk("a.js"));
-        // One source-backed module makes the chunk source-backed.
         let app = (APP_MODULE, false, Some("/x/common.js"));
-        assert!(
-            !collection(vec![PRELOAD_HELPER, APP_MODULE], vec![helper, app])
-                .is_virtual_only_chunk("a.js")
+
+        // Chunk shape x bundler: only a Vite collection may suppress.
+        type Shape = (
+            &'static str,
+            Vec<&'static str>,
+            Vec<(&'static str, bool, Option<&'static str>)>,
         );
+        let shapes: Vec<(Shape, bool)> = vec![
+            (
+                ("vite helper only", vec![PRELOAD_HELPER], vec![helper]),
+                true,
+            ),
+            (
+                (
+                    "rolldown runtime only",
+                    vec![ROLLDOWN_RUNTIME],
+                    vec![runtime],
+                ),
+                true,
+            ),
+            (
+                (
+                    "both helpers",
+                    vec![PRELOAD_HELPER, ROLLDOWN_RUNTIME],
+                    vec![helper, runtime],
+                ),
+                true,
+            ),
+            (("no listed modules", vec![], vec![helper]), false),
+            (("id not collected", vec![PRELOAD_HELPER], vec![]), false),
+            (
+                ("plugin virtual", vec!["\u{0}virtual:routes"], vec![plugin]),
+                false,
+            ),
+            (
+                ("helper with file path", vec![PRELOAD_HELPER], vec![pathed]),
+                false,
+            ),
+            (
+                ("non-virtual module", vec![PRELOAD_HELPER], vec![real]),
+                false,
+            ),
+            (
+                (
+                    "helper plus source",
+                    vec![PRELOAD_HELPER, APP_MODULE],
+                    vec![helper, app],
+                ),
+                false,
+            ),
+        ];
+        for ((name, chunk_modules, modules), vite_expected) in shapes {
+            for (bundler, choice) in [
+                ("vite", Some(BundlerChoice::Vite)),
+                ("rspack", Some(BundlerChoice::Rspack)),
+                ("webpack", None),
+                ("", None),
+            ] {
+                let built = collection(bundler, chunk_modules.clone(), modules.clone());
+                assert_eq!(built.bundler_choice(), choice, "{bundler:?}");
+                let expected = vite_expected && choice == Some(BundlerChoice::Vite);
+                assert_eq!(
+                    built.is_virtual_only_chunk("a.js"),
+                    expected,
+                    "{name} with bundler {bundler:?}"
+                );
+                assert!(!built.is_virtual_only_chunk("b.js"), "{name}: unknown file");
+            }
+        }
     }
 
     #[test]

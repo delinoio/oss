@@ -2,7 +2,10 @@
 
 use std::collections::BTreeMap;
 
+use clap::ValueEnum;
 use serde::Deserialize;
+
+use crate::engine::BundlerChoice;
 
 pub const COLLECT_VERSION: u32 = 1;
 
@@ -37,26 +40,38 @@ pub struct Collection {
     pub export_usage: Option<CollectedExportUsage>,
 }
 
-/// Module id prefixes of helpers that the bundler itself injects (Vite's
+/// Module id prefixes of helpers that the Vite build itself injects (Vite's
 /// `\0vite/preload-helper.js`, Rolldown's `\0rolldown/runtime.js`). Plugin
 /// virtual modules such as `\0virtual:*` are not bundler-owned and keep their
 /// source-map requirement.
-const BUNDLER_OWNED_VIRTUAL_PREFIXES: [&str; 2] = ["\0vite/", "\0rolldown/"];
+const VITE_OWNED_VIRTUAL_PREFIXES: [&str; 2] = ["\0vite/", "\0rolldown/"];
 
 impl Collection {
-    /// True when the emitted chunk `file` lists at least one module and every
-    /// listed module is a bundler-owned virtual helper with no source file.
-    /// Such a chunk has no original source a map could attribute, so a missing
-    /// map cannot hide a source-backed candidate. Unknown ids, ids without a
-    /// bundler-owned prefix, modules with a file path and chunks with no
-    /// listed modules are all treated as source-backed.
+    /// Decodes the `bundler` field into the supported bundler. An unknown or
+    /// empty value yields `None` and is treated as unsupported.
+    pub fn bundler_choice(&self) -> Option<BundlerChoice> {
+        BundlerChoice::from_str(&self.bundler, false).ok()
+    }
+
+    /// True when this is a Vite collection and the emitted chunk `file` lists
+    /// at least one module and every listed module is a Vite-owned virtual
+    /// helper with no source file. Such a chunk has no original source a map
+    /// could attribute, so a missing map cannot hide a source-backed
+    /// candidate. Only Vite collections qualify: Rspack and unsupported
+    /// bundlers never treat a `\0vite/` or `\0rolldown/` id as bundler-owned
+    /// and keep the map requirement for every chunk. Unknown ids, ids without
+    /// a Vite-owned prefix, modules with a file path and chunks with no listed
+    /// modules are all treated as source-backed.
     pub fn is_virtual_only_chunk(&self, file: &str) -> bool {
+        if self.bundler_choice() != Some(BundlerChoice::Vite) {
+            return false;
+        }
         let Some(chunk) = self.chunks.iter().find(|chunk| chunk.file == file) else {
             return false;
         };
         !chunk.modules.is_empty()
             && chunk.modules.iter().all(|id| {
-                BUNDLER_OWNED_VIRTUAL_PREFIXES
+                VITE_OWNED_VIRTUAL_PREFIXES
                     .iter()
                     .any(|prefix| id.starts_with(prefix))
                     && self.modules.iter().any(|module| {
