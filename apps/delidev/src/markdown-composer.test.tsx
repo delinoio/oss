@@ -200,7 +200,7 @@ const undo = (input: HTMLTextAreaElement) =>
 const redo = (input: HTMLTextAreaElement) =>
   fireEvent.keyDown(input, { key: "z", ctrlKey: true, shiftKey: true });
 const bindingTexts = () =>
-  probe.bindings.map((binding) => [
+  probe.bindings.map((binding): [number, number, string] => [
     binding.start,
     binding.end,
     probe.canonical.slice(binding.start, binding.end),
@@ -694,6 +694,7 @@ it("R16 modifier click: only the exact platform modifier opens the parsed URL on
   const changes = probe.changes;
   const click = (init: MouseEventInit) => {
     const down = fireEvent.mouseDown(input, { clientX: 10, clientY: 10, ...init });
+    fireEvent.mouseUp(input, { clientX: 10, clientY: 10, ...init });
     const up = fireEvent.click(input, { clientX: 10, clientY: 10, ...init });
     return { down, up };
   };
@@ -748,18 +749,21 @@ it("R16 modifier click: a pointer outside every link, a missing opener and nativ
   expect(
     fireEvent.mouseDown(input, { ctrlKey: true, clientX: 500, clientY: 500 }),
   ).toBe(true);
+  fireEvent.mouseUp(input);
   expect(native.invoke).not.toHaveBeenCalled();
   // No native opener: ordinary editing continues.
   native.isTauri.mockReturnValue(false);
   expect(
     fireEvent.mouseDown(input, { ctrlKey: true, clientX: 10, clientY: 10 }),
   ).toBe(true);
+  fireEvent.mouseUp(input);
   fireEvent.click(input, { ctrlKey: true, clientX: 10, clientY: 10 });
   expect(native.invoke).not.toHaveBeenCalled();
   // A rejected open shows the shared localized failure once, with no retry.
   native.isTauri.mockReturnValue(true);
   native.invoke.mockRejectedValue("browser-unavailable");
   fireEvent.mouseDown(input, { ctrlKey: true, clientX: 10, clientY: 10 });
+  fireEvent.mouseUp(input);
   fireEvent.click(input, { ctrlKey: true, clientX: 10, clientY: 10 });
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toContain(copy("external-link.notInstalled"));
@@ -826,4 +830,38 @@ it("R20 owner replacement: submit or restoration resets history and moves the ca
   undo(input);
   expect(probe.canonical).toBe("");
   expect(input.value).toBe("");
+});
+
+it("keeps the painted mirror aligned with the displayed text and canonical skill ranges", async () => {
+  const { view, input } = await boundDraft();
+  const overlay = view.container.querySelector(".skill-text-overlay > div")!;
+  // The mirror holds exactly the displayed text plus its trailing guard.
+  expect(overlay.textContent).toBe(`${input.value}\u200b`);
+  const labels = [...view.container.querySelectorAll("[data-markdown-link]")];
+  expect(labels.map((node) => node.textContent)).toEqual(["Docs"]);
+  expect(labels[0]!.className).toBe("markdown-link-label");
+  const skills = [...view.container.querySelectorAll(".skill-token-selected")];
+  expect(skills.map((node) => node.textContent)).toEqual([
+    "$add-issue",
+    "$add-note",
+  ]);
+  // Skill spans keep their canonical start offsets as identity.
+  expect(skills.map((node) => (node as HTMLElement).dataset.skillStart)).toEqual(
+    ["0", String(probe.canonical.indexOf("$add-note"))],
+  );
+  // Revealed source stays one ordinary span with no link styling.
+  select(input, 17);
+  const source = view.container.querySelector("[data-markdown-link]")!;
+  expect(source.className).toBe("markdown-link-source");
+  expect(source.textContent).toBe(LINK);
+});
+
+it("ignores a caret-only change event and a stray undo with no history", () => {
+  const { input } = mount(DRAFT);
+  fireEvent.change(input, { target: { value: DISPLAY } });
+  expect(probe.changes).toBe(0);
+  undo(input);
+  redo(input);
+  expect(probe.canonical).toBe(DRAFT);
+  expect(probe.changes).toBe(0);
 });

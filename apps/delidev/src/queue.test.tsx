@@ -871,3 +871,26 @@ it("keeps movement locked when inspecting an input with an uncertain removal", a
   expect(up).not.toHaveBeenCalled();
   expect(down).not.toHaveBeenCalled();
 });
+
+it("shows a queued Markdown link as its label and saves the canonical Markdown", async () => {
+  const value = fixture("See [Docs](https://example.com/d) first");
+  render(value.view());
+  fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  const editor = screen.getByRole("textbox", {
+    name: "Edited input",
+  }) as HTMLTextAreaElement;
+  expect(editor.value).toBe("See Docs first");
+  editor.focus();
+  editor.setSelectionRange(editor.value.length, editor.value.length);
+  fireEvent.select(editor);
+  fireEvent.paste(editor, {
+    clipboardData: { files: [], getData: () => " https://example.org/x" },
+  });
+  expect(editor.value).toBe("See Docs first https://example.org/x");
+  fireEvent.click(screen.getByRole("button", { name: "Save input" }));
+  await waitFor(() => expect(value.edit).toHaveBeenCalledOnce());
+  expect(value.edit.mock.calls[0]![0]).toMatchObject({
+    prompt:
+      "See [Docs](https://example.com/d) first [https://example.org/x](https://example.org/x)",
+  });
+});

@@ -5803,7 +5803,8 @@ The caret exemption follows the caret position, not panel visibility: dismissing
 panel with Escape leaves the valid prefix ordinary until the caret moves away.
 Confirmed absent token ranges use semantic muted text in a noninteractive aligned
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
-caret, undo and IME; suppress the overlay during composition. Localized accessible
+caret and IME; suppress the overlay during composition. Undo and redo are owned
+by the shared composer adapter described in Prompt composer Markdown links. Localized accessible
 status describes affected tokens without exposing prompt content in logs.
 Absence analysis builds one Set of exact current inventory names, then makes one
 lazy pass with one Set lookup per complete token plus one precomputed caret-prefix
@@ -5944,8 +5945,9 @@ the binding by the existing token-edit rule.
 The owner's `change(next, bindings)` call still decides admission. When it returns
 `false` (the 256 KiB prompt limit applies to the completed text including the
 separator), acceptance changes no text, binding, selection, focus or panel state.
-Acceptance is a programmatic controlled-value replacement, as before: it adds no
-separate undo transaction and does not rewrite native undo history. IME
+Acceptance is a programmatic controlled-value replacement, as before, and is
+recorded as one adapter undo transaction (see Prompt composer Markdown links):
+one undo restores the text, the bindings and the previous selection. IME
 composition, `repeat`, modifier and AltGraph keys, unavailable rows,
 disabled/inert/hidden owners, pending or uncertain locks and stale inventory or
 scope still refuse acceptance before any of the above runs. Project creation,
@@ -5984,7 +5986,7 @@ inventory reads remain unknown and may retain a valid selected decoration;
 selection styling never proves availability or enables acceptance. Changed or
 unresolved scope removes selected decoration while preserving reselection
 warnings and send guards. Suppress both decorations during IME. Preserve native
-textarea identity, focus, caret, selection, undo, scroll, existing localized
+textarea identity, focus, caret, selection, scroll, existing localized
 status ownership and pending/uncertain draft and binding locks. Apply the same
 rules to project creation, General Chat creation, follow-up and queued editing,
 including semantic themes, typography changes and 200% zoom. Fixture or browser
@@ -5998,6 +6000,127 @@ Restored queued bindings require one unique matching token and one accepted
 package with that display name. Ambiguous same-named packages or literal tokens
 remain stale through text edits until explicit clearing and reselection; package
 metadata cannot infer the original token span.
+
+## Prompt composer Markdown links
+
+All four composer placements (project creation, General Chat creation, session
+follow-up and queued editing) share one adapter, `useSkillCompletion`, over one
+native multiline textarea. The retained draft, the submitted payload and every
+skill binding offset are **canonical Markdown source text**. The textarea shows a
+**display projection** of that text in which valid inline HTTP(S) links collapse
+to their labels. The pure model lives in `prompt-markdown-links.ts` and the
+adapter-owned history in `prompt-edit-history.ts`; the Selected-skill contract
+above is unchanged and independent (skills keep literal `$name` bytes, authority,
+counts and noninteractive appearance; links add navigation only through the
+platform modifier click below).
+
+**Offsets.** All offsets are UTF-16 code units. The adapter keeps one canonical
+selection `{start, end, direction}` and translates between canonical and display
+offsets with monotonic maps: a display offset at a collapsed link's edge maps to
+the link's source start or end, and an interior display offset maps to the source
+offset of that label unit (an escaped label unit maps to its backslash).
+`toDisplay(toSource(d)) = d` for every display offset `d`.
+
+**Detection.** A valid link is `[label](destination)` with a nonempty single-line
+label of balanced brackets that holds no nested link, and an unspaced destination
+that resolves (backslash escapes removed) to an HTTP(S) URL accepted by
+`validHttpUrl` within 2,048 characters. Anything else (non-HTTP(S), credentials,
+angle destinations, titles, images, `www.` text, incomplete or edited syntax)
+stays ordinary visible source. Fenced code, inline code, images, other inline
+links, autolinks and reference definitions are protected: bare URLs inside them
+are never converted. At most 256 links collapse; the scan has a linear work
+budget, and when it is exhausted nothing converts. No title is ever fetched.
+
+**Conversion.** Conversion reuses `findUrlTokens` and `validHttpUrl`, so
+punctuation and unbalanced-bracket trimming, credential and 2,048/1,000,000
+limits are identical to message links. A token converts to `[URL](URL)` only when
+it lies wholly inside the converted range, is not glued to a preceding letter,
+digit, backslash or `!`, and is not protected. The label escapes `\`, `[` and `]`;
+the destination escapes `\`, `(` and `)`, so the resolved URL equals the original
+bytes. Conversion is idempotent (converted text is protected) and never nests.
+Pasted plain text converts every eligible URL immediately. A typed space or
+newline converts the whitespace-delimited word before it and the delimiter is
+kept. A URL still being typed at the buffer end, restored drafts, history
+recall and unrelated text are never converted. IME text converts only after
+composition ends, including an `input` delivered just after `compositionend`. If
+the owner refuses the converted text (256 KiB `change(...) === false`), the plain
+text is offered next; if that is also refused nothing changes. The owner's
+admission therefore stays atomic and identical to completion acceptance.
+
+**Reveal and collapse.** A link reveals its whole source when the canonical caret
+is strictly inside it or a nonempty selection overlaps it; link edges alone do not
+reveal. Primary clicks, arrow navigation and selections only change the selection
+state; reveal and collapse never call the owner's `change`, never create a history
+entry and never touch bindings. During IME composition the displayed text is
+frozen to what the native field holds (regions are shifted through each edit), so
+no reveal or collapse rewrites the field; if an edit overlaps a collapsed region
+the projection is rebuilt, which can interrupt that composition.
+
+**Mirror.** The single noninteractive mirror paints the displayed text. Collapsed
+labels use `markdown-link-label` (semantic `--link`, 1px underline, same as the
+selected-skill decoration); revealed source uses an unstyled
+`markdown-link-source` span that only anchors pointer hit-testing. Skill ranges
+are canonical and are mapped to display offsets; a skill range touching link
+syntax is not painted. No second mirror, toolbar, dialog, popup or focus stop is
+added and no prompt, URL or clipboard content is logged.
+
+**Modifier click.** In a native host only, the platform modifier alone (Command on
+macOS, Control elsewhere; no Alt, Shift or second modifier) with the primary
+button over a painted link calls `openExternalUrl` once with the parsed
+destination, prevents the default (no caret move, edit, focus or navigation) and
+stops propagation. Plain, wrong-modifier, Alt/Shift combinations, middle and right
+clicks do nothing special. Web previews without a native opener stay editable. A
+rejected open shows the shared localized external-link alert, keeps the draft and
+never retries or falls back; a pending open blocks a second activation.
+
+**History.** The adapter records every accepted canonical edit as one transaction
+holding the canonical text, bindings and selection before and after, because
+projection rewrites and programmatic value writes discard native undo. Undo
+(Command/Control+Z, redo with Shift or Control+Y on non-Apple platforms) and
+`beforeinput` `historyUndo`/`historyRedo` are consumed by the adapter and refused
+during IME composition. Consecutive typing, or consecutive deletion, that
+continues from the previous entry's exact result extends it until whitespace, a
+selection move or another kind; paste, conversion, cut, completion acceptance and
+a composition each form their own entry, a typed delimiter conversion is one entry
+(undo removes the conversion and the delimiter together), and a conversion of
+composed text amends the composition entry. History holds at most 100 entries and
+2,000,000 text units and is cleared by any owner replacement of the draft
+(submit, restoration, prompt-history recall), by `clear` and by `clearAccepted`.
+Undo and redo go through the owner's `change`, so a refused change leaves the
+stacks untouched.
+
+**State table.** Every cell is asserted by the matching `R..` test in
+`markdown-composer.test.tsx`. "Canonical" is the retained draft text; "display"
+is the textarea text. Offsets in the Bindings column are canonical.
+
+| Row | Event | Canonical text | Display text | Selection mapping | Undo stack | Bindings |
+| --- | ----- | -------------- | ------------ | ----------------- | ---------- | -------- |
+| R01 | Type a character | Display edit mapped through the maps; typing next to a collapsed link edits outside it | Re-projected; the link stays collapsed unless the caret is inside it | Canonical caret after the inserted text; native caret re-derived | Extends the current typing entry, else a new one | Moved by `editedBindings`; touching a token removes it |
+| R02 | Type a space or newline after a bare URL | The URL word becomes `[URL](URL)`, delimiter kept (plain text if refused) | Label of the new link, delimiter visible | Caret just after the delimiter | One conversion entry (conversion plus delimiter) | Shifted by the length change |
+| R03 | Type at the buffer end, or ineligible text | Unchanged apart from the typed text; no conversion without a delimiter, and none for `www.`, `mailto:`, `javascript:`, credentials or overlong URLs | Same as canonical | Caret after the typed text | Typing entry | Shifted |
+| R04 | Paste plain text | Every eligible URL in the pasted text converted; CRLF normalized; plain text if the owner refuses the conversion | Re-projected | Collapsed after the pasted text | One entry | Shifted by the full inserted length |
+| R05 | Paste with files or without text | Unchanged by the adapter; the form's image handler owns the event | Unchanged | Unchanged | Unchanged | Unchanged |
+| R06 | Delete (character, label character, syntax) | Range mapped to source; a label character edits the label, a whole-label deletion removes the link | Re-projected; broken syntax becomes ordinary visible source | Caret at the edit; inside a link it reveals | Deletion entry | Shifted; overlapped tokens removed |
+| R07 | Selection change (click, arrows, Shift-select, select-all) | Unchanged | Reveals every link the caret is strictly inside or the selection overlaps, collapses the rest | Direction and range preserved through the maps | Unchanged | Unchanged |
+| R08 | Copy | Unchanged | Unchanged | Unchanged | Unchanged | Unchanged (clipboard receives the canonical selected Markdown) |
+| R09 | Cut | Canonical range removed | Re-projected | Collapsed at the cut start | One cut entry | Shifted; overlapped tokens removed |
+| R10 | Undo | Restores the entry's earlier text | Re-projected | Restores the earlier selection | Moves the entry to redo | Restores earlier bindings (stale when their context changed) |
+| R11 | Redo | Restores the later text | Re-projected | Restores the later selection | Moves the entry back | Restores later bindings |
+| R12 | IME composition start | Unchanged | Frozen | Anchor is the canonical selection start | Starts a composition session | Unchanged |
+| R13 | IME composition update | Updated live through the maps; never converted | Equals the native field; regions shifted | Collapsed after composed text | One composition entry | Shifted |
+| R14 | IME composition end | Delimiters in the composed range convert | Re-projected; reveal recomputed | Mapped from the native caret | Conversion amends the composition entry | Shifted |
+| R15 | Skill acceptance | `prefix + $name + separator + suffix` exactly as `skillCompletionEdit` | Re-projected | Canonical caret at token end + 1 | One completion entry | New binding `[start, start + length($name))`; others shifted |
+| R16 | Modifier click on a link | Unchanged | Unchanged | Unchanged (the gesture is default-prevented) | Unchanged | Unchanged |
+| R17 | Blur and focus | Unchanged | Unchanged | Retained | Unchanged | Unchanged |
+| R18 | Prompt-history recall | Replaced, never converted | Re-projected | Canonical caret requested by the recall | Cleared | Cleared |
+| R19 | Limit rejection | Unchanged | Restored to the last projection | Unchanged | Unchanged | Unchanged |
+| R20 | Owner replacement (submit, restoration) | Replaced | Re-projected | Collapsed at the end | Cleared | Owner-defined |
+
+**Validation boundary.** jsdom fixtures prove the maps, the state table and event
+wiring. They do not establish real caret, drag-selection, IME, native undo menu,
+clipboard or packaged-host behavior on macOS, Windows or Linux; record that
+acceptance separately. No server RPC, capability, schema, dependency or feature
+flag is added.
 
 ## Image inputs
 
@@ -7434,7 +7557,7 @@ Settings > System has a Browser category directly after Appearance (`SettingsCat
 
 **Dispatch.** `open_external_url` (and the provider guidance, App information and GitHub openers) validate and classify the URL natively, read the saved choice directly from storage, resolve an installed identity through a fresh inventory immediately before launch and launch exactly one process with an argv-only recipe: macOS `/usr/bin/open -b <bundle> <url>`, the desktop-entry `Exec` command with field codes substituted on Linux, and the registered executable on Windows (registered arguments are ignored). The URL is one argv value, the environment is a credential-free allowlist, and a stopped (quitting) host launches nothing. A browser still running after a two-second grace period counts as dispatched and is reaped on its own thread, never killed. Unreadable or corrupt existing storage fails closed (`storage-unavailable`); a host with no app config directory has no saved choice, so the system default applies while Settings shows the preference as unavailable; a missing browser reports `browser-unavailable`; a failed launch reports `browser-launch-failed`. There is no fallback to the system default or another browser, no retry and no second launch, and the saved choice is kept. OAuth/subscription authorization calls the system-default dispatcher directly and never reads the preference. `device-browser-links` grants the five commands to `main` and `server-*` webviews only; permission tests resolve the generated ACL.
 
-**Renderer presentation.** `LinkedPre` renders user and assistant message text (generic session messages, Claude text blocks, Grok user input and Grok assistant text) as the original characters with explicit HTTP(S) tokens wrapped in anchors that never navigate the webview; reasoning, tool, artifact, progress, diff, file and details content stays inert. Trailing sentence punctuation and unbalanced closing brackets stay outside the URL, partial streamed tokens are not links until complete, and a second activation while one is pending is ignored. The terminal adapter (`terminal-emulator.ts`) reads rendered `.term-row` text on a plain primary click or hover, joins rows that fill the full grid width, ignores clicks while text is selected, and leaves WTerm `linksEnabled: false`, OSC 8/OSC 52 handling, input admission and parser replies unchanged; its listeners are removed on disposal. The terminal presenter supplies the adapter's opener only in a native Tauri host; web previews keep printed URLs inert without link listeners, pointer affordance or native launch attempts. Failures render a localized dismissible alert (`external-link.*`) naming Settings > Browser; Provider guidance, App information and GitHub openers map the same codes to that guidance.
+**Renderer presentation.** `LinkedPre` renders user and assistant message text (generic session messages, Claude text blocks, Grok user input and Grok assistant text) as the original characters with explicit HTTP(S) tokens wrapped in anchors that never navigate the webview; reasoning, tool, artifact, progress, diff, file and details content stays inert. Trailing sentence punctuation and unbalanced closing brackets stay outside the URL, partial streamed tokens are not links until complete, and a second activation while one is pending is ignored. The terminal adapter (`terminal-emulator.ts`) reads rendered `.term-row` text on a plain primary click or hover, joins rows that fill the full grid width, ignores clicks while text is selected, and leaves WTerm `linksEnabled: false`, OSC 8/OSC 52 handling, input admission and parser replies unchanged; its listeners are removed on disposal. The terminal presenter supplies the adapter's opener only in a native Tauri host; web previews keep printed URLs inert without link listeners, pointer affordance or native launch attempts. Failures render a localized dismissible alert (`external-link.*`) naming Settings > Browser; Provider guidance, App information and GitHub openers map the same codes to that guidance. Prompt composers open a Markdown link only on a platform-modifier primary click through the same `openExternalUrl` path and the same alert, as specified in [Prompt composer Markdown links](#prompt-composer-markdown-links).
 
 **Logging.** Operations `external_url_open`, `provider_guidance`, `app_information_link`, `github_open`, `browser_inventory` and `device_browser_preferences_*` log operation, URL class, browser identity, phase and failure code. URLs, query values, credentials and local executable paths are never logged.
 

@@ -198,3 +198,40 @@ it("refuses completion atomically when only the separator would exceed the 256 K
   expect(screen.queryByRole("listbox")).not.toBeNull();
   expect(f.createSession).not.toHaveBeenCalled();
 });
+
+it.each([NewSessionKind.Session, NewSessionKind.GeneralChat])(
+  "submits the canonical Markdown for a pasted URL in %s creation while showing the label",
+  async (kind) => {
+    const f = fixture(kind);
+    const view = render(f.view);
+    await waitFor(() =>
+      expect(
+        scrollChoiceValue(
+          screen.getByRole("combobox", { name: "Agent Worker" }),
+        ),
+      ).toBe(f.agent.id),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "First message",
+    }) as HTMLTextAreaElement;
+    input.focus();
+    fireEvent.paste(input, {
+      clipboardData: {
+        files: [],
+        getData: () => "Read https://example.com/docs now",
+      },
+    });
+    expect(input.value).toBe("Read https://example.com/docs now");
+    const link = view.container.querySelector("[data-markdown-link]");
+    expect(link?.textContent).toBe("https://example.com/docs");
+    expect(link?.className).toBe("markdown-link-label");
+    fireEvent.submit(input.form!);
+    await waitFor(() => expect(f.createSession).toHaveBeenCalledTimes(1));
+    const document = JSON.parse(
+      new TextDecoder().decode(f.createSession.mock.calls[0]![0].documentJson),
+    ) as { prompt: string };
+    expect(document.prompt).toBe(
+      "Read [https://example.com/docs](https://example.com/docs) now",
+    );
+  },
+);

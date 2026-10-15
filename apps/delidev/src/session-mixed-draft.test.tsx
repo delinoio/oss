@@ -349,3 +349,33 @@ it(
   },
   mixedDraftTimeoutMs,
 );
+
+it(
+  "queues the canonical Markdown of a pasted URL from the follow-up composer",
+  async () => {
+    const f = fixture();
+    render(<App transport={f.transport} />);
+    const input = (await f.select()) as HTMLTextAreaElement;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    fireEvent.select(input);
+    fireEvent.paste(input, {
+      clipboardData: { files: [], getData: () => "https://example.com/x" },
+    });
+    expect(input.value).toBe("$retained https://example.com/x");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Queue message" }),
+      ).toHaveProperty("disabled", false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
+    const request = f.enqueue.mock.calls[0]![0];
+    expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({
+      prompt: "$retained [https://example.com/x](https://example.com/x)",
+      mode: "execute",
+    });
+    expect(request.skills?.selections).toEqual([f.selection]);
+  },
+  mixedDraftTimeoutMs,
+);

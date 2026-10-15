@@ -825,6 +825,11 @@ export function useSkillCompletion({
       plain = value.slice(0, edit.start) + edit.inserted + value.slice(edit.end),
       caretAfter = edit.caret(position),
       composingNow = composing.current;
+    if (plain === value) {
+      // Nothing changed in the draft (for example a caret-only update).
+      updateSelection(collapsedAt(caretAfter));
+      return;
+    }
     // A typed space or newline completes the URL before it. Text committed by
     // an IME is processed once composition has ended, never during it.
     let converted: string | undefined;
@@ -852,7 +857,7 @@ export function useSkillCompletion({
               : EditKind.Deletion,
       selectionFor: (text) =>
         collapsedAt(caretAfter + (text.length - plain.length)),
-      seal: converted !== undefined || /\s/u.test(edit.inserted),
+      seal: !composingNow && (converted !== undefined || /\s/u.test(edit.inserted)),
       session: composingNow ? compositionSession.current : undefined,
       apply: !composingNow,
     });
@@ -909,7 +914,7 @@ export function useSkillCompletion({
     setSelected(0);
   };
   const isUndoKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    const key = event.key.toLowerCase(),
+    const key = (event.key ?? "").toLowerCase(),
       apple = isApplePlatform();
     if (event.altKey || (apple ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey))
       return undefined;
@@ -1393,30 +1398,35 @@ function SkillText({
   const collapsed = new Map(
     projection.regions.map((region) => [region.srcStart, region]),
   );
-  const linkItems: PaintedItem[] = links
-    .slice(0, MAX_PAINTED_LINKS)
-    .map((link) => {
-      const region = collapsed.get(link.start);
-      return region
-        ? {
-            start: region.displayStart,
-            end: region.displayStart + region.label.length,
-            className: "markdown-link-label",
-            attributes: {
-              "data-markdown-link": link.start,
-              "data-markdown-state": "collapsed",
-            },
-          }
-        : {
-            start: projection.toDisplay(link.start),
-            end: projection.toDisplay(link.end),
-            className: "markdown-link-source",
-            attributes: {
-              "data-markdown-link": link.start,
-              "data-markdown-state": "source",
-            },
-          };
-    });
+  // Every collapsed region is painted; revealed source is painted for the
+  // first MAX_PAINTED_LINKS links so hit-testing stays bounded.
+  const linkItems: PaintedItem[] = [];
+  let sourceCount = 0;
+  for (const link of links) {
+    const region = collapsed.get(link.start);
+    if (region)
+      linkItems.push({
+        start: region.displayStart,
+        end: region.displayStart + region.label.length,
+        className: "markdown-link-label",
+        attributes: {
+          "data-markdown-link": link.start,
+          "data-markdown-state": "collapsed",
+        },
+      });
+    else if (sourceCount < MAX_PAINTED_LINKS) {
+      sourceCount++;
+      linkItems.push({
+        start: projection.toDisplay(link.start),
+        end: projection.toDisplay(link.end),
+        className: "markdown-link-source",
+        attributes: {
+          "data-markdown-link": link.start,
+          "data-markdown-state": "source",
+        },
+      });
+    }
+  }
   const painted = [...skillItems, ...linkItems].sort(
     (a, b) => a.start - b.start,
   );
