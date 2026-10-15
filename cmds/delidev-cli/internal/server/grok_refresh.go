@@ -56,9 +56,13 @@ const (
 	// can race the outcome.
 	grokFaultBeforeLoginFinish grokFaultPoint = "before_login_finish"
 	grokFaultAfterClaim        grokFaultPoint = "after_claim"
-	grokFaultAfterResponse     grokFaultPoint = "after_response"
-	grokFaultAfterStage        grokFaultPoint = "after_stage"
-	grokFaultAfterPersist      grokFaultPoint = "after_persist"
+	// grokFaultAfterExchangeClaim runs after the login exchange claim committed and
+	// before the pre-send durable check: the window in which a cancellation can
+	// commit although nothing has stopped the login context yet.
+	grokFaultAfterExchangeClaim grokFaultPoint = "after_exchange_claim"
+	grokFaultAfterResponse      grokFaultPoint = "after_response"
+	grokFaultAfterStage         grokFaultPoint = "after_stage"
+	grokFaultAfterPersist       grokFaultPoint = "after_persist"
 
 	// Logout fault points.
 	grokFaultAfterRevokeClaim        grokFaultPoint = "after_revoke_claim"
@@ -73,6 +77,10 @@ const (
 	// grokFaultFenceWrite runs before the recovery-fence write of an unsettled
 	// operation; its error stands for a failed fence write.
 	grokFaultFenceWrite grokFaultPoint = "fence_write"
+
+	// grokFaultAfterWorkerLogoutCleanup runs after the scanner removed the vault
+	// generations of a Worker-lease logout and before it disconnects the account.
+	grokFaultAfterWorkerLogoutCleanup grokFaultPoint = "after_worker_logout_cleanup"
 
 	// grokFaultDurableRead runs before every read of the durable login operation
 	// by the watcher and the pre-poll check; an error stands for an unreadable
@@ -560,13 +568,9 @@ func (s *Service) markGrokRecovery(id, operation domain.ID) (bool, error) {
 		fenced = true
 		o.State = domain.SubscriptionRecovery
 		if o.GrokDiagnostic == nil {
-			code := domain.RecoveryRequired
-			if o.GrokRevocation == domain.GrokRevocationConfirmed {
-				// The provider revoked the token; only the protected cleanup is
-				// pending, so the outcome is known and the cleanup is retried.
-				code = domain.Unavailable
-			}
-			o.GrokDiagnostic = grokOperationDiagnostic(o.ID, grokDiagnosticPhaseOf(o.Action), code)
+			// A confirmed revocation leaves only the protected cleanup pending, so the
+			// outcome is known and the cleanup is retried (grokFenceCode).
+			o.GrokDiagnostic = grokOperationDiagnostic(o.ID, grokDiagnosticPhaseOf(o.Action), grokFenceCode(*o))
 		}
 		st.RecoveryRequired = true
 		a.Health = domain.AccountFailed

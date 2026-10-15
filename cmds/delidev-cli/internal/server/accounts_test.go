@@ -31,6 +31,7 @@ type accountTestSecrets struct {
 	putError, deleteError, referenceError error
 	enumerations                          int
 	afterPut                              func()
+	afterDelete                           func()
 	puts, deletes                         int
 }
 
@@ -62,6 +63,13 @@ func (v *accountTestSecrets) Delete(ctx context.Context, ref credentials.Ref) er
 	}
 	delete(v.values, ref)
 	v.removed[ref] = true
+	if hook := v.afterDelete; hook != nil {
+		// The hook runs outside the lock, like a concurrent change made while the
+		// vault removal is still in flight.
+		v.mu.Unlock()
+		hook()
+		v.mu.Lock()
+	}
 	return nil
 }
 func (v *accountTestSecrets) Get(ctx context.Context, ref credentials.Ref) ([]byte, error) {

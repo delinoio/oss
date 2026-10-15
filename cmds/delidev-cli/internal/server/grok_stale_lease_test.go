@@ -106,6 +106,48 @@ func TestGrokStaleLeaseIsReleasedByItsExactOwnerFinish(t *testing.T) {
 	})
 }
 
+// A queued operation whose initiating client device is revoked settles as
+// canceled while the accepted logout keeps readiness revoked. The restart that
+// follows must not turn the exact owner's cleanup-confirmed Finish into a ready
+// account: the health is restored from the canceled operation exactly as from a
+// failed one.
+func TestGrokStaleLeaseKeepsTheHealthOfACanceledQueuedOperation(t *testing.T) {
+	for _, kind := range queuedKinds {
+		t.Run("queued "+kind.name, func(t *testing.T) {
+			g := newGrokLoginFixture(t)
+			lease, generation, op := g.holdExecution(t, kind.action)
+			initiator := domain.NewID()
+			g.mutateServerOperation(func(a *domain.Account) {
+				a.Subscription.Pending.Actor = domain.Principal{Type: domain.ClientDevice, DeviceID: initiator}
+			})
+			if _, err := g.service.Store.Mutate(ownerContext(), domain.NewID(), "fixture.grok.revoke-initiator", nil, func(tx *store.Tx) (any, error) {
+				return nil, cancelQueuedSubscriptionInitiator(tx, initiator, g.service.subscriptionServerEpoch())
+			}); err != nil {
+				t.Fatal(err)
+			}
+			_, a := g.record()
+			if o := a.Subscription.ServerOperation; o == nil || o.ID != op || o.State != domain.SubscriptionCanceled || a.Subscription.Pending != nil {
+				t.Fatalf("the revoked initiator did not settle the queued operation as canceled: %+v", a.Subscription.ServerOperation)
+			}
+			g.restart(t)
+			_, a = g.record()
+			requireStaleFence(t, a, lease, generation)
+			if _, err := g.finishWith(lease, domain.NewID(), nil, false, false, true); err != nil {
+				t.Fatalf("the original Worker could not release its stale lease: %v", err)
+			}
+			_, a = g.record()
+			want := domain.AccountReady
+			if kind.action == logoutAction {
+				// The accepted logout is not undone by the revocation of its initiator.
+				want = domain.AccountRevoked
+			}
+			if st := a.Subscription; st.Lease != nil || st.RecoveryRequired || a.Health != want || st.Generation != generation {
+				t.Fatalf("the stale release of a canceled %s restored health %v, want %v (lease=%v fenced=%v)", kind.name, a.Health, want, st.Lease != nil, st.RecoveryRequired)
+			}
+		})
+	}
+}
+
 // A credential the stale execution rotated natively is the only valid one, so it
 // is published under the same checks as a current Finish; the queued operation
 // the restart settled stays settled.

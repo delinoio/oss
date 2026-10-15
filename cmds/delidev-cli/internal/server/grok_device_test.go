@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -908,6 +910,59 @@ func TestGrokDeviceLoginCancelCommittedJustBeforeAPollSendsNoFurtherPoll(t *test
 	_, a := g.settle(t, run, stateCanceled)
 	if polls := g.idp.DevicePolls(); polls != 1 || !a.Subscription.ServerOperation.CodeConsumed {
 		t.Fatalf("a poll was sent after the cancellation committed (polls=%d, claim=%v)", polls, a.Subscription.ServerOperation.CodeConsumed)
+	}
+	g.requireNoBundle(t, a)
+}
+
+// The send-gate table of a claimed login. Every request that can redeem the
+// credential is preceded by a durable read, including the first one right after
+// the claim committed; a cancellation committed in that window (before the
+// watcher noticed) stops the login without any request.
+//
+//	cancellation committed          | request that must not be sent
+//	after the device claim          | the first device poll
+//	between two device polls        | the next device poll (see the test above)
+//	after the browser claim         | the code exchange (TestGrokLoginCancelCommittedJustAfterTheClaimSendsNoExchange)
+func TestGrokDeviceLoginCancelCommittedJustAfterTheClaimSendsNoPoll(t *testing.T) {
+	g := newGrokDeviceFixture(t)
+	g.service.grokFaultHook = func(p grokFaultPoint) error {
+		if p == grokFaultAfterExchangeClaim {
+			// The claim committed; the cancellation commits before the first poll and
+			// nothing has stopped the login context yet.
+			g.cancelLogin(t)
+		}
+		return nil
+	}
+	run := g.startDevice(t)
+	_, a := g.settle(t, run, stateCanceled)
+	g.service.grokFaultHook = nil
+	if polls := g.idp.DevicePolls(); polls != 0 || !a.Subscription.ServerOperation.CodeConsumed || a.Subscription.RecoveryRequired {
+		t.Fatalf("a poll was sent after the cancellation committed behind the claim (polls=%d, claim=%v)", polls, a.Subscription.ServerOperation.CodeConsumed)
+	}
+	g.requireNoBundle(t, a)
+}
+
+// An unreadable durable state right after the claim fences the claimed login:
+// the first poll is not sent and the state is not mistaken for a cancellation.
+func TestGrokDeviceLoginUnreadableStateJustAfterTheClaimSendsNoPollAndFences(t *testing.T) {
+	g := newGrokDeviceFixture(t)
+	var failing atomic.Bool
+	g.service.grokFaultHook = func(p grokFaultPoint) error {
+		switch p {
+		case grokFaultAfterExchangeClaim:
+			failing.Store(true)
+		case grokFaultDurableRead:
+			if failing.Load() {
+				return errors.New("injected durable read failure")
+			}
+		}
+		return nil
+	}
+	run := g.startDevice(t)
+	_, a := g.settle(t, run, stateRecovery)
+	g.service.grokFaultHook = nil
+	if polls := g.idp.DevicePolls(); polls != 0 || !a.Subscription.ServerOperation.CodeConsumed || !a.Subscription.RecoveryRequired {
+		t.Fatalf("an unreadable state behind the claim sent a poll or was not fenced (polls=%d)", polls)
 	}
 	g.requireNoBundle(t, a)
 }

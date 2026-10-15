@@ -87,6 +87,13 @@ type SubscriptionLease struct {
 	// owner and SubscriptionState.Members holds its execution members. A
 	// historical singleton lease omits it and keeps exclusive execution.
 	Shared bool `json:"shared,omitempty"`
+	// CleanupConfirmed is the durable checkpoint of a Grok Worker-lease logout:
+	// the exact Worker reported the confirmed removal of its private credential
+	// files for a revoked generation, and the server recorded that before it
+	// deleted the vault bundle. From then on the remaining cleanup and the
+	// disconnect need no Worker, so the settlement and the scanner never recheck
+	// mutable Worker state.
+	CleanupConfirmed bool `json:"cleanup_confirmed,omitempty"`
 }
 
 func (s SubscriptionState) Validate(account Account) error {
