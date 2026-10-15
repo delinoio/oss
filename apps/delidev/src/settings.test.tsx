@@ -16,6 +16,7 @@ import {
   within,
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import { StrictMode, useState } from "react";
 import { SettingsLifetime, type SettingsOpening } from "./settings-lifetime";
 import {
@@ -5181,4 +5182,101 @@ it("opens a Settings category in a new window on a primary modified click and ke
   fireEvent.click(agents, { detail: 1 });
   expect(agents.getAttribute("aria-current")).toBe("page");
   expect(destination.opened).toHaveBeenCalledTimes(1);
+});
+
+it("marks the Agent Worker deletion opener, confirmation and retry Danger while Edit and Keep stay neutral", async () => {
+  const agent = resource(EntityKind.AGENT, { name: "Toned Agent" }, 7n),
+    value = fixture([agent]);
+  value.remove.mockRejectedValueOnce(
+    new ConnectError("Acknowledgment lost", Code.Unavailable),
+  );
+  render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  expectTone(
+    await screen.findByRole("button", { name: "Edit Toned Agent" }),
+    neutral,
+  );
+  expectTone(
+    screen.getByRole("button", { name: "Preview routing for Toned Agent" }),
+    neutral,
+  );
+  expectTone(
+    screen.getByRole("button", { name: "Delete Toned Agent" }),
+    danger,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Delete Toned Agent" }));
+  expect(value.remove).not.toHaveBeenCalled();
+  const confirm = screen.getByRole("button", {
+    name: "Confirm configuration deletion",
+  });
+  expectTone(confirm, danger);
+  fireEvent.click(confirm);
+  expectTone(
+    await screen.findByRole("button", { name: "Retry the same deletion" }),
+    danger,
+  );
+  expect(value.remove).toHaveBeenCalledTimes(1);
+});
+
+it("marks the generic editable configuration deletion opener Danger", async () => {
+  const instruction = resource(
+    EntityKind.TEMPLATE,
+    { name: "Toned instructions", contents: "Server contents" },
+    3n,
+  );
+  const value = fixture([instruction]);
+  render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  const opener = await screen.findByRole("button", {
+    name: "Delete Toned instructions",
+  });
+  expectTone(opener, danger);
+  expectTone(
+    screen.getByRole("button", { name: "Edit Toned instructions" }),
+    neutral,
+  );
+});
+
+it("marks only the custom Provider delete opener Danger beside Edit and Copy", async () => {
+  const custom = resource(EntityKind.PROVIDER, {
+    name: "Custom fixture",
+    enabled: true,
+  });
+  const entries = [
+    create(ProviderInventoryEntrySchema, {
+      presetId: ProviderPresetId.OLLAMA,
+      displayName: "Local fixture",
+      enabled: true,
+      accountCountsAvailable: true,
+    }),
+    create(ProviderInventoryEntrySchema, {
+      providerId: custom.id,
+      provider: custom,
+      displayName: "Custom fixture",
+      enabled: true,
+      accountCountsAvailable: false,
+    }),
+  ];
+  const value = fixture([custom], { providerEntries: entries });
+  render(value.view(<Settings visible />));
+  fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
+  const name = await screen.findByText("Custom fixture", {
+    selector: ".api-provider-name span",
+  });
+  const row = within(name.closest("article")!);
+  expectTone(
+    row.getByRole("button", { name: /^Delete custom provider/ }),
+    danger,
+  );
+  expectTone(
+    row.getByRole("button", { name: /^Edit custom provider/ }),
+    neutral,
+  );
+  const preset = within(
+    screen
+      .getByText("Local fixture", { selector: ".api-provider-name span" })
+      .closest("article")!,
+  );
+  for (const button of preset.getAllByRole("button"))
+    expect(button.getAttribute("data-action-tone")).not.toBe("danger");
 });

@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import { i18n, SupportedLanguage } from "./localization";
 import { quotaColor } from "./quota-color";
 import { SubscriptionBrand } from "./subscription-catalog";
@@ -864,4 +865,51 @@ it("preserves Korean subscription management copy", async () => {
     screen.getByRole("button", { name: `${account.alias} 로그인 관리` })
       .textContent,
   ).toBe("로그인 관리");
+});
+
+it("marks only Delete account Danger in the subscription action menu", () => {
+  const first = row(),
+    cleanup = vi.fn();
+  render(view([first], { cleanup }));
+  fireEvent.click(
+    screen.getByRole("button", { name: `More actions for ${first.alias}` }),
+  );
+  expectTone(screen.getByRole("button", { name: "Delete account" }), danger);
+  expectTone(screen.getByRole("button", { name: "Edit preferences" }), neutral);
+  expectTone(screen.getByRole("button", { name: "Account details" }), neutral);
+  fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+  expect(first.delete).toHaveBeenCalledTimes(1);
+  expect(cleanup).not.toHaveBeenCalled();
+});
+
+it("marks the failed-login cleanup control Danger and keeps disconnection and refresh neutral", () => {
+  const first = row(),
+    cleanup = vi.fn();
+  render(view([first], { cleanup }));
+  const button = screen.getByRole("button", { name: "Auto cleanup" });
+  expectTone(button, danger);
+  fireEvent.click(button);
+  expect(cleanup).toHaveBeenCalledTimes(1);
+  expectTone(
+    screen.getByRole("button", { name: `Disconnect ${first.alias}` }),
+    neutral,
+  );
+  expectTone(
+    screen.getByRole("button", { name: `Refresh ${first.alias}` }),
+    neutral,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: `Disconnect ${first.alias}` }),
+  );
+  expectTone(
+    screen.getByRole("button", { name: "Confirm disconnection" }),
+    neutral,
+  );
+});
+
+it("keeps the busy cleanup control Danger while pending", () => {
+  render(view([row()], { cleanup: vi.fn(), cleanupBusy: true }));
+  const button = screen.getByRole("button", { name: "Cleaning up…" });
+  expectTone(button, danger);
+  expect(button.getAttribute("aria-disabled")).toBe("true");
 });

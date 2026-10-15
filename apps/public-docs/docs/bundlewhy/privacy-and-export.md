@@ -8,7 +8,7 @@ bundlewhy is not yet published to npm. Version 0.1.0 is in development.
 
 Results stay in the output directory that you choose with `--out-dir` until you delete them. bundlewhy never uploads results, and it never deletes them for you. There is no telemetry, account or hosted service.
 
-A result bundle contains the analysis, a safe configuration summary and, for each source file, its display path, a SHA-256 hash and its content. With `--exclude-sources`, the bundle stores hashes and paths but not source content.
+A result bundle contains the analysis, a safe configuration summary and source display paths. Where the build's source map includes original text, the bundle also stores its SHA-256 hash and, unless excluded, its content. If no build-time text snapshot exists, a later live read is not stored or hashed as the analyzed revision. Saved and exported reports mark that source revision as unavailable. With `--exclude-sources`, verified hashes and paths remain, but source content is omitted.
 
 ## Exported reports
 

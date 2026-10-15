@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -82,5 +83,71 @@ func TestManualNativeAPIErrorPreservesOriginalLifecycle(t *testing.T) {
 			}
 			return
 		}
+	}
+}
+
+// This fixture executes the installed native adapter against a local-only provider.
+// It proves protocol composition, not account or remote-provider acceptance.
+func TestManualNativeScriptedTextCompletion(t *testing.T) {
+	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
+	if binary == "" {
+		t.Skip("explicit native Claude executable required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	version, err := exec.CommandContext(ctx, binary, "--version").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, logs := apiFixtureConfig(t, "native-scripted-completion")
+	cfg.Process.Executable = binary
+	cfg.Version = strings.TrimSuffix(strings.TrimSpace(string(version)), " (Claude Code)")
+	cfg.Model = "claude-sonnet-5-5"
+	cfg.Permission = DefaultPermission
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, "{}")
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/count_tokens") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"input_tokens":1}`)
+			return
+		}
+		nativeFixtureTextResponse(w, 1)
+	}))
+	defer provider.Close()
+	cfg.API.ServerOrigin = provider.URL
+	s, err := OpenAPISession(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err = s.SendInput(ctx, domain.NewID(), lifecycleFixtureText, ContinueSuccessfulRun); err != nil {
+		t.Fatal(err)
+	}
+	finished := false
+	for {
+		observation, err := s.Next(ctx)
+		if err != nil {
+			t.Fatalf("native scripted completion failed: %v; safe diagnostics: %s", err, logs.String())
+		}
+		if observation.Kind == InputFinished {
+			if observation.Result == nil || !observation.Result.Successful() {
+				t.Fatal("native scripted result did not succeed")
+			}
+			finished = true
+		}
+		if finished && observation.Run != nil && observation.Run.State == RunIdle {
+			break
+		}
+	}
+	closed, err := s.CloseForContinuation(ctx)
+	if err != nil {
+		t.Fatal("native completion history was not retained", err)
+	}
+	if _, _, err := closed.RetainCheckpoint(ctx); err != nil {
+		t.Fatal("native completion checkpoint was not retained", err)
 	}
 }

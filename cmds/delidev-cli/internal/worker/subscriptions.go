@@ -86,7 +86,11 @@ type managedSubscriptionJournal struct {
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {
-	httpClient, closeHTTP, err := networkHTTPClientFor(ctx, config, credential)
+	// The first protected credential read can wait for native code validation or
+	// OS authentication. The control-plane 15-second header bound can abandon a
+	// committed lease before that read completes. Keep a bounded wait while
+	// preserving the original caller cancellation and the single-delivery fence.
+	httpClient, closeHTTP, err := networkHTTPClientForHeaders(ctx, config, credential, time.Minute)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -4,7 +4,11 @@ import {
   PresentationKind,
   productResourceName,
 } from "./product-identity-labels";
-import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
+import {
+  SettingsActionButton,
+  SettingsActionIcon,
+  SettingsActionTone,
+} from "./settings-action";
 import { quotaColorStyle } from "./quota-color";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import {
@@ -540,6 +544,7 @@ export function ApiEntryRow({
                   {copy("api-entry-row.editPreferences_00b4cc")}
                 </SettingsActionButton>
                 <SettingsActionButton
+                  tone={SettingsActionTone.Danger}
                   icon={SettingsActionIcon.Delete}
                   className="api-entry-delete"
                   type="button"

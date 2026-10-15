@@ -462,6 +462,67 @@ Ordinary tests use a private executable fixture only. Opt-in installed macOS tes
 
 ### Claude Code applied settings evidence
 
+Message deltas may carry native classifier `safeguard_results` metadata. Its
+extensible record inventory is limited to 128 KiB, 128 objects, 64 fields per
+object and a required bounded native type name. Null or absent inventories are
+accepted. The adapter discards this metadata; it cannot approve a tool, answer a
+permission callback, change native permissions or prove successful execution.
+Original control, message and terminal ownership checks remain independent.
+
+Provider message snapshots and message deltas may declare
+`input_transformations` as null or an empty array. These shapes transform no
+input and grant no history authority. Nonempty transformation inventories remain
+unsupported until their original history effects have an owning adapter.
+
+Result `subagent_stats` accepts only its complete bounded native counter shape;
+these aggregates are discarded and cannot publish task lifecycle or cleanup.
+Native cumulative model usage validates optional nonnegative `thinkingTokens`
+and the closed `costBasis` values `list`, `managed` and `unknown`. These remain
+private native observations and are excluded from the existing public usage
+counter schema, with no inferred billing or replacement token totals.
+
+The result may report a nonnegative `result_index`, zero `queued_turn_count`,
+the same singleton `user_message_uuids`, and typed timing/resource observations.
+Timing phase maps have at most 32 bounded names and unsigned integer values;
+wall timestamps are nonnegative. These observations grant no input, resume or
+completion authority. Original result identity, content closure and terminal
+reason checks remain mandatory.
+
+Live partial and complete assistant replies may stamp `user_message_uuid` and
+`user_message_uuids`. The single-input binding requires the exact original input
+and, when supplied, a singleton list containing that same input; foreign,
+batched, child or list-only stamps fail. Stamps never replace replay-based input
+acceptance. Bounded `thinking_display` and positive `thinking_duration_ms` are
+presentation metadata only. A declared thinking duration must be a positive
+unsigned integer; null, zero, negative, fractional and nonnumeric values fail.
+Omission remains compatible. Automatic interrupted-turn `resume_reason` remains
+unsupported under the disabled automatic-resume profile.
+
+The lifecycle's required boolean `product_feedback_disabled` reports the
+organization's `allow_product_feedback` policy, not the local feedback setting.
+Both policy values are valid. The private environment explicitly pins
+`DISABLE_FEEDBACK_COMMAND=1` and `CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1`, alongside
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`; the control initializer still requires
+disabled feedback mode and lifecycle analytics must be disabled. Safe rejection
+logs record only closed validation booleans and original owner identity.
+
+Claude full-session initialization binds `apiKeySource` to the original auth
+profile: `ANTHROPIC_API_KEY` for API execution and `none` for native subscription
+or managed-token execution, after the separate account initialization proof.
+The `2.1.287` lifecycle may report the two bundled plugin descriptors
+`cc-plugin-agents-md` and `cc-plugin-plugin-authoring`, each with path `builtin`
+and its exact `<name>@builtin` source. Other, duplicate or substituted plugin
+descriptors remain unsupported. Optional absolute bounded `messaging_socket_path`,
+boolean `per_turn_effort_active` and `view_mode: default` metadata are discarded
+without opening a socket or granting tool authority. Empty MCP, original
+identity/settings, private memory and cleanup checks remain mandatory.
+
+The `2.1.287` settings response may also report a bounded private
+`remote_control_policy_lock_reason`, boolean `ultracodeAvailable` and explicitly
+false `ultracodeRequested`. These optional presentation fields are discarded;
+availability cannot authorize orchestration. The applied `ultracode` value must
+still be false, with unchanged model, effort, empty sources and effective settings.
+
 Before returning an API stream, initialization issues one separately correlated `get_settings` read within its existing bounded initialization deadline. The private `2.1.236` profile requires exact top-level and nested field names, empty effective settings/source collections, explicit absent advisor and disabled ultracode. Unknown/missing/null shapes, additional source/policy settings and unrequested model orchestration fail without sending input; no raw settings/source content enters logs or returned product data. This check preserves the private launch profile rather than interpreting an arbitrary raw cascade as execution authority.
 
 The native `applied.model` must equal the immutable native selector. `applied.effort` is a closed native enum or explicit null; an explicit requested effort must match, while an omitted selection retains the native-reported default or null without manufacturing one. Missing effort differs from reported null. Permission evidence remains the separately verified native initialization/system mode; this model/effort read cannot grant or change permission. Initialization failure closes and reconciles the original owned scope.
@@ -551,6 +612,8 @@ The private API session records original root conversation, compaction and comma
 `CloseForContinuation` can create one opaque in-memory handoff only from an accepted, settled, unchanged-permission root conversation with final native idle, no queued transport work and complete original root history. It first sends EOF at the settled boundary, joins clean native exit and owned descendant cleanup, then uses the private reader to verify the exact original transcript and whole-file digest. It accepts the separately proved settled root inline Read/Bash/Write/Edit and allowed tool-approval profiles below, and rejects other tool, task and callback auxiliary histories until their separate process-replacement profiles are proved. Manual-command handoff additionally requires the exact original prefix and pinned synthetic-context profile below. Unknown additional root messages cannot grant handoff authority. Original failures remain failed; explicit terminal-resume intent is required for known failed outcomes. EOF completion is bounded to ten seconds and rejects unconsumed/trailing/partial protocol data or nonzero native exit; timeout/uncertainty joins forced cleanup without granting a handoff. The separate forced `Close` operation remains available for Stop and does not claim persistence completion.
 
 `ContinueAPISession` consumes that handoff once, keeps the original session/model/effort/permission/workspace/home/executable selection and additive instructions, and requires a never-used process owner and execution credential on the same relay origin. It rechecks the retained transcript before launch and after native initialization, reads native applied settings again and uses only the exact `--resume=<session>` operation. Original instructions are read and compared without overwrite. Fresh launch and discovery still require empty private directories. The retained launch environment contains only validated system lookup context plus rebuilt original private paths and the newly supplied scoped credential; old credentials and arbitrary inherited environment are absent.
+
+The native reader accepts the observed `cost-state` shutdown metadata only with the original session, bounded nonnegative cost/duration/counter fields and a bounded closed model-counter inventory. It has no message UUID or parent linkage. Its original bytes enter the file digest; it cannot supply conversation, terminal, accounting or pricing authority.
 
 The native reader separately accepts the observed closed `mode: normal` JSONL metadata shape. It has no conversation identity and remains independently counted/file-hashed; this is not permission mode, since actual Plan and default sessions both write `normal` when a resumed process closes. Unknown modes/fields remain unsupported. The actual full native provider envelope can include separate system context messages alongside original conversation; acceptance tests verify every original input/answer and exact order without treating that native context as another user input.
 
@@ -672,7 +735,7 @@ The owned process runs `--bare --print` with stream-json input/output and verbos
 
 Before launch, the adapter requires canonical private home/config/cache/data/state/temp directories, empty child state and the private root as cwd. It reconstructs the environment from owned paths and absolute system lookup entries, preserving only bounded Windows system lookup context when applicable. Caller-supplied provider credentials, OAuth tokens, shell/loader options and proxy settings are discarded. Automatic updates and nonessential traffic are disabled, and the model base URL is fixed to loopback as an additional guard against accidental remote traffic. No provider token is supplied.
 
-Claude Code `2.1.287` emits one `{type: "system", subtype: "ui_invalidate"}` startup frame before the initialize response. The probe accepts at most one such frame, only before the response, with optional `event: "ui.render"`, `uuid` and `session_id` fields and no other key (a declared field must be a bounded text string; `null`, numbers and objects are refused); it is discarded as non-authoritative startup metadata. A second prelude, a prelude after the response, any other `system` subtype, an unknown field, a malformed or oversized frame, a foreign or duplicate response and trailing output fail with a typed refusal, and cleanup is still joined (RecoveryRequired when cleanup cannot be proved). The `2.1.287` control response may add `pending_permission_requests` and `pending_user_dialog_requests` as members of the inner control-response envelope next to `subtype`, `request_id` and `response` (the official SDK `ControlResponse` shape; each must be an empty array when declared, and the same names inside the initialize result are unknown fields). Its initialize result may add `analytics_disabled` (literal `true` when declared), `capabilities` (at most 64 unique bounded names, or a flat bounded object of boolean/text values), `feedback_mode` (`disabled`, `off` or exactly `{kind: "disabled"}`), `remote_control_available` and `remote_control_auto_connect_default` (explicit `false`), `session_state` (`idle`) and `user_output_styles_dir` (bounded private text). All control-response, initialize-result, account, descriptor and startup-frame keys must use their exact lowercase profile spelling: differently cased aliases are refused rather than matched case-insensitively. The same strict envelope decoder serves the probe and the API stream. Each addition is optional so earlier verified profiles keep passing, but a declared field with `null`, a wrong type, a non-empty pending list, a non-idle session, enabled feedback or enabled remote-control defaults is refused. These fields never grant account, tool or execution readiness; the no-token, first-party account, `dontAsk`, remote-control, fast-mode, catalog and cleanup checks stay authoritative. The same response validators serve the managed-token session initializer. Sanitized `2.1.287`-shaped fixtures cover the prelude and fields. An isolated, unauthenticated native initialization confirmed the `ui.render` event and disabled feedback object; it does not establish account-login acceptance.
+Claude Code `2.1.287` emits one `{type: "system", subtype: "ui_invalidate"}` startup frame before the initialize response. The probe accepts at most one such frame, only before the response, with optional `event: "ui.render"`, `uuid` and `session_id` fields and no other key (a declared field must be a bounded text string; `null`, numbers and objects are refused); it is discarded as non-authoritative startup metadata. A second prelude, a prelude after the response, any other `system` subtype, an unknown field, a malformed or oversized frame, a foreign or duplicate response and trailing output fail with a typed refusal, and cleanup is still joined (RecoveryRequired when cleanup cannot be proved). The `2.1.287` control response may add `pending_permission_requests` and `pending_user_dialog_requests` as members of the inner control-response envelope next to `subtype`, `request_id` and `response` (the official SDK `ControlResponse` shape; each must be an empty array when declared, and the same names inside the initialize result are unknown fields). Its initialize result may add `analytics_disabled` (literal `true` when declared), `capabilities` (at most 64 unique bounded names, or a flat bounded object of boolean/text values), `feedback_mode` (`disabled`, `off` or exactly `{kind: "disabled"}`), `remote_control_available` (explicit boolean; `true` is accepted only for the managed-token account profile) and `remote_control_auto_connect_default` (explicit `false`), `session_state` (`idle`) and `user_output_styles_dir` (bounded private text). All control-response, initialize-result, account, descriptor and startup-frame keys must use their exact lowercase profile spelling: differently cased aliases are refused rather than matched case-insensitively. The same strict envelope decoder serves the probe and the API stream. Each addition is optional so earlier verified profiles keep passing, but a declared field with `null`, a wrong type, a non-empty pending list, a non-idle session, enabled feedback or enabled remote-control defaults is refused. These fields never grant account, tool or execution readiness; the no-token, first-party account, `dontAsk`, remote-control, fast-mode, catalog and cleanup checks stay authoritative. The same response validators serve the managed-token session initializer. Command descriptors may include optional boolean `builtin` metadata, which grants no tool or execution authority. Managed-token availability does not activate remote control: all automatic activation gates must still be explicitly disabled. Sanitized `2.1.287`-shaped fixtures cover the prelude and fields. An isolated, unauthenticated native initialization confirmed the `ui.render` event and disabled feedback object; it does not establish account-login acceptance.
 
 Validation requires exactly one correlated success response, empty commands, an unauthenticated first-party account descriptor (`tokenSource: none`), `dontAsk`, explicitly disabled remote-control gates and the observed disabled fast-mode state. Typed agent/model/style descriptors must be bounded, unambiguous and structurally compatible. They are discarded after validation: native advertised model names, prices, capabilities and built-in agents never become selected-account catalog data or execution authority. Unknown fields, duplicate keys/responses, changed scope, malformed UTF-8, unsolicited control/events other than the single allowed startup frame, partial trailing output and mixed success/error responses fail explicitly. Native error text and stderr stay private and become only stable typed diagnostics.
 

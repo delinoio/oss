@@ -11,6 +11,8 @@ import {
   SettingsActionIcon,
   SettingsActionPresentation,
   SettingsActionScope,
+  SettingsActionTone,
+  actionTone,
 } from "./settings-action";
 import { ProjectList } from "./project-list";
 import { RepositoryRow } from "./repository-list";
@@ -236,4 +238,136 @@ it("settles an enclosing page entrance before measuring the action tooltip", () 
   expect(screen.getByTestId("page").getAttribute("data-entrance")).toBe("y4");
   fireEvent.pointerEnter(screen.getByRole("button", { name: "Edit project" }));
   expect(screen.getByTestId("page").hasAttribute("data-entrance")).toBe(false);
+});
+
+const tone = (button: HTMLElement) => button.getAttribute("data-action-tone");
+
+it("defaults to the Default tone marker and renders Danger for label and icon-only presentations inside Settings", () => {
+  const callback = vi.fn();
+  render(
+    <SettingsActionScope>
+      <SettingsActionButton icon={SettingsActionIcon.Delete}>
+        Plain label
+      </SettingsActionButton>
+      <SettingsActionButton
+        icon={SettingsActionIcon.Edit}
+        tone={SettingsActionTone.Default}
+      >
+        Explicit default
+      </SettingsActionButton>
+      <SettingsActionButton
+        icon={SettingsActionIcon.Inspect}
+        tone={SettingsActionTone.Danger}
+        type="button"
+        onClick={callback}
+      >
+        Danger label
+      </SettingsActionButton>
+      <SettingsActionButton
+        icon={SettingsActionIcon.Copy}
+        presentation={SettingsActionPresentation.Icon}
+        tone={SettingsActionTone.Danger}
+        disabled
+        onClick={callback}
+      >
+        Danger icon only
+      </SettingsActionButton>
+    </SettingsActionScope>,
+  );
+  // The marker follows the explicit tone prop only, never the icon or label.
+  expect(tone(screen.getByRole("button", { name: "Plain label" }))).toBe(
+    SettingsActionTone.Default,
+  );
+  expect(tone(screen.getByRole("button", { name: "Explicit default" }))).toBe(
+    SettingsActionTone.Default,
+  );
+  const danger = screen.getByRole("button", { name: "Danger label" });
+  expect(tone(danger)).toBe(SettingsActionTone.Danger);
+  fireEvent.click(danger);
+  expect(callback).toHaveBeenCalledTimes(1);
+  const iconOnly = screen.getByRole("button", { name: "Danger icon only" });
+  expect(tone(iconOnly)).toBe(SettingsActionTone.Danger);
+  expect(iconOnly.className).toContain("settings-action-only");
+  expect(iconOnly).toHaveProperty("disabled", true);
+  fireEvent.click(iconOnly);
+  expect(callback).toHaveBeenCalledTimes(1);
+});
+it("renders the same tone marker outside Settings and on plain buttons", () => {
+  render(
+    <>
+      <SettingsActionButton
+        icon={SettingsActionIcon.Delete}
+        tone={SettingsActionTone.Danger}
+      >
+        Outside danger
+      </SettingsActionButton>
+      <SettingsActionButton icon={SettingsActionIcon.Delete}>
+        Outside default
+      </SettingsActionButton>
+      <button {...actionTone(SettingsActionTone.Danger)}>Plain danger</button>
+      <button {...actionTone(SettingsActionTone.Default)}>Plain default</button>
+    </>,
+  );
+  expect(tone(screen.getByRole("button", { name: "Outside danger" }))).toBe(
+    "danger",
+  );
+  expect(tone(screen.getByRole("button", { name: "Outside default" }))).toBe(
+    "default",
+  );
+  expect(tone(screen.getByRole("button", { name: "Plain danger" }))).toBe(
+    "danger",
+  );
+  expect(tone(screen.getByRole("button", { name: "Plain default" }))).toBe(
+    "default",
+  );
+});
+it("marks Project, Repository and Agent Worker delete openers as Danger while Edit and routing stay Default", () => {
+  const row = (kind: EntityKind, id: string) =>
+    create(ResourceSchema, {
+      id,
+      kind,
+      schemaVersion: 1,
+      revision: 1n,
+      documentJson: encode({ name: "Original", repositories: [] }),
+    });
+  const client = new QueryClient();
+  render(
+    <QueryClientProvider client={client}>
+      <ProductIdentityProvider>
+        <SettingsActionScope>
+          <ProjectList
+            resources={[row(EntityKind.PROJECT, "project-a")]}
+            metadata={new Map()}
+            edit={vi.fn()}
+            remove={vi.fn()}
+          />
+          <RepositoryRow
+            row={row(EntityKind.REPOSITORY, "repository-a")}
+            edit={vi.fn()}
+            remove={vi.fn()}
+          />
+          <AgentWorkerRow
+            row={row(EntityKind.AGENT, "agent-a")}
+            edit={vi.fn()}
+            remove={vi.fn()}
+            preview={vi.fn()}
+          />
+        </SettingsActionScope>
+      </ProductIdentityProvider>
+    </QueryClientProvider>,
+  );
+  const deletes = screen
+    .getAllByRole("button")
+    .filter(
+      (button) => button.getAttribute("data-settings-action") === "delete",
+    );
+  expect(deletes).toHaveLength(3);
+  for (const button of deletes) expect(tone(button)).toBe("danger");
+  const others = screen
+    .getAllByRole("button")
+    .filter(
+      (button) => button.getAttribute("data-settings-action") !== "delete",
+    );
+  expect(others.length).toBeGreaterThanOrEqual(4);
+  for (const button of others) expect(tone(button)).toBe("default");
 });

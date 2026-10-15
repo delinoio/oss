@@ -4,7 +4,11 @@ import {
   productDiagnostic,
   productResourceName,
 } from "./product-identity-labels";
-import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
+import {
+  SettingsActionButton,
+  SettingsActionIcon,
+  SettingsActionTone,
+} from "./settings-action";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale } from "./localization";
@@ -847,6 +851,7 @@ export function ChatGPTAccountDeletion({
           <div className="actions">
             {readiness === Readiness.Ready ? (
               <SettingsActionButton
+                tone={SettingsActionTone.Danger}
                 icon={SettingsActionIcon.Delete}
                 className="account-deletion-confirm"
                 disabled={!active}
@@ -883,6 +888,7 @@ export function ChatGPTAccountDeletion({
           </p>
           <div className="actions">
             <SettingsActionButton
+              tone={SettingsActionTone.Danger}
               icon={SettingsActionIcon.Delete}
               className="account-deletion-confirm"
               disabled={!active}
@@ -941,6 +947,11 @@ export function ChatGPTAccountDeletion({
               {view.stage === Stage.Paused ? (
                 pending.current?.retry !== undefined ? (
                   <SettingsActionButton
+                    tone={
+                      pending.current.retry === Retry.Delete
+                        ? SettingsActionTone.Danger
+                        : SettingsActionTone.Default
+                    }
                     icon={SettingsActionIcon.Retry}
                     disabled={!active || pending.current.busy}
                     onClick={retry}

@@ -6,6 +6,7 @@ import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
+  SettingsActionTone,
 } from "./settings-action";
 import {
   useProviderPages,
@@ -356,6 +357,7 @@ export function ApiProviderSettings({
                 {copy("provider-model-settings.editCustomProvider_15ad80")}
               </SettingsActionButton>
               <SettingsActionButton
+                tone={SettingsActionTone.Danger}
                 icon={SettingsActionIcon.Delete}
                 presentation={SettingsActionPresentation.Icon}
                 targetName={productResourceName(productLabel, entry.provider!)}

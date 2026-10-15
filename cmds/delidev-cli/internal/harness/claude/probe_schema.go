@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"bytes"
 	"encoding/json"
 	"slices"
 
@@ -38,10 +39,11 @@ type initializeResult struct {
 }
 
 type nativeCommand struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	ArgumentHint string   `json:"argumentHint"`
-	Aliases      []string `json:"aliases,omitempty"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	ArgumentHint string          `json:"argumentHint"`
+	Aliases      []string        `json:"aliases,omitempty"`
+	Builtin      json.RawMessage `json:"builtin,omitempty"`
 }
 
 type probeAccount struct {
@@ -226,6 +228,9 @@ func validateNativeCommands(commands []nativeCommand) error {
 	}
 	names := map[string]bool{}
 	for _, command := range commands {
+		if len(command.Builtin) != 0 && !bytes.Equal(bytes.TrimSpace(command.Builtin), []byte("true")) && !bytes.Equal(bytes.TrimSpace(command.Builtin), []byte("false")) {
+			return incompatible()
+		}
 		if domain.Text(command.Name, "native command", 128, true) != nil || domain.Text(command.Description, "native command description", 16<<10, true) != nil || domain.Text(command.ArgumentHint, "native command argument hint", 2048, false) != nil || len(command.Aliases) > 16 {
 			return incompatible()
 		}

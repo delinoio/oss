@@ -13,6 +13,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   AccountingUnitKind,
   EntityKind,
@@ -705,4 +706,26 @@ it("renders independent future reset countdowns in Details without additional us
   expect(f.read).toHaveBeenCalledTimes(1);
   for (const callback of Object.values(f.callbacks))
     expect(callback).not.toHaveBeenCalled();
+});
+
+it("marks only Delete entry Danger in the API entry action menu", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findAllByText("USD 12.48");
+  fireEvent.click(
+    screen.getByRole("button", { name: "More actions for OpenRouter" }),
+  );
+  const actions = screen.getByRole("group", { name: "Actions for OpenRouter" });
+  expectTone(
+    within(actions).getByRole("button", { name: "Delete entry" }),
+    danger,
+  );
+  expectTone(
+    within(actions).getByRole("button", { name: "Edit preferences" }),
+    neutral,
+  );
+  fireEvent.click(
+    within(actions).getByRole("button", { name: "Delete entry" }),
+  );
+  expect(f.callbacks.remove).toHaveBeenCalledTimes(1);
 });

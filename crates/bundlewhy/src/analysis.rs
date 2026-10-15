@@ -45,6 +45,65 @@ pub struct AnalysisOutput {
     pub existence_relative: std::collections::BTreeMap<String, String>,
 }
 
+/// Returns the root that owns collected sources and their saved freshness
+/// paths. Vite's resolved root identifies source ownership; Rspack's context
+/// only resolves relative config and source-map paths, so it must not move the
+/// ownership boundary for files imported from outside that context.
+pub fn effective_root(collection: &Collection, selected_root: &Path) -> PathBuf {
+    if collection.bundler != "vite" {
+        return selected_root.to_path_buf();
+    }
+    let configured_root = context_root(collection, selected_root);
+    if configured_root.starts_with(selected_root) {
+        selected_root.to_path_buf()
+    } else {
+        nearest_package_root(&configured_root).unwrap_or(configured_root)
+    }
+}
+
+/// Expands an external Vite subroot to the nearest package boundary so files
+/// imported from the rest of that package remain project sources and keep
+/// their freshness paths when a saved run is reopened.
+fn nearest_package_root(root: &Path) -> Option<PathBuf> {
+    let mut directory = Some(root);
+    while let Some(current) = directory {
+        let manifest = current.join("package.json");
+        let named = std::fs::read(&manifest)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|manifest| {
+                manifest
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .map(|name| !name.is_empty())
+            })
+            .unwrap_or(false);
+        if named {
+            return Some(current.to_path_buf());
+        }
+        let parent = current.parent();
+        directory = parent.filter(|parent| *parent != current);
+    }
+    None
+}
+
+/// Returns the bundler context used to resolve source-map paths. This remains
+/// distinct from `effective_root` because Rspack permits imports outside its
+/// context while still resolving relative source-map entries from it.
+pub fn context_root(collection: &Collection, selected_root: &Path) -> PathBuf {
+    collection.context.as_deref().map_or_else(
+        || selected_root.to_path_buf(),
+        |context| {
+            let context = PathBuf::from(context);
+            if context.is_absolute() {
+                context
+            } else {
+                selected_root.join(context)
+            }
+        },
+    )
+}
+
 pub fn engine_identity(bundler: BundlerChoice, collection: &Collection) -> EngineIdentity {
     let spec = bundler.spec();
     let support = if collection.bundler_version == spec.version {
@@ -79,9 +138,12 @@ fn coverage(
     missing_maps: usize,
     failed_chunks: usize,
     unreadable_sources: usize,
+    unverified_sources: usize,
+    vite_env_source_gaps: usize,
     unsupported_engine: Option<&str>,
 ) -> Vec<CategoryCoverage> {
     let rules = rules::rules_by_category(&collection.bundler);
+    let source_gaps = unreadable_sources.saturating_add(unverified_sources);
     OptimizationCategory::ALL
         .into_iter()
         .map(|category| {
@@ -159,12 +221,24 @@ fn coverage(
                         ),
                     )
                 }
-                // The direct-eval detector reads module sources; an unreadable
-                // source may hide a finding.
-                OptimizationCategory::NameMangling if unreadable_sources > 0 => (
+                // Vite's generated env expression needs confirmation from the
+                // build's original source; Rspack's detector does not.
+                OptimizationCategory::DeadCodeElimination
+                    if collection.bundler == "vite" && vite_env_source_gaps > 0 =>
+                {
+                    (
+                        CoverageState::Partial,
+                        format!(
+                            "{vite_env_source_gaps} source file(s) lack verifiable build text; \
+                             Vite environment-variable findings in them may be missing."
+                        ),
+                    )
+                }
+                // The direct-eval detector also reads original source text.
+                OptimizationCategory::NameMangling if source_gaps > 0 => (
                     CoverageState::Partial,
                     format!(
-                        "{unreadable_sources} source file(s) could not be read; direct-eval \
+                        "{source_gaps} source file(s) lack verifiable build text; direct-eval \
                          findings in them may be missing."
                     ),
                 ),
@@ -217,10 +291,8 @@ fn coverage(
 
 pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     let collection = input.collection;
-    let context_dir = collection
-        .context
-        .as_ref()
-        .map_or_else(|| input.project_root.clone(), PathBuf::from);
+    let ownership_root = effective_root(collection, &input.project_root);
+    let context_dir = context_root(collection, &input.project_root);
     let mut problems: Vec<Problem> = Vec::new();
     let mut chunks = Vec::new();
     let mut failed_chunks = 0usize;
@@ -304,9 +376,10 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             }
         }
     }
-    let mut context = Context::new(
+    let mut context = Context::with_context(
         collection,
-        input.project_root.clone(),
+        ownership_root.clone(),
+        context_dir.clone(),
         input.project_name.clone(),
         chunks,
         store,
@@ -319,7 +392,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             diagnostic.snippet = None;
         }
     }
-    let root = input.project_root.clone();
+    let root = ownership_root.clone();
     let display = |path: &Path| classify(&root, path).display;
     if let Some(on_measuring) = input.on_measuring {
         on_measuring();
@@ -333,6 +406,8 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         .map(|chunk| measure(chunk, display))
         .collect();
     let unreadable_sources = context.sources.unreadable.len();
+    let unverified_sources = context.sources.unverified.len();
+    let vite_env_source_gaps = context.vite_env_source_gaps.len();
     if !context.sources.changed_since_build.is_empty() {
         problems.push(problem(
             ErrorCode::SourceStale,
@@ -356,6 +431,15 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             "Locations for these files are shown without source content.",
         ));
     }
+    if unverified_sources > 0 {
+        problems.push(problem(
+            ErrorCode::SourceUnverified,
+            ProblemSeverity::Warning,
+            format!("{unverified_sources} source file(s) have no build-time text snapshot"),
+            "Their live text cannot verify the revision analyzed by the build. Use source maps \
+             with sourcesContent or start a new run after checking build configuration.",
+        ));
+    }
     let project_relative = context.sources.project_relative.clone();
     let existence_relative = context.sources.existence_relative.clone();
     let sources = context.sources.into_files();
@@ -363,6 +447,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         entry.code == ErrorCode::SourceMapMissing.as_str()
             || entry.code == ErrorCode::CollectionFailed.as_str()
             || entry.code == ErrorCode::SourceUnreadable.as_str()
+            || entry.code == ErrorCode::SourceUnverified.as_str()
     });
     let mut config_summary: Vec<ConfigEntry> = collection
         .config_summary
@@ -380,7 +465,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         config_file: collection
             .config_file
             .as_deref()
-            .map(|file| classify(&input.project_root, Path::new(file)).display)
+            .map(|file| classify(&ownership_root, Path::new(file)).display)
             .unwrap_or_default(),
         status: if partial {
             RunStatus::Partial
@@ -394,6 +479,8 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             missing_maps.len(),
             failed_chunks,
             unreadable_sources,
+            unverified_sources,
+            vite_env_source_gaps,
             (collection.bundler_version != input.bundler.spec().version)
                 .then(|| {
                     format!(
@@ -425,7 +512,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ConditionOutcome, Diagnostic, EvidenceStatus};
+    use crate::model::{ConditionOutcome, Diagnostic, EvidenceStatus, SourceRevisionEvidence};
 
     const PROJECT_PLACEHOLDER: &str = "/__bundlewhy_project__";
     const BUILD_PLACEHOLDER: &str = "/__bundlewhy_build__";
@@ -433,6 +520,7 @@ mod tests {
     struct Fixture {
         _dir: tempfile::TempDir,
         project: PathBuf,
+        collection: Collection,
         output: AnalysisOutput,
     }
 
@@ -502,8 +590,173 @@ mod tests {
         Fixture {
             _dir: dir,
             project,
+            collection,
             output,
         }
+    }
+
+    fn vite_without_main_snapshot(
+        unreadable: bool,
+        edit: impl Fn(&mut serde_json::Value),
+    ) -> Fixture {
+        run_fixture_patched(BundlerChoice::Vite, true, edit, |build, project| {
+            let map_path = build.join("assets/index-BHjrzQLH.js.map");
+            let mut map: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&map_path).unwrap()).unwrap();
+            let source_index = map["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|source| {
+                    source
+                        .as_str()
+                        .is_some_and(|path| path.ends_with("/src/main.js"))
+                })
+                .unwrap();
+            map["sourcesContent"][source_index] = serde_json::Value::Null;
+            if unreadable {
+                map["sources"][source_index] =
+                    format!("{project}/src/__bundlewhy_missing__.js").into();
+            }
+            std::fs::write(&map_path, serde_json::to_vec(&map).unwrap()).unwrap();
+        })
+    }
+
+    fn dead_code_coverage(analysis: &Analysis) -> &CategoryCoverage {
+        analysis
+            .coverage
+            .iter()
+            .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+            .unwrap()
+    }
+
+    #[test]
+    fn source_provenance_vite_unreadable_mapping_keeps_coverage_partial() {
+        let fixture = vite_without_main_snapshot(true, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        assert_eq!(
+            analysis
+                .problems
+                .iter()
+                .filter(|entry| entry.code == "BW_SOURCE_UNREADABLE")
+                .count(),
+            1
+        );
+        assert!(
+            !analysis
+                .diagnostics
+                .iter()
+                .any(|entry| entry.rule == "minifier/unresolved-env-condition")
+        );
+        assert_eq!(dead_code_coverage(analysis).state, CoverageState::Partial);
+        assert!(
+            dead_code_coverage(analysis)
+                .note
+                .contains("environment-variable")
+        );
+    }
+
+    #[test]
+    fn source_provenance_vite_live_text_is_not_a_build_snapshot() {
+        let verified = run_fixture(BundlerChoice::Vite, |_| {});
+        assert!(
+            verified
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .any(|entry| entry.rule == "minifier/unresolved-env-condition")
+        );
+        assert_eq!(
+            dead_code_coverage(&verified.output.analysis).state,
+            CoverageState::Covered
+        );
+
+        let unverified = vite_without_main_snapshot(false, |_| {});
+        let analysis = &unverified.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        assert!(
+            analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_SOURCE_UNVERIFIED")
+        );
+        assert_eq!(dead_code_coverage(analysis).state, CoverageState::Partial);
+        assert!(
+            !analysis
+                .diagnostics
+                .iter()
+                .any(|entry| entry.rule == "minifier/unresolved-env-condition")
+        );
+        let main = unverified
+            .output
+            .sources
+            .iter()
+            .find(|source| source.path == "src/main.js")
+            .unwrap();
+        assert_eq!(main.revision_evidence, SourceRevisionEvidence::Unavailable);
+        assert!(main.content.is_empty());
+        assert!(main.sha256.is_empty());
+    }
+
+    #[test]
+    fn source_provenance_minifier_precedence_and_rspack_scope() {
+        for (edit, expected) in [
+            (false, CoverageState::NotApplicable),
+            (true, CoverageState::Unavailable),
+        ] {
+            let fixture = vite_without_main_snapshot(true, |value| {
+                if edit {
+                    value["defaultMinifier"] = false.into();
+                } else {
+                    value["minifyEnabled"] = false.into();
+                }
+            });
+            assert_eq!(dead_code_coverage(&fixture.output.analysis).state, expected);
+        }
+
+        let value: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(manifest_dir().join("tests/fixtures/rspack/collect.json")).unwrap(),
+        )
+        .unwrap();
+        let collection: Collection = serde_json::from_value(value).unwrap();
+        let rspack = coverage(&collection, 0, 0, 1, 0, 0, None);
+        assert_eq!(
+            rspack
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+                .unwrap()
+                .state,
+            CoverageState::Covered
+        );
+    }
+
+    #[test]
+    fn vite_dead_code_coverage_ignores_unrelated_source_gaps() {
+        let value: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(manifest_dir().join("tests/fixtures/vite/collect.json")).unwrap(),
+        )
+        .unwrap();
+        let collection: Collection = serde_json::from_value(value).unwrap();
+        let unrelated = coverage(&collection, 0, 0, 0, 1, 0, None);
+        assert_eq!(
+            unrelated
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+                .unwrap()
+                .state,
+            CoverageState::Covered
+        );
+        let relevant = coverage(&collection, 0, 0, 0, 1, 1, None);
+        assert_eq!(
+            relevant
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+                .unwrap()
+                .state,
+            CoverageState::Partial
+        );
     }
 
     fn walk(dir: &Path) -> Vec<PathBuf> {
@@ -978,6 +1231,101 @@ mod tests {
                 .filter(|source| source.id != png.id)
                 .all(|source| fixture.output.project_relative.contains_key(&source.id))
         );
+    }
+
+    #[test]
+    fn configured_context_root_owns_source_freshness_paths() {
+        let fixture = run_fixture(BundlerChoice::Vite, |_| {});
+        let selected_root = tempfile::tempdir().unwrap();
+        let output = analyze(&AnalysisInput {
+            run_id: "test-run".to_owned(),
+            project_root: selected_root.path().to_path_buf(),
+            project_name: "bundlewhy-fixture-vite-app".to_owned(),
+            bundler: BundlerChoice::Vite,
+            collection: &fixture.collection,
+            build_dir: fixture._dir.path().join("build"),
+            include_sources: true,
+            started_at: String::new(),
+            on_measuring: None,
+            cancelled: None,
+        });
+
+        assert!(!output.project_relative.is_empty());
+        assert!(
+            output
+                .project_relative
+                .values()
+                .all(|path| !Path::new(path).is_absolute())
+        );
+    }
+
+    #[test]
+    fn rspack_context_resolves_maps_without_changing_source_ownership() {
+        let selected_root = PathBuf::from("/workspace/project");
+        let collection = Collection {
+            bundler: "rspack".to_owned(),
+            context: Some("/workspace/config".to_owned()),
+            ..Collection::default()
+        };
+
+        assert_eq!(effective_root(&collection, &selected_root), selected_root);
+        assert_eq!(
+            context_root(&collection, &selected_root),
+            PathBuf::from("/workspace/config")
+        );
+    }
+
+    #[test]
+    fn nested_vite_root_keeps_selected_project_ownership() {
+        let selected_root = PathBuf::from("/workspace/project");
+        let collection = Collection {
+            bundler: "vite".to_owned(),
+            context: Some("web".to_owned()),
+            ..Collection::default()
+        };
+
+        assert_eq!(effective_root(&collection, &selected_root), selected_root);
+        assert_eq!(
+            context_root(&collection, &selected_root),
+            PathBuf::from("/workspace/project/web")
+        );
+    }
+
+    #[test]
+    fn external_vite_root_owns_sources() {
+        let selected_root = PathBuf::from("/workspace/project");
+        let collection = Collection {
+            bundler: "vite".to_owned(),
+            context: Some("/workspace/web".to_owned()),
+            ..Collection::default()
+        };
+
+        assert_eq!(
+            effective_root(&collection, &selected_root),
+            PathBuf::from("/workspace/web")
+        );
+    }
+
+    #[test]
+    fn external_vite_subroot_expands_to_nearest_package_boundary() {
+        let fixture = tempfile::tempdir().unwrap();
+        let selected_root = fixture.path().join("wrapper");
+        let package_root = fixture.path().join("app");
+        let subroot = package_root.join("src");
+        std::fs::create_dir_all(&selected_root).unwrap();
+        std::fs::create_dir_all(&subroot).unwrap();
+        std::fs::write(
+            package_root.join("package.json"),
+            r#"{"name":"external-app"}"#,
+        )
+        .unwrap();
+        let collection = Collection {
+            bundler: "vite".to_owned(),
+            context: Some(subroot.to_string_lossy().into_owned()),
+            ..Collection::default()
+        };
+
+        assert_eq!(effective_root(&collection, &selected_root), package_root);
     }
 
     #[test]
@@ -1499,6 +1847,23 @@ mod tests {
             .find(|entry| entry.category == OptimizationCategory::TreeShaking)
             .unwrap();
         assert_eq!(entry.state, CoverageState::NotApplicable);
+        assert!(
+            !analysis
+                .problems
+                .iter()
+                .any(|problem| problem.code == "BW_SOURCE_UNVERIFIED")
+        );
+        for category in [
+            OptimizationCategory::DeadCodeElimination,
+            OptimizationCategory::NameMangling,
+        ] {
+            let entry = analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == category)
+                .unwrap();
+            assert_eq!(entry.state, CoverageState::Covered, "{category:?}");
+        }
     }
 
     #[test]

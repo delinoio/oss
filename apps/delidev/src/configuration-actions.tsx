@@ -3,7 +3,11 @@ import {
   useProductLabels,
   productResourceName,
 } from "./product-identity-labels";
-import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
+import {
+  SettingsActionButton,
+  SettingsActionIcon,
+  SettingsActionTone,
+} from "./settings-action";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsTaskActions } from "./settings-task";
@@ -153,6 +157,7 @@ function ConfigurationDeletionRequest({
       <Problem error={mutation.error} />
       <SettingsTaskActions className="">
         <SettingsActionButton
+          tone={SettingsActionTone.Danger}
           icon={SettingsActionIcon.Confirm}
           disabled={blocked}
           onClick={() =>
@@ -170,6 +175,7 @@ function ConfigurationDeletionRequest({
         </SettingsActionButton>
         {mutation.uncertain ? (
           <SettingsActionButton
+            tone={SettingsActionTone.Danger}
             icon={SettingsActionIcon.Retry}
             disabled={mutation.busy}
             onClick={mutation.retry}

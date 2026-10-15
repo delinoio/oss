@@ -8,6 +8,36 @@ import (
 	"strconv"
 )
 
+// Native access programs remain advisory, but their schema is closed.
+type nativeCyberAccessProgram string
+
+const (
+	cyberAccessStandard     nativeCyberAccessProgram = "standard"
+	cyberAccessDaybreakBlue nativeCyberAccessProgram = "daybreakBlue"
+	cyberAccessDaybreakRed  nativeCyberAccessProgram = "daybreakRed"
+)
+
+type nativeModelAccessPrograms struct {
+	Cyber []nativeCyberAccessProgram `json:"cyber"`
+}
+
+func (p *nativeModelAccessPrograms) valid() bool {
+	if p == nil {
+		return true
+	}
+	if p.Cyber == nil {
+		return false
+	}
+	for _, program := range p.Cyber {
+		switch program {
+		case cyberAccessStandard, cyberAccessDaybreakBlue, cyberAccessDaybreakRed:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // ModelList collects one complete native snapshot. Cursors never leave this
 // owned runtime, and the caller must join Close before publishing the result.
 func (c *Client) ModelList(ctx context.Context, hidden bool) ([]domain.NativeModel, error) {
@@ -65,7 +95,10 @@ func (c *Client) readModelList(ctx context.Context, hidden bool) (diagnosticResu
 					Description string `json:"description"`
 				} `json:"serviceTiers"`
 				DefaultServiceTier *string `json:"defaultServiceTier"`
-				IsDefault          bool    `json:"isDefault"`
+				// Codex 0.159.2 adds advisory access-program metadata. It does not
+				// grant model or account authority to this adapter.
+				AvailableAccessPrograms *nativeModelAccessPrograms `json:"availableAccessPrograms"`
+				IsDefault               bool                       `json:"isDefault"`
 			} `json:"data"`
 			NextCursor *string `json:"nextCursor"`
 		}
@@ -77,6 +110,9 @@ func (c *Client) readModelList(ctx context.Context, hidden bool) (diagnosticResu
 			return nil, modelListFailure("bounds")
 		}
 		for _, entry := range page.Data {
+			if !entry.AvailableAccessPrograms.valid() {
+				return nil, modelListFailure("access-programs")
+			}
 			model := domain.NativeModel{ID: entry.ID, Model: entry.Model, DisplayName: entry.DisplayName, Description: entry.Description, Hidden: entry.Hidden, Reasoning: []domain.NativeReasoningEffort{}, DefaultReasoning: domain.NativeReasoningEffort(entry.DefaultReasoning), Modalities: entry.Modalities, ServiceTiers: []string{}, DefaultServiceTier: entry.DefaultServiceTier}
 			for _, effort := range entry.Reasoning {
 				model.Reasoning = append(model.Reasoning, domain.NativeReasoningEffort(effort.Effort))

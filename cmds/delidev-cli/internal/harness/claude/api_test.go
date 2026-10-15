@@ -278,6 +278,44 @@ func TestFullNativeCommandProfileRejectsAmbiguousOrUnboundedDescriptors(t *testi
 	}
 }
 
+func TestAPIStreamRetryReusesOnlyExactPrivateInstructions(t *testing.T) {
+	cfg, _ := apiFixtureConfig(t, "valid")
+	if _, err := prepareAPIStream(cfg); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(filepath.Dir(cfg.Home), "instructions.txt")
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareAPIStream(cfg); err != nil {
+		t.Fatal("no-send retry rejected original instructions", err)
+	}
+	after, err := os.Stat(path)
+	if err != nil || !os.SameFile(before, after) {
+		t.Fatal("retry replaced original instructions", err)
+	}
+	if err := os.WriteFile(path, []byte("changed instructions"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareAPIStream(cfg); err == nil {
+		t.Fatal("retry accepted changed instructions")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(filepath.Dir(cfg.Home), "other-instructions.txt")
+	if err := os.WriteFile(other, []byte(cfg.Instructions), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, path); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if _, err := prepareAPIStream(cfg); err == nil {
+		t.Fatal("retry followed substituted instructions")
+	}
+}
+
 func TestAPIStreamRejectsInvalidLaunchBeforeCreatingNativeState(t *testing.T) {
 	for _, change := range []string{"version", "owner", "executable", "session", "model", "effort", "permission", "token", "origin-path", "origin-query", "origin-empty-query", "origin-escaped", "origin-insecure", "workspace", "retained-home", "instructions-limit", "instructions-existing"} {
 		t.Run(change, func(t *testing.T) {

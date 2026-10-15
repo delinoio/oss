@@ -9,6 +9,7 @@ import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
+  SettingsActionTone,
 } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
@@ -739,6 +740,7 @@ function IntegrationConnection({
           )}
         </p>
         <SettingsActionButton
+          tone={SettingsActionTone.Danger}
           icon={deleting ? SettingsActionIcon.Retry : SettingsActionIcon.Delete}
           presentation={
             deleting
@@ -768,6 +770,7 @@ function IntegrationConnection({
               <p>{copy("integrations.deleteThisProfileAndItsServer_d6827d")}</p>
               <SettingsTaskActions className="">
                 <SettingsActionButton
+                  tone={SettingsActionTone.Danger}
                   icon={SettingsActionIcon.Confirm}
                   className="integration-danger"
                   disabled={blocked}

@@ -19,11 +19,30 @@ import {
   runAdapter,
   stripAnsi,
   summarizeValue,
+  waitForProtectionAck,
   writeCollection,
 } from "./common.mjs";
 
 export const ADAPTER_ID = "bundlewhy-collector-vite";
 export const ADAPTER_VERSION = "1";
+
+/**
+ * Match Vite's resolver identity for the root recorded in a collection.
+ * Vite resolves module IDs through symlinks unless preserveSymlinks is set;
+ * retaining the lexical root in that mode would make ownership and freshness
+ * checks disagree with the IDs emitted by the build.
+ */
+export function normalizeCollectionRoot(root, preserveSymlinks = false) {
+  // Vite normalizes root separators before configResolved, including when it
+  // preserves symlinks or cannot resolve a lexical path yet.
+  if (preserveSymlinks) return root.replaceAll("\\", "/");
+  // Vite keeps the resolved lexical root when realpath cannot access it yet.
+  try {
+    return fs.realpathSync(root).replaceAll("\\", "/");
+  } catch {
+    return root.replaceAll("\\", "/");
+  }
+}
 
 /**
  * Evaluates `build.rolldownOptions.treeshake.moduleSideEffects` for one bundled
@@ -77,7 +96,23 @@ function collectorPlugin(state) {
     name: "bundlewhy:collector",
     enforce: "post",
     apply: "build",
-    configResolved(config) {
+    async configResolved(config) {
+      const resolvedRoot = normalizeCollectionRoot(
+        config.root,
+        config.resolve?.preserveSymlinks === true,
+      );
+      // A config hook can choose an arbitrary external root and modify its
+      // files before configResolved runs. No earlier protection snapshot can
+      // cover an unknown path, so reject that run instead of reporting a
+      // clean project from a post-mutation baseline.
+      if (resolvedRoot !== state.root) {
+        throw new AdapterError(
+          AdapterErrorCode.UnsupportedBuild,
+          "A Vite config hook changed the project root after the protection snapshot",
+          "Select the final root in the Vite configuration before plugin config hooks run, then start a new diagnostic run.",
+        );
+      }
+      state.root = resolvedRoot;
       const treeshakeOption =
         config.build.rolldownOptions?.treeshake ??
         config.build.rollupOptions?.treeshake;
@@ -213,6 +248,7 @@ await runAdapter(async (request) => {
   const vite = await importFile(vitePackage.require.resolve("vite"));
 
   const state = {
+    root: null,
     resolved: null,
     moduleSideEffectsOption: undefined,
     collection: null,
@@ -228,6 +264,13 @@ await runAdapter(async (request) => {
     "build.write=true",
     "build.watch=null",
   ];
+
+  // Capture the selected project before loading the user's configuration.
+  // Configuration factories and plugins can mutate files while they are
+  // evaluated, so the Rust side must acknowledge this baseline first.
+  state.root = normalizeCollectionRoot(request.projectRoot);
+  emit({ event: "protection", root: state.root });
+  await waitForProtectionAck();
 
   // Load the configuration once on its own so that evaluation errors and
   // rejecting configuration factories are reported as configuration
@@ -256,11 +299,25 @@ await runAdapter(async (request) => {
     }
   }
 
+  // Capture the configured root after loading the user's configuration. This
+  // adds external roots to the protection set before the build starts.
+  const configuredRoot =
+    typeof userConfig.root === "string" ? userConfig.root : request.projectRoot;
+  const root = path.isAbsolute(configuredRoot)
+    ? configuredRoot
+    : path.resolve(request.projectRoot, configuredRoot);
+  state.root = normalizeCollectionRoot(
+    root,
+    userConfig.resolve?.preserveSymlinks === true,
+  );
+  emit({ event: "protection", root: state.root });
+  await waitForProtectionAck();
+
   progress("building", `Running vite build with Vite ${vite.version}`);
   try {
     await vite.build(
       vite.mergeConfig(userConfig, {
-        root: request.projectRoot,
+        root: userConfig.root ?? request.projectRoot,
         configFile: false,
         mode: "production",
         logLevel: "warn",
@@ -285,6 +342,7 @@ await runAdapter(async (request) => {
       }),
     );
   } catch (error) {
+    if (error instanceof AdapterError) throw error;
     throw new AdapterError(
       AdapterErrorCode.BuildFailed,
       `vite build failed: ${error?.message ?? error}`,
@@ -342,7 +400,7 @@ await runAdapter(async (request) => {
     engineDetails: { rolldownVersion: vite.rolldownVersion },
     overrides,
     configFile: request.configFile,
-    context: request.projectRoot,
+    context: state.root ?? request.projectRoot,
     configSummary,
     libraryBuild: Boolean(resolved.lib),
     ssrBuild: Boolean(resolved.ssr),

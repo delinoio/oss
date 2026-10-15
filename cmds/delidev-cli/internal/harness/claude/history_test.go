@@ -222,3 +222,46 @@ func TestMainHistoryCancellationReturnsNoPartialProof(t *testing.T) {
 		t.Fatal("canceled history read returned a partial checkpoint")
 	}
 }
+
+func TestMainHistoryCostStateIsBoundedPrivateMetadata(t *testing.T) {
+	for _, name := range []string{"valid", "no-thinking", "foreign", "identity", "negative", "overflow", "unknown", "missing", "null", "unknown-model-field"} {
+		t.Run(name, func(t *testing.T) {
+			session, workspace, records, proofs := historyFixture(t)
+			model := map[string]any{"inputTokens": 1, "outputTokens": 2, "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0, "webSearchRequests": 0, "costUSD": 0.01, "thinkingTokens": 0}
+			cost := map[string]any{"type": "cost-state", "sessionId": session, "totalCostUSD": 0.01, "totalAPIDuration": 1, "totalAPIDurationWithoutRetries": 1, "totalToolDuration": 0, "totalLinesAdded": 0, "totalLinesRemoved": 0, "totalDuration": 2, "startTime": 1234, "modelUsage": map[string]any{"fixture-model": model}, "hasUnknownModelCost": false}
+			switch name {
+			case "no-thinking":
+				delete(model, "thinkingTokens")
+			case "foreign":
+				cost["sessionId"] = domain.NewID()
+			case "identity":
+				cost["parentUuid"] = proofs[1].NativeID
+			case "negative":
+				cost["totalDuration"] = -1
+			case "overflow":
+				model["inputTokens"] = 1e16
+			case "unknown":
+				cost["permissionMode"] = "default"
+			case "missing":
+				delete(cost, "startTime")
+			case "null":
+				cost["totalCostUSD"] = nil
+			case "unknown-model-field":
+				model["authority"] = true
+			}
+			before, err := VerifyMainTranscript(context.Background(), historyJSONL(t, records), session, workspace, proofs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			records = append(records, cost)
+			after, err := VerifyMainTranscript(context.Background(), historyJSONL(t, records), session, workspace, proofs)
+			if name == "valid" || name == "no-thinking" {
+				if err != nil || after.MatchedMessages != before.MatchedMessages || after.LeafID != before.LeafID || after.AdditionalMessages != 0 || after.SHA256 == before.SHA256 {
+					t.Fatal("private costs changed message authority or escaped digest", err)
+				}
+			} else if err == nil {
+				t.Fatal("invalid cost metadata accepted")
+			}
+		})
+	}
+}

@@ -41,7 +41,7 @@ func publishClaudeUsage(tx *store.Tx, input domain.ExecutionJobInput, session st
 			return executionEventConflict()
 		}
 	}
-	observation := domain.ClaudeUsageRecord{ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *u}
+	observation := domain.ClaudeUsageRecord{ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *u}
 	if err := tx.PutClaudeUsage(event.ObservationID, session.ID, session.ProjectID, observation); err != nil {
 		return err
 	}

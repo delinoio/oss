@@ -80,7 +80,7 @@ Codex native flows use a common minimum SemVer `0.151.0` with no upper bound und
 
 `delidev`; the Go component is `delidev-cli` and its executable is `delidev`.
 
-Repositories use required remote URLs with optional Local folder connections under the [workspace contract](cmds-delidev-workspace-contract.md). System 37 and Worker 19 are main allocations established by the originating change, with support established only by active schema and runtime capability advertisements rather than ledger presence; System 31/32 and Worker 18 keep the separate immediate Local Clone and GitHub metadata boundary. Desktop registration, CLI/configuration transfer and session/schedule preparation share this source authority; independent managed clones preserve Fork, Sidechat and storage/deletion lifetimes without rewriting accepted history.
+Repositories use required remote URLs with optional Local folder connections under the [workspace contract](cmds-delidev-workspace-contract.md). System 37 and Worker 19 are main allocations established by the originating change, with support established only by active schema and runtime capability advertisements rather than ledger presence; System 31/32 and Worker 18 keep the separate immediate Local Clone and GitHub metadata boundary. Desktop registration, CLI/configuration transfer and session/schedule preparation share this source authority; independent managed clones preserve Fork, Sidechat and storage/deletion lifetimes without rewriting accepted history. Each Runner Device keeps one Worker-private source cache per validated repository source identity, so a repeated Worktree for the same repository copies from it instead of cloning the remote again; every session still owns an independent checkout and Git store and keeps its own pinned URL (see the [repository source cache](cmds-delidev-workspace-contract.md#repository-source-cache)).
 
 ## Domain Ownership Map
 
@@ -231,6 +231,10 @@ Record the controlled native A-to-B result separately from unperformed
 desktop/real-account/platform acceptance in pull requests, issues and CI runs.
 
 - Fresh authenticated main-desktop Worker relaunch recovery uses newly recorded immutable original-controller generation/registration/canonical-scope/desktop-client/PID/kernel-birth evidence, synchronized before admission and rechecked under final Go arbitration. Uncertain legacy/unknown proof remains blocked; same-process Stop, pending admission, updater/service and borrowed lifetimes retain their owners. Controller exit never proves native cleanup or authorizes replay/Resume. Follow the [desktop](apps-delidev-desktop-contract.md#automatic-main-window-local-worker-management), [CLI](cmds-delidev-contract.md#main-desktop-automatic-worker-management) and [process](cmds-delidev-process-contract.md#original-worker-controller-observation) contracts.
+
+## Destructive action presentation invariant
+
+Desktop and mobile buttons that delete persisted data, reset persisted settings or revoke authorization render the semantic marker `data-action-tone="danger"` with outlined danger-colored text, icon and border (transparent background, pale danger hover). Only the destructive branch of a shared confirmation is marked, the tone is derived from existing action state and never from icons or visible text, and no behavior, confirmation, geometry, label or accessibility name changes. The desktop client owns the closed `SettingsActionTone` catalog and the surface table in the [desktop contract](apps-delidev-desktop-contract.md#destructive-action-tone); the mobile client owns an app-local equivalent in the [mobile contract](apps-delidev-mobile-contract.md) and shares no runtime code.
 
 ## Diagnostic resource-kind invariant
 

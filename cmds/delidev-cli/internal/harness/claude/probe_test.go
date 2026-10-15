@@ -822,7 +822,8 @@ func TestManagedTokenInitializeSharesClaude287Validation(t *testing.T) {
 	build := func() map[string]any {
 		result := fixtureResult287()
 		result["account"] = map[string]any{"tokenSource": managedTokenSource, "apiProvider": "firstParty"}
-		result["commands"] = []any{map[string]any{"name": "compact", "description": "Compact", "argumentHint": ""}}
+		result["commands"] = []any{map[string]any{"name": "compact", "description": "Compact", "argumentHint": "", "builtin": true}}
+		result["remote_control_available"] = true
 		return result
 	}
 	raw, _ := json.Marshal(build())
@@ -834,5 +835,41 @@ func TestManagedTokenInitializeSharesClaude287Validation(t *testing.T) {
 	raw, _ = json.Marshal(result)
 	if err := validateInitializeManagedToken(raw, "dontAsk"); err == nil {
 		t.Fatal("non-idle managed session accepted")
+	}
+	for _, field := range []string{"remote_control_auto_enable", "remote_control_auto_connect_default", "remote_control_auto_on_by_default", "ide_rc_auto_enable_gate"} {
+		result := build()
+		result[field] = true
+		raw, _ := json.Marshal(result)
+		if validateInitializeManagedToken(raw, "dontAsk") == nil {
+			t.Fatalf("enabled activation gate accepted: %s", field)
+		}
+	}
+	for _, value := range []any{nil, "true", 1} {
+		result := build()
+		result["commands"].([]any)[0].(map[string]any)["builtin"] = value
+		raw, _ := json.Marshal(result)
+		if validateInitializeManagedToken(raw, "dontAsk") == nil {
+			t.Fatal("invalid builtin metadata accepted")
+		}
+	}
+}
+
+func TestPrivateClaudeEnvironmentPinsFeedbackOptOut(t *testing.T) {
+	config, _ := fixtureConfig(t, "feedback-opt-out")
+	config.Process.Env = append(config.Process.Env, "DISABLE_FEEDBACK_COMMAND=0", "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=0")
+	env, err := probeEnvironment(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"DISABLE_FEEDBACK_COMMAND=1", "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"} {
+		found := false
+		for _, value := range env {
+			if value == expected {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing private feedback setting: %s", expected)
+		}
 	}
 }

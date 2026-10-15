@@ -98,6 +98,9 @@ pub struct Context<'a> {
     pub modules: HashMap<&'a str, &'a CollectedModule>,
     pub chunks: Vec<Chunk>,
     pub sources: SourceStore,
+    /// Original files whose missing snapshots prevented Vite environment
+    /// candidates from being confirmed.
+    pub vite_env_source_gaps: HashSet<String>,
     /// Polled cooperatively by long-running detectors; true stops them.
     pub cancelled: Option<&'a (dyn Fn() -> bool + Sync)>,
     /// Export usage edges grouped for traversal; built on first use.
@@ -119,15 +122,33 @@ impl<'a> Context<'a> {
         chunks: Vec<Chunk>,
         sources: SourceStore,
     ) -> Self {
+        let context_dir = collection
+            .context
+            .as_ref()
+            .map_or_else(|| project_root.clone(), PathBuf::from);
+        Self::with_context(
+            collection,
+            project_root,
+            context_dir,
+            project_name,
+            chunks,
+            sources,
+        )
+    }
+
+    pub fn with_context(
+        collection: &'a Collection,
+        project_root: PathBuf,
+        context_dir: PathBuf,
+        project_name: String,
+        chunks: Vec<Chunk>,
+        sources: SourceStore,
+    ) -> Self {
         let modules = collection
             .modules
             .iter()
             .map(|module| (module.id.as_str(), module))
             .collect();
-        let context_dir = collection
-            .context
-            .as_ref()
-            .map_or_else(|| project_root.clone(), PathBuf::from);
         let engine = format!(
             "{} {} + {} {}",
             collection.bundler_package,
@@ -144,6 +165,7 @@ impl<'a> Context<'a> {
             modules,
             chunks,
             sources,
+            vite_env_source_gaps: HashSet::new(),
             cancelled: None,
             export_usage_index: std::cell::OnceCell::new(),
         }
@@ -254,9 +276,34 @@ impl<'a> Context<'a> {
     }
 
     pub fn original_location(&mut self, path: &Path, line: u32, column: u32) -> Located {
+        self.original_location_with_coverage_gap(path, line, column, true)
+    }
+
+    /// Locates a configuration-only file without reducing detector coverage.
+    pub fn original_location_without_coverage_gap(
+        &mut self,
+        path: &Path,
+        line: u32,
+        column: u32,
+    ) -> Located {
+        self.original_location_with_coverage_gap(path, line, column, false)
+    }
+
+    fn original_location_with_coverage_gap(
+        &mut self,
+        path: &Path,
+        line: u32,
+        column: u32,
+        track_coverage_gap: bool,
+    ) -> Located {
         let display = self.display_path(path);
         let root = self.project_root.clone();
-        let (source_id, snippet) = match self.sources.add_file(&root, path) {
+        let added = if track_coverage_gap {
+            self.sources.add_file(&root, path)
+        } else {
+            self.sources.add_file_without_coverage_gap(&root, path)
+        };
+        let (source_id, snippet) = match added {
             Some((id, Some(content))) => {
                 let (start_line, text) = snippet_lines(&content, line);
                 (
@@ -303,16 +350,20 @@ impl<'a> Context<'a> {
         let file = chunk.file.clone();
         if let Some((path, src_line, src_column)) = chunk.original(line, column) {
             let mut located = self.original_location(&path, src_line, src_column);
-            located.generated = Some(generated);
             if located.snippet.is_none() {
-                located.snippet = Some(CodeSnippet {
-                    kind: LocationKind::Generated,
-                    path: file,
-                    start_line: line + 1,
-                    highlight_line: line + 1,
-                    text: excerpt,
-                });
+                return Located {
+                    location: Some(generated),
+                    generated: None,
+                    snippet: Some(CodeSnippet {
+                        kind: LocationKind::Generated,
+                        path: file,
+                        start_line: line + 1,
+                        highlight_line: line + 1,
+                        text: excerpt,
+                    }),
+                };
             }
+            located.generated = Some(generated);
             return located;
         }
         Located {

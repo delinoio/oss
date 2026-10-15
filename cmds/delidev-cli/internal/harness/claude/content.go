@@ -267,8 +267,8 @@ func decodeContentBlock(raw []byte) (NativeContentBlock, error) {
 
 func (b *ExecutionBinding) observeContent(event StreamEvent) (observed []ContentEvent, returned error) {
 	defer func() {
-		if returned != nil && b.interrupt != nil && b.logger != nil {
-			b.logger.Warn("claude_stop_content_validation_failed", "owner_id", b.owner, "partial", event.Type == "stream_event", "assistant", event.Type == "assistant", "user", event.Type == "user", "initialized", b.initialized, "accepted", b.accepted, "finished", b.finished)
+		if returned != nil && b.logger != nil {
+			b.logger.Warn("claude_content_validation_failed", "owner_id", b.owner, "partial", event.Type == "stream_event", "assistant", event.Type == "assistant", "user", event.Type == "user", "initialized", b.initialized, "accepted", b.accepted, "finished", b.finished)
 		}
 	}()
 	if !b.initialized || !b.accepted {
@@ -321,17 +321,53 @@ func (b *ExecutionBinding) contentParent(parent *string) (string, error) {
 	return *parent, nil
 }
 
+// A live binding owns one input, so native batch/fold stamps cannot introduce
+// another sender or accept an input on behalf of the replay lifecycle.
+func (b *ExecutionBinding) validateReplyInputStamp(single, list json.RawMessage, parent *string) error {
+	if len(single) == 0 {
+		if len(list) != 0 {
+			return lifecycleUncertain()
+		}
+		return nil
+	}
+	var input domain.ID
+	if parent != nil || json.Unmarshal(single, &input) != nil || input != b.input {
+		return lifecycleUncertain()
+	}
+	if len(list) != 0 {
+		var inputs []domain.ID
+		if json.Unmarshal(list, &inputs) != nil || len(inputs) != 1 || inputs[0] != input {
+			return lifecycleUncertain()
+		}
+	}
+	return nil
+}
+
 func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, returned error) {
 	var envelope struct {
-		Type    string          `json:"type"`
-		Event   json.RawMessage `json:"event"`
-		Session domain.ID       `json:"session_id"`
-		Parent  *string         `json:"parent_tool_use_id"`
-		UUID    string          `json:"uuid"`
-		TTFT    *uint64         `json:"ttft_ms"`
+		Type            string          `json:"type"`
+		Event           json.RawMessage `json:"event"`
+		Session         domain.ID       `json:"session_id"`
+		Parent          *string         `json:"parent_tool_use_id"`
+		UUID            string          `json:"uuid"`
+		TTFT            *uint64         `json:"ttft_ms"`
+		ThinkingDisplay json.RawMessage `json:"thinking_display,omitempty"`
+		Input           json.RawMessage `json:"user_message_uuid,omitempty"`
+		Inputs          json.RawMessage `json:"user_message_uuids,omitempty"`
 	}
-	if decodeNativeObject(raw, &envelope) != nil {
+	decoded := decodeNativeObject(raw, &envelope)
+	stamped := b.validateReplyInputStamp(envelope.Input, envelope.Inputs, envelope.Parent)
+	if decoded != nil || stamped != nil {
+		if b.logger != nil {
+			b.logger.Warn("claude_partial_envelope_rejected", "owner_id", b.owner, "schema_valid", decoded == nil, "input_stamp_valid", stamped == nil)
+		}
 		return nil, lifecycleUncertain()
+	}
+	if len(envelope.ThinkingDisplay) != 0 {
+		var display *string
+		if json.Unmarshal(envelope.ThinkingDisplay, &display) != nil || display == nil || domain.Text(*display, "native thinking display", 128, true) != nil {
+			return nil, lifecycleUncertain()
+		}
 	}
 	parent, err := b.contentParent(envelope.Parent)
 	if err != nil {
@@ -343,8 +379,8 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 		return nil, lifecycleUncertain()
 	}
 	defer func() {
-		if returned != nil && b.interrupt != nil && b.logger != nil {
-			b.logger.Warn("claude_stop_partial_validation_failed", "owner_id", b.owner, "message_start", kind == "message_start", "block_start", kind == "content_block_start", "block_delta", kind == "content_block_delta", "block_stop", kind == "content_block_stop", "message_delta", kind == "message_delta", "message_stop", kind == "message_stop")
+		if returned != nil && b.logger != nil {
+			b.logger.Warn("claude_partial_validation_failed", "owner_id", b.owner, "message_start", kind == "message_start", "block_start", kind == "content_block_start", "block_delta", kind == "content_block_delta", "block_stop", kind == "content_block_stop", "message_delta", kind == "message_delta", "message_stop", kind == "message_stop")
 		}
 	}()
 	active := b.content.active[parent]
@@ -358,6 +394,9 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 		}
 		message, err := decodeProviderMessage(start.Message)
 		if err != nil {
+			if b.logger != nil {
+				b.logger.Warn("claude_provider_message_rejected", "owner_id", b.owner, "fields_known", requireExactNativeKeys(start.Message, &providerMessage{}))
+			}
 			return nil, err
 		}
 		key := parent + "\x00" + message.ID
@@ -546,17 +585,26 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 		base.Kind, base.Index = ContentStopped, stop.Index
 	case "message_delta":
 		var update struct {
-			Type  string          `json:"type"`
-			Delta json.RawMessage `json:"delta"`
-			Usage *ProviderUsage  `json:"usage"`
+			Type                 string          `json:"type"`
+			Delta                json.RawMessage `json:"delta"`
+			Usage                *ProviderUsage  `json:"usage"`
+			Context              json.RawMessage `json:"context_management,omitempty"`
+			InputTransformations json.RawMessage `json:"input_transformations,omitempty"`
+			Diagnostics          json.RawMessage `json:"diagnostics,omitempty"`
 		}
 		var delta struct {
 			Stop        *NativeStopReason `json:"stop_reason"`
 			Sequence    *string           `json:"stop_sequence"`
 			Container   json.RawMessage   `json:"container"`
 			StopDetails json.RawMessage   `json:"stop_details"`
+			Safeguards  json.RawMessage   `json:"safeguard_results,omitempty"`
 		}
-		if decodeNativeObject(envelope.Event, &update) != nil || update.Usage == nil || decodeNativeObject(update.Delta, &delta) != nil || (delta.Sequence != nil && domain.Text(*delta.Sequence, "native stop sequence", domain.MaxMessageText, false) != nil) {
+		updateErr := decodeNativeObject(envelope.Event, &update)
+		deltaErr := decodeNativeObject(update.Delta, &delta)
+		if updateErr != nil || update.Usage == nil || !emptyNativeInputTransformations(update.InputTransformations) || deltaErr != nil || !validNativeSafeguardMetadata(delta.Safeguards) || (delta.Sequence != nil && domain.Text(*delta.Sequence, "native stop sequence", domain.MaxMessageText, false) != nil) {
+			if b.logger != nil {
+				b.logger.Warn("claude_message_delta_rejected", "owner_id", b.owner, "schema_valid", updateErr == nil, "delta_valid", deltaErr == nil, "usage_present", update.Usage != nil, "transformations_empty", emptyNativeInputTransformations(update.InputTransformations))
+			}
 			return nil, lifecycleUncertain()
 		}
 		// Preserve this native usage update as reported. It is not an additive
@@ -595,23 +643,34 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 }
 
 type providerMessage struct {
-	ID          string            `json:"id"`
-	Type        string            `json:"type"`
-	Role        string            `json:"role"`
-	Model       string            `json:"model"`
-	Content     []json.RawMessage `json:"content"`
-	Stop        *NativeStopReason `json:"stop_reason"`
-	Sequence    *string           `json:"stop_sequence"`
-	Usage       *ProviderUsage    `json:"usage"`
-	Context     json.RawMessage   `json:"context_management"`
-	Container   json.RawMessage   `json:"container"`
-	Diagnostics json.RawMessage   `json:"diagnostics"`
-	StopDetails json.RawMessage   `json:"stop_details"`
+	ID                   string            `json:"id"`
+	Type                 string            `json:"type"`
+	Role                 string            `json:"role"`
+	Model                string            `json:"model"`
+	Content              []json.RawMessage `json:"content"`
+	Stop                 *NativeStopReason `json:"stop_reason"`
+	Sequence             *string           `json:"stop_sequence"`
+	Usage                *ProviderUsage    `json:"usage"`
+	Context              json.RawMessage   `json:"context_management"`
+	Container            json.RawMessage   `json:"container"`
+	Diagnostics          json.RawMessage   `json:"diagnostics"`
+	StopDetails          json.RawMessage   `json:"stop_details"`
+	InputTransformations json.RawMessage   `json:"input_transformations,omitempty"`
+}
+
+// An empty transformation inventory changes no native history or input proof.
+// Nonempty transformations need their own history adapter before acceptance.
+func emptyNativeInputTransformations(raw json.RawMessage) bool {
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return true
+	}
+	var transformations []json.RawMessage
+	return json.Unmarshal(raw, &transformations) == nil && transformations != nil && len(transformations) == 0
 }
 
 func decodeProviderMessage(raw []byte) (providerMessage, error) {
 	var message providerMessage
-	if decodeNativeObject(raw, &message) != nil || message.Type != "message" || message.Role != "assistant" || domain.Text(message.ID, "native message identity", 1024, true) != nil || domain.Text(message.Model, "native message model", 256, true) != nil || message.Content == nil || len(message.Content) > 1024 || (message.Sequence != nil && domain.Text(*message.Sequence, "native stop sequence", domain.MaxMessageText, false) != nil) {
+	if decodeNativeObject(raw, &message) != nil || !emptyNativeInputTransformations(message.InputTransformations) || message.Type != "message" || message.Role != "assistant" || domain.Text(message.ID, "native message identity", 1024, true) != nil || domain.Text(message.Model, "native message model", 256, true) != nil || message.Content == nil || len(message.Content) > 1024 || (message.Sequence != nil && domain.Text(*message.Sequence, "native stop sequence", domain.MaxMessageText, false) != nil) {
 		return providerMessage{}, lifecycleUncertain()
 	}
 	return message, nil
@@ -645,24 +704,34 @@ func decodeContentDelta(raw []byte) (ContentDeltaKind, string, error) {
 
 func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) {
 	var envelope struct {
-		Type            string                 `json:"type"`
-		Message         json.RawMessage        `json:"message"`
-		Session         domain.ID              `json:"session_id"`
-		Parent          *string                `json:"parent_tool_use_id"`
-		UUID            string                 `json:"uuid"`
-		Timestamp       string                 `json:"timestamp"`
-		Error           NativeAssistantProblem `json:"error"`
-		APIError        bool                   `json:"is_api_error_message"`
-		RequestID       *string                `json:"request_id"`
-		SubagentType    *string                `json:"subagent_type"`
-		TaskDescription *string                `json:"task_description"`
-		Aborted         json.RawMessage        `json:"aborted"`
+		Type             string                 `json:"type"`
+		Message          json.RawMessage        `json:"message"`
+		Session          domain.ID              `json:"session_id"`
+		Parent           *string                `json:"parent_tool_use_id"`
+		UUID             string                 `json:"uuid"`
+		Timestamp        string                 `json:"timestamp"`
+		Error            NativeAssistantProblem `json:"error"`
+		APIError         bool                   `json:"is_api_error_message"`
+		RequestID        *string                `json:"request_id"`
+		SubagentType     *string                `json:"subagent_type"`
+		TaskDescription  *string                `json:"task_description"`
+		Aborted          json.RawMessage        `json:"aborted"`
+		Input            json.RawMessage        `json:"user_message_uuid,omitempty"`
+		Inputs           json.RawMessage        `json:"user_message_uuids,omitempty"`
+		ThinkingDuration json.RawMessage        `json:"thinking_duration_ms,omitempty"`
 	}
-	if decodeNativeObject(raw, &envelope) != nil {
+	if decodeNativeObject(raw, &envelope) != nil || b.validateReplyInputStamp(envelope.Input, envelope.Inputs, envelope.Parent) != nil {
 		if b.interrupt != nil && b.logger != nil {
 			b.logger.Warn("claude_stop_assistant_envelope_invalid", "owner_id", b.owner)
 		}
 		return nil, lifecycleUncertain()
+	}
+	if len(envelope.ThinkingDuration) != 0 {
+		// A declared duration must be positive; explicit null is not omission.
+		var duration *uint64
+		if json.Unmarshal(envelope.ThinkingDuration, &duration) != nil || duration == nil || *duration == 0 {
+			return nil, lifecycleUncertain()
+		}
 	}
 	parent, err := b.contentParent(envelope.Parent)
 	if err != nil {

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { actionTone, SettingsActionTone } from "./settings-action";
 import {
   useProductLabels,
   PresentationKind,
@@ -235,6 +236,15 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
       ),
   );
   const mutations = [request, cancel, remove];
+  // Retry tone follows the retained request: only a retained snapshot DELETE and
+  // the permanent session deletion are destructive; storage requests of any other
+  // action and cancellation retries stay neutral.
+  const destructiveMutations = [
+    (request.input as { action?: WorkspaceStorageAction } | undefined)
+      ?.action === WorkspaceStorageAction.DELETE,
+    false,
+    true,
+  ];
   const blocked = mutations.some(
     (mutation) => mutation.busy || mutation.uncertain,
   );
@@ -578,6 +588,7 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
                                   </button>
                                 ) : (
                                   <button
+                                    {...actionTone(SettingsActionTone.Danger)}
                                     disabled={
                                       actionsBlocked || Boolean(snapshots.error)
                                     }
@@ -609,6 +620,7 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
               ) : null}
               {deleteSupported ? (
                 <button
+                  {...actionTone(SettingsActionTone.Danger)}
                   disabled={blocked || current.isFetching || !session}
                   onClick={() => {
                     setConfirm(undefined);
@@ -643,6 +655,7 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
                     </p>
                   ) : null}
                   <button
+                    {...actionTone(SettingsActionTone.Danger)}
                     disabled={
                       blocked ||
                       current.isFetching ||
@@ -824,6 +837,11 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
                 </p>
               ) : null}
               <button
+                {...actionTone(
+                  confirm.action === WorkspaceStorageAction.DELETE
+                    ? SettingsActionTone.Danger
+                    : SettingsActionTone.Default,
+                )}
                 disabled={
                   blocked ||
                   current.isFetching ||
@@ -842,7 +860,15 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
             <div key={index}>
               <Problem error={mutation.error} />
               {mutation.uncertain ? (
-                <button disabled={mutation.busy} onClick={mutation.retry}>
+                <button
+                  {...actionTone(
+                    destructiveMutations[index]
+                      ? SettingsActionTone.Danger
+                      : SettingsActionTone.Default,
+                  )}
+                  disabled={mutation.busy}
+                  onClick={mutation.retry}
+                >
                   <LocalizedText
                     id="session-storage.retryTheSameRequest_723e0c"
                     components={{

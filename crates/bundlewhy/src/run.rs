@@ -67,23 +67,95 @@ fn ancestor_lockfiles(project_root: &Path) -> Vec<PathBuf> {
     candidates
 }
 
-fn protected_files(selection: &Selection) -> BTreeMap<PathBuf, Option<String>> {
+fn protected_files_with_root(
+    selection: &Selection,
+    resolved_root: Option<&Path>,
+) -> BTreeMap<PathBuf, Option<String>> {
     let mut files: Vec<PathBuf> = LOCKFILES
         .iter()
         .map(|name| selection.project_root.join(name))
         .collect();
     files.extend(ancestor_lockfiles(&selection.project_root));
     files.push(selection.project_root.join("package.json"));
+    if let Some(root) = resolved_root.filter(|root| *root != selection.project_root) {
+        files.extend(LOCKFILES.iter().map(|name| root.join(name)));
+        files.extend(ancestor_lockfiles(root));
+        files.push(root.join("package.json"));
+        if let Some((manifest, _)) = nearest_package(root) {
+            files.push(manifest);
+        }
+    }
     if let Some(config) = &selection.config_file {
         files.push(config.clone());
     }
     files
         .into_iter()
         .map(|path| {
-            let digest = std::fs::read(&path).ok().map(|bytes| sha256_hex(&bytes));
+            let digest = file_digest(&path);
             (path, digest)
         })
         .collect()
+}
+
+fn file_digest(path: &Path) -> Option<String> {
+    std::fs::read(path).ok().map(|bytes| sha256_hex(&bytes))
+}
+
+fn refresh_protected_files(
+    protected_before: &BTreeMap<PathBuf, Option<String>>,
+) -> BTreeMap<PathBuf, Option<String>> {
+    protected_before
+        .keys()
+        .map(|path| (path.clone(), file_digest(path)))
+        .collect()
+}
+
+fn protected_files(selection: &Selection) -> BTreeMap<PathBuf, Option<String>> {
+    protected_files_with_root(selection, None)
+}
+
+fn nearest_package(root: &Path) -> Option<(PathBuf, String)> {
+    let mut directory = Some(root);
+    while let Some(current) = directory {
+        let manifest = current.join("package.json");
+        let name = std::fs::read(&manifest)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|manifest| {
+                manifest
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned)
+            });
+        if let Some(name) = name {
+            return Some((manifest, name));
+        }
+        let parent = current.parent();
+        directory = parent.filter(|parent| *parent != current);
+    }
+    None
+}
+
+fn project_name_at(root: &Path, fallback: &str) -> String {
+    if let Some((_, name)) = nearest_package(root) {
+        return name;
+    }
+    fallback.to_owned()
+}
+
+fn project_name_for_collection(
+    collection: &crate::collect::Collection,
+    effective_root: &Path,
+    selected_root: &Path,
+    fallback: &str,
+) -> String {
+    let identity_root = if collection.bundler == "vite" {
+        analysis::context_root(collection, selected_root)
+    } else {
+        effective_root.to_owned()
+    };
+    project_name_at(&identity_root, fallback)
 }
 
 fn prepare_out_dir(out_dir: &Path) -> BwResult<PathBuf> {
@@ -293,7 +365,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
         }
     });
 
-    let protected_before = protected_files(&selection);
+    let mut protected_before = protected_files(&selection);
     let adapter_options = AdapterOptions {
         config_name: options.config_name.clone(),
         allow_unsupported_engine: options.allow_unsupported_engine,
@@ -303,23 +375,38 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
     let mut current_stage = RunStage::Detecting;
     let progress_state = state.clone();
     let progress_log = log.clone();
-    let result = adapter::run(&run_dir, &selection, &adapter_options, cancel.clone(), |stage, message| {
-        if stage != current_stage && stage != RunStage::Unspecified {
-            progress_log.event(
-                "stage",
-                json!({ "stage": current_stage.as_str(), "durationMs": stage_started.elapsed().as_millis() as u64 }),
-            );
-            current_stage = stage;
-            stage_started = Instant::now();
-        }
-        print_line(&format!("  [{}] {message}", stage.as_str()));
-        progress_state.update(|served| {
-            if stage != RunStage::Unspecified {
-                served.progress.stage = stage;
+    let result = adapter::run(
+        &run_dir,
+        &selection,
+        &adapter_options,
+        cancel.clone(),
+        |stage, message| {
+            if stage != current_stage && stage != RunStage::Unspecified {
+                progress_log.event(
+                    "stage",
+                    json!({ "stage": current_stage.as_str(), "durationMs": stage_started.elapsed().as_millis() as u64 }),
+                );
+                current_stage = stage;
+                stage_started = Instant::now();
             }
-            served.progress.message = message.clone();
-        });
-    })
+            print_line(&format!("  [{}] {message}", stage.as_str()));
+            progress_state.update(|served| {
+                if stage != RunStage::Unspecified {
+                    served.progress.stage = stage;
+                }
+                served.progress.message = message.clone();
+            });
+        },
+        |root| {
+            // Keep the snapshot captured before config evaluation. The adapter
+            // can discover additional roots only after evaluating user config,
+            // so add new paths without replacing hashes for paths already
+            // protected before the adapter started.
+            for (path, digest) in protected_files_with_root(&selection, Some(&root)) {
+                protected_before.entry(path).or_insert(digest);
+            }
+        },
+    )
     .await;
     log.event("stage", json!({ "stage": current_stage.as_str(), "durationMs": stage_started.elapsed().as_millis() as u64 }));
 
@@ -352,6 +439,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             ),
         ),
         Ok(collection) => {
+            let effective_root = analysis::effective_root(&collection, &selection.project_root);
             log.event(
                 "engine",
                 json!({
@@ -377,8 +465,13 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             };
             let output = analysis::analyze(&AnalysisInput {
                 run_id: run_id.clone(),
-                project_root: selection.project_root.clone(),
-                project_name: selection.project_name.clone(),
+                project_root: effective_root.clone(),
+                project_name: project_name_for_collection(
+                    &collection,
+                    &effective_root,
+                    &selection.project_root,
+                    &selection.project_name,
+                ),
                 bundler: selection.bundler,
                 collection: &collection,
                 build_dir: run_dir.join("build"),
@@ -398,19 +491,19 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             );
             let analysis = output.analysis;
             let project_relative = bundle::retained_relative(
-                &selection.project_root,
+                &effective_root,
                 &output.sources,
                 &output.project_relative,
             );
             let existence_relative = bundle::retained_relative(
-                &selection.project_root,
+                &effective_root,
                 &output.sources,
                 &output.existence_relative,
             );
             (
                 ResultBundle {
                     schema_version: SCHEMA_VERSION,
-                    project_root: selection.project_root.to_string_lossy().into_owned(),
+                    project_root: effective_root.to_string_lossy().into_owned(),
                     analysis,
                     sources: output.sources,
                     project_relative,
@@ -446,7 +539,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
         );
     }
 
-    let protected_after = protected_files(&selection);
+    let protected_after = refresh_protected_files(&protected_before);
     let modified: Vec<String> = protected_before
         .iter()
         .filter(|(path, digest)| protected_after.get(*path) != Some(digest))
@@ -1063,6 +1156,135 @@ mod tests {
             with_repository_lockfile,
             protected_files(&selection),
             "a project lockfile created during the run must be detected"
+        );
+    }
+
+    #[test]
+    fn resolved_external_root_files_are_protected() {
+        let dir = tempfile::tempdir().unwrap();
+        let repository = dir.path().join("repo");
+        let project = repository.join("packages/app");
+        let external = dir.path().join("web");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        let selection = Selection {
+            project_root: project,
+            project_name: "app".to_owned(),
+            bundler: BundlerChoice::Vite,
+            config_file: None,
+        };
+
+        std::fs::write(
+            external.join("package.json"),
+            r#"{"name":"web-app","private":true}"#,
+        )
+        .unwrap();
+        let before = protected_files_with_root(&selection, Some(&external));
+        std::fs::write(external.join("pnpm-lock.yaml"), "lockfileVersion: 9").unwrap();
+        let after = protected_files_with_root(&selection, Some(&external));
+
+        assert_ne!(
+            before, after,
+            "external root lockfile changes must be detected"
+        );
+        assert_eq!(
+            project_name_at(&external, &selection.project_name),
+            "web-app"
+        );
+    }
+
+    #[test]
+    fn project_name_uses_nearest_ancestor_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("repo/apps/web/src");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            dir.path().join("repo/apps/web/package.json"),
+            r#"{"name":"web-app"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(project_name_at(&root, "fallback"), "web-app");
+    }
+
+    #[test]
+    fn nearest_external_package_manifest_is_protected() {
+        let dir = tempfile::tempdir().unwrap();
+        let repository = dir.path().join("repo");
+        let project = repository.join("packages/app");
+        let external = repository.join("apps/web/src");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        let manifest = repository.join("apps/web/package.json");
+        std::fs::write(&manifest, r#"{"name":"web-app","sideEffects":false}"#).unwrap();
+        let selection = Selection {
+            project_root: project,
+            project_name: "app".to_owned(),
+            bundler: BundlerChoice::Vite,
+            config_file: None,
+        };
+
+        let before = protected_files_with_root(&selection, Some(&external));
+        std::fs::write(&manifest, r#"{"name":"web-app","sideEffects":true}"#).unwrap();
+        let after = protected_files_with_root(&selection, Some(&external));
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn discovered_root_does_not_replace_pre_adapter_protected_digests() {
+        let dir = tempfile::tempdir().unwrap();
+        let repository = dir.path().join("repo");
+        let project = repository.join("packages/app");
+        let external = repository.join("apps/web");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        let project_manifest = project.join("package.json");
+        std::fs::write(&project_manifest, r#"{"name":"app"}"#).unwrap();
+        let external_manifest = external.join("package.json");
+        std::fs::write(&external_manifest, r#"{"name":"web"}"#).unwrap();
+        let selection = Selection {
+            project_root: project,
+            project_name: "app".to_owned(),
+            bundler: BundlerChoice::Vite,
+            config_file: None,
+        };
+
+        let mut before = protected_files(&selection);
+        let original_project_digest = before.get(&project_manifest).cloned().unwrap();
+        std::fs::write(&project_manifest, r#"{"name":"changed"}"#).unwrap();
+        for (path, digest) in protected_files_with_root(&selection, Some(&external)) {
+            before.entry(path).or_insert(digest);
+        }
+
+        assert_eq!(
+            before.get(&project_manifest),
+            Some(&original_project_digest)
+        );
+        assert_ne!(
+            refresh_protected_files(&before).get(&project_manifest),
+            Some(&original_project_digest)
+        );
+        assert!(before.contains_key(&external_manifest));
+    }
+
+    #[test]
+    fn vite_project_name_uses_collection_context_for_nested_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let selected = dir.path().join("project");
+        let nested = selected.join("web");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(selected.join("package.json"), r#"{"name":"workspace"}"#).unwrap();
+        std::fs::write(nested.join("package.json"), r#"{"name":"web-app"}"#).unwrap();
+        let collection = crate::collect::Collection {
+            bundler: "vite".to_owned(),
+            context: Some(nested.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            project_name_for_collection(&collection, &selected, &selected, "fallback"),
+            "web-app"
         );
     }
 }

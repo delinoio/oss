@@ -308,6 +308,12 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		}
 		handled := false
 		switch o.Kind {
+		case claude.NativeRateLimitObserved:
+			// Native quota notifications grant no account readiness, fallback,
+			// paid-credit or input authority. The original result still owns
+			// execution completion, including native rate-limit failures.
+			logger.DebugContext(publicationContext, "claude_native_rate_limit_observed")
+			handled = true
 		case claude.SessionInitialized:
 			if o.Initialized != nil && config.startup != nil {
 				config.startup.observation.NativeVersion = o.Initialized.Version

@@ -23,6 +23,7 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
+import { danger, expectTone } from "./test-action-tone";
 import { i18n, SupportedLanguage } from "./localization";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SessionPullRequests, readSessionPR } from "./session-pull-requests";
@@ -257,6 +258,25 @@ it("retains archived associations, shows exact identities and unlinks without ex
   expect(
     screen.queryByRole("region", { name: "Pending PR unlinks" }),
   ).toBeNull();
+});
+
+it("marks the PR unlink button and its retained original retry Danger", async () => {
+  const f = fixture(),
+    commit = f.unlink.getMockImplementation()!;
+  f.unlink.mockImplementationOnce(async (request) => {
+    await commit(request);
+    throw new ConnectError("Original acknowledgment lost", Code.Unavailable);
+  });
+  render(f.view);
+  openAssociations();
+  const unlink = await screen.findByRole("button", { name: "Unlink #17" });
+  expectTone(unlink, danger);
+  expect(f.unlink).not.toHaveBeenCalled();
+  fireEvent.click(unlink);
+  expectTone(
+    await screen.findByRole("button", { name: "Retry original PR unlink" }),
+    danger,
+  );
 });
 
 it("starts PR detail reads only after the association row enters the viewport", async () => {

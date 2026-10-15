@@ -1,13 +1,13 @@
 //! Source path classification, display paths and the bundle source store.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     path::{Component, Path, PathBuf},
 };
 
 use sha2::{Digest, Sha256};
 
-use crate::model::{SourceFile, SourceOrigin};
+use crate::model::{SourceFile, SourceOrigin, SourceRevisionEvidence};
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
@@ -138,6 +138,14 @@ pub struct SourceStore {
     /// the file still exists.
     pub existence_relative: BTreeMap<String, String>,
     pub unreadable: Vec<String>,
+    /// Readable text with no build-time snapshot. Live bytes cannot prove
+    /// which revision the bundler analyzed.
+    pub unverified: Vec<String>,
+    /// Cached source paths that were confirmed readable text without a
+    /// build-time snapshot. Other unavailable sources, such as binary assets
+    /// and generated asset stubs, must not become coverage gaps on a later
+    /// detector visit.
+    readable_without_snapshot: HashSet<String>,
     /// Source text the bundler used, from source-map `sourcesContent`, keyed by
     /// resolved path. Preferred over the live file, which may have changed
     /// after the build read it.
@@ -174,6 +182,10 @@ const BINARY_ASSET_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp", "tiff", "woff", "woff2", "ttf",
     "otf", "eot", "mp3", "mp4", "webm", "ogg", "wav", "flac", "aac", "pdf",
 ];
+
+/// Text assets that Vite imports as URL modules by default. Their file text
+/// is not the JavaScript module executed by the browser.
+const TEXT_ASSET_EXTENSIONS: &[&str] = &["svg"];
 
 /// Import query keys after which Vite turns a file into a string module: the
 /// file URL (`?url`, `?no-inline`), the inlined data URL (`?inline`) or the
@@ -235,6 +247,13 @@ fn is_asset_module_path(path: &str) -> bool {
     has_asset_query(path)
         || extension_of(path)
             .is_none_or(|extension| !SCRIPT_EXTENSIONS.contains(&extension.as_str()))
+}
+
+fn is_known_asset_path(path: &str) -> bool {
+    has_asset_query(path)
+        || is_binary_asset_path(path)
+        || extension_of(path)
+            .is_some_and(|extension| TEXT_ASSET_EXTENSIONS.contains(&extension.as_str()))
 }
 
 /// True when `snapshot` is the module code a bundler generated for an imported
@@ -323,7 +342,7 @@ impl SourceStore {
         }
     }
 
-    /// Adds a file from disk and returns its source ID and text.
+    /// Adds a source and returns its ID and verified build text, if available.
     ///
     /// The text is `None` for a non-text source (an imported image or a
     /// bundler-generated asset stub): it keeps its path and ID for
@@ -334,14 +353,41 @@ impl SourceStore {
         project_root: &Path,
         path: &Path,
     ) -> Option<(String, Option<String>)> {
+        self.add_file_with_coverage_gap(project_root, path, true)
+    }
+
+    /// Adds a source for attribution without counting a missing build snapshot
+    /// as a coverage gap. Use this for configuration-only locations that no
+    /// detector scans as source evidence.
+    pub fn add_file_without_coverage_gap(
+        &mut self,
+        project_root: &Path,
+        path: &Path,
+    ) -> Option<(String, Option<String>)> {
+        self.add_file_with_coverage_gap(project_root, path, false)
+    }
+
+    fn add_file_with_coverage_gap(
+        &mut self,
+        project_root: &Path,
+        path: &Path,
+        track_coverage_gap: bool,
+    ) -> Option<(String, Option<String>)> {
         let classified = classify(project_root, path);
         // Key by the resolved path rather than the display path.
         let key = normalize(path).to_string_lossy().into_owned();
         if let Some(existing) = self.files.get(&key) {
-            return Some((
-                existing.id.clone(),
-                existing.content_included.then(|| existing.content.clone()),
-            ));
+            let id = existing.id.clone();
+            let content = existing.content_included.then(|| existing.content.clone());
+            let existing_path = existing.path.clone();
+            if track_coverage_gap
+                && self.readable_without_snapshot.contains(&existing_path)
+                && !self.unverified.iter().any(|path| path == &existing_path)
+            {
+                tracing::debug!(path = %existing_path, "promoting cached unavailable source to coverage gap");
+                self.unverified.push(existing_path);
+            }
+            return Some((id, content));
         }
         // The module path may carry an import query that is not part of the
         // file name; filesystem access uses the backing file.
@@ -359,13 +405,13 @@ impl SourceStore {
             // The snapshot is generated asset module code, or there is no
             // snapshot and the live file is not text: the two cannot be
             // compared, so the source is unverifiable and never stale.
-            (Some(_), LiveRead::Bytes(bytes)) if stub => {
+            (Some(_), LiveRead::Bytes(_)) if stub => {
                 tracing::debug!(path = %classified.display, "generated asset module is not freshness-checked");
-                (None, sha256_hex(&bytes), false, true)
+                (None, String::new(), false, true)
             }
             (None, LiveRead::Bytes(bytes)) if as_text(&bytes).is_none() => {
                 tracing::debug!(path = %classified.display, "non-text source is not freshness-checked");
-                (None, sha256_hex(&bytes), false, true)
+                (None, String::new(), false, true)
             }
             // A module derived through an import query (for example
             // `Comp.vue?vue&type=style`) holds transformed code, which is
@@ -403,7 +449,19 @@ impl SourceStore {
                 derived,
             ),
             (None, LiveRead::Bytes(bytes)) => match as_text(&bytes) {
-                Some(live) => (Some(live.to_owned()), sha256_hex(&bytes), false, false),
+                Some(_) if is_known_asset_path(&classified.display) => {
+                    tracing::debug!(path = %classified.display, "asset source has no build snapshot; retaining existence only");
+                    (None, String::new(), false, true)
+                }
+                Some(_) => {
+                    tracing::debug!(path = %classified.display, "live source has no build snapshot");
+                    self.readable_without_snapshot
+                        .insert(classified.display.clone());
+                    if track_coverage_gap {
+                        self.unverified.push(classified.display.clone());
+                    }
+                    (None, String::new(), false, true)
+                }
                 None => (None, sha256_hex(&bytes), false, true),
             },
             (None, LiveRead::NotPermitted) => {
@@ -431,6 +489,11 @@ impl SourceStore {
             content: text.clone().unwrap_or_default(),
             content_included: verifiable,
             stale,
+            revision_evidence: if snapshot.is_some() && !stub {
+                SourceRevisionEvidence::BuildSnapshot
+            } else {
+                SourceRevisionEvidence::Unavailable
+            },
         };
         // A saved bundle is reopened against the backing file, not the module
         // path with its import query. Text sources are re-hashed; the others
@@ -613,7 +676,7 @@ mod tests {
         let first = store.add_file(dir.path(), &paths[0]).unwrap();
         let second = store.add_file(dir.path(), &paths[1]).unwrap();
         assert_ne!(first.0, second.0);
-        assert_eq!(second.1.as_deref(), Some("export const v = 2;"));
+        assert!(second.1.is_none());
         let files = store.into_files();
         assert_eq!(files.len(), 2);
         let mut displays: Vec<&str> = files.iter().map(|file| file.path.as_str()).collect();
@@ -642,6 +705,102 @@ mod tests {
         let files = store.into_files();
         assert!(files[0].stale);
         assert_eq!(files[0].sha256, sha256_hex(b"what the build read"));
+        assert_eq!(
+            files[0].revision_evidence,
+            SourceRevisionEvidence::BuildSnapshot
+        );
+    }
+
+    #[test]
+    fn source_provenance_without_snapshot_does_not_claim_live_revision() {
+        for edited_after_build in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("a.js");
+            std::fs::write(&file, "export const value = 'built';").unwrap();
+            if edited_after_build {
+                std::fs::write(&file, "export const value = 'after';").unwrap();
+            }
+            // Without sourcesContent, neither the matching-looking live file
+            // nor a post-build edit can prove the bundler's input revision.
+            let mut store = SourceStore::new(true);
+            let (id, text) = store.add_file(dir.path(), &file).unwrap();
+            assert!(text.is_none());
+            assert_eq!(store.unverified, vec!["a.js"]);
+            assert!(store.changed_since_build.is_empty());
+            assert!(!store.project_relative.contains_key(&id));
+            assert_eq!(store.existence_relative[&id], "a.js");
+            let source = store.into_files().pop().unwrap();
+            assert_eq!(
+                source.revision_evidence,
+                SourceRevisionEvidence::Unavailable
+            );
+            assert!(source.content.is_empty());
+            assert!(!source.content_included);
+            assert!(source.sha256.is_empty());
+            assert!(!source.stale);
+        }
+    }
+
+    #[test]
+    fn cached_unavailable_source_is_promoted_when_coverage_is_tracked() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.js");
+        std::fs::write(&file, "export const value = 1;").unwrap();
+        let mut store = SourceStore::new(true);
+
+        let first = store
+            .add_file_without_coverage_gap(dir.path(), &file)
+            .unwrap();
+        assert!(first.1.is_none());
+        assert!(store.unverified.is_empty());
+
+        let second = store.add_file(dir.path(), &file).unwrap();
+        assert_eq!(second.0, first.0);
+        assert_eq!(store.unverified, vec!["a.js".to_owned()]);
+
+        // Repeated detector visits keep the coverage-gap list deduplicated.
+        store.add_file(dir.path(), &file).unwrap();
+        assert_eq!(store.unverified, vec!["a.js".to_owned()]);
+    }
+
+    #[test]
+    fn cached_asset_source_is_not_promoted_to_a_coverage_gap() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("asset.png");
+        std::fs::write(&file, [0_u8, 159, 146, 150]).unwrap();
+        let mut store = SourceStore::new(true);
+        store.snapshots.insert(
+            normalize(&file),
+            r#"export default "__VITE_ASSET__abc__";"#.to_owned(),
+        );
+
+        let first = store
+            .add_file_without_coverage_gap(dir.path(), &file)
+            .unwrap();
+        assert!(first.1.is_none());
+        assert!(store.unverified.is_empty());
+
+        let second = store.add_file(dir.path(), &file).unwrap();
+        assert_eq!(second.0, first.0);
+        assert!(store.unverified.is_empty());
+    }
+
+    #[test]
+    fn text_assets_without_snapshots_do_not_create_detector_coverage_gaps() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["logo.svg", "source.js?raw", "source.js?url"] {
+            let file = dir.path().join(name);
+            let backing = filesystem_path(&file);
+            std::fs::write(&backing, "eval('not executable as imported')").unwrap();
+            let mut store = SourceStore::new(true);
+            let (id, content) = store.add_file(dir.path(), &file).unwrap();
+            assert!(content.is_none(), "{name}");
+            assert!(store.unverified.is_empty(), "{name}");
+            store.add_file(dir.path(), &file).unwrap();
+            assert!(store.unverified.is_empty(), "{name}");
+            assert!(store.readable_without_snapshot.is_empty(), "{name}");
+            assert!(store.existence_relative.contains_key(&id), "{name}");
+        }
     }
 
     #[cfg(unix)]
@@ -665,14 +824,9 @@ mod tests {
         let module = outside.path().join("module.js");
         std::fs::write(&module, "export {}").unwrap();
         store.allowed.insert(normalize(&module));
-        assert_eq!(
-            store
-                .add_file(project.path(), &module)
-                .unwrap()
-                .1
-                .as_deref(),
-            Some("export {}")
-        );
+        assert!(store.add_file(project.path(), &module).unwrap().1.is_none());
+        assert_eq!(store.unverified.len(), 1);
+        assert!(store.unverified[0].ends_with("/module.js"));
     }
 
     #[test]
@@ -686,7 +840,11 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert!(files[0].content.is_empty());
         assert!(!files[0].content_included);
-        assert_eq!(files[0].sha256, sha256_hex(b"export const a = 1;"));
+        assert!(files[0].sha256.is_empty());
+        assert_eq!(
+            files[0].revision_evidence,
+            SourceRevisionEvidence::Unavailable
+        );
     }
 
     const PNG_BYTES: &[u8] = &[
@@ -723,7 +881,7 @@ mod tests {
         assert!(!files[0].stale);
         assert!(!files[0].content_included);
         assert!(files[0].content.is_empty());
-        assert_eq!(files[0].sha256, sha256_hex(PNG_BYTES));
+        assert!(files[0].sha256.is_empty());
     }
 
     #[test]
@@ -736,7 +894,9 @@ mod tests {
         assert_eq!(text, None);
         assert!(store.changed_since_build.is_empty());
         assert!(store.project_relative.is_empty());
-        assert!(!store.into_files()[0].stale);
+        let source = store.into_files().pop().unwrap();
+        assert!(!source.stale);
+        assert!(source.sha256.is_empty());
     }
 
     #[test]
@@ -1013,13 +1173,13 @@ mod tests {
             ("a.js", Text, Binary, outcome(true, true, true, false)),
             ("a.js", Text, InvalidUtf8, outcome(true, true, true, false)),
             ("a.js", Text, Removed, outcome(true, true, true, false)),
-            // No snapshot: text is read live; non-text is unverifiable but
-            // its removal is still detected.
+            // No snapshot: a live text read cannot verify the built revision.
+            // Keep only an existence check for a saved run.
             (
                 "a.js",
                 None,
                 MatchingText,
-                outcome(false, true, true, false),
+                outcome(false, false, false, true),
             ),
             ("a.js", None, Binary, outcome(false, false, false, true)),
             (
@@ -1183,12 +1343,13 @@ mod tests {
                 ChangedText,
                 outcome(false, true, false, true),
             ),
-            // Without a snapshot the live file is the source, query or not.
+            // Without a snapshot neither a plain nor a queried live file
+            // proves the analyzed revision.
             (
                 "a.js?v=1",
                 None,
                 MatchingText,
-                outcome(false, true, true, false),
+                outcome(false, false, false, true),
             ),
             ("a.js?raw", None, Binary, outcome(false, false, false, true)),
         ];
@@ -1266,15 +1427,21 @@ mod tests {
         for name in ["src/a.js?raw", "src/a.js?v=1#x", "src/a.js#frag"] {
             let path = dir.path().join(name);
             let mut store = SourceStore::new(true);
-            // No source map snapshot: the live backing file is the source and
-            // is neither unreadable nor stale.
+            // No source map snapshot: a live read verifies the path, but not
+            // the revision used by the build.
             let (id, text) = store
                 .add_file(dir.path(), &path)
                 .unwrap_or_else(|| panic!("{name} must be readable"));
-            assert_eq!(text.as_deref(), Some("export const a = 1;"), "{name}");
+            assert!(text.is_none(), "{name}");
             assert!(store.unreadable.is_empty(), "{name}");
+            let expected_gap = if name.ends_with("?raw") {
+                Vec::new()
+            } else {
+                vec![name.to_owned()]
+            };
+            assert_eq!(store.unverified, expected_gap, "{name}");
             assert!(store.changed_since_build.is_empty(), "{name}");
-            assert_eq!(store.project_relative[&id], "src/a.js", "{name}");
+            assert_eq!(store.existence_relative[&id], "src/a.js", "{name}");
             // The display path and module identity keep the query.
             let files = store.into_files();
             assert_eq!(files[0].path, name);
@@ -1396,5 +1563,27 @@ mod tests {
             assert!(files[0].content_included);
             assert_eq!(files[0].sha256, sha256_hex(b"export const a = 1;"));
         }
+    }
+
+    #[test]
+    fn derived_module_keeps_the_snapshot_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.js");
+        let snapshot = "export const value = 1;";
+        std::fs::write(&file, snapshot).unwrap();
+        let queried = dir.path().join("a.js?v=1");
+        let mut store = SourceStore::new(true);
+        store
+            .snapshots
+            .insert(normalize(&queried), snapshot.to_owned());
+
+        store.add_file(dir.path(), &queried).unwrap();
+        let source = store.into_files().pop().unwrap();
+        assert_eq!(
+            source.revision_evidence,
+            SourceRevisionEvidence::BuildSnapshot
+        );
+        assert!(source.content_included);
+        assert_eq!(source.sha256, sha256_hex(snapshot.as_bytes()));
     }
 }

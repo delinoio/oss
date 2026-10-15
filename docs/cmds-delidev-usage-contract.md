@@ -329,6 +329,11 @@ authorized snapshot, two-second deadline and binary/JSON size limits. CLI JSON
 and desktop semantic tables expose the same server-owned values; each historical category amount carries its original currency. Shared pricing IDs count once across source families without merging their separate category projections; missing support
 receives explicit server-update guidance. Native-profile CLI reads require exactly one Claude and one OpenCode summary with no duplicate or unknown families; a profile echo from an older Codex/Grok-only server is insufficient.
 
+Claude observations and main-loop accounting retain the original API Provider
+UUID or the closed `claude` subscription service with no Provider UUID. The
+immutable model key must match that source; mixed and foreign service identities
+reject atomically. Subscription execution does not create a synthetic Provider.
+
 Claude input is the arbitrary-precision sum of its three measured disjoint input
 categories. Missing primitives remain null, explicit zero stays measured and
 thinking remains included in output. Native cumulative monetary amounts cannot

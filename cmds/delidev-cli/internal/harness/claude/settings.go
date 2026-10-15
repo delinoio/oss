@@ -21,10 +21,12 @@ func settingsUncertain() *domain.Error {
 }
 
 type appliedSettingsWire struct {
-	Model     *string         `json:"model"`
-	Effort    json.RawMessage `json:"effort"`
-	Advisor   json.RawMessage `json:"advisor"`
-	Ultracode *bool           `json:"ultracode"`
+	Model              *string         `json:"model"`
+	Effort             json.RawMessage `json:"effort"`
+	Advisor            json.RawMessage `json:"advisor"`
+	Ultracode          *bool           `json:"ultracode"`
+	UltracodeRequested json.RawMessage `json:"ultracodeRequested,omitempty"`
+	UltracodeAvailable json.RawMessage `json:"ultracodeAvailable,omitempty"`
 }
 
 func (s *appliedSettingsWire) UnmarshalJSON(raw []byte) error {
@@ -39,12 +41,27 @@ func (s *appliedSettingsWire) UnmarshalJSON(raw []byte) error {
 
 func decodeAppliedSettings(raw []byte, model string, effort NativeEffort) (AppliedSettings, error) {
 	var value struct {
-		Effective map[string]json.RawMessage `json:"effective"`
-		Sources   []json.RawMessage          `json:"sources"`
-		Applied   *appliedSettingsWire       `json:"applied"`
+		Effective                     map[string]json.RawMessage `json:"effective"`
+		Sources                       []json.RawMessage          `json:"sources"`
+		Applied                       *appliedSettingsWire       `json:"applied"`
+		RemoteControlPolicyLockReason json.RawMessage            `json:"remote_control_policy_lock_reason,omitempty"`
 	}
 	if decodeNativeObject(raw, &value) != nil || value.Applied == nil || value.Applied.Model == nil || domain.Text(*value.Applied.Model, "native applied model", 256, true) != nil || value.Applied.Ultracode == nil || len(value.Applied.Effort) == 0 || len(value.Applied.Advisor) == 0 || value.Effective == nil || value.Sources == nil {
 		return AppliedSettings{}, incompatible()
+	}
+	// Availability and a policy-lock explanation are presentation metadata.
+	// Keep their bounded shapes private; requested orchestration must stay off.
+	if len(value.RemoteControlPolicyLockReason) != 0 {
+		var reason *string
+		if json.Unmarshal(value.RemoteControlPolicyLockReason, &reason) != nil || reason == nil || domain.Text(*reason, "native policy lock reason", 4096, false) != nil {
+			return AppliedSettings{}, incompatible()
+		}
+	}
+	if len(value.Applied.UltracodeAvailable) != 0 && !bytes.Equal(bytes.TrimSpace(value.Applied.UltracodeAvailable), []byte("true")) && !bytes.Equal(bytes.TrimSpace(value.Applied.UltracodeAvailable), []byte("false")) {
+		return AppliedSettings{}, incompatible()
+	}
+	if len(value.Applied.UltracodeRequested) != 0 && !bytes.Equal(bytes.TrimSpace(value.Applied.UltracodeRequested), []byte("false")) {
+		return AppliedSettings{}, settingsUncertain()
 	}
 	// The initial API profile has no settings files or additional model-driven
 	// orchestration. A raw cascade is not proof of applied selection, and an

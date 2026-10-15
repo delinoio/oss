@@ -4,6 +4,7 @@ import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
+  SettingsActionTone,
 } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
@@ -973,6 +974,7 @@ function BackupInspection({
             </dl>
             <p>{copy("backups.thisObservationDoesNotRestoreData_2a506c")}</p>
             <SettingsActionButton
+              tone={SettingsActionTone.Danger}
               icon={SettingsActionIcon.Delete}
               presentation={SettingsActionPresentation.Icon}
               type="button"
@@ -1037,6 +1039,7 @@ function BackupInspection({
                   />
                   <SettingsTaskActions>
                     <SettingsActionButton
+                      tone={SettingsActionTone.Danger}
                       icon={SettingsActionIcon.Delete}
                       className="backups-destructive"
                       disabled={
@@ -1068,6 +1071,7 @@ function BackupInspection({
                     </SettingsTaskDismissButton>
                     {remove.uncertain ? (
                       <SettingsActionButton
+                        tone={SettingsActionTone.Danger}
                         icon={SettingsActionIcon.Retry}
                         disabled={!active || remove.busy}
                         onClick={remove.retry}
@@ -1103,6 +1107,7 @@ function BackupInspection({
         <Problem error={remove.error} summary={copy("backups.deletionHelp")} />
         {remove.uncertain ? (
           <SettingsActionButton
+            tone={SettingsActionTone.Danger}
             icon={SettingsActionIcon.Retry}
             disabled={!active || remove.busy}
             onClick={remove.retry}

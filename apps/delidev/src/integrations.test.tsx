@@ -11,6 +11,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   EntityKind,
   ErrorDetailSchema,
@@ -726,4 +727,42 @@ it("pins a paged profile Rename action to its original identity without observin
   ).toBe("Work");
   expect(f.list).toHaveBeenCalledTimes(reads);
   expect(f.save).not.toHaveBeenCalled();
+});
+
+it("marks the GitHub profile deletion opener and confirmation Danger while Keep and Validate stay neutral", async () => {
+  const f = fixture();
+  render(f.view());
+  fireEvent.click(await screen.findByRole("button", { name: "Manage Work" }));
+  expectTone(screen.getByRole("button", { name: "Validate profile" }), neutral);
+  expectTone(screen.getByRole("button", { name: "Delete profile" }), danger);
+  fireEvent.click(screen.getByRole("button", { name: "Delete profile" }));
+  expect(f.remove).not.toHaveBeenCalled();
+  expectTone(
+    screen.getByRole("button", { name: "Confirm profile deletion" }),
+    danger,
+  );
+  expectTone(screen.getByRole("button", { name: "Keep profile" }), neutral);
+});
+it("marks the retry of the original GitHub profile deletion Danger", async () => {
+  const f = fixture();
+  f.update(
+    create(ResourceSchema, {
+      ...f.profile,
+      revision: 9007199254741000n,
+      documentJson: encode({
+        ...profileDocument(f.profile),
+        pending: {
+          operation: "delete-profile",
+          request_id: newRequestId(),
+          expected_revision: "9007199254740999",
+        },
+      }),
+    }),
+  );
+  render(f.view());
+  fireEvent.click(await screen.findByRole("button", { name: "Manage Work" }));
+  expectTone(
+    screen.getByRole("button", { name: "Retry original profile deletion" }),
+    danger,
+  );
 });

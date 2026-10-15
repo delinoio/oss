@@ -58,6 +58,7 @@ import {
   type Pending,
   type State,
 } from "./state";
+import { ActionTone, actionTone } from "./action-tone";
 import { Connection, Status } from "./connection";
 import { ObservationEpoch, useObservationState } from "./observation";
 import {
@@ -561,6 +562,7 @@ function Settings({
             </>
           ) : null}
           <button
+            {...actionTone(ActionTone.Danger)}
             disabled={busy}
             onClick={() => {
               setConfirmText(c.confirmForget);
@@ -731,6 +733,7 @@ function Settings({
       {confirm ? (
         <Modal title={confirmText} close={() => setConfirm(undefined)}>
           <button
+            {...actionTone(ActionTone.Danger)}
             disabled={busy}
             onClick={() =>
               void run(async () => {
@@ -1194,6 +1197,10 @@ function Connected({
                     {c.inspect}
                   </button>
                   <button
+                    // The retained request replays the original revocation.
+                    {...(pending.operation === Operation.Revoke
+                      ? actionTone(ActionTone.Danger)
+                      : {})}
                     disabled={!enabled || busy || inspected !== pending.request}
                     onClick={() => {
                       setRevokeConfirm(false);
@@ -1273,7 +1280,15 @@ function Connected({
                   title={revokeConfirm ? c.confirmRevoke : c.confirmRetry}
                   close={() => setConfirm(undefined)}
                 >
-                  <button disabled={busy} onClick={() => void confirm()}>
+                  <button
+                    {...actionTone(
+                      revokeConfirm || pending?.operation === Operation.Revoke
+                        ? ActionTone.Danger
+                        : ActionTone.Default,
+                    )}
+                    disabled={busy}
+                    onClick={() => void confirm()}
+                  >
                     {c.confirm}
                   </button>
                 </Modal>
@@ -1285,6 +1300,7 @@ function Connected({
                 </p>
                 <p>{status}</p>
                 <button
+                  {...actionTone(ActionTone.Danger)}
                   disabled={!enabled || busy || !!pending}
                   onClick={() => {
                     setRevokeConfirm(true);

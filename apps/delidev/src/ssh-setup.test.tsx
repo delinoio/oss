@@ -5,6 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   InstallationService,
   ResourceSchema,
@@ -60,10 +61,22 @@ function fixture(supported = true) {
   );
   fireEvent.click(screen.getByText("Set up a Worker over SSH"));
   return {
+    id,
     inspect,
     start,
     client,
     fingerprint,
+    setState: (state: string) => {
+      resource = create(ResourceSchema, {
+        ...resource,
+        revision: 2n,
+        documentJson: encode({
+          state,
+          target: { host: "host.example", port: 22, user: "runner" },
+          identity: { fingerprint },
+        }),
+      });
+    },
     setRequested: () => {
       resource = create(ResourceSchema, {
         ...resource,
@@ -141,3 +154,30 @@ it("requires host confirmation, clears secrets and never retries an ambiguous in
   );
   expect(f.start).toHaveBeenCalledTimes(1);
 });
+
+it.each([
+  ["REQUESTED", false],
+  ["UNCERTAIN", true],
+])(
+  "marks the settled SSH credential removal Danger and keeps reconciliation neutral for %s",
+  async (state, reconcile) => {
+    const f = fixture();
+    f.setState(state);
+    await screen.findByRole("button", { name: "Inspect host identity" });
+    fireEvent.change(screen.getByLabelText("Original setup ID"), {
+      target: { value: f.id },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect original setup" }),
+    );
+    const cancel = await screen.findByRole("button", {
+      name: "Cancel setup and remove settled SSH credentials",
+    });
+    expectTone(cancel, danger);
+    const reconciliation = screen.queryByRole("button", {
+      name: "Reconcile original setup",
+    });
+    expect(reconciliation !== null).toBe(reconcile);
+    if (reconciliation) expectTone(reconciliation, neutral);
+  },
+);

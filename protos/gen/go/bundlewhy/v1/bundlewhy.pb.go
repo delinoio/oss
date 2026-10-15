@@ -581,6 +581,56 @@ func (SourceOrigin) EnumDescriptor() ([]byte, []int) {
 	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{9}
 }
 
+// Whether original source text is proven to be the revision read by the build.
+type SourceRevisionEvidence int32
+
+const (
+	SourceRevisionEvidence_SOURCE_REVISION_EVIDENCE_UNSPECIFIED    SourceRevisionEvidence = 0
+	SourceRevisionEvidence_SOURCE_REVISION_EVIDENCE_BUILD_SNAPSHOT SourceRevisionEvidence = 1
+	SourceRevisionEvidence_SOURCE_REVISION_EVIDENCE_UNAVAILABLE    SourceRevisionEvidence = 2
+)
+
+// Enum value maps for SourceRevisionEvidence.
+var (
+	SourceRevisionEvidence_name = map[int32]string{
+		0: "SOURCE_REVISION_EVIDENCE_UNSPECIFIED",
+		1: "SOURCE_REVISION_EVIDENCE_BUILD_SNAPSHOT",
+		2: "SOURCE_REVISION_EVIDENCE_UNAVAILABLE",
+	}
+	SourceRevisionEvidence_value = map[string]int32{
+		"SOURCE_REVISION_EVIDENCE_UNSPECIFIED":    0,
+		"SOURCE_REVISION_EVIDENCE_BUILD_SNAPSHOT": 1,
+		"SOURCE_REVISION_EVIDENCE_UNAVAILABLE":    2,
+	}
+)
+
+func (x SourceRevisionEvidence) Enum() *SourceRevisionEvidence {
+	p := new(SourceRevisionEvidence)
+	*p = x
+	return p
+}
+
+func (x SourceRevisionEvidence) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SourceRevisionEvidence) Descriptor() protoreflect.EnumDescriptor {
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[10].Descriptor()
+}
+
+func (SourceRevisionEvidence) Type() protoreflect.EnumType {
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[10]
+}
+
+func (x SourceRevisionEvidence) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SourceRevisionEvidence.Descriptor instead.
+func (SourceRevisionEvidence) EnumDescriptor() ([]byte, []int) {
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{10}
+}
+
 // Whether export usage evidence exists for a diagnostic.
 type ExportUsageState int32
 
@@ -617,11 +667,11 @@ func (x ExportUsageState) String() string {
 }
 
 func (ExportUsageState) Descriptor() protoreflect.EnumDescriptor {
-	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[10].Descriptor()
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[11].Descriptor()
 }
 
 func (ExportUsageState) Type() protoreflect.EnumType {
-	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[10]
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[11]
 }
 
 func (x ExportUsageState) Number() protoreflect.EnumNumber {
@@ -630,7 +680,7 @@ func (x ExportUsageState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ExportUsageState.Descriptor instead.
 func (ExportUsageState) EnumDescriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{10}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{11}
 }
 
 // Whether an export reference names an export.
@@ -670,11 +720,11 @@ func (x ExportScope) String() string {
 }
 
 func (ExportScope) Descriptor() protoreflect.EnumDescriptor {
-	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[11].Descriptor()
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[12].Descriptor()
 }
 
 func (ExportScope) Type() protoreflect.EnumType {
-	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[11]
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[12]
 }
 
 func (x ExportScope) Number() protoreflect.EnumNumber {
@@ -683,7 +733,7 @@ func (x ExportScope) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ExportScope.Descriptor instead.
 func (ExportScope) EnumDescriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{11}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{12}
 }
 
 // Why a derived export usage chain stops.
@@ -734,11 +784,11 @@ func (x ExportUsagePathEnd) String() string {
 }
 
 func (ExportUsagePathEnd) Descriptor() protoreflect.EnumDescriptor {
-	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[12].Descriptor()
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[13].Descriptor()
 }
 
 func (ExportUsagePathEnd) Type() protoreflect.EnumType {
-	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[12]
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[13]
 }
 
 func (x ExportUsagePathEnd) Number() protoreflect.EnumNumber {
@@ -747,7 +797,7 @@ func (x ExportUsagePathEnd) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ExportUsagePathEnd.Descriptor instead.
 func (ExportUsagePathEnd) EnumDescriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{12}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{13}
 }
 
 // The first display or work limit that shortened the shown chains.
@@ -793,11 +843,11 @@ func (x ExportUsageTruncation) String() string {
 }
 
 func (ExportUsageTruncation) Descriptor() protoreflect.EnumDescriptor {
-	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[13].Descriptor()
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[14].Descriptor()
 }
 
 func (ExportUsageTruncation) Type() protoreflect.EnumType {
-	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[13]
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[14]
 }
 
 func (x ExportUsageTruncation) Number() protoreflect.EnumNumber {
@@ -806,7 +856,7 @@ func (x ExportUsageTruncation) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ExportUsageTruncation.Descriptor instead.
 func (ExportUsageTruncation) EnumDescriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{13}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{14}
 }
 
 type AttributionState int32
@@ -842,11 +892,11 @@ func (x AttributionState) String() string {
 }
 
 func (AttributionState) Descriptor() protoreflect.EnumDescriptor {
-	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[14].Descriptor()
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[15].Descriptor()
 }
 
 func (AttributionState) Type() protoreflect.EnumType {
-	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[14]
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[15]
 }
 
 func (x AttributionState) Number() protoreflect.EnumNumber {
@@ -855,7 +905,7 @@ func (x AttributionState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AttributionState.Descriptor instead.
 func (AttributionState) EnumDescriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{14}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{15}
 }
 
 type ProblemSeverity int32
@@ -891,11 +941,11 @@ func (x ProblemSeverity) String() string {
 }
 
 func (ProblemSeverity) Descriptor() protoreflect.EnumDescriptor {
-	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[15].Descriptor()
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[16].Descriptor()
 }
 
 func (ProblemSeverity) Type() protoreflect.EnumType {
-	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[15]
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[16]
 }
 
 func (x ProblemSeverity) Number() protoreflect.EnumNumber {
@@ -904,7 +954,7 @@ func (x ProblemSeverity) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProblemSeverity.Descriptor instead.
 func (ProblemSeverity) EnumDescriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{15}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{16}
 }
 
 type ReportMode int32
@@ -946,11 +996,11 @@ func (x ReportMode) String() string {
 }
 
 func (ReportMode) Descriptor() protoreflect.EnumDescriptor {
-	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[16].Descriptor()
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[17].Descriptor()
 }
 
 func (ReportMode) Type() protoreflect.EnumType {
-	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[16]
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[17]
 }
 
 func (x ReportMode) Number() protoreflect.EnumNumber {
@@ -959,7 +1009,7 @@ func (x ReportMode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ReportMode.Descriptor instead.
 func (ReportMode) EnumDescriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{16}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{17}
 }
 
 type EngineIdentity struct {
@@ -2272,9 +2322,10 @@ type SourceFile struct {
 	Content         string `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
 	ContentIncluded bool   `protobuf:"varint,6,opt,name=content_included,json=contentIncluded,proto3" json:"content_included,omitempty"`
 	// True when the saved hash differs from the current project file.
-	Stale         bool `protobuf:"varint,7,opt,name=stale,proto3" json:"stale,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Stale            bool                   `protobuf:"varint,7,opt,name=stale,proto3" json:"stale,omitempty"`
+	RevisionEvidence SourceRevisionEvidence `protobuf:"varint,8,opt,name=revision_evidence,json=revisionEvidence,proto3,enum=bundlewhy.v1.SourceRevisionEvidence" json:"revision_evidence,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *SourceFile) Reset() {
@@ -2356,16 +2407,24 @@ func (x *SourceFile) GetStale() bool {
 	return false
 }
 
+func (x *SourceFile) GetRevisionEvidence() SourceRevisionEvidence {
+	if x != nil {
+		return x.RevisionEvidence
+	}
+	return SourceRevisionEvidence_SOURCE_REVISION_EVIDENCE_UNSPECIFIED
+}
+
 type SourceFileSummary struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Path            string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	Origin          SourceOrigin           `protobuf:"varint,3,opt,name=origin,proto3,enum=bundlewhy.v1.SourceOrigin" json:"origin,omitempty"`
-	Sha256          string                 `protobuf:"bytes,4,opt,name=sha256,proto3" json:"sha256,omitempty"`
-	ContentIncluded bool                   `protobuf:"varint,5,opt,name=content_included,json=contentIncluded,proto3" json:"content_included,omitempty"`
-	Stale           bool                   `protobuf:"varint,6,opt,name=stale,proto3" json:"stale,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Path             string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Origin           SourceOrigin           `protobuf:"varint,3,opt,name=origin,proto3,enum=bundlewhy.v1.SourceOrigin" json:"origin,omitempty"`
+	Sha256           string                 `protobuf:"bytes,4,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	ContentIncluded  bool                   `protobuf:"varint,5,opt,name=content_included,json=contentIncluded,proto3" json:"content_included,omitempty"`
+	Stale            bool                   `protobuf:"varint,6,opt,name=stale,proto3" json:"stale,omitempty"`
+	RevisionEvidence SourceRevisionEvidence `protobuf:"varint,7,opt,name=revision_evidence,json=revisionEvidence,proto3,enum=bundlewhy.v1.SourceRevisionEvidence" json:"revision_evidence,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *SourceFileSummary) Reset() {
@@ -2438,6 +2497,13 @@ func (x *SourceFileSummary) GetStale() bool {
 		return x.Stale
 	}
 	return false
+}
+
+func (x *SourceFileSummary) GetRevisionEvidence() SourceRevisionEvidence {
+	if x != nil {
+		return x.RevisionEvidence
+	}
+	return SourceRevisionEvidence_SOURCE_REVISION_EVIDENCE_UNSPECIFIED
 }
 
 type Analysis struct {
@@ -3507,7 +3573,7 @@ const file_bundlewhy_v1_bundlewhy_proto_rawDesc = "" +
 	"\brecovery\x18\x04 \x01(\tR\brecovery\"5\n" +
 	"\vConfigEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"\xd7\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"\xaa\x02\n" +
 	"\n" +
 	"SourceFile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
@@ -3516,14 +3582,16 @@ const file_bundlewhy_v1_bundlewhy_proto_rawDesc = "" +
 	"\x06sha256\x18\x04 \x01(\tR\x06sha256\x12\x18\n" +
 	"\acontent\x18\x05 \x01(\tR\acontent\x12)\n" +
 	"\x10content_included\x18\x06 \x01(\bR\x0fcontentIncluded\x12\x14\n" +
-	"\x05stale\x18\a \x01(\bR\x05stale\"\xc4\x01\n" +
+	"\x05stale\x18\a \x01(\bR\x05stale\x12Q\n" +
+	"\x11revision_evidence\x18\b \x01(\x0e2$.bundlewhy.v1.SourceRevisionEvidenceR\x10revisionEvidence\"\x97\x02\n" +
 	"\x11SourceFileSummary\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x122\n" +
 	"\x06origin\x18\x03 \x01(\x0e2\x1a.bundlewhy.v1.SourceOriginR\x06origin\x12\x16\n" +
 	"\x06sha256\x18\x04 \x01(\tR\x06sha256\x12)\n" +
 	"\x10content_included\x18\x05 \x01(\bR\x0fcontentIncluded\x12\x14\n" +
-	"\x05stale\x18\x06 \x01(\bR\x05stale\"\xfe\x05\n" +
+	"\x05stale\x18\x06 \x01(\bR\x05stale\x12Q\n" +
+	"\x11revision_evidence\x18\a \x01(\x0e2$.bundlewhy.v1.SourceRevisionEvidenceR\x10revisionEvidence\"\xfe\x05\n" +
 	"\bAnalysis\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x15\n" +
 	"\x06run_id\x18\x02 \x01(\tR\x05runId\x12!\n" +
@@ -3651,7 +3719,11 @@ const file_bundlewhy_v1_bundlewhy_proto_rawDesc = "" +
 	"\x15SOURCE_ORIGIN_PROJECT\x10\x01\x12\x1c\n" +
 	"\x18SOURCE_ORIGIN_DEPENDENCY\x10\x02\x12\x19\n" +
 	"\x15SOURCE_ORIGIN_VIRTUAL\x10\x03\x12\x1b\n" +
-	"\x17SOURCE_ORIGIN_GENERATED\x10\x04*|\n" +
+	"\x17SOURCE_ORIGIN_GENERATED\x10\x04*\x99\x01\n" +
+	"\x16SourceRevisionEvidence\x12(\n" +
+	"$SOURCE_REVISION_EVIDENCE_UNSPECIFIED\x10\x00\x12+\n" +
+	"'SOURCE_REVISION_EVIDENCE_BUILD_SNAPSHOT\x10\x01\x12(\n" +
+	"$SOURCE_REVISION_EVIDENCE_UNAVAILABLE\x10\x02*|\n" +
 	"\x10ExportUsageState\x12\"\n" +
 	"\x1eEXPORT_USAGE_STATE_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cEXPORT_USAGE_STATE_AVAILABLE\x10\x01\x12\"\n" +
@@ -3707,7 +3779,7 @@ func file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP() []byte {
 	return file_bundlewhy_v1_bundlewhy_proto_rawDescData
 }
 
-var file_bundlewhy_v1_bundlewhy_proto_enumTypes = make([]protoimpl.EnumInfo, 17)
+var file_bundlewhy_v1_bundlewhy_proto_enumTypes = make([]protoimpl.EnumInfo, 18)
 var file_bundlewhy_v1_bundlewhy_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_bundlewhy_v1_bundlewhy_proto_goTypes = []any{
 	(OptimizationCategory)(0),      // 0: bundlewhy.v1.OptimizationCategory
@@ -3720,49 +3792,50 @@ var file_bundlewhy_v1_bundlewhy_proto_goTypes = []any{
 	(CoverageState)(0),             // 7: bundlewhy.v1.CoverageState
 	(LocationKind)(0),              // 8: bundlewhy.v1.LocationKind
 	(SourceOrigin)(0),              // 9: bundlewhy.v1.SourceOrigin
-	(ExportUsageState)(0),          // 10: bundlewhy.v1.ExportUsageState
-	(ExportScope)(0),               // 11: bundlewhy.v1.ExportScope
-	(ExportUsagePathEnd)(0),        // 12: bundlewhy.v1.ExportUsagePathEnd
-	(ExportUsageTruncation)(0),     // 13: bundlewhy.v1.ExportUsageTruncation
-	(AttributionState)(0),          // 14: bundlewhy.v1.AttributionState
-	(ProblemSeverity)(0),           // 15: bundlewhy.v1.ProblemSeverity
-	(ReportMode)(0),                // 16: bundlewhy.v1.ReportMode
-	(*EngineIdentity)(nil),         // 17: bundlewhy.v1.EngineIdentity
-	(*SourceLocation)(nil),         // 18: bundlewhy.v1.SourceLocation
-	(*CodeSnippet)(nil),            // 19: bundlewhy.v1.CodeSnippet
-	(*Condition)(nil),              // 20: bundlewhy.v1.Condition
-	(*Evidence)(nil),               // 21: bundlewhy.v1.Evidence
-	(*DependencyPath)(nil),         // 22: bundlewhy.v1.DependencyPath
-	(*ExportReference)(nil),        // 23: bundlewhy.v1.ExportReference
-	(*ExportUsageEdge)(nil),        // 24: bundlewhy.v1.ExportUsageEdge
-	(*ExportUsagePath)(nil),        // 25: bundlewhy.v1.ExportUsagePath
-	(*ExportUsage)(nil),            // 26: bundlewhy.v1.ExportUsage
-	(*CorrectiveAction)(nil),       // 27: bundlewhy.v1.CorrectiveAction
-	(*Diagnostic)(nil),             // 28: bundlewhy.v1.Diagnostic
-	(*CategoryCoverage)(nil),       // 29: bundlewhy.v1.CategoryCoverage
-	(*SourceAttribution)(nil),      // 30: bundlewhy.v1.SourceAttribution
-	(*ChunkSize)(nil),              // 31: bundlewhy.v1.ChunkSize
-	(*Problem)(nil),                // 32: bundlewhy.v1.Problem
-	(*ConfigEntry)(nil),            // 33: bundlewhy.v1.ConfigEntry
-	(*SourceFile)(nil),             // 34: bundlewhy.v1.SourceFile
-	(*SourceFileSummary)(nil),      // 35: bundlewhy.v1.SourceFileSummary
-	(*Analysis)(nil),               // 36: bundlewhy.v1.Analysis
-	(*RunProgress)(nil),            // 37: bundlewhy.v1.RunProgress
-	(*GetRunProgressRequest)(nil),  // 38: bundlewhy.v1.GetRunProgressRequest
-	(*GetRunProgressResponse)(nil), // 39: bundlewhy.v1.GetRunProgressResponse
-	(*GetAnalysisRequest)(nil),     // 40: bundlewhy.v1.GetAnalysisRequest
-	(*GetAnalysisResponse)(nil),    // 41: bundlewhy.v1.GetAnalysisResponse
-	(*GetSourceFileRequest)(nil),   // 42: bundlewhy.v1.GetSourceFileRequest
-	(*GetSourceFileResponse)(nil),  // 43: bundlewhy.v1.GetSourceFileResponse
-	(*CancelRunRequest)(nil),       // 44: bundlewhy.v1.CancelRunRequest
-	(*CancelRunResponse)(nil),      // 45: bundlewhy.v1.CancelRunResponse
-	(*RunSummary)(nil),             // 46: bundlewhy.v1.RunSummary
-	(*ListRunsRequest)(nil),        // 47: bundlewhy.v1.ListRunsRequest
-	(*ListRunsResponse)(nil),       // 48: bundlewhy.v1.ListRunsResponse
-	(*SelectRunRequest)(nil),       // 49: bundlewhy.v1.SelectRunRequest
-	(*SelectRunResponse)(nil),      // 50: bundlewhy.v1.SelectRunResponse
-	(*ExportReportRequest)(nil),    // 51: bundlewhy.v1.ExportReportRequest
-	(*ExportReportResponse)(nil),   // 52: bundlewhy.v1.ExportReportResponse
+	(SourceRevisionEvidence)(0),    // 10: bundlewhy.v1.SourceRevisionEvidence
+	(ExportUsageState)(0),          // 11: bundlewhy.v1.ExportUsageState
+	(ExportScope)(0),               // 12: bundlewhy.v1.ExportScope
+	(ExportUsagePathEnd)(0),        // 13: bundlewhy.v1.ExportUsagePathEnd
+	(ExportUsageTruncation)(0),     // 14: bundlewhy.v1.ExportUsageTruncation
+	(AttributionState)(0),          // 15: bundlewhy.v1.AttributionState
+	(ProblemSeverity)(0),           // 16: bundlewhy.v1.ProblemSeverity
+	(ReportMode)(0),                // 17: bundlewhy.v1.ReportMode
+	(*EngineIdentity)(nil),         // 18: bundlewhy.v1.EngineIdentity
+	(*SourceLocation)(nil),         // 19: bundlewhy.v1.SourceLocation
+	(*CodeSnippet)(nil),            // 20: bundlewhy.v1.CodeSnippet
+	(*Condition)(nil),              // 21: bundlewhy.v1.Condition
+	(*Evidence)(nil),               // 22: bundlewhy.v1.Evidence
+	(*DependencyPath)(nil),         // 23: bundlewhy.v1.DependencyPath
+	(*ExportReference)(nil),        // 24: bundlewhy.v1.ExportReference
+	(*ExportUsageEdge)(nil),        // 25: bundlewhy.v1.ExportUsageEdge
+	(*ExportUsagePath)(nil),        // 26: bundlewhy.v1.ExportUsagePath
+	(*ExportUsage)(nil),            // 27: bundlewhy.v1.ExportUsage
+	(*CorrectiveAction)(nil),       // 28: bundlewhy.v1.CorrectiveAction
+	(*Diagnostic)(nil),             // 29: bundlewhy.v1.Diagnostic
+	(*CategoryCoverage)(nil),       // 30: bundlewhy.v1.CategoryCoverage
+	(*SourceAttribution)(nil),      // 31: bundlewhy.v1.SourceAttribution
+	(*ChunkSize)(nil),              // 32: bundlewhy.v1.ChunkSize
+	(*Problem)(nil),                // 33: bundlewhy.v1.Problem
+	(*ConfigEntry)(nil),            // 34: bundlewhy.v1.ConfigEntry
+	(*SourceFile)(nil),             // 35: bundlewhy.v1.SourceFile
+	(*SourceFileSummary)(nil),      // 36: bundlewhy.v1.SourceFileSummary
+	(*Analysis)(nil),               // 37: bundlewhy.v1.Analysis
+	(*RunProgress)(nil),            // 38: bundlewhy.v1.RunProgress
+	(*GetRunProgressRequest)(nil),  // 39: bundlewhy.v1.GetRunProgressRequest
+	(*GetRunProgressResponse)(nil), // 40: bundlewhy.v1.GetRunProgressResponse
+	(*GetAnalysisRequest)(nil),     // 41: bundlewhy.v1.GetAnalysisRequest
+	(*GetAnalysisResponse)(nil),    // 42: bundlewhy.v1.GetAnalysisResponse
+	(*GetSourceFileRequest)(nil),   // 43: bundlewhy.v1.GetSourceFileRequest
+	(*GetSourceFileResponse)(nil),  // 44: bundlewhy.v1.GetSourceFileResponse
+	(*CancelRunRequest)(nil),       // 45: bundlewhy.v1.CancelRunRequest
+	(*CancelRunResponse)(nil),      // 46: bundlewhy.v1.CancelRunResponse
+	(*RunSummary)(nil),             // 47: bundlewhy.v1.RunSummary
+	(*ListRunsRequest)(nil),        // 48: bundlewhy.v1.ListRunsRequest
+	(*ListRunsResponse)(nil),       // 49: bundlewhy.v1.ListRunsResponse
+	(*SelectRunRequest)(nil),       // 50: bundlewhy.v1.SelectRunRequest
+	(*SelectRunResponse)(nil),      // 51: bundlewhy.v1.SelectRunResponse
+	(*ExportReportRequest)(nil),    // 52: bundlewhy.v1.ExportReportRequest
+	(*ExportReportResponse)(nil),   // 53: bundlewhy.v1.ExportReportResponse
 }
 var file_bundlewhy_v1_bundlewhy_proto_depIdxs = []int32{
 	5,  // 0: bundlewhy.v1.EngineIdentity.bundler:type_name -> bundlewhy.v1.Bundler
@@ -3771,70 +3844,72 @@ var file_bundlewhy_v1_bundlewhy_proto_depIdxs = []int32{
 	8,  // 3: bundlewhy.v1.CodeSnippet.kind:type_name -> bundlewhy.v1.LocationKind
 	2,  // 4: bundlewhy.v1.Condition.outcome:type_name -> bundlewhy.v1.ConditionOutcome
 	1,  // 5: bundlewhy.v1.Evidence.status:type_name -> bundlewhy.v1.EvidenceStatus
-	11, // 6: bundlewhy.v1.ExportReference.scope:type_name -> bundlewhy.v1.ExportScope
-	23, // 7: bundlewhy.v1.ExportUsageEdge.consumer:type_name -> bundlewhy.v1.ExportReference
-	23, // 8: bundlewhy.v1.ExportUsageEdge.provider:type_name -> bundlewhy.v1.ExportReference
-	24, // 9: bundlewhy.v1.ExportUsagePath.edges:type_name -> bundlewhy.v1.ExportUsageEdge
-	12, // 10: bundlewhy.v1.ExportUsagePath.end:type_name -> bundlewhy.v1.ExportUsagePathEnd
-	10, // 11: bundlewhy.v1.ExportUsage.state:type_name -> bundlewhy.v1.ExportUsageState
-	25, // 12: bundlewhy.v1.ExportUsage.paths:type_name -> bundlewhy.v1.ExportUsagePath
-	13, // 13: bundlewhy.v1.ExportUsage.truncation:type_name -> bundlewhy.v1.ExportUsageTruncation
+	12, // 6: bundlewhy.v1.ExportReference.scope:type_name -> bundlewhy.v1.ExportScope
+	24, // 7: bundlewhy.v1.ExportUsageEdge.consumer:type_name -> bundlewhy.v1.ExportReference
+	24, // 8: bundlewhy.v1.ExportUsageEdge.provider:type_name -> bundlewhy.v1.ExportReference
+	25, // 9: bundlewhy.v1.ExportUsagePath.edges:type_name -> bundlewhy.v1.ExportUsageEdge
+	13, // 10: bundlewhy.v1.ExportUsagePath.end:type_name -> bundlewhy.v1.ExportUsagePathEnd
+	11, // 11: bundlewhy.v1.ExportUsage.state:type_name -> bundlewhy.v1.ExportUsageState
+	26, // 12: bundlewhy.v1.ExportUsage.paths:type_name -> bundlewhy.v1.ExportUsagePath
+	14, // 13: bundlewhy.v1.ExportUsage.truncation:type_name -> bundlewhy.v1.ExportUsageTruncation
 	0,  // 14: bundlewhy.v1.Diagnostic.category:type_name -> bundlewhy.v1.OptimizationCategory
 	1,  // 15: bundlewhy.v1.Diagnostic.status:type_name -> bundlewhy.v1.EvidenceStatus
-	20, // 16: bundlewhy.v1.Diagnostic.conditions:type_name -> bundlewhy.v1.Condition
-	18, // 17: bundlewhy.v1.Diagnostic.location:type_name -> bundlewhy.v1.SourceLocation
-	18, // 18: bundlewhy.v1.Diagnostic.generated_location:type_name -> bundlewhy.v1.SourceLocation
-	19, // 19: bundlewhy.v1.Diagnostic.snippet:type_name -> bundlewhy.v1.CodeSnippet
-	22, // 20: bundlewhy.v1.Diagnostic.dependency_paths:type_name -> bundlewhy.v1.DependencyPath
-	21, // 21: bundlewhy.v1.Diagnostic.evidence:type_name -> bundlewhy.v1.Evidence
-	27, // 22: bundlewhy.v1.Diagnostic.corrective_action:type_name -> bundlewhy.v1.CorrectiveAction
-	26, // 23: bundlewhy.v1.Diagnostic.export_usage:type_name -> bundlewhy.v1.ExportUsage
+	21, // 16: bundlewhy.v1.Diagnostic.conditions:type_name -> bundlewhy.v1.Condition
+	19, // 17: bundlewhy.v1.Diagnostic.location:type_name -> bundlewhy.v1.SourceLocation
+	19, // 18: bundlewhy.v1.Diagnostic.generated_location:type_name -> bundlewhy.v1.SourceLocation
+	20, // 19: bundlewhy.v1.Diagnostic.snippet:type_name -> bundlewhy.v1.CodeSnippet
+	23, // 20: bundlewhy.v1.Diagnostic.dependency_paths:type_name -> bundlewhy.v1.DependencyPath
+	22, // 21: bundlewhy.v1.Diagnostic.evidence:type_name -> bundlewhy.v1.Evidence
+	28, // 22: bundlewhy.v1.Diagnostic.corrective_action:type_name -> bundlewhy.v1.CorrectiveAction
+	27, // 23: bundlewhy.v1.Diagnostic.export_usage:type_name -> bundlewhy.v1.ExportUsage
 	0,  // 24: bundlewhy.v1.CategoryCoverage.category:type_name -> bundlewhy.v1.OptimizationCategory
 	7,  // 25: bundlewhy.v1.CategoryCoverage.state:type_name -> bundlewhy.v1.CoverageState
-	14, // 26: bundlewhy.v1.ChunkSize.attribution:type_name -> bundlewhy.v1.AttributionState
-	30, // 27: bundlewhy.v1.ChunkSize.sources:type_name -> bundlewhy.v1.SourceAttribution
-	15, // 28: bundlewhy.v1.Problem.severity:type_name -> bundlewhy.v1.ProblemSeverity
+	15, // 26: bundlewhy.v1.ChunkSize.attribution:type_name -> bundlewhy.v1.AttributionState
+	31, // 27: bundlewhy.v1.ChunkSize.sources:type_name -> bundlewhy.v1.SourceAttribution
+	16, // 28: bundlewhy.v1.Problem.severity:type_name -> bundlewhy.v1.ProblemSeverity
 	9,  // 29: bundlewhy.v1.SourceFile.origin:type_name -> bundlewhy.v1.SourceOrigin
-	9,  // 30: bundlewhy.v1.SourceFileSummary.origin:type_name -> bundlewhy.v1.SourceOrigin
-	3,  // 31: bundlewhy.v1.Analysis.status:type_name -> bundlewhy.v1.RunStatus
-	17, // 32: bundlewhy.v1.Analysis.engine:type_name -> bundlewhy.v1.EngineIdentity
-	28, // 33: bundlewhy.v1.Analysis.diagnostics:type_name -> bundlewhy.v1.Diagnostic
-	29, // 34: bundlewhy.v1.Analysis.coverage:type_name -> bundlewhy.v1.CategoryCoverage
-	31, // 35: bundlewhy.v1.Analysis.chunks:type_name -> bundlewhy.v1.ChunkSize
-	32, // 36: bundlewhy.v1.Analysis.problems:type_name -> bundlewhy.v1.Problem
-	33, // 37: bundlewhy.v1.Analysis.config_summary:type_name -> bundlewhy.v1.ConfigEntry
-	35, // 38: bundlewhy.v1.Analysis.sources:type_name -> bundlewhy.v1.SourceFileSummary
-	16, // 39: bundlewhy.v1.Analysis.mode:type_name -> bundlewhy.v1.ReportMode
-	3,  // 40: bundlewhy.v1.RunProgress.status:type_name -> bundlewhy.v1.RunStatus
-	4,  // 41: bundlewhy.v1.RunProgress.stage:type_name -> bundlewhy.v1.RunStage
-	16, // 42: bundlewhy.v1.RunProgress.mode:type_name -> bundlewhy.v1.ReportMode
-	37, // 43: bundlewhy.v1.GetRunProgressResponse.progress:type_name -> bundlewhy.v1.RunProgress
-	36, // 44: bundlewhy.v1.GetAnalysisResponse.analysis:type_name -> bundlewhy.v1.Analysis
-	34, // 45: bundlewhy.v1.GetSourceFileResponse.source:type_name -> bundlewhy.v1.SourceFile
-	37, // 46: bundlewhy.v1.CancelRunResponse.progress:type_name -> bundlewhy.v1.RunProgress
-	3,  // 47: bundlewhy.v1.RunSummary.status:type_name -> bundlewhy.v1.RunStatus
-	5,  // 48: bundlewhy.v1.RunSummary.bundler:type_name -> bundlewhy.v1.Bundler
-	46, // 49: bundlewhy.v1.ListRunsResponse.runs:type_name -> bundlewhy.v1.RunSummary
-	37, // 50: bundlewhy.v1.SelectRunResponse.progress:type_name -> bundlewhy.v1.RunProgress
-	38, // 51: bundlewhy.v1.AnalysisService.GetRunProgress:input_type -> bundlewhy.v1.GetRunProgressRequest
-	40, // 52: bundlewhy.v1.AnalysisService.GetAnalysis:input_type -> bundlewhy.v1.GetAnalysisRequest
-	42, // 53: bundlewhy.v1.AnalysisService.GetSourceFile:input_type -> bundlewhy.v1.GetSourceFileRequest
-	44, // 54: bundlewhy.v1.AnalysisService.CancelRun:input_type -> bundlewhy.v1.CancelRunRequest
-	47, // 55: bundlewhy.v1.AnalysisService.ListRuns:input_type -> bundlewhy.v1.ListRunsRequest
-	49, // 56: bundlewhy.v1.AnalysisService.SelectRun:input_type -> bundlewhy.v1.SelectRunRequest
-	51, // 57: bundlewhy.v1.AnalysisService.ExportReport:input_type -> bundlewhy.v1.ExportReportRequest
-	39, // 58: bundlewhy.v1.AnalysisService.GetRunProgress:output_type -> bundlewhy.v1.GetRunProgressResponse
-	41, // 59: bundlewhy.v1.AnalysisService.GetAnalysis:output_type -> bundlewhy.v1.GetAnalysisResponse
-	43, // 60: bundlewhy.v1.AnalysisService.GetSourceFile:output_type -> bundlewhy.v1.GetSourceFileResponse
-	45, // 61: bundlewhy.v1.AnalysisService.CancelRun:output_type -> bundlewhy.v1.CancelRunResponse
-	48, // 62: bundlewhy.v1.AnalysisService.ListRuns:output_type -> bundlewhy.v1.ListRunsResponse
-	50, // 63: bundlewhy.v1.AnalysisService.SelectRun:output_type -> bundlewhy.v1.SelectRunResponse
-	52, // 64: bundlewhy.v1.AnalysisService.ExportReport:output_type -> bundlewhy.v1.ExportReportResponse
-	58, // [58:65] is the sub-list for method output_type
-	51, // [51:58] is the sub-list for method input_type
-	51, // [51:51] is the sub-list for extension type_name
-	51, // [51:51] is the sub-list for extension extendee
-	0,  // [0:51] is the sub-list for field type_name
+	10, // 30: bundlewhy.v1.SourceFile.revision_evidence:type_name -> bundlewhy.v1.SourceRevisionEvidence
+	9,  // 31: bundlewhy.v1.SourceFileSummary.origin:type_name -> bundlewhy.v1.SourceOrigin
+	10, // 32: bundlewhy.v1.SourceFileSummary.revision_evidence:type_name -> bundlewhy.v1.SourceRevisionEvidence
+	3,  // 33: bundlewhy.v1.Analysis.status:type_name -> bundlewhy.v1.RunStatus
+	18, // 34: bundlewhy.v1.Analysis.engine:type_name -> bundlewhy.v1.EngineIdentity
+	29, // 35: bundlewhy.v1.Analysis.diagnostics:type_name -> bundlewhy.v1.Diagnostic
+	30, // 36: bundlewhy.v1.Analysis.coverage:type_name -> bundlewhy.v1.CategoryCoverage
+	32, // 37: bundlewhy.v1.Analysis.chunks:type_name -> bundlewhy.v1.ChunkSize
+	33, // 38: bundlewhy.v1.Analysis.problems:type_name -> bundlewhy.v1.Problem
+	34, // 39: bundlewhy.v1.Analysis.config_summary:type_name -> bundlewhy.v1.ConfigEntry
+	36, // 40: bundlewhy.v1.Analysis.sources:type_name -> bundlewhy.v1.SourceFileSummary
+	17, // 41: bundlewhy.v1.Analysis.mode:type_name -> bundlewhy.v1.ReportMode
+	3,  // 42: bundlewhy.v1.RunProgress.status:type_name -> bundlewhy.v1.RunStatus
+	4,  // 43: bundlewhy.v1.RunProgress.stage:type_name -> bundlewhy.v1.RunStage
+	17, // 44: bundlewhy.v1.RunProgress.mode:type_name -> bundlewhy.v1.ReportMode
+	38, // 45: bundlewhy.v1.GetRunProgressResponse.progress:type_name -> bundlewhy.v1.RunProgress
+	37, // 46: bundlewhy.v1.GetAnalysisResponse.analysis:type_name -> bundlewhy.v1.Analysis
+	35, // 47: bundlewhy.v1.GetSourceFileResponse.source:type_name -> bundlewhy.v1.SourceFile
+	38, // 48: bundlewhy.v1.CancelRunResponse.progress:type_name -> bundlewhy.v1.RunProgress
+	3,  // 49: bundlewhy.v1.RunSummary.status:type_name -> bundlewhy.v1.RunStatus
+	5,  // 50: bundlewhy.v1.RunSummary.bundler:type_name -> bundlewhy.v1.Bundler
+	47, // 51: bundlewhy.v1.ListRunsResponse.runs:type_name -> bundlewhy.v1.RunSummary
+	38, // 52: bundlewhy.v1.SelectRunResponse.progress:type_name -> bundlewhy.v1.RunProgress
+	39, // 53: bundlewhy.v1.AnalysisService.GetRunProgress:input_type -> bundlewhy.v1.GetRunProgressRequest
+	41, // 54: bundlewhy.v1.AnalysisService.GetAnalysis:input_type -> bundlewhy.v1.GetAnalysisRequest
+	43, // 55: bundlewhy.v1.AnalysisService.GetSourceFile:input_type -> bundlewhy.v1.GetSourceFileRequest
+	45, // 56: bundlewhy.v1.AnalysisService.CancelRun:input_type -> bundlewhy.v1.CancelRunRequest
+	48, // 57: bundlewhy.v1.AnalysisService.ListRuns:input_type -> bundlewhy.v1.ListRunsRequest
+	50, // 58: bundlewhy.v1.AnalysisService.SelectRun:input_type -> bundlewhy.v1.SelectRunRequest
+	52, // 59: bundlewhy.v1.AnalysisService.ExportReport:input_type -> bundlewhy.v1.ExportReportRequest
+	40, // 60: bundlewhy.v1.AnalysisService.GetRunProgress:output_type -> bundlewhy.v1.GetRunProgressResponse
+	42, // 61: bundlewhy.v1.AnalysisService.GetAnalysis:output_type -> bundlewhy.v1.GetAnalysisResponse
+	44, // 62: bundlewhy.v1.AnalysisService.GetSourceFile:output_type -> bundlewhy.v1.GetSourceFileResponse
+	46, // 63: bundlewhy.v1.AnalysisService.CancelRun:output_type -> bundlewhy.v1.CancelRunResponse
+	49, // 64: bundlewhy.v1.AnalysisService.ListRuns:output_type -> bundlewhy.v1.ListRunsResponse
+	51, // 65: bundlewhy.v1.AnalysisService.SelectRun:output_type -> bundlewhy.v1.SelectRunResponse
+	53, // 66: bundlewhy.v1.AnalysisService.ExportReport:output_type -> bundlewhy.v1.ExportReportResponse
+	60, // [60:67] is the sub-list for method output_type
+	53, // [53:60] is the sub-list for method input_type
+	53, // [53:53] is the sub-list for extension type_name
+	53, // [53:53] is the sub-list for extension extendee
+	0,  // [0:53] is the sub-list for field type_name
 }
 
 func init() { file_bundlewhy_v1_bundlewhy_proto_init() }
@@ -3847,7 +3922,7 @@ func file_bundlewhy_v1_bundlewhy_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bundlewhy_v1_bundlewhy_proto_rawDesc), len(file_bundlewhy_v1_bundlewhy_proto_rawDesc)),
-			NumEnums:      17,
+			NumEnums:      18,
 			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   1,

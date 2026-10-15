@@ -31,6 +31,9 @@ export const AdapterErrorCode = Object.freeze({
 export const FRAME_PREFIX = "BUNDLEWHY-FRAME";
 let protocolToken = "";
 
+const isAdapterEntrypoint = () =>
+  ["vite.mjs", "rspack.mjs"].includes(path.basename(process.argv[1] ?? ""));
+
 export class AdapterError extends Error {
   constructor(code, message, recovery) {
     super(message);
@@ -51,6 +54,41 @@ export function emit(event) {
   process.stdout.write(
     `${FRAME_PREFIX} ${protocolToken} ${JSON.stringify(event)}\n`,
   );
+}
+
+/**
+ * Wait until the Rust supervisor has captured the files named by a protection
+ * event before allowing the adapter to invoke user configuration hooks.
+ */
+export function waitForProtectionAck() {
+  const expected = `BUNDLEWHY-PROTECTION-ACK ${protocolToken}`;
+  return new Promise((resolve, reject) => {
+    let buffer = "";
+    const onData = (chunk) => {
+      buffer += chunk;
+      const newline = buffer.indexOf("\n");
+      if (newline < 0) return;
+      const line = buffer.slice(0, newline).replace(/\r$/, "");
+      process.stdin.off("data", onData);
+      process.stdin.off("end", onEnd);
+      process.stdin.pause();
+      if (line === expected) {
+        resolve();
+      } else {
+        reject(
+          new Error("The protection snapshot acknowledgement was invalid"),
+        );
+      }
+    };
+    const onEnd = () => {
+      process.stdin.off("data", onData);
+      reject(new Error("The protection snapshot acknowledgement was closed"));
+    };
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", onData);
+    process.stdin.once("end", onEnd);
+    process.stdin.resume();
+  });
 }
 
 export function progress(stage, message) {
@@ -189,7 +227,11 @@ export function summarizeValue(value) {
   return String(value);
 }
 
-export async function runAdapter(main) {
+export async function runAdapter(
+  main,
+  { execute = isAdapterEntrypoint() } = {},
+) {
+  if (!execute) return;
   const started = Date.now();
   try {
     const request = readRequest();
@@ -220,6 +262,11 @@ export async function runAdapter(main) {
       recovery,
     });
     process.exitCode = isRepeatProcess() ? REPORTED_FAILURE_EXIT_CODE : 1;
+  } finally {
+    // The supervisor keeps the acknowledgement pipe open while the adapter
+    // runs. Close our reader after the final frame so it cannot keep Node
+    // alive once the build is complete.
+    process.stdin.destroy();
   }
 }
 

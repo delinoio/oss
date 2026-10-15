@@ -16,7 +16,7 @@ use crate::{
     model::{
         Analysis, Diagnostic, ExportReference, ExportScope, ExportUsage, ExportUsageEdge,
         ExportUsagePathEnd, ExportUsageState, ExportUsageTruncation, ProblemSeverity, RunStatus,
-        SCHEMA_VERSION, SourceFile,
+        SCHEMA_VERSION, SourceFile, SourceRevisionEvidence,
     },
     rules::export_usage::{MAX_EDGES_PER_PATH, MAX_PATHS},
     sources::{
@@ -268,6 +268,26 @@ fn validate(bundle: &ResultBundle) -> BwResult<()> {
         }
         if source.path.contains('\0') {
             return Err(invalid("source path contains a NUL byte"));
+        }
+    }
+    let sources_by_id: BTreeMap<_, _> = bundle
+        .sources
+        .iter()
+        .map(|source| (source.id.as_str(), source))
+        .collect();
+    for summary in &analysis.sources {
+        if summary.revision_evidence == SourceRevisionEvidence::BuildSnapshot
+            && !sources_by_id
+                .get(summary.id.as_str())
+                .is_some_and(|source| {
+                    source.path == summary.path
+                        && source.revision_evidence == SourceRevisionEvidence::BuildSnapshot
+                })
+        {
+            return Err(invalid(format!(
+                "source summary {:?} claims a build snapshot without a matching source record",
+                summary.id
+            )));
         }
     }
     // The UI selects diagnostics by ID; duplicates would show the wrong one.
@@ -733,7 +753,9 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Diagnostic, ExportUsageEdge, ExportUsagePath, SourceLocation};
+    use crate::model::{
+        Diagnostic, ExportUsageEdge, ExportUsagePath, SourceLocation, SourceRevisionEvidence,
+    };
 
     fn bundle() -> ResultBundle {
         ResultBundle {
@@ -753,6 +775,20 @@ mod tests {
             project_relative: BTreeMap::new(),
             existence_relative: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn rejects_build_snapshot_summary_without_matching_source_record() {
+        let mut saved = bundle();
+        let mut summary = saved.sources[0].summary();
+        summary.revision_evidence = SourceRevisionEvidence::BuildSnapshot;
+        saved.analysis.sources.push(summary);
+        assert_eq!(
+            parse(&serde_json::to_vec(&saved).unwrap())
+                .unwrap_err()
+                .code,
+            ErrorCode::ResultInvalid
+        );
     }
 
     #[test]
@@ -809,6 +845,41 @@ mod tests {
         assert_eq!(error.code, ErrorCode::ResultInvalid);
         let error = parse(b"not json").unwrap_err();
         assert_eq!(error.code, ErrorCode::ResultInvalid);
+    }
+
+    #[test]
+    fn source_provenance_survives_saved_reload_and_export() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/a.js"), "live text").unwrap();
+        let mut saved = bundle();
+        saved.project_root = dir.path().to_string_lossy().into_owned();
+        saved.sources[0].revision_evidence = SourceRevisionEvidence::Unavailable;
+        saved.analysis.sources = vec![saved.sources[0].summary()];
+        saved
+            .existence_relative
+            .insert(saved.sources[0].id.clone(), "src/a.js".to_owned());
+        let mut reopened = parse(&serde_json::to_vec(&saved).unwrap()).unwrap();
+        mark_stale(&mut reopened);
+        assert_eq!(
+            reopened.sources[0].revision_evidence,
+            SourceRevisionEvidence::Unavailable
+        );
+        assert_eq!(
+            reopened.analysis.sources[0].revision_evidence,
+            SourceRevisionEvidence::Unavailable
+        );
+        assert!(!reopened.sources[0].stale);
+        assert!(reopened.sources[0].content.is_empty());
+        assert!(reopened.sources[0].sha256.is_empty());
+        let html = crate::export::render(
+            crate::export::UI_HTML,
+            &reopened.analysis,
+            &reopened.sources,
+            true,
+        );
+        assert!(html.contains("SOURCE_REVISION_EVIDENCE_UNAVAILABLE"));
+        assert!(!html.contains("live text"));
     }
 
     #[test]

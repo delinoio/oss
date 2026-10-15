@@ -36,7 +36,7 @@ func Setup(t testing.TB, sources map[string]string) (string, func(string, string
 	// The source map is read for each invocation so a fixture can add repositories
 	// after an ordinary Worker starts, without changing its transport executable.
 	source := fmt.Sprintf(`package main
-import("encoding/json";"os";"os/exec")
+import("encoding/json";"os";"os/exec";"path/filepath")
 func main(){
  realGit:=%q; mapping:=%q
  args:=os.Args[1:]; index:=-1
@@ -51,6 +51,11 @@ func main(){
    args=append(args[:index+1],append([]string{"--no-local","--no-hardlinks"},args[index+1:]...)...)
    // Fixture transport is a full independent copy with no object hard links.
    args=append([]string{"-c","protocol.file.allow=always"},args...)
+  } else if info,statErr:=os.Stat(original);statErr==nil && info.IsDir() && filepath.IsAbs(original) {
+   // A Worker-private repository source cache is an existing local bare store.
+   // Cloning from it needs no mapping and keeps the cloning command unchanged;
+   // the session clone sets its own pinned URL afterwards.
+   original=""
   } else {os.Stderr.WriteString("Unmapped fixture Git source");os.Exit(93)}
   for _,arg:=range args {if len(arg)>9 && arg[:9]=="--origin=" {remote=arg[9:]}}
  }

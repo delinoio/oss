@@ -1,4 +1,4 @@
-import { toJson } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -7,6 +7,7 @@ import {
   ReportMode,
   RunStage,
   SourceFileSchema,
+  SourceRevisionEvidence,
 } from "./gen/bundlewhy/v1/bundlewhy_pb";
 import { BootErrorCode, parseEmbeddedReport } from "./report";
 import {
@@ -61,6 +62,21 @@ describe("embedded report parsing", () => {
     if (!parsed.ok) expect(parsed.error.code).toBe(BootErrorCode.ResultInvalid);
     const missing = parseEmbeddedReport(JSON.stringify({ sources: [] }));
     expect(missing.ok).toBe(false);
+  });
+
+  it("rejects a build snapshot summary without matching source evidence", () => {
+    const unavailable = toJson(
+      SourceFileSchema,
+      create(SourceFileSchema, {
+        ...fixtureSource(),
+        revisionEvidence: SourceRevisionEvidence.UNAVAILABLE,
+      }),
+    );
+    const report = JSON.parse(reportJson());
+    report.sources = [unavailable];
+    const parsed = parseEmbeddedReport(JSON.stringify(report));
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error.code).toBe(BootErrorCode.ResultInvalid);
   });
 
   it("rejects unknown schema versions as BW_SCHEMA_UNSUPPORTED", () => {
