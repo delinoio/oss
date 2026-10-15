@@ -32,6 +32,15 @@ pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
 
 fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     let collection = context.collection;
+    // A module requested by a dynamic `import()` is the facade of a dynamic
+    // entry chunk. Rolldown keeps that module because the import asked for it,
+    // so an export-less one is a requested module, not an unrequested one.
+    let dynamic_facades: BTreeSet<&str> = collection
+        .chunks
+        .iter()
+        .filter(|chunk| chunk.is_dynamic_entry)
+        .filter_map(|chunk| chunk.facade_module_id.as_deref())
+        .collect();
     for module in &collection.modules {
         // Export-less modules (for example `import "./polyfill"`) qualify:
         // rendered code with no rendered export is the evidence.
@@ -47,6 +56,7 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         if !module.included
             || module.is_entry
             || html_entry
+            || dynamic_facades.contains(module.id.as_str())
             || !esm
             || !no_rendered_exports
             || module.rendered_length == 0

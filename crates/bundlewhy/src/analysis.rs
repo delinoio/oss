@@ -2172,6 +2172,79 @@ mod tests {
         }
     }
 
+    /// Runs the Vite fixture after adding one emitted chunk whose facade is
+    /// `src/effects/register.js`, an export-less module.
+    fn register_with_chunk(is_dynamic_entry: bool, is_entry: bool) -> Fixture {
+        run_fixture(BundlerChoice::Vite, |value| {
+            let register_id = value["modules"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|module| module["id"].as_str())
+                .find(|id| id.ends_with("src/effects/register.js"))
+                .expect("fixture has register.js")
+                .to_owned();
+            let chunks = value["chunks"].as_array_mut().unwrap();
+            let mut chunk = chunks
+                .iter()
+                .find(|chunk| chunk["isDynamicEntry"] == true)
+                .expect("fixture has a dynamic entry chunk")
+                .clone();
+            chunk["facadeModuleId"] = serde_json::json!(register_id);
+            chunk["isDynamicEntry"] = serde_json::json!(is_dynamic_entry);
+            chunk["isEntry"] = serde_json::json!(is_entry);
+            chunks.push(chunk);
+        })
+    }
+
+    #[test]
+    fn vite_side_effect_retained_skips_dynamic_entry_facades() {
+        let fixture = register_with_chunk(true, false);
+        let analysis = &fixture.output.analysis;
+        assert_eq!(
+            analysis.status,
+            RunStatus::Complete,
+            "{:?}",
+            analysis.problems
+        );
+        assert_absent(
+            &analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        );
+    }
+
+    #[test]
+    fn vite_side_effect_retained_keeps_static_import_modules_with_non_dynamic_facade_chunks() {
+        // A chunk facade that is not a dynamic entry does not exempt the
+        // module.
+        let fixture = register_with_chunk(false, false);
+        assert!(
+            find(
+                &fixture.output.analysis.diagnostics,
+                "vite/side-effect-retained",
+                "src/effects/register.js"
+            )
+            .is_some()
+        );
+        // The unmodified fixture keeps the finding for the static import.
+        let baseline = run_fixture(BundlerChoice::Vite, |_| {});
+        assert!(
+            find(
+                &baseline.output.analysis.diagnostics,
+                "vite/side-effect-retained",
+                "src/effects/register.js"
+            )
+            .is_some()
+        );
+        // Other dynamic entry facades stay unaffected and unreported.
+        assert_absent(
+            &baseline.output.analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/lazy/a.js",
+        );
+    }
+
     #[test]
     fn vite_side_effect_retained_id_ignores_the_declaration() {
         let ids: Vec<String> = [
