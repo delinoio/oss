@@ -365,8 +365,9 @@ struct Pending<'a> {
 }
 
 /// Expressions whose reads are still to be collected, each with the index of
-/// its first pending selector.
-type Work = Vec<(Expr, Option<usize>)>;
+/// its first pending selector and whether its value reaches an equality
+/// operand (where `typeof x` and `${x}` stand for `x`).
+type Work = Vec<(Expr, Option<usize>, bool)>;
 
 /// How a member access picks its property.
 #[derive(Clone, Copy, Debug)]
@@ -1721,7 +1722,7 @@ impl<'a> Parser<'a> {
     /// tested value. The first site in source order wins.
     fn resolve(mut self, count: usize) -> Vec<Option<EnvGuard>> {
         let mut guards = vec![None; count];
-        let mut done = vec![false; self.nodes.len()];
+        let mut done = vec![false; self.nodes.len() * 2];
         let sites = std::mem::take(&mut self.sites);
         let mut reads = Vec::new();
         let mut paths = Vec::new();
@@ -1755,31 +1756,31 @@ impl<'a> Parser<'a> {
         paths: &mut Vec<Pending<'a>>,
         out: &mut Vec<usize>,
     ) {
-        let mut work: Work = vec![(Some(root), None)];
-        while let Some((expr, path)) = work.pop() {
+        let mut work: Work = vec![(Some(root), None, false)];
+        while let Some((expr, path, equal)) = work.pop() {
             let Some(id) = expr else {
                 continue;
             };
-            if path.is_none() && std::mem::replace(&mut done[id], true) {
+            if path.is_none() && std::mem::replace(&mut done[id * 2 + usize::from(equal)], true) {
                 continue;
             }
             match (&self.nodes[id], path) {
                 (Node::Member { object, selector }, _) => {
                     if let Selector::Computed(key) = selector {
-                        work.push((*key, None));
+                        work.push((*key, None, false));
                     }
                     paths.push(Pending {
                         selector: *selector,
                         rest: path,
                     });
-                    work.push((*object, Some(paths.len() - 1)));
+                    work.push((*object, Some(paths.len() - 1), equal));
                 }
                 (Node::Call { callee, element }, _) => {
-                    self.call_value(*callee, *element, path, paths, &mut work);
+                    self.call_value(*callee, *element, (path, equal), paths, &mut work);
                 }
                 (Node::Conditional(left, right), Some(_)) => {
-                    work.push((*left, path));
-                    work.push((*right, path));
+                    work.push((*left, path, equal));
+                    work.push((*right, path, equal));
                 }
                 (Node::Array { elements }, Some(next)) => {
                     let Pending { selector, rest } = paths[next];
@@ -1787,30 +1788,36 @@ impl<'a> Parser<'a> {
                         index: Some(index), ..
                     } = selector
                     {
-                        array_element(elements, index, rest, &mut work);
+                        array_element(elements, index, (rest, equal), &mut work);
                     }
                 }
                 (Node::Object { properties }, Some(next)) => {
                     let Pending { selector, rest } = paths[next];
                     if let Some(key) = selector.static_key() {
-                        object_property(properties, key, rest, &mut work);
+                        object_property(properties, key, (rest, equal), &mut work);
                     }
                 }
-                (Node::Template(inner), Some(_)) => work.push((Some(*inner), None)),
+                (Node::Template(inner), Some(_)) => work.push((Some(*inner), None, false)),
                 (Node::Construct { callee }, Some(_)) => {
                     if let Node::Function { returns } = &self.nodes[*callee] {
                         for &value in returns {
                             if matches!(self.nodes[value], Node::Array { .. } | Node::Object { .. })
                             {
-                                work.push((Some(value), path));
+                                work.push((Some(value), path, equal));
                             }
                         }
                     }
                 }
                 // Not a container to select from: the whole value counts.
-                (_, Some(_)) => work.push((expr, None)),
+                (_, Some(_)) => work.push((expr, None, equal)),
                 (Node::Read(read), None) => out.push(*read),
-                (Node::Derived(operand), None) => work.push((Some(*operand), None)),
+                (Node::Derived(operand), None) => work.push((Some(*operand), None, false)),
+                // `typeof x === "undefined"` tests x, and `${x}` === "on"
+                // compares the text of x, wherever the operand's value comes
+                // from (a call, a conditional, a logical operand).
+                (Node::TypeOf(inner) | Node::Template(inner), None) if equal => {
+                    work.push((Some(*inner), None, false));
+                }
                 (
                     Node::TypeOf(_)
                     | Node::Function { .. }
@@ -1821,19 +1828,12 @@ impl<'a> Parser<'a> {
                     None,
                 ) => {}
                 (Node::Either(left, right) | Node::Conditional(left, right), None) => {
-                    work.push((*left, None));
-                    work.push((*right, None));
+                    work.push((*left, None, equal));
+                    work.push((*right, None, equal));
                 }
                 (Node::Equality(left, right), None) => {
-                    work.push((*left, None));
-                    work.push((*right, None));
-                    // `typeof x === "undefined"` tests x, and `${x}` === "on"
-                    // compares the text of x.
-                    for operand in [left, right].into_iter().flatten() {
-                        if let Node::TypeOf(inner) | Node::Template(inner) = &self.nodes[*operand] {
-                            work.push((Some(*inner), None));
-                        }
-                    }
+                    work.push((*left, None, true));
+                    work.push((*right, None, true));
                 }
             }
         }
@@ -1844,13 +1844,13 @@ impl<'a> Parser<'a> {
         &self,
         callee: Id,
         element: Option<usize>,
-        path: Option<usize>,
+        (path, equal): (Option<usize>, bool),
         paths: &mut Vec<Pending<'a>>,
         work: &mut Work,
     ) {
         match &self.nodes[callee] {
             Node::Function { returns } => {
-                work.extend(returns.iter().map(|id| (Some(*id), path)));
+                work.extend(returns.iter().map(|id| (Some(*id), path, equal)));
             }
             // `.at(N)` selects element N of whatever array its object
             // produces, like `[N]` would, before the pending selectors.
@@ -1865,9 +1865,9 @@ impl<'a> Parser<'a> {
                     },
                     rest: path,
                 });
-                work.push((Some(*object), Some(paths.len() - 1)));
+                work.push((Some(*object), Some(paths.len() - 1), equal));
             }
-            _ => work.push((Some(callee), None)),
+            _ => work.push((Some(callee), None, equal)),
         }
     }
 }
@@ -1903,21 +1903,31 @@ fn string_content(text: &str) -> Option<&str> {
 
 /// The element of an array literal at `index`, unless a spread at or before it
 /// makes the position unknown.
-fn array_element(elements: &[Element], index: usize, path: Option<usize>, work: &mut Work) {
+fn array_element(
+    elements: &[Element],
+    index: usize,
+    (path, equal): (Option<usize>, bool),
+    work: &mut Work,
+) {
     if index < elements.len() && !elements[..=index].iter().any(|element| element.spread) {
-        work.push((elements[index].value, path));
+        work.push((elements[index].value, path, equal));
     }
 }
 
 /// The value of the last property that defines `key`, unless a later spread or
 /// computed key may have replaced it.
-fn object_property(properties: &[Property<'_>], key: &str, path: Option<usize>, work: &mut Work) {
+fn object_property(
+    properties: &[Property<'_>],
+    key: &str,
+    (path, equal): (Option<usize>, bool),
+    work: &mut Work,
+) {
     for property in properties.iter().rev() {
         if property.wildcard {
             return;
         }
         if property.key == Some(key) {
-            work.push((property.value, path));
+            work.push((property.value, path, equal));
             return;
         }
     }
@@ -4514,6 +4524,77 @@ mod tests {
             (
                 "a = typeof process.env.FLAG !== 'undefined' ? 1 : 2",
                 Some("conditional"),
+            ),
+        ];
+        for &(code, expected) in rows {
+            assert_eq!(flag_guard(code), expected, "{code}");
+        }
+    }
+
+    /// The equality context of `typeof x` and `${x}` travels with the value
+    /// through every node that passes a value on.
+    #[test]
+    fn equality_context_reaches_typeof_and_templates_through_value_nodes() {
+        let rows: &[(&str, Option<&str>)] = &[
+            // Direct operands.
+            (
+                "typeof process.env.FLAG === 'undefined' && run()",
+                Some("and"),
+            ),
+            ("`${process.env.FLAG}` === 'on' && run()", Some("and")),
+            // A call returning the value.
+            (
+                "(function(){return typeof process.env.FLAG})()==='undefined'&&run()",
+                Some("and"),
+            ),
+            (
+                "(function(){return `${process.env.FLAG}`})()==='on'&&run()",
+                Some("and"),
+            ),
+            (
+                "(() => typeof process.env.FLAG)() === 'undefined' && run()",
+                Some("and"),
+            ),
+            // A conditional choosing the value.
+            (
+                "(c ? `${process.env.FLAG}` : 'off') === 'on' && run()",
+                Some("and"),
+            ),
+            (
+                "(c ? 'a' : typeof process.env.FLAG) === 'undefined' && run()",
+                Some("and"),
+            ),
+            // A logical operand and nesting of the above.
+            (
+                "(c || typeof process.env.FLAG) === 'undefined' && run()",
+                Some("and"),
+            ),
+            (
+                "((c ? (function(){return typeof process.env.FLAG})() : 1)) === 'undefined' && \
+                 run()",
+                Some("and"),
+            ),
+            // A member selected from a container holding the value.
+            (
+                "[typeof process.env.FLAG][0] === 'undefined' && run()",
+                Some("and"),
+            ),
+            (
+                "({a: `${process.env.FLAG}`}).a === 'on' && run()",
+                Some("and"),
+            ),
+            // Without an equality operator the value is only a type name or a
+            // never-empty string.
+            (
+                "(function(){return typeof process.env.FLAG})() && run()",
+                None,
+            ),
+            ("(c ? `${process.env.FLAG}` : 'off') && run()", None),
+            ("(c ? typeof process.env.FLAG : 1) && run()", None),
+            // A call result that is not an equality operand.
+            (
+                "((function(){return typeof process.env.FLAG})(), 1) === 1 && run()",
+                None,
             ),
         ];
         for &(code, expected) in rows {
