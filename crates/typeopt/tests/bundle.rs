@@ -3466,6 +3466,38 @@ export { reflected };"#,
 }
 
 #[test]
+fn observable_function_source_direct_eval() {
+    let index = r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(eval("reflected.toString()").includes("reflection-marker"));"#;
+    let settings = format!(
+        "{}\n{}\n//# sourceMappingURL=settings.js.map\n",
+        VERBOSE[1].1,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+    let temp = bundle(&[
+        ("index.js", index),
+        ("settings.js", &settings),
+        (
+            "settings.js.map",
+            r#"{"version":3,"sources":["src/settings.ts"],"names":[],"mappings":"AAAA"}"#,
+        ),
+    ]);
+    let plain = optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    let plain_settings = out(temp.path(), "settings.js");
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    let report = optimize(temp.path(), &["--minify"]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "settings.js"), plain_settings);
+    assert!(
+        report["size"]["minified"].is_null(),
+        "{report:#}; plain={plain:#}"
+    );
+}
+
+#[test]
 fn observable_function_source_safe_chunk_still_minifies() {
     let index = format!(
         "{}\nconsole.log('toString is only text', (13).toString(16));\n",

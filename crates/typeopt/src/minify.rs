@@ -437,9 +437,10 @@ impl Visit for SourceReflection {
     fn visit_call_expr(&mut self, call: &CallExpr) {
         call.visit_children_with(self);
         // `String(value)` performs the same callable-to-string conversion as
-        // an explicit `toString` call.
+        // an explicit `toString` call. Direct eval can execute source text in
+        // the importing lexical scope, so its string may read any callable.
         if let Callee::Expr(callee) = &call.callee
-            && matches!(&**callee, Expr::Ident(ident) if ident.sym == "String")
+            && matches!(&**callee, Expr::Ident(ident) if ident.sym == "String" || ident.sym == "eval")
         {
             self.member_to_string = true;
         }
