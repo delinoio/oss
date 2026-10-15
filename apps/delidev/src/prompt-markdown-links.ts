@@ -206,14 +206,6 @@ export interface UrlConversion {
   map: (offset: number) => number;
 }
 
-function overlapsProtected(
-  ranges: readonly TextRange[],
-  start: number,
-  end: number,
-): boolean {
-  return ranges.some((range) => range.start < end && range.end > start);
-}
-
 /**
  * Converts bare HTTP(S) URLs whose complete token lies inside `[from, to)` of
  * `text` to Markdown links. Detection reuses `findUrlTokens`, so the length,
@@ -240,12 +232,19 @@ export function convertBareUrls(
     .filter((token) => token.end <= to);
   if (!tokens.length) return;
   const { protectedRanges } = scanMarkdown(text);
+  // Tokens and protected ranges are both sorted and disjoint, so one shared
+  // cursor keeps the overlap test linear for large pastes.
+  let rangeIndex = 0;
   const accepted = tokens.filter((token) => {
+    while (
+      rangeIndex < protectedRanges.length &&
+      protectedRanges[rangeIndex]!.end <= token.start
+    )
+      rangeIndex += 1;
+    const range = protectedRanges[rangeIndex];
+    if (range && range.start < token.end) return false;
     const before = token.start === 0 ? "" : text[token.start - 1]!;
-    return (
-      !/[\p{L}\p{N}_<]/u.test(before) &&
-      !overlapsProtected(protectedRanges, token.start, token.end)
-    );
+    return !/[\p{L}\p{N}_<]/u.test(before);
   });
   if (!accepted.length) return;
   let result = "",

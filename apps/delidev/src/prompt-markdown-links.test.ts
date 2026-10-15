@@ -162,3 +162,18 @@ it("resolves repeated characters with the reported caret", () => {
 it("shifts retained link starts across a replacement", () => {
   expect(shiftStarts([2, 10, 20], { start: 5, end: 12 }, 1)).toEqual([2, 14]);
 });
+
+it("converts only unprotected URLs in a large paste with many protected shapes", () => {
+  const shapes = "[a](b) `c` ".repeat(8000);
+  const urls = Array.from(
+    { length: 4000 },
+    (_, index) => `https://example.com/${index}`,
+  ).join(" ");
+  const text = `${shapes}${urls} [x](https://inside.example.com) end`;
+  const result = convertBareUrls(text, 0, text.length)!;
+  expect(result.count).toBe(4000);
+  expect(result.text.endsWith(" [x](https://inside.example.com) end")).toBe(
+    true,
+  );
+  expect(result.text.startsWith(shapes)).toBe(true);
+});
