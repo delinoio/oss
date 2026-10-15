@@ -331,7 +331,13 @@ pub fn install_menu(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
         return Ok(());
     }
     let menu = Menu::default(app)?;
-    let item = MenuItem::with_id(app, NEW_WINDOW, "New Window", true, Some("CmdOrCtrl+N"))?;
+    let item = MenuItem::with_id(
+        app,
+        NEW_WINDOW,
+        "New Window",
+        true,
+        crate::shortcut_preferences::NEW_WINDOW_MENU_ACCELERATOR,
+    )?;
     let close = MenuItem::with_id(app, CLOSE_WINDOW, "Close Window", true, None::<&str>)?;
     let file = menu.items()?.into_iter().enumerate().find(|(_, item)| {
         item.as_submenu()

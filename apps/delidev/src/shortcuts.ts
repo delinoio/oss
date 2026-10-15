@@ -57,7 +57,7 @@ export const globalShortcutBindings = {
   [ShortcutId.CommandMenu]: [{ key: "k", primary: true }],
   [ShortcutId.OpenSettings]: [{ key: ",", primary: true }],
   [ShortcutId.Help]: [{ key: "?", ariaKey: "/", ariaShift: true }],
-  [ShortcutId.NewSession]: [{ key: "n", primary: true, shift: true }],
+  [ShortcutId.NewSession]: [{ key: "n", primary: true }],
   // Read-only window-level action owned above the connected App.
   [ShortcutId.ReloadPage]: [{ key: "r", primary: true }],
 } as const;
