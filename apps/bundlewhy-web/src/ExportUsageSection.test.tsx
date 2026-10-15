@@ -123,7 +123,7 @@ describe("export usage section", () => {
   it("reads the incomplete chain end that the Rust analysis writes", () => {
     const usage = fromJson(ExportUsageSchema, {
       state: "EXPORT_USAGE_STATE_AVAILABLE",
-      note: "1 engine edge(s) involve modules that bundlewhy could not identify and are not shown.",
+      note: "1 engine edge(s) could not be used and are not shown. Such edges involve modules that bundlewhy could not identify or export references that bundlewhy could not read.",
       paths: [
         {
           edges: [
@@ -166,7 +166,7 @@ describe("export usage section", () => {
       [ExportUsagePathEnd.TRUNCATED, /stopped at a limit before the start/],
       [
         ExportUsagePathEnd.INCOMPLETE,
-        /Chain start not confirmed.*could not use.*may continue beyond/,
+        /Chain start not confirmed.*could not use.*export reference it can read.*may continue beyond/,
       ],
       [ExportUsagePathEnd.UNSPECIFIED, /end of this chain was not recorded/],
     ];
@@ -244,13 +244,17 @@ describe("export usage section", () => {
     ).toContain("The reason was not recorded.");
   });
 
-  it("discloses engine edges that could not be mapped", () => {
+  it("discloses engine edges that could not be used", () => {
     renderUsage(
       fixtureExportUsage({
-        note: "3 engine edge(s) involve modules that bundlewhy could not identify and are not shown.",
+        note: "3 engine edge(s) could not be used and are not shown. Such edges involve modules that bundlewhy could not identify or export references that bundlewhy could not read.",
       }),
     );
-    expect(screen.getByText(/3 engine edge\(s\) involve modules/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /3 engine edge\(s\) could not be used.*export references/,
+      ),
+    ).toBeTruthy();
     expect(pathItems()).toHaveLength(2);
   });
 

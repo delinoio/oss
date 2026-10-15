@@ -46,7 +46,8 @@ pub struct CollectedExportUsage {
     /// Why the graph is unavailable: a stable code, never adapter or engine
     /// error text.
     pub reason: Option<ExportUsageReason>,
-    /// Engine edges that were dropped because a module could not be mapped.
+    /// Engine edges that were dropped because a module could not be mapped or
+    /// an export reference could not be read.
     pub skipped_edges: u32,
     /// Dropped edges per collected provider module: each entry says that an
     /// edge into that module exists but cannot be shown, so a chain that ends

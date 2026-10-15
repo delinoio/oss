@@ -55,10 +55,10 @@ pub const NOTE_NOT_COLLECTED: &str = "The collection has no export usage data. I
 pub const NOTE_NO_EDGE: &str = "Rspack reported no export usage edge that targets this module, so \
                                 no export-level chain is available for it.";
 /// Used when edges were dropped, so "Rspack reported none" would be untrue.
-pub const NOTE_NO_USABLE_EDGE: &str = "No export usage edge that bundlewhy could use targets this \
-                                       module. Edges that involve modules bundlewhy could not \
-                                       identify (for example concatenated module containers) were \
-                                       not used and may account for this.";
+pub const NOTE_NO_USABLE_EDGE: &str =
+    "No export usage edge that bundlewhy could use targets this module. Edges that involve \
+     modules bundlewhy could not identify (for example concatenated module containers) or export \
+     references bundlewhy could not read were not used and may account for this.";
 pub const NOTE_NO_REASON: &str = "The engine did not provide export usage data for this build.";
 
 /// Fixed text for each adapter reason code.
@@ -453,8 +453,9 @@ pub fn traverse_with_stats(
             String::new()
         } else {
             format!(
-                "{skipped} engine edge(s) involve modules that bundlewhy could not identify (for \
-                 example concatenated module containers) and are not shown."
+                "{skipped} engine edge(s) could not be used and are not shown. Such edges involve \
+                 modules that bundlewhy could not identify (for example concatenated module \
+                 containers) or export references that bundlewhy could not read."
             )
         },
         paths,
@@ -1046,6 +1047,29 @@ mod tests {
                     assert_eq!(result.note, NOTE_NO_USABLE_EDGE, "{}", case.name);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn the_disclosure_names_every_kind_of_dropped_edge() {
+        // Both endpoint modules are known; only the export reference is
+        // unreadable. The note must not blame the module mapping alone.
+        let mut unreadable = edge(("x", Some(A)), ("b", Some(B)), "9");
+        unreadable.consumer.export = Some(Vec::new());
+        let data = collection(vec![edge(("a", Some(A)), ("b", Some(B)), "1"), unreadable]);
+        let usage = build_for(&data, "b");
+        assert!(usage.note.starts_with("1 engine edge(s)"), "{}", usage.note);
+        for cause in [
+            "modules that bundlewhy could not identify",
+            "export references that bundlewhy could not read",
+        ] {
+            assert!(usage.note.contains(cause), "{}", usage.note);
+        }
+        for cause in [
+            "modules bundlewhy could not identify",
+            "export references bundlewhy could not read",
+        ] {
+            assert!(NOTE_NO_USABLE_EDGE.contains(cause), "{NOTE_NO_USABLE_EDGE}");
         }
     }
 
