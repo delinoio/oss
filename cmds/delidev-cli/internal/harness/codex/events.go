@@ -336,9 +336,9 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 		c.logger.InfoContext(ctx, "Codex passive remote control status observed", "owner_id", c.ownerID, "status", event.remoteControlStatus, "policy", RemoteControlDisabled)
 	}
 	if c.logger != nil && event.Kind == NativeExtensionEvent {
-		// Protocol method names identify missing adapters without retaining the
-		// native payload, command contents, paths or provider diagnostics.
-		c.logger.WarnContext(ctx, "Codex native extension retained", "owner_id", c.ownerID, "method", native.Method, "stage", event.ExtensionStage)
+		// Unsupported observations retain only a closed classification in logs;
+		// native method names and payloads remain inside the private adapter.
+		c.logger.WarnContext(ctx, "Codex native extension retained", "owner_id", c.ownerID, "stage", event.ExtensionStage)
 	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil
