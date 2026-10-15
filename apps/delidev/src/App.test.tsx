@@ -50,9 +50,8 @@ it(
     const value = fixture([], [], [], false, true);
     render(<App transport={value.transport} />);
     fireEvent.keyDown(document.body, {
-      key: "N",
+      key: "n",
       ctrlKey: true,
-      shiftKey: true,
     });
     const firstMessage = await screen.findByRole("textbox", {
       name: "First message",
@@ -314,7 +313,7 @@ it("help shortcuts reuse existing navigation and screen focus without sending ba
   fireEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
   fireEvent.keyDown(
     screen.getByRole("button", { name: "Close keyboard shortcuts" }),
-    { key: "n", ctrlKey: true, shiftKey: true },
+    { key: "n", ctrlKey: true },
   );
   expect(
     screen.queryByRole("dialog", { name: "Keyboard shortcuts" }),
