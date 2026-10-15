@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -1032,4 +1033,123 @@ func TestPrivateClaudeEnvironmentPinsFeedbackOptOut(t *testing.T) {
 			t.Fatalf("missing private feedback setting: %s", expected)
 		}
 	}
+}
+
+// TestInitializeProjectionPreservesRetainedEncodingAndFrameBound proves the
+// projection never re-encodes retained bytes. Characters that json.Marshal
+// would expand (HTML characters and U+2028/U+2029) must not push an initialize
+// result that passed the 1 MiB frame bound past it, for every initializer and
+// every descriptor list.
+func TestInitializeProjectionPreservesRetainedEncodingAndFrameBound(t *testing.T) {
+	const (
+		commandCount = 55
+		payloadBytes = 15000
+	)
+	payloads := []struct {
+		name  string
+		glyph string
+	}{
+		{"less-than", "<"},
+		{"greater-than", ">"},
+		{"ampersand", "&"},
+		{"line-separator", "\u2028"},
+		{"paragraph-separator", "\u2029"},
+	}
+	base := func(account map[string]any) map[string]any {
+		result := fixtureResult287()
+		result["account"] = account
+		return result
+	}
+	initializers := []struct {
+		name     string
+		account  map[string]any
+		validate func([]byte) error
+	}{
+		{"api", map[string]any{"tokenSource": "ANTHROPIC_AUTH_TOKEN", "apiProvider": "firstParty", "apiKeySource": "ANTHROPIC_API_KEY"}, func(raw []byte) error {
+			return validateInitializeMode(raw, "dontAsk", "ANTHROPIC_API_KEY", false)
+		}},
+		{"subscription", map[string]any{"apiProvider": "firstParty", "email": "fixture@example.invalid", "subscriptionType": "pro"}, func(raw []byte) error {
+			return validateInitializeMode(raw, "dontAsk", "ANTHROPIC_API_KEY", true)
+		}},
+		{"managed-token", map[string]any{"tokenSource": managedTokenSource, "apiProvider": "firstParty"}, func(raw []byte) error {
+			return validateInitializeManagedToken(raw, "dontAsk")
+		}},
+	}
+	for _, payload := range payloads {
+		for _, initializer := range initializers {
+			t.Run(payload.name+"/"+initializer.name, func(t *testing.T) {
+				// A leading letter keeps the description non-blank for text validation.
+				text := "x" + strings.Repeat(payload.glyph, (payloadBytes-1)/len(payload.glyph))
+				commands := make([]any, commandCount)
+				for i := range commands {
+					commands[i] = map[string]any{"name": fmt.Sprintf("cmd-%d", i), "description": "@@LARGE@@", "argumentHint": ""}
+				}
+				commands[0].(map[string]any)["name"] = "compact"
+				result := base(initializer.account)
+				result["commands"] = commands
+				encoded, err := json.Marshal(result)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Substitute the literal characters so the frame carries them
+				// unescaped, as a native process writes them.
+				raw := bytes.ReplaceAll(encoded, []byte("@@LARGE@@"), []byte(text))
+				if len(raw) >= 1<<20 {
+					t.Fatalf("fixture frame is %d bytes, want below the 1 MiB bound", len(raw))
+				}
+				projected, err := projectInitializeDescriptors(raw)
+				if err != nil {
+					t.Fatalf("projection refused a frame within the bound: %v", err)
+				}
+				if !bytes.Equal(projected, raw) {
+					t.Fatalf("projection re-encoded retained bytes: %d projected bytes from %d", len(projected), len(raw))
+				}
+				if err := initializer.validate(raw); err != nil {
+					t.Fatalf("initializer refused a frame within the bound: %v", err)
+				}
+			})
+		}
+	}
+
+	t.Run("agents-and-models-keep-original-encoding", func(t *testing.T) {
+		result := fixtureResult287()
+		result["commands"] = []any{}
+		result["agents"] = []any{map[string]any{"name": "Explore", "description": "@@TEXT@@", "futureAgent": "@@TEXT@@"}}
+		models := fixtureResult287()["models"].([]any)
+		models[0].(map[string]any)["description"] = "@@TEXT@@"
+		models[0].(map[string]any)["futureModel"] = "@@TEXT@@"
+		result["models"] = models
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := "a<b>&c\u2028d\u2029e"
+		raw := bytes.ReplaceAll(encoded, []byte("@@TEXT@@"), []byte(text))
+		projected, err := projectInitializeDescriptors(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := bytes.Count(projected, []byte(text)); got != 2 {
+			t.Fatalf("projection kept %d retained descriptions unescaped, want 2 (the discarded members are dropped)", got)
+		}
+		if len(projected) > len(raw) {
+			t.Fatalf("projection grew from %d to %d bytes", len(raw), len(projected))
+		}
+		if err := validateInitializeMode(raw, "dontAsk", "", false); err != nil {
+			t.Fatalf("probe initializer refused retained descriptors: %v", err)
+		}
+	})
+
+	t.Run("expanding-top-level-key-fails-closed", func(t *testing.T) {
+		result := fixtureResult287()
+		result["commands"] = []any{}
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw := bytes.Replace(encoded, []byte(`{`), []byte("{\"a\u2028\":true,"), 1)
+		if _, err := projectInitializeDescriptors(raw); err == nil {
+			t.Fatal("a projection larger than its validated frame was accepted")
+		}
+	})
 }

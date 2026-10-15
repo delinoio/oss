@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -180,17 +181,59 @@ func projectInitializeDescriptors(raw []byte) ([]byte, error) {
 			}
 			items[i] = projected
 		}
-		encoded, err := json.Marshal(items)
-		if err != nil {
-			return nil, incompatible()
-		}
-		result[name] = encoded
+		result[name] = encodeRawArray(items)
 	}
-	projected, err := json.Marshal(result)
-	if err != nil {
+	projected, err := encodeRawObject(result)
+	if err != nil || len(projected) > len(raw) {
+		// The projection only removes bytes, so it can never exceed the
+		// validated frame; growth means a key needed re-escaping.
 		return nil, incompatible()
 	}
 	return projected, nil
+}
+
+// encodeRawObject joins members in sorted key order and keeps every value's
+// original bytes. Re-encoding values through json.Marshal would escape the
+// HTML characters and U+2028/U+2029 and could grow a frame that already passed
+// the 1 MiB bound past it, so values are never re-encoded.
+func encodeRawObject(members map[string]json.RawMessage) ([]byte, error) {
+	names := make([]string, 0, len(members))
+	for name := range members {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	var out bytes.Buffer
+	out.WriteByte('{')
+	for i, name := range names {
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		var key bytes.Buffer
+		encoder := json.NewEncoder(&key)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(name); err != nil {
+			return nil, err
+		}
+		out.Write(bytes.TrimSuffix(key.Bytes(), []byte("\n")))
+		out.WriteByte(':')
+		out.Write(members[name])
+	}
+	out.WriteByte('}')
+	return out.Bytes(), nil
+}
+
+// encodeRawArray joins array elements without re-encoding them.
+func encodeRawArray(items []json.RawMessage) json.RawMessage {
+	var out bytes.Buffer
+	out.WriteByte('[')
+	for i, item := range items {
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		out.Write(item)
+	}
+	out.WriteByte(']')
+	return out.Bytes()
 }
 
 func projectDescriptor(raw json.RawMessage, shape reflect.Type) (json.RawMessage, error) {
@@ -214,7 +257,7 @@ func projectDescriptor(raw json.RawMessage, shape reflect.Type) (json.RawMessage
 		}
 		delete(members, name)
 	}
-	projected, err := json.Marshal(members)
+	projected, err := encodeRawObject(members)
 	if err != nil {
 		return nil, incompatible()
 	}
