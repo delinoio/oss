@@ -19,7 +19,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeforward"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -190,7 +189,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		nativeSent = true
 		return nil, publicationUncertain()
 	}
-	profile, err := conversationProfile(ctx, config, input.Source.MachineID, nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeReview, Account: input.Source.AccountID, Conversation: input.Source.SessionID}, input.ActionID)
+	profile, err := reviewProfile(ctx, config, input.Source.MachineID, input.Source.AccountID, input.Source.SessionID, input.ActionID)
 	if err != nil {
 		return nil, err
 	}

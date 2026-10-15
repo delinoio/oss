@@ -70,6 +70,14 @@ mod app {
     pub(crate) fn minify() -> bool {
         MINIFY.load(Ordering::Relaxed)
     }
+    /// Bundle mode: executable inline HTML code can observe callable source.
+    static BUNDLE_HTML_REFLECTION: AtomicBool = AtomicBool::new(false);
+    pub(crate) fn set_bundle_html_reflection(observed: bool) {
+        BUNDLE_HTML_REFLECTION.store(observed, Ordering::Relaxed);
+    }
+    pub(crate) fn bundle_html_reflection() -> bool {
+        BUNDLE_HTML_REFLECTION.load(Ordering::Relaxed)
+    }
     /// Bundle chunks (path substrings) kept as unchecked boundaries.
     static BUNDLE_EXCLUDE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     /// Bundle chunks known to run as ES modules (imported by a chunk or

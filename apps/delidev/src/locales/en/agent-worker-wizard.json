@@ -26,7 +26,6 @@
   "agent-worker-wizard.chooseHarnessToContinueToAccounts": "Choose a harness to continue to Accounts.",
   "agent-worker-wizard.harness": "Harness",
   "agent-worker-wizard.chooseAccounts": "Choose accounts",
-  "agent-worker-wizard.changeHarness": "Change harness",
   "agent-worker-wizard.selectAtLeastOneAccount": "Select at least one account. You can select several from the same source.",
   "agent-worker-wizard.accountSource": "Account source",
   "agent-worker-wizard.selectSource": "Select source",

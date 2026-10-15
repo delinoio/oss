@@ -666,7 +666,8 @@ it("preserves incompatible permission values across harness switches and clears 
   ).toBe("full-access");
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  fireEvent.click(screen.getByRole("button", { name: "Change harness" }));
+  expect(screen.queryByRole("button", { name: /Change harness/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
   fireEvent.click(screen.getByRole("radio", { name: "Claude Code" }));
   // A harness change requires fresh source selection; it cannot reuse the old
   // account route. The retained permission draft must survive that reset.
