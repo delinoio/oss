@@ -87,6 +87,8 @@ export function useProjectPromptHistory({
   blocked,
   textarea,
   replace,
+  read,
+  select,
 }: {
   projectId: string;
   enabled: boolean;
@@ -94,6 +96,10 @@ export function useProjectPromptHistory({
   blocked: boolean;
   textarea: RefObject<HTMLTextAreaElement | null>;
   replace: (text: string, caret: number) => void;
+  // Owners whose field shows a projection of the draft supply the canonical
+  // text and selection here, and select canonical ranges themselves.
+  read?: () => { text: string; start: number; end: number };
+  select?: (start: number, end: number) => void;
 }) {
   useLocale();
   const transport = useTransport();
@@ -173,21 +179,22 @@ export function useProjectPromptHistory({
     )
       return false;
     const field = event.currentTarget;
+    const draft = read?.() ?? {
+      text: field.value,
+      start: field.selectionStart,
+      end: field.selectionEnd,
+    };
     if (
-      field.selectionStart !== field.selectionEnd ||
+      draft.start !== draft.end ||
       (event.key === "ArrowUp"
-        ? field.selectionStart !== 0
-        : field.selectionEnd !== field.value.length)
+        ? draft.start !== 0
+        : draft.end !== draft.text.length)
     )
       return false;
     const next = navigation.current.move(
       event.key === "ArrowUp" ? "older" : "newer",
       entries.map((entry) => entry.prompt),
-      {
-        text: field.value,
-        start: field.selectionStart,
-        end: field.selectionEnd,
-      },
+      draft,
     );
     if (!next) return false;
     event.preventDefault();
@@ -201,7 +208,8 @@ export function useProjectPromptHistory({
         !editable()
       )
         return;
-      textarea.current?.setSelectionRange(next.start, next.end);
+      if (select) select(next.start, next.end);
+      else textarea.current?.setSelectionRange(next.start, next.end);
     });
     return true;
   };

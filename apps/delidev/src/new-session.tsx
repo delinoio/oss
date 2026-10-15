@@ -690,6 +690,8 @@ export function NewSession({
     active,
     blocked,
     textarea: firstMessage,
+    read: skills.readCanonical,
+    select: skills.select,
     replace: (value, caret) => {
       historyEditing.current = true;
       try {
@@ -1178,7 +1180,8 @@ export function NewSession({
                       ? copy("new-session.generalChatPlaceholder")
                       : copy("new-session.describeATaskAskAQuestion_4ed4ad")
                   }
-                  value={prompt}
+                  value={skills.value}
+                  {...skills.input}
                   onChange={(event) =>
                     skills.onChange(
                       event.target.value,

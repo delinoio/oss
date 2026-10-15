@@ -1245,11 +1245,16 @@
 .skill-token-unavailable {
   color: var(--muted);
 }
-.skill-token-selected {
+.skill-token-selected,
+.markdown-link-label {
   color: var(--link);
   text-decoration-line: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.12em;
+}
+/* Revealed link source is ordinary text; the span only anchors hit-testing. */
+.markdown-link-source {
+  color: inherit;
 }
 
 .new-session-composer .skill-textarea {

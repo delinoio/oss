@@ -189,7 +189,8 @@ function Followup() {
       {completion.wrap(
         <textarea
           ref={textarea}
-          value={value}
+          value={completion.value}
+          {...completion.input}
           onChange={(event) =>
             completion.onChange(event.target.value, event.target.selectionStart)
           }

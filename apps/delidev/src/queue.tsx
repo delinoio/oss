@@ -483,7 +483,8 @@ function QueuedInputEditor({
           autoFocus={autoFocus}
           rows={3}
           disabled={busy}
-          value={edit.prompt}
+          value={skills.value}
+          {...skills.input}
           onChange={(event) =>
             skills.onChange(event.target.value, event.target.selectionStart)
           }

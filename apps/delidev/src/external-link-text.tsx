@@ -78,19 +78,35 @@ export function LinkedPre({
         )}
       </pre>
       {failure ? (
-        <p className="external-link-error" role="alert">
-          <span>{copy(externalLinkFailureMessages[failure])}</span>
-          <button
-            type="button"
-            aria-label={copy("external-link.dismiss")}
-            onClick={() => setFailure(undefined)}
-          >
-            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
-              <path d="M6 6l12 12M18 6 6 18" />
-            </svg>
-          </button>
-        </p>
+        <ExternalLinkAlert
+          failure={failure}
+          dismiss={() => setFailure(undefined)}
+        />
       ) : null}
     </>
+  );
+}
+
+/** Localized, dismissible failure presentation shared by link openers. */
+export function ExternalLinkAlert({
+  failure,
+  dismiss,
+}: {
+  failure: ExternalLinkFailure;
+  dismiss: () => void;
+}) {
+  return (
+    <p className="external-link-error" role="alert">
+      <span>{copy(externalLinkFailureMessages[failure])}</span>
+      <button
+        type="button"
+        aria-label={copy("external-link.dismiss")}
+        onClick={dismiss}
+      >
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+          <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+      </button>
+    </p>
   );
 }
