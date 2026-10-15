@@ -1028,6 +1028,23 @@ fn arrow_or_function_body(bytes: &[u8], close: usize) -> Option<(usize, bool)> {
     let mut braces = 0i32;
     let mut angles = 0i32;
     while let Some(byte) = bytes.get(cursor) {
+        if *byte == b'{' && parentheses == 0 && brackets == 0 && braces == 0 && angles == 0 {
+            // A method can have a TypeScript return annotation before its
+            // body. Object-shaped return types also use braces, so skip a
+            // brace preceded by a type delimiter and continue to the next
+            // executable block.
+            let type_brace = bytes[..cursor]
+                .iter()
+                .rev()
+                .find(|byte| !byte.is_ascii_whitespace())
+                .is_some_and(|byte| matches!(byte, b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'('))
+                || bytes[..cursor].ends_with(b"=>");
+            if !type_brace {
+                return Some((cursor, false));
+            }
+            cursor = matching_delimiter(bytes, cursor, b'{', b'}')? + 1;
+            continue;
+        }
         if *byte == b'='
             && bytes.get(cursor + 1) == Some(&b'>')
             && parentheses == 0
@@ -1635,6 +1652,16 @@ y=/process.env.F/.test(z),process.env.G"#;
                 .is_some()
         );
         assert!(direct_eval_line("const run = λ => { var eval = helper; }; eval(code);").is_some());
+        assert!(
+            direct_eval_line("class C { run(): void { var eval = helper; } } eval(code);")
+                .is_some()
+        );
+        assert!(
+            direct_eval_line(
+                "class C { run(): Promise<{ ok: boolean }> { var eval = helper; } } eval(code);"
+            )
+            .is_some()
+        );
         assert_eq!(
             direct_eval_line(
                 "async function run() { for await (const item of items) { var eval = helper; } \
