@@ -730,8 +730,8 @@ it("plays one step heading entrance for each user-selected step change and none 
   expect(heading.getAttribute("data-entrance")).toBe("y4");
   settleEntrance(heading);
   expect(heading.getAttribute("data-entrance")).toBeNull();
-  // Change harness.
-  fireEvent.click(screen.getByRole("button", { name: "Change harness" }));
+  // Back from Accounts to Harness.
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
   expect(stepHeading("Harness")).toBe(heading);
   expect(heading.getAttribute("data-entrance")).toBe("y4");
   settleEntrance(heading);
@@ -752,13 +752,34 @@ it("plays one step heading entrance for each user-selected step change and none 
   expect(f.save).not.toHaveBeenCalled();
 });
 
+it("shows the selected harness as plain text on Accounts and returns to Harness only through Back", async () => {
+  const f = fixture();
+  render(f.view());
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  const heading = stepHeading("Accounts");
+  expect(screen.queryByRole("button", { name: /Change harness/ })).toBeNull();
+  expect(screen.queryByText("Change harness")).toBeNull();
+  const label = screen.getAllByText("Codex").find((node) => node.tagName === "P");
+  expect(label).toBeTruthy();
+  expect(label!.querySelector("button, svg, a")).toBeNull();
+  // The only route back is the footer Back button, which focuses the heading.
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  expect(stepHeading("Harness")).toBe(heading);
+  expect(globalThis.document.activeElement).toBe(heading);
+  // Confirming the same harness returns to Accounts.
+  fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+  expect(stepHeading("Accounts")).toBe(heading);
+  expect(screen.queryByRole("button", { name: /Change harness/ })).toBeNull();
+  expect(f.save).not.toHaveBeenCalled();
+});
+
 it("restarts the step entrance for a quick second step change without waiting for the first", async () => {
   const f = fixture();
   render(f.view());
   fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
   const heading = stepHeading("Accounts");
   expect(heading.getAttribute("data-entrance")).toBe("y4");
-  fireEvent.click(screen.getByRole("button", { name: "Change harness" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
   expect(stepHeading("Harness")).toBe(heading);
   expect(heading.getAttribute("data-entrance")).toBe("y4");
   // Focus moved to the heading without waiting for the motion.
@@ -823,7 +844,7 @@ it("suppresses the step entrance when Animation is Off and settles it mid-flight
   await act(async () => {
     await Promise.resolve();
   });
-  fireEvent.click(screen.getByRole("button", { name: "Change harness" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
   expect(heading.getAttribute("data-entrance")).toBe("y4");
   await act(async () => {
     globalThis.document.documentElement.dataset.animation = "false";
