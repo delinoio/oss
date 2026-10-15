@@ -177,3 +177,36 @@ it("converts only unprotected URLs in a large paste with many protected shapes",
   );
   expect(result.text.startsWith(shapes)).toBe(true);
 });
+
+it.each([
+  ["[see [docs]](https://example.com)", 0],
+  ["![img [alt]](https://example.com/a.png)", 0],
+  ["[a [b [c]]](https://example.com)", 0],
+])("protects a nested-bracket label shape without collapsing it: %s", (text) => {
+  const scan = scanMarkdown(text);
+  expect(scan.links).toEqual([]);
+  expect(scan.protectedRanges).toEqual([{ start: 0, end: text.length }]);
+  expect(convertBareUrls(text, 0, text.length)).toBeUndefined();
+  const pasted = `${text} ${URL}`;
+  expect(convertBareUrls(pasted, 0, pasted.length)!.text).toBe(
+    `${text} ${LINK}`,
+  );
+});
+
+it("keeps escaped label brackets collapsible and recovers from unmatched openers", () => {
+  const escaped = "[a \\[b\\]](https://example.com)";
+  expect(scanMarkdown(escaped).links).toHaveLength(1);
+  const unmatched = "[a [b](https://example.com)";
+  const scan = scanMarkdown(unmatched);
+  expect(scan.links).toHaveLength(1);
+  expect(scan.links[0]!.start).toBe(3);
+});
+
+it("bounds scanning of unterminated and oversized link destinations", () => {
+  const unterminated = "[a](".repeat(60000);
+  expect(scanMarkdown(unterminated).links).toEqual([]);
+  const long = `[a](${"x".repeat(20000)}) https://example.com`;
+  const scan = scanMarkdown(long);
+  expect(scan.links).toEqual([]);
+  expect(scan.protectedRanges.length).toBeGreaterThan(0);
+});

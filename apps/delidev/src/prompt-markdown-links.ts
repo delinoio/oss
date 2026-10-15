@@ -36,28 +36,57 @@ interface BracketShape extends TextRange {
   link?: MarkdownLink;
 }
 
+/** Longest destination scanned after `](`; keeps unterminated shapes bounded. */
+const MAX_DESTINATION_SCAN = 4 * MAX_URL_LENGTH;
+
+/**
+ * Pairs every unescaped `[` with its matching `]` on the same line in one
+ * linear pass, so nested labels such as `[see [docs]](url)` resolve in O(1) per
+ * opener. `-1` marks an unmatched opener.
+ */
+function matchBrackets(text: string): Int32Array {
+  const closes = new Int32Array(text.length).fill(-1);
+  const stack: number[] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === "\\") index += 1;
+    else if (char === "\n") stack.length = 0;
+    else if (char === "[") stack.push(index);
+    else if (char === "]") {
+      const open = stack.pop();
+      if (open !== undefined) closes[open] = index;
+    }
+  }
+  return closes;
+}
+
+function hasUnescapedBracket(text: string, from: number, to: number): boolean {
+  for (let index = from; index < to; index += 1) {
+    const char = text[index];
+    if (char === "\\") index += 1;
+    else if (char === "[" || char === "]") return true;
+  }
+  return false;
+}
+
 function parseBracketShape(
   text: string,
   open: number,
+  closes: Int32Array,
 ): BracketShape | undefined {
-  let index = open + 1;
-  for (;;) {
-    const char = text[index];
-    if (char === undefined || char === "\n" || char === "[") return;
-    if (char === "\\") {
-      index += 2;
-      continue;
-    }
-    if (char === "]") break;
-    index += 1;
-  }
-  const labelEnd = index;
-  if (text[labelEnd + 1] !== "(") return;
+  const labelEnd = closes[open]!;
+  if (labelEnd === -1 || text[labelEnd + 1] !== "(") return;
   let depth = 0,
     cursor = labelEnd + 2;
+  const limit = Math.min(text.length, cursor + MAX_DESTINATION_SCAN);
   for (;;) {
+    if (cursor >= limit) {
+      // Too long to be a URL destination: protect the scanned prefix and never
+      // rescan it, so adversarial input stays linear. It is never a link.
+      return cursor >= text.length ? undefined : { start: open, end: cursor };
+    }
     const char = text[cursor];
-    if (char === undefined || char === "\n") return;
+    if (char === "\n") return;
     if (char === "\\") {
       cursor += 2;
       continue;
@@ -72,7 +101,14 @@ function parseBracketShape(
   const end = cursor + 1;
   const raw = text.slice(labelEnd + 2, cursor);
   const shape: BracketShape = { start: open, end };
-  if (labelEnd > open + 1 && raw !== "" && !/[\s<>]/u.test(raw)) {
+  // Only a label without nested brackets is a collapsible link. A nested label
+  // is still link-shaped syntax, so its destination stays protected as source.
+  if (
+    labelEnd > open + 1 &&
+    raw !== "" &&
+    !/[\s<>]/u.test(raw) &&
+    !hasUnescapedBracket(text, open + 1, labelEnd)
+  ) {
     const url = raw.replace(ESCAPABLE, "$1");
     if (url.length <= MAX_URL_LENGTH && validHttpUrl(url))
       shape.link = {
@@ -96,6 +132,7 @@ export function scanMarkdown(text: string): MarkdownScan {
     protectedRanges: TextRange[] = [];
   if (text.length > MAX_SCAN_LENGTH) return { links, protectedRanges };
   const length = text.length;
+  const closes = matchBrackets(text);
   let index = 0;
   while (index < length) {
     const char = text[index];
@@ -154,7 +191,7 @@ export function scanMarkdown(text: string): MarkdownScan {
       continue;
     }
     if (char === "!" && text[index + 1] === "[") {
-      const shape = parseBracketShape(text, index + 1);
+      const shape = parseBracketShape(text, index + 1, closes);
       if (shape) {
         protectedRanges.push({ start: index, end: shape.end });
         index = shape.end;
@@ -162,7 +199,7 @@ export function scanMarkdown(text: string): MarkdownScan {
       }
     }
     if (char === "[") {
-      const shape = parseBracketShape(text, index);
+      const shape = parseBracketShape(text, index, closes);
       if (shape) {
         protectedRanges.push({ start: shape.start, end: shape.end });
         if (shape.link) links.push(shape.link);
