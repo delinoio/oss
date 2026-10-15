@@ -198,3 +198,33 @@ it("refuses completion atomically when only the separator would exceed the 256 K
   expect(screen.queryByRole("listbox")).not.toBeNull();
   expect(f.createSession).not.toHaveBeenCalled();
 });
+
+it.each([NewSessionKind.Session, NewSessionKind.GeneralChat])(
+  "converts a pasted URL to a collapsed Markdown link in %s creation",
+  async (kind) => {
+    const f = fixture(kind);
+    render(f.view);
+    await waitFor(() =>
+      expect(
+        scrollChoiceValue(
+          screen.getByRole("combobox", { name: "Agent Worker" }),
+        ),
+      ).toBe(f.agent.id),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "First message",
+    }) as HTMLTextAreaElement;
+    const url = "https://example.com/docs";
+    fireEvent.paste(input, {
+      clipboardData: { getData: () => url, files: [] },
+    });
+    expect(input.value).toBe(url);
+    expect(
+      document.querySelector(".prompt-markdown-link")?.textContent,
+    ).toBe(url);
+    input.setSelectionRange(5, 5);
+    fireEvent.select(input);
+    expect(input.value).toBe(`[${url}](${url})`);
+    expect(f.createSession).not.toHaveBeenCalled();
+  },
+);

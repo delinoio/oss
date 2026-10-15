@@ -3387,7 +3387,7 @@ export function SessionView({
                             ShortcutId.SessionNewline,
                           )}
                           id={`prompt-${id}`}
-                          value={draft}
+                          value={skills.displayValue}
                           onChange={(event) =>
                             skills.onChange(
                               event.target.value,

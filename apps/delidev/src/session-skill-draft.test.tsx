@@ -280,3 +280,27 @@ it("keeps composition-confirmation Enter away from local and connection send own
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
 }, 10_000);
+
+it("queues a pasted follow-up URL as canonical Markdown", async () => {
+  const f = fixture();
+  render(<App transport={f.transport} />);
+  fireEvent.click(
+    await sidebar().findByRole("button", {
+      name: /General Chat Skill original/,
+    }),
+  );
+  const input = await currentSession().findByRole("textbox", {
+    name: "Message",
+  });
+  const url = "https://example.com/follow-up";
+  fireEvent.paste(input, { clipboardData: { getData: () => url, files: [] } });
+  expect(input).toHaveProperty("value", url);
+  fireEvent.click(
+    currentSession().getByRole("button", { name: "Queue message" }),
+  );
+  await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
+  expect(
+    JSON.parse(new TextDecoder().decode(f.enqueue.mock.calls[0]![0].documentJson))
+      .prompt,
+  ).toBe(`[${url}](${url})`);
+}, 10_000);

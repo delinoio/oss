@@ -87,6 +87,7 @@ export function useProjectPromptHistory({
   blocked,
   textarea,
   replace,
+  draft,
 }: {
   projectId: string;
   enabled: boolean;
@@ -94,6 +95,12 @@ export function useProjectPromptHistory({
   blocked: boolean;
   textarea: RefObject<HTMLTextAreaElement | null>;
   replace: (text: string, caret: number) => void;
+  /** Canonical Markdown draft and selection when the textarea shows a collapsed display text. */
+  draft?: (field: HTMLTextAreaElement) => {
+    text: string;
+    start: number;
+    end: number;
+  };
 }) {
   useLocale();
   const transport = useTransport();
@@ -183,7 +190,7 @@ export function useProjectPromptHistory({
     const next = navigation.current.move(
       event.key === "ArrowUp" ? "older" : "newer",
       entries.map((entry) => entry.prompt),
-      {
+      draft?.(field) ?? {
         text: field.value,
         start: field.selectionStart,
         end: field.selectionEnd,

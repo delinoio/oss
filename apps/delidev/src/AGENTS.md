@@ -18,6 +18,7 @@ The shared pure `product-identity.ts` module is owned here and consumed by the m
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
 - [Explicit skill completion presentation and input ownership](../../../docs/apps-delidev-desktop-contract.md#explicit-skill-completion)
+- [Composer Markdown links](../../../docs/apps-delidev-desktop-contract.md#composer-markdown-links)
 - [Shared sidebar scroll ownership](../../../docs/apps-delidev-desktop-contract.md#sidebar-scroll-boundaries)
 - [DeliDev Diagnostics Presentation](../../../docs/apps-delidev-diagnostics-contract.md)
 - [DeliDev parallel browser QA](../../../docs/apps-delidev-qa-contract.md)
