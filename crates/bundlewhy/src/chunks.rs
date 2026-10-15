@@ -220,7 +220,8 @@ impl Chunk {
         // Convert positions to byte offsets in one forward pass; minified
         // chunks are often a single very long line, so per-token scans from the
         // line start would be quadratic.
-        let mut tokens: Vec<(usize, Option<u32>)> = Vec::with_capacity(positions.len());
+        // Each entry is (start offset, source id, offset where its line ends).
+        let mut tokens: Vec<(usize, Option<u32>, usize)> = Vec::with_capacity(positions.len());
         let mut cursor_line = u32::MAX;
         let mut cursor_byte = 0usize;
         let mut cursor_units = 0usize;
@@ -246,20 +247,24 @@ impl Chunk {
                 cursor_units += character.len_utf16();
                 cursor_byte += character.len_utf8();
             }
-            tokens.push((cursor_byte, source));
+            tokens.push((cursor_byte, source, line_end));
         }
         let total = self.code.len();
         let mut per_id: BTreeMap<u32, usize> = BTreeMap::new();
-        let mut unmapped = tokens.first().map_or(total, |(offset, _)| *offset);
-        for (index, (start, source)) in tokens.iter().enumerate() {
-            let end = tokens
+        let mut unmapped = tokens.first().map_or(total, |(offset, _, _)| *offset);
+        for (index, (start, source, line_end)) in tokens.iter().enumerate() {
+            let next = tokens
                 .get(index + 1)
-                .map_or(total, |(offset, _)| *offset)
+                .map_or(total, |(offset, _, _)| *offset)
                 .max(*start);
+            // A segment ends with its generated line: text on a later line
+            // before that line's first segment has no mapping.
+            let end = next.min((*line_end).max(*start));
             match source.filter(|id| matches!(self.map_sources.get(*id as usize), Some(Some(_)))) {
                 Some(id) => *per_id.entry(id).or_default() += end - start,
                 None => unmapped += end - start,
             }
+            unmapped += next - end;
         }
         let mut per_source: BTreeMap<PathBuf, u32> = BTreeMap::new();
         for (id, bytes) in per_id {
@@ -607,6 +612,95 @@ mod tests {
                     case.name
                 );
             }
+        }
+    }
+
+    #[test]
+    fn attribution_never_extends_a_segment_past_its_generated_line() {
+        struct Case {
+            name: &'static str,
+            code: &'static str,
+            mappings: &'static str,
+            /// Expected bytes per original file name, then unmapped bytes.
+            sources: Vec<(&'static str, u32)>,
+            unmapped: u32,
+        }
+        let cases = vec![
+            Case {
+                name: "later line without segments",
+                code: "const a=1;\nconst b=2;",
+                mappings: "AAAA",
+                sources: vec![("a.js", 11)],
+                unmapped: 10,
+            },
+            Case {
+                name: "empty line between mapped lines",
+                code: "ab\n\ncd",
+                mappings: "AAAA;;AAAA",
+                sources: vec![("a.js", 5)],
+                unmapped: 1,
+            },
+            Case {
+                name: "text before the first segment and after the first line",
+                code: "xxxxxx\nyy",
+                mappings: "MAAA",
+                sources: vec![("a.js", 1)],
+                unmapped: 8,
+            },
+            Case {
+                name: "CRLF stays inside the line it ends",
+                code: "ab\r\ncd",
+                mappings: "AAAA",
+                sources: vec![("a.js", 4)],
+                unmapped: 2,
+            },
+            Case {
+                name: "lone CR and U+2028 stay inside one line",
+                code: "a\rb\u{2028}c",
+                mappings: "AAAA",
+                sources: vec![("a.js", 7)],
+                unmapped: 0,
+            },
+            Case {
+                name: "adjacent mapped lines",
+                code: "ab\ncd",
+                mappings: "AAAA;ACAA",
+                sources: vec![("a.js", 3), ("b.js", 2)],
+                unmapped: 0,
+            },
+            Case {
+                name: "segment on a line past the end of the text",
+                code: "ab",
+                mappings: "AAAA;;AAAA",
+                sources: vec![("a.js", 2)],
+                unmapped: 0,
+            },
+        ];
+        for case in cases {
+            let map = format!(
+                r#"{{"version":3,"sources":["a.js","b.js"],"names":[],"mappings":"{}"}}"#,
+                case.mappings
+            );
+            let (_dir, chunk) = chunk_with_map(case.code, &map);
+            let (per_source, unmapped) = chunk.attribution().expect(case.name);
+            let actual: Vec<(String, u32)> = per_source
+                .iter()
+                .map(|(path, bytes)| {
+                    (
+                        path.file_name().unwrap().to_string_lossy().into_owned(),
+                        *bytes,
+                    )
+                })
+                .collect();
+            let expected: Vec<(String, u32)> = case
+                .sources
+                .iter()
+                .map(|(name, bytes)| ((*name).to_owned(), *bytes))
+                .collect();
+            assert_eq!(actual, expected, "{}", case.name);
+            assert_eq!(unmapped, case.unmapped, "{}", case.name);
+            let total: u32 = per_source.values().sum::<u32>() + unmapped;
+            assert_eq!(total as usize, case.code.len(), "{}", case.name);
         }
     }
 
