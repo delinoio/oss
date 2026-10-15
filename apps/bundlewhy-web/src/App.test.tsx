@@ -27,6 +27,7 @@ import {
   RunStage,
   RunStatus,
   SourceFileSchema,
+  SourceFileSummarySchema,
   SourceRevisionEvidence,
   type Analysis,
 } from "./gen/bundlewhy/v1/bundlewhy_pb";
@@ -154,6 +155,26 @@ describe("analysis layout", () => {
     ).toEqual(["src/main.ts", "node_modules/lodash/lodash.js"]);
     expect(within(details).getByText("Safety conditions")).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/saving/i);
+  });
+
+  it("hides original snippets when a legacy source has no provenance", async () => {
+    const analysis = fixtureAnalysis({
+      sources: [
+        create(SourceFileSummarySchema, {
+          id: "src-1",
+          path: "src/main.ts",
+          revisionEvidence: SourceRevisionEvidence.UNSPECIFIED,
+        }),
+      ],
+    });
+    await renderAnalysis(analysis);
+    const details = screen.getByRole("region", { name: "Diagnostic details" });
+    expect(
+      within(details).getByText("No code snippet is available."),
+    ).toBeTruthy();
+    expect(
+      within(details).queryByText("import { render } from './render';"),
+    ).toBeNull();
   });
 
   it("selects another diagnostic by click and arrow keys", async () => {

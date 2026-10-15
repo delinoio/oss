@@ -30,6 +30,7 @@ import {
   CoverageState,
   EngineSupport,
   EvidenceStatus,
+  LocationKind,
   OptimizationCategory,
   ReportMode,
   RunStatus,
@@ -471,7 +472,16 @@ export function AnalysisView({
                 </button>
               ) : null}
               {selected ? (
-                <DiagnosticDetails diagnostic={selected} />
+                <DiagnosticDetails
+                  diagnostic={selected}
+                  sourceRevisionEvidence={
+                    selected.location?.sourceId
+                      ? analysis.sources.find(
+                          (source) => source.id === selected.location?.sourceId,
+                        )?.revisionEvidence
+                      : undefined
+                  }
+                />
               ) : (
                 <p className="muted empty-details">
                   Select a diagnostic to see why the optimization was not
@@ -968,9 +978,18 @@ function EmptyList({
 /* Diagnostic details                                                  */
 /* ------------------------------------------------------------------ */
 
-export function DiagnosticDetails({ diagnostic }: { diagnostic: Diagnostic }) {
+export function DiagnosticDetails({
+  diagnostic,
+  sourceRevisionEvidence,
+}: {
+  diagnostic: Diagnostic;
+  sourceRevisionEvidence?: SourceRevisionEvidence;
+}) {
   const [sourceOpen, setSourceOpen] = useState(false);
   const sourceId = diagnostic.location?.sourceId;
+  const showSnippet =
+    diagnostic.snippet?.kind !== LocationKind.ORIGINAL ||
+    sourceRevisionEvidence === SourceRevisionEvidence.BUILD_SNAPSHOT;
   return (
     <article className="details" aria-labelledby="details-title">
       <h2 id="details-title">{diagnostic.title}</h2>
@@ -1050,7 +1069,7 @@ export function DiagnosticDetails({ diagnostic }: { diagnostic: Diagnostic }) {
       </DetailSection>
 
       <DetailSection title="Code">
-        {diagnostic.snippet ? (
+        {diagnostic.snippet && showSnippet ? (
           <Snippet snippet={diagnostic.snippet} />
         ) : (
           <p className="muted">No code snippet is available.</p>

@@ -12,6 +12,7 @@ import {
   ReportMode,
   RunStatus,
   SourceFileSchema,
+  SourceFileSummarySchema,
   SourceOrigin,
   SourceRevisionEvidence,
   type Analysis,
@@ -190,6 +191,14 @@ export function fixtureAnalysis(
       },
     ],
     problems: [],
+    sources: [
+      create(SourceFileSummarySchema, {
+        id: "src-1",
+        path: "src/main.ts",
+        origin: SourceOrigin.PROJECT,
+        revisionEvidence: SourceRevisionEvidence.BUILD_SNAPSHOT,
+      }),
+    ],
     ...overrides,
   });
 }
