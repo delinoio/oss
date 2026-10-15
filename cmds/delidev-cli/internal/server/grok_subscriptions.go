@@ -474,7 +474,10 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		if lease.Action == domain.SubscriptionLogout && (state.RevokedGeneration == "" || state.RevokedGeneration != lease.Generation) {
 			usable = false
 		}
-		if state.Pending != nil && state.Pending.Canceled {
+		// Only the lease's own operation can cancel it. An execute lease carries no
+		// operation: the pending operation is a logout or refresh that was accepted
+		// while the execution ran and belongs to someone else.
+		if state.Pending != nil && state.Pending.ID == lease.OperationID && state.Pending.Canceled {
 			usable = false
 		}
 		vault, err := s.secrets()
@@ -572,7 +575,7 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			if lease.Action == domain.SubscriptionLogout && (state.RevokedGeneration == "" || state.RevokedGeneration != lease.Generation) {
 				usable = false
 			}
-			if state.Pending != nil {
+			if state.Pending != nil && state.Pending.ID == lease.OperationID {
 				if err := subscriptionActorValid(tx, state.Pending.Actor); err != nil {
 					return nil, err
 				}
@@ -585,12 +588,18 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 					return nil, err
 				}
 			}
-			if !input.Cleanup || !usable && lease.Action != domain.SubscriptionLogin {
+			if !input.Cleanup || !usable && lease.Action != domain.SubscriptionLogin && lease.Action != domain.SubscriptionExecute {
 				// Keep the lease and old generation denied. Neither an error nor a
 				// process timeout establishes safe refresh-token redistribution.
 				state.RecoveryRequired = true
 				a.Health = domain.AccountFailed
 			} else {
+				// A confirmed execute cleanup releases the lease even when the
+				// execution produced no usable credential (a failed or canceled run,
+				// which is exactly how an accepted logout ends it): the Worker proved
+				// the process exit and the private-home removal, and nothing is
+				// redistributed, so the generation stays as it was and the accepted
+				// logout or refresh that waited for the lease can proceed.
 				state.Lease = nil
 				state.Members = nil
 				if state.Pending != nil && state.Pending.ID == lease.OperationID {
