@@ -138,15 +138,22 @@ fn reads_process_env(text: &str, name: &str) -> bool {
 ///
 /// This is a lexical scan, not a parser. Regular expression literals are
 /// recognized by the preceding token (an operator, punctuation or keyword such
-/// as `return`), which matches minified bundler output.
+/// as `return`), which matches minified bundler output. A `)` precedes a
+/// regular expression only when it closes the parenthesized head of an `if`,
+/// `while`, `for` or `with` statement (`if (ready) /eval(code)/.test(input)`);
+/// after any other `)` a `/` divides.
 fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
     let bytes = code.as_bytes();
     let mut ranges = Vec::new();
     // Open `${` substitutions; each entry is the brace depth inside it.
     let mut templates: Vec<usize> = Vec::new();
     let mut previous_significant: Option<u8> = None;
+    // One entry per open `(`: whether it opens a statement head.
+    let mut head_parens: Vec<bool> = Vec::new();
+    // Whether the last `)` closed a statement head.
+    let mut closed_head = false;
     let mut index = 0usize;
-    let regex_allowed = |previous: Option<u8>, start: usize| -> bool {
+    let regex_allowed = |previous: Option<u8>, start: usize, closed_head: bool| -> bool {
         match previous {
             None => true,
             // `</tag>` is a JSX closing tag, and `<a b={c} />` or
@@ -156,6 +163,7 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
             // regular expression starts with `>` right after a `}` or a `>`.
             Some(b'<') if closes_jsx_tag(bytes, start) => false,
             Some(b'}' | b'>') if bytes.get(start + 1) == Some(&b'>') => false,
+            Some(b')') => closed_head,
             Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
             Some(byte) if byte.is_ascii_alphabetic() => {
                 let head = &code[..start];
@@ -232,7 +240,7 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 ranges.push((index, end));
                 index = end;
             }
-            b'/' if regex_allowed(previous_significant, index) => {
+            b'/' if regex_allowed(previous_significant, index, closed_head) => {
                 let mut position = index + 1;
                 let mut in_class = false;
                 while position < bytes.len() {
@@ -259,6 +267,11 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                         *depth -= 1;
                     }
                 }
+                if byte == b'(' {
+                    head_parens.push(opens_statement_head(&code[..index]));
+                } else if byte == b')' {
+                    closed_head = head_parens.pop().unwrap_or(false);
+                }
                 if !byte.is_ascii_whitespace() {
                     previous_significant = Some(byte);
                 }
@@ -283,6 +296,39 @@ fn closes_jsx_tag(bytes: &[u8], slash: usize) -> bool {
         cursor += 1;
     }
     bytes.get(cursor) == Some(&b'>')
+}
+
+/// True when the `(` that follows `before` opens the head of an `if`,
+/// `while`, `for` (or `for await`) or `with` statement. A property of that name
+/// (`object.if (x)`) is not a statement.
+fn opens_statement_head(before: &str) -> bool {
+    let trimmed = before.trim_end();
+    let word_start = trimmed
+        .rfind(|character: char| {
+            !(character.is_alphanumeric() || character == '_' || character == '$')
+        })
+        .map_or(0, |position| {
+            position + trimmed[position..].chars().next().map_or(1, char::len_utf8)
+        });
+    let (head, word) = trimmed.split_at(word_start);
+    if head.trim_end().ends_with('.') {
+        return false;
+    }
+    match word {
+        "if" | "while" | "for" | "with" => true,
+        "await" => {
+            head.trim_end().ends_with("for") && {
+                let before_for = head.trim_end().trim_end_matches("for");
+                !before_for.ends_with(|character: char| {
+                    character.is_alphanumeric()
+                        || character == '_'
+                        || character == '$'
+                        || character == '.'
+                })
+            }
+        }
+        _ => false,
+    }
 }
 
 fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
@@ -3356,6 +3402,10 @@ y=/process.env.F/.test(z),process.env.G"#;
         ("/* (eval)(c) */ run();", 0),
         ("run('eval(c)', \"(eval)(c)\", `eval(c)`);", 0),
         ("const re = /eval(c)/;", 0),
+        // A regular expression after a statement head is a literal.
+        ("if (ready) /eval(c)/.test(input);", 0),
+        ("while (more()) /eval(c)/.exec(input);", 0),
+        ("if (ready) /x/.test(a); eval(c);", 1),
         // Escaped identifiers spell the same name.
         ("\\u0065val(c);", 1),
         ("ev\\u0061l(c);", 1),
@@ -3424,6 +3474,37 @@ y=/process.env.F/.test(z),process.env.G"#;
         let offsets = direct_eval_offsets(source);
         assert_eq!(offsets, vec![0, source.rfind("eval(d)").unwrap()]);
         assert_eq!(direct_eval_line(source), Some((0, 0)));
+    }
+
+    #[test]
+    fn regular_expressions_after_statement_heads_are_not_calls() {
+        // (source, offsets of the real direct calls)
+        let cases: [(&str, Vec<usize>); 12] = [
+            // A regular expression body of a statement head hides its text.
+            ("if (ready) /eval(code)/.test(input);", vec![]),
+            ("while (more()) /eval(code)/.exec(input);", vec![]),
+            ("for (;;) /eval(code)/.test(input);", vec![]),
+            ("for (const k of keys) /eval(code)/.test(k);", vec![]),
+            ("for await (const k of keys) /eval(code)/.test(k);", vec![]),
+            ("with (scope) /eval(code)/.test(input);", vec![]),
+            ("if(ready)/eval(code)/.test(input)", vec![]),
+            // A real call after the literal stays visible.
+            ("if (ready) /x/.test(a); eval(code);", vec![24]),
+            // Division after any other `)` is not a literal.
+            ("run(a) / eval(code) / 2;", vec![9]),
+            ("const v = (a + b) / eval(code) / 2;", vec![20]),
+            // A property named like a statement head is not a statement.
+            ("object.if (a) / eval(code) / 2;", vec![16]),
+            ("ifReady (a) / eval(code) / 2;", vec![14]),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(direct_eval_offsets(source), expected, "{source}");
+        }
+        let literal = "if (ready) /process.env.A/.test(x);";
+        assert!(in_ranges(
+            &non_code_ranges(literal),
+            literal.find("process").unwrap()
+        ));
     }
 
     #[test]
