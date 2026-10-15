@@ -105,6 +105,11 @@ pub struct Context<'a> {
     pub cancelled: Option<&'a (dyn Fn() -> bool + Sync)>,
     /// Export usage edges grouped for traversal; built on first use.
     pub export_usage_index: std::cell::OnceCell<export_usage::ExportUsageIndex<'a>>,
+    /// Per-chunk facts for the direct `eval` rule, keyed by chunk index and
+    /// built on first use so each chunk is scanned once for all modules.
+    pub chunk_eval_index: std::cell::RefCell<HashMap<usize, std::rc::Rc<common::ChunkEvalIndex>>>,
+    /// Number of included modules per chunk file; built on first use.
+    pub chunk_owner_counts: std::cell::OnceCell<HashMap<&'a str, usize>>,
 }
 
 /// Original or generated location plus a snippet for one diagnostic.
@@ -168,6 +173,8 @@ impl<'a> Context<'a> {
             vite_env_source_gaps: HashSet::new(),
             cancelled: None,
             export_usage_index: std::cell::OnceCell::new(),
+            chunk_eval_index: std::cell::RefCell::new(HashMap::new()),
+            chunk_owner_counts: std::cell::OnceCell::new(),
         }
     }
 

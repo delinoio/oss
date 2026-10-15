@@ -1,8 +1,9 @@
 //! Rules shared by both engines: duplicate packages and minifier blockers.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::Path,
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    path::{Path, PathBuf},
+    rc::Rc,
 };
 
 use regex::Regex;
@@ -1787,49 +1788,154 @@ struct EmittedEval {
     offset: usize,
 }
 
+/// The file that a source map resolves an emitted position to, as the two
+/// forms that [`same_backing_file`] compares.
+struct MappedFile {
+    literal: PathBuf,
+    key: PathBuf,
+}
+
+/// One direct `eval` call in an emitted chunk and the source file that the
+/// chunk's source map resolves it to.
+struct ChunkEvalCall {
+    offset: usize,
+    source: Option<MappedFile>,
+}
+
+/// Facts about one emitted chunk that do not depend on the module under
+/// analysis. They are computed once per chunk and shared by every candidate
+/// module, so the cost of scanning a chunk does not grow with the number of
+/// modules that report an `eval`.
+pub struct ChunkEvalIndex {
+    /// Unshadowed direct `eval(...)` calls in source order.
+    calls: Vec<ChunkEvalCall>,
+    /// Maximal runs of identifier characters in the chunk text; built on first
+    /// use, because only a chunk that holds an attributable call needs them.
+    words: std::cell::OnceCell<HashSet<String>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Chunk scans and identifier-run scans started on this thread.
+    static CHUNK_SCANS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+impl ChunkEvalIndex {
+    fn build(chunk: &crate::chunks::Chunk) -> Self {
+        #[cfg(test)]
+        CHUNK_SCANS.with(|scans| scans.set((scans.get().0 + 1, scans.get().1)));
+        let calls: Vec<ChunkEvalCall> = direct_eval_offsets(&chunk.code)
+            .into_iter()
+            .map(|offset| {
+                let source = chunk.map.as_ref().and_then(|_| {
+                    let (line, column) = chunk.position(offset);
+                    chunk.original(line, column).map(|(path, _, _)| MappedFile {
+                        literal: crate::sources::normalize(&path),
+                        key: crate::sources::module_file_key(&path),
+                    })
+                });
+                ChunkEvalCall { offset, source }
+            })
+            .collect();
+        tracing::debug!(
+            rule = "minifier/direct-eval-blocks-mangling",
+            chunk = %chunk.file,
+            calls = calls.len(),
+            "scanned emitted chunk for direct eval calls"
+        );
+        Self {
+            calls,
+            words: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// Reports whether `name` appears in the chunk text as a whole identifier
+    /// (not as part of a longer one).
+    fn contains_word(&self, chunk: &crate::chunks::Chunk, name: &str) -> bool {
+        static WORD: std::sync::LazyLock<Regex> =
+            std::sync::LazyLock::new(|| Regex::new(r"[\w$]+").expect("static regex"));
+        static WORD_ONLY: std::sync::LazyLock<Regex> =
+            std::sync::LazyLock::new(|| Regex::new(r"^[\w$]+$").expect("static regex"));
+        if !WORD_ONLY.is_match(name) {
+            // Not an identifier: fall back to a bounded text search.
+            let pattern = Regex::new(&format!(r"(^|[^\w$]){}([^\w$]|$)", regex::escape(name)))
+                .expect("escaped regex");
+            return pattern.is_match(&chunk.code);
+        }
+        self.words
+            .get_or_init(|| {
+                #[cfg(test)]
+                CHUNK_SCANS.with(|scans| scans.set((scans.get().0, scans.get().1 + 1)));
+                WORD.find_iter(&chunk.code)
+                    .map(|found| found.as_str().to_owned())
+                    .collect()
+            })
+            .contains(name)
+    }
+}
+
+/// The shared index of the emitted chunk at `chunk_index`, built on first use.
+fn chunk_eval_index(context: &Context<'_>, chunk_index: usize) -> Rc<ChunkEvalIndex> {
+    if let Some(index) = context.chunk_eval_index.borrow().get(&chunk_index) {
+        return Rc::clone(index);
+    }
+    let index = Rc::new(ChunkEvalIndex::build(&context.chunks[chunk_index]));
+    context
+        .chunk_eval_index
+        .borrow_mut()
+        .insert(chunk_index, Rc::clone(&index));
+    index
+}
+
+/// How many included modules take part in each chunk file, counted once for
+/// the whole collection. Every included module owns part of the chunk text,
+/// including virtual and plugin-generated modules that have no file path.
+fn chunk_owner_counts<'c>(context: &'c Context<'_>) -> &'c HashMap<&'c str, usize> {
+    context.chunk_owner_counts.get_or_init(|| {
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        for module in context.collection.modules.iter().filter(|m| m.included) {
+            let files: HashSet<&str> = module.chunks.iter().map(String::as_str).collect();
+            for file in files {
+                *counts.entry(file).or_default() += 1;
+            }
+        }
+        counts
+    })
+}
+
 /// Finds the emitted direct `eval` calls that are attributable to `module` in
-/// `chunk_files`. A call is attributable when the chunk's source map resolves
-/// its generated position to the module's source file, or, for a chunk without
-/// a usable map, when the module is the only included module the chunk comes
-/// from, whether or not the other modules have a file path. A chunk shared with
-/// other modules and lacking a map proves nothing about which module owns an
-/// `eval`, so it is not counted.
+/// the chunks at `chunk_indices`. A call is attributable when the chunk's
+/// source map resolves its generated position to the module's source file, or,
+/// for a chunk without a usable map, when the module is the only included
+/// module the chunk comes from, whether or not the other modules have a file
+/// path. A chunk shared with other modules and lacking a map proves nothing
+/// about which module owns an `eval`, so it is not counted. The module path and
+/// the mapped source are compared by their backing file, so an import query or
+/// fragment on either does not hide the match.
 fn emitted_evals(
     context: &Context<'_>,
     module: &CollectedModule,
     module_path: &Path,
-    chunk_files: &[String],
+    chunk_indices: &[usize],
 ) -> Vec<EmittedEval> {
     let mut found = Vec::new();
-    // The module path can carry an import query or fragment that the source
-    // map's source lacks, so both sides are compared by their backing file.
     let module_literal = crate::sources::normalize(module_path);
     let module_key = crate::sources::module_file_key(module_path);
-    for file in chunk_files {
-        let Some(index) = context.chunk_index(file) else {
-            continue;
-        };
+    for &index in chunk_indices {
         let chunk = &context.chunks[index];
-        let offsets = direct_eval_offsets(&chunk.code);
-        if offsets.is_empty() {
+        let shared = chunk_eval_index(context, index);
+        if shared.calls.is_empty() {
             continue;
         }
-        // Every included module that shares the chunk owns part of its text,
-        // including virtual and plugin-generated modules that have no file
-        // path: their `eval` calls must not be blamed on the analyzed module.
-        let owners = context
-            .collection
-            .modules
-            .iter()
-            .filter(|other| other.included && other.chunks.iter().any(|f| f == file))
-            .count();
+        let owners = chunk_owner_counts(context)
+            .get(chunk.file.as_str())
+            .copied()
+            .unwrap_or_default();
         let has_map = chunk.map.is_some();
-        for offset in offsets {
+        for call in &shared.calls {
             let attributable = if has_map {
-                let (line, column) = chunk.position(offset);
-                chunk.original(line, column).is_some_and(|(path, _, _)| {
-                    crate::sources::normalize(&path) == module_literal
-                        || crate::sources::module_file_key(&path) == module_key
+                call.source.as_ref().is_some_and(|mapped| {
+                    mapped.literal == module_literal || mapped.key == module_key
                 })
             } else {
                 owners <= 1
@@ -1837,8 +1943,8 @@ fn emitted_evals(
             tracing::debug!(
                 rule = "minifier/direct-eval-blocks-mangling",
                 module = %context.module_log_label(&module.id),
-                chunk = %file,
-                offset,
+                chunk = %chunk.file,
+                offset = call.offset,
                 has_map,
                 owners,
                 attributable,
@@ -1847,7 +1953,7 @@ fn emitted_evals(
             if attributable {
                 found.push(EmittedEval {
                     chunk_index: index,
-                    offset,
+                    offset: call.offset,
                 });
             }
         }
@@ -1869,6 +1975,16 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         );
         return;
     }
+    // The first `EVAL` log of each module, found once instead of by scanning
+    // every log for every module.
+    let mut eval_logs: HashMap<&str, &crate::collect::EngineLog> = HashMap::new();
+    for log in &collection.logs {
+        if log.code.as_deref() == Some("EVAL")
+            && let Some(id) = log.id.as_deref()
+        {
+            eval_logs.entry(id).or_insert(log);
+        }
+    }
     for module in &collection.modules {
         if context.is_cancelled() {
             return;
@@ -1876,9 +1992,7 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         if !module.included || module.path.is_none() {
             continue;
         }
-        let rolldown_log = collection.logs.iter().find(|log| {
-            log.code.as_deref() == Some("EVAL") && log.id.as_deref() == Some(module.id.as_str())
-        });
+        let rolldown_log = eval_logs.get(module.id.as_str()).copied();
         let rspack_bailout = module
             .bailouts
             .iter()
@@ -1890,18 +2004,17 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         if rolldown_log.is_none() && rspack_bailout.is_none() && source_eval.is_none() {
             continue;
         }
-        let chunk_files: Vec<String> = module
+        let chunk_indices: Vec<usize> = module
             .chunks
             .iter()
-            .filter(|file| context.chunk_index(file).is_some())
-            .cloned()
+            .filter_map(|file| context.chunk_index(file))
             .collect();
         let module_path = Path::new(module.path.as_deref().expect("module path checked above"));
         // The source scan and the engine report only name a candidate. Tree
         // shaking and minification may have removed the call, so a finding
         // needs an eval call in the emitted chunk that maps back to this
         // module.
-        let emitted = emitted_evals(context, module, module_path, &chunk_files);
+        let emitted = emitted_evals(context, module, module_path, &chunk_indices);
         let Some(first_emitted) = emitted.first() else {
             tracing::debug!(
                 rule = "minifier/direct-eval-blocks-mangling",
@@ -1919,10 +2032,9 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                 continue;
             }
             emitted_files.push(chunk.file.clone());
+            let shared = chunk_eval_index(context, call.chunk_index);
             for name in &names {
-                let pattern = Regex::new(&format!(r"(^|[^\w$]){}([^\w$]|$)", regex::escape(name)))
-                    .expect("escaped regex");
-                if pattern.is_match(&chunk.code) {
+                if shared.contains_word(chunk, name) {
                     retained.insert(name.clone());
                 }
             }
@@ -2967,6 +3079,117 @@ y=/process.env.F/.test(z),process.env.G"#;
             .as_ref()
             .expect("generated location");
         assert_eq!(generated.line, 2);
+    }
+
+    /// Analyzes one chunk that holds a direct `eval` call for each of `count`
+    /// modules. With `mapped` the source map resolves line `n` to module `n`;
+    /// without it the chunk has no map. Returns the findings and the number of
+    /// chunk scans and identifier-run scans the rule started.
+    fn many_module_eval_run(count: usize, mapped: bool) -> (Vec<DiagnosticDraft>, (usize, usize)) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let build_dir = root.join("build");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(&build_dir).unwrap();
+        let mut sources = crate::sources::SourceStore::new(true);
+        let mut modules = Vec::new();
+        let mut code = String::new();
+        for index in 0..count {
+            let path = root.join(format!("src/m{index}.js"));
+            let source = format!(
+                "const longLocalName{index} = 1;\nexport function run(code) {{ return eval(code); \
+                 }}\n"
+            );
+            std::fs::write(&path, &source).unwrap();
+            sources
+                .snapshots
+                .insert(crate::sources::normalize(&path), source);
+            modules.push(CollectedModule {
+                id: path.to_string_lossy().into_owned(),
+                path: Some(path.to_string_lossy().into_owned()),
+                included: true,
+                chunks: vec!["main.js".to_owned()],
+                ..CollectedModule::default()
+            });
+            code.push_str(&format!(
+                "const longLocalName{index} = 1; eval(code{index});\n"
+            ));
+        }
+        std::fs::write(build_dir.join("main.js"), &code).unwrap();
+        if mapped {
+            let names: Vec<String> = (0..count)
+                .map(|index| format!("\"../src/m{index}.js\""))
+                .collect();
+            let mappings = (0..count)
+                .map(|index| if index == 0 { "AAAA" } else { "ACAA" })
+                .collect::<Vec<_>>()
+                .join(";");
+            let map = format!(
+                r#"{{"version":3,"file":"main.js","sources":[{}],"names":[],"mappings":"{mappings}"}}"#,
+                names.join(",")
+            );
+            std::fs::write(build_dir.join("main.js.map"), map).unwrap();
+        }
+        let collection = crate::collect::Collection {
+            default_minifier: true,
+            minify_enabled: true,
+            mangle: ManglingSetting::Enabled,
+            modules,
+            ..crate::collect::Collection::default()
+        };
+        let chunk = crate::chunks::Chunk::load(&build_dir, "main.js", None, true, root).unwrap();
+        let mut context = Context::new(
+            &collection,
+            root.to_path_buf(),
+            "app".to_owned(),
+            vec![chunk],
+            sources,
+        );
+        CHUNK_SCANS.with(|scans| scans.set((0, 0)));
+        let mut drafts = Vec::new();
+        direct_eval_mangling(&mut context, &mut drafts);
+        (drafts, CHUNK_SCANS.with(std::cell::Cell::get))
+    }
+
+    #[test]
+    fn retained_names_are_whole_identifiers_in_the_emitted_chunk() {
+        // (emitted chunk text, whether `longLocalName` still appears)
+        for (code, retained) in [
+            ("const longLocalName = 1;\neval(c);", true),
+            ("run(longLocalName);\neval(c);", true),
+            ("x=longLocalName+1,eval(c);", true),
+            ("const longLocalNameExtra = 1;\neval(c);", false),
+            ("const myLongLocalName = 1;\neval(c);", false),
+            ("const $longLocalName = 1;\neval(c);", false),
+            ("const longLocalName$ = 1;\neval(c);", false),
+            ("const longLocalName_ = 1;\neval(c);", false),
+            ("const a = 1;\neval(c);", false),
+        ] {
+            let drafts = eval_rule_drafts_for_chunk(
+                DEAD_EVAL_SOURCE,
+                true,
+                ManglingSetting::Enabled,
+                &EmittedChunk::plain(code),
+            );
+            assert_eq!(drafts.len(), usize::from(retained), "{code}");
+        }
+    }
+
+    #[test]
+    fn a_chunk_is_scanned_once_for_all_candidate_modules() {
+        for count in [1, 2, 12] {
+            // Each module owns its call through the source map: one finding
+            // per module, and the chunk is scanned once whatever the count.
+            let (drafts, scans) = many_module_eval_run(count, true);
+            assert_eq!(drafts.len(), count, "mapped, {count} modules");
+            assert_eq!(scans, (1, 1), "mapped, {count} modules");
+            // Without a map a shared chunk attributes nothing, but the scan
+            // for emitted calls still happens once and finds no names to check.
+            let (drafts, scans) = many_module_eval_run(count, false);
+            assert_eq!(drafts.len(), usize::from(count == 1), "unmapped, {count}");
+            assert_eq!(scans.0, 1, "unmapped, {count} modules");
+            assert!(scans.1 <= 1, "unmapped, {count} modules");
+        }
     }
 
     #[test]
