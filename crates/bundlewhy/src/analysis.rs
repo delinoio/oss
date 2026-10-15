@@ -2399,6 +2399,66 @@ mod tests {
     }
 
     #[test]
+    fn env_reads_inside_invalid_containers_do_not_produce_a_branch_diagnostic() {
+        let guard = "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag branch\")";
+        let read = "process.env.BUNDLEWHY_FIXTURE_FLAG";
+        let diagnostic_count = |replacement: String| {
+            let fixture = run_fixture_patched(
+                BundlerChoice::Rspack,
+                true,
+                |_| {},
+                |build, _| {
+                    let path = build.join("main.js");
+                    let code = std::fs::read_to_string(&path).unwrap();
+                    assert!(code.contains(guard));
+                    std::fs::write(&path, code.replace(guard, &replacement)).unwrap();
+                },
+            );
+            fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+                .count()
+        };
+        // The generated read only supplies a value inside an array literal,
+        // nested array or function object; the following operator does not
+        // depend on it.
+        for container in [
+            format!("[{read}]"),
+            format!("[[{read}]]"),
+            format!("(function(){{ return {read} }})"),
+            format!("(function(){{ return {read}; }})"),
+            format!("(()=>{read})"),
+        ] {
+            for suffix in [
+                "&&console.log(\"flag branch\")",
+                "||console.log(\"flag branch\")",
+                "??console.log(\"flag branch\")",
+                "?console.log(\"flag branch\"):0",
+            ] {
+                assert_eq!(
+                    diagnostic_count(format!("{container}{suffix}")),
+                    0,
+                    "{container}{suffix}"
+                );
+            }
+        }
+        // A real branch inside the container remains detected.
+        assert_eq!(
+            diagnostic_count(format!("[{read}&&console.log(\"flag branch\")]")),
+            1
+        );
+        assert_eq!(
+            diagnostic_count(format!(
+                "function run(){{{read}&&console.log(\"flag branch\")}}run()"
+            )),
+            1
+        );
+    }
+
+    #[test]
     fn disabled_minification_suppresses_env_condition_findings() {
         let fixture = run_fixture(BundlerChoice::Rspack, |value| {
             value["minifyEnabled"] = serde_json::json!(false);

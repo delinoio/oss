@@ -345,6 +345,11 @@ struct ScanScope {
     pending_reads: Vec<usize>,
     conditional_pending: Vec<usize>,
     arrow_expression: bool,
+    /// True when this scope is itself a value container (array literal,
+    /// object literal, function body or call argument list). Scopes that only
+    /// inherit an invalid context, such as a parenthesized sub-expression
+    /// inside an array, are not containers.
+    value_container: bool,
 }
 
 fn env_guards(
@@ -366,6 +371,7 @@ fn env_guards(
         pending_reads: Vec::new(),
         conditional_pending: Vec::new(),
         arrow_expression: false,
+        value_container: false,
     }];
     let mut current_scope = 0;
     let mut next_start = 0;
@@ -422,7 +428,7 @@ fn env_guards(
 
         match bytes[index] {
             b'(' | b'[' | b'{' => {
-                let context = scope_context(
+                let (context, value_container) = scope_context(
                     code,
                     index,
                     bytes[index],
@@ -436,6 +442,7 @@ fn env_guards(
                     pending_reads: Vec::new(),
                     conditional_pending: Vec::new(),
                     arrow_expression: false,
+                    value_container,
                 });
                 current_scope = scopes.len() - 1;
             }
@@ -444,9 +451,16 @@ fn env_guards(
                 let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
                 let conditional_pending =
                     std::mem::take(&mut scopes[current_scope].conditional_pending);
-                scopes[parent].pending_reads.extend(pending_reads);
-                scopes[parent].pending_reads.extend(conditional_pending);
-                scopes[parent].pending_reads.sort_unstable();
+                // A closed value container evaluates to a value (array,
+                // object, function object or call result). Reads that were
+                // only values inside it must not inherit an operator that
+                // follows the container. Guards found inside the container
+                // remain recorded on their own reads.
+                if !scopes[current_scope].value_container {
+                    scopes[parent].pending_reads.extend(pending_reads);
+                    scopes[parent].pending_reads.extend(conditional_pending);
+                    scopes[parent].pending_reads.sort_unstable();
+                }
                 current_scope = parent;
             }
             b';' => {
@@ -524,6 +538,7 @@ fn env_guards(
                         pending_reads: Vec::new(),
                         conditional_pending: Vec::new(),
                         arrow_expression: true,
+                        value_container: false,
                     });
                     current_scope = scopes.len() - 1;
                 }
@@ -625,7 +640,7 @@ fn scope_context(
     opener: u8,
     parent: ScopeContext,
     ignored: &[(usize, usize)],
-) -> ScopeContext {
+) -> (ScopeContext, bool) {
     let prefix = scope_prefix(code, index, ignored);
     if opener == b'[' {
         // A bracket after an expression is a computed member access and keeps
@@ -638,12 +653,12 @@ fn scope_context(
                     b'_' | b'$' | b']' | b')' | b'}' | b'\'' | b'"' | b'`' | b'.'
                 )
         }) {
-            return parent;
+            return (parent, false);
         }
-        return ScopeContext::Invalid;
+        return (ScopeContext::Invalid, true);
     }
     if opener != b'(' {
-        return ScopeContext::Invalid;
+        return (ScopeContext::Invalid, true);
     }
     if prefix.ends_with("for")
         && prefix
@@ -654,7 +669,7 @@ fn scope_context(
                 !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
             })
     {
-        return ScopeContext::For(ForClause::Initializer);
+        return (ScopeContext::For(ForClause::Initializer), false);
     }
     for (keyword, guard) in [
         ("if", EnvGuard::If),
@@ -670,15 +685,15 @@ fn scope_context(
                     !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
                 })
         {
-            return ScopeContext::Guard(guard);
+            return (ScopeContext::Guard(guard), false);
         }
     }
     if prefix.as_bytes().last().is_some_and(|byte| {
         byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'$' | b']' | b')' | b'.')
     }) {
-        ScopeContext::Invalid
+        (ScopeContext::Invalid, true)
     } else {
-        parent
+        (parent, false)
     }
 }
 
@@ -2174,6 +2189,84 @@ y=/process.env.F/.test(z),process.env.G"#;
             guard("if (process.env.VERSION\n) run()", "process.env.VERSION"),
             Some("the retained read is in an if condition")
         );
+    }
+
+    #[test]
+    fn invalid_containers_do_not_inherit_outer_guards() {
+        let guard = |code: &str| {
+            let read = "process.env.FLAG";
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        // Value-only reads inside array literals, object literals, function
+        // objects and call argument lists never control a following operator.
+        for code in [
+            "[process.env.FLAG] && run()",
+            "[process.env.FLAG] || run()",
+            "[process.env.FLAG] ?? run()",
+            "[process.env.FLAG] ? a() : b()",
+            "x = [process.env.FLAG] || run()",
+            "[[process.env.FLAG]] && run()",
+            "[[process.env.FLAG], 1] && run()",
+            "[1, [2, [process.env.FLAG]]] && run()",
+            "([process.env.FLAG]) && run()",
+            "(function(){ return process.env.FLAG }) && run()",
+            "(function(){ return process.env.FLAG; }) && run()",
+            "(function(){ return process.env.FLAG }) || run()",
+            "(function(){ return process.env.FLAG; }) ?? run()",
+            "(function(){ return process.env.FLAG }) ? a() : b()",
+            "(()=>process.env.FLAG) && run()",
+            "(()=>{ return process.env.FLAG }) && run()",
+            "(()=>{ return process.env.FLAG; }) && run()",
+            "check(process.env.FLAG) && run()",
+            "{a:process.env.FLAG} && run()",
+            "({a:process.env.FLAG}) && run()",
+        ] {
+            assert_eq!(guard(code), None, "{code}");
+        }
+        // Real branches keep their guards, including branches inside
+        // containers and parenthesized or computed-member conditions.
+        for (code, evidence) in [
+            (
+                "process.env.FLAG && run()",
+                "the retained read controls a && short-circuit branch",
+            ),
+            (
+                "(process.env.FLAG) && run()",
+                "the retained read controls a && short-circuit branch",
+            ),
+            (
+                "[process.env.FLAG && run()]",
+                "the retained read controls a && short-circuit branch",
+            ),
+            (
+                "[[process.env.FLAG || run()]]",
+                "the retained read controls a || short-circuit branch",
+            ),
+            (
+                "function run(){process.env.FLAG&&work()}",
+                "the retained read controls a && short-circuit branch",
+            ),
+            (
+                "function run(){process.env.FLAG&&work();}",
+                "the retained read controls a && short-circuit branch",
+            ),
+            (
+                "check(a && process.env.FLAG && run())",
+                "the retained read controls a && short-circuit branch",
+            ),
+            (
+                "[(process.env.FLAG) && run()]",
+                "the retained read controls a && short-circuit branch",
+            ),
+            (
+                "if({on:true}[process.env.FLAG])run()",
+                "the retained read is in an if condition",
+            ),
+        ] {
+            assert_eq!(guard(code), Some(evidence), "{code}");
+        }
     }
 
     #[test]
