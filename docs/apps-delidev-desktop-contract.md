@@ -6519,16 +6519,36 @@ also owns prompt Markdown links. The pure model lives in
   fenced code and autolinks are skipped, so conversion is idempotent and never
   nests. Label `\`, `[`, `]` and destination `\`, `(`, `)` are backslash-escaped;
   the parsed destination always equals the original URL.
+  Label brackets pair on one line in a single linear pass. A label with nested
+  or unmatched unescaped brackets, such as `[see [docs]](url)`, is still
+  link-shaped syntax: its whole range stays protected, but it is never collapsed
+  because it is not a plain label. A destination longer than four times the URL
+  limit is protected up to the scanned prefix and is never a link. Protected
+  ranges and URL tokens are sorted, so overlap checks use one shared cursor and
+  stay linear for prompts up to the 256 KiB limit. A closed fenced block ends at
+  its closing fence; text after it is scanned normally. This is a deliberately
+  conservative subset of CommonMark; constructs that need a full parser protect
+  more text rather than convert a URL inside them.
 - **Presentation.** A valid inline HTTP(S) link displays as its label with the
   `--link` color and underline when the caret or selection does not intersect
   it. A caret strictly inside, or a selection overlapping, the link reveals the
   full source; leaving collapses it. Invalid Markdown remains visible source.
   Titles are never fetched.
+  The collapsed display decodes label escapes (for example `\[::1\]` shows as
+  `[::1]`), and offsets map through a per-link escape table; an offset between a
+  backslash and its escaped character rounds to the character start, and an edit
+  replaces the whole escape sequence. After a reveal, the session composer
+  re-measures its height from the displayed text, not only from the draft.
 - **History.** Programmatic conversion clears the native undo stack, so every
   edit is recorded in `PromptEditHistory`. Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z, Ctrl+Y
   (non-macOS) and native `historyUndo`/`historyRedo` run through it. A conversion
   and the paste or delimiter that triggered it are one undo/redo step. History
-  resets when the draft changes outside the adapter.
+  resets when the draft changes outside the adapter or the transport is
+  replaced, because history alignment compares only text and an equal-text
+  snapshot must not revive another transport's skill bindings. Project prompt
+  history recall passes canonical selections to the adapter, which maps them to
+  display offsets; the history hook never writes raw offsets into the textarea
+  when the adapter owns the draft.
 - **Limit.** A conversion that would exceed the 256 KiB canonical prompt limit is
   dropped atomically and the original URL stays; the triggering edit is still
   subject to the normal limit.
