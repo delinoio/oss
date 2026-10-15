@@ -42,6 +42,10 @@ const (
 	GrokReasonDeviceAuthorization GrokOAuthReason = "device-authorization"
 )
 
+// grokDeviceAuthorizationMembers are the members of a device authorization
+// response the client reads.
+var grokDeviceAuthorizationMembers = []string{"device_code", "user_code", "verification_uri", "verification_uri_complete", "expires_in", "interval"}
+
 var grokUserCodePattern = regexp.MustCompile(`^[A-Z0-9-]{4,32}$`)
 
 // GrokUserCodeValid reports whether value has the displayable device user code
@@ -231,8 +235,11 @@ func (c GrokOAuthClient) RequestDeviceAuthorization(ctx context.Context, endpoin
 	if err != nil || status != http.StatusOK {
 		return GrokDeviceGrant{}, failure
 	}
-	var doc map[string]json.RawMessage
-	if !grokStrictObject(raw, false) || json.Unmarshal(raw, &doc) != nil {
+	// Member names are case-sensitive: a differently cased spelling of a member
+	// the client reads is an alias the grant does not define, so it refuses the
+	// whole response instead of being ignored beside (or instead of) the member.
+	doc, strict := grokExactMembers(raw)
+	if !strict || grokHasMemberAlias(doc, grokDeviceAuthorizationMembers) {
 		return GrokDeviceGrant{}, failure
 	}
 	defer func() {

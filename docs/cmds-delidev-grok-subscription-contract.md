@@ -1297,14 +1297,26 @@ pending native-started operation.
 ### Token endpoint response table
 
 The authorization-code exchange and the refresh grant share one response classifier (`classifyGrokTokenResponse`). A body is parsed only when it is exactly one JSON object
-whose top-level members are unique (compared case-insensitively, as the decoder
-matches fields): another JSON value, a stray comma, any other non-whitespace byte
+whose top-level member names are unique: another JSON value, a stray comma, any other non-whitespace byte
 after the first object or a repeated member (the decoder would silently keep the
 last one, and implementations disagree) makes the response unparsed, whatever its
 status. Both grants are claimed
 before the request, so an unparsed response is never a published success and never
-a definitive rejection that would release the claim. The table is pinned by
-`TestGrokTokenResponseTable`, which runs every row against both grants.
+a definitive rejection that would release the claim.
+
+Member names are case-sensitive, as OAuth and JSON define them. The classifier
+reads exactly the canonical spellings (`access_token`, `refresh_token`,
+`id_token`, `token_type`, `expires_in`, `error`, `error_description`,
+`error_uri`) from the decoded top-level members; it never relies on the decoder's
+case-insensitive struct matching and never folds case. A name that equals a
+canonical name only when case is ignored (for example `ERROR` or `Access_Token`)
+is an alias: it is never read as the member, and its presence makes the body
+untrustworthy. The same exact-name rule applies to the discovery metadata and to
+every other provider document the Grok flows read; repeated names are compared
+exactly, so two spellings that differ in case are two distinct names, and the
+alias rule is what refuses them. The table is pinned by
+`TestGrokTokenResponseTable`, which runs every row against both grants, and the
+discovery rule by `TestGrokDiscoveryRequiresExactMemberNames`.
 
 The device authorization response and the device poll answers follow it too: a
 repeated member (for example a repeated `error`, which could turn a rejection into
@@ -1318,18 +1330,20 @@ or a userinfo response that repeats a claim name is refused (exact comparison, a
 claim names are case-sensitive), because the decoder would keep the last
 occurrence (`TestGrokIdentityEvidenceRejectsRepeatedClaims`).
 
-| Status                                                     | Body                                                                                                                                                | Reason                     | Settlement after the claim         |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------- |
-| 200                                                        | one valid token object (trailing whitespace allowed)                                                                                                | success                    | publish                            |
-| 200                                                        | a token object that also carries any of `error`, `error_description`, `error_uri` (even empty or null, any case)                                    | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| 200                                                        | token object followed by another JSON value or any other byte, or a repeated member                                                                 | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
-| 200                                                        | missing or invalid member, not JSON                                                                                                                 | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
-| 400, 401                                                   | exactly one object with a non-empty `error` and none of the token members                                                                           | `GrokReasonTokenRejected`  | `FAILED`, the token did not rotate |
-| 400, 401                                                   | an `error` object followed by any other byte or JSON value, or with a repeated member                                                               | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| 400, 401                                                   | a non-empty `error` that also carries any of `access_token`, `refresh_token`, `id_token`, `token_type`, `expires_in` (even empty or null, any case) | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| 400, 401                                                   | no `error` member, an empty `error`, or not JSON                                                                                                    | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| other 4xx, 5xx, redirect                                   | any body                                                                                                                                            | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| transport error, cancellation, truncated or oversized body | none                                                                                                                                                | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| Status                                                     | Body                                                                                                                                      | Reason                     | Settlement after the claim         |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------- |
+| 200                                                        | one valid token object (trailing whitespace allowed)                                                                                      | success                    | publish                            |
+| 200                                                        | a token object that also carries any of `error`, `error_description`, `error_uri` (even empty or null) or an alias of one of them         | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| 200                                                        | a token object that carries an alias of a token member (a name that differs from it only in case), or only aliases                        | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
+| 200                                                        | token object followed by another JSON value or any other byte, or a repeated member                                                       | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
+| 200                                                        | missing or invalid member, not JSON                                                                                                       | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | exactly one object with a non-empty `error`, none of the token members and no alias                                                       | `GrokReasonTokenRejected`  | `FAILED`, the token did not rotate |
+| 400, 401                                                   | an `error` object followed by any other byte or JSON value, or with a repeated member                                                     | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | a non-empty `error` that also carries any of `access_token`, `refresh_token`, `id_token`, `token_type`, `expires_in` (even empty or null) | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | an `error` object that also carries an alias of any token or error member (for example `Error_Description`, `Access_Token`)               | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | no canonical `error` member (including only an alias such as `ERROR`), an empty `error`, a non-string `error`, or not JSON                | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| other 4xx, 5xx, redirect                                   | any body                                                                                                                                  | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| transport error, cancellation, truncated or oversized body | none                                                                                                                                      | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
 
 ### Native refresh confinement
 
