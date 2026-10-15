@@ -805,7 +805,12 @@ export function useSkillCompletion({
       const at = selectionFor(text),
         after = { text, bindings: nextBindings, selection: at };
       expected.current = text;
-      if (amend === undefined || !history.amend(amend, after))
+      if (text === value) {
+        // Fallback to the already accepted text after the owner refused every
+        // converted candidate: it re-offers the accepted draft so the owner
+        // drops its refusal state, and it is never a new history entry.
+        if (amend === undefined || !history.amend(amend, after)) history.seal();
+      } else if (amend === undefined || !history.amend(amend, after))
         history.record(kindFor(text), before, after, { seal, session });
       setBindings(nextBindings);
       updateSelection(at);
@@ -1249,9 +1254,11 @@ export function useSkillCompletion({
           compositionAnchor.current,
           at.start,
         );
+        // The accepted composed text is the fallback when the owner refuses
+        // the expanded Markdown (for example at the prompt limit).
         if (result.changed)
           transact({
-            candidates: [result.text],
+            candidates: [result.text, value],
             kindFor: () => EditKind.Conversion,
             selectionFor: (text) =>
               collapsedAt(at.start + text.length - value.length),

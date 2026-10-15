@@ -61,6 +61,8 @@ interface Probe {
   bindings: SkillTokenBinding[];
   api: ReturnType<typeof useSkillCompletion>;
   selections: unknown[];
+  /** Every text the owner was offered, in order, with its verdict. */
+  attempts: { text: string; accepted: boolean }[];
 }
 let probe: Probe;
 let outsideBlocked = false;
@@ -82,8 +84,11 @@ function Harness({
       if (
         limit !== undefined &&
         new TextEncoder().encode(next).byteLength > limit
-      )
+      ) {
+        probe.attempts.push({ text: next, accepted: false });
         return false;
+      }
+      probe.attempts.push({ text: next, accepted: true });
       probe.changes += 1;
       setValue(next);
     },
@@ -155,6 +160,7 @@ beforeEach(() => {
     bindings: [],
     api: undefined as never,
     selections: [],
+    attempts: [],
   };
   outsideBlocked = false;
   native.invoke.mockReset();
@@ -839,6 +845,66 @@ it("R12 R13 R14 IME: no conversion while composing even for a complete URL word"
   expect(probe.canonical).toBe("https://a.test/x ");
   fireEvent.compositionEnd(input);
   expect(probe.canonical).toBe("[https://a.test/x](https://a.test/x) ");
+});
+
+it("R26 IME end over the limit: the accepted composed text is re-offered when its Markdown expansion is refused", () => {
+  const plain = "go https://a.test/x ",
+    expanded = "go [https://a.test/x](https://a.test/x) ";
+  // The plain draft fits; the expansion (41 bytes) does not.
+  const { input } = mount("go https://a.test/x", { limit: 30 });
+  select(input, 19);
+  fireEvent.compositionStart(input);
+  nativeEdit(input, plain, 20);
+  expect(probe.canonical).toBe(plain);
+  fireEvent.compositionEnd(input);
+  expect(probe.canonical).toBe(plain);
+  expect(input.value).toBe(plain);
+  // The refused expansion is followed by the accepted text, so an owner that
+  // shows a limit error on refusal clears it again.
+  const verdicts = probe.attempts.map((attempt) => [
+    attempt.text,
+    attempt.accepted,
+  ]);
+  expect(verdicts.slice(-2)).toEqual([
+    [expanded, false],
+    [plain, true],
+  ]);
+  expect(probe.api.readCanonical().start).toBe(plain.length);
+  // The composition stays one sealed entry: one undo removes it, none is added.
+  undo(input);
+  expect(probe.canonical).toBe("go https://a.test/x");
+  redo(input);
+  expect(probe.canonical).toBe(plain);
+  nativeEdit(input, `${plain}y`, plain.length + 1);
+  undo(input);
+  expect(probe.canonical).toBe(plain);
+});
+
+it("R26 IME end over the limit: a final input after composition end and an unchanged range behave alike", () => {
+  const plain = "go https://a.test/x ",
+    expanded = "go [https://a.test/x](https://a.test/x) ";
+  const { input } = mount("go https://a.test/x", { limit: 30 });
+  select(input, 19);
+  fireEvent.compositionStart(input);
+  fireEvent.compositionEnd(input);
+  nativeEdit(input, plain, 20);
+  expect(probe.canonical).toBe(plain);
+  expect(
+    probe.attempts.slice(-2).map((attempt) => [attempt.text, attempt.accepted]),
+  ).toEqual([
+    [expanded, false],
+    [plain, true],
+  ]);
+  // A composition without any delimiter offers nothing beyond the edit itself.
+  cleanup();
+  const again = mount("ab", { limit: 30 });
+  select(again.input, 2);
+  fireEvent.compositionStart(again.input);
+  nativeEdit(again.input, "ab한", 3);
+  const offered = probe.attempts.length;
+  fireEvent.compositionEnd(again.input);
+  expect(probe.attempts).toHaveLength(offered);
+  expect(probe.canonical).toBe("ab한");
 });
 
 it("R15 skill acceptance: keeps the previous layer's binding, separator and caret in canonical offsets", async () => {
