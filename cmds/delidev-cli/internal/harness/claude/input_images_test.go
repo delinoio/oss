@@ -89,16 +89,16 @@ func TestClaudeImageContextChecksDimensionsAndInertLocation(t *testing.T) {
 	session := domain.NewID()
 	expected := imageContext{width: 4064, height: 2324, displayedWidth: 2000, displayedHeight: 1144, media: domain.ImagePNG}
 	text := "[Image: source: /private/tmp/native/" + string(session) + "/images/1.png, original 4064x2324, displayed at 2000x1144. Multiply coordinates by 2.03 to map to original image.]"
-	if !imageContextText(text, expected, session, "/private/tmp/native") {
+	if location, ok := imageContextText(text, expected, session, "/private/tmp/native"); !ok || location != "/private/tmp/native/"+string(session)+"/images/1.png" {
 		t.Fatal("original native context rejected")
 	}
 	for _, other := range []string{text + " extra", "[Image: source: /tmp/foreign.png]", "[Image: source: https://fixture.invalid/image.png]"} {
-		if imageContextText(other, expected, session, "/private/tmp/native") {
+		if _, ok := imageContextText(other, expected, session, "/private/tmp/native"); ok {
 			t.Fatal("foreign native context accepted")
 		}
 	}
 	expected.displayedWidth++
-	if imageContextText(text, expected, session, "/private/tmp/native") {
+	if _, ok := imageContextText(text, expected, session, "/private/tmp/native"); ok {
 		t.Fatal("changed native dimensions accepted")
 	}
 }
@@ -146,6 +146,18 @@ func TestClaudeImageScaleMatchesNativeJavaScriptRounding(t *testing.T) {
 // image-context record for that input.
 func imageRetentionFixture(t *testing.T, hidden bool) (*APISession, string) {
 	t.Helper()
+	if hidden {
+		return multiImageRetentionFixture(t, 1)
+	}
+	return multiImageRetentionFixture(t)
+}
+
+// multiImageRetentionFixture is like imageRetentionFixture, but the first input
+// expects one 2x2 PNG per given cache ordinal and the hidden record carries one
+// text block per ordinal in that order. No ordinals means no hidden record.
+func multiImageRetentionFixture(t *testing.T, ordinals ...int) (*APISession, string) {
+	t.Helper()
+	hidden := len(ordinals) > 0
 	s, _ := continuationFixture(t)
 	path := filepath.Join(s.config.Home, "projects", "delidev", string(s.config.SessionID)+".jsonl")
 	raw, err := os.ReadFile(path)
@@ -164,19 +176,27 @@ func imageRetentionFixture(t *testing.T, hidden bool) (*APISession, string) {
 			}
 			records = append(records, record)
 		}
-		records = slices.Insert(records, 2, imageContextRecord(s, contextID, string(s.current.input), 1))
+		records = slices.Insert(records, 2, imageContextRecord(s, contextID, string(s.current.input), ordinals...))
 		records[3]["parentUuid"] = contextID
 		if err := os.WriteFile(path, historyJSONL(t, records), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	s.history.images = map[domain.ID][]imageContext{s.current.input: {{width: 2, height: 2, displayedWidth: 2, displayedHeight: 2, media: domain.ImagePNG}}}
+	expected := make([]imageContext, max(len(ordinals), 1))
+	for i := range expected {
+		expected[i] = imageContext{width: 2, height: 2, displayedWidth: 2, displayedHeight: 2, media: domain.ImagePNG}
+	}
+	s.history.images = map[domain.ID][]imageContext{s.current.input: expected}
 	return s, contextID
 }
 
-func imageContextRecord(s *APISession, id, parent string, ordinal int) map[string]any {
-	location := filepath.Join(s.config.Home, "image-tmp", string(s.config.SessionID), "images", strconv.Itoa(ordinal)+".png")
-	body := map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": "[Image: source: " + location + "]"}}}
+func imageContextRecord(s *APISession, id, parent string, ordinals ...int) map[string]any {
+	content := make([]any, 0, len(ordinals))
+	for _, ordinal := range ordinals {
+		location := filepath.Join(s.config.Home, "image-tmp", string(s.config.SessionID), "images", strconv.Itoa(ordinal)+".png")
+		content = append(content, map[string]any{"type": "text", "text": "[Image: source: " + location + "]"})
+	}
+	body := map[string]any{"role": "user", "content": content}
 	return map[string]any{"type": "user", "uuid": id, "parentUuid": parent, "sessionId": s.config.SessionID, "cwd": s.config.Workspace, "version": SupportedVersion, "isSidechain": false, "isMeta": true, "message": body}
 }
 
@@ -224,6 +244,59 @@ func TestClaudeImageRetentionRequiresEveryExpectedContextRecord(t *testing.T) {
 		s, _ := continuationFixture(t)
 		if err := s.retainImageContexts(context.Background()); err != nil {
 			t.Fatal("text-only history changed", err)
+		}
+	})
+}
+
+func TestClaudeImageRetentionRequiresDistinctContextLocations(t *testing.T) {
+	t.Run("distinct accepted", func(t *testing.T) {
+		s, id := multiImageRetentionFixture(t, 1, 2)
+		if err := s.retainImageContexts(context.Background()); err != nil {
+			t.Fatal("distinct image locations rejected", err)
+		}
+		if len(s.history.images) != 0 || !slices.ContainsFunc(s.history.messages, func(m HistoryMessageProof) bool { return m.NativeID == id }) {
+			t.Fatal("distinct context record was not consumed and retained")
+		}
+		if observed, err := s.readRetainedTranscript(context.Background()); err != nil || observed.MatchedMessages != 3 || observed.AdditionalMessages != 0 {
+			t.Fatal("distinct image history lost retained-history authority", err)
+		}
+	})
+	t.Run("non contiguous distinct accepted", func(t *testing.T) {
+		s, _ := multiImageRetentionFixture(t, 3, 1)
+		if err := s.retainImageContexts(context.Background()); err != nil {
+			t.Fatal("ordered distinct locations without monotonicity rejected", err)
+		}
+	})
+	t.Run("repeated rejected before retention", func(t *testing.T) {
+		s, id := multiImageRetentionFixture(t, 1, 1)
+		var logs bytes.Buffer
+		s.config.Process.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+		messages := slices.Clone(s.history.messages)
+		err := s.retainImageContexts(context.Background())
+		if err == nil {
+			t.Fatal("repeated image-context location accepted")
+		}
+		if len(s.history.images) != 1 || !slices.Equal(messages, s.history.messages) || slices.ContainsFunc(s.history.messages, func(m HistoryMessageProof) bool { return m.NativeID == id }) {
+			t.Fatal("repeated location inserted a proof or cleared the expectation")
+		}
+		if !strings.Contains(logs.String(), "claude_image_context_invalid") || !strings.Contains(logs.String(), "stage=8") || strings.Contains(logs.String(), s.config.Home) || strings.Contains(err.Error(), s.config.Home) {
+			t.Fatal("repeated location was not reported as a numeric stage only", logs.String())
+		}
+		if _, err := s.readRetainedTranscript(context.Background()); err == nil {
+			t.Fatal("repeated image-context location acquired retained-history authority")
+		}
+		if _, err := s.CloseForContinuation(context.Background()); err == nil {
+			t.Fatal("repeated image-context location acquired continuation authority")
+		}
+	})
+	t.Run("swapped dimensions still refused", func(t *testing.T) {
+		s, _ := multiImageRetentionFixture(t, 1, 2)
+		s.history.images[s.current.input][1].width = 4
+		if err := s.retainImageContexts(context.Background()); err == nil {
+			t.Fatal("mismatched block dimensions accepted")
+		}
+		if len(s.history.images) != 1 {
+			t.Fatal("mismatched block consumed the expectation")
 		}
 	})
 }
