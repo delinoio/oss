@@ -41,6 +41,11 @@ type grokSubscriptionRun struct {
 	// the only installation the lease may launch: discovery can replace the
 	// job's frozen observation between dispatch and Take.
 	installation domain.Installation
+	// launchPath and launchInfo are the private verified snapshot of the
+	// executable that every native run of this execution launches (see
+	// bindLaunch); empty until it is bound.
+	launchPath string
+	launchInfo os.FileInfo
 }
 
 // authorizedGrokInstallation decodes and validates the installation returned by
@@ -182,7 +187,7 @@ func (r *grokSubscriptionRun) prepare(ctx context.Context) ([]string, error) {
 	// The last gate before the credential can exist: the executable the native
 	// process is about to start must still be the one the Take authorized, so
 	// bytes replaced since the launch target was verified never receive it.
-	if _, _, err := r.verifiedExecutable(ctx); err != nil {
+	if err := r.verifyLaunch(ctx); err != nil {
 		return nil, err
 	}
 	owner := filepath.Join(r.processes, string(r.owner))
@@ -218,6 +223,10 @@ func (r *grokSubscriptionRun) finish(joined bool) error {
 		bounded, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		joined = joined && grokNativeJoined(bounded, r.processes, r.owner, true)
 		cancel()
+	}
+	// The snapshot is not a credential; remove it once nothing can still run it.
+	if joined || !r.attempted {
+		defer r.removeLaunch()
 	}
 	original := r.original
 	r.original = subscription.GrokBundle{}

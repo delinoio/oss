@@ -1689,6 +1689,42 @@ bytes it finds later.
 | credential callback (the last gate before `auth.json`) | replaced after the launch target was verified                                 | `RECOVERY_REQUIRED`; no credential, no started journal; the lease is released with confirmed cleanup | `TestGrokPrepareRefusesBytesReplacedAfterTheLaunchTargetWasVerified`, `TestGrokExecutionNeverDeliversTheCredentialToReplacedBytes`              |
 | ready report                                           | replaced after the credential callback                                        | `RECOVERY_REQUIRED`; the evidence digest is the admitted one                                         | `TestGrokStartupFollowsBytesReplacedBeforeTheTakeAdmittedThem`                                                                                  |
 
+#### Launch binding
+
+A digest check of the installed path proves nothing about the bytes the operating
+system later executes: another updater can replace the path atomically (or write
+the same inode) between the check and the exec. The Worker therefore never
+launches the installed path. It copies the bytes it hashes into a private
+snapshot inside the execution's own 0700 journal directory, in one read of one
+open descriptor, accepts the snapshot only when that digest equals the admitted
+digest and the installed path still names the file it read (identity, size and
+modification time unchanged), and launches the snapshot for every native run of
+the execution: the inspections of the empty private profile and the credentialed
+launch alike. The installed path stays the startup evidence; the snapshot is only
+what runs. The credential callback re-verifies the snapshot (identity first, then
+its digest) immediately before `auth.json` is written, and the snapshot is
+removed when the execution ends.
+
+| Event                                                   | Outcome                                                                                               | Test                                                              |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| admitted bytes at the installed path                    | a private snapshot is created and launched; the credential reaches only the snapshot                  | `TestGrokLaunchBindingLaunchesOnlyTheSnapshotOfTheAdmittedBytes`  |
+| installed path replaced after the bind                  | unaffected: the snapshot of the admitted bytes still runs                                             | `TestGrokLaunchBindingLaunchesOnlyTheSnapshotOfTheAdmittedBytes`  |
+| installed path replaced before the bind                 | `RECOVERY_REQUIRED`, no snapshot is kept, no credential; the lease is released with confirmed cleanup | `TestGrokLaunchBindingRefusesBytesReplacedBeforeTheBind`          |
+| snapshot rewritten in place before the credential       | `RECOVERY_REQUIRED` (digest), no credential                                                           | `TestGrokLaunchBindingRefusesASnapshotChangedBeforeTheCredential` |
+| snapshot replaced by another file before the credential | `RECOVERY_REQUIRED` (identity), no credential                                                         | `TestGrokLaunchBindingRefusesASnapshotChangedBeforeTheCredential` |
+| execution ends                                          | the snapshot is removed                                                                               | `TestGrokLaunchBindingLaunchesOnlyTheSnapshotOfTheAdmittedBytes`  |
+
+Platform note and residual. A descriptor-based exec (`execve` of `/proc/self/fd`
+on Linux, `fexecve` where it exists) would remove even the snapshot, but the
+native launch crosses the owned-process supervisor boundary on Unix and macOS has
+no `fexecve`, so one snapshot mechanism is used on every platform. The residual is
+a writer that already runs as the Worker's own user and replaces the snapshot
+inside the Worker's private execution directory in the instant between the
+re-verification and the exec; such a writer can read the credential file directly,
+so it is outside the boundary this binding protects. A native executable that
+needs files next to its installed location is not supported by the snapshot and
+fails at launch, and the normal cleanup then retires the credential.
+
 ### Stale lease after a restart
 
 A lease granted by an earlier server epoch is stale. The restart fences the

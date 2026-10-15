@@ -121,6 +121,18 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 			}()
 			return nil, err
 		}
+		// Every native run of this execution launches a private snapshot of the
+		// verified executable, never the installed path (see bindLaunch).
+		launch, err := subscriptionRun.bindLaunch(ctx, journal)
+		if err != nil {
+			defer func() {
+				if err := subscriptionRun.release(true); err != nil {
+					output, returned = nil, err
+				}
+			}()
+			return nil, err
+		}
+		executable = launch
 		defer func() {
 			// A Finish that is not acknowledged leaves the execute lease possibly held:
 			// that is execution uncertainty, which closes the primary lane and
