@@ -5,6 +5,7 @@
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
 - Propagate the explicit CI execution mode and exact planner comparison to every selector and result check. Do not infer full validation from a manual event alone.
+- pnport Windows development validation uses `pnport-windows.ps1` on the package-owned native x64/arm64 runners. Keep it distinct from complete release and minimum-OS acceptance; follow the owning repository workflow contract.
 
 ## Owning contracts
 

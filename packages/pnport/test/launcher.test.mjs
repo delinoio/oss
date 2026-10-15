@@ -17,9 +17,59 @@ import {
   nativeManifest,
 } from "../scripts/manifests.mjs";
 const require = createRequire(import.meta.url);
-const { targets, selectTarget } = require("../src/platforms.cjs");
+const {
+  targets,
+  allTargets,
+  targetsForVersion,
+  selectTarget,
+} = require("../src/platforms.cjs");
 const { resolveBinary, launch, Failure } = require("../src/launcher.cjs");
 const revision = "a".repeat(40);
+
+test("0.2.0 adds both native Windows packages without changing 0.1.x", () => {
+  for (const version of ["0.1.0", "0.1.2", "0.1.0-next.1"]) {
+    assert.equal(targetsForVersion(version).length, 4);
+    assert.equal(
+      Object.keys(launcherManifest(version, revision).optionalDependencies)
+        .length,
+      4,
+    );
+  }
+  for (const version of ["0.2.0", "0.2.1", "1.0.0"]) {
+    assert.equal(targetsForVersion(version), allTargets);
+    assert.equal(
+      Object.keys(launcherManifest(version, revision).optionalDependencies)
+        .length,
+      6,
+    );
+    for (const cpu of ["x64", "arm64"]) {
+      const target = selectTarget(
+        "win32",
+        cpu,
+        undefined,
+        "10.0.19045",
+        version,
+      );
+      assert.equal(target?.suffix, `win32-${cpu}-msvc`);
+      const native = nativeManifest(target.suffix, version, revision);
+      assert.equal(native.preferUnplugged, true);
+      assert.equal(native.version, version);
+      assert.equal(companion(target), "pnport_preload.dll");
+      for (const release of [
+        "10.0.19044",
+        "6.3.9600",
+        "unknown",
+        "10.0.19045extra",
+      ])
+        assert.equal(
+          selectTarget("win32", cpu, undefined, release, version),
+          undefined,
+        );
+    }
+  }
+  for (const version of ["0.2.0-next.1", "garbage", "01.2.0", "0.2.0.0"])
+    assert.throws(() => targetsForVersion(version));
+});
 
 for (const version of ["0.1.0", "0.1.0-next.1"])
   test(`manifests pin four exact ${version} native packages and request Yarn unplugging`, () => {

@@ -545,6 +545,13 @@ button.sidebar-project-row:hover {
   height: 14px;
   color: var(--text-subtle);
 }
+/* Fixed square slot matching the 14px outline glyph; overrides the 48px picker mark. */
+.worker-harness-mark.sidebar-harness-mark {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
 .sidebar-session-title {
   min-width: 0;
   flex: 1;
