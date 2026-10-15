@@ -119,6 +119,16 @@ const PUNCTUATORS: [&str; 33] = [
     "<<", ">>", "**",
 ];
 
+/// The ECMAScript line terminators.
+fn is_line_terminator(ch: char) -> bool {
+    matches!(ch, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+}
+
+/// Whether the UTF-8 encoding of U+2028 or U+2029 starts at `index`.
+fn separator_at(bytes: &[u8], index: usize) -> bool {
+    matches!(bytes.get(index..index + 3), Some([0xe2, 0x80, 0xa8 | 0xa9]))
+}
+
 fn is_word_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$') || byte >= 0x80
 }
@@ -143,7 +153,7 @@ fn tokenize<'a>(code: &'a str, ignored: &[(usize, usize)]) -> Vec<Token<'a>> {
             let first = text.as_bytes().first().copied().unwrap_or(b' ');
             let second = text.as_bytes().get(1).copied();
             if first == b'/' && matches!(second, Some(b'/' | b'*')) {
-                if text.contains('\n') {
+                if text.contains(is_line_terminator) {
                     newline = true;
                 }
                 index = end.max(start + 1);
@@ -190,6 +200,12 @@ fn tokenize<'a>(code: &'a str, ignored: &[(usize, usize)]) -> Vec<Token<'a>> {
             index += 1;
             continue;
         }
+        // U+2028 and U+2029 are line terminators too.
+        if separator_at(bytes, index) {
+            newline = true;
+            index += 3;
+            continue;
+        }
         if byte.is_ascii_whitespace() {
             index += 1;
             continue;
@@ -202,7 +218,7 @@ fn tokenize<'a>(code: &'a str, ignored: &[(usize, usize)]) -> Vec<Token<'a>> {
             TokenKind::Number
         } else if is_word_byte(byte) || byte == b'#' {
             index += 1;
-            while index < bytes.len() && is_word_byte(bytes[index]) {
+            while index < bytes.len() && is_word_byte(bytes[index]) && !separator_at(bytes, index) {
                 index += 1;
             }
             TokenKind::Word
@@ -456,7 +472,7 @@ struct Parser<'a> {
 struct Returns {
     /// Returned expressions that can carry a read.
     values: Vec<Id>,
-    /// Number of `return` statements, with or without a value.
+    /// Number of `return` and `throw` statements, with or without a value.
     statements: usize,
 }
 
@@ -648,6 +664,10 @@ impl<'a> Parser<'a> {
                 self.bump();
                 if self.tok().is_some_and(|next| !next.newline) {
                     self.parse_expr();
+                }
+                // Like a `return`, a `throw` completes the function abruptly.
+                if let Some(frame) = self.returns.last_mut() {
+                    frame.statements += 1;
                 }
                 self.eat_punct(";");
             }
@@ -853,8 +873,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// A `return` in a `finally` block replaces the value returned by the
-    /// `try` and `catch` blocks, so those values are dropped.
+    /// A `return` or `throw` in a `finally` block replaces the value returned
+    /// by the `try` and `catch` blocks, so those values are dropped.
     fn parse_try(&mut self) {
         self.bump();
         let start = self.returns.last().map_or(0, |frame| frame.values.len());
@@ -1728,7 +1748,7 @@ impl<'a> Parser<'a> {
                     work.push((*object, Some(paths.len() - 1)));
                 }
                 (Node::Call { callee, element }, _) => {
-                    self.call_value(*callee, *element, path, &mut work);
+                    self.call_value(*callee, *element, path, paths, &mut work);
                 }
                 (Node::Conditional(left, right), Some(_)) => {
                     work.push((*left, path));
@@ -1793,20 +1813,33 @@ impl<'a> Parser<'a> {
     }
 
     /// The values a call can produce, each with the selectors still pending.
-    fn call_value(&self, callee: Id, element: Option<usize>, path: Option<usize>, work: &mut Work) {
+    fn call_value(
+        &self,
+        callee: Id,
+        element: Option<usize>,
+        path: Option<usize>,
+        paths: &mut Vec<Pending<'a>>,
+        work: &mut Work,
+    ) {
         match &self.nodes[callee] {
             Node::Function { returns } => {
                 work.extend(returns.iter().map(|id| (Some(*id), path)));
             }
+            // `.at(N)` selects element N of whatever array its object
+            // produces, like `[N]` would, before the pending selectors.
             Node::Member {
                 object: Some(object),
                 selector: Selector::Name("at"),
-            } if element.is_some() => match (&self.nodes[*object], element) {
-                (Node::Array { elements }, Some(index)) => {
-                    array_element(elements, index, path, work);
-                }
-                _ => work.push((Some(callee), None)),
-            },
+            } if element.is_some() => {
+                paths.push(Pending {
+                    selector: Selector::Literal {
+                        text: "",
+                        index: element,
+                    },
+                    rest: path,
+                });
+                work.push((Some(*object), Some(paths.len() - 1)));
+            }
             _ => work.push((Some(callee), None)),
         }
     }
@@ -2233,6 +2266,56 @@ mod tests {
             (
                 "invoked function returning an array",
                 "(function(){return [process.env.FLAG]})()[0]&&run()",
+                Some("and"),
+            ),
+            (
+                "at on an invoked function result",
+                "(function(){return [process.env.FLAG]})().at(0)&&run()",
+                Some("and"),
+            ),
+            (
+                "at on an invoked function result, other element",
+                "(function(){return [process.env.FLAG, 1]})().at(1)&&run()",
+                None,
+            ),
+            (
+                "at on an invoked arrow result",
+                "(()=>[process.env.FLAG])().at(0)||run()",
+                Some("or"),
+            ),
+            (
+                "at on a conditional of arrays",
+                "(a?[process.env.FLAG]:[1]).at(0)&&run()",
+                Some("and"),
+            ),
+            (
+                "at on a conditional, other element",
+                "(a?[1, process.env.FLAG]:[2]).at(0)&&run()",
+                None,
+            ),
+            (
+                "at on a constructed array",
+                "new function(){return [process.env.FLAG]}().at(0)&&run()",
+                Some("and"),
+            ),
+            (
+                "at on a produced array, then a member",
+                "(function(){return [{a:process.env.FLAG}]})().at(0).a&&run()",
+                Some("and"),
+            ),
+            (
+                "at on a produced array, then another member",
+                "(function(){return [{a:process.env.FLAG, b:1}]})().at(0).b&&run()",
+                None,
+            ),
+            (
+                "at on a produced array through an optional call",
+                "(function(){return [process.env.FLAG]})()?.at(0)&&run()",
+                Some("and"),
+            ),
+            (
+                "nested at",
+                "(function(){return [[process.env.FLAG]]})().at(0).at(0)&&run()",
                 Some("and"),
             ),
             (
@@ -3411,6 +3494,38 @@ mod tests {
                 "(function(){return /* c */ process.env.FLAG})()&&run()",
                 Some("and"),
             ),
+            // Every ECMAScript line terminator ends the `return`, in a comment
+            // or in plain code.
+            (
+                "return before a block comment with a carriage return",
+                "(function(){return /*\r*/ process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "return before a block comment with a line separator",
+                "(function(){return /*\u{2028}*/ process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "return before a block comment with a paragraph separator",
+                "(function(){return /*\u{2029}*/ process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "return before a bare carriage return",
+                "(function(){return\rprocess.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "return before a bare line separator",
+                "(function(){return\u{2028}process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "return before a bare paragraph separator",
+                "(function(){return\u{2029}process.env.FLAG})()&&run()",
+                None,
+            ),
             // A `finally` return replaces the `try` and `catch` values.
             (
                 "finally return replaces the try value",
@@ -3427,6 +3542,38 @@ mod tests {
                 "(function(){try{return process.env.FLAG}catch(e){return 2}finally{return \
                  1}})()&&run()",
                 None,
+            ),
+            (
+                "finally throw replaces the try value",
+                "(function(){try{return process.env.FLAG}finally{throw 1}})()&&run()",
+                None,
+            ),
+            (
+                "finally throw replaces the catch value",
+                "(function(){try{f()}catch(e){return process.env.FLAG}finally{throw 1}})()&&run()",
+                None,
+            ),
+            (
+                "finally throw replaces both values",
+                "(function(){try{return process.env.FLAG}catch(e){return 2}finally{throw \
+                 1}})()&&run()",
+                None,
+            ),
+            (
+                "finally throw without a value",
+                "(function(){try{return process.env.FLAG}finally{throw\nx}})()&&run()",
+                None,
+            ),
+            (
+                "throw before the try statement",
+                "(function(){if(a)return process.env.FLAG;try{f()}finally{throw 1}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "throw in a try block keeps the earlier return",
+                "(function(){if(a)return process.env.FLAG;try{throw \
+                 1}finally{cleanup()}})()&&run()",
+                Some("and"),
             ),
             (
                 "finally without a return keeps the try value",
@@ -3938,6 +4085,10 @@ mod tests {
                 "(function(){try{return process.env.FLAG}finally{if(x)return 1}})()&&run()",
             ),
             (
+                "conditional throw in a finally block",
+                "(function(){try{return process.env.FLAG}finally{if(x)throw 1}})()&&run()",
+            ),
+            (
                 "object property read through a variable",
                 "var o={a:process.env.FLAG};o.a&&run()",
             ),
@@ -3994,6 +4145,19 @@ mod tests {
         );
         // Only a comment that holds a line terminator separates statements.
         assert_eq!(texts("a/* x */b"), [row("a", false), row("b", false)]);
+        // Every ECMAScript line terminator counts, in a comment or outside.
+        for terminator in ["\n", "\r", "\r\n", "\u{2028}", "\u{2029}"] {
+            assert_eq!(
+                texts(&format!("a/*{terminator}*/b")),
+                [row("a", false), row("b", true)],
+                "comment with {terminator:?}"
+            );
+            assert_eq!(
+                texts(&format!("a{terminator}b")),
+                [row("a", false), row("b", true)],
+                "bare {terminator:?}"
+            );
+        }
         // Optional chaining, a conditional with a decimal and numbers.
         assert_eq!(
             texts("a?.b?.5:1"),
