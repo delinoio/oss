@@ -371,7 +371,10 @@ pub fn traverse_with_stats(
         .take(max_queued)
         .map(|edge| Candidate {
             path: vec![*edge],
-            end: None,
+            // A self-referencing export closes its cycle with its first edge:
+            // the chain is terminal as soon as it exists, like any chain
+            // whose extension revisits an export.
+            end: (edge.consumer == edge.provider).then_some(ExportUsagePathEnd::Cycle),
         })
         .collect();
     stats.peak_queued = queue.len();
@@ -432,12 +435,6 @@ pub fn traverse_with_stats(
             finished.push((path, ExportUsagePathEnd::Truncated));
             continue;
         }
-        // An edge of the chain that also consumes the first export is a
-        // self-referencing export: the chain ends once instead of repeating
-        // the edge. Every edge in the chain is indexed under its provider, so
-        // this is the same test as finding it among `upstream`, without
-        // scanning a dense list.
-        let closed_on_itself = path.iter().any(|seen| seen.provider == outermost.consumer);
         for edge in upstream {
             if path.iter().any(|seen| std::ptr::eq(*seen, *edge)) {
                 continue;
@@ -459,11 +456,6 @@ pub fn traverse_with_stats(
             });
         }
         stats.peak_queued = stats.peak_queued.max(queue.len());
-        if closed_on_itself {
-            // This chain is the one being processed now, so its turn in the
-            // breadth-first order is also now.
-            finished.push((path, ExportUsagePathEnd::Cycle));
-        }
     }
     let paths = finished
         .into_iter()
@@ -1592,6 +1584,143 @@ mod tests {
             .filter(|path| path.end == ExportUsagePathEnd::Cycle)
             .count();
         assert_eq!(cycles, 1, "{usage:?}");
+    }
+
+    /// Cycle detection: a chain is terminal as soon as it exists when its
+    /// first edge consumes the export it provides, and when an extension
+    /// revisits an export. Mirrors the "Cycle detection" table in the
+    /// contract.
+    #[test]
+    fn cycle_detection_table() {
+        use ExportUsagePathEnd::{Cycle, Root, Truncated};
+        struct Case {
+            name: &'static str,
+            edges: Vec<CollectedExportEdge>,
+            module: &'static str,
+            limits: Limits,
+            /// Module names along each chain with its end, in output order.
+            chains: Vec<(Vec<&'static str>, ExportUsagePathEnd)>,
+            truncation: ExportUsageTruncation,
+        }
+        let none = ExportUsageTruncation::None;
+        let cases = [
+            Case {
+                name: "a self-referencing export alone ends once",
+                edges: vec![edge(("a", Some(A)), ("a", Some(A)), "1")],
+                module: "a",
+                limits: Limits::DEFAULT,
+                chains: vec![(vec!["a", "a"], Cycle)],
+                truncation: none,
+            },
+            Case {
+                name: "a self-referencing export with another consumer is not extended by it",
+                edges: vec![
+                    edge(("a", Some(A)), ("a", Some(A)), "1"),
+                    edge(("entry", None), ("a", Some(A)), "2"),
+                ],
+                module: "a",
+                limits: Limits::DEFAULT,
+                chains: vec![(vec!["a", "a"], Cycle), (vec!["entry", "a"], Root)],
+                truncation: none,
+            },
+            Case {
+                name: "a self-referencing module-scope export ends once",
+                edges: vec![
+                    edge(("a", None), ("a", None), "1"),
+                    edge(("entry", None), ("a", None), "2"),
+                ],
+                module: "a",
+                limits: Limits::DEFAULT,
+                chains: vec![(vec!["a", "a"], Cycle), (vec!["entry", "a"], Root)],
+                truncation: none,
+            },
+            Case {
+                name: "an edge between two exports of one module is not a self-reference",
+                edges: vec![
+                    edge(("a", Some(A)), ("a", Some(B)), "1"),
+                    edge(("entry", None), ("a", Some(A)), "2"),
+                ],
+                module: "a",
+                limits: Limits::DEFAULT,
+                chains: vec![(vec!["entry", "a"], Root), (vec!["entry", "a", "a"], Root)],
+                truncation: none,
+            },
+            Case {
+                name: "a self-referencing export keeps its end at a one-edge depth limit",
+                edges: vec![edge(("a", Some(A)), ("a", Some(A)), "1")],
+                module: "a",
+                limits: Limits {
+                    max_edges_per_path: 1,
+                    ..Limits::DEFAULT
+                },
+                chains: vec![(vec!["a", "a"], Cycle)],
+                truncation: none,
+            },
+            Case {
+                name: "a self-referencing export keeps its end when the expansion budget is spent",
+                edges: vec![
+                    edge(("a", Some(A)), ("a", Some(A)), "1"),
+                    edge(("entry", None), ("a", Some(A)), "2"),
+                ],
+                module: "a",
+                limits: Limits {
+                    max_expansions: 0,
+                    ..Limits::DEFAULT
+                },
+                chains: vec![(vec!["a", "a"], Cycle), (vec!["entry", "a"], Truncated)],
+                truncation: ExportUsageTruncation::ExpansionBudget,
+            },
+            Case {
+                name: "a self-referencing consumer upstream closes a cycle and is extended no \
+                       further",
+                edges: vec![
+                    edge(("a", Some(A)), ("b", Some(B)), "1"),
+                    edge(("a", Some(A)), ("a", Some(A)), "2"),
+                    edge(("entry", None), ("a", Some(A)), "3"),
+                ],
+                module: "b",
+                limits: Limits::DEFAULT,
+                chains: vec![
+                    (vec!["a", "a", "b"], Cycle),
+                    (vec!["entry", "a", "b"], Root),
+                ],
+                truncation: none,
+            },
+            Case {
+                name: "a self-referencing export does not use up the chain quota",
+                edges: vec![
+                    edge(("a", Some(A)), ("a", Some(A)), "1"),
+                    edge(("e1", None), ("a", Some(A)), "2"),
+                    edge(("e2", None), ("a", Some(A)), "3"),
+                ],
+                module: "a",
+                limits: Limits {
+                    max_paths: 3,
+                    ..Limits::DEFAULT
+                },
+                chains: vec![
+                    (vec!["a", "a"], Cycle),
+                    (vec!["e1", "a"], Root),
+                    (vec!["e2", "a"], Root),
+                ],
+                truncation: none,
+            },
+        ];
+        for case in cases {
+            let usage = run(&collection(case.edges), case.module, case.limits);
+            let chains: Vec<(Vec<String>, ExportUsagePathEnd)> = usage
+                .paths
+                .iter()
+                .map(|path| (modules(path), path.end))
+                .collect();
+            let expected: Vec<(Vec<String>, ExportUsagePathEnd)> = case
+                .chains
+                .iter()
+                .map(|(names, end)| (names.iter().map(|n| (*n).to_owned()).collect(), *end))
+                .collect();
+            assert_eq!(chains, expected, "{}", case.name);
+            assert_eq!(usage.truncation, case.truncation, "{}", case.name);
+        }
     }
 
     #[test]
