@@ -1746,7 +1746,12 @@ fn is_case_label(prefix: &str) -> bool {
             .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
 }
 
-fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
+/// Byte offsets of every unshadowed direct `eval(...)` call in `source`, in
+/// source order. Text in strings, templates, comments and regular expressions
+/// is not a call, a binding named `eval` makes the calls in its scope ordinary
+/// calls, and member accesses, private names, declarations and bodyless
+/// signatures named `eval` are not calls.
+fn direct_eval_offsets(source: &str) -> Vec<usize> {
     // `eval(` inside strings, templates, comments or regular expressions is
     // not a call.
     let ignored = non_code_ranges(source);
@@ -1754,20 +1759,93 @@ fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
     // cannot observe the surrounding scope; shadowing is decided per call.
     let shadows = eval_shadow_scopes(source, &ignored);
     // One forward pass over the tokens decides which `eval(` tokens call the
-    // global function. Member accesses, private names, declarations and
-    // bodyless signatures named `eval` are not calls.
-    let start = eval_sites::classify_eval_sites(source, &ignored)
+    // global function. Comments are token separators, so `eval /* note */
+    // (code)` is a call.
+    eval_sites::classify_eval_sites(source, &ignored)
         .into_iter()
         .filter(|site| site.kind == eval_sites::EvalSiteKind::DirectCall)
         .map(|site| site.start)
-        .find(|start| {
+        .filter(|start| {
             !shadows
                 .iter()
                 .any(|(begin, end)| (*begin..*end).contains(start))
-        })?;
+        })
+        .collect()
+}
+
+fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
+    let start = *direct_eval_offsets(source).first()?;
     let line = source[..start].matches('\n').count();
     let column = start - source[..start].rfind('\n').map_or(0, |index| index + 1);
     Some((u32::try_from(line).ok()?, u32::try_from(column).ok()?))
+}
+
+/// A direct `eval` call that survives in an emitted chunk and belongs to the
+/// analyzed module.
+struct EmittedEval {
+    chunk_index: usize,
+    offset: usize,
+}
+
+/// Finds the emitted direct `eval` calls that are attributable to `module` in
+/// `chunk_files`. A call is attributable when the chunk's source map resolves
+/// its generated position to the module's source file, or, for a chunk without
+/// a usable map, when the module is the only module the chunk comes from. A
+/// chunk shared with other modules and lacking a map proves nothing about
+/// which module owns an `eval`, so it is not counted.
+fn emitted_evals(
+    context: &Context<'_>,
+    module: &CollectedModule,
+    module_path: &Path,
+    chunk_files: &[String],
+) -> Vec<EmittedEval> {
+    let mut found = Vec::new();
+    for file in chunk_files {
+        let Some(index) = context.chunk_index(file) else {
+            continue;
+        };
+        let chunk = &context.chunks[index];
+        let offsets = direct_eval_offsets(&chunk.code);
+        if offsets.is_empty() {
+            continue;
+        }
+        let owners = context
+            .collection
+            .modules
+            .iter()
+            .filter(|other| {
+                other.included && other.path.is_some() && other.chunks.iter().any(|f| f == file)
+            })
+            .count();
+        let has_map = chunk.map.is_some();
+        for offset in offsets {
+            let attributable = if has_map {
+                let (line, column) = chunk.position(offset);
+                chunk
+                    .original(line, column)
+                    .is_some_and(|(path, _, _)| crate::sources::normalize(&path) == module_path)
+            } else {
+                owners <= 1
+            };
+            tracing::debug!(
+                rule = "minifier/direct-eval-blocks-mangling",
+                module = %module.id,
+                chunk = %file,
+                offset,
+                has_map,
+                owners,
+                attributable,
+                "emitted direct eval candidate"
+            );
+            if attributable {
+                found.push(EmittedEval {
+                    chunk_index: index,
+                    offset,
+                });
+            }
+        }
+    }
+    found
 }
 
 fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
@@ -1805,18 +1883,41 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         if rolldown_log.is_none() && rspack_bailout.is_none() && source_eval.is_none() {
             continue;
         }
+        let chunk_files: Vec<String> = module
+            .chunks
+            .iter()
+            .filter(|file| context.chunk_index(file).is_some())
+            .cloned()
+            .collect();
+        let module_path = crate::sources::normalize(Path::new(
+            module.path.as_deref().expect("module path checked above"),
+        ));
+        // The source scan and the engine report only name a candidate. Tree
+        // shaking and minification may have removed the call, so a finding
+        // needs an eval call in the emitted chunk that maps back to this
+        // module.
+        let emitted = emitted_evals(context, module, &module_path, &chunk_files);
+        let Some(first_emitted) = emitted.first() else {
+            tracing::debug!(
+                rule = "minifier/direct-eval-blocks-mangling",
+                module = %module.id,
+                "skipping direct eval candidate with no attributable emitted eval call"
+            );
+            continue;
+        };
         let names = declared_names(&source);
         let mut retained: BTreeSet<String> = BTreeSet::new();
-        let mut chunk_files = Vec::new();
-        for file in &module.chunks {
-            let Some(index) = context.chunk_index(file) else {
+        let mut emitted_files: Vec<String> = Vec::new();
+        for call in &emitted {
+            let chunk = &context.chunks[call.chunk_index];
+            if emitted_files.contains(&chunk.file) {
                 continue;
-            };
-            chunk_files.push(file.clone());
+            }
+            emitted_files.push(chunk.file.clone());
             for name in &names {
                 let pattern = Regex::new(&format!(r"(^|[^\w$]){}([^\w$]|$)", regex::escape(name)))
                     .expect("escaped regex");
-                if pattern.is_match(&context.chunks[index].code) {
+                if pattern.is_match(&chunk.code) {
                     retained.insert(name.clone());
                 }
             }
@@ -1831,7 +1932,18 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
             .or(source_eval)
             .unwrap_or((0, 0));
         let display = context.module_display(module);
-        let located = context.module_location(module, line, column);
+        // The location is the original-source candidate; the emitted call is
+        // attached as the generated location. When the source map resolves the
+        // emitted call to the module, that mapped position is more precise.
+        let emitted_located =
+            context.chunk_location(first_emitted.chunk_index, first_emitted.offset);
+        let located = if emitted_located.generated.is_some() {
+            emitted_located
+        } else {
+            let mut located = context.module_location(module, line, column);
+            located.generated = emitted_located.location;
+            located
+        };
         let retained_list: Vec<String> = retained.into_iter().take(12).collect();
         let mut evidence = Vec::new();
         if let Some(log) = rolldown_log {
@@ -1848,19 +1960,45 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                 bailout.clone(),
             ));
         }
-        if !engine_reported {
+        // The source scan names the original-source candidate only; the
+        // emitted call below is what blocks mangling.
+        if source_eval.is_some() {
             evidence.push(Evidence::new(
                 "bundlewhy source scan",
                 EvidenceStatus::Inferred,
-                "Direct eval found in the source; the engine did not report it.",
+                if engine_reported {
+                    "Direct eval candidate found in the original source."
+                } else {
+                    "Direct eval candidate found in the original source; the engine did not report \
+                     it."
+                },
             ));
         }
+        let emitted_sites: Vec<String> = emitted
+            .iter()
+            .take(3)
+            .map(|call| {
+                let chunk = &context.chunks[call.chunk_index];
+                let (line, column) = chunk.position(call.offset);
+                format!("{}:{}:{}", chunk.file, line + 1, column + 1)
+            })
+            .collect();
+        evidence.push(Evidence::new(
+            "emitted chunk text",
+            EvidenceStatus::Confirmed,
+            format!(
+                "Direct eval call survives in the generated output and maps to this module ({} \
+                 call(s)): {}",
+                emitted.len(),
+                emitted_sites.join(", ")
+            ),
+        ));
         evidence.push(Evidence::new(
             "generated chunk text",
             EvidenceStatus::Confirmed,
             format!(
                 "Declared names still present in {}: {}",
-                chunk_files.join(", "),
+                emitted_files.join(", "),
                 retained_list.join(", ")
             ),
         ));
@@ -1880,9 +2018,9 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                     "No direct eval can observe local names",
                     ConditionOutcome::Unmet,
                     if engine_reported {
-                        "Direct eval reported by the engine"
+                        "Direct eval reported by the engine and present in the emitted output"
                     } else {
-                        "Direct eval found in the source"
+                        "Direct eval found in the source and present in the emitted output"
                     },
                 ),
                 Condition::new(
@@ -1921,6 +2059,38 @@ mod tests {
         engine_reports_eval: bool,
         mangle: ManglingSetting,
     ) -> Vec<DiagnosticDraft> {
+        eval_rule_drafts_for_chunk(
+            source,
+            engine_reports_eval,
+            mangle,
+            &EmittedChunk::plain("const longLocalName = 1;\neval(code);"),
+        )
+    }
+
+    /// Emitted chunk text, an optional source map and the number of other
+    /// modules that share the chunk.
+    struct EmittedChunk {
+        code: String,
+        map: Option<String>,
+        other_modules: usize,
+    }
+
+    impl EmittedChunk {
+        fn plain(code: &str) -> Self {
+            Self {
+                code: code.to_owned(),
+                map: None,
+                other_modules: 0,
+            }
+        }
+    }
+
+    fn eval_rule_drafts_for_chunk(
+        source: &str,
+        engine_reports_eval: bool,
+        mangle: ManglingSetting,
+        emitted: &EmittedChunk,
+    ) -> Vec<DiagnosticDraft> {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let source_path = root.join("src/main.js");
@@ -1928,8 +2098,28 @@ mod tests {
         std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
         std::fs::create_dir_all(&build_dir).unwrap();
         std::fs::write(&source_path, source).unwrap();
-        std::fs::write(build_dir.join("main.js"), "const longLocalName = 1;").unwrap();
+        std::fs::write(build_dir.join("main.js"), &emitted.code).unwrap();
+        if let Some(map) = &emitted.map {
+            std::fs::write(build_dir.join("main.js.map"), map).unwrap();
+        }
         let module_id = source_path.to_string_lossy().into_owned();
+        let mut modules = vec![CollectedModule {
+            id: module_id.clone(),
+            path: Some(source_path.to_string_lossy().into_owned()),
+            included: true,
+            chunks: vec!["main.js".to_owned()],
+            ..CollectedModule::default()
+        }];
+        for index in 0..emitted.other_modules {
+            let other = root.join(format!("src/other{index}.js"));
+            modules.push(CollectedModule {
+                id: other.to_string_lossy().into_owned(),
+                path: Some(other.to_string_lossy().into_owned()),
+                included: true,
+                chunks: vec!["main.js".to_owned()],
+                ..CollectedModule::default()
+            });
+        }
         let collection = crate::collect::Collection {
             default_minifier: true,
             minify_enabled: true,
@@ -1943,13 +2133,7 @@ mod tests {
             } else {
                 Vec::new()
             },
-            modules: vec![CollectedModule {
-                id: module_id,
-                path: Some(source_path.to_string_lossy().into_owned()),
-                included: true,
-                chunks: vec!["main.js".to_owned()],
-                ..CollectedModule::default()
-            }],
+            modules,
             ..crate::collect::Collection::default()
         };
         let chunk = crate::chunks::Chunk::load(&build_dir, "main.js", None, true, root).unwrap();
@@ -2484,6 +2668,180 @@ y=/process.env.F/.test(z),process.env.G"#;
         // The finding points at the call on line 7, not at the declaration.
         assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 7);
         assert_eq!(drafts[0].located.location.as_ref().unwrap().column, 12);
+    }
+
+    const DEAD_EVAL_SOURCE: &str = "const longLocalName = 1;\nexport function run(code) {\n  \
+                                    return longLocalName;\n  return eval(code);\n}\n";
+
+    #[test]
+    fn source_eval_removed_from_emitted_chunk_gives_no_finding() {
+        // Tree shaking and minification dropped the call, but the declared
+        // name is still present in the chunk.
+        let emitted = EmittedChunk::plain("const longLocalName = 1;\nconsole.log(longLocalName);");
+        for engine_reports_eval in [false, true] {
+            let drafts = eval_rule_drafts_for_chunk(
+                DEAD_EVAL_SOURCE,
+                engine_reports_eval,
+                ManglingSetting::Enabled,
+                &emitted,
+            );
+            assert!(
+                drafts.is_empty(),
+                "engine_reports_eval={engine_reports_eval}"
+            );
+        }
+    }
+
+    #[test]
+    fn emitted_eval_text_in_strings_and_comments_is_not_a_call() {
+        let emitted = EmittedChunk::plain(
+            "const longLocalName = 1;\n// eval(code)\nconsole.log(\"eval(code)\", longLocalName);",
+        );
+        let drafts =
+            eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, true, ManglingSetting::Enabled, &emitted);
+        assert!(drafts.is_empty());
+    }
+
+    #[test]
+    fn surviving_emitted_eval_reports_with_emitted_evidence() {
+        let emitted =
+            EmittedChunk::plain("const longLocalName = 1;\nexport const r = (c) => eval(c);");
+        let drafts =
+            eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, false, ManglingSetting::Enabled, &emitted);
+        assert_eq!(drafts.len(), 1);
+        let draft = &drafts[0];
+        assert_eq!(draft.rule, RuleId::DirectEvalBlocksMangling);
+        // A source-only candidate stays Inferred even with the emitted call.
+        assert_eq!(draft.status, EvidenceStatus::Inferred);
+        let labels: Vec<&str> = draft
+            .evidence
+            .iter()
+            .map(|e| e.provenance.as_str())
+            .collect();
+        assert!(labels.contains(&"bundlewhy source scan"), "{labels:?}");
+        let emitted_evidence = draft
+            .evidence
+            .iter()
+            .find(|e| e.provenance == "emitted chunk text")
+            .expect("emitted chunk evidence");
+        assert!(
+            emitted_evidence.detail.contains("main.js:2:"),
+            "{}",
+            emitted_evidence.detail
+        );
+        // The original-source candidate is the location; the emitted call is
+        // the generated location.
+        let location = draft.located.location.as_ref().unwrap();
+        assert_eq!(location.kind, crate::model::LocationKind::Original);
+        assert_eq!(location.line, 4);
+        let generated = draft.located.generated.as_ref().unwrap();
+        assert_eq!(generated.kind, crate::model::LocationKind::Generated);
+        assert_eq!(generated.line, 2);
+    }
+
+    #[test]
+    fn engine_reported_eval_is_confirmed_only_with_emitted_eval() {
+        let with_call = EmittedChunk::plain("const longLocalName = 1;\neval(code);");
+        let drafts = eval_rule_drafts_for_chunk(
+            DEAD_EVAL_SOURCE,
+            true,
+            ManglingSetting::Enabled,
+            &with_call,
+        );
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].status, EvidenceStatus::Confirmed);
+        let without_call = EmittedChunk::plain("const longLocalName = 1;");
+        assert!(
+            eval_rule_drafts_for_chunk(
+                DEAD_EVAL_SOURCE,
+                true,
+                ManglingSetting::Enabled,
+                &without_call
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn engine_report_without_source_eval_needs_emitted_eval() {
+        let source = "const longLocalName = 1;\nexport default longLocalName;\n";
+        let without_call = EmittedChunk::plain("const longLocalName = 1;");
+        assert!(
+            eval_rule_drafts_for_chunk(source, true, ManglingSetting::Enabled, &without_call)
+                .is_empty()
+        );
+        let with_call = EmittedChunk::plain("const longLocalName = 1;\neval(code);");
+        let drafts = eval_rule_drafts_for_chunk(source, true, ManglingSetting::Enabled, &with_call);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].status, EvidenceStatus::Confirmed);
+    }
+
+    #[test]
+    fn shared_chunk_without_map_does_not_attribute_eval_to_module() {
+        // Another module shares the chunk and no source map says which module
+        // the call belongs to, so the declared names alone prove nothing.
+        let emitted = EmittedChunk {
+            code: "const longLocalName = 1;\neval(code);".to_owned(),
+            map: None,
+            other_modules: 1,
+        };
+        let drafts =
+            eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, true, ManglingSetting::Enabled, &emitted);
+        assert!(drafts.is_empty());
+    }
+
+    fn shared_chunk_with_map() -> EmittedChunk {
+        // Line 1 maps to `other0.js` and line 2 (the eval call) maps to
+        // `main.js`.
+        let map = r#"{"version":3,"file":"main.js","sources":["../src/other0.js","../src/main.js"],"names":[],"mappings":"AAAA;ACAA"}"#;
+        EmittedChunk {
+            code: "const longLocalName = 1;\neval(code);".to_owned(),
+            map: Some(map.to_owned()),
+            other_modules: 1,
+        }
+    }
+
+    #[test]
+    fn shared_chunk_eval_mapped_to_module_is_reported() {
+        let drafts = eval_rule_drafts_for_chunk(
+            DEAD_EVAL_SOURCE,
+            true,
+            ManglingSetting::Enabled,
+            &shared_chunk_with_map(),
+        );
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].status, EvidenceStatus::Confirmed);
+        // The source map resolves the emitted call to the module, so the
+        // generated position accompanies the original location.
+        let generated = drafts[0]
+            .located
+            .generated
+            .as_ref()
+            .expect("generated location");
+        assert_eq!(generated.line, 2);
+    }
+
+    #[test]
+    fn shared_chunk_eval_mapped_to_another_module_is_not_reported() {
+        let mut emitted = shared_chunk_with_map();
+        // Swap the sources so the call belongs to the other module.
+        emitted.map = emitted.map.map(|map| {
+            map.replace(
+                r#""sources":["../src/other0.js","../src/main.js"]"#,
+                r#""sources":["../src/main.js","../src/other0.js"]"#,
+            )
+        });
+        let drafts =
+            eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, true, ManglingSetting::Enabled, &emitted);
+        assert!(drafts.is_empty());
+    }
+
+    #[test]
+    fn direct_eval_offsets_lists_every_unshadowed_call() {
+        let source = "eval(a); function f(eval) { eval(b); } o.eval(c); eval(d);";
+        let offsets = direct_eval_offsets(source);
+        assert_eq!(offsets, vec![0, source.rfind("eval(d)").unwrap()]);
+        assert_eq!(direct_eval_line(source), Some((0, 0)));
     }
 
     #[test]
