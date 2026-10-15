@@ -89,6 +89,7 @@ func TestManagedCodexAppsStartupIsPrivatePassiveMetadata(t *testing.T) {
 			t.Fatal("private connector descriptor or error escaped")
 		}
 		params["name"] = "foreign-server"
+		c.mcpStartupServers = map[string]struct{}{"foreign-server": {}}
 		event, err = observeFixture(c, "mcpServer/startupStatus/updated", params)
 		if err != nil || event.Kind != MetadataEvent || event.Metadata != MCPStartupObserved || event.Native != nil || !event.Correlated || c.execution.active != turn || c.execution.paused != paused {
 			t.Fatal("project MCP startup changed execution authority", err)
@@ -131,12 +132,15 @@ func TestManagedCodexAppsStartupIsPrivatePassiveMetadata(t *testing.T) {
 }
 
 func TestProjectMCPStartupRetainsIsolatedAndForeignBoundaries(t *testing.T) {
-	for _, scenario := range []string{"ordinary", "api", "title", "sidechat", "model-observation", "unscoped", "foreign", "unknown-state", "unknown-field"} {
+	for _, scenario := range []string{"ordinary", "unconfigured", "api", "title", "sidechat", "model-observation", "unscoped", "foreign", "unknown-state", "unknown-field"} {
 		t.Run(scenario, func(t *testing.T) {
 			c, turn := observationClient()
 			c.managedHome = "/fixture-managed-home"
+			c.mcpStartupServers = map[string]struct{}{"private-project-server": {}}
 			params := map[string]any{"threadId": c.thread, "name": "private-project-server", "status": nativeMCPReady}
 			switch scenario {
+			case "unconfigured":
+				c.mcpStartupServers = nil
 			case "api":
 				c.managedHome = ""
 			case "title":

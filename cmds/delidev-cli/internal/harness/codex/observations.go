@@ -166,6 +166,9 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 		if c.managedTitle || c.sidechat != "" || c.modelObservation != "" {
 			return privateNative(native), nil
 		}
+		if _, configured := c.mcpStartupServers[params.Name]; !configured {
+			return privateNative(native), nil
+		}
 		if c.logger != nil {
 			c.logger.Info("Codex passive MCP startup observed", "owner_id", c.ownerID, "status", params.Status, "has_error", params.Error != nil)
 		}
