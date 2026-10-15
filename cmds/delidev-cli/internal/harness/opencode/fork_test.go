@@ -66,7 +66,7 @@ func TestForkHistoryPreservesEveryNonIdentityByte(t *testing.T) {
 		raw, _ = json.Marshal(map[string]any{"info": info, "parts": parts})
 		child = append(child, raw)
 	}
-	if ids, _, err := compareForkHistory(source, child, fixtureSessionID, childID); err != nil || len(ids) != 2 {
+	if ids, _, err := compareForkHistory(source, child, fixtureSessionID, childID, false); err != nil || len(ids) != 2 {
 		t.Fatal("complete native ID clone rejected", err)
 	}
 	for _, mutation := range []string{"model", "text", "usage", "parent", "path", "reused-part", "missing-message", "reordered"} {
@@ -97,7 +97,7 @@ func TestForkHistoryPreservesEveryNonIdentityByte(t *testing.T) {
 			if mutation == "reordered" {
 				changed[0], changed[1] = changed[1], changed[0]
 			}
-			if _, _, err := compareForkHistory(source, changed, fixtureSessionID, childID); err == nil {
+			if _, _, err := compareForkHistory(source, changed, fixtureSessionID, childID, false); err == nil {
 				t.Fatal("incomplete or changed native history adopted")
 			}
 		})

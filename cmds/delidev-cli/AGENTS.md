@@ -8,6 +8,10 @@
 
 The installed Tailscale adapter lives in `internal/tailscale`; approval and ingress business flows remain in `internal/server`. Read the [connections contract](../../docs/cmds-delidev-connections-contract.md#tailscale-connections) before changing either boundary.
 
+## Native OpenCode tests
+
+Opt-in native OpenCode tests must obtain the binary and its observed version only through `nativetest.NativeOpenCodeExecutable(t)` (`internal/nativetest`); never read `DELIDEV_NATIVE_OPENCODE_EXECUTABLE` directly and never pin real-binary probe configs to `opencode.SupportedVersion`. Follow the [native OpenCode testing runbook](../../docs/cmds-delidev-opencode-native-testing.md).
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../docs/apps-delidev-desktop-contract.md)
@@ -19,6 +23,7 @@ The installed Tailscale adapter lives in `internal/tailscale`; approval and ingr
 - [DeliDev direct execution startup](../../docs/cmds-delidev-execution-startup-contract.md)
 - [DeliDev same-account native session forks](../../docs/cmds-delidev-forks-contract.md)
 - [DeliDev native harness adapter contract](../../docs/cmds-delidev-harness-contract.md)
+- [DeliDev native OpenCode testing runbook](../../docs/cmds-delidev-opencode-native-testing.md)
 - [OpenCode Go subscription contract](../../docs/cmds-delidev-opencode-go-subscription-contract.md)
 - [DeliDev native API relay contract](../../docs/cmds-delidev-proxy-contract.md)
 - [DeliDev native read-only Sidechat](../../docs/cmds-delidev-sidechat-contract.md)
