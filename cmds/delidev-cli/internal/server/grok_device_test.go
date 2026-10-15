@@ -710,6 +710,11 @@ func TestValidServerLoginProgressIsServiceAware(t *testing.T) {
 		{"grok fragment", domain.SubscriptionGrok, "https://accounts.x.ai/oauth2/device#x", "ABCD-1234", false},
 		{"grok lowercase code", domain.SubscriptionGrok, deviceVerifyURL, "abcd-1234", false},
 		{"grok no code", domain.SubscriptionGrok, deviceVerifyURL, "", false},
+		{"grok other path with a safe parameter", domain.SubscriptionGrok, "https://accounts.x.ai/activate?source=cli&user_code=ABCD-1234", "ABCD-1234", true},
+		{"grok code differs from the displayed code", domain.SubscriptionGrok, deviceVerifyURL, "WXYZ-9876", false},
+		{"grok unsafe query value", domain.SubscriptionGrok, "https://accounts.x.ai/oauth2/device?next=https://evil.test", "ABCD-1234", false},
+		{"grok empty query", domain.SubscriptionGrok, "https://accounts.x.ai/oauth2/device?", "ABCD-1234", false},
+		{"grok over the length bound", domain.SubscriptionGrok, "https://accounts.x.ai/" + strings.Repeat("p", 2048), "ABCD-1234", false},
 		{"chatgpt device", domain.SubscriptionChatGPT, "https://auth.openai.com/codex/device", "ABCD-1234", true},
 		{"chatgpt rejects xai", domain.SubscriptionChatGPT, deviceVerifyURL, "ABCD-1234", false},
 	}

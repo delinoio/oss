@@ -3,8 +3,11 @@ package subscription_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -539,6 +542,48 @@ func TestGrokDeviceCodeIsValidatedAfterDecoding(t *testing.T) {
 			client, endpoints := deviceFixture(t, idp)
 			if _, err := client.RequestDeviceAuthorization(context.Background(), endpoints); err == nil {
 				t.Fatal("a device code that decodes to a forbidden byte was accepted")
+			}
+		})
+	}
+}
+
+// The server, the desktop renderer and the native host share one verification
+// address rule. This test runs the table that the renderer (vitest) and the
+// native host (cargo) also run, so no layer can accept an address another layer
+// refuses: every row states the expected result of each layer, and the server
+// (which also receives the displayed user code) must match the renderer.
+func TestGrokVerificationURLMatchesTheSharedDesktopTable(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "apps", "delidev", "src", "grok-url-validation-fixtures.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures struct {
+		DeviceVerification []struct {
+			Name     string `json:"name"`
+			URL      string `json:"url"`
+			UserCode string `json:"userCode"`
+			Server   bool   `json:"server"`
+			Native   bool   `json:"native"`
+			Renderer bool   `json:"renderer"`
+		} `json:"deviceVerification"`
+	}
+	if err := json.Unmarshal(raw, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	if len(fixtures.DeviceVerification) < 60 {
+		t.Fatalf("the shared table has only %d rows", len(fixtures.DeviceVerification))
+	}
+	for _, row := range fixtures.DeviceVerification {
+		t.Run(row.Name, func(t *testing.T) {
+			_, valid := subscription.GrokVerificationURL(row.URL, row.UserCode)
+			if got := valid && subscription.GrokUserCodeValid(row.UserCode); got != row.Server {
+				t.Fatalf("server verdict %v, table says %v for %q", got, row.Server, row.URL)
+			}
+			if row.Server != row.Renderer {
+				t.Fatalf("the table lets the server (%v) and the renderer (%v) disagree", row.Server, row.Renderer)
+			}
+			if row.Server && !row.Native {
+				t.Fatalf("the server accepts %q but the native host refuses it", row.URL)
 			}
 		})
 	}

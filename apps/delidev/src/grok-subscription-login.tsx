@@ -201,38 +201,79 @@ export function grokLoginURL(raw: string): boolean {
   }
 }
 
-// Validates the transient device verification address and user code pair. The
-// address must be the fixed xAI device page; an embedded user_code must equal
-// the displayed code so the page and the screen can never disagree. A query
-// delimiter requires exactly that one parameter: URL.href keeps an empty "?" or
-// "#" while the native parser rejects both, so neither may pass here.
+// The device verification address rule, shared with the Go server and the native
+// host through grok-url-validation-fixtures.json. It is a plain string rule, not
+// a parsed URL, so no normalization can make the three layers disagree:
+//   - at most 2048 printable ASCII characters (0x21 to 0x7e);
+//   - exactly the prefix https://accounts.x.ai (no port, credentials, host case);
+//   - one or more non-empty path segments of [A-Za-z0-9._~-], none of them a dot
+//     segment, with an optional trailing slash;
+//   - no fragment; an optional, never empty query of key=value pairs joined by
+//     "&": a key matches [A-Za-z0-9_.-]{1,64} and appears once, a value has at
+//     most 256 characters of [A-Za-z0-9._~-] and well-formed percent escapes of
+//     printable ASCII;
+//   - a user_code pair, when present, matches [A-Z0-9-]{4,32}.
+// The renderer additionally pins an embedded user_code to the displayed code so
+// the page and the screen can never disagree.
+const deviceAddressPrefix = "https://accounts.x.ai";
+const deviceAddressMax = 2048;
+const deviceSegment = /^[A-Za-z0-9._~-]+$/;
+const deviceQueryKey = /^[A-Za-z0-9_.-]{1,64}$/;
+const deviceQueryValue = /^(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})*$/;
+function deviceAddressPath(path: string): boolean {
+  const trimmed = path.endsWith("/") ? path.slice(0, -1) : path;
+  if (trimmed.length < 2 || !trimmed.startsWith("/")) return false;
+  return trimmed
+    .slice(1)
+    .split("/")
+    .every(
+      (segment) =>
+        deviceSegment.test(segment) && segment !== "." && segment !== "..",
+    );
+}
+function deviceAddressValue(value: string): boolean {
+  if (value.length > 256 || !deviceQueryValue.test(value)) return false;
+  for (const escape of value.matchAll(/%([0-9A-Fa-f]{2})/g)) {
+    const byte = Number.parseInt(escape[1], 16);
+    if (byte < 0x20 || byte > 0x7e) return false;
+  }
+  return true;
+}
 export function grokDeviceVerification(raw: string, code: string): boolean {
-  try {
-    if (raw.length > 512 || !/^[!-~]+$/.test(raw) || raw.includes("#"))
-      return false;
-    if (!deviceCodePattern.test(code)) return false;
-    const url = new URL(raw),
-      query = url.searchParams;
+  if (
+    raw.length > deviceAddressMax ||
+    !/^[!-~]+$/.test(raw) ||
+    !raw.startsWith(deviceAddressPrefix)
+  )
+    return false;
+  if (!deviceCodePattern.test(code)) return false;
+  const rest = raw.slice(deviceAddressPrefix.length);
+  const split = rest.indexOf("?");
+  const path = split < 0 ? rest : rest.slice(0, split);
+  if (!deviceAddressPath(path)) return false;
+  if (split < 0) return true;
+  const query = rest.slice(split + 1);
+  if (query === "") return false;
+  const seen = new Set<string>();
+  for (const pair of query.split("&")) {
+    const equals = pair.indexOf("=");
+    if (equals < 0) return false;
+    const key = pair.slice(0, equals),
+      value = pair.slice(equals + 1);
     if (
-      url.href !== raw ||
-      url.protocol !== "https:" ||
-      url.host !== "accounts.x.ai" ||
-      url.username ||
-      url.password ||
-      url.hash ||
-      url.pathname !== "/oauth2/device"
+      !deviceQueryKey.test(key) ||
+      seen.has(key) ||
+      !deviceAddressValue(value)
     )
       return false;
-    if (!raw.includes("?")) return true;
-    const keys = [...query.keys()];
-    return (
-      keys.length === 1 &&
-      keys[0] === "user_code" &&
-      query.get("user_code") === code
-    );
-  } catch {
-    return false;
+    seen.add(key);
+    if (
+      key === "user_code" &&
+      (!deviceCodePattern.test(value) || value !== code)
+    )
+      return false;
   }
+  return true;
 }
 
 // The machine owns everything that decides what the screen offers; this view

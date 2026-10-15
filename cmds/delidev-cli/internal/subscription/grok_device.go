@@ -7,12 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 )
 
 // The RFC 8628 device authorization grant of the fixed xAI profile. The device
@@ -54,53 +52,132 @@ func GrokUserCodeValid(value string) bool { return grokUserCodePattern.MatchStri
 
 var grokQueryKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
-// grokSafeQueryValue accepts a short printable value without control characters.
-func grokSafeQueryValue(value string) bool {
-	if len(value) > 256 || !utf8.ValidString(value) {
+// grokVerificationUnreserved reports whether b may appear unescaped in a
+// verification path segment or query value.
+func grokVerificationUnreserved(b byte) bool {
+	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '-' || b == '.' || b == '_' || b == '~'
+}
+
+func grokHexDigit(b byte) (byte, bool) {
+	switch {
+	case b >= '0' && b <= '9':
+		return b - '0', true
+	case b >= 'a' && b <= 'f':
+		return b - 'a' + 10, true
+	case b >= 'A' && b <= 'F':
+		return b - 'A' + 10, true
+	}
+	return 0, false
+}
+
+// grokVerificationPath accepts one or more non-empty segments of unreserved
+// characters, each introduced by a slash, with an optional trailing slash. A dot
+// segment, an empty segment or any escape is refused, so the path needs no
+// normalization and means the same to every parser.
+func grokVerificationPath(path string) bool {
+	trimmed := strings.TrimSuffix(path, "/")
+	if len(trimmed) < 2 || trimmed[0] != '/' {
 		return false
 	}
-	for _, r := range value {
-		if unicode.IsControl(r) {
+	for _, segment := range strings.Split(trimmed[1:], "/") {
+		if segment == "" || segment == "." || segment == ".." {
 			return false
+		}
+		for i := 0; i < len(segment); i++ {
+			if !grokVerificationUnreserved(segment[i]) {
+				return false
+			}
 		}
 	}
 	return true
 }
 
-// GrokVerificationURL validates a device verification URL: https on the
-// verification host, an absolute path, no credentials or fragment. The query may
-// carry the provider's own routing or tracking parameters (RFC 8628 leaves the
-// shape of the complete URI to the provider) as long as each key is a short token,
-// each value is short printable text and each key appears once. A user_code member,
-// when present, must equal userCode when one is given.
-func GrokVerificationURL(raw, userCode string) (string, bool) {
-	if raw == "" || len(raw) > grokVerificationMax {
-		return "", false
+// grokVerificationQueryValue accepts at most 256 bytes of unreserved characters
+// and well-formed percent escapes of printable ASCII.
+func grokVerificationQueryValue(value string) bool {
+	if len(value) > 256 {
+		return false
 	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host != GrokVerificationHost || u.User != nil || u.Fragment != "" || u.Path == "" || u.Path[0] != '/' {
-		return "", false
-	}
-	query, err := url.ParseQuery(u.RawQuery)
-	if err != nil {
-		return "", false
-	}
-	for key, values := range query {
-		if len(values) != 1 || !grokQueryKeyPattern.MatchString(key) || !grokSafeQueryValue(values[0]) {
-			return "", false
+	for i := 0; i < len(value); i++ {
+		if grokVerificationUnreserved(value[i]) {
+			continue
 		}
-		if key == "user_code" && userCode != "" && values[0] != userCode {
-			return "", false
+		if value[i] != '%' || i+2 >= len(value) {
+			return false
 		}
+		hi, okHi := grokHexDigit(value[i+1])
+		lo, okLo := grokHexDigit(value[i+2])
+		if !okHi || !okLo || hi<<4|lo < 0x20 || hi<<4|lo > 0x7e {
+			return false
+		}
+		i += 2
 	}
-	return u.String(), true
+	return true
 }
 
-// grokCarriesUserCode reports whether a validated verification URL embeds the
-// given user code, as a complete verification URI must.
+// GrokVerificationURL validates a device verification address. The address is a
+// plain string rule, not a parsed URL, so the Go server, the renderer and the
+// native host (which share apps/delidev/src/grok-url-validation-fixtures.json)
+// cannot disagree about normalization:
+//
+//   - at most 2048 bytes of printable ASCII (0x21 to 0x7e);
+//   - exactly the prefix https://accounts.x.ai: no port, credentials, other case
+//     of the host or backslash;
+//   - one or more non-empty path segments of [A-Za-z0-9._~-], none of them a dot
+//     segment, with an optional trailing slash (the page itself is the provider's
+//     choice, RFC 8628 leaves it open);
+//   - no fragment; an optional query that is never empty, of key=value pairs
+//     joined by &, where each key matches [A-Za-z0-9_.-]{1,64} and appears once,
+//     and each value has at most 256 bytes of [A-Za-z0-9._~-] and well-formed
+//     percent escapes of printable ASCII;
+//   - a user_code pair, when present, matches [A-Z0-9-]{4,32} and, when userCode
+//     is given, equals it.
+//
+// The accepted string is returned unchanged.
+func GrokVerificationURL(raw, userCode string) (string, bool) {
+	const prefix = "https://" + GrokVerificationHost
+	if len(raw) > grokVerificationMax || !strings.HasPrefix(raw, prefix) {
+		return "", false
+	}
+	for i := 0; i < len(raw); i++ {
+		if raw[i] < 0x21 || raw[i] > 0x7e {
+			return "", false
+		}
+	}
+	path, query, hasQuery := strings.Cut(raw[len(prefix):], "?")
+	if !grokVerificationPath(path) {
+		return "", false
+	}
+	if !hasQuery {
+		return raw, true
+	}
+	if query == "" {
+		return "", false
+	}
+	seen := map[string]bool{}
+	for _, pair := range strings.Split(query, "&") {
+		key, value, ok := strings.Cut(pair, "=")
+		if !ok || !grokQueryKeyPattern.MatchString(key) || seen[key] || !grokVerificationQueryValue(value) {
+			return "", false
+		}
+		seen[key] = true
+		if key == "user_code" && (!GrokUserCodeValid(value) || userCode != "" && value != userCode) {
+			return "", false
+		}
+	}
+	return raw, true
+}
+
+// grokCarriesUserCode reports whether a validated verification address embeds
+// the given user code, as a complete verification URI must.
 func grokCarriesUserCode(verified, userCode string) bool {
-	u, err := url.Parse(verified)
-	return err == nil && u.Query().Get("user_code") == userCode
+	_, query, _ := strings.Cut(verified, "?")
+	for _, pair := range strings.Split(query, "&") {
+		if key, value, ok := strings.Cut(pair, "="); ok && key == "user_code" && value == userCode {
+			return true
+		}
+	}
+	return false
 }
 
 // GrokDeviceGrant is one device authorization. The device code is secret and

@@ -82,15 +82,16 @@ native receiver plus authenticated Connect forwarding. Device authorization
 honors RFC 8628 pending, slow-down, denial and expiry; see
 [Server-owned device login](#server-owned-device-login). The desktop opens the
 device verification page only through the closed native
-`grok-device-authorization-open` action (fixed `https://accounts.x.ai/oauth2/device`
-with at most one `user_code` query value), which uses the system default browser
-and never the General/Local link destinations. Without a `user_code` the URL has
-no query at all: an empty `?` or `#` delimiter is rejected. The renderer
-predicates (`grokLoginURL`, `grokDeviceVerification`) and the native validators
-(`validate_grok_subscription_authorization`, `validate_grok_device_authorization`)
-run the shared case table `apps/delidev/src/grok-url-validation-fixtures.json`
-in both TypeScript and Rust tests, so the two layers cannot disagree; the
-renderer additionally requires the URL's `user_code` to equal the displayed code.
+`grok-device-authorization-open` action, which uses the system default browser
+and never the General/Local link destinations. The destination is closed by
+[the verification address rule](#verification-address-rule): the server, the
+renderer predicate (`grokDeviceVerification`) and the native validator
+(`validate_grok_device_authorization`) accept exactly the same addresses, so an
+address the server publishes is always one the desktop can open. The browser
+authorization predicate (`grokLoginURL`) and its native validator
+(`validate_grok_subscription_authorization`) run their own shared table. Both
+tables live in `apps/delidev/src/grok-url-validation-fixtures.json` and run in
+the Go, TypeScript and Rust tests, so the layers cannot disagree.
 
 ### Capability advertisement table
 
@@ -232,12 +233,10 @@ id with the other method is a conflict.
   such as `\/`, `\"`, `\\` or `\u0041` is accepted, kept as owned bytes and sent
   percent-encoded), a
   `user_code` matching `[A-Z0-9-]{4,32}` (for example `XXXX-XXXX`), a
-  `verification_uri_complete` and/or `verification_uri` (https, host exactly
-  `accounts.x.ai`, an absolute path, no credentials or fragment; a query may carry
-  the provider's own routing or tracking parameters, each key a short token used
-  once and each value short printable text, and the complete URI must carry a
-  `user_code` equal to the user code, which is preserved with the safe
-  parameters), a positive `expires_in` (at most 24 hours) and an optional
+  `verification_uri_complete` and/or `verification_uri` (each held to the
+  [verification address rule](#verification-address-rule); the complete URI must
+  carry a `user_code` equal to the user code, and its safe parameters are
+  preserved), a positive `expires_in` (at most 24 hours) and an optional
   `interval` of 1 to 60 seconds (default 5). Member names are case-sensitive: a
   name that equals one of these members only when case is ignored is an alias
   and refuses the whole response, as in the
@@ -249,8 +248,9 @@ id with the other method is a conflict.
 - **Presentation.** The verification URL and user code are returned only through
   the transient `GetSubscriptionProgress` `url` and `user_code` fields while the
   operation is waiting. `validServerLoginProgress` is service-aware: for Grok it
-  accepts only an https `accounts.x.ai` URL without credentials or fragment plus
-  a user code of the existing `[A-Z0-9-]{4,32}` shape. The URL, user code and
+  accepts only an address that satisfies the
+  [verification address rule](#verification-address-rule) plus a user code of
+  the existing `[A-Z0-9-]{4,32}` shape. The URL, user code and
   device code never reach logs, documents, events or `grok_diagnostic`; the
   account document records only the closed login method (`LoginMethod` device
   code), the exchange claim and the outcome. Settled operations return neither
@@ -297,6 +297,32 @@ id with the other method is a conflict.
   to compare), reads userinfo and maps the bundle with `BuildGrokBundle`, so both
   methods yield identical bundles for the same token response. Sealing,
   duplicate-identity handling and publication are unchanged.
+
+#### Verification address rule
+
+The device verification address (`verification_uri_complete`, else
+`verification_uri`) is validated as a plain string, not as a parsed URL, so no
+normalization can make the layers disagree. The Go server
+(`subscription.GrokVerificationURL`, which also guards the transient progress
+response), the renderer (`grokDeviceVerification`) and the native host
+(`validate_grok_device_authorization`) implement the same rule:
+
+| Part        | Rule                                                                                                                                                                                                          |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Length      | At most 2048 bytes, all printable ASCII (0x21 to 0x7e)                                                                                                                                                        |
+| Origin      | Exactly the prefix `https://accounts.x.ai`: no port, credentials, host case difference, trailing dot or backslash                                                                                             |
+| Path        | One or more non-empty segments of `[A-Za-z0-9._~-]`, each introduced by a slash, none of them `.` or `..`, with an optional trailing slash; the page itself is the provider's choice and no escape is allowed |
+| Fragment    | Never                                                                                                                                                                                                         |
+| Query       | Optional and never empty: `key=value` pairs joined by `&`, each key `[A-Za-z0-9_.-]{1,64}` used once, each value at most 256 bytes of `[A-Za-z0-9._~-]` and well-formed percent escapes of printable ASCII    |
+| `user_code` | When present, `[A-Z0-9-]{4,32}`; the server and the renderer also require it to equal the displayed code, and a complete verification URI must carry it                                                       |
+
+The server publishes an address unchanged, only after it passes the rule, so the
+renderer pins the first valid pair for the whole login. The native host does not
+receive the displayed code, so it checks only the closed destination.
+`TestGrokVerificationURLMatchesTheSharedDesktopTable` (Go), the shared-table
+tests in `grok-subscription-login.test.tsx` and
+`device_validator_matches_the_shared_url_table` (Rust) run every row of the
+`deviceVerification` table, which states each layer's expected result.
 
 #### Durable operation reads
 

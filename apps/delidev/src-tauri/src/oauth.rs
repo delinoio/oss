@@ -3066,8 +3066,8 @@ fn begin_grok_subscription_for(
     })
 }
 
-const GROK_DEVICE_HOST: &str = "accounts.x.ai";
-const GROK_DEVICE_PATH: &str = "/oauth2/device";
+const GROK_DEVICE_ADDRESS_PREFIX: &str = "https://accounts.x.ai";
+const GROK_DEVICE_ADDRESS_MAX: usize = 2048;
 const GROK_DEVICE_CODE_PARAMETER: &str = "user_code";
 
 fn grok_device_user_code(value: &str) -> bool {
@@ -3077,38 +3077,106 @@ fn grok_device_user_code(value: &str) -> bool {
             .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'-')
 }
 
-// The device verification address is the fixed xAI page with, at most, one
-// `user_code` parameter. The renderer additionally pins it to the displayed
-// code; native only has to keep the destination closed.
+fn grok_device_unreserved(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~')
+}
+
+// One or more non-empty path segments of unreserved characters, none of them a
+// dot segment, with an optional trailing slash.
+fn grok_device_path(path: &str) -> bool {
+    let trimmed = path.strip_suffix('/').unwrap_or(path);
+    let Some(segments) = trimmed.strip_prefix('/') else {
+        return false;
+    };
+    !segments.is_empty()
+        && segments.split('/').all(|segment| {
+            !segment.is_empty()
+                && segment != "."
+                && segment != ".."
+                && segment.bytes().all(grok_device_unreserved)
+        })
+}
+
+// At most 256 bytes of unreserved characters and well-formed percent escapes of
+// printable ASCII.
+fn grok_device_query_value(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() > 256 {
+        return false;
+    }
+    let mut i = 0;
+    while i < bytes.len() {
+        if grok_device_unreserved(bytes[i]) {
+            i += 1;
+            continue;
+        }
+        if bytes[i] != b'%' || i + 2 >= bytes.len() {
+            return false;
+        }
+        let decoded = std::str::from_utf8(&bytes[i + 1..i + 3])
+            .ok()
+            .filter(|hex| hex.bytes().all(|b| b.is_ascii_hexdigit()))
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match decoded {
+            Some(byte) if (0x20..=0x7e).contains(&byte) => i += 3,
+            _ => return false,
+        }
+    }
+    true
+}
+
+// The device verification address rule, shared with the Go server and the
+// renderer through `src/grok-url-validation-fixtures.json`. It is a plain
+// string rule, not a parsed URL, so no normalization can make the layers
+// disagree:
+//   - at most 2048 printable ASCII bytes (0x21 to 0x7e);
+//   - exactly the prefix `https://accounts.x.ai` (no port, credentials or host
+//     case difference);
+//   - one or more non-empty path segments of `[A-Za-z0-9._~-]`, none of them a
+//     dot segment, with an optional trailing slash;
+//   - no fragment; an optional, never empty query of `key=value` pairs joined
+//     by `&`: a key matches `[A-Za-z0-9_.-]{1,64}` and appears once, a value is
+//     bounded to 256 bytes of unreserved characters and well-formed percent
+//     escapes of printable ASCII;
+//   - a `user_code` pair, when present, matches `[A-Z0-9-]{4,32}`.
+// The renderer additionally pins an embedded `user_code` to the displayed code;
+// native only has to keep the destination closed.
 fn validate_grok_device_authorization(raw: &str) -> Result<(), NativeFailure> {
     let invalid = NativeFailure::InvalidInput;
-    if raw.len() > 512 || !raw.bytes().all(|b| (33..=126).contains(&b)) {
+    if raw.len() > GROK_DEVICE_ADDRESS_MAX || !raw.bytes().all(|b| (33..=126).contains(&b)) {
         return Err(invalid);
     }
-    let url = url::Url::parse(raw).map_err(|_| invalid)?;
-    if url.scheme() != "https"
-        || url.host_str() != Some(GROK_DEVICE_HOST)
-        || url.port().is_some()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.path() != GROK_DEVICE_PATH
-        || url.fragment().is_some()
-        || url.as_str() != raw
-    {
+    let rest = raw
+        .strip_prefix(GROK_DEVICE_ADDRESS_PREFIX)
+        .ok_or(invalid)?;
+    let (path, query) = match rest.split_once('?') {
+        Some((path, query)) => (path, Some(query)),
+        None => (rest, None),
+    };
+    if !grok_device_path(path) {
         return Err(invalid);
     }
-    if url.query().is_none() {
+    let Some(query) = query else {
         return Ok(());
+    };
+    if query.is_empty() {
+        return Err(invalid);
     }
-    let mut pairs = url.query_pairs();
-    match (pairs.next(), pairs.next()) {
-        (Some((key, value)), None)
-            if key == GROK_DEVICE_CODE_PARAMETER && grok_device_user_code(&value) =>
-        {
-            Ok(())
+    let mut seen = std::collections::HashSet::new();
+    for pair in query.split('&') {
+        let (key, value) = pair.split_once('=').ok_or(invalid)?;
+        let key_valid = (1..=64).contains(&key.len())
+            && key
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'));
+        if !key_valid || !seen.insert(key) || !grok_device_query_value(value) {
+            return Err(invalid);
         }
-        _ => Err(invalid),
+        if key == GROK_DEVICE_CODE_PARAMETER && !grok_device_user_code(value) {
+            return Err(invalid);
+        }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -3247,6 +3315,8 @@ mod grok_subscription_tests {
         url: String,
         native: bool,
     }
+    // `server` and `renderer` are read by the other layers' tests of the same
+    // table; this host only checks `native`.
 
     #[derive(serde::Deserialize)]
     struct AuthorizationCase {
@@ -3298,11 +3368,18 @@ mod grok_subscription_tests {
     const DEVICE_WITH_CODE: &str = "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234";
 
     #[test]
-    fn device_validator_accepts_only_the_fixed_verification_page() {
+    fn device_validator_accepts_only_closed_accounts_addresses() {
         for accepted in [
             DEVICE_PAGE,
             DEVICE_WITH_CODE,
             "https://accounts.x.ai/oauth2/device?user_code=AB12",
+            // The provider chooses the absolute path and may add safe routing
+            // parameters (see the shared table).
+            "https://accounts.x.ai/oauth2/authorize",
+            "https://accounts.x.ai/oauth2/device/",
+            "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&source=cli",
+            "https://accounts.x.ai/oauth2/device?x=1",
+            "https://accounts.x.ai/oauth2/device?next=https%3A%2F%2Faccounts.x.ai%2Fx",
         ] {
             assert!(
                 validate_grok_device_authorization(accepted).is_ok(),
@@ -3316,8 +3393,6 @@ mod grok_subscription_tests {
             "https://accounts.x.ai.evil.test/oauth2/device",
             "https://evil.test/oauth2/device?user_code=ABCD-1234",
             "http://accounts.x.ai/oauth2/device",
-            "https://accounts.x.ai/oauth2/authorize",
-            "https://accounts.x.ai/oauth2/device/",
             "https://accounts.x.ai:8443/oauth2/device",
             "https://user@accounts.x.ai/oauth2/device",
             "https://user:secret@accounts.x.ai/oauth2/device",
@@ -3327,9 +3402,10 @@ mod grok_subscription_tests {
             "https://accounts.x.ai/oauth2/device?user_code=abcd-1234",
             "https://accounts.x.ai/oauth2/device?user_code=AB",
             "https://accounts.x.ai/oauth2/device?next=https://evil.test",
-            "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&next=1",
             "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&user_code=ABCD-1234",
-            "https://accounts.x.ai/oauth2/device?x=1",
+            "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&flag",
+            "https://accounts.x.ai/oauth2/device?a=%zz",
+            "https://accounts.x.ai/../device",
             "file:///etc/passwd",
             "https://accounts.x.ai/oauth2/device ",
             "not a url",
@@ -3430,7 +3506,7 @@ mod grok_subscription_tests {
             (
                 "",
                 operation.as_str(),
-                "https://accounts.x.ai/oauth2/device?x=1",
+                "https://accounts.x.ai/oauth2/device?next=https://evil.test",
             ),
             ("", operation.as_str(), ""),
             ("unexpected-generation", operation.as_str(), DEVICE_PAGE),
