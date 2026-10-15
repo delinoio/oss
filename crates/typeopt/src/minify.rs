@@ -274,25 +274,28 @@ impl VisitMut for RemoveKeepCalls {
     }
 
     fn visit_mut_expr(&mut self, expression: &mut Expr) {
-        expression.visit_mut_children_with(self);
         if let Expr::Seq(sequence) = expression {
+            // Elements are walked here rather than through the children
+            // visitor, which would turn an element keep call into `void 0`
+            // before its position in the sequence is known.
             let last = sequence.exprs.len().saturating_sub(1);
             let mut exprs = Vec::with_capacity(sequence.exprs.len());
             for (index, mut element) in sequence.exprs.drain(..).enumerate() {
                 if let Expr::Call(call) = &mut *element
                     && is_keep_call(&Expr::Call(call.clone()))
                 {
-                    exprs.extend(keep_call_effects(call));
+                    let mut effects = keep_call_effects(call);
+                    for effect in &mut effects {
+                        effect.visit_mut_with(self);
+                    }
+                    exprs.extend(effects);
                     // A keep call yields `undefined`, which the sequence
                     // still yields when it was the last element.
                     if index == last {
-                        exprs.push(Box::new(Expr::Unary(swc_core::ecma::ast::UnaryExpr {
-                            span: Default::default(),
-                            op: swc_core::ecma::ast::UnaryOp::Void,
-                            arg: Box::new(Expr::Lit(swc_core::ecma::ast::Lit::Num(0.0.into()))),
-                        })));
+                        exprs.push(void_zero());
                     }
                 } else {
+                    element.visit_mut_with(self);
                     exprs.push(element);
                 }
             }
@@ -300,8 +303,47 @@ impl VisitMut for RemoveKeepCalls {
             if sequence.exprs.len() == 1 {
                 *expression = *sequence.exprs.pop().unwrap();
             }
+            return;
         }
+        if let Expr::Call(call) = expression
+            && is_keep_call(&Expr::Call(call.clone()))
+        {
+            // The compressor can move a keep call into any expression
+            // position (an operand of `&&`, `||` or `??`, an arm of `?:`, a
+            // loop body). Its value is `undefined`, so it reduces to its
+            // effects followed by `void 0`.
+            let mut effects = keep_call_effects(call);
+            for effect in &mut effects {
+                effect.visit_mut_with(self);
+            }
+            *expression = match effects.len() {
+                0 => *void_zero(),
+                1 => Expr::Unary(swc_core::ecma::ast::UnaryExpr {
+                    span: Default::default(),
+                    op: swc_core::ecma::ast::UnaryOp::Void,
+                    arg: effects.pop().unwrap(),
+                }),
+                _ => {
+                    effects.push(void_zero());
+                    Expr::Seq(swc_core::ecma::ast::SeqExpr {
+                        span: Default::default(),
+                        exprs: effects,
+                    })
+                }
+            };
+            return;
+        }
+        expression.visit_mut_children_with(self);
     }
+}
+
+/// The expression `void 0`.
+fn void_zero() -> Box<Expr> {
+    Box::new(Expr::Unary(swc_core::ecma::ast::UnaryExpr {
+        span: Default::default(),
+        op: swc_core::ecma::ast::UnaryOp::Void,
+        arg: Box::new(Expr::Lit(swc_core::ecma::ast::Lit::Num(0.0.into()))),
+    }))
 }
 
 /// Counts keep calls that removal could not reach.
@@ -819,6 +861,110 @@ export {};
             run_module(input),
             "{}",
             minified.code
+        );
+    }
+
+    /// Asserts that `input` still minifies, leaves no keep call behind and
+    /// behaves the same.
+    fn assert_minified_equivalent(input: &str) {
+        let minified = minify_module(input).expect("minified");
+        assert!(!minified.code.contains(KEEP), "{}", minified.code);
+        assert_eq!(
+            run_module(&minified.code),
+            run_module(input),
+            "{}",
+            minified.code
+        );
+    }
+
+    #[test]
+    fn removes_keep_calls_in_logical_operands() {
+        assert_minified_equivalent(
+            "let f; if (globalThis.c === undefined) { f = () => 1; } console.log(f && f.name, f \
+             && f()); export {};",
+        );
+    }
+
+    #[test]
+    fn removes_keep_calls_in_return_sequences() {
+        assert_minified_equivalent(
+            "let f; function h(c) { if (c) { f = function () { return 1; }; } return f; } \
+             console.log(h(1).name, h(0).name); export {};",
+        );
+    }
+
+    #[test]
+    fn removes_keep_calls_in_conditional_arms() {
+        assert_minified_equivalent(
+            "let f; function h(c) { if (c) { f = () => 1; } else { console.log(\"no\"); } return \
+             f; } console.log(h(1).name); h(0); export {};",
+        );
+    }
+
+    #[test]
+    fn removes_keep_calls_in_or_operands_with_classes() {
+        assert_minified_equivalent(
+            "let f; function h(c) { if (!c) { f = class {}; } return f; } console.log(h(0).name); \
+             export {};",
+        );
+    }
+
+    #[test]
+    fn removes_keep_calls_in_loop_bodies() {
+        assert_minified_equivalent(
+            "let f; function h(n) { for (let i = 0; i < n; i++) { if (i) { f = () => i; } } \
+             return f; } console.log(h(3).name, h(3)()); export {};",
+        );
+    }
+
+    #[test]
+    fn removes_keep_calls_in_value_positions_with_effects() {
+        assert_minified_equivalent(
+            "let f; function h(c) { if (c) { f = () => 1; } } h(1); console.log(\"ok\"); export \
+             {};",
+        );
+    }
+
+    #[test]
+    fn replaces_expression_keep_calls_with_their_effects() {
+        fn rewrite(source: &str) -> String {
+            let cm: Lrc<SourceMap> = Default::default();
+            let file = cm.new_source_file(Lrc::new(FileName::Anon), source.to_owned());
+            let mut errors = Vec::new();
+            let mut module = parse_file_as_module(
+                &file,
+                Syntax::Es(EsSyntax::default()),
+                EsVersion::latest(),
+                None,
+                &mut errors,
+            )
+            .unwrap();
+            module.visit_mut_with(&mut RemoveKeepCalls);
+            // The production pipeline parenthesizes through the fixer.
+            module.visit_mut_with(&mut fixer(None));
+            let mut leftover = CountKeepCalls::default();
+            module.visit_with(&mut leftover);
+            assert_eq!(leftover.0, 0);
+            let mut output = Vec::new();
+            Emitter {
+                cfg: Config::default().with_minify(true),
+                cm: cm.clone(),
+                comments: None,
+                wr: JsWriter::new(cm, "\n", &mut output, None),
+            }
+            .emit_module(&module)
+            .unwrap();
+            String::from_utf8(output).unwrap()
+        }
+        assert_eq!(rewrite(&format!("a && {KEEP}(f);")), "a&&void 0;");
+        assert_eq!(rewrite(&format!("a && {KEEP}(f = 1);")), "a&&void(f=1);");
+        assert_eq!(
+            rewrite(&format!("x = a ? {KEEP}(f = 1, g(), h) : 2;")),
+            "x=a?(f=1,g(),void 0):2;"
+        );
+        assert_eq!(
+            rewrite(&format!("x = (a, {KEEP}(f = 1));")),
+            "x=(a,f=1,void 0);"
         );
     }
 

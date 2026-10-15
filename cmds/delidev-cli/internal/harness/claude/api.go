@@ -260,6 +260,7 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 		args = append(args, "--append-system-prompt-file="+path)
 	}
 	prepared := config.Process
+	prepared.SessionContext = config.OrdinaryTools.ProcessSession()
 	env = config.OrdinaryTools.Apply(env)
 	prepared.Args, prepared.Env, prepared.Cwd = args, env, workspace
 	prepared.ProtectedValues = config.ProtectedValues()
