@@ -93,7 +93,11 @@ it("selects one real exact route after response loss and exports a pending recip
     </TransportProvider>,
   );
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
-  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
+  expect(
+    screen
+      .getByRole("button", { name: "Network settings" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
   fireEvent.click(
     await screen.findByRole("button", { name: "New network profile" }),
   );

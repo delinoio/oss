@@ -1233,11 +1233,6 @@ function Shell({
                               <h2>
                                 {copy("App.yourSessionsInOnePlace_5dad94")}
                               </h2>
-                              <p>
-                                {copy(
-                                  "App.selectARetainedSessionOrStart_a9de9e",
-                                )}
-                              </p>
                               <Problem
                                 error={status.error}
                                 actions={

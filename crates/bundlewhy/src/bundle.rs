@@ -23,6 +23,7 @@ use crate::{
 pub const BUNDLE_FILE: &str = "analysis.json";
 pub const INCOMPLETE_MARKER: &str = "INCOMPLETE";
 pub const SUMMARY_FILE: &str = "run-summary.json";
+pub const COMPLETION_FILE: &str = "completion.json";
 const MAX_SUMMARY_BYTES: u64 = 64 * 1024;
 #[cfg(not(test))]
 const MAX_BUNDLE_BYTES: u64 = 512 * 1024 * 1024;
@@ -49,6 +50,17 @@ pub struct ResultBundle {
     /// checks that the file still exists.
     #[serde(default)]
     pub existence_relative: BTreeMap<String, String>,
+}
+
+/// A small record written after the result bundle and summary are committed.
+/// Its write is outside the measured interval to avoid a self-referential
+/// duration, while the main result persistence is inside that interval.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Completion {
+    run_id: String,
+    duration_ms: u32,
+    finished_at: String,
 }
 
 /// Keeps a result within the loader's size limit. When source content makes
@@ -108,6 +120,8 @@ pub fn save(run_dir: &Path, bundle: &ResultBundle) -> BwResult<()> {
     // the old one first, commit the bundle, then publish the new summary.
     let summary_path = run_dir.join(SUMMARY_FILE);
     let _ = std::fs::remove_file(&summary_path);
+    // A replacement bundle must not retain timing for the previous contents.
+    let _ = std::fs::remove_file(run_dir.join(COMPLETION_FILE));
     let temporary = run_dir.join(format!("{BUNDLE_FILE}.tmp"));
     // std::fs::rename replaces an existing destination on every supported
     // platform, including Windows (MoveFileExW with replacement).
@@ -139,6 +153,47 @@ pub fn save(run_dir: &Path, bundle: &ResultBundle) -> BwResult<()> {
         tracing::warn!(%error, "run summary could not be written; listings will read the bundle");
         let _ = std::fs::remove_file(&summary_temporary);
         let _ = std::fs::remove_file(&summary_path);
+    }
+    Ok(())
+}
+
+pub fn save_completion(
+    run_dir: &Path,
+    run_id: &str,
+    duration_ms: u32,
+    finished_at: &str,
+) -> BwResult<()> {
+    use std::io::Write;
+
+    let completion = Completion {
+        run_id: run_id.to_owned(),
+        duration_ms,
+        finished_at: finished_at.to_owned(),
+    };
+    let bytes = serde_json::to_vec(&completion).map_err(|error| {
+        BwError::new(
+            ErrorCode::ResultInvalid,
+            format!("Could not serialize completion timing: {error}"),
+            "Report this as a bug.",
+        )
+    })?;
+    let temporary = run_dir.join(format!("{COMPLETION_FILE}.tmp"));
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .and_then(|mut file| file.write_all(&bytes))
+        .and_then(|()| std::fs::rename(&temporary, run_dir.join(COMPLETION_FILE)));
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(BwError::new(
+            ErrorCode::OutputDirInvalid,
+            format!(
+                "Could not write {}: {error}",
+                run_dir.join(COMPLETION_FILE).display()
+            ),
+            "Check that the output directory is writable and has free space.",
+        ));
     }
     Ok(())
 }
@@ -279,6 +334,12 @@ pub fn read_summary_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
         &mut std::io::Read::take(open_no_follow(path)?, MAX_SUMMARY_BYTES + 1),
         &mut bytes,
     )?;
+    if bytes.len() as u64 > MAX_SUMMARY_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "metadata file is too large",
+        ));
+    }
     Ok(bytes)
 }
 
@@ -335,6 +396,27 @@ pub fn load(run_dir: &Path) -> BwResult<ResultBundle> {
         ))
     })?;
     let mut bundle = parse(&bytes)?;
+    let completion_path = run_dir.join(COMPLETION_FILE);
+    match std::fs::symlink_metadata(&completion_path) {
+        Ok(_) => {
+            let bytes = read_summary_bytes(&completion_path)
+                .map_err(|error| invalid(format!("completion.json is invalid: {error}")))?;
+            let completion: Completion = serde_json::from_slice(&bytes)
+                .map_err(|error| invalid(format!("completion.json is invalid: {error}")))?;
+            if completion.run_id != bundle.analysis.run_id
+                || completion.duration_ms < bundle.analysis.duration_ms
+                || chrono::DateTime::parse_from_rfc3339(&completion.finished_at).is_err()
+            {
+                return Err(invalid("completion.json does not match the result bundle"));
+            }
+            bundle.analysis.duration_ms = completion.duration_ms;
+            bundle.analysis.finished_at = completion.finished_at;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // Bundles saved before completion.json use analysis.json timing.
+        }
+        Err(error) => return Err(invalid(format!("completion.json is inaccessible: {error}"))),
+    }
     let status = normalized_status(bundle.analysis.status, run_dir);
     if bundle.analysis.status == RunStatus::Running {
         bundle.analysis.problems.push(problem(
@@ -545,6 +627,48 @@ mod tests {
             project_relative: BTreeMap::new(),
             existence_relative: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn completed_at_legacy_bundle_uses_embedded_duration() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut legacy = bundle();
+        legacy.analysis.duration_ms = 123;
+        legacy.analysis.finished_at = "2026-10-14T09:00:00Z".to_owned();
+        save(dir.path(), &legacy).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded.analysis.duration_ms, 123);
+        assert_eq!(loaded.analysis.finished_at, legacy.analysis.finished_at);
+    }
+
+    #[test]
+    fn completed_at_rejects_timing_for_another_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let saved = bundle();
+        save(dir.path(), &saved).unwrap();
+        save_completion(
+            dir.path(),
+            &uuid::Uuid::now_v7().to_string(),
+            123,
+            "2026-10-14T09:00:00Z",
+        )
+        .unwrap();
+        assert_eq!(load(dir.path()).unwrap_err().code, ErrorCode::ResultInvalid);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn completed_at_rejects_symlinked_timing_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        save(dir.path(), &bundle()).unwrap();
+        std::fs::write(outside.path().join(COMPLETION_FILE), "{}").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join(COMPLETION_FILE),
+            dir.path().join(COMPLETION_FILE),
+        )
+        .unwrap();
+        assert_eq!(load(dir.path()).unwrap_err().code, ErrorCode::ResultInvalid);
     }
 
     #[test]

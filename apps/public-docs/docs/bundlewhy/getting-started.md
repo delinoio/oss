@@ -58,6 +58,8 @@ bundlewhy open ./bundlewhy-runs/<run-id>
 
 `open` validates the saved results and serves them in the local web UI. Add `--no-open` to skip opening the browser.
 
+For a completed run, the elapsed time includes saving the result bundle and attempting its optional summary. The live view, reopened run and exported report use the same recorded time. Older saved runs keep their original elapsed time.
+
 ## Export an HTML report
 
 ```sh
