@@ -2176,8 +2176,19 @@ mod tests {
     /// Runs the Vite fixture with `src/effects/register.js` declaring
     /// `exports` and the given hook value, and returns its finding.
     fn retained_with_exports(exports: &[&str], module_side_effects: &str) -> Diagnostic {
+        retained_with_declaration(exports, module_side_effects, None)
+    }
+
+    /// Like `retained_with_exports`, also setting the collected
+    /// `treeshake.moduleSideEffects` verdict when one is given.
+    fn retained_with_declaration(
+        exports: &[&str],
+        module_side_effects: &str,
+        treeshake_side_effects: Option<&str>,
+    ) -> Diagnostic {
         let exports: Vec<String> = exports.iter().map(|name| (*name).to_owned()).collect();
         let module_side_effects = module_side_effects.to_owned();
+        let treeshake_side_effects = treeshake_side_effects.map(str::to_owned);
         let fixture = run_fixture(BundlerChoice::Vite, |value| {
             for module in value["modules"].as_array_mut().unwrap() {
                 if module["id"]
@@ -2187,6 +2198,9 @@ mod tests {
                     module["exports"] = serde_json::json!(exports);
                     module["usedExports"] = serde_json::json!([]);
                     module["moduleSideEffects"] = serde_json::json!(module_side_effects);
+                    if let Some(option) = &treeshake_side_effects {
+                        module["treeshakeSideEffects"] = serde_json::json!(option);
+                    }
                 }
             }
         });
@@ -2287,6 +2301,43 @@ mod tests {
         assert_eq!(export_use_outcome(&analyzed), ConditionOutcome::Met);
         assert_eq!(analyzed.status, EvidenceStatus::Inferred);
         assert!(has_inferred_effect_evidence(&analyzed));
+    }
+
+    #[test]
+    fn vite_side_effect_retained_confirms_only_modules_without_exports() {
+        // (hook value, configured option verdict, whether the effective
+        // declaration keeps the module). Only a module that declares no export
+        // can be Confirmed; a module that declares exports stays Inferred with
+        // an Unknown export-use condition under every declaration.
+        for (hook, option, keeps) in [
+            ("no-treeshake", None, true),
+            ("null", Some("true"), true),
+            ("false", None, false),
+            ("true", None, false),
+            ("null", Some("false"), false),
+            ("null", Some("null"), false),
+        ] {
+            let case = format!("{hook} / {option:?}");
+            let without_exports = retained_with_declaration(&[], hook, option);
+            assert_eq!(
+                export_use_outcome(&without_exports),
+                ConditionOutcome::Met,
+                "{case}"
+            );
+            let expected = if keeps {
+                EvidenceStatus::Confirmed
+            } else {
+                EvidenceStatus::Inferred
+            };
+            assert_eq!(without_exports.status, expected, "{case}");
+            let with_exports = retained_with_declaration(&["default"], hook, option);
+            assert_eq!(
+                export_use_outcome(&with_exports),
+                ConditionOutcome::Unknown,
+                "{case}"
+            );
+            assert_eq!(with_exports.status, EvidenceStatus::Inferred, "{case}");
+        }
     }
 
     #[test]
