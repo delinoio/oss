@@ -131,10 +131,24 @@ func grokHealthAfterExecuteRecovery(a domain.Account, lease domain.SubscriptionL
 		return domain.AccountReady
 	}
 	switch {
-	case o.Action == domain.SubscriptionLogout && o.State == domain.SubscriptionFailed:
+	case o.Action == domain.SubscriptionLogout && grokQueuedOperationEndedWithoutEffect(*o):
 		return domain.AccountRevoked
-	case o.Action == domain.SubscriptionRefresh && (o.State == domain.SubscriptionFailed || st.Pending != nil && st.Pending.ID == o.ID):
+	case o.Action == domain.SubscriptionRefresh && (grokQueuedOperationEndedWithoutEffect(*o) || st.Pending != nil && st.Pending.ID == o.ID):
 		return grokHealthAfterQueuedFence(*o)
 	}
 	return domain.AccountReady
+}
+
+// grokQueuedOperationEndedWithoutEffect reports whether a logout or refresh that
+// was accepted behind a lease ended without touching the credential: it failed
+// (a restart or a pre-claim refusal settled it) or it was canceled (a revoked
+// initiating client settled it). Both leave the health its acceptance implied, so
+// every path that restores health after a fenced lease reads them the same way:
+//
+//	settled state | logout                               | refresh
+//	failed        | revoked (the accepted logout stands) | health before the refresh
+//	canceled      | revoked (the accepted logout stands) | health before the refresh
+//	succeeded     | not applicable (the account is disconnected)
+func grokQueuedOperationEndedWithoutEffect(o domain.ServerSubscriptionOperation) bool {
+	return o.State == domain.SubscriptionFailed || o.State == domain.SubscriptionCanceled
 }

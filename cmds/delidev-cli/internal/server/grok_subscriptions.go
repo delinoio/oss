@@ -468,7 +468,7 @@ func (s *Service) grokStaleLease(l *domain.SubscriptionLease) bool {
 //	none, or any other state or epoch   | any        | ready
 func grokHealthAfterStaleRelease(st *domain.SubscriptionState, lease domain.SubscriptionLease) domain.AccountHealth {
 	o := st.ServerOperation
-	if o != nil && o.Epoch == lease.Epoch && (o.State == domain.SubscriptionFailed || o.State == domain.SubscriptionCanceled) && (o.Action == domain.SubscriptionLogout || o.Action == domain.SubscriptionRefresh) {
+	if o != nil && o.Epoch == lease.Epoch && grokQueuedOperationEndedWithoutEffect(*o) && (o.Action == domain.SubscriptionLogout || o.Action == domain.SubscriptionRefresh) {
 		return grokHealthAfterQueuedFence(*o)
 	}
 	return domain.AccountReady

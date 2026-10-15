@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -159,6 +160,48 @@ func TestGrokExecuteRecoveryRestoresTheHealthOfAQueuedOperation(t *testing.T) {
 			}
 			q.requireQueued(t, q.op)
 			q.proceeds(t, kind.action)
+		})
+	}
+}
+
+// A client revocation settles the queued operation as canceled while the accepted
+// logout keeps readiness revoked. The original Worker's recovery Finish reads that
+// canceled operation exactly like a failed one: a logout stays revoked and a
+// refresh returns the health it was admitted under.
+func TestGrokExecuteRecoveryRestoresTheHealthOfACanceledQueuedOperation(t *testing.T) {
+	for _, kind := range queuedKinds {
+		t.Run(kind.name, func(t *testing.T) {
+			q := newQueuedExecution(t, kind.action)
+			if kind.action != logoutAction {
+				q.mutateServerOperation(func(a *domain.Account) { a.Subscription.ServerOperation.HealthBefore = domain.AccountExpired })
+			}
+			initiator := domain.NewID()
+			q.mutateServerOperation(func(a *domain.Account) {
+				a.Subscription.Pending.Actor = domain.Principal{Type: domain.ClientDevice, DeviceID: initiator}
+			})
+			if _, err := q.service.Store.Mutate(ownerContext(), domain.NewID(), "fixture.grok.revoke-initiator", nil, func(tx *store.Tx) (any, error) {
+				return nil, cancelQueuedSubscriptionInitiator(tx, initiator, q.service.subscriptionServerEpoch())
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := q.service.retainLostSubscriptionLeases(q.input.MachineID, q.instance, true); err != nil {
+				t.Fatal(err)
+			}
+			_, a := q.record()
+			if a.Subscription.ServerOperation.State != domain.SubscriptionCanceled || a.Subscription.Pending != nil || a.Subscription.Lease == nil || !a.Subscription.RecoveryRequired {
+				t.Fatal("the canceled operation with a fenced lease was not set up")
+			}
+			if _, err := q.finishWith(q.lease, domain.NewID(), nil, false, false, true); err != nil {
+				t.Fatalf("the original Worker's recovery was refused: %v", err)
+			}
+			_, a = q.record()
+			want := domain.AccountRevoked
+			if kind.action != logoutAction {
+				want = domain.AccountExpired
+			}
+			if a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != want {
+				t.Fatalf("recovery after a canceled %s left health %q, want %q", kind.name, a.Health, want)
+			}
 		})
 	}
 }
