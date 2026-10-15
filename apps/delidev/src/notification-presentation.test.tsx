@@ -19,6 +19,10 @@ import {
   NativeNotificationSettings,
   NotificationPresentation,
 } from "./notification-presentation";
+import {
+  PresentationOutcome,
+  PresentationPhase,
+} from "./presentation-diagnostics";
 import { Settings } from "./settings";
 import { NotificationSettings } from "./notification-settings";
 import { MutationIntents } from "./mutation";
@@ -433,15 +437,17 @@ it("shows desktop guidance without a native read or request in non-desktop execu
 });
 
 // The window renders no global status for any readiness, candidate or pump
-// failure, while the controller keeps its queries and native calls.
+// failure, while the controller keeps its queries and native calls. Each failure
+// leaves one bounded structured warning with only its stable phase and outcome.
 it.each([
-  "readiness-read",
-  "candidate-read",
-  "scope-begin",
-  "native-present",
+  ["readiness-read", PresentationPhase.NotificationReadiness],
+  ["candidate-read", PresentationPhase.NotificationCandidateRead],
+  ["scope-begin", PresentationPhase.NotificationScopeBegin],
+  ["native-present", PresentationPhase.NotificationPresent],
 ] as const)(
-  "renders no global status after a %s failure and keeps the controller behavior",
-  async (failure) => {
+  "renders no global status after a %s failure, keeps the controller behavior and warns once with its phase",
+  async (failure, phase) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const candidate = {
       inboxId: newRequestId(),
       sessionId: newRequestId(),
@@ -508,6 +514,20 @@ it.each([
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(view.container.textContent).toBe("");
+    expect(
+      warn.mock.calls.filter(
+        ([name]) => name === "delidev.presentation.outcome",
+      ),
+    ).toEqual([
+      [
+        "delidev.presentation.outcome",
+        { phase, outcome: PresentationOutcome.Failed },
+      ],
+    ]);
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(
+      /read failed|begin failed/,
+    );
+    warn.mockRestore();
     if (failure === "readiness-read") expect(list).not.toHaveBeenCalled();
     if (failure === "scope-begin") expect(claim).not.toHaveBeenCalled();
     if (failure === "native-present") expect(claim).toHaveBeenCalledTimes(1);

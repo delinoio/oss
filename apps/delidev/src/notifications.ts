@@ -7,6 +7,7 @@ import {
   newRequestId,
   type NotificationCandidate,
 } from "@delinoio/delidev-api-client";
+import { PresentationPhase } from "./presentation-diagnostics";
 
 export enum NativeNotificationPermission {
   NotDetermined = "not-determined",
@@ -118,14 +119,17 @@ export class NotificationPump {
   constructor(
     private readonly service: Service,
     private readonly bridge: NotificationBridge,
-    private readonly problem: (failed: boolean) => void,
+    private readonly problem: (
+      failed: boolean,
+      phase: PresentationPhase,
+    ) => void,
     private readonly changed: () => void,
   ) {}
   prepare() {
     if (this.closed) return;
     this.scope ??= this.bridge.begin().catch((error: unknown) => {
       this.scope = undefined;
-      this.problem(true);
+      this.problem(true, PresentationPhase.NotificationScopeBegin);
       throw error;
     });
     void this.scope.catch(() => {});
@@ -141,7 +145,7 @@ export class NotificationPump {
           !nativeKinds[v.kind],
       )
     ) {
-      this.problem(true);
+      this.problem(true, PresentationPhase.NotificationCandidateInvalid);
       return;
     }
     this.pending = values.map((v) => ({ ...v }));
@@ -156,11 +160,15 @@ export class NotificationPump {
   private async drain() {
     if (this.running) return;
     this.running = true;
+    // The scope phase reports its own failures; the generic pump phase covers
+    // only the remaining claim, presentation and report work.
+    let phase = PresentationPhase.NotificationScopeBegin;
     try {
       this.prepare();
       const scope = await this.scope;
       if (!scope || !isEntityId(scope))
         throw new Error("Native presentation scope is unavailable.");
+      phase = PresentationPhase.NotificationPump;
       while (!this.closed && this.pending) {
         const batch = this.pending;
         this.pending = undefined;
@@ -232,14 +240,14 @@ export class NotificationPump {
           if (failed) break;
         }
         if (!this.closed) {
-          this.problem(failed);
+          this.problem(failed, PresentationPhase.NotificationPresent);
           if (accepted && !failed) this.changed();
         }
       }
     } catch {
       if (!this.closed) {
         this.pending = undefined;
-        this.problem(true);
+        this.problem(true, phase);
       }
     } finally {
       this.running = false;

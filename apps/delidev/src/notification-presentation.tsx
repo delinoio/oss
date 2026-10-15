@@ -21,6 +21,10 @@ import {
   notificationReadiness,
   notificationReady,
 } from "./notifications";
+import {
+  PresentationFailureLog,
+  PresentationPhase,
+} from "./presentation-diagnostics";
 import { useSettingsOpening } from "./settings-lifetime";
 
 const readinessKey = ["native-notification-readiness"] as const;
@@ -42,6 +46,14 @@ function useReadiness(active = true) {
   });
 }
 
+// A completed presentation batch proves that these earlier pump failures ended.
+const pumpPhases = [
+  PresentationPhase.NotificationScopeBegin,
+  PresentationPhase.NotificationCandidateInvalid,
+  PresentationPhase.NotificationPresent,
+  PresentationPhase.NotificationPump,
+] as const;
+
 export function NotificationPresentation() {
   const enabled = isTauri();
   const transport = useTransport();
@@ -62,6 +74,18 @@ export function NotificationPresentation() {
     },
   );
   const pump = useRef<NotificationPump>(undefined);
+  // The window renders no status for these failures, so the warnings below are
+  // the only renderer-side evidence. One log belongs to one connection.
+  const failures = useMemo(() => new PresentationFailureLog(), [service]);
+  useEffect(() => {
+    failures.report(PresentationPhase.NotificationReadiness, readiness.isError);
+  }, [failures, readiness.isError]);
+  useEffect(() => {
+    failures.report(
+      PresentationPhase.NotificationCandidateRead,
+      candidates.isError,
+    );
+  }, [failures, candidates.isError]);
   // Keep the native scope for the lifetime of this connection. Permission polls
   // must not replace callbacks for already submitted notifications.
   useEffect(() => {
@@ -74,8 +98,9 @@ export function NotificationPresentation() {
         present: (scope, notice) =>
           invoke("present_notification", { scope, notice }),
       },
-      () => {
-        // The window shows no global status for notification pump failures.
+      (failed, phase) => {
+        if (failed) failures.failed(phase);
+        else pumpPhases.forEach((value) => failures.recovered(value));
       },
       () => {
         void candidates.refetch();
@@ -87,7 +112,7 @@ export function NotificationPresentation() {
       value.close();
       if (pump.current === value) pump.current = undefined;
     };
-  }, [enabled, service, candidates.refetch]);
+  }, [enabled, service, failures, candidates.refetch]);
   useEffect(() => {
     if (ready && !candidates.isError && candidates.data)
       pump.current?.update(candidates.data.candidates);

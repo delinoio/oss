@@ -20,6 +20,7 @@ import {
   notificationReadiness,
   notificationReady,
 } from "./notifications";
+import { PresentationPhase } from "./presentation-diagnostics";
 
 function fixture() {
   const candidate = create(NotificationCandidateSchema, {
@@ -114,7 +115,12 @@ it.each(["replayed", "mismatched"])(
       }),
     );
     value.pump.update([value.candidate]);
-    await vi.waitFor(() => expect(value.problem).toHaveBeenCalledWith(true));
+    await vi.waitFor(() =>
+      expect(value.problem).toHaveBeenCalledWith(
+        true,
+        PresentationPhase.NotificationPump,
+      ),
+    );
     expect(value.bridge.present).not.toHaveBeenCalled();
     expect(value.report).not.toHaveBeenCalled();
     value.pump.close();
@@ -127,7 +133,12 @@ it("retains an uncertain server reservation after a lost acknowledgment without 
     throw new ConnectError("Lost acknowledgment", Code.Unavailable);
   });
   value.pump.update([value.candidate]);
-  await vi.waitFor(() => expect(value.problem).toHaveBeenCalledWith(true));
+  await vi.waitFor(() =>
+    expect(value.problem).toHaveBeenCalledWith(
+      true,
+      PresentationPhase.NotificationPump,
+    ),
+  );
   expect(value.claim).toHaveBeenCalledTimes(1);
   expect(value.bridge.present).not.toHaveBeenCalled();
   expect(value.changed).not.toHaveBeenCalled();
@@ -143,7 +154,12 @@ it.each([Result.Denied, Result.Failed, Result.Uncertain])(
       value.candidate,
       { ...value.candidate, inboxId: newRequestId() },
     ]);
-    await vi.waitFor(() => expect(value.problem).toHaveBeenCalledWith(true));
+    await vi.waitFor(() =>
+      expect(value.problem).toHaveBeenCalledWith(
+        true,
+        PresentationPhase.NotificationPresent,
+      ),
+    );
     expect(value.claim).toHaveBeenCalledTimes(1);
     expect(value.report).toHaveBeenCalledTimes(1);
     expect(value.changed).not.toHaveBeenCalled();
@@ -157,7 +173,12 @@ it("does not repeat a submitted notice when metadata reporting fails", async () 
     throw new ConnectError("Lost report", Code.Unavailable);
   });
   value.pump.update([value.candidate]);
-  await vi.waitFor(() => expect(value.problem).toHaveBeenCalledWith(true));
+  await vi.waitFor(() =>
+    expect(value.problem).toHaveBeenCalledWith(
+      true,
+      PresentationPhase.NotificationPump,
+    ),
+  );
   value.pump.update([value.candidate]);
   await vi.waitFor(() => expect(value.changed).toHaveBeenCalledTimes(1));
   expect(value.bridge.present).toHaveBeenCalledTimes(1);
@@ -200,10 +221,33 @@ it("cancels outstanding connection work and cannot display after disposal", asyn
   expect(value.problem).not.toHaveBeenCalled();
 });
 
+it("reports a native scope initialization failure by phase and recovers on the next refresh", async () => {
+  const value = fixture();
+  value.bridge.begin.mockRejectedValueOnce(new Error("private native detail"));
+  value.pump.prepare();
+  await vi.waitFor(() =>
+    expect(value.problem).toHaveBeenCalledWith(
+      true,
+      PresentationPhase.NotificationScopeBegin,
+    ),
+  );
+  expect(JSON.stringify(value.problem.mock.calls)).not.toContain("private");
+  value.pump.update([value.candidate]);
+  await vi.waitFor(() => expect(value.changed).toHaveBeenCalledTimes(1));
+  expect(value.problem).toHaveBeenLastCalledWith(
+    false,
+    PresentationPhase.NotificationPresent,
+  );
+  value.pump.close();
+});
+
 it("rejects oversized pages before native initialization and separates Linux service availability from permission", () => {
   const value = fixture();
   value.pump.update(Array.from({ length: 51 }, () => value.candidate));
-  expect(value.problem).toHaveBeenCalledWith(true);
+  expect(value.problem).toHaveBeenCalledWith(
+    true,
+    PresentationPhase.NotificationCandidateInvalid,
+  );
   expect(value.bridge.begin).not.toHaveBeenCalled();
   expect(
     notificationReady(

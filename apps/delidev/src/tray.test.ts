@@ -9,6 +9,7 @@ import {
   UsageCoverage,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
+import { PresentationPhase } from "./presentation-diagnostics";
 import {
   TrayPublisher,
   TrayQuotaState,
@@ -169,6 +170,31 @@ it("serializes publication, coalesces refreshes and clears only the original sco
   expect(bridge.begin).toHaveBeenCalledTimes(1);
 });
 
+it.each([
+  ["begin", PresentationPhase.TrayBegin],
+  ["publish", PresentationPhase.TrayPublish],
+] as const)(
+  "reports a native tray %s failure by phase without raw error text",
+  async (failure, phase) => {
+    const problem = vi.fn();
+    const bridge = {
+      begin: vi.fn(async () => {
+        if (failure === "begin") throw new Error("private native detail");
+        return "scope";
+      }),
+      publish: vi.fn(async () => {
+        if (failure === "publish") throw new Error("private native detail");
+      }),
+    };
+    const publisher = new TrayPublisher(bridge, problem);
+    publisher.update(unavailableTray());
+    await vi.waitFor(() => expect(problem).toHaveBeenCalledWith(true, phase));
+    expect(problem).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(problem.mock.calls)).not.toContain("private");
+    publisher.close();
+  },
+);
+
 it("recovers presentation initialization on a later refresh without replaying product work", async () => {
   const problem = vi.fn();
   const bridge = {
@@ -180,7 +206,9 @@ it("recovers presentation initialization on a later refresh without replaying pr
   };
   const publisher = new TrayPublisher(bridge, problem);
   publisher.update(unavailableTray());
-  await vi.waitFor(() => expect(problem).toHaveBeenCalledWith(true));
+  await vi.waitFor(() =>
+    expect(problem).toHaveBeenCalledWith(true, PresentationPhase.TrayBegin),
+  );
   publisher.update(traySummary(overview(), false, undefined, undefined));
   await vi.waitFor(() => expect(bridge.publish).toHaveBeenCalledOnce());
   expect(bridge.publish.mock.calls[0]?.length).toBe(3);

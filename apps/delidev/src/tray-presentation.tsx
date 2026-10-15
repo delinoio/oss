@@ -10,6 +10,10 @@ import {
   isEntityId,
 } from "@delinoio/delidev-api-client";
 import {
+  PresentationFailureLog,
+  PresentationPhase,
+} from "./presentation-diagnostics";
+import {
   TrayDestination,
   TrayPublisher,
   traySummary,
@@ -68,14 +72,23 @@ export function TrayPresentation({
   useEffect(() => {
     if (!enabled) return;
     let canceled = false;
+    // The window renders no status for tray failures, so these warnings are the
+    // only renderer-side evidence. One log belongs to one tray lifetime.
+    const failures = new PresentationFailureLog();
     const value = new TrayPublisher(
       {
         begin: () => invoke("begin_tray"),
         publish: (scope, revision, summary) =>
           invoke("publish_tray", { scope, revision, summary }),
       },
-      () => {
-        // The window shows no global status for tray publication state.
+      (failed, phase) => {
+        if (canceled) return;
+        if (failed) failures.failed(phase);
+        else {
+          // A completed publication proves that the scope exists.
+          failures.recovered(PresentationPhase.TrayBegin);
+          failures.recovered(PresentationPhase.TrayPublish);
+        }
       },
     );
     publisher.current = value;
@@ -117,8 +130,10 @@ export function TrayPresentation({
             await invoke("acknowledge_tray_action", { id: action.id });
           }
           retries = 0;
+          if (!canceled) failures.recovered(PresentationPhase.TrayActionRead);
         } catch {
           if (!canceled) {
+            failures.failed(PresentationPhase.TrayActionRead);
             // A concurrent native label publication can briefly return Busy.
             // Retry only this retained read/idempotent acknowledgment, never a
             // product mutation or a new notification display.
@@ -147,8 +162,9 @@ export function TrayPresentation({
         }
       })
       .catch(() => {
-        // Without the activation listener the tray still publishes; the
-        // window shows no global status for the missing listener.
+        // Without the activation listener the tray still publishes.
+        if (!canceled)
+          failures.failed(PresentationPhase.TrayActivationListener);
       });
     return () => {
       canceled = true;

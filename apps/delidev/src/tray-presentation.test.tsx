@@ -21,6 +21,10 @@ import {
 } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { encode } from "./documents";
+import {
+  PresentationOutcome,
+  PresentationPhase,
+} from "./presentation-diagnostics";
 
 const native = vi.hoisted(() => ({
   callbacks: new Set<() => void>(),
@@ -244,14 +248,17 @@ it("opens the native-selected view without sending work or losing the session dr
 }, 15000);
 
 // The window renders no global status for tray publication, activation listener
-// or retained action failures, and the tray effects keep running.
+// or retained action failures, and the tray effects keep running. Each failure
+// leaves one bounded structured warning with only its stable phase and outcome.
 it.each([
-  ["publish_tray", "publication"],
-  ["read_tray_action", "action read"],
-  ["listen", "activation listener"],
+  ["begin_tray", PresentationPhase.TrayBegin],
+  ["publish_tray", PresentationPhase.TrayPublish],
+  ["read_tray_action", PresentationPhase.TrayActionRead],
+  ["listen", PresentationPhase.TrayActivationListener],
 ] as const)(
-  "renders no global status after a tray %s failure",
-  async (failure, _label) => {
+  "renders no global status after a tray %s failure and warns once with its phase",
+  async (failure, phase) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     native.failing.clear();
     native.hanging.clear();
     native.listenFails = failure === "listen";
@@ -310,12 +317,25 @@ it.each([
         await new Promise((resolve) => setTimeout(resolve, 50));
       });
       observer.disconnect();
+      const records = warn.mock.calls.filter(
+        ([name]) => name === "delidev.presentation.outcome",
+      );
+      expect(records).toEqual([
+        [
+          "delidev.presentation.outcome",
+          { phase, outcome: PresentationOutcome.Failed },
+        ],
+      ]);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(
+        `${failure} failed`,
+      );
       expect(everShown).toBe(false);
       expect(screen.queryByText(/Tray status is unavailable/)).toBeNull();
       expect(screen.queryByRole("status")).toBeNull();
       expect(view.container.querySelector("main [role='alert']")).toBeNull();
       view.unmount();
     } finally {
+      warn.mockRestore();
       native.failing.clear();
       native.hanging.clear();
       native.listenFails = false;

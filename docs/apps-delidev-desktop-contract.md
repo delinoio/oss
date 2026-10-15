@@ -1640,6 +1640,36 @@ Permission reads have a five-second deadline and never prompt. Only the explicit
 
 Native status uses a connection-scoped React Query cache and 30-second reads. The product window renders no status text for a readiness, candidate or presentation-pump failure; requests remain in the inbox and the Settings notification status keeps the truthful native availability. Disabled/unavailable permission does not claim candidates. Settings explicitly distinguishes unrequested permission, denial, bundle/action/service/capacity failures and Linux service availability. API submission, platform permission and actual displayed/seen notifications are separate evidence. No browser notification API, network broker, arbitrary native payload or OS-permission request from a timer is allowed. Component tests, cross compilation and native host initialization do not establish real notification acceptance on any platform.
 
+#### Tray and notification failure diagnostics
+
+The product window renders nothing for a tray or desktop-notification failure,
+so the renderer records each failing phase as one structured console warning.
+The record has the stable event name `delidev.presentation.outcome` and exactly
+two fields: a closed phase and the outcome `failed`. It never contains raw error
+text, identifiers, paths, summaries or payloads. One log belongs to one tray
+lifetime or one notification connection. A phase warns only on its transition
+from healthy to failing, so a repeating failure and bounded retries add no
+further warning; the first later success of that phase records one `recovered`
+info record with the same two fields.
+
+| Phase                            | Failure event                                                         | Result                                                               | Recovery event                       |
+| -------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------ |
+| `tray-begin`                     | `begin_tray` rejects                                                  | warn; the next summary refresh begins again                          | a completed publication              |
+| `tray-publish`                   | `publish_tray` rejects                                                | warn; the scope is dropped and the next refresh begins again         | a completed publication              |
+| `tray-action-read`               | `read_tray_action` or `acknowledge_tray_action` rejects or is invalid | warn once; bounded retry continues unchanged                         | a completed read or acknowledgment   |
+| `tray-activation-listener`       | the `tray-activate` listener cannot be registered                     | warn; the tray still publishes and no activation is received         | none until the tray is mounted again |
+| `notification-readiness`         | the permission read rejects                                           | warn; no candidate is read and Settings keeps native availability    | a later successful read              |
+| `notification-candidate-read`    | the candidate list read rejects                                       | warn; the pump keeps its previous page and presents nothing new      | a later successful read              |
+| `notification-scope-begin`       | `begin_notifications` rejects or returns an invalid scope             | warn; nothing is claimed and the next page begins again              | a completed presentation batch       |
+| `notification-candidate-invalid` | the page exceeds 50 entries or carries an invalid target              | warn; the page is dropped before native initialization               | a completed presentation batch       |
+| `notification-present`           | native display is denied, failed or uncertain                         | warn; the batch stops and display is never retried                   | a completed presentation batch       |
+| `notification-pump`              | claim verification, claim or report fails                             | warn; pending work is dropped and a submitted notice is not repeated | a completed presentation batch       |
+
+Every phase leaves the product UI empty. Disposal or a connection change ends
+the log, so a closed controller emits no late record. The tray publisher and
+the notification pump report only the phase; the presentation component decides
+what is recorded.
+
 #### Notifications settings presentation
 
 `notification-settings.tsx` and `notification-settings.css` own the Notifications
