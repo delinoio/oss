@@ -467,6 +467,15 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 					continue
 				}
 				state := a.Subscription
+				// A negotiated original Worker reconciles its own fenced ChatGPT
+				// Execute lease. Peers without the recovery capability keep the fence.
+				if state != nil && a.SubscriptionService == domain.SubscriptionChatGPT && state.RecoveryRequired && state.Lease != nil && state.Lease.Action == domain.SubscriptionExecute && state.Lease.MachineID == domain.ID(req.Msg.MachineId) && slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexRecoveryV1) {
+					records = append(records, r)
+					if len(records) == 4 {
+						break
+					}
+					continue
+				}
 				if state != nil && a.SubscriptionService == domain.SubscriptionClaude && state.RecoveryRequired && state.Lease != nil && state.Lease.MachineID == domain.ID(req.Msg.MachineId) {
 					records = append(records, r)
 					if len(records) == 4 {
@@ -1259,6 +1268,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				return nil, rpc.Error(err, c)
 			}
 		}
+		var releasedCapture domain.ID
 		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.finish", input, func(tx *store.Tx) (any, error) {
 			if err := tx.Authorize(); err != nil {
 				return nil, err
@@ -1308,6 +1318,11 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				// Owner retirement settles every retained member's cleanup ownership
 				// together with the owner's confirmed containment.
 				state.Members = nil
+				// The lease's protected recovery capture is retired with its release.
+				if state.RecoveryCapture != nil {
+					releasedCapture = state.RecoveryCapture.ID
+				}
+				state.RecoveryCapture, state.RecoveryReason = nil, ""
 				if state.Pending != nil && state.Pending.ID == lease.OperationID {
 					state.Pending = nil
 				}
@@ -1415,6 +1430,13 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 		}
 		if original.Subscription.Pending != nil {
 			delete(s.subscriptionProgress, original.Subscription.Pending.ID)
+		}
+		if releasedCapture != "" {
+			// Best effort: an unretired capture is no longer protected by state and
+			// the next reference cleanup of this account retires it.
+			if deleteErr := vault.Delete(ctx, credentials.Ref{Owner: input.Account, ID: releasedCapture, Purpose: credentials.AccountLogin}); deleteErr != nil {
+				s.logger.WarnContext(ctx, "subscription_recovery_capture_retire_unconfirmed", "account_id", input.Account, "capture_id", releasedCapture, "code", domain.SafeError(deleteErr).Code)
+			}
 		}
 		// Cancellation can win during vault staging. Take remains blocked by the
 		// account gate until the unpublished new generation is tombstoned too.
@@ -1644,6 +1666,19 @@ func managedSidechatLease(tx *store.Tx, lease domain.SubscriptionLease) (*domain
 // independently of the writer's current generation. Rotation may retire them
 // only after joined observer cleanup and checked obsolete-reference retirement.
 func protectedGenerations(st *domain.SubscriptionState) []domain.ID {
+	protected := independentCredentialGenerations(st)
+	// The protected recovery capture of a live or fenced Execute lease is retired
+	// only by the lease's confirmed release or recovery, never by an unrelated
+	// reference cleanup.
+	if st != nil && st.RecoveryCapture != nil {
+		protected = append(protected, st.RecoveryCapture.ID)
+	}
+	return protected
+}
+
+// independentCredentialGenerations lists the references captured by access-only
+// quota and credit readers, which settle independently of the owner lease.
+func independentCredentialGenerations(st *domain.SubscriptionState) []domain.ID {
 	var protected []domain.ID
 	if st != nil && st.ServerQuota != nil && (st.ServerQuota.Active() || st.ServerQuota.ReferenceRetirementPending) {
 		protected = append(protected, st.ServerQuota.Generation)
