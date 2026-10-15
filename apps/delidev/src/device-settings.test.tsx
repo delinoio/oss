@@ -4,6 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   DeviceService,
   EntityKind,
@@ -322,4 +323,39 @@ it("labels retained diagnostics when refresh fails and renders guidance only as 
   fireEvent.click(screen.getByRole("button", { name: "Refresh diagnostics" }));
   await screen.findByText(/report below is the last returned observation/);
   expect(screen.getByTitle("2026-09-25T12:34:56Z")).toBeTruthy();
+});
+
+it("marks the device revocation confirmation and its original retry Danger while Keep stays neutral", async () => {
+  const value = fixture();
+  value.revoke.mockRejectedValueOnce(
+    new ConnectError("lost response", Code.Unavailable),
+  );
+  render(
+    value.view(
+      <DeviceRevocation
+        initial={value.original}
+        active
+        close={() => {}}
+        revoked={() => {}}
+      />,
+    ),
+  );
+  const confirm = screen.getByRole("button", {
+    name: "Confirm device revocation",
+  });
+  expectTone(confirm, danger);
+  expectTone(
+    screen.getByRole("button", { name: "Keep device authorized" }),
+    neutral,
+  );
+  await waitFor(() =>
+    expect((confirm as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(confirm);
+  expectTone(
+    await screen.findByRole("button", {
+      name: "Retry original device revocation",
+    }),
+    danger,
+  );
 });

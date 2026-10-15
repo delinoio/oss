@@ -8,6 +8,7 @@ import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
+  SettingsActionTone,
 } from "./settings-action";
 import {
   DisclosureButton,
@@ -623,6 +624,7 @@ function NetworkWorkspace({
                     {copy("network-settings.editProfile_15c4aa")}
                   </SettingsActionButton>
                   <SettingsActionButton
+                    tone={SettingsActionTone.Danger}
                     icon={SettingsActionIcon.Delete}
                     presentation={SettingsActionPresentation.Icon}
                     targetName={productResourceName(productLabel, row)}
@@ -786,6 +788,7 @@ function ProfileDeletion({
       </p>
       <SettingsTaskActions>
         <SettingsActionButton
+          tone={SettingsActionTone.Danger}
           icon={SettingsActionIcon.Confirm}
           disabled={pending}
           onClick={() =>
@@ -814,6 +817,7 @@ function ProfileDeletion({
       />
       {remove.uncertain ? (
         <SettingsActionButton
+          tone={SettingsActionTone.Danger}
           icon={SettingsActionIcon.Retry}
           disabled={remove.busy}
           onClick={remove.retry}

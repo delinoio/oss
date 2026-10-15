@@ -1,3 +1,4 @@
+import { actionTone, SettingsActionTone } from "./settings-action";
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { RetainedImages } from "./image-attachments";
 import { acknowledgeImages, retainedImages } from "./image-input";
@@ -178,6 +179,7 @@ export function QueuedInput({
               {copy("queue.steer")}
             </button>
             <button
+              {...actionTone(SettingsActionTone.Danger)}
               className="queue-icon"
               aria-label={copy("queue.removeInput_95e788")}
               disabled={busy}
@@ -281,6 +283,7 @@ export function QueuedInput({
                 {copy("queue.editInput_f7680c")}
               </button>
               <button
+                {...actionTone(SettingsActionTone.Danger)}
                 disabled={busy}
                 onClick={() =>
                   void remove.send({
@@ -349,7 +352,15 @@ export function QueuedInput({
         <div key={index}>
           <Problem error={operation.error} />
           {operation.uncertain ? (
-            <button disabled={operation.busy} onClick={operation.retry}>
+            <button
+              {...actionTone(
+                index === 1
+                  ? SettingsActionTone.Danger
+                  : SettingsActionTone.Default,
+              )}
+              disabled={operation.busy}
+              onClick={operation.retry}
+            >
               <LocalizedText
                 id="queue.retryTheSame_4cb78a"
                 components={{
@@ -665,7 +676,15 @@ function PendingQueueInput({
       </p>
       <Problem error={operation.error} />
       {valid && operation.uncertain ? (
-        <button disabled={operation.busy} onClick={operation.retry}>
+        <button
+          {...actionTone(
+            kind === QueueMutationKind.Remove
+              ? SettingsActionTone.Danger
+              : SettingsActionTone.Default,
+          )}
+          disabled={operation.busy}
+          onClick={operation.retry}
+        >
           <LocalizedText
             id="queue.retryTheSame_4cb78a"
             components={{ s0: <>{label}</> }}

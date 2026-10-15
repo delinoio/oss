@@ -12,6 +12,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   EntityKind,
   ResourceSchema,
@@ -2984,3 +2985,94 @@ it.each(["succeeded", "failed", "canceled"])(
     value.client.clear();
   },
 );
+
+function details(value: ReturnType<typeof fixture>) {
+  return render(
+    value.view(
+      <ScheduleDetails
+        initial={value.schedule}
+        active
+        open={() => {}}
+        close={() => {}}
+        edit={() => {}}
+      />,
+    ),
+  );
+}
+it("marks Delete schedule Danger while Run now and Resume stay neutral", async () => {
+  const value = fixture();
+  details(value);
+  expectTone(
+    await screen.findByRole("button", { name: "Resume future runs" }),
+    null,
+  );
+  expectTone(screen.getByRole("button", { name: "Run now" }), null);
+  expectTone(screen.getByRole("button", { name: "Delete schedule" }), danger);
+  expect(value.remove).not.toHaveBeenCalled();
+});
+it("derives the shared confirmation tone from the selected branch: delete is Danger and Run now is neutral", async () => {
+  const value = fixture();
+  details(value);
+  await screen.findByRole("button", { name: "Run now" });
+  fireEvent.click(screen.getByRole("button", { name: "Delete schedule" }));
+  expectTone(
+    screen.getByRole("button", { name: "Confirm schedule deletion" }),
+    danger,
+  );
+  expectTone(screen.getByRole("button", { name: "Cancel" }), null);
+  fireEvent.click(screen.getByRole("button", { name: "Run now" }));
+  expectTone(screen.getByRole("button", { name: "Confirm Run now" }), neutral);
+  expect(
+    screen.queryByRole("button", { name: "Confirm schedule deletion" }),
+  ).toBeNull();
+  expect(value.remove).not.toHaveBeenCalled();
+  expect(value.run).not.toHaveBeenCalled();
+});
+it("marks only the retry of the same schedule deletion Danger", async () => {
+  const value = fixture();
+  value.remove.mockRejectedValueOnce(
+    new ConnectError("lost acknowledgment", Code.Unavailable),
+  );
+  details(value);
+  await screen.findByRole("button", { name: "Run now" });
+  fireEvent.click(screen.getByRole("button", { name: "Delete schedule" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm schedule deletion" }),
+  );
+  expectTone(
+    await screen.findByRole("button", {
+      name: "Retry the same schedule deletion",
+    }),
+    danger,
+  );
+});
+it("keeps the Run now retry neutral", async () => {
+  const value = fixture();
+  value.run.mockRejectedValueOnce(
+    new ConnectError("lost acknowledgment", Code.Unavailable),
+  );
+  details(value);
+  await screen.findByRole("button", { name: "Run now" });
+  fireEvent.click(screen.getByRole("button", { name: "Run now" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm Run now" }));
+  expectTone(
+    await screen.findByRole("button", { name: "Retry the same Run now" }),
+    neutral,
+  );
+});
+it("keeps the schedule control retry neutral", async () => {
+  const value = fixture();
+  value.control.mockRejectedValueOnce(
+    new ConnectError("lost acknowledgment", Code.Unavailable),
+  );
+  details(value);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Resume future runs" }),
+  );
+  expectTone(
+    await screen.findByRole("button", {
+      name: "Retry the same schedule control",
+    }),
+    neutral,
+  );
+});

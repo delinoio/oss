@@ -12,6 +12,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone } from "./test-action-tone";
 import {
   EntityKind,
   ResourceSchema,
@@ -843,3 +844,17 @@ it("keeps movement locked when inspecting an input with an uncertain removal", a
   expect(up).not.toHaveBeenCalled();
   expect(down).not.toHaveBeenCalled();
 });
+
+it.each([false, true])(
+  "marks only queued input removal Danger when compact=%s",
+  (compact) => {
+    const value = fixture();
+    render(value.view(value.resource, compact));
+    expectTone(screen.getByRole("button", { name: "Remove input" }), danger);
+    for (const name of ["Steer with this input", "Edit input"]) {
+      const button = screen.queryByRole("button", { name });
+      if (button) expectTone(button, null);
+    }
+    expect(value.remove).not.toHaveBeenCalled();
+  },
+);

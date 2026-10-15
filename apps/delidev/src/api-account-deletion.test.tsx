@@ -12,6 +12,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   AccountService,
   BrowserService,
@@ -612,4 +613,61 @@ it("changes English/Korean presentation without starting or replaying work", asy
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(value.disconnect).not.toHaveBeenCalled();
   expect(value.remove).not.toHaveBeenCalled();
+});
+
+it("marks the API entry deletion confirmation Danger and the task Close control untoned", () => {
+  const value = fixture();
+  render(<value.Harness />);
+  expectTone(screen.getByRole("button", { name: confirmLabel }), danger);
+  // The task header owns dismissal here, so the Close control carries no tone.
+  expectTone(screen.getByRole("button", { name: "Close Delete entry" }), null);
+});
+
+it("marks only the retry of the same deletion Danger", async () => {
+  const value = fixture();
+  value.remove.mockRejectedValueOnce(
+    new ConnectError("lost", Code.Unavailable),
+  );
+  confirm(value);
+  expectTone(
+    await screen.findByRole("button", { name: "Retry the same deletion" }),
+    danger,
+  );
+});
+
+it("keeps the status-check retry neutral", async () => {
+  const value = fixture();
+  value.status
+    .mockResolvedValueOnce({ account: value.initial })
+    .mockRejectedValueOnce(new ConnectError("read lost", Code.Unavailable));
+  confirm(value);
+  expectTone(
+    await screen.findByRole("button", { name: "Retry original status check" }),
+    neutral,
+  );
+});
+
+it("keeps the original credential-cleanup retry neutral", async () => {
+  const value = fixture();
+  value.disconnect.mockImplementationOnce(async (request) => ({
+    account: value.patch({
+      health: "disconnected",
+      connection: undefined,
+      removal: {
+        request_id: request.mutation!.requestId,
+        expected_revision: "inert fixture token",
+      },
+    }),
+    requestId: request.mutation!.requestId,
+    cleanupProblemJson: encode({
+      code: "unavailable",
+      message: "Protected cleanup is pending.",
+      guidance: "Retry the original cleanup.",
+    }),
+  }));
+  confirm(value);
+  expectTone(
+    await screen.findByRole("button", { name: cleanupLabel }),
+    neutral,
+  );
 });

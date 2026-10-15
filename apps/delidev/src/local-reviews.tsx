@@ -1,3 +1,4 @@
+import { actionTone, SettingsActionTone } from "./settings-action";
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
@@ -97,7 +98,12 @@ function PendingCommentDeletion({
       </p>
       <Problem error={mutation.error} />
       {intent.uncertain ? (
-        <button type="button" disabled={mutation.busy} onClick={mutation.retry}>
+        <button
+          {...actionTone(SettingsActionTone.Danger)}
+          type="button"
+          disabled={mutation.busy}
+          onClick={mutation.retry}
+        >
           {copy("local-reviews.retryOriginalCommentDeletion_db3527")}
         </button>
       ) : null}
@@ -576,6 +582,7 @@ function CommentRow({
             {copy("local-reviews.editComment_4f346f")}
           </button>
           <button
+            {...actionTone(SettingsActionTone.Danger)}
             disabled={blocked}
             onClick={() =>
               void remove.send({

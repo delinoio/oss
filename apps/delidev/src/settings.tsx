@@ -16,6 +16,7 @@ import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
+  SettingsActionTone,
 } from "./settings-action";
 import { DisclosureDensity, DisclosureDensityScope } from "./disclosure";
 import { SettingsCategory } from "./settings-category";
@@ -3654,6 +3655,7 @@ function SettingsWorkspace({
                                           {editableKinds.includes(kind) &&
                                           kind !== EntityKind.SETTINGS ? (
                                             <SettingsActionButton
+                                              tone={SettingsActionTone.Danger}
                                               icon={SettingsActionIcon.Delete}
                                               presentation={
                                                 SettingsActionPresentation.Icon

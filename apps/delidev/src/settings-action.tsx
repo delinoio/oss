@@ -43,6 +43,23 @@ export enum SettingsActionPresentation {
   Icon = "icon",
   Label = "label",
 }
+/**
+ * Semantic presentation tone. Danger marks buttons that delete persisted data,
+ * reset persisted settings or revoke authorization. It is presentation only and
+ * is never derived from an icon or visible text.
+ */
+export enum SettingsActionTone {
+  Default = "default",
+  Danger = "danger",
+}
+/**
+ * Spread onto plain `<button>` elements that need the same tone marker as
+ * `SettingsActionButton`. Pass the Danger tone only for destructive branches;
+ * callers derive it from existing action state.
+ */
+export function actionTone(tone: SettingsActionTone) {
+  return { "data-action-tone": tone } as const;
+}
 const ActionScope = createContext(false);
 export function SettingsActionScope({ children }: { children: ReactNode }) {
   return <ActionScope.Provider value>{children}</ActionScope.Provider>;
@@ -94,6 +111,7 @@ export function SettingsActionGlyph({ icon }: { icon: SettingsActionIcon }) {
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon: SettingsActionIcon;
   presentation?: SettingsActionPresentation;
+  tone?: SettingsActionTone;
   ref?: Ref<HTMLButtonElement>;
   decorativePrefix?: string;
   targetName?: string;
@@ -104,6 +122,7 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 export function SettingsActionButton({
   icon,
   presentation = SettingsActionPresentation.Label,
+  tone = SettingsActionTone.Default,
   ref,
   children,
   decorativePrefix,
@@ -192,6 +211,7 @@ export function SettingsActionButton({
             ? `${props.className ?? ""} settings-action-button${iconOnly ? " settings-action-only" : ""}`
             : props.className
         }
+        data-action-tone={tone}
         data-settings-action={scoped ? icon : undefined}
         data-settings-action-presentation={scoped ? presentation : undefined}
         aria-label={name}

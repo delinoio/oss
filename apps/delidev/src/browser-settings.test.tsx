@@ -9,6 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import { BrowserSettings } from "./browser-settings";
 import {
   BrowserChoiceState,
@@ -492,4 +493,29 @@ it("validates native snapshots and inventories strictly", () => {
     parseBrowserInventory({ browsers: [{ identity: "../a", name: "A" }] }),
   ).toThrow();
   expect(() => parseBrowserInventory({ browsers: "x" })).toThrow();
+});
+
+it("marks the persisted browser preference reset Danger and the transient reload neutral", async () => {
+  const damaged = fixture({
+    problem: BrowserPreferenceProblem.InvalidDocument,
+  });
+  const first = render(view(damaged.bridge));
+  await screen.findByRole("alert");
+  expectTone(
+    screen.getByRole("button", { name: "Reset browser settings" }),
+    danger,
+  );
+  expect(damaged.bridge.reset).not.toHaveBeenCalled();
+  first.unmount();
+  const transient = fixture({ problem: BrowserPreferenceProblem.ReadFailed });
+  render(view(transient.bridge));
+  await screen.findByRole("alert");
+  expectTone(
+    screen.getByRole("button", { name: "Reload browser settings" }),
+    neutral,
+  );
+  expectTone(
+    screen.getByRole("button", { name: "Refresh browser list" }),
+    neutral,
+  );
 });

@@ -11,6 +11,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   EntityKind,
   NetworkService,
@@ -950,5 +951,28 @@ it("starts Runner Device network closed and unread until its modal is opened", a
   await screen.findByRole("dialog", { name: "Runner Device network" });
   expect(await screen.findAllByText("9007199254740993 · stale")).toHaveLength(
     2,
+  );
+});
+
+it("marks the Network profile deletion opener, confirmation and retry Danger while Edit stays neutral", async () => {
+  const f = fixture(false, undefined, true);
+  f.remove.mockRejectedValueOnce(
+    new ConnectError("Lost deletion response", Code.Unavailable),
+  );
+  const opener = await screen.findByRole("button", { name: "Delete profile" });
+  expectTone(opener, danger);
+  expectTone(screen.getByRole("button", { name: "Edit profile" }), neutral);
+  fireEvent.click(opener);
+  expect(f.remove).not.toHaveBeenCalled();
+  const confirm = screen.getByRole("button", {
+    name: "Confirm profile deletion",
+  });
+  expectTone(confirm, danger);
+  fireEvent.click(confirm);
+  expectTone(
+    await screen.findByRole("button", {
+      name: "Retry original profile deletion",
+    }),
+    danger,
   );
 });

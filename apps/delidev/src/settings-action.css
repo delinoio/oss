@@ -59,3 +59,17 @@
   .settings-action-button {
   justify-content: flex-start;
 }
+/* Danger tone (delete, reset, revoke). The marker is semantic and never
+   derived from an icon or label. Repeating :root raises specificity above the
+   icon-only color rule, the generic Settings border rule and per-feature button
+   classes without !important. Focus outlines, disabled attenuation and native
+   disabled semantics keep their original owners. */
+:root:root:root:root:root button[data-action-tone="danger"] {
+  background: transparent;
+  border: 1px solid var(--danger-text);
+  color: var(--danger-text);
+}
+:root:root:root:root:root
+  button[data-action-tone="danger"]:hover:not(:disabled) {
+  background: var(--danger-background);
+}

@@ -17,6 +17,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   DeviceService,
   EntityKind,
@@ -531,4 +532,24 @@ it("returns confirmed revocation to Details once and falls back to Refresh when 
     ),
   );
   expect(value.revoke).toHaveBeenCalledTimes(1);
+});
+
+it("marks the paired-device Revoke opener Danger while Details stays neutral", async () => {
+  const value = fixture();
+  render(value.view());
+  await open();
+  expectTone(workerDetails(), null);
+  const revoke = screen.getByRole("button", {
+    name: "Revoke DeliDev local Worker",
+  });
+  expectTone(revoke, danger);
+  fireEvent.click(revoke);
+  expectTone(
+    screen.getByRole("button", { name: "Keep device authorized" }),
+    neutral,
+  );
+  expectTone(
+    screen.getByRole("button", { name: "Confirm device revocation" }),
+    danger,
+  );
 });

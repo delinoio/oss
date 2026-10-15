@@ -9,6 +9,7 @@ import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
+  SettingsActionTone,
 } from "./settings-action";
 import { quotaColorStyle } from "./quota-color";
 import { Timestamp, TimestampMode } from "./timestamp-display";
@@ -629,6 +630,7 @@ export function SubscriptionRow({
                   {copy("subscription-settings.editPreferences_00b4cc")}
                 </SettingsActionButton>
                 <SettingsActionButton
+                  tone={SettingsActionTone.Danger}
                   icon={SettingsActionIcon.Delete}
                   type="button"
                   disabled={!account.metadataAvailable || actionsBlocked}
@@ -1009,6 +1011,7 @@ export function SubscriptionSettingsView({
           </h2>
           <div className="subscription-header-actions">
             <SettingsActionButton
+              tone={SettingsActionTone.Danger}
               icon={SettingsActionIcon.Inspect}
               type="button"
               disabled={!cleanup}

@@ -12,6 +12,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   EntityKind,
   ResourceSchema,
@@ -331,3 +332,25 @@ it("discards retry ownership when the connection registry is replaced", async ()
   ).toBeNull();
   expect(f.mutate).toHaveBeenCalledOnce();
 });
+
+it.each([
+  ["removal", danger],
+  ["edit", neutral],
+  ["Steer", neutral],
+] as const)(
+  "derives the original %s retry tone before and after the queue row disappears",
+  async (kind, tone) => {
+    const f = fixture(kind);
+    render(f.view);
+    await f.start();
+    expectTone(
+      screen.getByRole("button", { name: `Retry the same ${kind}` }),
+      tone,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Publish tombstone" }));
+    expectTone(
+      screen.getByRole("button", { name: `Retry the same ${kind}` }),
+      tone,
+    );
+  },
+);

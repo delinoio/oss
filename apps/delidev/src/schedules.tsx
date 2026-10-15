@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
-import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
+import {
+  SettingsActionButton,
+  SettingsActionIcon,
+  SettingsActionTone,
+  actionTone,
+} from "./settings-action";
 import { useSidebarPaneVisible } from "./sidebar-context";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
@@ -1147,7 +1152,11 @@ export function ScheduleDetails({
             <button disabled={blocked} onClick={() => setConfirm("run")}>
               {copy("schedules.runNow_099139")}
             </button>
-            <button disabled={blocked} onClick={() => setConfirm("delete")}>
+            <button
+              {...actionTone(SettingsActionTone.Danger)}
+              disabled={blocked}
+              onClick={() => setConfirm("delete")}
+            >
               {copy("schedules.deleteSchedule_d8d0bd")}
             </button>
           </div>
@@ -1163,6 +1172,11 @@ export function ScheduleDetails({
                     )}
               </p>
               <button
+                {...actionTone(
+                  confirm === "delete"
+                    ? SettingsActionTone.Danger
+                    : SettingsActionTone.Default,
+                )}
                 disabled={blocked}
                 onClick={() =>
                   confirm === "run"
@@ -1186,7 +1200,15 @@ export function ScheduleDetails({
         <div key={index}>
           <Problem error={operation.error} />
           {operation.uncertain ? (
-            <button disabled={operation.busy} onClick={operation.retry}>
+            <button
+              {...actionTone(
+                index === 1
+                  ? SettingsActionTone.Danger
+                  : SettingsActionTone.Default,
+              )}
+              disabled={operation.busy}
+              onClick={operation.retry}
+            >
               <LocalizedText
                 id="schedules.retryTheSame_4cb78a"
                 components={{
