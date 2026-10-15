@@ -208,43 +208,46 @@ func (h *sessionHistory) retainImageReplay(input domain.ID, raw json.RawMessage)
 // original dimensions come from immutable Worker bytes; displayed dimensions
 // come from the validated native replay. The cache location is inert metadata:
 // it never grants a file read, publication, deletion or workspace capability.
-func imageContextText(text string, expected imageContext, session domain.ID, roots ...string) bool {
+func imageContextText(text string, expected imageContext, session domain.ID, roots ...string) (string, bool) {
 	if expected.width <= 0 || expected.height <= 0 || expected.displayedWidth <= 0 || expected.displayedHeight <= 0 {
-		return false
+		return "", false
 	}
 	prefix := "[Image: source: "
 	if !strings.HasPrefix(text, prefix) || !strings.HasSuffix(text, "]") {
-		return false
+		return "", false
 	}
 	body := strings.TrimSuffix(strings.TrimPrefix(text, prefix), "]")
 	if expected.width != expected.displayedWidth || expected.height != expected.displayedHeight {
 		suffix := fmt.Sprintf(", original %dx%d, displayed at %dx%d. Multiply coordinates by %s to map to original image.", expected.width, expected.height, expected.displayedWidth, expected.displayedHeight, nativeImageScale(expected.width, expected.displayedWidth))
 		if !strings.HasSuffix(body, suffix) {
-			return false
+			return "", false
 		}
 		body = strings.TrimSuffix(body, suffix)
 	}
 	if !filepath.IsAbs(body) || filepath.Clean(body) != body || domain.Text(body, "native image context location", 4096, true) != nil {
-		return false
+		return "", false
 	}
 	if len(roots) != 1 {
-		return false
+		return "", false
 	}
 	relative, err := filepath.Rel(roots[0], body)
 	if err != nil || !filepath.IsLocal(relative) {
-		return false
+		return "", false
 	}
 	parent := filepath.Dir(body)
 	if filepath.Base(parent) != "images" || filepath.Base(filepath.Dir(parent)) != string(session) {
-		return false
+		return "", false
 	}
 	ext := filepath.Ext(body)
 	allowed := map[domain.ImageMediaType]string{domain.ImagePNG: ".png", domain.ImageJPEG: ".jpg", domain.ImageWebP: ".webp"}
 	if ext != allowed[expected.media] {
-		return false
+		return "", false
 	}
 	ordinal, err := strconv.Atoi(strings.TrimSuffix(filepath.Base(body), ext))
-	return err == nil && ordinal > 0 && strconv.Itoa(ordinal)+ext == filepath.Base(body)
+	if err != nil || ordinal <= 0 || strconv.Itoa(ordinal)+ext != filepath.Base(body) {
+		return "", false
+	}
+	return body, true
 }
 
 func (s *APISession) retainImageContexts(ctx context.Context) error {
@@ -313,10 +316,22 @@ func (s *APISession) retainImageContexts(ctx context.Context) error {
 		if decodeNativeObject(fields["message"], &message) != nil || message.Role != "user" || len(message.Content) != len(expected) || !nativeUUID(id) {
 			return imageContextFailure(s, 3)
 		}
+		// Equal media types and dimensions do not prove image identity, so a
+		// record that repeats one cache location must not clear the pending
+		// expectation. Block order stays the expected input order.
+		locations := make(map[string]struct{}, len(message.Content))
 		for i, block := range message.Content {
-			if block.Type != "text" || !imageContextText(block.Text, expected[i], s.config.SessionID, filepath.Join(historyHome(s.config), "image-tmp")) {
+			if block.Type != "text" {
 				return imageContextFailure(s, 4)
 			}
+			location, valid := imageContextText(block.Text, expected[i], s.config.SessionID, filepath.Join(historyHome(s.config), "image-tmp"))
+			if !valid {
+				return imageContextFailure(s, 4)
+			}
+			if _, repeated := locations[location]; repeated {
+				return imageContextFailure(s, imageContextStageDuplicate)
+			}
+			locations[location] = struct{}{}
 		}
 		role, digest, err := historyPayloadDigest(fields["message"], false)
 		if err != nil {
@@ -349,6 +364,10 @@ func (s *APISession) retainImageContexts(ctx context.Context) error {
 // imageContextStageMissing is the numeric claude_image_context_invalid stage
 // for an expected image input that has no hidden native context record.
 const imageContextStageMissing = 7
+
+// imageContextStageDuplicate is the numeric claude_image_context_invalid stage
+// for a hidden context record whose blocks repeat one native-cache location.
+const imageContextStageDuplicate = 8
 
 func imageContextFailure(s *APISession, stage int) error {
 	if s.config.Process.Logger != nil {
