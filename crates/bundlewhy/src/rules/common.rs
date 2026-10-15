@@ -145,10 +145,11 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
         match previous {
             None => true,
             // `</tag>` is a JSX closing tag, and `<a b={c} />` or
-            // `<A<B> />` a self-closing one. A regular expression never starts
-            // right after a `<`, and none starts with `>` right after a `}`
-            // or a `>`.
-            Some(b'<') => false,
+            // `<A<B> />` a self-closing one. A slash after a `<` is a closing
+            // tag only when a tag name and `>` follow it; otherwise it starts
+            // a regular expression (`value < /eval(code)/.test(text)`). No
+            // regular expression starts with `>` right after a `}` or a `>`.
+            Some(b'<') if closes_jsx_tag(bytes, start) => false,
             Some(b'}' | b'>') if bytes.get(start + 1) == Some(&b'>') => false,
             Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
             Some(byte) if byte.is_ascii_alphabetic() => {
@@ -261,6 +262,22 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
         }
     }
     ranges
+}
+
+/// True when the `/` at `slash` is followed by an optional JSX tag name and
+/// `>`, as in `</div>`, `</Foo.Bar>`, `</ns:tag >` and the fragment `</>`.
+fn closes_jsx_tag(bytes: &[u8], slash: usize) -> bool {
+    let mut cursor = slash + 1;
+    while bytes
+        .get(cursor)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || b"_$.:-".contains(byte))
+    {
+        cursor += 1;
+    }
+    while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+        cursor += 1;
+    }
+    bytes.get(cursor) == Some(&b'>')
 }
 
 fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
@@ -2034,15 +2051,22 @@ y=/process.env.F/.test(z),process.env.G"#;
             "x=<b a=\"1\" />{process.env.H}</p>",
             "x=<br />{process.env.H}</p>",
             "x=<A<B> />{process.env.H}</p>",
+            "x=<b>t</b >{process.env.H}</p>",
+            "x=<b>t</ns:b>{process.env.H}</p>",
+            "x=<b>t</Foo.Bar-x>{process.env.H}</p>",
         ] {
             assert!(
                 !in_ranges(&non_code_ranges(code), code.find("process").unwrap()),
                 "{code}"
             );
         }
-        // Regular expressions after other tokens, including `}` and `>`,
+        // Regular expressions after other tokens, including `<`, `}` and `>`,
         // are still literals.
         for code in [
+            "x=a< /process.env.H/.test(b)",
+            "x=a</process.env.H/.test(b)",
+            "if(a < /process.env.H/.test(b))run()",
+            "x=a<b>/process.env.H/.test(c)",
             "x=a>/process.env.H/.test(b)",
             "x=a+/process.env.H/.test(b)",
             "if(a){}/process.env.H/.test(b)",
@@ -2604,6 +2628,22 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(
             direct_eval_line("class C { value = typeof\n eval(code) }"),
             Some((1, 1))
+        );
+    }
+
+    #[test]
+    fn a_regular_expression_after_a_less_than_operator_is_a_literal() {
+        for source in [
+            "const ok = value < /eval(code)/.test(text);",
+            "if (a </eval(code)/.test(text)) run();",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source}");
+        }
+        // A call after the literal stays visible.
+        let source = "const ok = value < /eval(code)/.test(text), r = eval(x);";
+        assert_eq!(
+            direct_eval_line(source),
+            Some((0, u32::try_from(source.rfind("eval(x)").unwrap()).unwrap()))
         );
     }
 
