@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -83,17 +84,49 @@ func recoverRemovedClaudeProfile(ctx context.Context, config Config, credential 
 	}
 	return nil
 }
+
+// claudeInstallationAdmitted is the one admission rule for every executable that
+// opens a native Claude profile: execution, login and historical cleanup. An
+// inspected installation keeps the numeric baseline. A version-4 direct-startup
+// identity carries only the resolved path and its executable digest, so it has
+// no numeric gate; the original process proves its version before any use.
+func claudeInstallationAdmitted(installation domain.Installation) bool {
+	if installation.Harness != domain.ClaudeCode || installation.ResolvedPath == "" {
+		return false
+	}
+	if installation.Version == "" {
+		return domain.ValidExecutableSHA256(installation.ExecutableSHA256)
+	}
+	return domain.HarnessVersionAllowed(domain.ClaudeCode, installation.Version)
+}
+
+// retainClaudeInstallation durably records the exact executable evidence in the
+// operation journal. Call it before any native profile side effect so that only
+// journals written before this field existed ever lack it.
+func (l *managedSubscriptionLease) retainClaudeInstallation(installation domain.Installation) error {
+	retained := installation
+	l.journal.Installation = &retained
+	return writeJSON(l.journalPath, l.journal)
+}
+
 func openClaudeProfile(config Config, credential Credential, account, profile domain.ID, installation domain.Installation, owner domain.ID, create bool) (*nativeClaudeProfile, error) {
 	root, err := claudeProfileRoot(config.Root, credential, account, profile)
 	if err != nil {
 		return nil, err
 	}
-	if installation.Harness != domain.ClaudeCode || !domain.HarnessVersionAllowed(domain.ClaudeCode, installation.Version) || installation.ResolvedPath == "" {
+	if !claudeInstallationAdmitted(installation) {
 		return nil, subscription.Invalid()
 	}
 	executable, err := filepath.EvalSymlinks(installation.ResolvedPath)
 	if err != nil || !filepath.IsAbs(executable) || executable != installation.ResolvedPath {
 		return nil, subscription.Invalid()
+	}
+	// Re-inspect the retained digest here, at the single point every
+	// profile-bearing launch passes through, so a binary replaced after
+	// resolution (for example while waiting for the lease) never receives the
+	// profile directories.
+	if err := verifyClaudeLaunchExecutable(config, installation); err != nil {
+		return nil, err
 	}
 	for _, dir := range []string{filepath.Join(config.Root, "native-claude"), filepath.Join(config.Root, "native-claude", string(credential.ServerID)), filepath.Dir(root)} {
 		if err := security.PrivateDir(dir); err != nil {
@@ -152,7 +185,7 @@ func openClaudeProfile(config Config, credential Credential, account, profile do
 	if err != nil {
 		return nil, err
 	}
-	auth := claude.AuthConfig{Version: installation.Version, Home: filepath.Join(root, "claude"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: root, Env: env, Logger: config.Logger}}
+	auth := claude.AuthConfig{Version: installation.Version, DirectStartup: installation.Version == "", Home: filepath.Join(root, "claude"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: root, Env: env, Logger: config.Logger}}
 	// Register the durable profile in place so the shared registry owns its
 	// deletion and reference semantics; nothing is moved or rewritten.
 	profiles, err := nativeProfiles(config, credential.MachineID)
@@ -347,6 +380,18 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	if domain.ValidInstallationVersion(installation.Version) {
 		observedVersion = installation.Version
 	}
+	// Account operations use inspected inventory; only execution may carry the
+	// versionless direct-startup identity.
+	if installation.Version == "" {
+		return subscription.Invalid()
+	}
+	// The profile identity and original executable are durable before the profile
+	// is created or touched, so a crash in this window still recovers with the
+	// original binary.
+	lease.journal.NativeProfileID = domain.ID(lease.response.NativeProfileId)
+	if err := lease.retainClaudeInstallation(installation); err != nil {
+		return subscription.Invalid()
+	}
 	profile, err := openClaudeProfile(config, credential, account, domain.ID(lease.response.NativeProfileId), installation, domain.ID(lease.response.LeaseId), op.Action == domain.SubscriptionLogin)
 	if err != nil {
 		return err
@@ -357,10 +402,6 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 			returned = domain.SafeError(err)
 		}
 	}()
-	lease.journal.NativeProfileID = domain.ID(lease.response.NativeProfileId)
-	if err := writeJSON(lease.journalPath, lease.journal); err != nil {
-		return subscription.Invalid()
-	}
 	lease.journal.NativeStarted = true
 	if err := security.PrivateDir(filepath.Join(config.Root, "processes", lease.response.LeaseId)); err != nil {
 		return err
@@ -479,54 +520,102 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	}
 }
 
-// Admission verifies the installed original CLI against a disposable empty
-// profile. It never probes a personal login or creates subscription authority.
-func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, machineID domain.ID, resource *pb.Resource) (bool, error) {
-	var machine domain.Machine
-	if resource == nil || domain.Decode(resource.DocumentJson, &machine) != nil {
-		return false, subscription.Invalid()
+// claudeCleanupInstallation resolves the original installation for historical
+// device-owned cleanup. The retained journal evidence wins; only journals
+// written before it was retained fall back to the single passively decoded,
+// fully verified inventory entry of the current attach. Whichever source
+// supplies it, any digest it retains must still match the executable on disk
+// before cleanup launches it with access to the original profile; a mismatch
+// fails closed.
+func claudeCleanupInstallation(ctx context.Context, config Config, journal managedSubscriptionJournal) (domain.Installation, error) {
+	installation, err := claudeRetainedInstallation(config, journal)
+	if err != nil {
+		return domain.Installation{}, err
 	}
-	var installation *domain.Installation
+	if err := verifyClaudeExecutableDigest(ctx, config.Logger, installation); err != nil {
+		return domain.Installation{}, err
+	}
+	return installation, nil
+}
+
+// verifyClaudeLaunchExecutable bounds the digest recheck for one profile-bearing
+// launch. Every path that hands a native profile to a process calls it with that
+// process's own installation immediately before the handoff: the single profile
+// open and each joined shared-owner member, which opens no profile itself.
+func verifyClaudeLaunchExecutable(config Config, installation domain.Installation) error {
+	ctx, stop := context.WithTimeout(context.Background(), 30*time.Second)
+	defer stop()
+	return verifyClaudeExecutableDigest(ctx, config.Logger, installation)
+}
+
+// verifyExecutionStartup is the one pre-execution check of a freshly opened
+// execution profile. An inspected installation keeps its standalone version and
+// auth-status probes. A version-4 direct-startup identity runs no standalone
+// child at all: its original execution process validates the executable and
+// protocol before any input is delivered.
+func (p *nativeClaudeProfile) verifyExecutionStartup(ctx context.Context, config Config) error {
+	if p.config.DirectStartup {
+		if config.Logger != nil {
+			config.Logger.DebugContext(ctx, "claude_execution_startup_probe_skipped", "reason", "direct_startup")
+		}
+		return nil
+	}
+	if err := claude.VerifyAuthVersion(ctx, p.config); err != nil {
+		return err
+	}
+	_, err := p.identity(ctx, config)
+	return err
+}
+
+// verifyClaudeExecutableDigest is the one executable-identity recheck for every
+// launch that carries a native Claude profile. An installation that retains a
+// digest must still match the bytes on disk right now; one that retains none
+// (an inspected entry without a digest) has nothing to compare. A mismatch
+// fails closed before any process receives the profile. The check cannot close
+// the window between this read and the later exec; that residual race is
+// documented in the execution startup contract.
+func verifyClaudeExecutableDigest(ctx context.Context, logger *slog.Logger, installation domain.Installation) error {
+	if installation.ExecutableSHA256 == "" {
+		return nil
+	}
+	digest, err := harness.InspectExecutable(ctx, installation.ResolvedPath)
+	if err != nil || digest != installation.ExecutableSHA256 {
+		if logger != nil {
+			logger.WarnContext(ctx, "claude_profile_executable_changed", "inspected", err == nil)
+		}
+		return domain.Fail(domain.RecoveryRequired, "The original native executable changed.", "Restore the original executable before opening its native profile.")
+	}
+	return nil
+}
+
+func claudeRetainedInstallation(config Config, journal managedSubscriptionJournal) (domain.Installation, error) {
+	if journal.Installation != nil {
+		return *journal.Installation, nil
+	}
+	if journal.InstallationRetention {
+		// A current-schema journal retains the executable before any profile
+		// open. Its absence proves no evidence exists; the current inventory
+		// describes a possibly different binary and is never substituted.
+		return domain.Installation{}, domain.Fail(domain.RecoveryRequired, "The original native executable evidence was not retained.", "Restore the original Runner Device state; no replacement executable is launched with the account profile.")
+	}
+	var machine domain.Machine
+	if config.attachedMachine == nil || domain.Decode(config.attachedMachine.DocumentJson, &machine) != nil {
+		return domain.Installation{}, subscription.Invalid()
+	}
+	var found *domain.Installation
 	for i := range machine.Installations {
 		candidate := &machine.Installations[i]
 		if candidate.Harness == domain.ClaudeCode && domain.HarnessVersionAllowed(domain.ClaudeCode, candidate.Version) && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
-			if installation != nil {
-				return false, subscription.Invalid()
+			if found != nil {
+				return domain.Installation{}, subscription.Invalid()
 			}
-			installation = candidate
+			found = candidate
 		}
 	}
-	if installation == nil {
-		return false, nil
+	if found == nil {
+		return domain.Installation{}, subscription.Invalid()
 	}
-	profiles, err := nativeProfiles(config, machineID)
-	if err != nil {
-		return false, err
-	}
-	lease, err := profiles.AcquireWait(ctx, nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeDiscovery}, 30*time.Second)
-	if err != nil {
-		return false, err
-	}
-	// The accountless probe profile is persistent and never holds credentials.
-	defer lease.Close()
-	root := lease.Root
-	env, err := harness.PrivateRuntimeEnvironment(root)
-	if err != nil {
-		return false, err
-	}
-	auth := claude.AuthConfig{Version: installation.Version, Home: filepath.Join(root, "claude"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.NewID(), Executable: installation.ResolvedPath, Cwd: root, Env: env, Logger: config.Logger}}
-	err = claude.VerifyAuthVersion(ctx, auth)
-	if err == nil {
-		var status claude.AuthStatus
-		status, err = claude.ReadAuthStatus(ctx, auth)
-		if err == nil && (status.LoggedIn || status.AuthMethod != "none" || status.APIKeySource != nil) {
-			err = subscription.Invalid()
-		}
-	}
-	if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
-		return false, err
-	}
-	return err == nil, err
+	return *found, nil
 }
 
 // managedClaudeToken is one server-owned setup token delivered by the protected
@@ -592,7 +681,11 @@ func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner 
 		_ = finish(false)
 		return nil, nil, nil, subscription.Invalid()
 	}
-	profile, err = openClaudeProfile(config, connection.Credential, input.AccountID, domain.ID(lease.response.NativeProfileId), input.Installation, domain.ID(lease.response.LeaseId), false)
+	// Retain the original executable before the profile opens (see runClaudeAccount).
+	err = lease.retainClaudeInstallation(input.Installation)
+	if err == nil {
+		profile, err = openClaudeProfile(config, connection.Credential, input.AccountID, domain.ID(lease.response.NativeProfileId), input.Installation, domain.ID(lease.response.LeaseId), false)
+	}
 	if err == nil {
 		if err = security.PrivateDir(filepath.Join(config.Root, "processes", lease.response.LeaseId)); err == nil {
 			lease.journal.NativeStarted = true
@@ -600,10 +693,7 @@ func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner 
 		}
 	}
 	if err == nil {
-		err = claude.VerifyAuthVersion(ctx, profile.config)
-	}
-	if err == nil {
-		_, err = profile.identity(ctx, config)
+		err = profile.verifyExecutionStartup(ctx, config)
 	}
 	if err != nil {
 		_ = finish(false)
@@ -663,19 +753,17 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 			return err
 		}
 		_, statErr := os.Lstat(root)
-		noNative := !original.Shared && !journal.NativeStarted && original.Action == domain.SubscriptionLogin && errors.Is(statErr, os.ErrNotExist)
-		originalCleanupAction := (original.Action == domain.SubscriptionLogout && journal.Action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT) ||
-			(original.Shared && original.Action == domain.SubscriptionExecute && journal.Action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
-		removedOriginal := errors.Is(statErr, os.ErrNotExist) && journal.NativeStarted && journal.NativeProfileID == state.NativeProfileID && originalCleanupAction
-		if removedOriginal {
+		disposition := classifyClaudeRecovery(original, journal, state.NativeProfileID, statErr)
+		switch disposition {
+		case claudeRecoveryProfileRemoved:
 			if err := recoverRemovedClaudeProfile(ctx, config, credential, accountID, state.NativeProfileID); err != nil {
 				return err
 			}
-		} else if !noNative {
-			if config.nativeClaudeInstallation == nil {
-				return subscription.Invalid()
+		case claudeRecoveryNativeCleanup:
+			installation, err := claudeCleanupInstallation(ctx, config, journal)
+			if err != nil {
+				return err
 			}
-			installation := *config.nativeClaudeInstallation
 			profile, err := openClaudeProfile(config, credential, accountID, state.NativeProfileID, installation, original.ID, false)
 			if err != nil {
 				return err
@@ -688,7 +776,11 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 			if closed != nil {
 				return closed
 			}
+		case claudeRecoveryPreserveAccount:
+			// The profile was never opened: the server must keep the account.
+			journal.AccountPreserved = true
 		}
+		config.Logger.InfoContext(ctx, "claude_subscription_recovery_disposition", "lease_id", original.ID, "account_id", accountID, "disposition", disposition)
 		journal.Cleanup = true
 		journal.Success = false
 		journal.NativeIdentity = ""
@@ -707,7 +799,60 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 		settleSharedClaudeMemberJournals(config, state.Members)
 		return nil
 	}
-	return lease.finishClaude(nil, true, false)
+	// A preserved account settles as a succeeded no-native recovery; every other
+	// disposition is the cleanup confirmation that disconnects the account.
+	return lease.finishClaude(nil, true, journal.AccountPreserved)
+}
+
+// claudeRecoveryDisposition is the closed result of classifyClaudeRecovery.
+type claudeRecoveryDisposition string
+
+const (
+	// claudeRecoveryNativeCleanup logs the original profile out with the
+	// retained executable evidence.
+	claudeRecoveryNativeCleanup claudeRecoveryDisposition = "native_cleanup"
+	// claudeRecoveryProfileRemoved reconciles a profile the original operation
+	// already removed.
+	claudeRecoveryProfileRemoved claudeRecoveryDisposition = "profile_removed"
+	// claudeRecoveryNeverCreated settles a login that never created its profile;
+	// the cleanup confirmation disconnects the account.
+	claudeRecoveryNeverCreated claudeRecoveryDisposition = "never_created"
+	// claudeRecoveryPreserveAccount settles an execution that provably never
+	// opened the existing profile. The account stays connected: this is a
+	// succeeded no-native settlement, never the cleanup signal that means logout.
+	claudeRecoveryPreserveAccount claudeRecoveryDisposition = "preserve_account"
+)
+
+// classifyClaudeRecovery is the one rule that decides what native work a
+// device-owned recovery needs; every cell is pinned by a table test.
+//
+//   - A profile the original LOGOUT (or shared execution) already removed is
+//     reconciled, never relaunched.
+//   - A shared owner, or any lease that started native work, needs cleanup.
+//   - A LOGIN whose profile directory does not exist never created it.
+//   - A current-schema journal (InstallationRetention) that still lacks the
+//     retained installation never reached the retention that precedes every
+//     profile open, so an EXECUTE crash right after Take left the existing
+//     account profile untouched and keeps the account. LOGOUT, LOGIN and REFRESH
+//     of such a journal still need native cleanup, which then fails closed
+//     because no executable evidence exists. Journals without the marker are
+//     ambiguous legacy evidence.
+func classifyClaudeRecovery(original *domain.SubscriptionLease, journal managedSubscriptionJournal, stateProfile domain.ID, statErr error) claudeRecoveryDisposition {
+	originalCleanupAction := (original.Action == domain.SubscriptionLogout && journal.Action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT) ||
+		(original.Shared && original.Action == domain.SubscriptionExecute && journal.Action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
+	if errors.Is(statErr, os.ErrNotExist) && journal.NativeStarted && journal.NativeProfileID == stateProfile && originalCleanupAction {
+		return claudeRecoveryProfileRemoved
+	}
+	if original.Shared || journal.NativeStarted {
+		return claudeRecoveryNativeCleanup
+	}
+	if original.Action == domain.SubscriptionLogin && errors.Is(statErr, os.ErrNotExist) {
+		return claudeRecoveryNeverCreated
+	}
+	if journal.InstallationRetention && journal.Installation == nil && original.Action == domain.SubscriptionExecute {
+		return claudeRecoveryPreserveAccount
+	}
+	return claudeRecoveryNativeCleanup
 }
 
 // runManagedClaudeRecovery consumes the original local claim of a server-token

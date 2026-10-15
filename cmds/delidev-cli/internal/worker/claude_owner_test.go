@@ -552,7 +552,6 @@ func TestClaudeSharedOwnerRecoveryJoinsEveryMemberBeforeOneOwnerCleanup(t *testi
 		_ = gate.owner.profile.close()
 	}
 	gate.mu.Unlock()
-	f.config.nativeClaudeInstallation = &f.installaton
 	client := delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.cred.Endpoint)
 	f.mu.Lock()
 	f.recovering = true
@@ -660,7 +659,6 @@ func (f *sharedClaudeFixture) lostOwnerState(members []startedMember) *domain.Su
 		_ = gate.owner.profile.close()
 	}
 	gate.mu.Unlock()
-	f.config.nativeClaudeInstallation = &f.installaton
 	f.mu.Lock()
 	f.recovering = true
 	f.mu.Unlock()

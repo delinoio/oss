@@ -16,7 +16,7 @@ use crate::{
         SourceFile,
     },
     rules::{self, Context},
-    sources::{AssetExemption, SourceStore, classify},
+    sources::{AssetExemption, SourceStore, classify, freshness_unverified_problem},
 };
 
 pub struct AnalysisInput<'a> {
@@ -470,6 +470,12 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
              the current code.",
         ));
     }
+    // Freshness-unverified sources keep a usable build snapshot, so this
+    // warning is informational and never makes the run partial.
+    problems.extend(freshness_unverified_problem(
+        context.sources.freshness_unverified.len(),
+        context.sources.existence_unverified.len(),
+    ));
     if !context.sources.unreadable.is_empty() {
         problems.push(problem(
             ErrorCode::SourceUnreadable,
@@ -1195,6 +1201,84 @@ mod tests {
                 .diagnostics
                 .iter()
                 .all(|diagnostic| diagnostic.export_usage.is_none())
+        );
+    }
+
+    /// A snapshot-backed source whose live read fails with an error other than
+    /// "not found" must not be reported as changed: the run keeps the snapshot
+    /// text, stays complete and carries the freshness-unverified warning.
+    #[cfg(unix)]
+    #[test]
+    fn vite_snapshot_source_with_a_failed_live_read_is_unverified_not_stale() {
+        // A path below a regular file fails with a not-a-directory error.
+        const BLOCKED_SOURCE: &str = "package.json/blocked.ts";
+        let snapshot = "export const blocked = 1;";
+        let fixture = run_fixture_patched(
+            BundlerChoice::Vite,
+            true,
+            |value| {
+                let modules = value["modules"].as_array_mut().unwrap();
+                let mut blocked = modules
+                    .iter()
+                    .find(|module| {
+                        module["path"]
+                            .as_str()
+                            .is_some_and(|path| path.contains("/src/effects/"))
+                    })
+                    .unwrap()
+                    .clone();
+                let project = blocked["packageDir"].as_str().unwrap().to_owned();
+                let path = format!("{project}/{BLOCKED_SOURCE}");
+                blocked["id"] = path.clone().into();
+                blocked["path"] = path.into();
+                blocked["isEntry"] = false.into();
+                modules.push(blocked);
+            },
+            |build, project| {
+                let map_path = build.join("assets/index-BHjrzQLH.js.map");
+                let mut map: serde_json::Value =
+                    serde_json::from_str(&std::fs::read_to_string(&map_path).unwrap()).unwrap();
+                map["sources"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(format!("{project}/{BLOCKED_SOURCE}").into());
+                map["sourcesContent"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(snapshot.into());
+                std::fs::write(&map_path, serde_json::to_string(&map).unwrap()).unwrap();
+            },
+        );
+        let analysis = &fixture.output.analysis;
+        let codes: Vec<&str> = analysis
+            .problems
+            .iter()
+            .map(|entry| entry.code.as_str())
+            .collect();
+        assert!(!codes.contains(&"BW_SOURCE_STALE"), "{codes:?}");
+        assert!(!codes.contains(&"BW_SOURCE_UNREADABLE"), "{codes:?}");
+        assert_eq!(
+            codes
+                .iter()
+                .filter(|code| **code == "BW_SOURCE_FRESHNESS_UNVERIFIED")
+                .count(),
+            1,
+            "{codes:?}"
+        );
+        // The warning is informational: it never makes the run partial.
+        assert_eq!(analysis.status, RunStatus::Complete, "{codes:?}");
+        let blocked = fixture
+            .output
+            .sources
+            .iter()
+            .find(|source| source.path.ends_with(BLOCKED_SOURCE))
+            .unwrap();
+        assert!(!blocked.stale);
+        assert!(blocked.content_included);
+        assert_eq!(blocked.content, snapshot);
+        assert_eq!(
+            blocked.revision_evidence,
+            SourceRevisionEvidence::BuildSnapshot
         );
     }
 
@@ -2810,8 +2894,6 @@ mod tests {
         for tail in [
             "if (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG) === \"undefined\") { use(); }",
             "if (typeof (process.env.BUNDLEWHY_FIXTURE_FLAG) === \"undefined\") { use(); }",
-            "while (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
-            "switch (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { default: use(); }",
             "async function gate() { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } }",
             "const gate = async () => { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } \
              }",
@@ -2848,6 +2930,8 @@ mod tests {
     fn rspack_keyword_lookalike_calls_are_not_branch_guards() {
         for tail in [
             "const value = typeof(process.env.BUNDLEWHY_FIXTURE_FLAG);",
+            "while (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "switch (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { default: use(); }",
             "const value = typeof (process.env.BUNDLEWHY_FIXTURE_FLAG);",
             "check(process.env.BUNDLEWHY_FIXTURE_FLAG);",
             "obj.typeof(process.env.BUNDLEWHY_FIXTURE_FLAG);",
@@ -3046,6 +3130,114 @@ mod tests {
             },
         );
         assert!(env_diagnostics(&fixture.output).is_empty());
+    }
+
+    #[test]
+    fn env_reads_inside_invalid_containers_do_not_produce_a_branch_diagnostic() {
+        let guard = "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag branch\")";
+        let read = "process.env.BUNDLEWHY_FIXTURE_FLAG";
+        let diagnostic_count = |replacement: String| {
+            let fixture = run_fixture_patched(
+                BundlerChoice::Rspack,
+                true,
+                |_| {},
+                |build, _| {
+                    let path = build.join("main.js");
+                    let code = std::fs::read_to_string(&path).unwrap();
+                    assert!(code.contains(guard));
+                    std::fs::write(&path, code.replace(guard, &replacement)).unwrap();
+                },
+            );
+            fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+                .count()
+        };
+        // The generated read only supplies a value inside an array literal,
+        // nested array or function object; the following operator does not
+        // depend on it.
+        for container in [
+            format!("[{read}]"),
+            format!("[[{read}]]"),
+            format!("(function(){{ return {read} }})"),
+            format!("(function(){{ return {read}; }})"),
+            format!("(()=>{read})"),
+        ] {
+            for suffix in [
+                "&&console.log(\"flag branch\")",
+                "||console.log(\"flag branch\")",
+                "??console.log(\"flag branch\")",
+                "?console.log(\"flag branch\"):0",
+            ] {
+                assert_eq!(
+                    diagnostic_count(format!("{container}{suffix}")),
+                    0,
+                    "{container}{suffix}"
+                );
+            }
+        }
+        // A real branch inside the container remains detected.
+        assert_eq!(
+            diagnostic_count(format!("[{read}&&console.log(\"flag branch\")]")),
+            1
+        );
+        assert_eq!(
+            diagnostic_count(format!(
+                "function run(){{{read}&&console.log(\"flag branch\")}}run()"
+            )),
+            1
+        );
+    }
+
+    #[test]
+    fn env_reads_keep_their_container_classification_after_keywords_regexes_and_members() {
+        let guard = "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag branch\")";
+        let read = "process.env.BUNDLEWHY_FIXTURE_FLAG";
+        let diagnostic_count = |replacement: String| {
+            let fixture = run_fixture_patched(
+                BundlerChoice::Rspack,
+                true,
+                |_| {},
+                |build, _| {
+                    let path = build.join("main.js");
+                    let code = std::fs::read_to_string(&path).unwrap();
+                    assert!(code.contains(guard));
+                    std::fs::write(&path, code.replace(guard, &replacement)).unwrap();
+                },
+            );
+            fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+                .count()
+        };
+        let suffix = "&&console.log(\"flag branch\")";
+        // An array literal after `return` is a value, not a computed member.
+        assert_eq!(
+            diagnostic_count(format!("function run(){{return[{read}]{suffix}}}run()")),
+            0
+        );
+        // Parentheses after `return` and `await` only group their operand.
+        assert_eq!(
+            diagnostic_count(format!("function run(){{return({read}){suffix}}}run()")),
+            1
+        );
+        assert_eq!(
+            diagnostic_count(format!(
+                "async function run(){{await({read}){suffix}}}run()"
+            )),
+            1
+        );
+        // A bracket after a regular expression literal is a computed member.
+        assert_eq!(diagnostic_count(format!("/x/[{read}]{suffix}")), 1);
+        // An array literal that is indexed yields the environment value.
+        assert_eq!(diagnostic_count(format!("[{read}][0]{suffix}")), 1);
+        assert_eq!(diagnostic_count(format!("[{read}]{suffix}")), 0);
     }
 
     #[test]

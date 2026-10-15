@@ -8,11 +8,14 @@ use std::{
 
 use regex::Regex;
 
-use super::{Context, DiagnosticDraft, RuleId, await_context::await_operator_offsets};
+use self::env_guard::env_guards;
+use super::{Context, DiagnosticDraft, RuleId};
 use crate::{
     collect::CollectedModule,
     model::{Condition, ConditionOutcome, Evidence, EvidenceStatus},
 };
+
+mod env_guard;
 
 pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     duplicate_packages(context, drafts);
@@ -485,21 +488,6 @@ fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
     index > 0 && offset < ranges[index - 1].1
 }
 
-/// Whether the line terminator that starts at `terminator` (and ends at
-/// `after`) ends a statement, by the ECMAScript automatic semicolon insertion
-/// rule: a statement ends when the next token cannot continue the expression,
-/// unless the previous token cannot end one.
-///
-/// The previous token cannot end an expression after a binary or prefix
-/// operator, a comma, an opener or `=>`. The next token continues the
-/// expression for a binary or member operator, a call, an index, a tagged
-/// template, a single `+` or `-` (binary), `in` or `instanceof`. It does not
-/// for `++` and `--`: a line terminator before them is a restricted
-/// production, so they start a new statement.
-fn asi_terminates(code: &str, terminator: usize, after: usize, ignored: &[(usize, usize)]) -> bool {
-    statement_boundary(code, terminator, after, ignored, false, AwaitWord::Operator)
-}
-
 /// How a bare `await` token is read by a statement-boundary decision.
 ///
 /// `await` is the unary operator only in a module and inside an `async`
@@ -514,8 +502,10 @@ pub(super) enum AwaitWord {
     Identifier,
 }
 
-/// Whether the line terminator at `terminator` ends an expression-bodied
-/// arrow function: the [`asi_terminates`] rule, plus a `{` after an operand.
+/// Whether the line terminator that starts at `terminator` (and ends at
+/// `after`) ends an expression-bodied arrow function, by the ECMAScript
+/// automatic semicolon insertion rule: the body ends when the next token
+/// cannot continue the expression, unless the previous token cannot end one.
 /// A `{` cannot continue an expression, so there it opens a block statement
 /// (`(eval) => eval` + line terminator + `{ eval(code) }`).
 pub(super) fn arrow_body_ends(
@@ -563,339 +553,6 @@ fn statement_boundary(
     }
 }
 
-#[derive(Clone, Copy)]
-enum EnvGuard {
-    ShortCircuitAnd,
-    ShortCircuitOr,
-    NullishCoalescing,
-    Conditional,
-    If,
-    While,
-    Switch,
-    For,
-}
-
-impl EnvGuard {
-    fn evidence(self) -> &'static str {
-        match self {
-            Self::ShortCircuitAnd => "the retained read controls a && short-circuit branch",
-            Self::ShortCircuitOr => "the retained read controls a || short-circuit branch",
-            Self::NullishCoalescing => "the retained read controls a ?? fallback branch",
-            Self::Conditional => "the retained read controls a conditional (?:) branch",
-            Self::If => "the retained read is in an if condition",
-            Self::While => "the retained read is in a while condition",
-            Self::Switch => "the retained read is in a switch condition",
-            Self::For => "the retained read is in a for condition",
-        }
-    }
-}
-
-/// Recognize only a generated branch whose test contains this read. A plain
-/// value read in a call, assignment or another data expression is not a DCE
-/// blocker.
-#[cfg(test)]
-fn env_guard(code: &str, start: usize, end: usize, ignored: &[(usize, usize)]) -> Option<EnvGuard> {
-    env_guards(code, &[(start, end)], ignored)
-        .into_iter()
-        .next()
-        .flatten()
-}
-
-#[derive(Clone, Copy)]
-enum ScopeContext {
-    Neutral,
-    Invalid,
-    Guard(EnvGuard),
-    For(ForClause),
-}
-
-#[derive(Clone, Copy)]
-enum ForClause {
-    Initializer,
-    Test,
-    Update,
-}
-
-struct ScanScope {
-    parent: usize,
-    context: ScopeContext,
-    conditional_questions: usize,
-    pending_reads: Vec<usize>,
-    conditional_pending: Vec<usize>,
-    arrow_expression: bool,
-    /// True for a `{` scope that holds object-literal or class members, where
-    /// a keyword followed by `(` declares a method instead of starting a
-    /// control statement.
-    members: bool,
-}
-
-fn env_guards(
-    code: &str,
-    reads: &[(usize, usize)],
-    ignored: &[(usize, usize)],
-) -> Vec<Option<EnvGuard>> {
-    if reads.is_empty() {
-        return Vec::new();
-    }
-    let bytes = code.as_bytes();
-    // Classified once per chunk; every `await(` operand looks its answer up.
-    let await_operators = await_operator_offsets(code, ignored);
-    let mut guards = vec![None; reads.len()];
-    let mut blocked = vec![false; reads.len()];
-    let mut contexts = vec![ScopeContext::Neutral; reads.len()];
-    let mut scopes = vec![ScanScope {
-        parent: 0,
-        context: ScopeContext::Neutral,
-        conditional_questions: 0,
-        pending_reads: Vec::new(),
-        conditional_pending: Vec::new(),
-        arrow_expression: false,
-        members: false,
-    }];
-    let mut current_scope = 0;
-    let mut next_start = 0;
-    let mut next_end = 0;
-    let mut ignored_index = 0;
-
-    for index in 0..bytes.len() {
-        while next_start < reads.len() && reads[next_start].0 == index {
-            contexts[next_start] = scopes[current_scope].context;
-            next_start += 1;
-        }
-        while next_end < reads.len() && reads[next_end].1 <= index {
-            scopes[current_scope].pending_reads.push(next_end);
-            next_end += 1;
-        }
-        while ignored_index < ignored.len() && ignored[ignored_index].1 <= index {
-            ignored_index += 1;
-        }
-        if ignored_index < ignored.len()
-            && ignored[ignored_index].0 <= index
-            && index < ignored[ignored_index].1
-        {
-            continue;
-        }
-
-        if scopes[current_scope].arrow_expression
-            && matches!(bytes[index], b',' | b';' | b')' | b']' | b'}')
-        {
-            let parent = scopes[current_scope].parent;
-            let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
-            let conditional_pending =
-                std::mem::take(&mut scopes[current_scope].conditional_pending);
-            // An expression-bodied arrow evaluates to a function object at
-            // the enclosing expression. Do not let its unguarded reads flow
-            // into an enclosing branch operator. Guards found inside the
-            // arrow body remain recorded on their own reads.
-            drop(pending_reads);
-            drop(conditional_pending);
-            current_scope = parent;
-        }
-
-        let terminator = line_terminator_len(bytes, index);
-        if terminator > 0 && asi_terminates(code, index, index + terminator, ignored) {
-            for read in scopes[current_scope].pending_reads.drain(..) {
-                if guards[read].is_none() {
-                    blocked[read] = true;
-                }
-            }
-            for read in scopes[current_scope].conditional_pending.drain(..) {
-                if guards[read].is_none() {
-                    blocked[read] = true;
-                }
-            }
-            // A statement boundary also ends an expression-bodied arrow.
-            while scopes[current_scope].arrow_expression {
-                current_scope = scopes[current_scope].parent;
-            }
-        }
-
-        match bytes[index] {
-            b'(' | b'[' | b'{' => {
-                let context = scope_context(
-                    code,
-                    index,
-                    bytes[index],
-                    scopes[current_scope].context,
-                    scopes[current_scope].members,
-                    ignored,
-                    &await_operators,
-                );
-                scopes.push(ScanScope {
-                    parent: current_scope,
-                    context,
-                    conditional_questions: 0,
-                    pending_reads: Vec::new(),
-                    conditional_pending: Vec::new(),
-                    arrow_expression: false,
-                    members: bytes[index] == b'{' && brace_holds_members(code, index, ignored),
-                });
-                current_scope = scopes.len() - 1;
-            }
-            b')' | b']' | b'}' if current_scope != 0 => {
-                let parent = scopes[current_scope].parent;
-                let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
-                let conditional_pending =
-                    std::mem::take(&mut scopes[current_scope].conditional_pending);
-                scopes[parent].pending_reads.extend(pending_reads);
-                scopes[parent].pending_reads.extend(conditional_pending);
-                scopes[parent].pending_reads.sort_unstable();
-                current_scope = parent;
-            }
-            b';' => {
-                let context = scopes[current_scope].context;
-                match context {
-                    ScopeContext::For(ForClause::Test) => {
-                        for read in scopes[current_scope].pending_reads.drain(..) {
-                            if guards[read].is_none() {
-                                guards[read] = Some(EnvGuard::For);
-                            }
-                        }
-                    }
-                    _ => {
-                        for read in scopes[current_scope].pending_reads.drain(..) {
-                            if guards[read].is_none() {
-                                blocked[read] = true;
-                            }
-                        }
-                    }
-                }
-                for read in scopes[current_scope].conditional_pending.drain(..) {
-                    if matches!(context, ScopeContext::For(ForClause::Test)) {
-                        if guards[read].is_none() {
-                            guards[read] = Some(EnvGuard::For);
-                        }
-                    } else if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-                if let ScopeContext::For(clause) = context {
-                    scopes[current_scope].context = ScopeContext::For(match clause {
-                        ForClause::Initializer => ForClause::Test,
-                        ForClause::Test | ForClause::Update => ForClause::Update,
-                    });
-                }
-            }
-            b',' => {
-                for read in scopes[current_scope].pending_reads.drain(..) {
-                    if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-                for read in scopes[current_scope].conditional_pending.drain(..) {
-                    if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-            }
-            b':' => {
-                if scopes[current_scope].conditional_questions > 0 {
-                    let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
-                    scopes[current_scope]
-                        .conditional_pending
-                        .extend(pending_reads);
-                    scopes[current_scope].conditional_questions -= 1;
-                } else {
-                    for read in scopes[current_scope].pending_reads.drain(..) {
-                        if guards[read].is_none() {
-                            blocked[read] = true;
-                        }
-                    }
-                    for read in scopes[current_scope].conditional_pending.drain(..) {
-                        if guards[read].is_none() {
-                            blocked[read] = true;
-                        }
-                    }
-                }
-            }
-            b'=' if bytes.get(index + 1) == Some(&b'>') => {
-                if next_significant_token(code, index + 2, ignored).1 != Token::Punct("{") {
-                    scopes.push(ScanScope {
-                        parent: current_scope,
-                        context: ScopeContext::Neutral,
-                        conditional_questions: 0,
-                        pending_reads: Vec::new(),
-                        conditional_pending: Vec::new(),
-                        arrow_expression: true,
-                        members: false,
-                    });
-                    current_scope = scopes.len() - 1;
-                }
-            }
-            b'=' if bytes.get(index + 1) != Some(&b'=')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'=')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'!')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'<')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'>') =>
-            {
-                for read in scopes[current_scope].pending_reads.drain(..) {
-                    if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-                for read in scopes[current_scope].conditional_pending.drain(..) {
-                    if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-            }
-            b'&' if bytes.get(index + 1) == Some(&b'&') => {
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none() {
-                        guards[read] = Some(EnvGuard::ShortCircuitAnd);
-                    }
-                }
-            }
-            b'|' if bytes.get(index + 1) == Some(&b'|') => {
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none() {
-                        guards[read] = Some(EnvGuard::ShortCircuitOr);
-                    }
-                }
-            }
-            b'?' if bytes.get(index + 1) == Some(&b'?') => {
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none() {
-                        guards[read] = Some(EnvGuard::NullishCoalescing);
-                    }
-                }
-            }
-            b'?' if bytes.get(index + 1) != Some(&b'.')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'?') =>
-            {
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none() {
-                        guards[read] = Some(EnvGuard::Conditional);
-                    }
-                }
-                scopes[current_scope].conditional_questions += 1;
-            }
-            _ => {}
-        }
-    }
-
-    while scopes[current_scope].arrow_expression {
-        let parent = scopes[current_scope].parent;
-        current_scope = parent;
-    }
-
-    guards
-        .into_iter()
-        .zip(contexts.into_iter().zip(blocked))
-        .map(|(guard, (context, blocked))| match context {
-            // An invalid enclosing expression blocks inherited branch
-            // evidence, but an operator found inside that expression still
-            // directly controls its own branch.
-            ScopeContext::Invalid => guard,
-            ScopeContext::Neutral => guard,
-            ScopeContext::Guard(fallback) if !blocked => guard.or(Some(fallback)),
-            ScopeContext::Guard(_) => guard,
-            ScopeContext::For(ForClause::Test) if !blocked => guard.or(Some(EnvGuard::For)),
-            ScopeContext::For(_) => guard,
-        })
-        .collect()
-}
-
 /// Returns the code before `index` with trailing whitespace and comments
 /// removed, so a control keyword separated from its `(` by comments is still
 /// the last token of the prefix.
@@ -932,9 +589,6 @@ fn strip_comments_for_prefix<'a>(
     }
 }
 
-/// Keyword unary operators whose operand may be parenthesized.
-const UNARY_KEYWORDS: [&str; 4] = ["typeof", "await", "void", "delete"];
-
 /// True for a character that can continue a JavaScript identifier
 /// (`IdentifierPart`): any Unicode `ID_Continue` character (letters, digits,
 /// combining marks, connector punctuation such as `_`), `$`, and the
@@ -950,53 +604,6 @@ pub(super) fn is_identifier_part(character: char) -> bool {
         LazyLock::new(|| Regex::new(r"^\p{ID_Continue}$").expect("static regex"));
     matches!(character, '\u{200c}' | '\u{200d}')
         || ID_CONTINUE.is_match(character.encode_utf8(&mut [0; 4]))
-}
-
-/// True when the last significant token before an opening parenthesis is
-/// `keyword` used as a control keyword. `prefix` is the code before the
-/// parenthesis as returned by [`strip_comments_for_prefix`] and `token` is
-/// [`previous_significant_token`] for the same position.
-///
-/// Rejected: an identifier that merely ends in the keyword (`notif`, `$if`,
-/// `éif`, `a\u{301}if`); a property, method or private name written after a
-/// member access, even when whitespace, line terminators or comments separate
-/// the dot from the name (`obj.if`, `obj?.while`, `obj. /* c */ for`,
-/// `this.#if`); and a method declaration. Inside object-literal or class
-/// members (`members`), a keyword is a method name after a comma or `*`
-/// (`{a, if(){}}`, `*if(){}`), as the first token of a member or after `get`,
-/// `set`, `static` or `async`. Outside members the comma and `*` precede an
-/// operand (`(a, typeof(x))`, `a * await(x)`), so the keyword is not a name.
-fn ends_with_control_keyword(
-    code: &str,
-    prefix: &str,
-    token: Token<'_>,
-    keyword: &str,
-    members: bool,
-    ignored: &[(usize, usize)],
-) -> bool {
-    let Token::Word {
-        text,
-        member: false,
-    } = token
-    else {
-        return false;
-    };
-    if text != keyword {
-        return false;
-    }
-    let start = prefix.len() - keyword.len();
-    let before = strip_comments_for_prefix(code, start, ignored);
-    match before.chars().next_back() {
-        // A comma or `*` before a keyword is a method-name separator only in
-        // a member list. In an expression it precedes a unary operator
-        // (`(a, typeof(x))`, `a * await(x)`).
-        Some(',' | '*') => !members,
-        Some('{' | '}' | ';') => !members,
-        Some(character) if members && is_identifier_part(character) => {
-            !matches!(trailing_word(before), "get" | "set" | "static" | "async")
-        }
-        _ => true,
-    }
 }
 
 /// The identifier-like word at the end of `text`, or an empty string.
@@ -1080,71 +687,6 @@ pub(super) fn class_heading_precedes(code: &str, end: usize, ignored: &[(usize, 
         }
     }
     word_end.is_some_and(|finish| depth == 0 && is_class(0, finish))
-}
-
-fn scope_context(
-    code: &str,
-    index: usize,
-    opener: u8,
-    parent: ScopeContext,
-    members: bool,
-    ignored: &[(usize, usize)],
-    await_operators: &[usize],
-) -> ScopeContext {
-    let prefix = strip_comments_for_prefix(code, index, ignored);
-    let last = prefix.chars().next_back();
-    if opener == b'[' {
-        // A bracket after an expression is a computed member access and keeps
-        // the surrounding condition. A bracket after an operator starts an
-        // array literal, whose contents do not form a guard by themselves.
-        if last.is_some_and(|character| {
-            is_identifier_part(character)
-                || matches!(character, ']' | ')' | '}' | '\'' | '"' | '`' | '.')
-        }) {
-            return parent;
-        }
-        return ScopeContext::Invalid;
-    }
-    if opener != b'(' {
-        return ScopeContext::Invalid;
-    }
-    let token = previous_significant_token(code, index, ignored);
-    if ends_with_control_keyword(code, prefix, token, "for", members, ignored) {
-        return ScopeContext::For(ForClause::Initializer);
-    }
-    for (keyword, guard) in [
-        ("if", EnvGuard::If),
-        ("while", EnvGuard::While),
-        ("switch", EnvGuard::Switch),
-    ] {
-        if ends_with_control_keyword(code, prefix, token, keyword, members, ignored) {
-            return ScopeContext::Guard(guard);
-        }
-    }
-    // A keyword unary operator followed by `(` (`typeof(x)`, `await(x)`)
-    // wraps its operand instead of calling it, so the parenthesis keeps the
-    // surrounding context. A property or longer identifier ending in the same
-    // letters (`obj.typeof(x)`, `mytypeof(x)`) is an ordinary call.
-    //
-    // `await` is an operator only where the token classifier proves a module
-    // or an async function; in classic script code `await(x)` is an ordinary
-    // call. The classifier ran once for the whole chunk.
-    if UNARY_KEYWORDS.iter().any(|keyword| {
-        ends_with_control_keyword(code, prefix, token, keyword, members, ignored)
-            && (*keyword != "await"
-                || await_operators
-                    .binary_search(&(prefix.len() - keyword.len()))
-                    .is_ok())
-    }) {
-        return parent;
-    }
-    if last.is_some_and(|character| {
-        is_identifier_part(character) || matches!(character, ']' | ')' | '.')
-    }) {
-        ScopeContext::Invalid
-    } else {
-        parent
-    }
 }
 
 fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
@@ -1761,6 +1303,10 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         })
         .collect();
     let mut bodies: Vec<(usize, usize)> = function_bodies.iter().map(|(_, body)| *body).collect();
+    // TypeScript `namespace` and `module` bodies own their `var` declarations
+    // just like function bodies.
+    let namespaces = namespace_bodies(source, &code, ignored, &blocks);
+    bodies.extend(namespaces.iter().map(|namespace| namespace.body));
     let mut scopes = Vec::new();
     // Parameter lists followed by a body: `(...) {` or `(...) =>`.
     let parameters = Regex::new(r"\(([^()]*)\)\s*(?:=>|\{)").expect("static regex");
@@ -1881,8 +1427,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
     // are scoped like their ASCII counterparts. ZWNJ and ZWJ are permitted
     // after the first identifier character by the ECMAScript grammar.
     let single_arrow =
-        Regex::new(r"(?:\p{ID_Start}|[$_])(?:\p{ID_Continue}|[$_\u{200C}\u{200D}])*\s*=>\s*\{")
-            .expect("static regex");
+        Regex::new(&format!(r"{UNICODE_IDENTIFIER}\s*=>\s*\{{")).expect("static regex");
     for found in single_arrow.find_iter(&code) {
         let open = found.end() - 1;
         if let Some(body) = blocks.iter().find(|(start, _)| *start == open) {
@@ -1911,6 +1456,21 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             _ => enclosing(found.start()),
         };
         scopes.push(scope);
+        // An exported member is visible in every declaration that merges into
+        // the same namespace symbol; other declarations stay local to their
+        // own body.
+        if exported_declaration(&code, found.start())
+            && let Some(namespace) = namespaces
+                .iter()
+                .find(|namespace| namespace.body == enclosing(found.start()))
+        {
+            scopes.extend(
+                namespaces
+                    .iter()
+                    .filter(|merged| merged.key == namespace.key)
+                    .map(|merged| merged.body),
+            );
+        }
     }
     scopes
 }
@@ -1970,6 +1530,168 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
         index += 1;
     }
     bytes.len()
+}
+
+/// ECMAScript identifier syntax: Unicode `ID_Start` or `$`/`_`, then
+/// `ID_Continue`, `$`, `_`, ZWNJ or ZWJ.
+const UNICODE_IDENTIFIER: &str =
+    r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*";
+
+/// Words that can follow `module`/`namespace` in expressions such as
+/// `module in {}`; they are never namespace names.
+const NON_NAMESPACE_WORDS: [&str; 3] = ["in", "instanceof", "of"];
+
+/// A TypeScript `namespace`/`module` declaration body. Declarations with the
+/// same `key` merge into one symbol and share its exported members.
+struct NamespaceBody {
+    key: String,
+    body: (usize, usize),
+}
+
+/// Finds TypeScript namespace and module bodies, including dotted names,
+/// nested declarations, Unicode names and quoted ambient module names.
+///
+/// The keyword and the name must share a line, as in TypeScript's grammar, so
+/// automatic semicolon insertion keeps `module\nN\n{}` an ordinary block.
+/// Keys follow the textual qualified name; an exported nested declaration
+/// extends the key of its enclosing namespace, while any other nested
+/// declaration gets a block-local key because it cannot merge with outer
+/// declarations.
+fn namespace_bodies(
+    source: &str,
+    code: &str,
+    ignored: &[(usize, usize)],
+    blocks: &[(usize, usize)],
+) -> Vec<NamespaceBody> {
+    let keyword = Regex::new(r"\b(namespace|module)").expect("static regex");
+    let path = Regex::new(&format!(
+        r"^({UNICODE_IDENTIFIER}(?:\s*\.\s*{UNICODE_IDENTIFIER})*)\s*\{{"
+    ))
+    .expect("static regex");
+    let mut namespaces: Vec<NamespaceBody> = Vec::new();
+    for found in keyword.find_iter(code) {
+        let kind = found.as_str();
+        // Literals are masked in `code`, so measure the same-line trivia gap in
+        // the original source.
+        let Some(cursor) = same_line_trivia_end(source, ignored, found.end()) else {
+            continue;
+        };
+        // Member accesses such as `module.exports` or `a.namespace` are not
+        // declarations.
+        let preceding = code[..found.start()]
+            .bytes()
+            .rev()
+            .find(|byte| !byte.is_ascii_whitespace());
+        if matches!(preceding, Some(b'.' | b'$')) {
+            continue;
+        }
+        let rest = &code[cursor..];
+        let (name, open) = if let Some(captures) = path.captures(rest)
+            && let (Some(name), Some(all)) = (captures.get(1), captures.get(0))
+        {
+            let name: String = name
+                .as_str()
+                .split('.')
+                .map(str::trim)
+                .collect::<Vec<_>>()
+                .join(".");
+            if NON_NAMESPACE_WORDS.contains(&name.as_str()) {
+                continue;
+            }
+            (name, cursor + all.end() - 1)
+        } else if kind == "module"
+            && matches!(source.as_bytes().get(cursor), Some(b'"' | b'\''))
+            && let Some(&(_, end)) = ignored.iter().find(|(start, _)| *start == cursor)
+            && let Some(offset) = code[end..].find(|character: char| !character.is_whitespace())
+            && code.as_bytes().get(end + offset) == Some(&b'{')
+        {
+            // `declare module "pkg" {}`: the literal is masked in `code`.
+            (
+                format!("'{}'", &source[cursor + 1..end.saturating_sub(1)]),
+                end + offset,
+            )
+        } else {
+            continue;
+        };
+        let Some(body) = blocks.iter().find(|(start, _)| *start == open).copied() else {
+            continue;
+        };
+        let parent = blocks
+            .iter()
+            .filter(|(start, end)| *start < found.start() && found.start() < *end)
+            .min_by_key(|(start, end)| end - start);
+        let key = match parent {
+            None => name,
+            // Only an exported nested namespace is a member of its parent
+            // symbol; any other nested declaration merges only inside its
+            // own enclosing body.
+            Some(parent) => match namespaces.iter().find(|outer| outer.body == *parent) {
+                Some(outer) if exported_declaration(code, found.start()) => {
+                    format!("{}.{name}", outer.key)
+                }
+                _ => format!("@{}.{name}", parent.0),
+            },
+        };
+        namespaces.push(NamespaceBody { key, body });
+    }
+    namespaces
+}
+
+/// Skips whitespace and comments that stay on one line, starting at `from`.
+/// Returns the position of the next token, or `None` when no trivia separates
+/// it from `from` or a line terminator intervenes. A multi-line comment that
+/// contains a line terminator counts as a line break, as in TypeScript.
+fn same_line_trivia_end(source: &str, ignored: &[(usize, usize)], from: usize) -> Option<usize> {
+    let is_line_terminator =
+        |character: char| matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}');
+    let mut cursor = from;
+    loop {
+        let rest = &source[cursor..];
+        if let Some(character) = rest.chars().next()
+            && character.is_whitespace()
+            && !is_line_terminator(character)
+        {
+            cursor += character.len_utf8();
+            continue;
+        }
+        if rest.starts_with("/*")
+            && let Some(&(_, end)) = ignored.iter().find(|(start, _)| *start == cursor)
+            && !source[cursor..end.min(source.len())].contains(is_line_terminator)
+        {
+            cursor = end.min(source.len());
+            continue;
+        }
+        break;
+    }
+    (cursor > from).then_some(cursor)
+}
+
+/// Modifiers that can sit between `export` and a declaration keyword, for
+/// example `export declare var` or `export async function`.
+const DECLARATION_MODIFIERS: [&str; 2] = ["declare", "async"];
+
+/// Whether the declaration starting at `start` is directly preceded by
+/// `export`, optionally followed by any of `DECLARATION_MODIFIERS` in any
+/// order. Comments are masked in `code`, so they count as whitespace.
+fn exported_declaration(code: &str, start: usize) -> bool {
+    let word_boundary = |before: &str| {
+        before.chars().next_back().is_none_or(|character| {
+            !(character.is_alphanumeric() || character == '_' || character == '$')
+        })
+    };
+    let mut prefix = code[..start].trim_end();
+    'modifiers: loop {
+        for modifier in DECLARATION_MODIFIERS {
+            if let Some(before) = prefix.strip_suffix(modifier)
+                && word_boundary(before)
+            {
+                prefix = before.trim_end();
+                continue 'modifiers;
+            }
+        }
+        break;
+    }
+    prefix.strip_suffix("export").is_some_and(word_boundary)
 }
 
 /// Finds a block-bodied function or arrow body after a parameter list.
@@ -2355,7 +2077,14 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        super::await_context::await_operator_offsets,
+        env_guard::{EnvGuard, env_guard},
+        *,
+    };
+
+    /// Keyword unary operators whose operand may be parenthesized.
+    const UNARY_KEYWORDS: [&str; 4] = ["typeof", "await", "void", "delete"];
 
     fn eval_rule_drafts(source: &str, engine_reports_eval: bool) -> Vec<DiagnosticDraft> {
         let dir = tempfile::tempdir().unwrap();
@@ -2597,145 +2326,528 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
-    fn env_reads_require_a_generated_branch() {
-        let guard = |code: &str, read: &str| {
-            let start = code.find(read).unwrap();
-            env_guard(code, start, start + read.len(), &non_code_ranges(code))
-                .map(EnvGuard::evidence)
+    fn eval_shadowing_is_decided_per_call() {
+        // A shadowing parameter in one function does not hide a real direct
+        // eval in another.
+        let source = "function a(eval) {\n  eval(x);\n}\nfunction b() {\n  return eval(y);\n}\n";
+        assert_eq!(direct_eval_line(source), Some((4, 9)));
+        assert_eq!(direct_eval_line("function run(eval) { eval(code); }"), None);
+        assert_eq!(
+            direct_eval_line("{ const eval = (x) => x; eval(y); }"),
+            None
+        );
+        assert_eq!(direct_eval_line("const f = (eval) => eval(z);"), None);
+        assert_eq!(
+            direct_eval_line("{ let eval = g; } eval(w);"),
+            Some((0, 18))
+        );
+        // Control-flow conditions are not parameter lists.
+        assert_eq!(direct_eval_line("if (eval) { eval(code); }"), Some((0, 12)));
+        assert_eq!(
+            direct_eval_line("while (eval) { eval(code); }"),
+            Some((0, 15))
+        );
+        assert_eq!(
+            direct_eval_line("try {} catch (eval) { eval(code); }"),
+            None
+        );
+    }
+
+    #[test]
+    fn named_function_expression_eval_shadows_only_its_body() {
+        assert_eq!(
+            direct_eval_line("const helper = function eval() { return 1; }; eval(code);"),
+            Some((0, 46))
+        );
+        assert_eq!(
+            direct_eval_line("const helper = function eval() { return eval(code); };"),
+            None
+        );
+        assert_eq!(
+            direct_eval_line("function eval(code) { return code; } eval(code);"),
+            None
+        );
+        let source = "const helper = function eval() { return eval(code); };\nconst longLocalName \
+                      = 1;\neval('longLocalName');";
+        assert_eq!(direct_eval_line(source), Some((2, 0)));
+        let drafts = eval_rule_drafts(source, false);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+        assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+        assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 3);
+    }
+
+    #[test]
+    fn function_bodies_skip_typescript_return_annotations() {
+        let source = "function run(): void { var eval = helper; } eval(code);";
+        assert!(direct_eval_line(source).is_some());
+        let source = "function run(): Promise<{ ok: boolean }> { var eval = helper; } eval(code);";
+        assert!(direct_eval_line(source).is_some());
+        let source = "function run(): () => { ok: boolean } { var eval = helper; } eval(code);";
+        assert!(direct_eval_line(source).is_some());
+    }
+
+    #[test]
+    fn eval_shadowing_handles_function_scan_edge_cases() {
+        assert_eq!(
+            direct_eval_line("obj.function(); if (condition) { var eval = helper; } eval(code);"),
+            None
+        );
+        assert!(direct_eval_line("const make = () => function eval() {}; eval(code);").is_some());
+        assert!(direct_eval_line("const instance = new function eval() {}; eval(code);").is_some());
+        assert!(
+            direct_eval_line("const run = (value = make()) => { var eval = helper; }; eval(code);")
+                .is_some()
+        );
+        assert!(
+            direct_eval_line("const run = (value): void => { var eval = helper; }; eval(code);")
+                .is_some()
+        );
+        assert!(direct_eval_line("const run = λ => { var eval = helper; }; eval(code);").is_some());
+        assert!(
+            direct_eval_line("class C { run(): void { var eval = helper; } } eval(code);")
+                .is_some()
+        );
+        assert!(
+            direct_eval_line(
+                "class C { run(): Promise<{ ok: boolean }> { var eval = helper; } } eval(code);"
+            )
+            .is_some()
+        );
+        assert_eq!(
+            direct_eval_line(
+                "async function run() { for await (const item of items) { var eval = helper; } \
+                 eval(code); }"
+            ),
+            None
+        );
+        assert!(
+            direct_eval_line("function outer() { return\nfunction eval() {}; } eval(code);")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn namespace_local_var_eval_does_not_shadow_outside_calls() {
+        for keyword in ["namespace", "module"] {
+            assert_eq!(
+                direct_eval_line(&format!(
+                    "{keyword} N {{ var eval = helper; }}\neval(code);"
+                )),
+                Some((1, 0))
+            );
+            assert_eq!(
+                direct_eval_line(&format!("{keyword} N {{ var eval = helper; eval(code); }}")),
+                None
+            );
+            assert_eq!(
+                direct_eval_line(&format!(
+                    "{keyword} N {{ var eval = helper; eval(code); }}\neval(code);"
+                )),
+                Some((1, 0))
+            );
+        }
+        // Nested and dotted namespaces.
+        assert_eq!(
+            direct_eval_line(
+                "namespace A { namespace B { var eval = helper; eval(code); } }\neval(code);"
+            ),
+            Some((1, 0))
+        );
+        assert_eq!(
+            direct_eval_line("namespace A.B { var eval = helper; eval(code); }"),
+            None
+        );
+        assert_eq!(
+            direct_eval_line("export namespace A.B { var eval = helper; }\neval(code);"),
+            Some((1, 0))
+        );
+        assert_eq!(
+            direct_eval_line("declare namespace N { var eval: any; }\neval(code);"),
+            Some((1, 0))
+        );
+        // A `var` in a nested block belongs to the enclosing namespace.
+        assert_eq!(
+            direct_eval_line(
+                "namespace N { if (x) { var eval = helper; } eval(code); }\neval(code);"
+            ),
+            Some((1, 0))
+        );
+        // A function keeps its own `var` boundary inside a namespace.
+        assert_eq!(
+            direct_eval_line("namespace N { function f() { var eval = helper; } eval(code); }"),
+            Some((0, 50))
+        );
+        // Lexical declarations keep the block path.
+        assert_eq!(
+            direct_eval_line("namespace N { let eval = helper; eval(code); }\neval(code);"),
+            Some((1, 0))
+        );
+        // Plain blocks still shadow the surrounding source scope.
+        assert_eq!(direct_eval_line("{ var eval = helper; } eval(code);"), None);
+        // Identifiers that merely resemble the keywords stay ordinary blocks.
+        assert_eq!(
+            direct_eval_line("module.exports = { run() { var eval = helper; } }; eval(code);"),
+            Some((0, 51))
+        );
+        assert_eq!(
+            direct_eval_line("{ var namespace = 1; } { var eval = helper; } eval(code);"),
+            None
+        );
+    }
+
+    #[test]
+    fn namespace_var_eval_scope_table() {
+        // (source, expected direct-eval position). `None` means every call is
+        // shadowed by a binding; `Some` is the first unshadowed call.
+        let cases: &[(&str, Option<(u32, u32)>)] = &[
+            // Quoted ambient module names.
+            (
+                "declare module \"pkg\" { export var eval: any }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "declare module 'pkg' { var eval: any }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "declare module \"pkg\" { var eval: any; eval(code); }",
+                None,
+            ),
+            (
+                "module \"a{b\" { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            // Unicode namespace names.
+            (
+                "namespace \u{3a9} { var eval = helper }\neval(code);",
+                Some((1, 0)),
+            ),
+            ("namespace \u{3a9} { var eval = helper; eval(code); }", None),
+            (
+                "namespace \u{3a9}.\u{3bb}x { var eval = helper }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "module caf\u{e9} { var eval = helper }\neval(code);",
+                Some((1, 0)),
+            ),
+            // The keyword and the name share a line; otherwise automatic
+            // semicolon insertion leaves an ordinary block.
+            ("module\nN\n{ var eval = helper; }\neval(code);", None),
+            ("namespace\nN\n{ var eval = helper; }\neval(code);", None),
+            ("module\n\"pkg\"\n{ var eval = helper; }\neval(code);", None),
+            (
+                "module N\n{ var eval = helper; }\neval(code);",
+                Some((2, 0)),
+            ),
+            (
+                "namespace N.\nM\n{ var eval = helper; }\neval(code);",
+                Some((3, 0)),
+            ),
+            // Same-line comments are trivia between the keyword and the name.
+            (
+                "namespace/* note */N { var eval = helper; } eval(code);",
+                Some((0, 44)),
+            ),
+            (
+                "namespace /* note */ N { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "module/* a */N/* b */.M { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "module/* note */\"pkg\" { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            // A comment that contains a line terminator is a line break.
+            (
+                "namespace /*\n*/ N { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace // note\nN { var eval = helper; }\neval(code);",
+                None,
+            ),
+            // Words that follow the keywords in expressions are not names.
+            (
+                "module in { a: 1 }; { var eval = helper; } eval(code);",
+                None,
+            ),
+            // Modifiers between `export` and the declaration keyword.
+            (
+                "namespace N { export async function eval() {} }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export declare async function eval(): void; }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export async /* c */ function eval() {} }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { async function eval() {} }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            // Exported members are shared by merged declarations.
+            (
+                "namespace N { export var eval = helper; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { eval(code); }\nnamespace N { export var eval = helper; }",
+                None,
+            ),
+            (
+                "module N { export let eval = helper; }\nmodule N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export const eval = helper; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export function eval() {} }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export declare var eval: any; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare module \"pkg\" { export var eval: any }\ndeclare module 'pkg' { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "namespace A.B { export var eval = helper; }\nnamespace A { export namespace B { \
+                 eval(code); } }",
+                None,
+            ),
+            // The merge never reaches outside the merged declarations.
+            (
+                "namespace N { export var eval = helper; }\nnamespace N { }\neval(code);",
+                Some((2, 0)),
+            ),
+            (
+                "namespace N { export var eval = helper; }\nnamespace M { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare module \"a\" { export var eval: any }\ndeclare module \"b\" { \
+                 eval(code); }",
+                Some((1, 21)),
+            ),
+            (
+                "namespace N { export var eval = helper; }\nfunction f() { namespace N { \
+                 eval(code); } }",
+                Some((1, 29)),
+            ),
+            // Non-exported bindings stay local to their own declaration.
+            (
+                "namespace N { var eval = helper; }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "namespace N { let eval = helper; }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "namespace N { export namespace M { export var eval = helper; } }\nnamespace N { \
+                 export namespace M { eval(code); } }",
+                None,
+            ),
+            // A nested namespace that is not exported is a separate symbol in
+            // each outer declaration.
+            (
+                "namespace N { namespace M { export var eval = helper; } }\nnamespace N { \
+                 namespace M { eval(code); } }",
+                Some((1, 28)),
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(direct_eval_line(source), *expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn namespace_scan_known_limits_are_pinned() {
+        // The scan has no parser: merged declarations are matched by their
+        // written qualified name, so a merge through an alias or a class or
+        // function with the same name is not followed, and the exported
+        // binding stays in its own declaration.
+        assert_eq!(
+            direct_eval_line(
+                "namespace N { export var eval = helper; }\nnamespace N\n.M { eval(code); }"
+            ),
+            Some((2, 5))
+        );
+        // Constructs without a recognized shape keep the program-wide `var`
+        // boundary, which suppresses calls elsewhere in the source.
+        assert_eq!(
+            direct_eval_line("declare global { var eval: any }\neval(code);"),
+            None
+        );
+        // Escapes in module names are compared as written.
+        assert_eq!(
+            direct_eval_line(
+                "declare module \"p\\x6bg\" { export var eval: any }\ndeclare module \"pkg\" { \
+                 eval(code); }"
+            ),
+            Some((1, 23))
+        );
+    }
+
+    #[test]
+    fn namespace_local_var_eval_reaches_the_mangling_rule() {
+        let prefix = "const longLocalName = 1;\n";
+        for keyword in ["namespace", "module"] {
+            let outside = format!("{prefix}{keyword} N {{ var eval = helper; }}\neval(code);");
+            let drafts = eval_rule_drafts(&outside, false);
+            assert_eq!(drafts.len(), 1);
+            assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+            assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+            let shadowed = format!("{prefix}{keyword} N {{ var eval = helper; eval(code); }}");
+            assert!(eval_rule_drafts(&shadowed, false).is_empty());
+            // Engine-reported evals are unaffected by the source scan.
+            assert_eq!(eval_rule_drafts(&shadowed, true).len(), 1);
+        }
+    }
+
+    #[test]
+    fn switch_case_function_declarations_keep_their_declaration_scope() {
+        for source in [
+            "switch (value) { case 0: function eval(x) { return x; } eval(code); }",
+            "switch (value) { default: function eval(x) { return x; } eval(code); }",
+        ] {
+            assert_eq!(direct_eval_line(source), None);
+        }
+    }
+
+    #[test]
+    fn var_eval_uses_the_containing_function_scope() {
+        let shadowed = "function run() { if (condition) { var eval = helper; } eval(code); }";
+        assert_eq!(direct_eval_line(shadowed), None);
+        assert_eq!(
+            direct_eval_line(&format!("{shadowed}\nfunction other() {{ eval(code); }}")),
+            Some((1, 19))
+        );
+        assert_eq!(
+            direct_eval_line("function run() { if (true) { let eval = helper; } eval(code); }"),
+            Some((0, 50))
+        );
+        assert_eq!(
+            direct_eval_line("function run() { if (true) { const eval = helper; } eval(code); }"),
+            Some((0, 52))
+        );
+        assert_eq!(direct_eval_line("{ var eval = helper; } eval(code);"), None);
+        for source in [
+            "const run = () => { var eval = helper; eval(code); }; eval(code);",
+            "const run = value => { var eval = helper; eval(code); }; eval(code);",
+        ] {
+            assert_eq!(
+                direct_eval_line(source),
+                Some((
+                    0,
+                    u32::try_from(source.rfind("eval(code)").unwrap()).unwrap()
+                ))
+            );
+        }
+        let source = "function run() { if (condition) { var eval = helper; } const longLocalName \
+                      = 1; return eval(code); }";
+        assert!(eval_rule_drafts(source, false).is_empty());
+        let reported = eval_rule_drafts(source, true);
+        assert_eq!(reported.len(), 1);
+        assert_eq!(reported[0].status, EvidenceStatus::Confirmed);
+    }
+
+    #[test]
+    fn finds_direct_eval_but_not_member_eval() {
+        assert_eq!(
+            direct_eval_line("const a = 1;\n  return eval(x);"),
+            Some((1, 9))
+        );
+        assert_eq!(direct_eval_line("obj.eval(x); evaluate(y);"), None);
+        assert_eq!(
+            direct_eval_line(
+                "const a = \"eval(x)\"; // eval(y)\n/* eval(z) */ b = `eval(t)`; c = /eval(r)/;"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn collects_declared_names_of_four_or_more_characters() {
+        let names =
+            declared_names("const ab = 1; let local = 2; var other = 3; function helper() {}");
+        assert_eq!(names, vec!["local".to_owned(), "other".to_owned()]);
+        let names = declared_names(
+            "const real = 1; const text = \"const retainedLiteralName\"; // let commented",
+        );
+        assert_eq!(names, vec!["real".to_owned(), "text".to_owned()]);
+        let names = declared_names(
+            "const x = f(1, 2), descriptiveName = 1;\nlet { alpha, beta: renamedBeta = 3, \
+             ...restOfIt } = o, [first, , second] = a;",
+        );
+        assert_eq!(
+            names,
+            [
+                "alpha",
+                "descriptiveName",
+                "first",
+                "renamedBeta",
+                "restOfIt",
+                "second"
+            ]
+            .map(str::to_owned)
+            .to_vec()
+        );
+    }
+
+    #[test]
+    fn configuration_only_locations_do_not_reduce_coverage() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("rspack.config.js");
+        std::fs::write(&config, "module.exports = {};").unwrap();
+        let collection = crate::collect::Collection {
+            bundler: "rspack".to_owned(),
+            config_file: Some(config.to_string_lossy().into_owned()),
+            minify_enabled: false,
+            config_summary: BTreeMap::from([(
+                "optimization.minimize".to_owned(),
+                "false".to_owned(),
+            )]),
+            ..crate::collect::Collection::default()
         };
-        for code in [
-            "console.log(process.env.VERSION);",
-            "const version=process.env.VERSION;ready&&run()",
-            "console.log(process.env.VERSION),ready&&run()",
-            "if(console.log(process.env.VERSION))run()",
-            "if(process.env.VERSION,ready)run()",
-            "if((process.env.VERSION),ready)run()",
-            "if([process.env.VERSION])run()",
-            "if({value:process.env.VERSION})run()",
-            "console.log(process.env.VERSION, '&&')",
-        ] {
-            assert_eq!(guard(code, "process.env.VERSION"), None, "{code}");
-        }
-        assert_eq!(guard("console.log(({}).VERSION)", "({}).VERSION"), None);
-        assert_eq!(
-            guard("'on'===process.env.VERSION&&run()", "process.env.VERSION"),
-            Some("the retained read controls a && short-circuit branch")
+        let mut context = Context::new(
+            &collection,
+            dir.path().to_path_buf(),
+            "app".to_owned(),
+            Vec::new(),
+            crate::sources::SourceStore::new(true),
         );
-        assert_eq!(
-            guard(
-                "(sideEffect(), process.env.VERSION)&&run()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read controls a && short-circuit branch")
+        let mut drafts = Vec::new();
+        configuration_disabled(
+            &mut context,
+            &mut drafts,
+            &DisabledOptimization {
+                rule: RuleId::RspackSideEffectsDisabled,
+                title: "Side effects are disabled",
+                option: "optimization.sideEffects",
+                summary: "The option is disabled.",
+                direction: "Enable the option.",
+                safety: "Verify side effects before changing it.",
+            },
         );
-        assert_eq!(
-            guard("({}).VERSION==='on'&&run()", "({}).VERSION"),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard("if((process.env.VERSION))run()", "process.env.VERSION"),
-            Some("the retained read is in an if condition")
-        );
-        assert_eq!(
-            guard(
-                "if({on:true}[process.env.VERSION])run()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read is in an if condition")
-        );
-        assert_eq!(
-            guard(
-                "if(ready?process.env.VERSION:false)run()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read is in an if condition")
-        );
-        assert_eq!(
-            guard(
-                "if/*!license*/(process.env.VERSION)run()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read is in an if condition")
-        );
-        for code in [
-            "obj.if(process.env.VERSION)run()",
-            "obj.switch(process.env.VERSION)run()",
-        ] {
-            assert_eq!(guard(code, "process.env.VERSION"), None, "{code}");
-        }
-        assert_eq!(
-            guard("process.env.VERSION?on():off()", "process.env.VERSION"),
-            Some("the retained read controls a conditional (?:) branch")
-        );
-        assert_eq!(
-            guard("process.env.VERSION??fallback", "process.env.VERSION"),
-            Some("the retained read controls a ?? fallback branch")
-        );
-        assert_eq!(
-            guard("(()=>process.env.VERSION)&&run()", "process.env.VERSION"),
-            None
-        );
-        assert_eq!(
-            guard(
-                "function run(){process.env.VERSION&&work()}",
-                "process.env.VERSION"
-            ),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard(
-                "for (; process.env.VERSION; ) work()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read is in a for condition")
-        );
-        assert_eq!(
-            guard(
-                "for (process.env.VERSION; ; ) work()",
-                "process.env.VERSION"
-            ),
-            None
-        );
-        assert_eq!(
-            guard(
-                "for (; ; process.env.VERSION) work()",
-                "process.env.VERSION"
-            ),
-            None
-        );
-        assert_eq!(
-            guard(
-                "ready ? process.env.VERSION : fallback && work()",
-                "process.env.VERSION"
-            ),
-            None
-        );
-        assert_eq!(
-            guard(
-                "(ready ? process.env.VERSION : fallback) && work()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard(
-                "process.env.VERSION ? yes : no && work()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read controls a conditional (?:) branch")
-        );
-        assert_eq!(
-            guard("process.env.VERSION\nready&&run()", "process.env.VERSION"),
-            None
-        );
-        assert_eq!(
-            guard("process.env.VERSION\n&&run()", "process.env.VERSION"),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard("if (process.env.VERSION\n) run()", "process.env.VERSION"),
-            Some("the retained read is in an if condition")
-        );
+        minification_disabled(&mut context, &mut drafts);
+        assert_eq!(drafts.len(), 2);
+        assert!(context.sources.unverified.is_empty());
     }
 
     #[test]
@@ -2814,8 +2926,6 @@ y=/process.env.F/.test(z),process.env.G"#;
             None
         );
     }
-
-    const LINE_TERMINATORS: [&str; 5] = ["\n", "\r", "\r\n", "\u{2028}", "\u{2029}"];
 
     #[test]
     fn line_comments_end_at_every_ecmascript_line_terminator() {
@@ -2943,6 +3053,21 @@ y=/process.env.F/.test(z),process.env.G"#;
         }
     }
 
+    /// Like `keyword_guard`, but skips reads that sit in non-code text.
+    fn keyword_guard_in_code(code: &str, read: &str) -> Option<&'static str> {
+        let start = code.find(read).unwrap();
+        let ignored = non_code_ranges(code);
+        if in_ranges(&ignored, start) {
+            return None;
+        }
+        env_guard(code, start, start + read.len(), &ignored).map(EnvGuard::evidence)
+    }
+
+    fn keyword_guard(code: &str, read: &str) -> Option<&'static str> {
+        let start = code.find(read).unwrap();
+        env_guard(code, start, start + read.len(), &non_code_ranges(code)).map(EnvGuard::evidence)
+    }
+
     #[test]
     fn every_line_terminator_is_an_asi_boundary() {
         let read = "process.env.FLAG";
@@ -3009,99 +3134,6 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     const AND_GUARD: &str = "the retained read controls a && short-circuit branch";
-
-    /// The previous token for the text before the marker `|` in `code`.
-    fn previous_token_before_bar(code: &str) -> Token<'_> {
-        let index = code.find('|').unwrap();
-        let ignored = non_code_ranges(code);
-        previous_significant_token(code, index, &ignored)
-    }
-
-    #[test]
-    fn previous_token_skips_comments_and_every_line_terminator() {
-        for terminator in LINE_TERMINATORS {
-            let word = |text, member| Token::Word { text, member };
-            let cases: Vec<(String, Token<'static>)> = vec![
-                (String::new(), Token::Edge),
-                (format!("// c{terminator}/* d */ |"), Token::Edge),
-                (format!("a // c{terminator}|"), word("a", false)),
-                (format!("a /* c{terminator}d */ |"), word("a", false)),
-                (format!("else // c{terminator}|"), word("else", false)),
-                (
-                    format!("obj.return // c{terminator}|"),
-                    word("return", true),
-                ),
-                ("obj?.typeof|".to_string(), word("typeof", true)),
-                (format!("obj. // c{terminator}else|"), word("else", true)),
-                (format!("obj.{terminator}in|"), word("in", true)),
-                ("obj /* c */ . /* d */ do|".to_string(), word("do", true)),
-                ("this.#new|".to_string(), word("new", true)),
-                ("x = ...of|".to_string(), word("of", false)),
-                ("1. in|".to_string(), word("in", false)),
-                (format!("x.a{terminator}return|"), word("return", false)),
-                (format!("x = 12{terminator}|"), Token::Number),
-                (format!("x = 1.5 // c{terminator}|"), Token::Number),
-                (format!("x = 'a' // c{terminator}|"), Token::Literal),
-                ("x = \"a\"/* c */|".to_string(), Token::Literal),
-                (format!("x = `a${{b}}c` // c{terminator}|"), Token::Literal),
-                (format!("x = /a b/ // c{terminator}|"), Token::Literal),
-                ("x = /a b/g|".to_string(), word("g", false)),
-                ("x = `a${|".to_string(), Token::Punct("{")),
-                (format!("f() // c{terminator}|"), Token::Punct(")")),
-                (format!("a++ // c{terminator}|"), Token::Punct("++")),
-                ("a -- /* c */|".to_string(), Token::Punct("--")),
-                (format!("[...{terminator}|"), Token::Punct("...")),
-                (format!("a = // c{terminator}|"), Token::Punct("=")),
-                (format!("f = x =>{terminator}|"), Token::Punct(">")),
-                ("a \u{e9}\u{bb}|".to_string(), Token::Punct("\u{bb}")),
-            ];
-            for (code, expected) in cases {
-                let code = if code.contains('|') {
-                    code
-                } else {
-                    format!("{code}|")
-                };
-                assert_eq!(previous_token_before_bar(&code), expected, "{code:?}");
-            }
-        }
-    }
-
-    #[test]
-    fn next_token_skips_comments_and_classifies_literals() {
-        for terminator in LINE_TERMINATORS {
-            let word = |text| Token::Word {
-                text,
-                member: false,
-            };
-            let cases: Vec<(String, Token<'static>)> = vec![
-                (String::new(), Token::Edge),
-                (
-                    format!("{terminator} // c{terminator}/* d */ "),
-                    Token::Edge,
-                ),
-                (format!("{terminator}ready"), word("ready")),
-                (format!("{terminator}// c{terminator}in x"), word("in")),
-                (format!("{terminator}12"), Token::Number),
-                (format!("{terminator}'a'"), Token::Literal),
-                (format!("{terminator}`a`"), Token::Template),
-                (format!("{terminator}/* c */ ++x"), Token::Punct("++")),
-                (format!("{terminator}--x"), Token::Punct("--")),
-                (format!("{terminator}+ +x"), Token::Punct("+")),
-                (format!("{terminator}-x"), Token::Punct("-")),
-                (format!("{terminator}.a"), Token::Punct(".")),
-                (format!("{terminator}(a)"), Token::Punct("(")),
-                (format!("{terminator}\u{e9}a"), word("\u{e9}a")),
-            ];
-            for (code, expected) in cases {
-                let ignored = non_code_ranges(&code);
-                assert_eq!(
-                    next_significant_token(&code, 0, &ignored).1,
-                    expected,
-                    "{code:?}"
-                );
-            }
-        }
-    }
 
     #[test]
     fn keyword_named_properties_are_division_operands() {
@@ -3270,36 +3302,20 @@ y=/process.env.F/.test(z),process.env.G"#;
             // the next line.
             for keyword in OPEN_KEYWORDS {
                 let code = format!("x = {keyword}{terminator}{read} && run()");
-                assert_eq!(keyword_guard(&code, read), Some(AND_GUARD), "{code:?}");
+                // `typeof`, `void`, `delete` and `new` do not pass the value
+                // of their operand on, so the read does not control the
+                // branch.
+                let expected = if matches!(keyword, "typeof" | "void" | "delete" | "new") {
+                    None
+                } else {
+                    Some(AND_GUARD)
+                };
+                assert_eq!(keyword_guard(&code, read), expected, "{code:?}");
             }
         }
         // The operand of `await` is a regular expression, not a division.
         let code = "async () => await // c\r/process.env.FLAG/.test(x) && run()";
         assert!(in_ranges(&non_code_ranges(code), code.find(read).unwrap()));
-    }
-
-    #[test]
-    fn a_block_after_an_arrow_expression_is_a_new_statement() {
-        for terminator in LINE_TERMINATORS {
-            for body in ["eval", "g(1)", "a.b", "[1]", "'s'", "1"] {
-                for comment in ["", "// c", "/* c */"] {
-                    // The line terminator ends the arrow body, so `eval` in
-                    // the block is the global one.
-                    let source = format!(
-                        "const f = (eval) => {body}{terminator}{comment}{terminator}{{ eval(code) \
-                         }}"
-                    );
-                    assert!(direct_eval_line(&source).is_some(), "{source:?}");
-                    // After an operator the block is the arrow body.
-                    let source = "const f = (eval) => { eval(code) }".to_string();
-                    assert_eq!(direct_eval_line(&source), None, "{source:?}");
-                    let source = format!(
-                        "const f = (eval) =>{terminator}{comment}{terminator}{{ eval(code) }}"
-                    );
-                    assert_eq!(direct_eval_line(&source), None, "{source:?}");
-                }
-            }
-        }
     }
 
     #[test]
@@ -3316,88 +3332,6 @@ y=/process.env.F/.test(z),process.env.G"#;
             assert_eq!(keyword_guard(&code, read), Some(AND_GUARD), "{code:?}");
             let code = format!("f = () => {read}{terminator}++x; g(run && y)");
             assert_eq!(keyword_guard(&code, read), None, "{code:?}");
-        }
-    }
-
-    #[test]
-    fn continued_arrow_bodies_keep_the_shadow_scope() {
-        for terminator in LINE_TERMINATORS {
-            // The next line starts with a binary operator, so the call is part
-            // of the arrow body and `eval` is the parameter.
-            for source in [
-                format!("const f = (eval) => 1{terminator}+eval(code)"),
-                format!("const f = eval => 1{terminator}+eval(code)"),
-                format!("const f = (eval) => 1{terminator}-eval(code)"),
-                format!("const f = (eval) => a{terminator}.b(eval(code))"),
-                format!("const f = (eval) => a{terminator}|| eval(code)"),
-                format!("const f = (eval) => a {terminator}// c{terminator}* eval(code)"),
-                format!("const f = (eval) => a{terminator}[eval(code)]"),
-                format!("const f = (eval) =>{terminator}eval(code)"),
-                format!("const f = (eval) => 1 +{terminator}eval(code)"),
-                format!("const f = eval => g(1,{terminator}eval(code))"),
-            ] {
-                assert_eq!(direct_eval_line(&source), None, "{source:?}");
-            }
-            // A statement boundary ends the body, so the next call is direct.
-            for source in [
-                format!("const f = (eval) => 1{terminator}++x; eval(code)"),
-                format!("const f = (eval) => 1{terminator}--x\neval(code)"),
-                format!("const f = (eval) => 1{terminator}x\neval(code)"),
-                format!("const f = (eval) => 1{terminator}'s'; eval(code)"),
-                format!("const f = (eval) => 1;{terminator}eval(code)"),
-                "foo((eval) => eval(1), eval(2))".to_string(),
-                format!("foo((eval) => eval(1)){terminator}eval(2)"),
-                "x = [eval => eval(1)]; eval(2)".to_string(),
-            ] {
-                assert!(direct_eval_line(&source).is_some(), "{source:?}");
-            }
-        }
-        let source = "foo((eval) => eval(1), eval(2))";
-        assert_eq!(direct_eval_line(source), Some((0, 23)));
-    }
-
-    #[test]
-    fn member_calls_named_eval_are_never_direct_across_comments() {
-        for terminator in LINE_TERMINATORS {
-            for source in [
-                "obj.eval(code)".to_string(),
-                "obj?.eval(code)".to_string(),
-                format!("obj. // c{terminator}eval(code)"),
-                format!("obj.{terminator}eval(code)"),
-                format!("obj. /* c{terminator}d */ eval(code)"),
-                format!("obj?. // c{terminator}eval(code)"),
-                "obj /* a */ . /* b */ eval(code)".to_string(),
-                format!("obj // a{terminator}.{terminator}eval(code)"),
-                "this.#eval(code)".to_string(),
-                format!("this. // c{terminator}#eval(code)"),
-                format!("eval{terminator}`t`"),
-                format!("eval // c{terminator}"),
-                "eval?.(code)".to_string(),
-            ] {
-                assert_eq!(direct_eval_line(&source), None, "{source:?}");
-            }
-            // A call, including one with comments before the parenthesis or
-            // after a spread operator, is direct.
-            for source in [
-                format!("eval // c{terminator}(code)"),
-                "eval /* c */ (code)".to_string(),
-                format!("eval{terminator}(code)"),
-                "f(...eval(code))".to_string(),
-                format!("[...{terminator}eval(code)]"),
-                format!("x = 1.{terminator}+eval(code)"),
-                format!("a; // obj.{terminator}eval(code)"),
-            ] {
-                assert!(direct_eval_line(&source).is_some(), "{source:?}");
-            }
-        }
-        // Whole words only.
-        for source in [
-            "evaluate(code)",
-            "x.eval2(code)",
-            "reeval(code)",
-            "éeval(code)",
-        ] {
-            assert_eq!(direct_eval_line(source), None, "{source:?}");
         }
     }
 
@@ -3427,21 +3361,6 @@ y=/process.env.F/.test(z),process.env.G"#;
             &non_code_ranges(&code),
             code.find(read).unwrap()
         ));
-    }
-
-    /// Like `keyword_guard`, but skips reads that sit in non-code text.
-    fn keyword_guard_in_code(code: &str, read: &str) -> Option<&'static str> {
-        let start = code.find(read).unwrap();
-        let ignored = non_code_ranges(code);
-        if in_ranges(&ignored, start) {
-            return None;
-        }
-        env_guard(code, start, start + read.len(), &ignored).map(EnvGuard::evidence)
-    }
-
-    fn keyword_guard(code: &str, read: &str) -> Option<&'static str> {
-        let start = code.find(read).unwrap();
-        env_guard(code, start, start + read.len(), &non_code_ranges(code)).map(EnvGuard::evidence)
     }
 
     const CONTROL_KEYWORDS: [(&str, &str); 4] = [
@@ -3572,16 +3491,15 @@ y=/process.env.F/.test(z),process.env.G"#;
         }
     }
 
-    /// Known limit: a labeled block cannot be told from an object literal
-    /// without a parser, so a keyword that starts it is treated as a method
-    /// name and the read is reported as unguarded rather than guarded.
+    /// A labeled block is a statement block, so a keyword that starts it is a
+    /// control keyword and keeps its guard.
     #[test]
-    fn labeled_blocks_are_treated_as_member_lists() {
+    fn labeled_blocks_are_statement_blocks() {
         let read = "process.env.FLAG";
-        for (keyword, _) in CONTROL_KEYWORDS {
+        for (keyword, evidence) in CONTROL_KEYWORDS {
             let arguments = keyword_arguments(keyword, read);
             let code = format!("outer:{{{keyword}({arguments}}}");
-            assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+            assert_eq!(keyword_guard(&code, read), Some(evidence), "{code:?}");
         }
     }
 
@@ -3631,58 +3549,6 @@ y=/process.env.F/.test(z),process.env.G"#;
             // A keyword inside a longer identifier is not the identifier's end.
             let code = format!("{keyword}Value({arguments}");
             assert_eq!(keyword_guard(&code, read), None, "{code:?}");
-        }
-    }
-
-    #[test]
-    fn identifier_parts_follow_ecmascript_id_continue() {
-        for character in [
-            'a',
-            'Z',
-            '0',
-            '_',
-            '$',
-            '\u{e9}',
-            '\u{4e2d}',
-            '\u{301}',
-            '\u{200c}',
-            '\u{200d}',
-            '\u{203f}',
-            '\u{b7}',
-            '\u{e33}',
-            '\u{3099}',
-            '\u{1d7d8}',
-            '\u{ff9e}',
-        ] {
-            assert!(is_identifier_part(character), "{character:?}");
-        }
-        for character in [
-            ' ',
-            '-',
-            '.',
-            '#',
-            '(',
-            '\n',
-            '\r',
-            '\u{2028}',
-            '\u{2029}',
-            '\u{a0}',
-            '\u{2e2e}',
-            '\u{1f600}',
-        ] {
-            assert!(!is_identifier_part(character), "{character:?}");
-        }
-        // The definition matches the Unicode property over the whole BMP and
-        // the first supplementary plane, apart from the three ECMAScript
-        // additions.
-        let property = Regex::new(r"^\p{ID_Continue}$").unwrap();
-        for code in 0..0x2_0000u32 {
-            let Some(character) = char::from_u32(code) else {
-                continue;
-            };
-            let expected = property.is_match(&character.to_string())
-                || matches!(character, '$' | '\u{200c}' | '\u{200d}');
-            assert_eq!(is_identifier_part(character), expected, "{code:#x}");
         }
     }
 
@@ -3747,6 +3613,305 @@ y=/process.env.F/.test(z),process.env.G"#;
         }
     }
 
+    const LINE_TERMINATORS: [&str; 5] = ["\n", "\r", "\r\n", "\u{2028}", "\u{2029}"];
+
+    /// The previous token for the text before the marker `|` in `code`.
+    fn previous_token_before_bar(code: &str) -> Token<'_> {
+        let index = code.find('|').unwrap();
+        let ignored = non_code_ranges(code);
+        previous_significant_token(code, index, &ignored)
+    }
+
+    #[test]
+    fn previous_token_skips_comments_and_every_line_terminator() {
+        for terminator in LINE_TERMINATORS {
+            let word = |text, member| Token::Word { text, member };
+            let cases: Vec<(String, Token<'static>)> = vec![
+                (String::new(), Token::Edge),
+                (format!("// c{terminator}/* d */ |"), Token::Edge),
+                (format!("a // c{terminator}|"), word("a", false)),
+                (format!("a /* c{terminator}d */ |"), word("a", false)),
+                (format!("else // c{terminator}|"), word("else", false)),
+                (
+                    format!("obj.return // c{terminator}|"),
+                    word("return", true),
+                ),
+                ("obj?.typeof|".to_string(), word("typeof", true)),
+                (format!("obj. // c{terminator}else|"), word("else", true)),
+                (format!("obj.{terminator}in|"), word("in", true)),
+                ("obj /* c */ . /* d */ do|".to_string(), word("do", true)),
+                ("this.#new|".to_string(), word("new", true)),
+                ("x = ...of|".to_string(), word("of", false)),
+                ("1. in|".to_string(), word("in", false)),
+                (format!("x.a{terminator}return|"), word("return", false)),
+                (format!("x = 12{terminator}|"), Token::Number),
+                (format!("x = 1.5 // c{terminator}|"), Token::Number),
+                (format!("x = 'a' // c{terminator}|"), Token::Literal),
+                ("x = \"a\"/* c */|".to_string(), Token::Literal),
+                (format!("x = `a${{b}}c` // c{terminator}|"), Token::Literal),
+                (format!("x = /a b/ // c{terminator}|"), Token::Literal),
+                ("x = /a b/g|".to_string(), word("g", false)),
+                ("x = `a${|".to_string(), Token::Punct("{")),
+                (format!("f() // c{terminator}|"), Token::Punct(")")),
+                (format!("a++ // c{terminator}|"), Token::Punct("++")),
+                ("a -- /* c */|".to_string(), Token::Punct("--")),
+                (format!("[...{terminator}|"), Token::Punct("...")),
+                (format!("a = // c{terminator}|"), Token::Punct("=")),
+                (format!("f = x =>{terminator}|"), Token::Punct(">")),
+                ("a \u{e9}\u{bb}|".to_string(), Token::Punct("\u{bb}")),
+            ];
+            for (code, expected) in cases {
+                let code = if code.contains('|') {
+                    code
+                } else {
+                    format!("{code}|")
+                };
+                assert_eq!(previous_token_before_bar(&code), expected, "{code:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn next_token_skips_comments_and_classifies_literals() {
+        for terminator in LINE_TERMINATORS {
+            let word = |text| Token::Word {
+                text,
+                member: false,
+            };
+            let cases: Vec<(String, Token<'static>)> = vec![
+                (String::new(), Token::Edge),
+                (
+                    format!("{terminator} // c{terminator}/* d */ "),
+                    Token::Edge,
+                ),
+                (format!("{terminator}ready"), word("ready")),
+                (format!("{terminator}// c{terminator}in x"), word("in")),
+                (format!("{terminator}12"), Token::Number),
+                (format!("{terminator}'a'"), Token::Literal),
+                (format!("{terminator}`a`"), Token::Template),
+                (format!("{terminator}/* c */ ++x"), Token::Punct("++")),
+                (format!("{terminator}--x"), Token::Punct("--")),
+                (format!("{terminator}+ +x"), Token::Punct("+")),
+                (format!("{terminator}-x"), Token::Punct("-")),
+                (format!("{terminator}.a"), Token::Punct(".")),
+                (format!("{terminator}(a)"), Token::Punct("(")),
+                (format!("{terminator}\u{e9}a"), word("\u{e9}a")),
+            ];
+            for (code, expected) in cases {
+                let ignored = non_code_ranges(&code);
+                assert_eq!(
+                    next_significant_token(&code, 0, &ignored).1,
+                    expected,
+                    "{code:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_block_after_an_arrow_expression_is_a_new_statement() {
+        for terminator in LINE_TERMINATORS {
+            for body in ["eval", "g(1)", "a.b", "[1]", "'s'", "1"] {
+                for comment in ["", "// c", "/* c */"] {
+                    // The line terminator ends the arrow body, so `eval` in
+                    // the block is the global one.
+                    let source = format!(
+                        "const f = (eval) => {body}{terminator}{comment}{terminator}{{ eval(code) \
+                         }}"
+                    );
+                    assert!(direct_eval_line(&source).is_some(), "{source:?}");
+                    // After an operator the block is the arrow body.
+                    let source = "const f = (eval) => { eval(code) }".to_string();
+                    assert_eq!(direct_eval_line(&source), None, "{source:?}");
+                    let source = format!(
+                        "const f = (eval) =>{terminator}{comment}{terminator}{{ eval(code) }}"
+                    );
+                    assert_eq!(direct_eval_line(&source), None, "{source:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn continued_arrow_bodies_keep_the_shadow_scope() {
+        for terminator in LINE_TERMINATORS {
+            // The next line starts with a binary operator, so the call is part
+            // of the arrow body and `eval` is the parameter.
+            for source in [
+                format!("const f = (eval) => 1{terminator}+eval(code)"),
+                format!("const f = eval => 1{terminator}+eval(code)"),
+                format!("const f = (eval) => 1{terminator}-eval(code)"),
+                format!("const f = (eval) => a{terminator}.b(eval(code))"),
+                format!("const f = (eval) => a{terminator}|| eval(code)"),
+                format!("const f = (eval) => a {terminator}// c{terminator}* eval(code)"),
+                format!("const f = (eval) => a{terminator}[eval(code)]"),
+                format!("const f = (eval) =>{terminator}eval(code)"),
+                format!("const f = (eval) => 1 +{terminator}eval(code)"),
+                format!("const f = eval => g(1,{terminator}eval(code))"),
+            ] {
+                assert_eq!(direct_eval_line(&source), None, "{source:?}");
+            }
+            // A statement boundary ends the body, so the next call is direct.
+            for source in [
+                format!("const f = (eval) => 1{terminator}++x; eval(code)"),
+                format!("const f = (eval) => 1{terminator}--x\neval(code)"),
+                format!("const f = (eval) => 1{terminator}x\neval(code)"),
+                format!("const f = (eval) => 1{terminator}'s'; eval(code)"),
+                format!("const f = (eval) => 1;{terminator}eval(code)"),
+                "foo((eval) => eval(1), eval(2))".to_string(),
+                format!("foo((eval) => eval(1)){terminator}eval(2)"),
+                "x = [eval => eval(1)]; eval(2)".to_string(),
+            ] {
+                assert!(direct_eval_line(&source).is_some(), "{source:?}");
+            }
+        }
+        let source = "foo((eval) => eval(1), eval(2))";
+        assert_eq!(direct_eval_line(source), Some((0, 23)));
+    }
+
+    #[test]
+    fn member_calls_named_eval_are_never_direct_across_comments() {
+        for terminator in LINE_TERMINATORS {
+            for source in [
+                "obj.eval(code)".to_string(),
+                "obj?.eval(code)".to_string(),
+                format!("obj. // c{terminator}eval(code)"),
+                format!("obj.{terminator}eval(code)"),
+                format!("obj. /* c{terminator}d */ eval(code)"),
+                format!("obj?. // c{terminator}eval(code)"),
+                "obj /* a */ . /* b */ eval(code)".to_string(),
+                format!("obj // a{terminator}.{terminator}eval(code)"),
+                "this.#eval(code)".to_string(),
+                format!("this. // c{terminator}#eval(code)"),
+                format!("eval{terminator}`t`"),
+                format!("eval // c{terminator}"),
+                "eval?.(code)".to_string(),
+            ] {
+                assert_eq!(direct_eval_line(&source), None, "{source:?}");
+            }
+            // A call, including one with comments before the parenthesis or
+            // after a spread operator, is direct.
+            for source in [
+                format!("eval // c{terminator}(code)"),
+                "eval /* c */ (code)".to_string(),
+                format!("eval{terminator}(code)"),
+                "f(...eval(code))".to_string(),
+                format!("[...{terminator}eval(code)]"),
+                format!("x = 1.{terminator}+eval(code)"),
+                format!("a; // obj.{terminator}eval(code)"),
+            ] {
+                assert!(direct_eval_line(&source).is_some(), "{source:?}");
+            }
+        }
+        // Whole words only.
+        for source in [
+            "evaluate(code)",
+            "x.eval2(code)",
+            "reeval(code)",
+            "éeval(code)",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn identifier_parts_follow_ecmascript_id_continue() {
+        for character in [
+            'a',
+            'Z',
+            '0',
+            '_',
+            '$',
+            '\u{e9}',
+            '\u{4e2d}',
+            '\u{301}',
+            '\u{200c}',
+            '\u{200d}',
+            '\u{203f}',
+            '\u{b7}',
+            '\u{e33}',
+            '\u{3099}',
+            '\u{1d7d8}',
+            '\u{ff9e}',
+        ] {
+            assert!(is_identifier_part(character), "{character:?}");
+        }
+        for character in [
+            ' ',
+            '-',
+            '.',
+            '#',
+            '(',
+            '\n',
+            '\r',
+            '\u{2028}',
+            '\u{2029}',
+            '\u{a0}',
+            '\u{2e2e}',
+            '\u{1f600}',
+        ] {
+            assert!(!is_identifier_part(character), "{character:?}");
+        }
+        // The definition matches the Unicode property over the whole BMP and
+        // the first supplementary plane, apart from the three ECMAScript
+        // additions.
+        let property = Regex::new(r"^\p{ID_Continue}$").unwrap();
+        for code in 0..0x2_0000u32 {
+            let Some(character) = char::from_u32(code) else {
+                continue;
+            };
+            let expected = property.is_match(&character.to_string())
+                || matches!(character, '$' | '\u{200c}' | '\u{200d}');
+            assert_eq!(is_identifier_part(character), expected, "{code:#x}");
+        }
+    }
+
+    #[test]
+    fn direct_eval_positions_count_every_line_terminator() {
+        for terminator in LINE_TERMINATORS {
+            let source = format!("// note{terminator}eval(code)");
+            assert_eq!(direct_eval_line(&source), Some((1, 0)), "{source:?}");
+            let source = format!("a{terminator}b{terminator}  return eval(x)");
+            assert_eq!(direct_eval_line(&source), Some((2, 9)), "{source:?}");
+            let source = format!("{terminator}{terminator}eval(x)");
+            assert_eq!(direct_eval_line(&source), Some((2, 0)), "{source:?}");
+        }
+        // CRLF is one terminator; a CR and an LF that are not adjacent are
+        // two.
+        assert_eq!(line_and_column("a\r\nb", 3), (1, 0));
+        assert_eq!(line_and_column("a\r\r\nb", 4), (2, 0));
+        assert_eq!(line_and_column("a\n\rb", 3), (2, 0));
+        assert_eq!(line_and_column("a\u{2028}b", 4), (1, 0));
+        // The column counts bytes after the last terminator.
+        assert_eq!(line_and_column("\u{2029}\u{e9}x", 5), (1, 2));
+        assert_eq!(line_and_column("abc", 2), (0, 2));
+    }
+
+    #[test]
+    fn eval_shadow_scopes_end_at_every_line_terminator() {
+        for terminator in LINE_TERMINATORS {
+            // An expression-bodied arrow ends at the line terminator, so the
+            // next line's eval is a real direct eval.
+            for source in [
+                format!("const f = (eval) => eval(1){terminator}eval(2)"),
+                format!("const f = eval => eval(1){terminator}eval(2)"),
+            ] {
+                let (line, _) = direct_eval_line(&source).expect(&source);
+                assert_eq!(line, 1, "{source:?}");
+            }
+            // `return` followed by a line terminator ends the statement, so
+            // the function is a declaration scoped to its block.
+            let source = format!(
+                "function outer() {{ return{terminator}function eval() {{}} }} eval(code);"
+            );
+            assert!(direct_eval_line(&source).is_some(), "{source:?}");
+            // A `case` label is recognized after any terminator.
+            let source =
+                format!("switch (a) {{ case 1:{terminator}function eval() {{}} }} eval(code);");
+            assert!(direct_eval_line(&source).is_some(), "{source:?}");
+        }
+    }
+
     #[test]
     fn keyword_unary_parentheses_keep_the_enclosing_guard() {
         let guard = |code: &str, read: &str| {
@@ -3799,7 +3964,15 @@ y=/process.env.F/.test(z),process.env.G"#;
                             .replace("{operator}", operator)
                             .replace("{read}", read)
                     );
-                    assert_eq!(guard(&code, read), Some(evidence), "{code:?}");
+                    // The branch evidence follows the operand's value: `await`
+                    // passes it on, `typeof` yields a type name that only an
+                    // equality test reads, and `void` and `delete` drop it.
+                    let expected = match operator {
+                        "await" => Some(evidence),
+                        "typeof" if statement.contains("===") => Some(evidence),
+                        _ => None,
+                    };
+                    assert_eq!(guard(&code, read), expected, "{code:?}");
                 }
                 for code in [
                     "const value = {operator}({read});",
@@ -3893,7 +4066,9 @@ y=/process.env.F/.test(z),process.env.G"#;
                 for (context, code, is_operator_context) in keyword_contexts(&statement) {
                     // Only `await` depends on the context: it is an ordinary
                     // call in a classic script outside an async function.
-                    let expected = if operator == "await" && !is_operator_context {
+                    // `typeof`, `void` and `delete` do not pass their operand
+                    // on, so the read guards nothing even as an operator.
+                    let expected = if operator != "await" || !is_operator_context {
                         None
                     } else {
                         condition
@@ -3994,9 +4169,9 @@ y=/process.env.F/.test(z),process.env.G"#;
             format!("/* async function f() {{ */ {gate}"),
         ] {
             assert_eq!(guard(&code, read), None, "{code:?}");
-            // The same layout with `typeof` keeps its guard, so the missing
+            // The same layout with `!` keeps its guard, so the missing
             // guard above comes from `await` being an identifier.
-            let operator_code = code.replace("await(", "typeof(");
+            let operator_code = code.replace("await(", "!(");
             assert_eq!(guard(&operator_code, read), condition, "{operator_code:?}");
         }
     }
@@ -4015,11 +4190,11 @@ y=/process.env.F/.test(z),process.env.G"#;
         .map(EnvGuard::evidence)
     }
 
-    /// `await(` is an ordinary call in `code`. The same layout with `typeof`
+    /// `await(` is an ordinary call in `code`. The same layout with `!`
     /// keeps its guard, so the missing guard comes from the classification.
     fn assert_await_is_a_call(code: &str) {
         assert_eq!(await_guard(code), None, "{code:?}");
-        let operator_code = code.replace("await(", "typeof(");
+        let operator_code = code.replace("await(", "!(");
         assert_eq!(
             await_guard(&operator_code),
             Some(AWAIT_CONDITION),
@@ -4314,7 +4489,7 @@ y=/process.env.F/.test(z),process.env.G"#;
             "const g = async () => 1\n  ?? 2\n  ?? (await(process.env.FLAG) ? 2 : 3)",
             "var await = f; const g = async () => 1\n  ?? (await(process.env.FLAG) ? 2 : 3)",
         ] {
-            let operator_code = code.replace("await(", "typeof(");
+            let operator_code = code.replace("await(", "!(");
             let expected = await_guard(&operator_code);
             assert!(expected.is_some(), "{operator_code:?}");
             assert_eq!(await_guard(code), expected, "{code:?}");
@@ -4325,7 +4500,7 @@ y=/process.env.F/.test(z),process.env.G"#;
             "var await = f; const g = async () => 1;\n?? (await(process.env.FLAG) ? 2 : 3)",
             "var await = f; const g = async () => 1\n!(await(process.env.FLAG) ? 2 : 3)",
         ] {
-            let operator_code = code.replace("await(", "typeof(");
+            let operator_code = code.replace("await(", "!(");
             assert!(await_guard(&operator_code).is_some(), "{operator_code:?}");
             assert_eq!(await_operators_in(code).len(), 0, "{code:?}");
         }
@@ -4355,31 +4530,6 @@ y=/process.env.F/.test(z),process.env.G"#;
         code.push_str("export {}");
         let ignored = non_code_ranges(&code);
         assert_eq!(await_operator_offsets(&code, &ignored).len(), 3000);
-    }
-
-    #[test]
-    fn a_bare_await_identifier_ends_a_concise_arrow_in_a_synchronous_context() {
-        let gate = await_gate();
-        for terminator in LINE_TERMINATORS {
-            // `await` is an identifier in the synchronous arrow, so the line
-            // break ends the arrow and the next `await` belongs to `outer`.
-            for code in [
-                format!(
-                    "var await = 1; async function outer() {{ const inner = () => \
-                     await{terminator}{gate} }}"
-                ),
-                format!(
-                    "var await = 1; async function outer() {{ const inner = (a) => await // \
-                     c{terminator}{gate} }}"
-                ),
-                format!(
-                    "var await = 1; async function outer() {{ const inner = a => await /* c \
-                     */{terminator}{gate} }}"
-                ),
-            ] {
-                assert_await_is_an_operator(&code);
-            }
-        }
     }
 
     #[test]
@@ -4435,11 +4585,13 @@ y=/process.env.F/.test(z),process.env.G"#;
                     if operator == "await" && context == "classic script" {
                         continue;
                     }
-                    assert_eq!(
-                        await_guard(&code),
-                        Some(AWAIT_CONDITION),
-                        "{context}: {code:?}"
-                    );
+                    // `void` and `delete` drop the operand's value, while the
+                    // equality test reads the operand of `typeof`.
+                    let expected = match operator {
+                        "void" | "delete" => None,
+                        _ => Some(AWAIT_CONDITION),
+                    };
+                    assert_eq!(await_guard(&code), expected, "{context}: {code:?}");
                 }
             }
         }
@@ -4527,11 +4679,10 @@ y=/process.env.F/.test(z),process.env.G"#;
             }
             for separator in separators {
                 let code = wrap(format!("{separator}{operator}({read})) run()"));
-                assert_eq!(
-                    guard(&code, read),
-                    Some("the retained read is in an if condition"),
-                    "{code:?}"
-                );
+                // Only `await` passes its operand on as the branch value.
+                let expected =
+                    (operator == "await").then_some("the retained read is in an if condition");
+                assert_eq!(guard(&code, read), expected, "{code:?}");
             }
         }
         // The same identifier-part sweep applies to the control keywords.
@@ -4541,303 +4692,5 @@ y=/process.env.F/.test(z),process.env.G"#;
                 assert_eq!(guard(&code, read), None, "{code:?}");
             }
         }
-    }
-
-    #[test]
-    fn env_guard_scans_many_reads_in_one_pass() {
-        let mut code = String::new();
-        let mut reads = Vec::new();
-        for index in 0..256 {
-            let read = format!("process.env.FLAG{index}");
-            let start = code.len();
-            code.push_str(&read);
-            reads.push((start, start + read.len()));
-            code.push_str("&&run();");
-        }
-        let guards = env_guards(&code, &reads, &[]);
-        assert_eq!(guards.len(), reads.len());
-        assert!(
-            guards
-                .iter()
-                .all(|guard| matches!(guard, Some(EnvGuard::ShortCircuitAnd)))
-        );
-    }
-
-    #[test]
-    fn direct_eval_positions_count_every_line_terminator() {
-        for terminator in LINE_TERMINATORS {
-            let source = format!("// note{terminator}eval(code)");
-            assert_eq!(direct_eval_line(&source), Some((1, 0)), "{source:?}");
-            let source = format!("a{terminator}b{terminator}  return eval(x)");
-            assert_eq!(direct_eval_line(&source), Some((2, 9)), "{source:?}");
-            let source = format!("{terminator}{terminator}eval(x)");
-            assert_eq!(direct_eval_line(&source), Some((2, 0)), "{source:?}");
-        }
-        // CRLF is one terminator; a CR and an LF that are not adjacent are
-        // two.
-        assert_eq!(line_and_column("a\r\nb", 3), (1, 0));
-        assert_eq!(line_and_column("a\r\r\nb", 4), (2, 0));
-        assert_eq!(line_and_column("a\n\rb", 3), (2, 0));
-        assert_eq!(line_and_column("a\u{2028}b", 4), (1, 0));
-        // The column counts bytes after the last terminator.
-        assert_eq!(line_and_column("\u{2029}\u{e9}x", 5), (1, 2));
-        assert_eq!(line_and_column("abc", 2), (0, 2));
-    }
-
-    #[test]
-    fn eval_shadow_scopes_end_at_every_line_terminator() {
-        for terminator in LINE_TERMINATORS {
-            // An expression-bodied arrow ends at the line terminator, so the
-            // next line's eval is a real direct eval.
-            for source in [
-                format!("const f = (eval) => eval(1){terminator}eval(2)"),
-                format!("const f = eval => eval(1){terminator}eval(2)"),
-            ] {
-                let (line, _) = direct_eval_line(&source).expect(&source);
-                assert_eq!(line, 1, "{source:?}");
-            }
-            // `return` followed by a line terminator ends the statement, so
-            // the function is a declaration scoped to its block.
-            let source = format!(
-                "function outer() {{ return{terminator}function eval() {{}} }} eval(code);"
-            );
-            assert!(direct_eval_line(&source).is_some(), "{source:?}");
-            // A `case` label is recognized after any terminator.
-            let source =
-                format!("switch (a) {{ case 1:{terminator}function eval() {{}} }} eval(code);");
-            assert!(direct_eval_line(&source).is_some(), "{source:?}");
-        }
-    }
-
-    #[test]
-    fn eval_shadowing_is_decided_per_call() {
-        // A shadowing parameter in one function does not hide a real direct
-        // eval in another.
-        let source = "function a(eval) {\n  eval(x);\n}\nfunction b() {\n  return eval(y);\n}\n";
-        assert_eq!(direct_eval_line(source), Some((4, 9)));
-        assert_eq!(direct_eval_line("function run(eval) { eval(code); }"), None);
-        assert_eq!(
-            direct_eval_line("{ const eval = (x) => x; eval(y); }"),
-            None
-        );
-        assert_eq!(direct_eval_line("const f = (eval) => eval(z);"), None);
-        assert_eq!(
-            direct_eval_line("{ let eval = g; } eval(w);"),
-            Some((0, 18))
-        );
-        // Control-flow conditions are not parameter lists.
-        assert_eq!(direct_eval_line("if (eval) { eval(code); }"), Some((0, 12)));
-        assert_eq!(
-            direct_eval_line("while (eval) { eval(code); }"),
-            Some((0, 15))
-        );
-        assert_eq!(
-            direct_eval_line("try {} catch (eval) { eval(code); }"),
-            None
-        );
-    }
-
-    #[test]
-    fn named_function_expression_eval_shadows_only_its_body() {
-        assert_eq!(
-            direct_eval_line("const helper = function eval() { return 1; }; eval(code);"),
-            Some((0, 46))
-        );
-        assert_eq!(
-            direct_eval_line("const helper = function eval() { return eval(code); };"),
-            None
-        );
-        assert_eq!(
-            direct_eval_line("function eval(code) { return code; } eval(code);"),
-            None
-        );
-        let source = "const helper = function eval() { return eval(code); };\nconst longLocalName \
-                      = 1;\neval('longLocalName');";
-        assert_eq!(direct_eval_line(source), Some((2, 0)));
-        let drafts = eval_rule_drafts(source, false);
-        assert_eq!(drafts.len(), 1);
-        assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
-        assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
-        assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 3);
-    }
-
-    #[test]
-    fn function_bodies_skip_typescript_return_annotations() {
-        let source = "function run(): void { var eval = helper; } eval(code);";
-        assert!(direct_eval_line(source).is_some());
-        let source = "function run(): Promise<{ ok: boolean }> { var eval = helper; } eval(code);";
-        assert!(direct_eval_line(source).is_some());
-        let source = "function run(): () => { ok: boolean } { var eval = helper; } eval(code);";
-        assert!(direct_eval_line(source).is_some());
-    }
-
-    #[test]
-    fn eval_shadowing_handles_function_scan_edge_cases() {
-        assert_eq!(
-            direct_eval_line("obj.function(); if (condition) { var eval = helper; } eval(code);"),
-            None
-        );
-        assert!(direct_eval_line("const make = () => function eval() {}; eval(code);").is_some());
-        assert!(direct_eval_line("const instance = new function eval() {}; eval(code);").is_some());
-        assert!(
-            direct_eval_line("const run = (value = make()) => { var eval = helper; }; eval(code);")
-                .is_some()
-        );
-        assert!(
-            direct_eval_line("const run = (value): void => { var eval = helper; }; eval(code);")
-                .is_some()
-        );
-        assert!(direct_eval_line("const run = λ => { var eval = helper; }; eval(code);").is_some());
-        assert!(
-            direct_eval_line("class C { run(): void { var eval = helper; } } eval(code);")
-                .is_some()
-        );
-        assert!(
-            direct_eval_line(
-                "class C { run(): Promise<{ ok: boolean }> { var eval = helper; } } eval(code);"
-            )
-            .is_some()
-        );
-        assert_eq!(
-            direct_eval_line(
-                "async function run() { for await (const item of items) { var eval = helper; } \
-                 eval(code); }"
-            ),
-            None
-        );
-        assert!(
-            direct_eval_line("function outer() { return\nfunction eval() {}; } eval(code);")
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn switch_case_function_declarations_keep_their_declaration_scope() {
-        for source in [
-            "switch (value) { case 0: function eval(x) { return x; } eval(code); }",
-            "switch (value) { default: function eval(x) { return x; } eval(code); }",
-        ] {
-            assert_eq!(direct_eval_line(source), None);
-        }
-    }
-
-    #[test]
-    fn var_eval_uses_the_containing_function_scope() {
-        let shadowed = "function run() { if (condition) { var eval = helper; } eval(code); }";
-        assert_eq!(direct_eval_line(shadowed), None);
-        assert_eq!(
-            direct_eval_line(&format!("{shadowed}\nfunction other() {{ eval(code); }}")),
-            Some((1, 19))
-        );
-        assert_eq!(
-            direct_eval_line("function run() { if (true) { let eval = helper; } eval(code); }"),
-            Some((0, 50))
-        );
-        assert_eq!(
-            direct_eval_line("function run() { if (true) { const eval = helper; } eval(code); }"),
-            Some((0, 52))
-        );
-        assert_eq!(direct_eval_line("{ var eval = helper; } eval(code);"), None);
-        for source in [
-            "const run = () => { var eval = helper; eval(code); }; eval(code);",
-            "const run = value => { var eval = helper; eval(code); }; eval(code);",
-        ] {
-            assert_eq!(
-                direct_eval_line(source),
-                Some((
-                    0,
-                    u32::try_from(source.rfind("eval(code)").unwrap()).unwrap()
-                ))
-            );
-        }
-        let source = "function run() { if (condition) { var eval = helper; } const longLocalName \
-                      = 1; return eval(code); }";
-        assert!(eval_rule_drafts(source, false).is_empty());
-        let reported = eval_rule_drafts(source, true);
-        assert_eq!(reported.len(), 1);
-        assert_eq!(reported[0].status, EvidenceStatus::Confirmed);
-    }
-
-    #[test]
-    fn finds_direct_eval_but_not_member_eval() {
-        assert_eq!(
-            direct_eval_line("const a = 1;\n  return eval(x);"),
-            Some((1, 9))
-        );
-        assert_eq!(direct_eval_line("obj.eval(x); evaluate(y);"), None);
-        assert_eq!(
-            direct_eval_line(
-                "const a = \"eval(x)\"; // eval(y)\n/* eval(z) */ b = `eval(t)`; c = /eval(r)/;"
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn collects_declared_names_of_four_or_more_characters() {
-        let names =
-            declared_names("const ab = 1; let local = 2; var other = 3; function helper() {}");
-        assert_eq!(names, vec!["local".to_owned(), "other".to_owned()]);
-        let names = declared_names(
-            "const real = 1; const text = \"const retainedLiteralName\"; // let commented",
-        );
-        assert_eq!(names, vec!["real".to_owned(), "text".to_owned()]);
-        let names = declared_names(
-            "const x = f(1, 2), descriptiveName = 1;\nlet { alpha, beta: renamedBeta = 3, \
-             ...restOfIt } = o, [first, , second] = a;",
-        );
-        assert_eq!(
-            names,
-            [
-                "alpha",
-                "descriptiveName",
-                "first",
-                "renamedBeta",
-                "restOfIt",
-                "second"
-            ]
-            .map(str::to_owned)
-            .to_vec()
-        );
-    }
-
-    #[test]
-    fn configuration_only_locations_do_not_reduce_coverage() {
-        let dir = tempfile::tempdir().unwrap();
-        let config = dir.path().join("rspack.config.js");
-        std::fs::write(&config, "module.exports = {};").unwrap();
-        let collection = crate::collect::Collection {
-            bundler: "rspack".to_owned(),
-            config_file: Some(config.to_string_lossy().into_owned()),
-            minify_enabled: false,
-            config_summary: BTreeMap::from([(
-                "optimization.minimize".to_owned(),
-                "false".to_owned(),
-            )]),
-            ..crate::collect::Collection::default()
-        };
-        let mut context = Context::new(
-            &collection,
-            dir.path().to_path_buf(),
-            "app".to_owned(),
-            Vec::new(),
-            crate::sources::SourceStore::new(true),
-        );
-        let mut drafts = Vec::new();
-        configuration_disabled(
-            &mut context,
-            &mut drafts,
-            &DisabledOptimization {
-                rule: RuleId::RspackSideEffectsDisabled,
-                title: "Side effects are disabled",
-                option: "optimization.sideEffects",
-                summary: "The option is disabled.",
-                direction: "Enable the option.",
-                safety: "Verify side effects before changing it.",
-            },
-        );
-        minification_disabled(&mut context, &mut drafts);
-        assert_eq!(drafts.len(), 2);
-        assert!(context.sources.unverified.is_empty());
     }
 }
