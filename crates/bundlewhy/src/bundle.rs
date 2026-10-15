@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{BwError, BwResult, ErrorCode, problem},
-    model::{Analysis, ProblemSeverity, RunStatus, SCHEMA_VERSION, SourceFile},
+    model::{
+        Analysis, ProblemSeverity, RunStatus, SCHEMA_VERSION, SourceFile, SourceRevisionEvidence,
+    },
     sources::{
         as_text, filesystem_path, is_binary_asset_path, is_generated_asset_module,
         safe_project_relative, sha256_hex,
@@ -263,6 +265,26 @@ fn validate(bundle: &ResultBundle) -> BwResult<()> {
         }
         if source.path.contains('\0') {
             return Err(invalid("source path contains a NUL byte"));
+        }
+    }
+    let sources_by_id: BTreeMap<_, _> = bundle
+        .sources
+        .iter()
+        .map(|source| (source.id.as_str(), source))
+        .collect();
+    for summary in &analysis.sources {
+        if summary.revision_evidence == SourceRevisionEvidence::BuildSnapshot
+            && !sources_by_id
+                .get(summary.id.as_str())
+                .is_some_and(|source| {
+                    source.path == summary.path
+                        && source.revision_evidence == SourceRevisionEvidence::BuildSnapshot
+                })
+        {
+            return Err(invalid(format!(
+                "source summary {:?} claims a build snapshot without a matching source record",
+                summary.id
+            )));
         }
     }
     // The UI selects diagnostics by ID; duplicates would show the wrong one.
@@ -627,6 +649,20 @@ mod tests {
             project_relative: BTreeMap::new(),
             existence_relative: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn rejects_build_snapshot_summary_without_matching_source_record() {
+        let mut saved = bundle();
+        let mut summary = saved.sources[0].summary();
+        summary.revision_evidence = SourceRevisionEvidence::BuildSnapshot;
+        saved.analysis.sources.push(summary);
+        assert_eq!(
+            parse(&serde_json::to_vec(&saved).unwrap())
+                .unwrap_err()
+                .code,
+            ErrorCode::ResultInvalid
+        );
     }
 
     #[test]

@@ -80,6 +80,7 @@ fn coverage(
     failed_chunks: usize,
     unreadable_sources: usize,
     unverified_sources: usize,
+    vite_env_source_gaps: usize,
     unsupported_engine: Option<&str>,
 ) -> Vec<CategoryCoverage> {
     let rules = rules::rules_by_category(&collection.bundler);
@@ -164,13 +165,13 @@ fn coverage(
                 // Vite's generated env expression needs confirmation from the
                 // build's original source; Rspack's detector does not.
                 OptimizationCategory::DeadCodeElimination
-                    if collection.bundler == "vite" && source_gaps > 0 =>
+                    if collection.bundler == "vite" && vite_env_source_gaps > 0 =>
                 {
                     (
                         CoverageState::Partial,
                         format!(
-                            "{source_gaps} source file(s) lack verifiable build text; Vite \
-                             environment-variable findings in them may be missing."
+                            "{vite_env_source_gaps} source file(s) lack verifiable build text; \
+                             Vite environment-variable findings in them may be missing."
                         ),
                     )
                 }
@@ -348,6 +349,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         .collect();
     let unreadable_sources = context.sources.unreadable.len();
     let unverified_sources = context.sources.unverified.len();
+    let vite_env_source_gaps = context.vite_env_source_gaps.len();
     if !context.sources.changed_since_build.is_empty() {
         problems.push(problem(
             ErrorCode::SourceStale,
@@ -420,6 +422,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             failed_chunks,
             unreadable_sources,
             unverified_sources,
+            vite_env_source_gaps,
             (collection.bundler_version != input.bundler.spec().version)
                 .then(|| {
                     format!(
@@ -658,7 +661,7 @@ mod tests {
         )
         .unwrap();
         let collection: Collection = serde_json::from_value(value).unwrap();
-        let rspack = coverage(&collection, 0, 0, 1, 0, None);
+        let rspack = coverage(&collection, 0, 0, 1, 0, 0, None);
         assert_eq!(
             rspack
                 .iter()
@@ -666,6 +669,33 @@ mod tests {
                 .unwrap()
                 .state,
             CoverageState::Covered
+        );
+    }
+
+    #[test]
+    fn vite_dead_code_coverage_ignores_unrelated_source_gaps() {
+        let value: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(manifest_dir().join("tests/fixtures/vite/collect.json")).unwrap(),
+        )
+        .unwrap();
+        let collection: Collection = serde_json::from_value(value).unwrap();
+        let unrelated = coverage(&collection, 0, 0, 0, 1, 0, None);
+        assert_eq!(
+            unrelated
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+                .unwrap()
+                .state,
+            CoverageState::Covered
+        );
+        let relevant = coverage(&collection, 0, 0, 0, 1, 1, None);
+        assert_eq!(
+            relevant
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+                .unwrap()
+                .state,
+            CoverageState::Partial
         );
     }
 

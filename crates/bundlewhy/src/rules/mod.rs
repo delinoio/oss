@@ -97,6 +97,9 @@ pub struct Context<'a> {
     pub modules: HashMap<&'a str, &'a CollectedModule>,
     pub chunks: Vec<Chunk>,
     pub sources: SourceStore,
+    /// Original files whose missing snapshots prevented Vite environment
+    /// candidates from being confirmed.
+    pub vite_env_source_gaps: HashSet<String>,
     /// Polled cooperatively by long-running detectors; true stops them.
     pub cancelled: Option<&'a (dyn Fn() -> bool + Sync)>,
 }
@@ -141,6 +144,7 @@ impl<'a> Context<'a> {
             modules,
             chunks,
             sources,
+            vite_env_source_gaps: HashSet::new(),
             cancelled: None,
         }
     }
