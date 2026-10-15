@@ -74,10 +74,12 @@ pub struct DetectedEngine {
 
 impl DetectedEngine {
     /// Accepts an engine frame only when it names the selected bundler's
-    /// package and carries a bounded, printable version string.
+    /// package and carries a bounded, printable, non-blank version string.
+    /// The version is kept exactly as reported: trimming it here would record
+    /// a padded manifest version as the matrix version, which the adapter's
+    /// own exact comparison rejects.
     fn from_frame(expected_package: &str, package: &str, version: &str) -> Option<Self> {
-        let version = version.trim();
-        let valid_version = !version.is_empty()
+        let valid_version = !version.trim().is_empty()
             && version.chars().count() <= MAX_ENGINE_VERSION_LEN
             && !version.chars().any(char::is_control);
         (package == expected_package && valid_version).then(|| Self {
@@ -912,6 +914,22 @@ echo "BUNDLEWHY-FRAME TOKEN {\"event\":\"error\",\"code\":\"BW_ENGINE_VERSION_UN
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn padded_engine_versions_reach_the_callback_unchanged() {
+        let (engines, _) = engines_reported_before_failure(
+            r#"echo "BUNDLEWHY-FRAME TOKEN {\"event\":\"engine\",\"package\":\"vite\",\"version\":\" 8.3.4 \"}""#,
+        )
+        .await;
+        assert_eq!(
+            engines,
+            vec![DetectedEngine {
+                package: "vite".to_owned(),
+                version: " 8.3.4 ".to_owned(),
+            }]
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn invalid_or_foreign_engine_events_are_not_reported() {
         let (engines, _) = engines_reported_before_failure(
             r#"echo "BUNDLEWHY-FRAME TOKEN {\"event\":\"engine\",\"package\":\"webpack\",\"version\":\"5.0.0\"}"
@@ -925,12 +943,22 @@ echo '{"event":"engine","package":"vite","version":"9.9.9"}'"#,
     #[test]
     fn engine_frames_require_the_selected_package_and_a_bounded_version() {
         assert_eq!(
-            DetectedEngine::from_frame("vite", "vite", " 8.3.4 "),
+            DetectedEngine::from_frame("vite", "vite", "8.3.4"),
             Some(DetectedEngine {
                 package: "vite".to_owned(),
                 version: "8.3.4".to_owned(),
             })
         );
+        // The reported value is preserved exactly, never trimmed.
+        for padded in [" 8.3.4", "8.3.4 ", " 8.3.4 "] {
+            assert_eq!(
+                DetectedEngine::from_frame("vite", "vite", padded),
+                Some(DetectedEngine {
+                    package: "vite".to_owned(),
+                    version: padded.to_owned(),
+                })
+            );
+        }
         assert_eq!(DetectedEngine::from_frame("vite", "other", "8.3.4"), None);
         assert_eq!(DetectedEngine::from_frame("vite", "vite", "  "), None);
         assert_eq!(DetectedEngine::from_frame("vite", "vite", "1\n2"), None);

@@ -683,7 +683,7 @@ fn failed_run_engine_identity(
         Some(engine) => {
             identity.bundler_package = engine.package.clone();
             identity.bundler_version = engine.version.clone();
-            identity.support = if engine.version == spec.version {
+            identity.support = if spec.is_matrix_version(&engine.version) {
                 EngineSupport::Supported
             } else if allow_unsupported_engine {
                 EngineSupport::UnsupportedSelected
@@ -1415,6 +1415,30 @@ mod tests {
         assert_eq!(identity.bundler_package, "vite");
         assert_eq!(identity.bundler_version, "8.0.0");
         assert_eq!(identity.support, crate::model::EngineSupport::Unspecified);
+    }
+
+    #[test]
+    fn failed_runs_never_treat_a_padded_version_as_the_matrix_version() {
+        use crate::model::EngineSupport;
+        for bundler in [BundlerChoice::Vite, BundlerChoice::Rspack] {
+            let spec = bundler.spec();
+            for padded in [
+                format!(" {}", spec.version),
+                format!("{} ", spec.version),
+                format!(" {} ", spec.version),
+            ] {
+                let engine = detected(spec.package, &padded);
+                for (allow, expected) in [
+                    (false, EngineSupport::Unspecified),
+                    (true, EngineSupport::UnsupportedSelected),
+                ] {
+                    let identity = failed_run_engine_identity(bundler, Some(&engine), allow);
+                    // The reported value is preserved exactly.
+                    assert_eq!(identity.bundler_version, padded);
+                    assert_eq!(identity.support, expected, "{padded:?} allow={allow}");
+                }
+            }
+        }
     }
 
     #[test]
