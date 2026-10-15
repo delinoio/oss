@@ -2,7 +2,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { nativeMatrix as pnportMatrix } from "../../packages/pnport/scripts/native-matrix.mjs";
+import { developmentMatrix as pnportMatrix } from "../../packages/pnport/scripts/native-matrix.mjs";
 
 export const jobPaths = JSON.parse(
   readFileSync(new URL("./job-paths.json", import.meta.url), "utf8"),

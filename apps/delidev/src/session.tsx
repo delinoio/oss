@@ -95,7 +95,10 @@ import {
   interactionRequestIdentity,
   type InboxInteractionDraft,
 } from "./inbox-drafts";
-import { useConversationPages } from "./conversation-pagination";
+import {
+  messageRetention,
+  useConversationPages,
+} from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import {
@@ -1235,6 +1238,12 @@ export function SessionView({
     EntityKind.MESSAGE,
     id,
     conversationActive && live.generation > 0,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    messageRetention,
   );
   const queue = useConversationPages(
     EntityKind.QUEUE,

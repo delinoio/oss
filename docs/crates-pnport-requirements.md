@@ -71,7 +71,7 @@ Support x64 and arm64 on:
 
 Linux support includes dynamically linked and fully static child executables. Musl hosts and mixed-architecture execution are excluded.
 
-Use Rust and integrate pnport into the existing root Cargo workspace. Preserve the root `nightly-2026-01-01` toolchain and protected dependency contracts; adapt the required upstream code rather than upgrading the repository toolchain.
+Use Rust and integrate pnport into the existing root Cargo workspace. Preserve the root `nightly-2026-09-28` toolchain and protected dependency contracts; adapt the required upstream code rather than upgrading the repository toolchain.
 
 Use `pnp` version `0.12.12` and vendor the necessary fspy components from commit `3aac49e31fba6905bb0b3d0e29d7755493241e9c`. Record provenance, retained licenses, local modifications, and upstream maintenance instructions. Porting and virtualization belong to pnport; an upstream contribution is not a release dependency.
 

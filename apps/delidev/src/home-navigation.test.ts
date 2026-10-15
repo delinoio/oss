@@ -15,12 +15,14 @@ import {
   navigationRow,
   type NavigationReader,
 } from "./home-navigation";
+import { Harness } from "./configuration-fields";
 import { encode } from "./documents";
 
 const row = (id = newRequestId(), revision = 1n) =>
   navigationRow(
     create(ResourceSchema, {
       id,
+      kind: EntityKind.SESSION,
       revision,
       schemaVersion: 1,
       documentJson: encode({
@@ -29,6 +31,9 @@ const row = (id = newRequestId(), revision = 1n) =>
         outcome: "not-started",
         archive: "active",
         private_content: "must not be retained",
+        initial_execution: {
+          configuration: { harness: Harness.Claude, secret: "not retained" },
+        },
       }),
     }),
   );
@@ -68,7 +73,13 @@ it("retains more than 5,000 projected rows with original identity/revision and n
         "awaitingUserResponse",
         "title",
         "conversationKind",
+        "harness",
       ]);
+      expect(entry.harness).toBe(Harness.Claude);
+      expect(entry.revision).toBe(9007199254740993n);
+      expect(JSON.stringify({ ...entry, revision: "" })).not.toContain(
+        "secret",
+      );
     }
   }
 });
