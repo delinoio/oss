@@ -380,12 +380,16 @@ func TestGrokDevicePollRejectsTrailingDataInEveryAnswer(t *testing.T) {
 }
 
 // A repeated member makes a device answer ambiguous: the decoder keeps the last
-// one, so a repeated error could turn a rejection into a pending answer.
+// one, so a repeated error could turn a rejection into a pending answer. An
+// answer that also carries a token member is ambiguous for the same reason.
 func TestGrokDeviceResponsesRejectRepeatedMembers(t *testing.T) {
 	t.Run("poll answer", func(t *testing.T) {
 		for _, body := range []string{
 			`{"error":"authorization_pending","error":"access_denied"}`,
 			`{"error":"slow_down","Error":"slow_down"}`,
+			// An answer that also carries a token member contradicts itself.
+			`{"error":"authorization_pending","access_token":"issued"}`,
+			`{"error":"access_denied","refresh_token":""}`,
 		} {
 			idp := grokidp.New(t)
 			client, endpoints := deviceFixture(t, idp)

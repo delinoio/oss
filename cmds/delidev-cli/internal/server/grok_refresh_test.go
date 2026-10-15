@@ -219,6 +219,9 @@ func TestGrokRefreshFailuresNeverReplaceTheBundle(t *testing.T) {
 		diagnosis domain.Code
 	}{
 		{"invalid_grant", func(i *grokidp.IdP) { i.TokenStatus, i.TokenBody = 400, `{"error":"invalid_grant"}` }, false, domain.AccountExpired, domain.Unauthenticated},
+		{"rejection that carries a rotated token", func(i *grokidp.IdP) {
+			i.TokenStatus, i.TokenBody = 400, `{"error":"invalid_grant","refresh_token":"rotated"}`
+		}, true, domain.AccountFailed, domain.RecoveryRequired},
 		{"server error", func(i *grokidp.IdP) { i.TokenStatus, i.TokenBody = 503, "unavailable" }, true, domain.AccountFailed, domain.RecoveryRequired},
 		{"truncated body", func(i *grokidp.IdP) { i.TruncateTokenBody = true }, true, domain.AccountFailed, domain.RecoveryRequired},
 		{"malformed success", func(i *grokidp.IdP) { i.TokenBody = `{"access_token":"x"}` }, true, domain.AccountFailed, domain.RecoveryRequired},

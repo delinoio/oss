@@ -320,21 +320,19 @@ func (c GrokOAuthClient) PollDeviceToken(ctx context.Context, endpoints GrokEndp
 	if err != nil {
 		return GrokTokens{}, 0, err
 	}
-	if status == http.StatusBadRequest || status == http.StatusUnauthorized {
-		var body struct {
-			Error string `json:"error"`
-		}
-		if grokStrictObject(raw, true) && json.Unmarshal(raw, &body) == nil {
-			switch body.Error {
-			case "authorization_pending":
-				return GrokTokens{}, GrokDevicePending, nil
-			case "slow_down":
-				return GrokTokens{}, GrokDeviceSlowDown, nil
-			case "access_denied":
-				return GrokTokens{}, GrokDeviceDenied, nil
-			case "expired_token":
-				return GrokTokens{}, GrokDeviceExpired, nil
-			}
+	// The RFC 8628 answers come from the same classified rejection as every
+	// other token response: an error object that also carries a token member is
+	// uncertain, never a pending or definitive answer.
+	if body, outcome := classifyGrokTokenResponse(status, raw); outcome == grokTokenOutcomeRejected {
+		switch body.Error {
+		case "authorization_pending":
+			return GrokTokens{}, GrokDevicePending, nil
+		case "slow_down":
+			return GrokTokens{}, GrokDeviceSlowDown, nil
+		case "access_denied":
+			return GrokTokens{}, GrokDeviceDenied, nil
+		case "expired_token":
+			return GrokTokens{}, GrokDeviceExpired, nil
 		}
 	}
 	tokens, err := grokTokenResult(status, raw)
