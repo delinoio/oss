@@ -91,9 +91,22 @@ fn protected_files_with_root(
     files
         .into_iter()
         .map(|path| {
-            let digest = std::fs::read(&path).ok().map(|bytes| sha256_hex(&bytes));
+            let digest = file_digest(&path);
             (path, digest)
         })
+        .collect()
+}
+
+fn file_digest(path: &Path) -> Option<String> {
+    std::fs::read(path).ok().map(|bytes| sha256_hex(&bytes))
+}
+
+fn refresh_protected_files(
+    protected_before: &BTreeMap<PathBuf, Option<String>>,
+) -> BTreeMap<PathBuf, Option<String>> {
+    protected_before
+        .keys()
+        .map(|path| (path.clone(), file_digest(path)))
         .collect()
 }
 
@@ -279,7 +292,6 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
         }
     });
 
-    let mut resolved_root = None;
     let mut protected_before = protected_files(&selection);
     let adapter_options = AdapterOptions {
         config_name: options.config_name.clone(),
@@ -313,8 +325,13 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             });
         },
         |root| {
-            resolved_root = Some(root);
-            protected_before = protected_files_with_root(&selection, resolved_root.as_deref());
+            // Keep the snapshot captured before config evaluation. The adapter
+            // can discover additional roots only after evaluating user config,
+            // so add new paths without replacing hashes for paths already
+            // protected before the adapter started.
+            for (path, digest) in protected_files_with_root(&selection, Some(&root)) {
+                protected_before.entry(path).or_insert(digest);
+            }
         },
     )
     .await;
@@ -444,7 +461,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
         );
     }
 
-    let protected_after = protected_files_with_root(&selection, resolved_root.as_deref());
+    let protected_after = refresh_protected_files(&protected_before);
     let modified: Vec<String> = protected_before
         .iter()
         .filter(|(path, digest)| protected_after.get(*path) != Some(digest))

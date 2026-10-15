@@ -119,6 +119,10 @@ function collectorPlugin(state) {
         defineKeys: Object.keys(config.define ?? {}).sort(),
         plugins: config.plugins.map((plugin) => plugin.name).filter(Boolean),
       };
+      // Config hooks can replace the root. Publish the final resolver root
+      // after those hooks so the Rust side can add its protected files while
+      // retaining the pre-adapter snapshot for paths it already knows.
+      emit({ event: "protection", root: state.root });
     },
     onLog(level, log) {
       // Rolldown reports optimization-relevant warnings (for example EVAL and
