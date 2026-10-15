@@ -260,25 +260,42 @@ fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
     index > 0 && offset < ranges[index - 1].1
 }
 
-fn next_code_byte(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<u8> {
+fn next_code_index(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<usize> {
     let mut index = start;
     while index < bytes.len() {
         if in_ranges(ignored, index) || bytes[index].is_ascii_whitespace() {
             index += 1;
         } else {
-            return Some(bytes[index]);
+            return Some(index);
         }
     }
     None
 }
 
+fn next_code_byte(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<u8> {
+    next_code_index(bytes, start, ignored).map(|index| bytes[index])
+}
+
+/// Returns true when the next code token is exactly `operator` doubled
+/// (`++` or `--`) with no whitespace or comment between the two bytes.
+fn is_adjacent_doubled_operator(
+    bytes: &[u8],
+    token: usize,
+    operator: u8,
+    ignored: &[(usize, usize)],
+) -> bool {
+    bytes.get(token + 1) == Some(&operator) && !in_ranges(ignored, token + 1)
+}
+
 fn asi_terminates(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> bool {
-    let Some(next) = next_code_byte(bytes, index + 1, ignored) else {
+    let Some(token) = next_code_index(bytes, index + 1, ignored) else {
         return true;
     };
-    match next {
-        b'+' => next_code_byte(bytes, index + 2, ignored) != Some(b'+'),
-        b'-' => next_code_byte(bytes, index + 2, ignored) != Some(b'-'),
+    match bytes[token] {
+        // A prefix `++`/`--` starts a new statement after a line terminator
+        // (restricted production), while a single `+`/`-` continues the
+        // current expression as a binary operator.
+        operator @ (b'+' | b'-') => is_adjacent_doubled_operator(bytes, token, operator, ignored),
         b'!' | b'%' | b'&' | b'(' | b')' | b'*' | b',' | b'.' | b'/' | b':' | b';' | b'<'
         | b'=' | b'>' | b'?' | b'[' | b']' | b'^' | b'{' | b'}' | b'|' | b'~' => false,
         _ => true,
@@ -2174,6 +2191,46 @@ y=/process.env.F/.test(z),process.env.G"#;
             guard("if (process.env.VERSION\n) run()", "process.env.VERSION"),
             Some("the retained read is in an if condition")
         );
+    }
+
+    #[test]
+    fn env_guard_newline_plus_minus_follows_asi_rules() {
+        let guard = |code: &str| {
+            let read = "process.env.FLAG";
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        let and = Some("the retained read controls a && short-circuit branch");
+        // A single sign after a newline continues the arithmetic expression.
+        for code in [
+            "process.env.FLAG\n+suffix&&run()",
+            "process.env.FLAG\n-suffix&&run()",
+            "process.env.FLAG\n  +suffix&&run()",
+            "process.env.FLAG\n  -suffix&&run()",
+            "process.env.FLAG /* c */\n+suffix&&run()",
+            "process.env.FLAG\n/* c */ -suffix&&run()",
+            "process.env.FLAG\n+ +suffix&&run()",
+            "process.env.FLAG\n- -suffix&&run()",
+            "process.env.FLAG\n+/* c */+suffix&&run()",
+            "process.env.FLAG\n-/* c */-suffix&&run()",
+            "process.env.FLAG+suffix&&run()",
+        ] {
+            assert_eq!(guard(code), and, "{code:?}");
+        }
+        // A doubled prefix update after a newline starts a new statement.
+        for code in [
+            "process.env.FLAG\n++suffix&&run()",
+            "process.env.FLAG\n--suffix&&run()",
+            "process.env.FLAG\n  ++suffix&&run()",
+            "process.env.FLAG\n  --suffix&&run()",
+            "process.env.FLAG /* c */\n++suffix&&run()",
+            "process.env.FLAG\n/* c */ --suffix&&run()",
+            "process.env.FLAG;\nready&&run()",
+            "console.log(process.env.FLAG); ready&&run()",
+        ] {
+            assert_eq!(guard(code), None, "{code:?}");
+        }
     }
 
     #[test]
