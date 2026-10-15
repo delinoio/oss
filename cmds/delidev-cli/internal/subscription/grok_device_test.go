@@ -410,3 +410,46 @@ func TestGrokDeviceResponsesRejectRepeatedMembers(t *testing.T) {
 		}
 	})
 }
+
+// The device code is validated on its decoded value, not on one particular JSON
+// encoding: a legal escape of a printable character is accepted, anything that
+// decodes to a forbidden byte is not.
+func TestGrokDeviceCodeIsValidatedAfterDecoding(t *testing.T) {
+	for name, body := range map[string]string{
+		"escaped slash":     `{"device_code":"abc\/def","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","expires_in":60}`,
+		"unicode escape":    `{"device_code":"ABCD","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","expires_in":60}`,
+		"lowercase escaped": `{"device_code":"~~abc","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","expires_in":60}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			idp := grokidp.New(t)
+			idp.DeviceBody = body
+			client, endpoints := deviceFixture(t, idp)
+			grant, err := client.RequestDeviceAuthorization(context.Background(), endpoints)
+			if err != nil {
+				t.Fatalf("a legal escape was refused: %v", err)
+			}
+			defer grant.Clear()
+			if len(grant.DeviceCode) == 0 || strings.ContainsAny(string(grant.DeviceCode), `\"`) {
+				t.Fatalf("the device code was not decoded: %q", grant.DeviceCode)
+			}
+		})
+	}
+	for name, body := range map[string]string{
+		"escaped quote":     `{"device_code":"a\"b","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","expires_in":60}`,
+		"escaped backslash": `{"device_code":"a\\b","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","expires_in":60}`,
+		"escaped control":   `{"device_code":"a\u0000b","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","expires_in":60}`,
+		"escaped space":     `{"device_code":"a b","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","expires_in":60}`,
+		"escaped non-ascii": `{"device_code":"aéb","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","expires_in":60}`,
+		"newline escape":    `{"device_code":"a\nb","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","expires_in":60}`,
+		"short unicode":     `{"device_code":"a\u00","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","expires_in":60}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			idp := grokidp.New(t)
+			idp.DeviceBody = body
+			client, endpoints := deviceFixture(t, idp)
+			if _, err := client.RequestDeviceAuthorization(context.Background(), endpoints); err == nil {
+				t.Fatal("a device code that decodes to a forbidden byte was accepted")
+			}
+		})
+	}
+}

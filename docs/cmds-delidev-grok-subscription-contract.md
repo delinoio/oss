@@ -215,7 +215,8 @@ id with the other method is a conflict.
   string (no client secret, no `Authorization` header, no redirect following, no
   retry) to the discovered `device_authorization_endpoint` (issuer origin only),
   else the fixed `https://auth.x.ai/oauth2/device/code`. The response must carry
-  a `device_code` (printable ASCII, at most 2048 bytes, kept as owned bytes), a
+  a `device_code` (printable ASCII, at most 2048 bytes, validated on its decoded value so a legal
+  JSON escape such as `\/` or `\u0041` is accepted, kept as owned bytes), a
   `user_code` matching `[A-Z0-9-]{4,32}` (for example `XXXX-XXXX`), a
   `verification_uri_complete` and/or `verification_uri` (https, host exactly
   `accounts.x.ai`, an absolute path, no credentials or fragment; a query may carry
