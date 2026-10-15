@@ -182,6 +182,11 @@ enum WorkerCapability {
   // Claude original image input, native preprocessing replay and retained history.
   // Requires capability 25.
   WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1 = 71;
+  // Worker-only ChatGPT (managed Codex) Execute recovery lane: protected
+  // latest-credential capture, original-Worker reconciliation of a fenced lease
+  // and a durable recovery settle. Requires capability 3. Older peers keep the
+  // existing fence.
+  WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1 = 72;
   WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1 = 26;
   WORKER_CAPABILITY_NATIVE_SKILLS_V1 = 24;
   WORKER_CAPABILITY_IMAGE_INPUTS_V1 = 25;

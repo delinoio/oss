@@ -50,7 +50,55 @@ type SubscriptionState struct {
 	// Members are the execution members of a shared owner lease. Historical
 	// singleton accounts omit them.
 	Members []SubscriptionMember `json:"members,omitempty"`
+	// RecoveryCapture is the non-secret metadata of the protected server-vault
+	// capture of the latest validated authentication of the live Execute lease
+	// (issue 3992). The secret bytes live only in the vault. Historical accounts
+	// and unsupported peers omit it.
+	RecoveryCapture *SubscriptionRecoveryCapture `json:"recovery_capture,omitempty"`
+	// RecoveryReason is the closed diagnostic of a fenced Execute lease whose
+	// automatic recovery is blocked. It is observation only and grants nothing.
+	RecoveryReason SubscriptionRecoveryReason `json:"recovery_reason,omitempty"`
 }
+
+// SubscriptionRecoveryCapture binds a protected capture to the original lease,
+// its settled generation and the account's immutable identity commitment.
+type SubscriptionRecoveryCapture struct {
+	ID                 ID     `json:"id"`
+	LeaseID            ID     `json:"lease_id"`
+	Generation         ID     `json:"generation"`
+	IdentityCommitment string `json:"identity_commitment"`
+	// Usable is true when the capture is a validated successor (or the unchanged
+	// copy) of the settled generation for the same identity.
+	Usable   bool      `json:"usable"`
+	SyncedAt time.Time `json:"synced_at"`
+}
+
+func (c SubscriptionRecoveryCapture) Validate() bool {
+	return c.ID.Validate() == nil && c.LeaseID.Validate() == nil && c.Generation.Validate() == nil && len(c.IdentityCommitment) == 64 && !c.SyncedAt.IsZero()
+}
+
+// SubscriptionRecoveryReason is the closed reason an automatic ChatGPT Execute
+// recovery is blocked.
+type SubscriptionRecoveryReason string
+
+const (
+	// RecoveryCredentialProofUnavailable: no surviving latest-credential proof.
+	RecoveryCredentialProofUnavailable SubscriptionRecoveryReason = "credential-proof-unavailable"
+	// RecoveryCleanupUnconfirmed: native, process or file cleanup is unproven.
+	RecoveryCleanupUnconfirmed SubscriptionRecoveryReason = "cleanup-unconfirmed"
+	// RecoveryOwnershipUnproven: the original ownership evidence is missing or foreign.
+	RecoveryOwnershipUnproven SubscriptionRecoveryReason = "ownership-unproven"
+)
+
+func (r SubscriptionRecoveryReason) Valid() bool {
+	switch r {
+	case RecoveryCredentialProofUnavailable, RecoveryCleanupUnconfirmed, RecoveryOwnershipUnproven:
+		return true
+	default:
+		return false
+	}
+}
+
 type SubscriptionOperation struct {
 	ID         ID                 `json:"id"`
 	Action     SubscriptionAction `json:"action"`
@@ -160,6 +208,12 @@ func (s SubscriptionState) Validate(account Account) error {
 		}
 	}
 	if s.Lease == nil && len(s.Members) != 0 {
+		return invalid()
+	}
+	if s.RecoveryCapture != nil && (s.Lease == nil || s.Lease.Action != SubscriptionExecute || account.SubscriptionService != SubscriptionChatGPT || !s.RecoveryCapture.Validate() || s.RecoveryCapture.LeaseID != s.Lease.ID || s.RecoveryCapture.Generation != s.Lease.Generation) {
+		return invalid()
+	}
+	if s.RecoveryReason != "" && (!s.RecoveryReason.Valid() || !s.RecoveryRequired || s.Lease == nil || s.Lease.Action != SubscriptionExecute || account.SubscriptionService != SubscriptionChatGPT) {
 		return invalid()
 	}
 	if s.Lease != nil {

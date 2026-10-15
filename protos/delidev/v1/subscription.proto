@@ -50,6 +50,12 @@ service SubscriptionService {
   rpc TakeSubscription(TakeSubscriptionRequest) returns (TakeSubscriptionResponse);
   rpc PublishSubscriptionProgress(PublishSubscriptionProgressRequest) returns (PublishSubscriptionProgressResponse);
   rpc FinishSubscription(FinishSubscriptionRequest) returns (FinishSubscriptionResponse);
+  // Worker-only ChatGPT execution recovery lane negotiated by
+  // WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1 (issue 3992). None of these
+  // methods grants authentication to a new execution.
+  rpc SyncSubscriptionRecoveryCapture(SyncSubscriptionRecoveryCaptureRequest) returns (SyncSubscriptionRecoveryCaptureResponse);
+  rpc ReadSubscriptionRecoveryCapture(ReadSubscriptionRecoveryCaptureRequest) returns (ReadSubscriptionRecoveryCaptureResponse);
+  rpc RecoverSubscription(RecoverSubscriptionRequest) returns (RecoverSubscriptionResponse);
 }
 
 // Explicit server-owned cleanup of failed initial logins. No native login or
@@ -217,6 +223,78 @@ enum SubscriptionFinishScope {
 message FinishSubscriptionResponse {
   Resource account = 1;
   bool replayed = 2;
+}
+
+// Synchronizes a protected capture of the latest validated authentication bundle
+// of the exact live Execute lease into the server vault before the Worker deletes
+// its transient auth.json. The capture is bound to the lease and the account's
+// immutable identity commitment, is never readable by Take and grants neither
+// readiness, quota access nor credential redistribution. The mutation request ID
+// is the durable capture identity, the mutation ID is the account and the
+// expected revision is the lease revision.
+message SyncSubscriptionRecoveryCaptureRequest {
+  Mutation mutation = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string generation_id = 5;
+  // Protected secret bytes. Never logged, journaled or returned.
+  bytes bundle = 6;
+}
+message SyncSubscriptionRecoveryCaptureResponse {
+  string capture_id = 1;
+  bool replayed = 2;
+}
+
+// Returns the retained capture only to the original Worker device that owns the
+// fenced Execute lease so it can scan its retained history for the latest tokens.
+// It changes no state and grants no execution authority.
+message ReadSubscriptionRecoveryCaptureRequest {
+  string account_id = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string capture_id = 5;
+}
+message ReadSubscriptionRecoveryCaptureResponse {
+  // Protected secret bytes. Never logged or journaled.
+  bytes bundle = 1;
+}
+
+// Reports the independently verified outcome of reconciling one fenced Execute
+// lease. The mutation request ID is a durable recovery request identity distinct
+// from the original Take and Finish request IDs.
+message RecoverSubscriptionRequest {
+  Mutation mutation = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  // The current instance of the original Worker, which may replace the lease's
+  // original instance.
+  string instance_id = 4;
+  string generation_id = 5;
+  string capture_id = 6;
+  SubscriptionRecoveryOutcome outcome = 7;
+  SubscriptionRecoveryBlockedReason blocked_reason = 8;
+}
+message RecoverSubscriptionResponse {
+  Resource account = 1;
+  bool replayed = 2;
+}
+enum SubscriptionRecoveryOutcome {
+  SUBSCRIPTION_RECOVERY_OUTCOME_UNSPECIFIED = 0;
+  // Native, process and file cleanup were independently confirmed and the retained
+  // history was scanned for the captured credentials. The server decides between
+  // restoring the account and settling it disconnected.
+  SUBSCRIPTION_RECOVERY_OUTCOME_SETTLED = 1;
+  // The Worker cannot prove cleanup. The fence stays and the closed reason is
+  // published through the account.
+  SUBSCRIPTION_RECOVERY_OUTCOME_BLOCKED = 2;
+}
+enum SubscriptionRecoveryBlockedReason {
+  SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED = 0;
+  SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_PROOF_UNAVAILABLE = 1;
+  SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CLEANUP_UNCONFIRMED = 2;
+  SUBSCRIPTION_RECOVERY_BLOCKED_REASON_OWNERSHIP_UNPROVEN = 3;
 }
 
 enum SubscriptionLoginMethod {

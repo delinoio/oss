@@ -131,8 +131,12 @@ const (
 	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
 	NativeClaudeSubscriptionsV1    WorkerCapability = "native-claude-subscriptions-v1"
 	ManagedClaudeExecutionV1       WorkerCapability = "managed-claude-execution-v1"
-	CodexQuotaBlockV1              WorkerCapability = "codex-quota-block-v1"
-	SubscriptionPaidCreditsV1      WorkerCapability = "subscription-paid-credits-v1"
+	// ManagedCodexRecoveryV1 negotiates the Worker-only ChatGPT Execute recovery
+	// lane: protected latest-credential capture and reconciliation of a fenced
+	// lease by its original Worker (issue 3992). Older peers keep the fence.
+	ManagedCodexRecoveryV1    WorkerCapability = "managed-codex-recovery-v1"
+	CodexQuotaBlockV1         WorkerCapability = "codex-quota-block-v1"
+	SubscriptionPaidCreditsV1 WorkerCapability = "subscription-paid-credits-v1"
 
 	SubscriptionObservationsV1  WorkerCapability = "subscription-observations-v1"
 	NativeSessionCompactionV1   WorkerCapability = "native-session-compaction-v1"

@@ -58,9 +58,12 @@ type Config struct {
 	// capability and the account's managed native installation is verified.
 	codexMembers bool
 	codexOwners  *codexOwnerRegistry
-	terminals    *terminalManager
-	Root         string
-	StartupID    domain.ID
+	// codexRecovery is true when the original server negotiated the ChatGPT
+	// Execute recovery lane for this Worker.
+	codexRecovery bool
+	terminals     *terminalManager
+	Root          string
+	StartupID     domain.ID
 	// DesktopClientID enables proof only for authenticated ordinary desktop admission.
 	DesktopClientID domain.ID
 	Logger          *slog.Logger
@@ -535,6 +538,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) {
 				profile += "\x00shared-subscription-owner-v1"
 			}
+			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1) {
+				profile += "\x00managed-codex-recovery-v1"
+			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1)
@@ -668,6 +674,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1)
 			}
+			// The ChatGPT recovery lane is advertised only after the original server
+			// echoes support; older servers keep the existing fence.
+			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1)
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1) && openCodeChildExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1)
 			}
@@ -723,6 +734,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.openCodeForkReasoning = runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1) && machineCapability(attached.Msg.Machine, domain.OpenCodeGeneralChatForkV1) && machineCapability(attached.Msg.Machine, domain.OpenCodeGeneralChatForkReasoningV1)
 			config.parallelSessions = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) && machineCapability(attached.Msg.Machine, domain.ParallelSessionsV1)
 			config.codexMembers = managedCapabilityExpected && config.parallelSessions && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1) && machineCapability(attached.Msg.Machine, domain.SharedSubscriptionOwnerV1)
+			config.codexRecovery = managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1) && machineCapability(attached.Msg.Machine, domain.ManagedCodexRecoveryV1)
 			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)
 			config.namedWorkspaceDirectories = namedDirectoriesExpected && machineCapability(attached.Msg.Machine, domain.NamedWorkspaceDirectoriesV1)
 			// The terminal owner was created before attachment and holds a Config copy.
