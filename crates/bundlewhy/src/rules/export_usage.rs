@@ -26,6 +26,9 @@ pub const MAX_PATHS: usize = 5;
 pub const MAX_EDGES_PER_PATH: usize = 24;
 /// Most chains extended per diagnostic; bounds work on dense graphs.
 pub const MAX_EXPANSIONS: usize = 10_000;
+/// Most chains waiting to be extended at one time; bounds memory on dense
+/// graphs, where one chain can have as many extensions as the graph has edges.
+pub const MAX_QUEUED: usize = 10_000;
 
 /// Display and work limits for one traversal.
 #[derive(Debug, Clone, Copy)]
@@ -33,6 +36,7 @@ pub struct Limits {
     pub max_paths: usize,
     pub max_edges_per_path: usize,
     pub max_expansions: usize,
+    pub max_queued: usize,
 }
 
 impl Limits {
@@ -40,6 +44,7 @@ impl Limits {
         max_paths: MAX_PATHS,
         max_edges_per_path: MAX_EDGES_PER_PATH,
         max_expansions: MAX_EXPANSIONS,
+        max_queued: MAX_QUEUED,
     };
 }
 
@@ -255,7 +260,7 @@ pub fn build(context: &Context<'_>, module_id: &str) -> ExportUsage {
     let index = context
         .export_usage_index
         .get_or_init(|| ExportUsageIndex::new(usage));
-    let result = traverse(context, index, module_id, Limits::DEFAULT);
+    let (result, stats) = traverse_with_stats(context, index, module_id, Limits::DEFAULT);
     tracing::debug!(
         module = module_id,
         state = ?result.state,
@@ -266,6 +271,8 @@ pub fn build(context: &Context<'_>, module_id: &str) -> ExportUsage {
             .filter(|path| path.end == ExportUsagePathEnd::Incomplete)
             .count(),
         truncation = ?result.truncation,
+        expansions = stats.expansions,
+        peak_queued = stats.peak_queued,
         skipped_edges = index.skipped_edges(),
         dropped_by_index = index.unusable_edges,
         unattributed_edges = index.unattributed_edges,
@@ -291,32 +298,60 @@ struct Candidate<'a> {
     end: Option<ExportUsagePathEnd>,
 }
 
+/// What one traversal did; reported in the debug log and checked by tests.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TraversalStats {
+    /// Chains that were extended.
+    pub expansions: usize,
+    /// Most chains that waited in the queue at one time.
+    pub peak_queued: usize,
+}
+
 pub fn traverse(
     context: &Context<'_>,
     index: &ExportUsageIndex<'_>,
     module_id: &str,
     limits: Limits,
 ) -> ExportUsage {
+    traverse_with_stats(context, index, module_id, limits).0
+}
+
+pub fn traverse_with_stats(
+    context: &Context<'_>,
+    index: &ExportUsageIndex<'_>,
+    module_id: &str,
+    limits: Limits,
+) -> (ExportUsage, TraversalStats) {
     let starts = index.edges_into_module(module_id);
     let skipped = index.skipped_edges();
+    let mut stats = TraversalStats::default();
     if starts.is_empty() {
-        return unavailable(if index.may_hide_edge_into(module_id) {
+        let note = if index.may_hide_edge_into(module_id) {
             NOTE_NO_USABLE_EDGE
         } else {
             NOTE_NO_EDGE
-        });
+        };
+        return (unavailable(note), stats);
+    }
+    // The queue never holds more than `max_queued` chains (at least one, so
+    // that a diagnostic with edges always shows a chain). A chain that does
+    // not fit is not queued and the traversal is marked as cut short.
+    let max_queued = limits.max_queued.max(1);
+    let mut truncation = ExportUsageTruncation::None;
+    if starts.len() > max_queued {
+        note_limit(&mut truncation, ExportUsageTruncation::ExpansionBudget);
     }
     let mut queue: VecDeque<Candidate<'_>> = starts
         .iter()
+        .take(max_queued)
         .map(|edge| Candidate {
             path: vec![*edge],
             end: None,
         })
         .collect();
+    stats.peak_queued = queue.len();
     // Each chain is stored outermost consumer last while it grows.
     let mut finished: Vec<(EdgePath<'_>, ExportUsagePathEnd)> = Vec::new();
-    let mut truncation = ExportUsageTruncation::None;
-    let mut expansions = 0usize;
     while let Some(candidate) = queue.pop_front() {
         if finished.len() >= limits.max_paths {
             note_limit(&mut truncation, ExportUsageTruncation::PathCount);
@@ -329,7 +364,7 @@ pub fn traverse(
             finished.push((path, end));
             continue;
         }
-        if expansions >= limits.max_expansions {
+        if stats.expansions >= limits.max_expansions {
             note_limit(&mut truncation, ExportUsageTruncation::ExpansionBudget);
             let rest = std::iter::once(Candidate { path, end: None }).chain(queue.drain(..));
             for candidate in rest {
@@ -341,7 +376,7 @@ pub fn traverse(
             }
             break;
         }
-        expansions += 1;
+        stats.expansions += 1;
         let Some(outermost) = path.last().copied() else {
             continue;
         };
@@ -366,13 +401,21 @@ pub fn traverse(
             finished.push((path, ExportUsagePathEnd::Truncated));
             continue;
         }
-        let mut closed_on_itself = false;
+        // An edge of the chain that also consumes the first export is a
+        // self-referencing export: the chain ends once instead of repeating
+        // the edge. Every edge in the chain is indexed under its provider, so
+        // this is the same test as finding it among `upstream`, without
+        // scanning a dense list.
+        let closed_on_itself = path.iter().any(|seen| seen.provider == outermost.consumer);
         for edge in upstream {
             if path.iter().any(|seen| std::ptr::eq(*seen, *edge)) {
-                // The edge is already part of the chain (a self-referencing
-                // export); end the chain once instead of repeating the edge.
-                closed_on_itself = true;
                 continue;
+            }
+            if queue.len() >= max_queued {
+                // Extending the chain by the remaining edges would hold more
+                // chains than the memory bound allows.
+                note_limit(&mut truncation, ExportUsageTruncation::ExpansionBudget);
+                break;
             }
             let revisits = path
                 .iter()
@@ -384,6 +427,7 @@ pub fn traverse(
                 end: revisits.then_some(ExportUsagePathEnd::Cycle),
             });
         }
+        stats.peak_queued = stats.peak_queued.max(queue.len());
         if closed_on_itself {
             // This chain is the one being processed now, so its turn in the
             // breadth-first order is also now.
@@ -403,7 +447,7 @@ pub fn traverse(
             }
         })
         .collect();
-    ExportUsage {
+    let usage = ExportUsage {
         state: ExportUsageState::Available,
         note: if skipped == 0 {
             String::new()
@@ -415,7 +459,8 @@ pub fn traverse(
         },
         paths,
         truncation,
-    }
+    };
+    (usage, stats)
 }
 
 fn display_ref(context: &Context<'_>, reference: &CollectedExportRef) -> ExportReference {
@@ -480,7 +525,11 @@ mod tests {
         }
     }
 
-    fn run(collection: &Collection, module: &str, limits: Limits) -> ExportUsage {
+    fn run_with_stats(
+        collection: &Collection,
+        module: &str,
+        limits: Limits,
+    ) -> (ExportUsage, TraversalStats) {
         let context = Context::new(
             collection,
             PathBuf::from("/project"),
@@ -489,7 +538,11 @@ mod tests {
             SourceStore::new(false),
         );
         let usage = collection.export_usage.as_ref().unwrap();
-        traverse(&context, &ExportUsageIndex::new(usage), module, limits)
+        traverse_with_stats(&context, &ExportUsageIndex::new(usage), module, limits)
+    }
+
+    fn run(collection: &Collection, module: &str, limits: Limits) -> ExportUsage {
+        run_with_stats(collection, module, limits).0
     }
 
     fn modules(path: &ExportUsagePath) -> Vec<String> {
@@ -695,6 +748,7 @@ mod tests {
             max_paths: 1,
             max_edges_per_path: 1,
             max_expansions: 100,
+            max_queued: MAX_QUEUED,
         };
         let usage = run(&collection(edges), "leaf", limits);
         assert_eq!(usage.truncation, ExportUsageTruncation::PathCount);
@@ -1315,6 +1369,168 @@ mod tests {
         let ends: Vec<_> = usage.paths.iter().map(|path| path.end).collect();
         assert!(ends.contains(&ExportUsagePathEnd::Cycle), "{ends:?}");
         assert!(ends.contains(&ExportUsagePathEnd::Truncated), "{ends:?}");
+    }
+
+    /// `count` distinct edges from `consumer` into `provider`.
+    fn fan(
+        count: usize,
+        consumer: impl Fn(usize) -> (String, Option<&'static [&'static str]>),
+        provider: (&str, Option<&[&str]>),
+    ) -> Vec<CollectedExportEdge> {
+        (0..count)
+            .map(|index| {
+                let (module, export) = consumer(index);
+                edge((&module, export), provider, &format!("d{index}"))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_dense_permitted_graph_never_queues_more_chains_than_the_bound() {
+        // Every edge into the diagnostic export is consumed by one shared
+        // export, and that export is consumed by as many edges again: both
+        // lists fit the edge collection limit, but extending one chain would
+        // otherwise queue every upstream edge at once.
+        let count = 50_000;
+        let mut edges = fan(count, |_| ("shared".to_owned(), Some(A)), ("leaf", Some(B)));
+        edges.extend(fan(
+            count,
+            |index| (format!("user{index}"), None),
+            ("shared", Some(A)),
+        ));
+        let (usage, stats) = run_with_stats(&collection(edges), "leaf", Limits::DEFAULT);
+        assert!(stats.peak_queued <= MAX_QUEUED, "{stats:?}");
+        assert!(stats.expansions <= MAX_EXPANSIONS, "{stats:?}");
+        assert_eq!(usage.state, ExportUsageState::Available);
+        assert_eq!(usage.truncation, ExportUsageTruncation::ExpansionBudget);
+        assert_eq!(usage.paths.len(), MAX_PATHS);
+        assert!(
+            usage
+                .paths
+                .iter()
+                .all(|path| path.end == ExportUsagePathEnd::Truncated)
+        );
+    }
+
+    /// Queue bound: every combination of queue state and event. Mirrors the
+    /// "Queue bound" table in the contract.
+    #[test]
+    fn queue_bound_table() {
+        struct Case {
+            name: &'static str,
+            edges: Vec<CollectedExportEdge>,
+            max_queued: usize,
+            truncation: ExportUsageTruncation,
+            consumers: Vec<&'static str>,
+            peak: usize,
+        }
+        let roots = |count| {
+            fan(
+                count,
+                |index| (format!("c{index}"), None),
+                ("leaf", Some(A)),
+            )
+        };
+        let cases = [
+            Case {
+                name: "starts fit the bound",
+                edges: roots(3),
+                max_queued: 3,
+                truncation: ExportUsageTruncation::None,
+                consumers: vec!["c0", "c1", "c2"],
+                peak: 3,
+            },
+            Case {
+                name: "starts exceed the bound: the first starts in order are kept",
+                edges: roots(4),
+                max_queued: 2,
+                truncation: ExportUsageTruncation::ExpansionBudget,
+                consumers: vec!["c0", "c1"],
+                peak: 2,
+            },
+            Case {
+                name: "a bound of zero still queues one chain",
+                edges: roots(3),
+                max_queued: 0,
+                truncation: ExportUsageTruncation::ExpansionBudget,
+                consumers: vec!["c0"],
+                peak: 1,
+            },
+            Case {
+                name: "extensions fit the bound",
+                edges: {
+                    let mut edges = fan(1, |_| ("mid".to_owned(), Some(B)), ("leaf", Some(A)));
+                    edges.extend(fan(
+                        3,
+                        |index| (format!("u{index}"), None),
+                        ("mid", Some(B)),
+                    ));
+                    edges
+                },
+                max_queued: 3,
+                truncation: ExportUsageTruncation::None,
+                consumers: vec!["u0", "u1", "u2"],
+                peak: 3,
+            },
+            Case {
+                name: "extensions reach the bound: the rest are not queued",
+                edges: {
+                    let mut edges = fan(1, |_| ("mid".to_owned(), Some(B)), ("leaf", Some(A)));
+                    edges.extend(fan(
+                        5,
+                        |index| (format!("u{index}"), None),
+                        ("mid", Some(B)),
+                    ));
+                    edges
+                },
+                max_queued: 3,
+                truncation: ExportUsageTruncation::ExpansionBudget,
+                consumers: vec!["u0", "u1", "u2"],
+                peak: 3,
+            },
+        ];
+        for case in cases {
+            let limits = Limits {
+                max_queued: case.max_queued,
+                ..Limits::DEFAULT
+            };
+            let (usage, stats) = run_with_stats(&collection(case.edges), "leaf", limits);
+            assert_eq!(usage.truncation, case.truncation, "{}", case.name);
+            let consumers: Vec<String> = usage
+                .paths
+                .iter()
+                .map(|path| path.edges[0].consumer.module.clone())
+                .collect();
+            assert_eq!(consumers, case.consumers, "{}", case.name);
+            assert!(
+                usage
+                    .paths
+                    .iter()
+                    .all(|path| path.end == ExportUsagePathEnd::Root),
+                "{}",
+                case.name
+            );
+            assert_eq!(stats.peak_queued, case.peak, "{}", case.name);
+            assert!(stats.peak_queued <= case.max_queued.max(1), "{}", case.name);
+        }
+    }
+
+    #[test]
+    fn a_chain_that_closes_on_itself_ends_once_even_when_the_queue_is_full() {
+        let mut edges = vec![edge(("a", Some(A)), ("a", Some(A)), "self")];
+        edges.extend(fan(3, |index| (format!("u{index}"), None), ("a", Some(A))));
+        let limits = Limits {
+            max_queued: 1,
+            ..Limits::DEFAULT
+        };
+        let usage = run(&collection(edges), "a", limits);
+        assert_eq!(usage.truncation, ExportUsageTruncation::ExpansionBudget);
+        let cycles = usage
+            .paths
+            .iter()
+            .filter(|path| path.end == ExportUsagePathEnd::Cycle)
+            .count();
+        assert_eq!(cycles, 1, "{usage:?}");
     }
 
     #[test]

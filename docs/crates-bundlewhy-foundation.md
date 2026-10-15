@@ -164,11 +164,23 @@ A collection without `exportUsage` (older adapter versions) deserializes with th
 
 Analysis: `Context` indexes edges once per analysis, by provider export and by provider module, so each diagnostic reads its starting edges without scanning the whole edge list. For a diagnostic module, the traversal starts from every edge whose provider is an export of that module and follows edges toward consumers: the next edge must provide exactly the current outermost consumer's export (module and export path equal). A named export is never linked to a module-scope reference of the same module, so a gap in Rspack's edges ends the chain instead of being bridged. Chains are produced breadth first (shortest first) from edges sorted by provider, consumer, dependency ID and location, so input order never changes the result. A chain that closes a cycle is queued like any other chain and is emitted in its breadth-first turn, so a shorter chain is never listed after a longer cycle chain, and the chain cap keeps the shortest chains. Chains are stored from the outermost consumer to the diagnostic module. The traversal never infers function calls; a `null` export stays module scope.
 
-| Limit                           | Value | Effect                                                            |
-| ------------------------------- | ----- | ----------------------------------------------------------------- |
-| Chains per diagnostic           | 5     | More chains stop the search; `truncation = PATH_COUNT`            |
-| Edges per chain                 | 24    | The chain ends `TRUNCATED`; `truncation = DEPTH`                  |
-| Chain extensions per diagnostic | 10000 | Remaining chains end `TRUNCATED`; `truncation = EXPANSION_BUDGET` |
+| Limit                           | Value | Effect                                                                                   |
+| ------------------------------- | ----- | ---------------------------------------------------------------------------------------- |
+| Chains per diagnostic           | 5     | More chains stop the search; `truncation = PATH_COUNT`                                   |
+| Edges per chain                 | 24    | The chain ends `TRUNCATED`; `truncation = DEPTH`                                         |
+| Chain extensions per diagnostic | 10000 | Remaining chains end `TRUNCATED`; `truncation = EXPANSION_BUDGET`                        |
+| Chains waiting in the queue     | 10000 | Chains that do not fit are not queued; `truncation = EXPANSION_BUDGET` (see Queue bound) |
+
+Queue bound. A dense graph can give one chain as many extensions as it has edges, so the number of chains waiting in the queue is bounded, not only the number of extensions. A chain is queued only while fewer than 10000 chains wait (a bound below one is treated as one, so a diagnostic with edges always shows a chain). Chains that do not fit are dropped whole, in the stable edge order, so a chain that was queued earlier is never replaced by a later one. Memory is bounded by the queue bound and the 24 edge depth, not by the edge count.
+
+| Queue state                          | Event                                                          | Result                                                                                                                         |
+| ------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Starting edges at most the bound     | The traversal starts                                           | Every starting edge is queued                                                                                                  |
+| Starting edges above the bound       | The traversal starts                                           | The first starting edges in stable order are queued; `truncation = EXPANSION_BUDGET`                                           |
+| Fewer chains waiting than the bound  | A chain is extended by each consuming edge                     | Every extension is queued                                                                                                      |
+| The bound is reached while extending | The next consuming edge of the chain                           | It and the rest of that chain's extensions are not queued; `truncation = EXPANSION_BUDGET`                                     |
+| The bound is reached while extending | The chain also consumes its own edge (self-referencing export) | The chain still ends `CYCLE` once; the check does not depend on the queue                                                      |
+| Any                                  | A chain is taken from the queue                                | It ends, or at least one extension is queued (the queue has room because the chain just left), so no chain disappears silently |
 
 `truncation` records the first limit reached; `NONE` means nothing was cut. A chain ends `ROOT` when no edge consumes its first export and no dropped edge could have (see the chain end table), `INCOMPLETE` when no usable edge consumes its first export but a dropped edge could have, `CYCLE` when the next edge would revisit an export already in the chain (the closing edge is included as the first edge, and a self-referencing edge ends the chain once), and `TRUNCATED` at a limit. A chain whose root is reached does not prove that no other consumer exists.
 
