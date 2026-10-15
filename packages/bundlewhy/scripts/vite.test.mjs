@@ -164,7 +164,10 @@ test("finalized output options decide whether the Oxc minifier runs", () => {
   assert.equal(resolveFinalizedMinifyActive({ minify: false }), false);
   assert.equal(resolveFinalizedMinifyActive({ minify: "dce-only" }), false);
   assert.equal(resolveFinalizedMinifyActive({ minify: true }), true);
-  assert.equal(resolveFinalizedMinifyActive({ minify: { compress: {} } }), true);
+  assert.equal(
+    resolveFinalizedMinifyActive({ minify: { compress: {} } }),
+    true,
+  );
 
   // A plugin hook can turn minification on after `build.minify: false`.
   assert.deepEqual(
