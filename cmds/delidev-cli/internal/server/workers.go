@@ -470,6 +470,8 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	// tracks one exact context per assigned job and never preclaims more work
 	// than the independent lane rules admit.
 	inFlight := map[domain.ID]*workerInFlight{}
+	// capabilityLogged keeps one log line per job that waits for a capability.
+	capabilityLogged := map[domain.ID]bool{}
 	skipSession := func(record store.Record, busy bool) {
 		if record.SessionID != "" {
 			blocked[record.SessionID] = true
@@ -664,6 +666,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			}
 			if job.State == domain.JobQueued {
 				claimDependencyBlocked := false
+				claimCapabilityBlocked := false
 				var releasedRetry domain.ID
 				result, err := s.Store.Mutate(ctx, domain.NewID(), "worker.claim", struct{ Job, Instance domain.ID }{record.ID, instance}, func(tx *store.Tx) (any, error) {
 					if err := currentInstance(tx, machine, instance); err != nil {
@@ -710,6 +713,12 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 								return nil, err
 							}
 							return rejectDowngradedNamedWorkspaceJob(tx, r, j, err)
+						}
+						// A Worker that predates the OpenCode image pair rejects the
+						// frozen declaration, so the job waits for one that reports it.
+						if queuedOpenCodeImageWorkerMissing(current, j) {
+							claimCapabilityBlocked = true
+							return r, nil
 						}
 					}
 					if j.Type == domain.PrepareWorkspaceJob {
@@ -812,6 +821,14 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					s.logger.InfoContext(ctx, "sidechat_retry_preclaim_rejected", "job_id", record.ID, "generation_id", releasedRetry, "code", job.Problem.Code)
 				}
 				if claimDependencyBlocked {
+					skipSession(record, false)
+					continue
+				}
+				if claimCapabilityBlocked {
+					if !capabilityLogged[record.ID] {
+						capabilityLogged[record.ID] = true
+						s.logger.InfoContext(ctx, "worker_claim_waiting_for_capability", "machine_id", machine, "instance_id", instance, "job_id", record.ID, "session_id", record.SessionID, "type", job.Type, "capability", "opencode_image_inputs_v1")
+					}
 					skipSession(record, false)
 					continue
 				}

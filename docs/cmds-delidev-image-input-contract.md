@@ -52,6 +52,22 @@ Automated route fixtures stage real owned images and assert that Claude Code, Gr
 
 Queued edits include typed attachment field 5. Explicit selections must match the immutable original ordered references; old-client omission preserves them. Mixed skill/image Fork proofs retain the original Worker image lookup while copying child-owned skill packages; no new byte ownership or native call is inferred.
 
+## OpenCode image declaration across Worker reconnects
+
+A frozen `image_input_declared` OpenCode declaration is only valid for a Runner Device that currently reports Worker 70. A Worker build that predates the pair can reconnect on the same machine and replaces the reported capability list, so the server checks the current list at each point where a declaration meets a Worker. Every cell below is covered by a test in `cmds/delidev-cli/internal/server`.
+
+| State | Event | Result |
+| --- | --- | --- |
+| First execution preview, Runner without Worker 70 | Agent model declares `image` | Declaration is not frozen; snapshot stays text-only and dispatches as before |
+| First execution preview, Runner with Worker 70 | Agent model declares `image` | Declaration is frozen |
+| Creation, enqueue or follow-up with images | Runner without Worker 70 | Unsupported-image error; the upload stays unclaimed |
+| Dispatch of an assignment that declares OpenCode images | Runner without Worker 70 | Typed unsupported error; the saved input stays queued and no image is dropped |
+| Queued execution, compaction (restore or assignment) or Fork (source assignment or child snapshot) job that declares OpenCode images | Claimed by a Worker that reports Worker 70 | Claimed and assigned |
+| Same queued job | Claimed by a Worker without Worker 70 | Not claimed: the job stays queued under the existing skipped-job ordering rules, the wait is logged once per job and stream, and no failure, uncertainty or image loss is recorded |
+| Same job still waiting | A Worker reporting Worker 70 attaches | Claimed and assigned in the normal order |
+| Queued job with a text-only OpenCode snapshot or a Codex declaration | Claimed by a Worker without Worker 70 | Claimed; the OpenCode pair is irrelevant |
+| Job already claimed by an instance | Same instance reconnects its stream | Resent unchanged; a different instance follows the existing replaced-instance reconciliation |
+
 ## Image-view observation separation
 
 [Codex image-view metadata](cmds-delidev-harness-contract.md#codex-image-view-observations) uses the original tool/reference identity, not an image-input attachment. Its native location and prepared-root scope grant no source file read, transfer, image-input claim or source-file deletion. Existing authenticated attachment reads continue to require an original claimed upload and immutable byte ownership; an image-view observation alone cannot satisfy them. The metadata-only transcript explicitly reports unavailable preview. Do not reopen a displayed path or download a URL to supply missing native bytes. Existing attachment cleanup and independent workspace/native cleanup retain their original authority.

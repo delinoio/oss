@@ -162,3 +162,36 @@ func checkQueuedImageEdit(tx *store.Tx, session domain.Session, prompt string, r
 	}
 	return nil
 }
+
+// queuedOpenCodeImageWorkerMissing reports whether a queued Worker job carries a
+// frozen OpenCode image declaration that the claiming Runner Device cannot
+// honor. The declaration was admitted while a Worker holding the OpenCode image
+// pair was connected, but a Worker that predates the pair can reconnect on the
+// same machine before the job is claimed and rejects every such assignment, even
+// a text-only one. The caller leaves the job queued instead of claiming it. A
+// payload that does not decode is left to the claim checks that own it.
+func queuedOpenCodeImageWorkerMissing(machine domain.Machine, job domain.Job) bool {
+	if slices.Contains(machine.WorkerCapabilities, domain.OpenCodeImageInputsV1) {
+		return false
+	}
+	declares := func(configurations ...domain.ExecutionConfiguration) bool {
+		for _, c := range configurations {
+			if c.Harness == domain.OpenCode && c.ImageInputDeclared {
+				return true
+			}
+		}
+		return false
+	}
+	switch job.Type {
+	case domain.ExecuteSessionJob:
+		var input domain.ExecutionJobInput
+		return domain.Decode(job.Input, &input) == nil && declares(input.Configuration)
+	case domain.CompactSessionJob:
+		var input domain.SessionCompactionInput
+		return domain.DecodeCompactionInput(job.Input, &input) == nil && declares(input.Restore.Configuration, input.Assignment.Configuration)
+	case domain.ForkSessionJob:
+		var input domain.ForkJobInput
+		return domain.Decode(job.Input, &input) == nil && declares(input.SourceAssignment.Configuration, input.Snapshot.Configuration)
+	}
+	return false
+}
