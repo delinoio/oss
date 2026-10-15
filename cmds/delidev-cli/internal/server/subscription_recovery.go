@@ -81,10 +81,14 @@ func (s *Service) subscriptionRecoveryLeaseView(ctx context.Context, tx *store.T
 	return r, a, nil
 }
 
+// subscriptionCaptureInput is the receipt digest of a capture request. The
+// presenting instance is deliberately excluded: the same durable request is
+// repeated unchanged by a replacement instance of the original Worker after a
+// lost acknowledgement.
 type subscriptionCaptureInput struct {
-	Account, Lease, Machine, Instance, Generation domain.ID
-	Digest                                        string
-	Revision                                      uint64
+	Account, Lease, Machine, Generation domain.ID
+	Digest                              string
+	Revision                            uint64
 }
 
 // SyncSubscriptionRecoveryCapture implements the pre-deletion protected capture.
@@ -111,7 +115,8 @@ func (s *Service) SyncSubscriptionRecoveryCapture(ctx context.Context, req *conn
 	identityJSON, _ := json.Marshal(struct{ Account, User string }{identity.Account, identity.User})
 	commitment := s.accountCommitment(s.Identity.ServerID, identityJSON)
 	clear(identityJSON)
-	input := subscriptionCaptureInput{domain.ID(m.Id), domain.ID(msg.LeaseId), domain.ID(msg.MachineId), domain.ID(msg.InstanceId), domain.ID(msg.GenerationId), s.accountCommitment(domain.ID(m.RequestId), msg.Bundle), m.ExpectedRevision}
+	input := subscriptionCaptureInput{domain.ID(m.Id), domain.ID(msg.LeaseId), domain.ID(msg.MachineId), domain.ID(msg.GenerationId), s.accountCommitment(domain.ID(m.RequestId), msg.Bundle), m.ExpectedRevision}
+	instance := domain.ID(msg.InstanceId)
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -130,7 +135,7 @@ func (s *Service) SyncSubscriptionRecoveryCapture(ctx context.Context, req *conn
 	var usable bool
 	var settled string
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
-		_, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, recoveryAnyFence)
+		_, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, instance, recoveryAnyFence)
 		if err != nil {
 			return err
 		}
@@ -166,7 +171,7 @@ func (s *Service) SyncSubscriptionRecoveryCapture(ctx context.Context, req *conn
 	}
 	var previous domain.ID
 	result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.recovery-capture", input, func(tx *store.Tx) (any, error) {
-		r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, recoveryAnyFence)
+		r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, instance, recoveryAnyFence)
 		if err != nil {
 			return nil, err
 		}
@@ -253,11 +258,15 @@ const (
 	recoverBlocked subscriptionRecoverOutcome = "blocked"
 )
 
+// subscriptionRecoverInput is the receipt digest of a recovery request. The
+// presenting instance is deliberately excluded (see subscriptionCaptureInput), so
+// the durable recovery request replays across Worker restarts and replacement
+// instances of the same original Worker.
 type subscriptionRecoverInput struct {
-	Account, Lease, Machine, Instance, Generation, Capture domain.ID
-	Revision                                               uint64
-	Outcome                                                pb.SubscriptionRecoveryOutcome
-	Reason                                                 pb.SubscriptionRecoveryBlockedReason
+	Account, Lease, Machine, Generation, Capture domain.ID
+	Revision                                     uint64
+	Outcome                                      pb.SubscriptionRecoveryOutcome
+	Reason                                       pb.SubscriptionRecoveryBlockedReason
 }
 
 func subscriptionRecoveryReason(value pb.SubscriptionRecoveryBlockedReason) domain.SubscriptionRecoveryReason {
@@ -286,7 +295,8 @@ func (s *Service) RecoverSubscription(ctx context.Context, req *connect.Request[
 	if err := workerActor(ctx, msg.MachineId, msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	input := subscriptionRecoverInput{domain.ID(m.Id), domain.ID(msg.LeaseId), domain.ID(msg.MachineId), domain.ID(msg.InstanceId), domain.ID(msg.GenerationId), domain.ID(msg.CaptureId), m.ExpectedRevision, msg.Outcome, msg.BlockedReason}
+	input := subscriptionRecoverInput{domain.ID(m.Id), domain.ID(msg.LeaseId), domain.ID(msg.MachineId), domain.ID(msg.GenerationId), domain.ID(msg.CaptureId), m.ExpectedRevision, msg.Outcome, msg.BlockedReason}
+	instance := domain.ID(msg.InstanceId)
 	switch msg.Outcome {
 	case pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_SETTLED:
 		if input.Capture.Validate() != nil || msg.BlockedReason != pb.SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED {
@@ -319,7 +329,7 @@ func (s *Service) RecoverSubscription(ctx context.Context, req *connect.Request[
 		var original domain.Account
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
 			var err error
-			_, original, err = s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, recoveryFenced)
+			_, original, err = s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, instance, recoveryFenced)
 			if err == nil && (original.Subscription.Lease.Revision != input.Revision || original.Subscription.Generation != input.Generation || original.Subscription.Lease.Generation != input.Generation) {
 				err = subscriptionDenied()
 			}
@@ -332,7 +342,7 @@ func (s *Service) RecoverSubscription(ctx context.Context, req *connect.Request[
 		if msg.Outcome == pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_BLOCKED {
 			reason := subscriptionRecoveryReason(msg.BlockedReason)
 			result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.recover", input, func(tx *store.Tx) (any, error) {
-				r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, recoveryFenced)
+				r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, instance, recoveryFenced)
 				if err != nil {
 					return nil, err
 				}
@@ -385,7 +395,7 @@ func (s *Service) RecoverSubscription(ctx context.Context, req *connect.Request[
 			return nil, rpc.Error(err, c)
 		}
 		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.recover", input, func(tx *store.Tx) (any, error) {
-			r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, recoveryFenced)
+			r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, instance, recoveryFenced)
 			if err != nil {
 				return nil, err
 			}

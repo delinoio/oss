@@ -312,6 +312,19 @@ func TestSubscriptionRecoveryReplacementInstanceOfOriginalWorkerSettles(t *testi
 	if _, account := f.record(); account.Subscription.Lease != nil || account.Health != domain.AccountReady {
 		t.Fatal("replacement-instance recovery did not restore readiness")
 	}
+	// A lost acknowledgement is repeated by yet another instance of the same
+	// original Worker; the durable recovery identity still replays.
+	next := domain.NewID()
+	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.next-instance", nil, func(tx *store.Tx) (any, error) {
+		return nil, tx.SetWorkerInstance(f.input.MachineID, next, time.Now().UTC())
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.InstanceId = string(next)
+	if replay, err := f.recoverCall(request); err != nil || !replay.Replayed {
+		t.Fatal("the durable recovery request did not replay across instances", err)
+	}
 }
 
 func TestSubscriptionRecoveryRetireWaitsForIndependentCredentialUsers(t *testing.T) {
