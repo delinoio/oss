@@ -18,7 +18,14 @@
 //!   overloads or parameter properties, never uses `new.target` or
 //!   `import.meta`, returns no value from its constructor, uses `super` only as
 //!   `super(…)` in the constructor or `super.m(…)` in instance members, and has
-//!   no static member that uses `this` or `super`.
+//!   no static member that uses `this` or `super`. The one exception is a
+//!   `keepNames` static block `static{H(this,"Name")}`, where `H` is a helper
+//!   that only runs
+//!   `Object.defineProperty(a,"name",{value:b,configurable:true})` on its
+//!   arguments (see `name_helper_block`): it defines the constructor's own
+//!   `name` and exposes neither the class nor an instance. After call inlining,
+//!   the same block may be the inlined body
+//!   `D(this,"name",{value:"Name",configurable:true})`.
 //!
 //! One value stands for the instances of each closed class. `this` in the
 //! instance members of a class holds that value and the values of every
@@ -139,12 +146,94 @@ pub(super) struct Candidate {
 /// `call` or `toString` could construct instances or reveal the source.
 const SAFE_CONSTRUCTOR_READS: &[&str] = &["name", "length"];
 
+/// Why a static block that uses `this` is not the `keepNames` naming block
+/// `static{H(this,"Name")}` of a proven helper `H`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NameBlockMismatch {
+    /// The block is not exactly one call `H(…)` with an identifier callee and
+    /// two arguments without spread.
+    NotSingleCall,
+    /// The first argument is not `this`.
+    ReceiverArgument,
+    /// The second argument is not a string or a substitution-free template.
+    NonLiteralName,
+    /// The callee does not resolve to a symbol with exactly one declaration
+    /// in a checked file.
+    HelperUnresolved,
+    /// The helper symbol is assigned somewhere.
+    HelperWritten,
+    /// The helper is not exactly
+    /// `(a,b)=>D(a,"name",{value:b,configurable:true})`.
+    HelperShape,
+    /// `D` is neither `Object.defineProperty` nor a single-declaration,
+    /// unwritten alias of it.
+    DefinePropertyAlias,
+    /// `Object` is not the library global.
+    ShadowedObject,
+    /// Application code, or an external runtime import, may replace `Object`
+    /// or `Object.defineProperty`, so a call to either form can run
+    /// arbitrary code with the constructor.
+    DefinePropertyPatched,
+}
+
 fn contains_receiver(node: Node) -> bool {
     let mut nodes = Vec::new();
     collect_nodes(node, &mut nodes);
     nodes
         .iter()
         .any(|n| matches!(n.kind(), SyntaxKind::ThisKeyword | SyntaxKind::SuperKeyword))
+}
+
+/// A string or a substitution-free template literal.
+fn is_string_literal(node: Node) -> bool {
+    matches!(
+        node.kind(),
+        SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
+    )
+}
+
+/// `{value: V, configurable: true}` in either property order, with plain
+/// (non-computed, non-shorthand) keys, where `value_ok` accepts `V`.
+fn name_descriptor(descriptor: Node, mut value_ok: impl FnMut(Node) -> bool) -> bool {
+    if descriptor.kind() != SyntaxKind::ObjectLiteralExpression
+        || descriptor.properties().len() != 2
+    {
+        return false;
+    }
+    let (mut value, mut configurable) = (false, false);
+    for property in descriptor.properties().iter() {
+        if property.kind() != SyntaxKind::PropertyAssignment {
+            return false;
+        }
+        let key = property.name();
+        let initializer = skip_outer(property.initializer());
+        if !matches!(
+            key.kind(),
+            SyntaxKind::Identifier | SyntaxKind::StringLiteral
+        ) {
+            return false;
+        }
+        match key.text() {
+            "value" if !value && value_ok(initializer) => value = true,
+            "configurable" if !configurable && true_literal(initializer) => configurable = true,
+            _ => return false,
+        }
+    }
+    value && configurable
+}
+
+/// `true` or its minified form `!0`.
+fn true_literal(node: Node) -> bool {
+    match node.kind() {
+        SyntaxKind::TrueKeyword => true,
+        SyntaxKind::PrefixUnaryExpression => {
+            let operand = skip_outer(node.operand());
+            node.operator() == SyntaxKind::ExclamationToken
+                && operand.kind() == SyntaxKind::NumericLiteral
+                && operand.text() == "0"
+        }
+        _ => false,
+    }
 }
 
 /// A summarized member owns its parameters and results.
@@ -202,16 +291,266 @@ impl Builder<'_, '_> {
             && WELL_KNOWN_SYMBOLS.contains(&expression.name().text())
             && object.kind() == SyntaxKind::Identifier
             && object.text() == "Symbol"
-            && self.symbol(object).is_none_or(|symbol| {
-                self.ctx.checker.sym(symbol).declarations.iter().all(|&d| {
-                    source_file_info(get_source_file_of_node(d))
-                        .file_name
-                        .ends_with(".d.ts")
-                })
-            })
+            && self.lib_global(object)
     }
 
-    fn class_candidate(&mut self, node: Node) -> Result<Candidate, &'static str> {
+    /// `node` is an identifier that names a library global: it resolves to no
+    /// declaration or only to declarations in `.d.ts` files.
+    fn lib_global(&self, node: Node) -> bool {
+        self.symbol(node).is_none_or(|symbol| {
+            self.ctx.checker.sym(symbol).declarations.iter().all(|&d| {
+                source_file_info(get_source_file_of_node(d))
+                    .file_name
+                    .ends_with(".d.ts")
+            })
+        })
+    }
+
+    /// The only declaration of `symbol` when it is a variable with an
+    /// identifier name or a function, written nowhere, in a checked (not
+    /// JavaScript boundary) file.
+    fn single_binding(&self, symbol: SymbolId) -> Result<Node, NameBlockMismatch> {
+        let declarations = &self.ctx.checker.sym(symbol).declarations;
+        let [declaration] = declarations.as_slice() else {
+            return Err(NameBlockMismatch::HelperUnresolved);
+        };
+        let declaration = *declaration;
+        let shape = match declaration.kind() {
+            SyntaxKind::VariableDeclaration => declaration.name().kind() == SyntaxKind::Identifier,
+            SyntaxKind::FunctionDeclaration => declaration.name().kind() == SyntaxKind::Identifier,
+            _ => false,
+        };
+        let checked = self
+            .ctx
+            .file_of_node(declaration)
+            .is_some_and(|file| !self.ctx.files[file].js);
+        if !shape || !checked || declaration.flags().intersects(NodeFlags::Ambient) {
+            return Err(NameBlockMismatch::HelperUnresolved);
+        }
+        if self
+            .ctx
+            .refs(symbol)
+            .iter()
+            .any(|r| r.kind == RefKind::Write)
+        {
+            return Err(NameBlockMismatch::HelperWritten);
+        }
+        Ok(declaration)
+    }
+
+    /// Neither the `Object` global nor `Object.defineProperty` is replaced
+    /// by application code or an external runtime import. Computed once per
+    /// program through the shared intrinsic patch scan; it covers the direct
+    /// and the aliased form of the callee.
+    fn define_property_intact(&mut self) -> bool {
+        if let Some(intact) = self.define_property_intact {
+            return intact;
+        }
+        let intact = super::builtin_intact(self.ctx, "Object", "defineProperty");
+        tracing::debug!(intact, "Object.defineProperty patch query");
+        self.define_property_intact = Some(intact);
+        intact
+    }
+
+    /// `node` is exactly `Object.defineProperty` with the library `Object`.
+    fn is_define_property(&self, node: Node) -> Result<(), NameBlockMismatch> {
+        let node = skip_outer(node);
+        if node.kind() != SyntaxKind::PropertyAccessExpression
+            || node.question_dot_token().is_some()
+            || node.name().kind() != SyntaxKind::Identifier
+            || node.name().text() != "defineProperty"
+        {
+            return Err(NameBlockMismatch::DefinePropertyAlias);
+        }
+        let object = skip_outer(node.expression());
+        if object.kind() != SyntaxKind::Identifier || object.text() != "Object" {
+            return Err(NameBlockMismatch::DefinePropertyAlias);
+        }
+        if !self.lib_global(object) {
+            return Err(NameBlockMismatch::ShadowedObject);
+        }
+        Ok(())
+    }
+
+    /// `node` is `Object.defineProperty` or an identifier of a single
+    /// unwritten variable initialized with exactly that.
+    fn define_property_callee(&self, node: Node) -> Result<(), NameBlockMismatch> {
+        let node = skip_outer(node);
+        if node.kind() != SyntaxKind::Identifier {
+            return self.is_define_property(node);
+        }
+        let symbol = self
+            .symbol(node)
+            .ok_or(NameBlockMismatch::DefinePropertyAlias)?;
+        let declaration = self
+            .single_binding(symbol)
+            .map_err(|_| NameBlockMismatch::DefinePropertyAlias)?;
+        if declaration.kind() != SyntaxKind::VariableDeclaration
+            || declaration.initializer().is_nil()
+        {
+            return Err(NameBlockMismatch::DefinePropertyAlias);
+        }
+        self.is_define_property(declaration.initializer())
+    }
+
+    /// `static{D(this,"name",{value:"Name",configurable:true})}`: the helper
+    /// call after call inlining. `D` is `Object.defineProperty` or an alias
+    /// of it, as in `name_helper_block`.
+    fn inlined_name_block(
+        &self,
+        callee: Node,
+        arguments: NodeSlice,
+    ) -> Result<(), NameBlockMismatch> {
+        if skip_outer(arguments.get(0)).kind() != SyntaxKind::ThisKeyword {
+            return Err(NameBlockMismatch::ReceiverArgument);
+        }
+        let key = skip_outer(arguments.get(1));
+        if !is_string_literal(key) {
+            return Err(NameBlockMismatch::NonLiteralName);
+        }
+        let descriptor = skip_outer(arguments.get(2));
+        if key.text() != "name" || !name_descriptor(descriptor, is_string_literal) {
+            return Err(NameBlockMismatch::HelperShape);
+        }
+        self.define_property_callee(callee)?;
+        Ok(())
+    }
+
+    /// `static{H(this,"Name")}` where `H` is the `keepNames` helper. Such a
+    /// block only runs `Object.defineProperty(C,"name",{value,configurable})`
+    /// on the class constructor: it creates no instance and hands the class
+    /// to no other code, because the helper is checked exactly:
+    /// - the block is one call `H(this, literal)` with an identifier callee;
+    /// - `H` has one declaration in a checked file and no write, and is a
+    ///   variable initialized with an arrow function or a non-async,
+    ///   non-generator function expression, or a function declaration, with two
+    ///   plain identifier parameters `a` and `b` whose body is exactly
+    ///   `D(a,"name",{value:b,configurable:true})` (`!0` for `true`, an
+    ///   optional `return`);
+    /// - `D` is `Object.defineProperty` or a single-declaration unwritten alias
+    ///   of it, and `Object` is the library global.
+    fn name_helper_block(&self, member: Node) -> Result<(), NameBlockMismatch> {
+        let body = member.static_block_body();
+        let statements = body.statements().to_vec();
+        let [statement] = statements.as_slice() else {
+            return Err(NameBlockMismatch::NotSingleCall);
+        };
+        if statement.kind() != SyntaxKind::ExpressionStatement {
+            return Err(NameBlockMismatch::NotSingleCall);
+        }
+        let call = skip_outer(statement.expression());
+        if call.kind() != SyntaxKind::CallExpression {
+            return Err(NameBlockMismatch::NotSingleCall);
+        }
+        let callee = skip_outer(call.expression());
+        let arguments = call.arguments();
+        if call.question_dot_token().is_some()
+            || !matches!(arguments.len(), 2 | 3)
+            || arguments
+                .iter()
+                .any(|a| a.kind() == SyntaxKind::SpreadElement)
+        {
+            return Err(NameBlockMismatch::NotSingleCall);
+        }
+        if arguments.len() == 3 {
+            return self.inlined_name_block(callee, arguments);
+        }
+        if callee.kind() != SyntaxKind::Identifier {
+            return Err(NameBlockMismatch::NotSingleCall);
+        }
+        if skip_outer(arguments.get(0)).kind() != SyntaxKind::ThisKeyword {
+            return Err(NameBlockMismatch::ReceiverArgument);
+        }
+        let name = skip_outer(arguments.get(1));
+        if !is_string_literal(name) {
+            return Err(NameBlockMismatch::NonLiteralName);
+        }
+        let symbol = self
+            .symbol(callee)
+            .ok_or(NameBlockMismatch::HelperUnresolved)?;
+        let declaration = self.single_binding(symbol)?;
+        let function = match declaration.kind() {
+            SyntaxKind::FunctionDeclaration => declaration,
+            _ if declaration.initializer().is_some() => skip_outer(declaration.initializer()),
+            _ => return Err(NameBlockMismatch::HelperShape),
+        };
+        if !matches!(
+            function.kind(),
+            SyntaxKind::ArrowFunction
+                | SyntaxKind::FunctionExpression
+                | SyntaxKind::FunctionDeclaration
+        ) || get_combined_modifier_flags(function).intersects(ModifierFlags::Async)
+            || function.asterisk_token().is_some()
+            || function.parameters().len() != 2
+        {
+            return Err(NameBlockMismatch::HelperShape);
+        }
+        let mut names = Vec::new();
+        for parameter in function.parameters().iter() {
+            let plain = parameter.name().kind() == SyntaxKind::Identifier
+                && parameter.name().text() != "this"
+                && parameter.dot_dot_dot_token().is_nil()
+                && parameter.question_token().is_nil()
+                && parameter.initializer().is_nil();
+            if !plain {
+                return Err(NameBlockMismatch::HelperShape);
+            }
+            names.push(parameter.name().text());
+        }
+        if names[0] == names[1] {
+            return Err(NameBlockMismatch::HelperShape);
+        }
+        let mut inner = function.body();
+        if inner.kind() == SyntaxKind::Block {
+            let statements = inner.statements().to_vec();
+            let [statement] = statements.as_slice() else {
+                return Err(NameBlockMismatch::HelperShape);
+            };
+            if !matches!(
+                statement.kind(),
+                SyntaxKind::ReturnStatement | SyntaxKind::ExpressionStatement
+            ) || statement.expression().is_nil()
+            {
+                return Err(NameBlockMismatch::HelperShape);
+            }
+            inner = statement.expression();
+        }
+        let define = skip_outer(inner);
+        if define.kind() != SyntaxKind::CallExpression || define.question_dot_token().is_some() {
+            return Err(NameBlockMismatch::HelperShape);
+        }
+        let arguments = define.arguments();
+        if arguments.len() != 3 {
+            return Err(NameBlockMismatch::HelperShape);
+        }
+        let (target, key, descriptor) = (
+            skip_outer(arguments.get(0)),
+            skip_outer(arguments.get(1)),
+            skip_outer(arguments.get(2)),
+        );
+        if target.kind() != SyntaxKind::Identifier
+            || target.text() != names[0]
+            || !is_string_literal(key)
+            || key.text() != "name"
+            || descriptor.kind() != SyntaxKind::ObjectLiteralExpression
+            || descriptor.properties().len() != 2
+        {
+            return Err(NameBlockMismatch::HelperShape);
+        }
+        if !name_descriptor(descriptor, |value| {
+            value.kind() == SyntaxKind::Identifier && value.text() == names[1]
+        }) {
+            return Err(NameBlockMismatch::HelperShape);
+        }
+        self.define_property_callee(define.expression())?;
+        Ok(())
+    }
+
+    fn class_candidate(
+        &mut self,
+        node: Node,
+        name_blocks: &mut usize,
+    ) -> Result<Candidate, &'static str> {
         let binding = Self::class_binding(node).ok_or("anonymous")?;
         let symbol = self.symbol(binding).ok_or("unresolved")?;
         if !is_external_module(get_source_file_of_node(node)) || in_namespace(node) {
@@ -289,7 +628,33 @@ impl Builder<'_, '_> {
             if (is_static(member) || member.kind() == SyntaxKind::ClassStaticBlockDeclaration)
                 && contains_receiver(member)
             {
-                return Err("static-receiver");
+                if member.kind() != SyntaxKind::ClassStaticBlockDeclaration {
+                    return Err("static-receiver");
+                }
+                let block = self.name_helper_block(member).and_then(|()| {
+                    if self.define_property_intact() {
+                        Ok(())
+                    } else {
+                        Err(NameBlockMismatch::DefinePropertyPatched)
+                    }
+                });
+                match block {
+                    Ok(()) => {
+                        *name_blocks += 1;
+                        tracing::debug!(
+                            file = %source_file_info(get_source_file_of_node(node)).file_name,
+                            "keepNames static block accepted"
+                        );
+                    }
+                    Err(mismatch) => {
+                        tracing::debug!(
+                            file = %source_file_info(get_source_file_of_node(node)).file_name,
+                            reason = ?mismatch,
+                            "keepNames-shaped static block rejected"
+                        );
+                        return Err("static-receiver");
+                    }
+                }
             }
         }
         let mut nodes = Vec::new();
@@ -407,6 +772,7 @@ impl Builder<'_, '_> {
     pub(super) fn closed_classes(&mut self, files: &[usize]) -> HashMap<Node, Candidate> {
         let mut candidates = HashMap::<Node, Candidate>::new();
         let mut rejected = BTreeMap::<&'static str, usize>::new();
+        let mut name_blocks = 0usize;
         for &file in files {
             for index in 0..self.ctx.files[file].nodes.len() {
                 let node = self.ctx.files[file].nodes[index];
@@ -416,7 +782,7 @@ impl Builder<'_, '_> {
                 ) {
                     continue;
                 }
-                match self.class_candidate(node) {
+                match self.class_candidate(node, &mut name_blocks) {
                     Ok(candidate) => {
                         candidates.insert(node, candidate);
                     }
@@ -476,6 +842,7 @@ impl Builder<'_, '_> {
         tracing::debug!(
             closed = candidates.len(),
             ?rejected,
+            name_blocks,
             "closed classes classified"
         );
         candidates

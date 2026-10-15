@@ -485,3 +485,80 @@ func TestClaudeAcceptedRunnerRequestReplaysThroughOriginalReceipt(t *testing.T) 
 		t.Fatalf("a new Runner login request was not rejected: %v", err)
 	}
 }
+
+// A lost device-owned lease settles through exactly one of two signals. Cleanup
+// alone confirms a logout and disconnects the account. Cleanup together with
+// success and no identity is the no-native settlement of an EXECUTE that never
+// opened the profile; it keeps the account connected and is refused for every
+// other action.
+func TestClaudeRecoveryNoNativeSettlementKeepsOnlyAnExecuteAccount(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		action    domain.SubscriptionAction
+		success   bool
+		wantKept  bool
+		wantError bool
+	}{
+		{"execute no-native settlement keeps the account", domain.SubscriptionExecute, true, true, false},
+		{"execute cleanup-only confirmation is a logout", domain.SubscriptionExecute, false, false, false},
+		{"login cannot claim no-native settlement", domain.SubscriptionLogin, true, false, true},
+		{"refresh cannot claim no-native settlement", domain.SubscriptionRefresh, true, false, true},
+		{"logout cannot claim no-native settlement", domain.SubscriptionLogout, true, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newClaudeSubscriptionFixture(t)
+			ctx := context.Background()
+			login := claudeStart(t, f, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+			lease, err := f.take(login, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r, _ := f.record()
+			connect := &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: lease.LeaseRevision}, LeaseId: lease.LeaseId, GenerationId: lease.GenerationId, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), CleanupConfirmed: true, Succeeded: true, NativeIdentity: &pb.NativeSubscriptionIdentity{ProfileId: lease.NativeProfileId, IdentityCommitment: strings.Repeat("ab", 32)}}
+			if _, err = f.client.FinishSubscription(ctx, subscriptionRequest(f.workerToken, connect)); err != nil {
+				t.Fatal(err)
+			}
+			_, connected := f.record()
+			refresh := claudeStart(t, f, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+			held, err := f.take(refresh, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.claude-lease-action", nil, func(tx *store.Tx) (any, error) {
+				r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+				if err != nil {
+					return nil, err
+				}
+				a.Subscription.Lease.Action = tc.action
+				_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+				return nil, err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err = f.service.markSubscriptionRecovery(f.input.AccountID); err != nil {
+				t.Fatal(err)
+			}
+			_, err = f.finish(held, nil, tc.success, false, true)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("finish error = %v, want error %t", err, tc.wantError)
+			}
+			_, a := f.record()
+			if tc.wantError {
+				if !a.Subscription.RecoveryRequired || a.Subscription.Lease == nil {
+					t.Fatal("a refused settlement released the lost lease")
+				}
+				return
+			}
+			if a.Subscription.RecoveryRequired || a.Subscription.Lease != nil {
+				t.Fatal("recovery did not retire the lost lease")
+			}
+			kept := a.Connection != nil && a.Health == domain.AccountReady && a.Subscription.Generation == connected.Subscription.Generation && a.Subscription.NativeProfileID == connected.Subscription.NativeProfileID && a.Subscription.IdentityCommitment == connected.Subscription.IdentityCommitment && a.Subscription.OwnerMachineID == connected.Subscription.OwnerMachineID
+			if kept != tc.wantKept {
+				t.Fatalf("account kept = %t, want %t", kept, tc.wantKept)
+			}
+			if !tc.wantKept && (a.Connection != nil || a.Subscription.NativeProfileID != "") {
+				t.Fatal("cleanup-only confirmation did not disconnect the account")
+			}
+		})
+	}
+}

@@ -7,11 +7,14 @@ use std::{
 
 use regex::Regex;
 
+use self::env_guard::env_guards;
 use super::{Context, DiagnosticDraft, RuleId};
 use crate::{
     collect::CollectedModule,
     model::{Condition, ConditionOutcome, Evidence, EvidenceStatus},
 };
+
+mod env_guard;
 
 pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     duplicate_packages(context, drafts);
@@ -139,26 +142,38 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
     let mut templates: Vec<usize> = Vec::new();
     let mut previous_significant: Option<u8> = None;
     let mut index = 0usize;
-    // Whether the previous token was the `}` that closed a statement block.
-    let mut after_block = false;
-    // Open `{` blocks; each entry says whether the block is a statement block.
-    let mut blocks: Vec<bool> = Vec::new();
+    let regex_allowed = |previous: Option<u8>, start: usize| -> bool {
+        match previous {
+            None => true,
+            Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
+            Some(byte) if byte.is_ascii_alphabetic() => {
+                let head = &code[..start];
+                let trimmed = head.trim_end();
+                [
+                    "return", "typeof", "case", "do", "else", "in", "of", "void", "yield",
+                    "delete", "throw", "new",
+                ]
+                .iter()
+                .any(|keyword| {
+                    trimmed.ends_with(keyword)
+                        && !trimmed[..trimmed.len() - keyword.len()].ends_with(|character: char| {
+                            character.is_alphanumeric() || character == '_' || character == '$'
+                        })
+                })
+            }
+            _ => false,
+        }
+    };
     // Scans a quoted string or template text starting after the opener.
     let scan_until = |mut position: usize, terminator: u8, template: bool| -> (usize, bool) {
         while position < bytes.len() {
             match bytes[position] {
-                b'\\'
-                    if bytes.get(position + 1) == Some(&b'\r')
-                        && bytes.get(position + 2) == Some(&b'\n') =>
-                {
-                    position += 3;
-                }
                 b'\\' => position += 2,
                 byte if byte == terminator => return (position + 1, false),
                 b'$' if template && bytes.get(position + 1) == Some(&b'{') => {
                     return (position + 2, true);
                 }
-                b'\n' | b'\r' if !template => return (position, false),
+                b'\n' if !template => return (position, false),
                 _ => position += 1,
             }
         }
@@ -172,7 +187,6 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 ranges.push((index, end));
                 index = end;
                 previous_significant = Some(b'"');
-                after_block = false;
             }
             b'`' => {
                 let (end, opened) = scan_until(index + 1, b'`', true);
@@ -182,7 +196,6 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 }
                 index = end;
                 previous_significant = Some(b'"');
-                after_block = false;
             }
             b'}' if templates.last() == Some(&0) => {
                 templates.pop();
@@ -193,11 +206,10 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 }
                 index = end;
                 previous_significant = Some(b'"');
-                after_block = false;
             }
             b'/' if bytes.get(index + 1) == Some(&b'/') => {
                 let end = code[index..]
-                    .find(is_line_terminator)
+                    .find('\n')
                     .map_or(bytes.len(), |offset| index + offset);
                 ranges.push((index, end));
                 index = end;
@@ -209,37 +221,24 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 ranges.push((index, end));
                 index = end;
             }
-            b'/' if regex_allowed(bytes, index, previous_significant, after_block, &ranges) => {
+            b'/' if regex_allowed(previous_significant, index) => {
                 let mut position = index + 1;
                 let mut in_class = false;
-                let mut closed = false;
                 while position < bytes.len() {
-                    if line_terminator_at(bytes, position).is_some() {
-                        break;
-                    }
                     match bytes[position] {
                         b'\\' => position += 1,
                         b'[' => in_class = true,
                         b']' => in_class = false,
-                        b'/' if !in_class => {
-                            closed = true;
-                            break;
-                        }
+                        b'/' if !in_class => break,
+                        b'\n' => break,
                         _ => {}
                     }
                     position += 1;
                 }
-                // An unterminated literal stops before its line terminator so
-                // that the terminator stays visible to the ASI decision.
-                let end = if closed {
-                    position + 1
-                } else {
-                    position.min(bytes.len())
-                };
+                let end = (position + 1).min(bytes.len());
                 ranges.push((index, end));
                 index = end;
                 previous_significant = Some(b'"');
-                after_block = false;
             }
             _ => {
                 if let Some(depth) = templates.last_mut() {
@@ -249,19 +248,9 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                         *depth -= 1;
                     }
                 }
-                if let Some(character) = char_at(bytes, index)
-                    && (is_js_whitespace(character) || is_line_terminator(character))
-                {
-                    index += character.len_utf8();
-                    continue;
+                if !byte.is_ascii_whitespace() {
+                    previous_significant = Some(byte);
                 }
-                after_block = false;
-                match byte {
-                    b'{' => blocks.push(opens_statement_block(bytes, index, &ranges)),
-                    b'}' => after_block = blocks.pop().unwrap_or(false),
-                    _ => {}
-                }
-                previous_significant = Some(byte);
                 index += 1;
             }
         }
@@ -269,970 +258,9 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
     ranges
 }
 
-/// Whether a `/` after the previous token starts a regular expression literal.
-/// `previous` is the last significant byte; a word is checked as a token, so
-/// trivia between the keyword and the slash never matters. A `}` that closed a
-/// statement block ends a statement, so a slash after it starts a new one.
-fn regex_allowed(
-    bytes: &[u8],
-    start: usize,
-    previous: Option<u8>,
-    after_block: bool,
-    ranges: &[(usize, usize)],
-) -> bool {
-    match previous {
-        None => true,
-        Some(b'}') => after_block,
-        Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
-        Some(byte) if byte.is_ascii_alphabetic() => previous_token_end(bytes, start, ranges)
-            .is_some_and(|end| {
-                matches!(
-                    token_ending_at(bytes, end, ranges),
-                    TokenBefore::Keyword(word) if REGEX_KEYWORDS.contains(&word)
-                )
-            }),
-        _ => false,
-    }
-}
-
 fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
     let index = ranges.partition_point(|(start, _)| *start <= offset);
     index > 0 && offset < ranges[index - 1].1
-}
-
-/// ECMAScript `WhiteSpace`: tab, vertical tab, form feed, space, no-break
-/// space, zero-width no-break space (BOM) and every Unicode `Zs` code point.
-fn is_js_whitespace(character: char) -> bool {
-    matches!(
-        character,
-        '\u{0009}' | '\u{000B}' | '\u{000C}' | '\u{0020}' | '\u{00A0}' | '\u{1680}' | '\u{2000}'
-            ..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}'
-    )
-}
-
-/// ECMAScript `LineTerminator`: LF, CR, LS (U+2028) and PS (U+2029).
-fn is_line_terminator(character: char) -> bool {
-    matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
-}
-
-/// Decodes the UTF-8 character that starts at `index`.
-fn char_at(bytes: &[u8], index: usize) -> Option<char> {
-    let length = match *bytes.get(index)? {
-        0x00..=0x7f => 1,
-        0xc0..=0xdf => 2,
-        0xe0..=0xef => 3,
-        0xf0..=0xf7 => 4,
-        _ => return None,
-    };
-    std::str::from_utf8(bytes.get(index..index + length)?)
-        .ok()?
-        .chars()
-        .next()
-}
-
-/// Decodes the UTF-8 character that ends right before `end`.
-fn char_before(bytes: &[u8], end: usize) -> Option<char> {
-    let mut start = end.checked_sub(1)?;
-    while start > 0 && end - start < 4 && bytes[start] & 0xc0 == 0x80 {
-        start -= 1;
-    }
-    char_at(bytes, start).filter(|character| start + character.len_utf8() == end)
-}
-
-/// Byte length of the line terminator that starts at `index`, if any.
-fn line_terminator_at(bytes: &[u8], index: usize) -> Option<usize> {
-    char_at(bytes, index)
-        .filter(|character| is_line_terminator(*character))
-        .map(char::len_utf8)
-}
-
-/// The comment range (`//...` or `/*...*/`) that contains `index`, if any.
-/// Other ignored ranges (strings, templates, regular expressions) are tokens.
-fn comment_range(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> Option<(usize, usize)> {
-    let position = ignored.partition_point(|(start, _)| *start <= index);
-    let (start, end) = *ignored.get(position.checked_sub(1)?)?;
-    (index < end && matches!(bytes.get(start..start + 2), Some(b"//" | b"/*")))
-        .then_some((start, end))
-}
-
-/// True for a `/* ... */` comment that contains a line terminator. JavaScript
-/// treats such a comment as a line terminator.
-fn comment_has_line_terminator(bytes: &[u8], start: usize, end: usize) -> bool {
-    bytes.get(start..start + 2) == Some(b"/*")
-        && std::str::from_utf8(&bytes[start..end])
-            .is_ok_and(|text| text.contains(is_line_terminator))
-}
-
-/// Result of skipping the trivia between two tokens.
-struct Trivia {
-    /// Start of the next token, or `None` at the end of the input.
-    next: Option<usize>,
-    /// Whether a line terminator (including one inside a block comment) was
-    /// crossed on the way.
-    crossed_terminator: bool,
-}
-
-/// Skips every character that separates two tokens: JavaScript whitespace,
-/// line terminators and comments. Strings, templates and regular expressions
-/// are tokens and stop the scan.
-fn skip_trivia(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Trivia {
-    let mut index = start;
-    let mut crossed_terminator = false;
-    while index < bytes.len() {
-        if in_ranges(ignored, index) {
-            let Some((comment_start, comment_end)) = comment_range(bytes, index, ignored) else {
-                break;
-            };
-            crossed_terminator |= comment_has_line_terminator(bytes, comment_start, comment_end);
-            index = comment_end;
-            continue;
-        }
-        match char_at(bytes, index) {
-            Some(character) if is_js_whitespace(character) => index += character.len_utf8(),
-            Some(character) if is_line_terminator(character) => {
-                crossed_terminator = true;
-                index += character.len_utf8();
-            }
-            _ => {
-                return Trivia {
-                    next: Some(index),
-                    crossed_terminator,
-                };
-            }
-        }
-    }
-    Trivia {
-        next: (index < bytes.len()).then_some(index),
-        crossed_terminator,
-    }
-}
-
-fn next_code_byte(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<u8> {
-    skip_trivia(bytes, start, ignored)
-        .next
-        .map(|index| bytes[index])
-}
-
-/// Returns true when the next code token is exactly `operator` doubled
-/// (`++` or `--`) with no whitespace or comment between the two bytes.
-fn is_adjacent_doubled_operator(
-    bytes: &[u8],
-    token: usize,
-    operator: u8,
-    ignored: &[(usize, usize)],
-) -> bool {
-    bytes.get(token + 1) == Some(&operator) && !in_ranges(ignored, token + 1)
-}
-
-fn is_identifier_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$') || byte >= 0x80
-}
-
-/// End (exclusive) of the last token before `end`, skipping whitespace, line
-/// terminators and comments backwards.
-fn previous_token_end(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> Option<usize> {
-    let mut position = end;
-    while position > 0 {
-        if let Some((comment_start, _)) = comment_range(bytes, position - 1, ignored) {
-            position = comment_start;
-            continue;
-        }
-        match char_before(bytes, position) {
-            Some(character) if is_js_whitespace(character) || is_line_terminator(character) => {
-                position -= character.len_utf8();
-            }
-            _ => return Some(position),
-        }
-    }
-    None
-}
-
-/// True for a character that can be part of an identifier-like word. Every
-/// non-ASCII character counts except ECMAScript whitespace and line
-/// terminators, which separate tokens.
-fn is_identifier_char(character: char) -> bool {
-    character.is_ascii_alphanumeric()
-        || matches!(character, '_' | '$')
-        || (!character.is_ascii() && !is_js_whitespace(character) && !is_line_terminator(character))
-}
-
-/// The identifier-like word that ends at `end`, if the token there is one.
-fn word_before(bytes: &[u8], end: usize) -> &str {
-    let mut start = end;
-    while let Some(character) = char_before(bytes, start).filter(|c| is_identifier_char(*c)) {
-        start -= character.len_utf8();
-    }
-    std::str::from_utf8(&bytes[start..end]).unwrap_or("")
-}
-
-/// The identifier-like word that starts at `start`.
-fn word_at(bytes: &[u8], start: usize) -> &str {
-    let mut end = start;
-    while let Some(character) = char_at(bytes, end).filter(|c| is_identifier_char(*c)) {
-        end += character.len_utf8();
-    }
-    std::str::from_utf8(&bytes[start..end]).unwrap_or("")
-}
-
-/// True when the word that starts at `start` is a property name, that is, the
-/// previous token (trivia skipped) is a member-access `.` or `?.` and not the
-/// end of a `...` spread.
-fn is_property_name(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> bool {
-    previous_token_end(bytes, start, ignored).is_some_and(|end| {
-        bytes[end - 1] == b'.' && !in_ranges(ignored, end - 1) && !bytes[..end].ends_with(b"...")
-    })
-}
-
-/// Keywords after which a `/` starts a regular expression literal.
-const REGEX_KEYWORDS: &[&str] = &[
-    "return",
-    "typeof",
-    "case",
-    "do",
-    "else",
-    "in",
-    "of",
-    "void",
-    "yield",
-    "delete",
-    "throw",
-    "new",
-    "instanceof",
-    "await",
-];
-
-/// Keywords whose grammar cannot finish at a line break: they need an operand
-/// (`typeof`, `in`, `case`), a body (`function`, `class`, `else`, `try`) or a
-/// parenthesized head (`if`, `for`, `while`). `return`, `throw`, `break`,
-/// `continue` and `yield` are restricted productions and are deliberately
-/// absent.
-const OPERAND_KEYWORDS: &[&str] = &[
-    "typeof",
-    "void",
-    "delete",
-    "new",
-    "in",
-    "instanceof",
-    "await",
-    "case",
-    "function",
-    "class",
-    "extends",
-    "if",
-    "else",
-    "while",
-    "for",
-    "switch",
-    "with",
-    "catch",
-    "do",
-    "try",
-    "finally",
-    "var",
-    "const",
-];
-
-/// Keywords whose operand must start on the same line: a line terminator right
-/// after them ends the statement through automatic semicolon insertion, so a
-/// `{` on a later line opens a block instead of an object literal.
-const RESTRICTED_PRODUCTION_KEYWORDS: &[&str] = &["return", "yield"];
-
-/// The token that ends at a given position, as seen by every lookup of the
-/// env-condition scan. Keeping the classification in one place means that
-/// regular expression detection, automatic semicolon insertion and scope
-/// detection agree on keywords, property names, private names and numbers.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TokenBefore<'a> {
-    /// A word from [`REGEX_KEYWORDS`] or [`OPERAND_KEYWORDS`] in keyword
-    /// position.
-    Keyword(&'a str),
-    /// Any other identifier, a property name after `.` or `?.`, or a private
-    /// name such as `#typeof`.
-    Name,
-    /// A numeric literal, including one with a trailing decimal point (`1.`).
-    Number,
-    /// A string, template text, or regular expression literal.
-    Literal,
-    /// Template text that ends by opening a `${` substitution.
-    SubstitutionOpen,
-    /// A punctuator ending in this byte.
-    Punct(u8),
-}
-
-/// Classifies the token whose last byte is right before `end`. `end` must come
-/// from [`previous_token_end`], so no trivia sits at the end of the token.
-fn token_ending_at<'a>(bytes: &'a [u8], end: usize, ignored: &[(usize, usize)]) -> TokenBefore<'a> {
-    let last = bytes[end - 1];
-    if in_ranges(ignored, end - 1) {
-        return if ends_template_substitution(bytes, end - 1, ignored) {
-            TokenBefore::SubstitutionOpen
-        } else {
-            TokenBefore::Literal
-        };
-    }
-    if is_identifier_byte(last) {
-        let word = word_before(bytes, end);
-        let start = end - word.len();
-        return if word.is_empty() {
-            TokenBefore::Name
-        } else if start > 0 && bytes[start - 1] == b'#' && !in_ranges(ignored, start - 1) {
-            // A private name is never a keyword.
-            TokenBefore::Name
-        } else if word.as_bytes()[0].is_ascii_digit() {
-            TokenBefore::Number
-        } else if is_property_name(bytes, start, ignored) {
-            TokenBefore::Name
-        } else if REGEX_KEYWORDS.contains(&word) || OPERAND_KEYWORDS.contains(&word) {
-            TokenBefore::Keyword(word)
-        } else {
-            TokenBefore::Name
-        };
-    }
-    if last == b'.' && dot_is_decimal_point(bytes, end - 1) {
-        return TokenBefore::Number;
-    }
-    TokenBefore::Punct(last)
-}
-
-/// True when the `.` at `dot` is the decimal point of a numeric literal such
-/// as `1.`: the token before it is made of decimal digits only. A `.` after a
-/// name, a fraction (`1.5.`), an exponent, a prefix (`0x1.`) or a bigint
-/// suffix is member access.
-fn dot_is_decimal_point(bytes: &[u8], dot: usize) -> bool {
-    let mut start = dot;
-    while let Some(character) =
-        char_before(bytes, start).filter(|c| is_identifier_char(*c) || *c == '.')
-    {
-        start -= character.len_utf8();
-    }
-    let run = &bytes[start..dot];
-    run.first().is_some_and(u8::is_ascii_digit)
-        && run
-            .iter()
-            .all(|byte| byte.is_ascii_digit() || *byte == b'_')
-}
-
-/// True when the token that ends at `end` can end an operand (identifier,
-/// literal, closing bracket), so that a following `++` or `--` is postfix.
-fn token_ends_operand(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> bool {
-    match token_ending_at(bytes, end, ignored) {
-        TokenBefore::Literal | TokenBefore::Name | TokenBefore::Number => true,
-        TokenBefore::Keyword(word) => !OPERAND_KEYWORDS.contains(&word),
-        TokenBefore::SubstitutionOpen => false,
-        TokenBefore::Punct(byte) => matches!(byte, b')' | b']' | b'}'),
-    }
-}
-
-/// True when the `{` at `index` opens a block (statement block, function body
-/// or class body) rather than an object literal. A closing `}` of a block ends
-/// a statement, so the next token starts a new one whatever it is.
-///
-/// This is a lexical guess from the previous token. A function or class
-/// expression body (`x = function () {}`) and an arrow function body
-/// (`() => {}`) are treated as blocks as well.
-fn opens_statement_block(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> bool {
-    let Some(end) = previous_token_end(bytes, index, ignored) else {
-        return true;
-    };
-    match token_ending_at(bytes, end, ignored) {
-        TokenBefore::Punct(b';' | b'{' | b'}' | b')') | TokenBefore::Name => true,
-        // The body of a block-bodied arrow function (`=> {`) is always a
-        // block; a lone `>` is a comparison and takes an object literal.
-        TokenBefore::Punct(b'>') => end >= 2 && bytes[end - 2] == b'=',
-        TokenBefore::Punct(b':') => colon_opens_block(bytes, end, ignored),
-        TokenBefore::Keyword(word) => {
-            matches!(word, "else" | "do" | "try" | "finally" | "catch" | "class")
-                || (RESTRICTED_PRODUCTION_KEYWORDS.contains(&word)
-                    && skip_trivia(bytes, end, ignored).crossed_terminator)
-        }
-        _ => false,
-    }
-}
-
-/// True when the `:` that ends at `colon_end` belongs to a label or a `case`
-/// clause, so that a `{` after it opens a block. Any other `:` (property
-/// value, conditional branch, type annotation) is followed by an object
-/// literal. A label counts only after a statement boundary (`;`, `}` or the
-/// start of the text) and a `case` clause only for a single-token test, because
-/// a lexical scan cannot tell a label from a property name after `{`.
-fn colon_opens_block(bytes: &[u8], colon_end: usize, ignored: &[(usize, usize)]) -> bool {
-    let Some(label_end) = previous_token_end(bytes, colon_end - 1, ignored) else {
-        return false;
-    };
-    let token = token_ending_at(bytes, label_end, ignored);
-    let label_start = match token {
-        TokenBefore::Name | TokenBefore::Number => label_end - word_before(bytes, label_end).len(),
-        TokenBefore::Literal => {
-            let position = ignored.partition_point(|(start, _)| *start < label_end);
-            match position.checked_sub(1).and_then(|at| ignored.get(at)) {
-                Some(&(start, _)) => start,
-                None => return false,
-            }
-        }
-        _ => return false,
-    };
-    let Some(before_end) = previous_token_end(bytes, label_start, ignored) else {
-        return token == TokenBefore::Name;
-    };
-    match token_ending_at(bytes, before_end, ignored) {
-        TokenBefore::Keyword("case") => true,
-        TokenBefore::Punct(b';' | b'}') => token == TokenBefore::Name,
-        _ => false,
-    }
-}
-
-/// True when the ignored range that holds `index` is template text that ends
-/// by opening a `${` substitution.
-fn ends_template_substitution(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> bool {
-    let position = ignored.partition_point(|(start, _)| *start <= index);
-    let Some(&(start, end)) = position.checked_sub(1).and_then(|at| ignored.get(at)) else {
-        return false;
-    };
-    matches!(bytes[start], b'`' | b'}') && end - start >= 2 && &bytes[end - 2..end] == b"${"
-}
-
-/// True when the tokens before `end` leave an expression unfinished, such as a
-/// trailing binary operator, so that the next line continues it.
-fn expression_is_unfinished(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> bool {
-    let Some(token_end) = previous_token_end(bytes, end, ignored) else {
-        return false;
-    };
-    match token_ending_at(bytes, token_end, ignored) {
-        TokenBefore::SubstitutionOpen => true,
-        TokenBefore::Literal | TokenBefore::Name | TokenBefore::Number => false,
-        TokenBefore::Keyword(word) => OPERAND_KEYWORDS.contains(&word),
-        TokenBefore::Punct(sign @ (b'+' | b'-')) => {
-            // Tokens are matched greedily, so a run of an odd length ends in
-            // a single binary or unary sign.
-            let mut run_start = token_end - 1;
-            while run_start > 0
-                && bytes[run_start - 1] == sign
-                && !in_ranges(ignored, run_start - 1)
-            {
-                run_start -= 1;
-            }
-            if (token_end - run_start) % 2 == 1 {
-                return true;
-            }
-            // A trailing `++` or `--` is postfix after an operand and a prefix
-            // operator otherwise.
-            !previous_token_end(bytes, run_start, ignored)
-                .is_some_and(|before| token_ends_operand(bytes, before, ignored))
-        }
-        TokenBefore::Punct(
-            b'!' | b'%' | b'&' | b'(' | b'*' | b',' | b'.' | b'/' | b':' | b'<' | b'=' | b'>'
-            | b'?' | b'[' | b'^' | b'|' | b'~',
-        ) => true,
-        TokenBefore::Punct(_) => false,
-    }
-}
-
-/// Decides whether a line break ends the current statement. `start` is the
-/// first byte of the line break: a line terminator, or a block comment that
-/// contains one.
-///
-/// `block_close` is the position of the most recent `}` that closed a
-/// statement block. A line break right after it always ends the statement,
-/// because a block statement needs no semicolon and the next token, even a
-/// `/`, `(`, `[` or template, starts a new statement.
-fn asi_terminates(
-    bytes: &[u8],
-    start: usize,
-    ignored: &[(usize, usize)],
-    block_close: Option<usize>,
-) -> bool {
-    let trivia = skip_trivia(bytes, start, ignored);
-    let Some(token) = trivia.next else {
-        return true;
-    };
-    if !trivia.crossed_terminator {
-        return false;
-    }
-    if let Some(close) = block_close
-        && previous_token_end(bytes, start, ignored) == Some(close + 1)
-    {
-        return true;
-    }
-    // No semicolon is inserted while the previous line leaves an expression
-    // unfinished, whatever starts the next line.
-    if expression_is_unfinished(bytes, start, ignored) {
-        return false;
-    }
-    match bytes[token] {
-        // A prefix `++`/`--` starts a new statement after a line terminator
-        // (restricted production), while a single `+`/`-` continues the
-        // current expression as a binary operator.
-        operator @ (b'+' | b'-') => is_adjacent_doubled_operator(bytes, token, operator, ignored),
-        // A template literal after an expression is a tagged template.
-        b'`' => false,
-        b'!' | b'%' | b'&' | b'(' | b')' | b'*' | b',' | b'.' | b'/' | b':' | b';' | b'<'
-        | b'=' | b'>' | b'?' | b'[' | b']' | b'^' | b'{' | b'}' | b'|' | b'~' => false,
-        _ => !matches!(word_at(bytes, token), "in" | "instanceof"),
-    }
-}
-
-/// Remembers the ASI decision for the trivia run between two tokens. Every
-/// line break in one run sees the same previous and next token, so the decision
-/// is computed once per run instead of once per line break.
-#[derive(Default)]
-struct AsiMemo {
-    /// End of the trivia run and the decision for it.
-    run: Option<(usize, bool)>,
-}
-
-impl AsiMemo {
-    /// Same as [`asi_terminates`] for the line break at `start`. Line breaks
-    /// must be queried in increasing order.
-    fn terminates(
-        &mut self,
-        bytes: &[u8],
-        start: usize,
-        ignored: &[(usize, usize)],
-        block_close: Option<usize>,
-    ) -> bool {
-        if let Some((run_end, decision)) = self.run
-            && start < run_end
-        {
-            return decision;
-        }
-        let run_end = skip_trivia(bytes, start, ignored)
-            .next
-            .unwrap_or(bytes.len());
-        let decision = asi_terminates(bytes, start, ignored, block_close);
-        self.run = Some((run_end, decision));
-        decision
-    }
-}
-
-#[derive(Clone, Copy)]
-enum EnvGuard {
-    ShortCircuitAnd,
-    ShortCircuitOr,
-    NullishCoalescing,
-    Conditional,
-    If,
-    While,
-    Switch,
-    For,
-}
-
-impl EnvGuard {
-    fn evidence(self) -> &'static str {
-        match self {
-            Self::ShortCircuitAnd => "the retained read controls a && short-circuit branch",
-            Self::ShortCircuitOr => "the retained read controls a || short-circuit branch",
-            Self::NullishCoalescing => "the retained read controls a ?? fallback branch",
-            Self::Conditional => "the retained read controls a conditional (?:) branch",
-            Self::If => "the retained read is in an if condition",
-            Self::While => "the retained read is in a while condition",
-            Self::Switch => "the retained read is in a switch condition",
-            Self::For => "the retained read is in a for condition",
-        }
-    }
-}
-
-/// Recognize only a generated branch whose test contains this read. A plain
-/// value read in a call, assignment or another data expression is not a DCE
-/// blocker.
-#[cfg(test)]
-fn env_guard(code: &str, start: usize, end: usize, ignored: &[(usize, usize)]) -> Option<EnvGuard> {
-    env_guards(code, &[(start, end)], ignored)
-        .into_iter()
-        .next()
-        .flatten()
-}
-
-#[derive(Clone, Copy)]
-enum ScopeContext {
-    Neutral,
-    Invalid,
-    Guard(EnvGuard),
-    For(ForClause),
-}
-
-#[derive(Clone, Copy)]
-enum ForClause {
-    Initializer,
-    Test,
-    Update,
-}
-
-struct ScanScope {
-    parent: usize,
-    context: ScopeContext,
-    conditional_questions: usize,
-    pending_reads: Vec<usize>,
-    conditional_pending: Vec<usize>,
-    arrow_expression: bool,
-    /// A `{` block (statement block, function body or class body): its
-    /// closing `}` ends a statement, so its reads never reach the parent.
-    statement_block: bool,
-    /// The parenthesized head of an `if`, `while` or `switch`.
-    control_head: bool,
-}
-
-/// Marks the unguarded reads that are still pending in `scope` as blocked: a
-/// statement boundary ended them before any branch operator used them.
-fn block_pending_reads(scope: &mut ScanScope, guards: &[Option<EnvGuard>], blocked: &mut [bool]) {
-    for read in scope
-        .pending_reads
-        .drain(..)
-        .chain(scope.conditional_pending.drain(..))
-    {
-        if guards[read].is_none() {
-            blocked[read] = true;
-        }
-    }
-}
-
-/// Materializes the guard of every unblocked read that is still pending when
-/// the `)` of a control-flow head closes `scope`. The read keeps the guard of
-/// the head that encloses its start; reads inside a nested call or array have
-/// an invalid context and are left alone.
-fn settle_control_flow_reads(
-    scope: &ScanScope,
-    contexts: &[ScopeContext],
-    blocked: &[bool],
-    guards: &mut [Option<EnvGuard>],
-) {
-    if !scope.control_head {
-        return;
-    }
-    for &read in scope.pending_reads.iter().chain(&scope.conditional_pending) {
-        if let ScopeContext::Guard(guard) = contexts[read]
-            && !blocked[read]
-            && guards[read].is_none()
-        {
-            guards[read] = Some(guard);
-        }
-    }
-}
-
-fn env_guards(
-    code: &str,
-    reads: &[(usize, usize)],
-    ignored: &[(usize, usize)],
-) -> Vec<Option<EnvGuard>> {
-    if reads.is_empty() {
-        return Vec::new();
-    }
-    let bytes = code.as_bytes();
-    let mut guards = vec![None; reads.len()];
-    let mut blocked = vec![false; reads.len()];
-    let mut contexts = vec![ScopeContext::Neutral; reads.len()];
-    let mut scopes = vec![ScanScope {
-        parent: 0,
-        context: ScopeContext::Neutral,
-        conditional_questions: 0,
-        pending_reads: Vec::new(),
-        conditional_pending: Vec::new(),
-        arrow_expression: false,
-        statement_block: false,
-        control_head: false,
-    }];
-    let mut current_scope = 0;
-    let mut next_start = 0;
-    let mut next_end = 0;
-    let mut ignored_index = 0;
-    let mut asi = AsiMemo::default();
-    let mut block_close: Option<usize> = None;
-
-    for index in 0..bytes.len() {
-        while next_start < reads.len() && reads[next_start].0 == index {
-            contexts[next_start] = scopes[current_scope].context;
-            next_start += 1;
-        }
-        while next_end < reads.len() && reads[next_end].1 <= index {
-            scopes[current_scope].pending_reads.push(next_end);
-            next_end += 1;
-        }
-        while ignored_index < ignored.len() && ignored[ignored_index].1 <= index {
-            ignored_index += 1;
-        }
-        if ignored_index < ignored.len()
-            && ignored[ignored_index].0 <= index
-            && index < ignored[ignored_index].1
-        {
-            // A block comment that contains a line terminator is itself a
-            // line break; the rest of an ignored range never matters.
-            let (start, end) = ignored[ignored_index];
-            if index == start
-                && comment_has_line_terminator(bytes, start, end)
-                && asi.terminates(bytes, start, ignored, block_close)
-            {
-                block_pending_reads(&mut scopes[current_scope], &guards, &mut blocked);
-            }
-            continue;
-        }
-
-        if scopes[current_scope].arrow_expression
-            && matches!(bytes[index], b',' | b';' | b')' | b']' | b'}')
-        {
-            let parent = scopes[current_scope].parent;
-            let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
-            let conditional_pending =
-                std::mem::take(&mut scopes[current_scope].conditional_pending);
-            // An expression-bodied arrow evaluates to a function object at
-            // the enclosing expression. Do not let its unguarded reads flow
-            // into an enclosing branch operator. Guards found inside the
-            // arrow body remain recorded on their own reads.
-            drop(pending_reads);
-            drop(conditional_pending);
-            current_scope = parent;
-        }
-
-        if line_terminator_at(bytes, index).is_some()
-            && asi.terminates(bytes, index, ignored, block_close)
-        {
-            block_pending_reads(&mut scopes[current_scope], &guards, &mut blocked);
-        }
-
-        match bytes[index] {
-            b'(' | b'[' | b'{' => {
-                let context = scope_context(
-                    bytes,
-                    index,
-                    bytes[index],
-                    scopes[current_scope].context,
-                    ignored,
-                );
-                scopes.push(ScanScope {
-                    parent: current_scope,
-                    context,
-                    conditional_questions: 0,
-                    pending_reads: Vec::new(),
-                    conditional_pending: Vec::new(),
-                    arrow_expression: false,
-                    statement_block: bytes[index] == b'{'
-                        && opens_statement_block(bytes, index, ignored),
-                    control_head: bytes[index] == b'('
-                        && matches!(context, ScopeContext::Guard(_))
-                        && !matches!(scopes[current_scope].context, ScopeContext::Guard(_)),
-                });
-                current_scope = scopes.len() - 1;
-            }
-            b'}' if current_scope != 0 && scopes[current_scope].statement_block => {
-                block_pending_reads(&mut scopes[current_scope], &guards, &mut blocked);
-                block_close = Some(index);
-                current_scope = scopes[current_scope].parent;
-            }
-            b')' | b']' | b'}' if current_scope != 0 => {
-                let parent = scopes[current_scope].parent;
-                if bytes[index] == b')' {
-                    // A control-flow head (`if`, `while`, `switch`) consumes
-                    // the reads of its condition. Record that guard now, so
-                    // closing the surrounding statement block later cannot
-                    // block a read that the head already controls.
-                    settle_control_flow_reads(
-                        &scopes[current_scope],
-                        &contexts,
-                        &blocked,
-                        &mut guards,
-                    );
-                }
-                let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
-                let conditional_pending =
-                    std::mem::take(&mut scopes[current_scope].conditional_pending);
-                scopes[parent].pending_reads.extend(pending_reads);
-                scopes[parent].pending_reads.extend(conditional_pending);
-                scopes[parent].pending_reads.sort_unstable();
-                current_scope = parent;
-            }
-            b';' => {
-                let context = scopes[current_scope].context;
-                match context {
-                    ScopeContext::For(ForClause::Test) => {
-                        for read in scopes[current_scope].pending_reads.drain(..) {
-                            if guards[read].is_none() {
-                                guards[read] = Some(EnvGuard::For);
-                            }
-                        }
-                    }
-                    _ => {
-                        for read in scopes[current_scope].pending_reads.drain(..) {
-                            if guards[read].is_none() {
-                                blocked[read] = true;
-                            }
-                        }
-                    }
-                }
-                for read in scopes[current_scope].conditional_pending.drain(..) {
-                    if matches!(context, ScopeContext::For(ForClause::Test)) {
-                        if guards[read].is_none() {
-                            guards[read] = Some(EnvGuard::For);
-                        }
-                    } else if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-                if let ScopeContext::For(clause) = context {
-                    scopes[current_scope].context = ScopeContext::For(match clause {
-                        ForClause::Initializer => ForClause::Test,
-                        ForClause::Test | ForClause::Update => ForClause::Update,
-                    });
-                }
-            }
-            b',' => {
-                for read in scopes[current_scope].pending_reads.drain(..) {
-                    if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-                for read in scopes[current_scope].conditional_pending.drain(..) {
-                    if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-            }
-            b':' => {
-                if scopes[current_scope].conditional_questions > 0 {
-                    let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
-                    scopes[current_scope]
-                        .conditional_pending
-                        .extend(pending_reads);
-                    scopes[current_scope].conditional_questions -= 1;
-                } else {
-                    for read in scopes[current_scope].pending_reads.drain(..) {
-                        if guards[read].is_none() {
-                            blocked[read] = true;
-                        }
-                    }
-                    for read in scopes[current_scope].conditional_pending.drain(..) {
-                        if guards[read].is_none() {
-                            blocked[read] = true;
-                        }
-                    }
-                }
-            }
-            b'=' if bytes.get(index + 1) == Some(&b'>') => {
-                if next_code_byte(bytes, index + 2, ignored) != Some(b'{') {
-                    scopes.push(ScanScope {
-                        parent: current_scope,
-                        context: ScopeContext::Neutral,
-                        conditional_questions: 0,
-                        pending_reads: Vec::new(),
-                        conditional_pending: Vec::new(),
-                        arrow_expression: true,
-                        statement_block: false,
-                        control_head: false,
-                    });
-                    current_scope = scopes.len() - 1;
-                }
-            }
-            b'=' if bytes.get(index + 1) != Some(&b'=')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'=')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'!')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'<')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'>') =>
-            {
-                for read in scopes[current_scope].pending_reads.drain(..) {
-                    if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-                for read in scopes[current_scope].conditional_pending.drain(..) {
-                    if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-            }
-            b'&' if bytes.get(index + 1) == Some(&b'&') => {
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none() {
-                        guards[read] = Some(EnvGuard::ShortCircuitAnd);
-                    }
-                }
-            }
-            b'|' if bytes.get(index + 1) == Some(&b'|') => {
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none() {
-                        guards[read] = Some(EnvGuard::ShortCircuitOr);
-                    }
-                }
-            }
-            b'?' if bytes.get(index + 1) == Some(&b'?') => {
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none() {
-                        guards[read] = Some(EnvGuard::NullishCoalescing);
-                    }
-                }
-            }
-            b'?' if bytes.get(index + 1) != Some(&b'.')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'?') =>
-            {
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none() {
-                        guards[read] = Some(EnvGuard::Conditional);
-                    }
-                }
-                scopes[current_scope].conditional_questions += 1;
-            }
-            _ => {}
-        }
-    }
-
-    while scopes[current_scope].arrow_expression {
-        let parent = scopes[current_scope].parent;
-        current_scope = parent;
-    }
-
-    guards
-        .into_iter()
-        .zip(contexts.into_iter().zip(blocked))
-        .map(|(guard, (context, blocked))| match context {
-            // An invalid enclosing expression blocks inherited branch
-            // evidence, but an operator found inside that expression still
-            // directly controls its own branch.
-            ScopeContext::Invalid => guard,
-            ScopeContext::Neutral => guard,
-            ScopeContext::Guard(fallback) if !blocked => guard.or(Some(fallback)),
-            ScopeContext::Guard(_) => guard,
-            ScopeContext::For(ForClause::Test) if !blocked => guard.or(Some(EnvGuard::For)),
-            ScopeContext::For(_) => guard,
-        })
-        .collect()
-}
-
-fn scope_context(
-    bytes: &[u8],
-    index: usize,
-    opener: u8,
-    parent: ScopeContext,
-    ignored: &[(usize, usize)],
-) -> ScopeContext {
-    let before =
-        previous_token_end(bytes, index, ignored).map(|end| token_ending_at(bytes, end, ignored));
-    if opener == b'[' {
-        // A bracket after an expression is a computed member access and keeps
-        // the surrounding condition. A bracket after an operator starts an
-        // array literal, whose contents do not form a guard by themselves.
-        return match before {
-            Some(
-                TokenBefore::Name
-                | TokenBefore::Number
-                | TokenBefore::Keyword(_)
-                | TokenBefore::Literal
-                | TokenBefore::Punct(b']' | b')' | b'}' | b'.'),
-            ) => parent,
-            _ => ScopeContext::Invalid,
-        };
-    }
-    if opener != b'(' {
-        return ScopeContext::Invalid;
-    }
-    match before {
-        Some(TokenBefore::Keyword("for")) => ScopeContext::For(ForClause::Initializer),
-        Some(TokenBefore::Keyword("if")) => ScopeContext::Guard(EnvGuard::If),
-        Some(TokenBefore::Keyword("while")) => ScopeContext::Guard(EnvGuard::While),
-        Some(TokenBefore::Keyword("switch")) => ScopeContext::Guard(EnvGuard::Switch),
-        Some(
-            TokenBefore::Name
-            | TokenBefore::Number
-            | TokenBefore::Keyword(_)
-            | TokenBefore::Punct(b']' | b')' | b'.'),
-        ) => ScopeContext::Invalid,
-        _ => parent,
-    }
 }
 
 fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
@@ -1853,6 +881,10 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         })
         .collect();
     let mut bodies: Vec<(usize, usize)> = function_bodies.iter().map(|(_, body)| *body).collect();
+    // TypeScript `namespace` and `module` bodies own their `var` declarations
+    // just like function bodies.
+    let namespaces = namespace_bodies(source, &code, ignored, &blocks);
+    bodies.extend(namespaces.iter().map(|namespace| namespace.body));
     let mut scopes = Vec::new();
     // Parameter lists followed by a body: `(...) {` or `(...) =>`.
     let parameters = Regex::new(r"\(([^()]*)\)\s*(?:=>|\{)").expect("static regex");
@@ -1973,8 +1005,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
     // are scoped like their ASCII counterparts. ZWNJ and ZWJ are permitted
     // after the first identifier character by the ECMAScript grammar.
     let single_arrow =
-        Regex::new(r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*\s*=>\s*\{")
-            .expect("static regex");
+        Regex::new(&format!(r"{UNICODE_IDENTIFIER}\s*=>\s*\{{")).expect("static regex");
     for found in single_arrow.find_iter(&code) {
         let open = found.end() - 1;
         if let Some(body) = blocks.iter().find(|(start, _)| *start == open) {
@@ -2003,8 +1034,185 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             _ => enclosing(found.start()),
         };
         scopes.push(scope);
+        // An exported member is visible in every declaration that merges into
+        // the same namespace symbol; other declarations stay local to their
+        // own body.
+        if exported_declaration(&code, found.start())
+            && let Some(namespace) = namespaces
+                .iter()
+                .find(|namespace| namespace.body == enclosing(found.start()))
+        {
+            scopes.extend(
+                namespaces
+                    .iter()
+                    .filter(|merged| merged.key == namespace.key)
+                    .map(|merged| merged.body),
+            );
+        }
     }
     scopes
+}
+
+/// ECMAScript identifier syntax: Unicode `ID_Start` or `$`/`_`, then
+/// `ID_Continue`, `$`, `_`, ZWNJ or ZWJ.
+const UNICODE_IDENTIFIER: &str =
+    r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*";
+
+/// Words that can follow `module`/`namespace` in expressions such as
+/// `module in {}`; they are never namespace names.
+const NON_NAMESPACE_WORDS: [&str; 3] = ["in", "instanceof", "of"];
+
+/// A TypeScript `namespace`/`module` declaration body. Declarations with the
+/// same `key` merge into one symbol and share its exported members.
+struct NamespaceBody {
+    key: String,
+    body: (usize, usize),
+}
+
+/// Finds TypeScript namespace and module bodies, including dotted names,
+/// nested declarations, Unicode names and quoted ambient module names.
+///
+/// The keyword and the name must share a line, as in TypeScript's grammar, so
+/// automatic semicolon insertion keeps `module\nN\n{}` an ordinary block.
+/// Keys follow the textual qualified name; an exported nested declaration
+/// extends the key of its enclosing namespace, while any other nested
+/// declaration gets a block-local key because it cannot merge with outer
+/// declarations.
+fn namespace_bodies(
+    source: &str,
+    code: &str,
+    ignored: &[(usize, usize)],
+    blocks: &[(usize, usize)],
+) -> Vec<NamespaceBody> {
+    let keyword = Regex::new(r"\b(namespace|module)").expect("static regex");
+    let path = Regex::new(&format!(
+        r"^({UNICODE_IDENTIFIER}(?:\s*\.\s*{UNICODE_IDENTIFIER})*)\s*\{{"
+    ))
+    .expect("static regex");
+    let mut namespaces: Vec<NamespaceBody> = Vec::new();
+    for found in keyword.find_iter(code) {
+        let kind = found.as_str();
+        // Literals are masked in `code`, so measure the same-line trivia gap in
+        // the original source.
+        let Some(cursor) = same_line_trivia_end(source, ignored, found.end()) else {
+            continue;
+        };
+        // Member accesses such as `module.exports` or `a.namespace` are not
+        // declarations.
+        let preceding = code[..found.start()]
+            .bytes()
+            .rev()
+            .find(|byte| !byte.is_ascii_whitespace());
+        if matches!(preceding, Some(b'.' | b'$')) {
+            continue;
+        }
+        let rest = &code[cursor..];
+        let (name, open) = if let Some(captures) = path.captures(rest)
+            && let (Some(name), Some(all)) = (captures.get(1), captures.get(0))
+        {
+            let name: String = name
+                .as_str()
+                .split('.')
+                .map(str::trim)
+                .collect::<Vec<_>>()
+                .join(".");
+            if NON_NAMESPACE_WORDS.contains(&name.as_str()) {
+                continue;
+            }
+            (name, cursor + all.end() - 1)
+        } else if kind == "module"
+            && matches!(source.as_bytes().get(cursor), Some(b'"' | b'\''))
+            && let Some(&(_, end)) = ignored.iter().find(|(start, _)| *start == cursor)
+            && let Some(offset) = code[end..].find(|character: char| !character.is_whitespace())
+            && code.as_bytes().get(end + offset) == Some(&b'{')
+        {
+            // `declare module "pkg" {}`: the literal is masked in `code`.
+            (
+                format!("'{}'", &source[cursor + 1..end.saturating_sub(1)]),
+                end + offset,
+            )
+        } else {
+            continue;
+        };
+        let Some(body) = blocks.iter().find(|(start, _)| *start == open).copied() else {
+            continue;
+        };
+        let parent = blocks
+            .iter()
+            .filter(|(start, end)| *start < found.start() && found.start() < *end)
+            .min_by_key(|(start, end)| end - start);
+        let key = match parent {
+            None => name,
+            // Only an exported nested namespace is a member of its parent
+            // symbol; any other nested declaration merges only inside its
+            // own enclosing body.
+            Some(parent) => match namespaces.iter().find(|outer| outer.body == *parent) {
+                Some(outer) if exported_declaration(code, found.start()) => {
+                    format!("{}.{name}", outer.key)
+                }
+                _ => format!("@{}.{name}", parent.0),
+            },
+        };
+        namespaces.push(NamespaceBody { key, body });
+    }
+    namespaces
+}
+
+/// Skips whitespace and comments that stay on one line, starting at `from`.
+/// Returns the position of the next token, or `None` when no trivia separates
+/// it from `from` or a line terminator intervenes. A multi-line comment that
+/// contains a line terminator counts as a line break, as in TypeScript.
+fn same_line_trivia_end(source: &str, ignored: &[(usize, usize)], from: usize) -> Option<usize> {
+    let is_line_terminator =
+        |character: char| matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}');
+    let mut cursor = from;
+    loop {
+        let rest = &source[cursor..];
+        if let Some(character) = rest.chars().next()
+            && character.is_whitespace()
+            && !is_line_terminator(character)
+        {
+            cursor += character.len_utf8();
+            continue;
+        }
+        if rest.starts_with("/*")
+            && let Some(&(_, end)) = ignored.iter().find(|(start, _)| *start == cursor)
+            && !source[cursor..end.min(source.len())].contains(is_line_terminator)
+        {
+            cursor = end.min(source.len());
+            continue;
+        }
+        break;
+    }
+    (cursor > from).then_some(cursor)
+}
+
+/// Modifiers that can sit between `export` and a declaration keyword, for
+/// example `export declare var` or `export async function`.
+const DECLARATION_MODIFIERS: [&str; 2] = ["declare", "async"];
+
+/// Whether the declaration starting at `start` is directly preceded by
+/// `export`, optionally followed by any of `DECLARATION_MODIFIERS` in any
+/// order. Comments are masked in `code`, so they count as whitespace.
+fn exported_declaration(code: &str, start: usize) -> bool {
+    let word_boundary = |before: &str| {
+        before.chars().next_back().is_none_or(|character| {
+            !(character.is_alphanumeric() || character == '_' || character == '$')
+        })
+    };
+    let mut prefix = code[..start].trim_end();
+    'modifiers: loop {
+        for modifier in DECLARATION_MODIFIERS {
+            if let Some(before) = prefix.strip_suffix(modifier)
+                && word_boundary(before)
+            {
+                prefix = before.trim_end();
+                continue 'modifiers;
+            }
+        }
+        break;
+    }
+    prefix.strip_suffix("export").is_some_and(word_boundary)
 }
 
 /// Finds a block-bodied function or arrow body after a parameter list.
@@ -2538,65 +1746,6 @@ mod tests {
     }
 
     #[test]
-    fn blocks_after_labels_and_case_clauses_are_statement_blocks() {
-        // Each cell: source, whether the first `{` opens a statement block.
-        let cells: &[(&str, bool)] = &[
-            ("a;label: {", true),
-            ("label: {", true),
-            ("x();\nlabel: {", true),
-            ("if (a) { b }\nlabel: {", true),
-            ("switch (a) { case 1: {", true),
-            ("switch (a) { case \"s\": {", true),
-            ("switch (a) { case b: {", true),
-            ("switch (a) { case 1: x(); break; default: {", true),
-            ("const f = () => {", true),
-            ("const f=()=>{", true),
-            ("const f = async (a) => {", true),
-            ("const f = a => {", true),
-            ("x = a ? () => {", true),
-            ("f(() => {", true),
-            ("x = { run: () => {", true),
-            // A comparison `>` or `>=` takes an object literal.
-            ("x = a > {", false),
-            ("x = a >= {", false),
-            ("x = a >> {", false),
-            // Object literals keep their reading.
-            ("x = { a: {", false),
-            ("x = c ? d : {", false),
-            ("f(a, b ? c : {", false),
-            ("x = { default: {", false),
-            ("x = { a: 1, b: {", false),
-            ("x = { 'a': {", false),
-            ("x = y.z ? w.v : {", false),
-        ];
-        for (source, expected) in cells {
-            let index = source.rfind('{').unwrap();
-            let ranges = non_code_ranges(&source[..index]);
-            assert_eq!(
-                opens_statement_block(source.as_bytes(), index, &ranges),
-                *expected,
-                "{source}"
-            );
-        }
-    }
-
-    #[test]
-    fn regex_after_a_labeled_or_case_block_is_not_code() {
-        for source in [
-            "label: { work(); }\n/process.env.FLAG&&run/.test(source)",
-            "switch (a) { case 1: { work(); }\n/process.env.FLAG&&run/.test(s) }",
-            "const f=()=>{}\n/process.env.FLAG&&run/.test(source)",
-            "const f = async (a) => { work(); }\n/process.env.FLAG&&run/.test(source)",
-        ] {
-            let ranges = non_code_ranges(source);
-            assert!(
-                in_ranges(&ranges, source.find("process.env").unwrap()),
-                "{source}"
-            );
-        }
-    }
-
-    #[test]
     fn non_code_ranges_cover_strings_comments_templates_and_regexes() {
         let code = r#"a("process.env.A");/* process.env.B */x=`process.env.C ${process.env.D} t`;// process.env.E
 y=/process.env.F/.test(z),process.env.G"#;
@@ -2644,890 +1793,6 @@ y=/process.env.F/.test(z),process.env.G"#;
             "if (process.env.FEATURE_FLAGS) {}",
             "FEATURE_FLAG"
         ));
-    }
-
-    #[test]
-    fn env_reads_require_a_generated_branch() {
-        let guard = |code: &str, read: &str| {
-            let start = code.find(read).unwrap();
-            env_guard(code, start, start + read.len(), &non_code_ranges(code))
-                .map(EnvGuard::evidence)
-        };
-        for code in [
-            "console.log(process.env.VERSION);",
-            "const version=process.env.VERSION;ready&&run()",
-            "console.log(process.env.VERSION),ready&&run()",
-            "if(console.log(process.env.VERSION))run()",
-            "if(process.env.VERSION,ready)run()",
-            "if((process.env.VERSION),ready)run()",
-            "if([process.env.VERSION])run()",
-            "if({value:process.env.VERSION})run()",
-            "console.log(process.env.VERSION, '&&')",
-        ] {
-            assert_eq!(guard(code, "process.env.VERSION"), None, "{code}");
-        }
-        assert_eq!(guard("console.log(({}).VERSION)", "({}).VERSION"), None);
-        assert_eq!(
-            guard("'on'===process.env.VERSION&&run()", "process.env.VERSION"),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard(
-                "(sideEffect(), process.env.VERSION)&&run()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard("({}).VERSION==='on'&&run()", "({}).VERSION"),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard("if((process.env.VERSION))run()", "process.env.VERSION"),
-            Some("the retained read is in an if condition")
-        );
-        assert_eq!(
-            guard(
-                "if({on:true}[process.env.VERSION])run()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read is in an if condition")
-        );
-        assert_eq!(
-            guard(
-                "if(ready?process.env.VERSION:false)run()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read is in an if condition")
-        );
-        assert_eq!(
-            guard(
-                "if/*!license*/(process.env.VERSION)run()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read is in an if condition")
-        );
-        for code in [
-            "obj.if(process.env.VERSION)run()",
-            "obj.switch(process.env.VERSION)run()",
-        ] {
-            assert_eq!(guard(code, "process.env.VERSION"), None, "{code}");
-        }
-        assert_eq!(
-            guard("process.env.VERSION?on():off()", "process.env.VERSION"),
-            Some("the retained read controls a conditional (?:) branch")
-        );
-        assert_eq!(
-            guard("process.env.VERSION??fallback", "process.env.VERSION"),
-            Some("the retained read controls a ?? fallback branch")
-        );
-        assert_eq!(
-            guard("(()=>process.env.VERSION)&&run()", "process.env.VERSION"),
-            None
-        );
-        assert_eq!(
-            guard(
-                "function run(){process.env.VERSION&&work()}",
-                "process.env.VERSION"
-            ),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard(
-                "for (; process.env.VERSION; ) work()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read is in a for condition")
-        );
-        assert_eq!(
-            guard(
-                "for (process.env.VERSION; ; ) work()",
-                "process.env.VERSION"
-            ),
-            None
-        );
-        assert_eq!(
-            guard(
-                "for (; ; process.env.VERSION) work()",
-                "process.env.VERSION"
-            ),
-            None
-        );
-        assert_eq!(
-            guard(
-                "ready ? process.env.VERSION : fallback && work()",
-                "process.env.VERSION"
-            ),
-            None
-        );
-        assert_eq!(
-            guard(
-                "(ready ? process.env.VERSION : fallback) && work()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard(
-                "process.env.VERSION ? yes : no && work()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read controls a conditional (?:) branch")
-        );
-        assert_eq!(
-            guard("process.env.VERSION\nready&&run()", "process.env.VERSION"),
-            None
-        );
-        assert_eq!(
-            guard("process.env.VERSION\n&&run()", "process.env.VERSION"),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard("if (process.env.VERSION\n) run()", "process.env.VERSION"),
-            Some("the retained read is in an if condition")
-        );
-    }
-
-    #[test]
-    fn restricted_keyword_line_break_makes_a_following_brace_a_block() {
-        let in_code =
-            |code: &str| !in_ranges(&non_code_ranges(code), code.find("process").unwrap());
-        // `return` and `yield` end at a line terminator, so `{}` is a block and
-        // the slash after it starts a regular expression.
-        for keyword in RESTRICTED_PRODUCTION_KEYWORDS {
-            for trivia in ["\n", "\r\n", "\u{2028}", " /* a\nb */ ", " // c\n"] {
-                let code = format!(
-                    "function f(){{{keyword}{trivia}{{}}\n/process.env.FLAG&&run/.test(s)}}"
-                );
-                assert!(!in_code(&code), "{code:?}");
-            }
-            // On the same line the braces are an object literal operand, so the
-            // slash divides.
-            for trivia in [" ", "/* a */", "\t"] {
-                let code = format!("function f(){{{keyword}{trivia}{{}}/process.env.FLAG/2}}");
-                assert!(in_code(&code), "{code:?}");
-            }
-        }
-    }
-
-    #[test]
-    fn control_flow_heads_inside_blocks_keep_their_guard() {
-        let flag = Some;
-        for (head, evidence) in [
-            ("if", "the retained read is in an if condition"),
-            ("while", "the retained read is in a while condition"),
-            ("switch", "the retained read is in a switch condition"),
-        ] {
-            for (before, after) in [
-                ("", ""),
-                ("function f(){", "}"),
-                ("const f=()=>{", "}"),
-                ("{", "}"),
-                ("if(a){", "}"),
-                ("try{", "}catch(e){}"),
-                ("function f(){x;", "}"),
-            ] {
-                for body in ["{run()}", "run()", "{}"] {
-                    for condition in ["process.env.FLAG", "(process.env.FLAG)"] {
-                        let code = format!("{before}{head}({condition}){body}{after}");
-                        assert_eq!(flag_guard(&code), flag(evidence), "{code:?}");
-                    }
-                }
-            }
-        }
-        // A read inside a nested call is not the condition itself.
-        for code in [
-            "function f(){if(g(process.env.FLAG)){run()}}",
-            "function f(){if(x){}process.env.FLAG}",
-        ] {
-            assert_eq!(flag_guard(code), None, "{code:?}");
-        }
-    }
-
-    #[test]
-    fn env_guard_newline_plus_minus_follows_asi_rules() {
-        let guard = |code: &str| {
-            let read = "process.env.FLAG";
-            let start = code.find(read).unwrap();
-            env_guard(code, start, start + read.len(), &non_code_ranges(code))
-                .map(EnvGuard::evidence)
-        };
-        let and = Some("the retained read controls a && short-circuit branch");
-        // A single sign after a newline continues the arithmetic expression.
-        for code in [
-            "process.env.FLAG\n+suffix&&run()",
-            "process.env.FLAG\n-suffix&&run()",
-            "process.env.FLAG\n  +suffix&&run()",
-            "process.env.FLAG\n  -suffix&&run()",
-            "process.env.FLAG /* c */\n+suffix&&run()",
-            "process.env.FLAG\n/* c */ -suffix&&run()",
-            "process.env.FLAG\n+ +suffix&&run()",
-            "process.env.FLAG\n- -suffix&&run()",
-            "process.env.FLAG\n+/* c */+suffix&&run()",
-            "process.env.FLAG\n-/* c */-suffix&&run()",
-            "process.env.FLAG+suffix&&run()",
-        ] {
-            assert_eq!(guard(code), and, "{code:?}");
-        }
-        // A doubled prefix update after a newline starts a new statement.
-        for code in [
-            "process.env.FLAG\n++suffix&&run()",
-            "process.env.FLAG\n--suffix&&run()",
-            "process.env.FLAG\n  ++suffix&&run()",
-            "process.env.FLAG\n  --suffix&&run()",
-            "process.env.FLAG /* c */\n++suffix&&run()",
-            "process.env.FLAG\n/* c */ --suffix&&run()",
-            "process.env.FLAG;\nready&&run()",
-            "console.log(process.env.FLAG); ready&&run()",
-        ] {
-            assert_eq!(guard(code), None, "{code:?}");
-        }
-    }
-
-    const JS_WHITESPACE: [char; 18] = [
-        '\u{0009}', '\u{000B}', '\u{000C}', '\u{0020}', '\u{00A0}', '\u{1680}', '\u{2000}',
-        '\u{2001}', '\u{2002}', '\u{2003}', '\u{2004}', '\u{2005}', '\u{2006}', '\u{2007}',
-        '\u{2008}', '\u{2009}', '\u{200A}', '\u{FEFF}',
-    ];
-    const JS_WHITESPACE_TAIL: [char; 3] = ['\u{202F}', '\u{205F}', '\u{3000}'];
-    const LINE_TERMINATORS: [&str; 5] = ["\n", "\r", "\r\n", "\u{2028}", "\u{2029}"];
-
-    fn flag_guard(code: &str) -> Option<&'static str> {
-        let read = "process.env.FLAG";
-        let start = code.find(read).unwrap();
-        env_guard(code, start, start + read.len(), &non_code_ranges(code)).map(EnvGuard::evidence)
-    }
-
-    const AND_GUARD: Option<&str> = Some("the retained read controls a && short-circuit branch");
-
-    #[test]
-    fn js_whitespace_and_line_terminators_are_classified_exactly() {
-        for character in JS_WHITESPACE.into_iter().chain(JS_WHITESPACE_TAIL) {
-            assert!(is_js_whitespace(character), "{character:?}");
-            assert!(!is_line_terminator(character), "{character:?}");
-        }
-        for character in ['\n', '\r', '\u{2028}', '\u{2029}'] {
-            assert!(is_line_terminator(character), "{character:?}");
-            assert!(!is_js_whitespace(character), "{character:?}");
-        }
-        // Not WhiteSpace in ECMAScript: NEL, the zero-width spaces and the
-        // Mongolian vowel separator.
-        for character in [
-            '\u{0085}', '\u{180E}', '\u{200B}', '\u{200C}', '\u{2060}', 'a', '+',
-        ] {
-            assert!(!is_js_whitespace(character), "{character:?}");
-            assert!(!is_line_terminator(character), "{character:?}");
-        }
-    }
-
-    #[test]
-    fn skip_trivia_reports_whether_a_terminator_was_crossed() {
-        let skip = |code: &str| {
-            let trivia = skip_trivia(code.as_bytes(), 0, &non_code_ranges(code));
-            (trivia.next, trivia.crossed_terminator)
-        };
-        assert_eq!(skip("  \u{a0}\u{feff}\t+"), (Some(8), false));
-        assert_eq!(skip("/* c */ // d"), (None, false));
-        assert_eq!(skip("/* a\nb */+"), (Some(9), true));
-        assert_eq!(skip("// c\n+"), (Some(5), true));
-        assert_eq!(skip(" \u{2028}+"), (Some(4), true));
-        assert_eq!(skip("\"s\"+"), (Some(0), false));
-        assert_eq!(skip("\n"), (None, true));
-    }
-
-    #[test]
-    fn env_guard_separators_between_tokens_follow_javascript_trivia() {
-        // WhiteSpace before a single sign keeps the continuation; before a
-        // doubled sign the line break still starts a new statement.
-        for whitespace in JS_WHITESPACE.into_iter().chain(JS_WHITESPACE_TAIL) {
-            for (sign, expected) in [
-                ("+", AND_GUARD),
-                ("-", AND_GUARD),
-                ("++", None),
-                ("--", None),
-            ] {
-                let code = format!("process.env.FLAG\n{whitespace}{sign}suffix&&run()");
-                assert_eq!(flag_guard(&code), expected, "{code:?}");
-                let code = format!("process.env.FLAG{whitespace}\n{sign}suffix&&run()");
-                assert_eq!(flag_guard(&code), expected, "{code:?}");
-            }
-            // Whitespace between two signs makes two tokens: binary plus a
-            // unary sign, never a doubled update operator.
-            for sign in ["+", "-"] {
-                let code = format!("process.env.FLAG\n{sign}{whitespace}{sign}suffix&&run()");
-                assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
-            }
-        }
-        // Every LineTerminator separates statements before a doubled sign and
-        // continues the expression before a single sign.
-        for terminator in LINE_TERMINATORS {
-            for (sign, expected) in [
-                ("+", AND_GUARD),
-                ("-", AND_GUARD),
-                ("++", None),
-                ("--", None),
-            ] {
-                let code = format!("process.env.FLAG{terminator}{sign}suffix&&run()");
-                assert_eq!(flag_guard(&code), expected, "{code:?}");
-                let code = format!("process.env.FLAG {terminator} {sign}suffix&&run()");
-                assert_eq!(flag_guard(&code), expected, "{code:?}");
-                // A line comment ends at any line terminator.
-                let code = format!("process.env.FLAG // c{terminator}{sign}suffix&&run()");
-                assert_eq!(flag_guard(&code), expected, "{code:?}");
-                // A block comment that contains a line terminator is a line
-                // break itself.
-                let code = format!("process.env.FLAG/*{terminator}*/{sign}suffix&&run()");
-                assert_eq!(flag_guard(&code), expected, "{code:?}");
-                let code = format!("process.env.FLAG/* a{terminator}b */ {sign}suffix&&run()");
-                assert_eq!(flag_guard(&code), expected, "{code:?}");
-                let code = format!("process.env.FLAG /* a */ /*{terminator}*/ {sign}suffix&&run()");
-                assert_eq!(flag_guard(&code), expected, "{code:?}");
-            }
-        }
-        // A block comment without a line terminator is not a line break.
-        for code in [
-            "process.env.FLAG/* c */&&run()",
-            "process.env.FLAG /* a */ /* b */ + suffix&&run()",
-            "process.env.FLAG\n+/* c */+suffix&&run()",
-            "process.env.FLAG\n-/*\n*/-suffix&&run()",
-        ] {
-            assert_eq!(flag_guard(code), AND_GUARD, "{code:?}");
-        }
-        // A string, template or statement terminator is a token, not trivia.
-        for code in [
-            "process.env.FLAG\n\"+\"&&run()",
-            "process.env.FLAG\n'+'&&run()",
-            "process.env.FLAG\n7&&run()",
-            "process.env.FLAG;\n+suffix&&run()",
-        ] {
-            assert_eq!(flag_guard(code), None, "{code:?}");
-        }
-        assert_eq!(flag_guard("process.env.FLAG\n`x`&&run()"), AND_GUARD);
-        // A regular expression after non-ASCII whitespace is still a literal.
-        let code = "x=\u{a0}/process.env.FLAG/.test(y)\u{2028}z";
-        assert!(in_ranges(
-            &non_code_ranges(code),
-            code.find("process").unwrap()
-        ));
-    }
-
-    #[test]
-    fn env_guard_unfinished_expressions_continue_across_line_breaks() {
-        // The previous line ends in an operator, so the next line continues it
-        // even when a doubled sign or another statement-like token follows.
-        for code in [
-            "process.env.FLAG +\n++suffix&&run()",
-            "process.env.FLAG -\n--suffix&&run()",
-            "process.env.FLAG +\n+suffix&&run()",
-            "process.env.FLAG -\n-suffix&&run()",
-            "process.env.FLAG +\nsuffix&&run()",
-            "process.env.FLAG *\nsuffix&&run()",
-            "process.env.FLAG ===\nsuffix&&run()",
-            "process.env.FLAG in\nsuffix&&run()",
-            "process.env.FLAG instanceof\nsuffix&&run()",
-            "process.env.FLAG + ++\nsuffix&&run()",
-            "process.env.FLAG +++\nsuffix&&run()",
-            "process.env.FLAG +/* c */\n++suffix&&run()",
-            "process.env.FLAG +/*\n*/++suffix&&run()",
-            "process.env.FLAG + // c\n++suffix&&run()",
-            "process.env.FLAG +\u{a0}\n\u{feff}++suffix&&run()",
-            "process.env.FLAG +\u{2028}++suffix&&run()",
-            "process.env.FLAG\n+\n++suffix&&run()",
-            "process.env.FLAG\n+ ++suffix&&run()",
-            "process.env.FLAG\n-\u{a0}--suffix&&run()",
-            "process.env.FLAG\nin suffix&&run()",
-            "process.env.FLAG\ninstanceof suffix&&run()",
-        ] {
-            assert_eq!(flag_guard(code), AND_GUARD, "{code:?}");
-        }
-        // The previous line is a complete statement, so the doubled sign starts
-        // the next one.
-        for code in [
-            "process.env.FLAG++\n++suffix&&run()",
-            "process.env.FLAG--\n--suffix&&run()",
-            "process.env.FLAG ++ // c\n++suffix&&run()",
-            "process.env.FLAG\u{a0}++\u{2029}++suffix&&run()",
-            "process.env.FLAG)\n++suffix&&run()",
-            "process.env.FLAG]\n++suffix&&run()",
-            "process.env.FLAG;\n++suffix&&run()",
-            "process.env.FLAG\nsuffix&&run()",
-        ] {
-            assert_eq!(flag_guard(code), None, "{code:?}");
-        }
-    }
-
-    const KEYWORD_SEPARATORS: [&str; 9] = [
-        "", " ", "/* c */", "\n", "\r\n", "\u{a0}", "\u{2028}", "/*\n*/", "// c\n",
-    ];
-
-    #[test]
-    fn env_guard_keyword_property_names_are_decided_across_trivia() {
-        for keyword in OPERAND_KEYWORDS {
-            // A keyword in keyword position leaves the expression unfinished.
-            let code = format!("process.env.FLAG + {keyword}\nsuffix&&run()");
-            assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
-            let code = format!("process.env.FLAG + {keyword} ++\n++suffix&&run()");
-            assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
-            for before in KEYWORD_SEPARATORS {
-                for after in KEYWORD_SEPARATORS {
-                    for dot in [".", "?."] {
-                        // The same word after a member access is a property
-                        // name, so the expression is finished.
-                        let access = format!("obj{before}{dot}{after}{keyword}");
-                        let code = format!("process.env.FLAG + {access}\nsuffix&&run()");
-                        assert_eq!(flag_guard(&code), None, "{code:?}");
-                        let code = format!("process.env.FLAG.{access}\nsuffix&&run()");
-                        assert_eq!(flag_guard(&code), None, "{code:?}");
-                        let code = format!("process.env.FLAG + {access} ++\n++suffix&&run()");
-                        assert_eq!(flag_guard(&code), None, "{code:?}");
-                    }
-                }
-            }
-            // Separators before the keyword, other than a member access, keep
-            // it a keyword.
-            for separator in KEYWORD_SEPARATORS {
-                let code = format!("process.env.FLAG +{separator}{keyword}\nsuffix&&run()");
-                assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
-            }
-        }
-        let bytes = b"a...typeof";
-        assert!(!is_property_name(bytes, 4, &[]));
-        assert!(is_property_name(b"a . typeof", 4, &[]));
-        assert!(is_property_name(b"a?.typeof", 3, &[]));
-        assert!(is_property_name(
-            b"a./* c */typeof",
-            9,
-            &non_code_ranges("a./* c */typeof")
-        ));
-    }
-
-    #[test]
-    fn env_guard_words_stop_at_unicode_separators() {
-        for keyword in ["in", "instanceof"] {
-            for separator in JS_WHITESPACE
-                .into_iter()
-                .chain(JS_WHITESPACE_TAIL)
-                .map(String::from)
-                .chain(LINE_TERMINATORS.map(String::from))
-                .chain(["/* c */".to_owned(), "/*\n*/".to_owned()])
-            {
-                // The operator ends before the separator, so the next line
-                // continues the expression.
-                let code = format!("process.env.FLAG\n{keyword}{separator}suffix&&run()");
-                assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
-                // The keyword is found when separators precede it as well.
-                let code =
-                    format!("process.env.FLAG +{separator}{keyword}{separator}\nsuffix&&run()");
-                assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
-            }
-            // A non-separator character makes the word a different identifier.
-            for suffix in ["\u{e9}", "x", "$", "_", "\u{3b1}"] {
-                let code = format!("process.env.FLAG\n{keyword}{suffix}&&run()");
-                assert_eq!(flag_guard(&code), None, "{code:?}");
-            }
-        }
-        for keyword in OPERAND_KEYWORDS {
-            for prefix in ["\u{e9}", "x", "$", "_", "\u{3b1}"] {
-                let code = format!("process.env.FLAG + {prefix}{keyword}\nsuffix&&run()");
-                assert_eq!(flag_guard(&code), None, "{code:?}");
-            }
-        }
-    }
-
-    /// Every separator the lookups must treat as trivia between two tokens.
-    fn all_separators() -> Vec<String> {
-        JS_WHITESPACE
-            .into_iter()
-            .chain(JS_WHITESPACE_TAIL)
-            .map(String::from)
-            .chain(LINE_TERMINATORS.map(String::from))
-            .chain(["/* c */", "/*\n*/", "// c\n", " /* c */ \u{feff}"].map(String::from))
-            .collect()
-    }
-
-    #[test]
-    fn token_before_classifies_every_lookup_through_one_helper() {
-        fn classify(code: &str) -> Option<TokenBefore<'_>> {
-            let ignored = non_code_ranges(code);
-            let end = previous_token_end(code.as_bytes(), code.len(), &ignored)?;
-            Some(token_ending_at(code.as_bytes(), end, &ignored))
-        }
-        for (code, expected) in [
-            ("a = typeof", TokenBefore::Keyword("typeof")),
-            ("a = x /* c */ in", TokenBefore::Keyword("in")),
-            ("a = obj.typeof", TokenBefore::Name),
-            ("a = obj?./* c */typeof", TokenBefore::Name),
-            ("a = obj.#typeof", TokenBefore::Name),
-            ("class A { #function }", TokenBefore::Punct(b'}')),
-            ("a = #in", TokenBefore::Name),
-            ("a = value", TokenBefore::Name),
-            ("a = 7", TokenBefore::Number),
-            ("a = 0x1f", TokenBefore::Number),
-            ("a = 1.", TokenBefore::Number),
-            ("a = 1_0.", TokenBefore::Number),
-            ("a = 1.5.", TokenBefore::Punct(b'.')),
-            ("a = 1e5.", TokenBefore::Punct(b'.')),
-            ("a = 0x1.", TokenBefore::Punct(b'.')),
-            ("a = 1n.", TokenBefore::Punct(b'.')),
-            ("a = 1..", TokenBefore::Punct(b'.')),
-            ("a = a1.", TokenBefore::Punct(b'.')),
-            ("a = $1.", TokenBefore::Punct(b'.')),
-            ("a = f().", TokenBefore::Punct(b'.')),
-            ("a = 'text'", TokenBefore::Literal),
-            ("a = /re/", TokenBefore::Literal),
-            ("a = `t${", TokenBefore::SubstitutionOpen),
-            ("a = b +", TokenBefore::Punct(b'+')),
-        ] {
-            assert_eq!(classify(code), Some(expected), "{code:?}");
-        }
-        assert_eq!(classify("  /* c */ // d"), None);
-    }
-
-    #[test]
-    fn regex_literals_follow_keywords_across_all_trivia() {
-        let read = |code: &str| in_ranges(&non_code_ranges(code), code.find("process").unwrap());
-        for keyword in REGEX_KEYWORDS {
-            for separator in all_separators() {
-                // A keyword in keyword position starts a regular expression
-                // whatever sits between it and the slash.
-                let code = format!("{keyword}{separator}/process.env.FLAG/.test(y)");
-                assert!(read(&code), "{code:?}");
-                // A property named like a keyword is an operand, so the slash
-                // divides.
-                for dot in [".", "?."] {
-                    let code = format!("obj{dot}{keyword}{separator}/process.env.FLAG/2");
-                    assert!(!read(&code), "{code:?}");
-                }
-            }
-            // A longer identifier is not the keyword.
-            for prefix in ["x", "$", "_", "\u{e9}"] {
-                let code = format!("{prefix}{keyword} /process.env.FLAG/2");
-                assert!(!read(&code), "{code:?}");
-            }
-        }
-        // The bug case: a regular expression after `return` and a BOM.
-        let code = "function f(){return\u{feff}/process.env.FLAG/.test(x)&&run()}";
-        assert!(read(code));
-    }
-
-    #[test]
-    fn private_names_are_never_keywords() {
-        for keyword in OPERAND_KEYWORDS {
-            for access in [".#", "?.#", " . #", ".\n#", "./* c */#"] {
-                // The completed member access ends the expression, so the next
-                // line starts a new statement.
-                let code = format!("process.env.FLAG + obj{access}{keyword}\nsuffix&&run()");
-                assert_eq!(flag_guard(&code), None, "{code:?}");
-                let code = format!("process.env.FLAG + obj{access}{keyword} ++\n++suffix&&run()");
-                assert_eq!(flag_guard(&code), None, "{code:?}");
-            }
-            // The same word in keyword position still continues.
-            let code = format!("process.env.FLAG + {keyword}\nsuffix&&run()");
-            assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
-        }
-        // A private name that is not a keyword behaves the same.
-        assert_eq!(
-            flag_guard("process.env.FLAG + obj.#count\nsuffix&&run()"),
-            None
-        );
-    }
-
-    #[test]
-    fn statement_blocks_end_the_statement_at_their_closing_brace() {
-        let followers = [
-            "/abc/.test(x)&&run()",
-            "(a)&&run()",
-            "[a]&&run()",
-            "`t`&&run()",
-            "+a&&run()",
-            "-a&&run()",
-            "++a&&run()",
-            "*a&&run()",
-            "in a&&run()",
-            "&&run()",
-        ];
-        for head in [
-            "if(x){",
-            "while(x){",
-            "for(;;){",
-            "function f(){",
-            "class A{m(){",
-            "if(x){}else{",
-            "const f=()=>{",
-            "const f=async(a)=>{",
-            "try{",
-            "{",
-        ] {
-            let tail = "}".repeat(head.matches('{').count());
-            for boundary in BOUNDARIES {
-                for follower in followers {
-                    let code = format!("{head}process.env.FLAG\n{tail}{boundary}{follower}");
-                    assert_eq!(flag_guard(&code), None, "{code:?}");
-                    let code = format!("{head}process.env.FLAG{tail}{boundary}{follower}");
-                    assert_eq!(flag_guard(&code), None, "{code:?}");
-                }
-            }
-            // On one line the pending read is already drained at the brace.
-            let code = format!("{head}process.env.FLAG{tail} (a)&&run()");
-            assert_eq!(flag_guard(&code), None, "{code:?}");
-        }
-        // An object literal is an operand: the expression continues past its
-        // closing brace on the next line.
-        for (code, expected) in [
-            ("process.env.FLAG + {a:1}\n(x)&&run()", AND_GUARD),
-            ("process.env.FLAG + {a:1}\n/abc/.test(x)&&run()", AND_GUARD),
-            ("process.env.FLAG + [{a:1}]\n(x)&&run()", AND_GUARD),
-            ("process.env.FLAG + f({a:1})\n(x)&&run()", AND_GUARD),
-        ] {
-            assert_eq!(flag_guard(code), expected, "{code:?}");
-        }
-        // A slash after a statement block starts a regular expression, after an
-        // object literal it divides.
-        let read = |code: &str| in_ranges(&non_code_ranges(code), code.find("process").unwrap());
-        assert!(read("if(x){}\n/process.env.FLAG/.test(y)"));
-        assert!(read("function f(){}\n/process.env.FLAG/.test(y)"));
-        assert!(read("{}\n/process.env.FLAG/.test(y)"));
-        assert!(read("if(a){if(b){}}/process.env.FLAG/.test(y)"));
-        assert!(!read("x={}\n/process.env.FLAG/2"));
-        assert!(!read("f({})/process.env.FLAG/2"));
-        assert!(!read("x=[{}]/process.env.FLAG/2"));
-        assert!(!read("a?{}:{}/process.env.FLAG/2"));
-    }
-
-    #[test]
-    fn known_limits_choose_the_conservative_direction() {
-        // A function or class expression body is read as a statement block, so
-        // a line break after it ends the statement. JavaScript would continue
-        // the expression, and the read is conservatively left unreported.
-        for code in [
-            "process.env.FLAG + function(){}\n(x)&&run()",
-            "process.env.FLAG + class{}\n+a&&run()",
-        ] {
-            assert_eq!(flag_guard(code), None, "{code:?}");
-        }
-        // The same reading makes a slash after such a body a regular
-        // expression, although JavaScript divides.
-        let code = "x=function(){}/process.env.FLAG/2";
-        assert!(in_ranges(
-            &non_code_ranges(code),
-            code.find("process").unwrap()
-        ));
-        // A `)` is always an operand end before a slash, so the body of
-        // `if (a) /re/.test(b)` is read as code, as is a call result.
-        for code in ["f(a)/process.env.FLAG/2", "if(a)/process.env.FLAG/.test(b)"] {
-            assert!(
-                !in_ranges(&non_code_ranges(code), code.find("process").unwrap()),
-                "{code:?}"
-            );
-        }
-        // A word that is a keyword only in some positions (`of`, `yield`,
-        // `await`) counts as one wherever it is not a property or private name.
-        let code = "const of=1;of/process.env.FLAG/.test(a)";
-        assert!(in_ranges(
-            &non_code_ranges(code),
-            code.find("process").unwrap()
-        ));
-    }
-
-    #[test]
-    fn expression_keywords_stay_pending_across_line_breaks() {
-        for (code, expected) in [
-            ("process.env.FLAG + function\nfoo(){} && run()", AND_GUARD),
-            (
-                "process.env.FLAG + function\u{a0}\n*gen(){} && run()",
-                AND_GUARD,
-            ),
-            (
-                "process.env.FLAG + async function\nfoo(){} && run()",
-                AND_GUARD,
-            ),
-            ("process.env.FLAG + class\nA{} && run()", AND_GUARD),
-            (
-                "process.env.FLAG + class A extends\nB{} && run()",
-                AND_GUARD,
-            ),
-            (
-                "process.env.FLAG + class A extends // c\nB{} && run()",
-                AND_GUARD,
-            ),
-            (
-                "process.env.FLAG + (class extends\nB{}) && run()",
-                AND_GUARD,
-            ),
-            ("process.env.FLAG + (function\nfoo(){}) && run()", AND_GUARD),
-            // A property with the same name leaves nothing unfinished.
-            ("process.env.FLAG + obj.function\nfoo && run()", None),
-            ("process.env.FLAG + obj.class\nfoo && run()", None),
-            ("process.env.FLAG + obj?.extends\nfoo && run()", None),
-            // A longer identifier is not the keyword.
-            ("process.env.FLAG + functions\nfoo && run()", None),
-            ("process.env.FLAG + classes\nfoo && run()", None),
-            ("process.env.FLAG + subclass\nfoo && run()", None),
-        ] {
-            assert_eq!(flag_guard(code), expected, "{code:?}");
-        }
-    }
-
-    #[test]
-    fn decimal_points_end_numeric_literals() {
-        // `1.` is a complete operand, so the prefix update on the next line
-        // starts a new statement.
-        for number in ["1.", "0.", "10.", "1_0.", "007."] {
-            for update in ["++", "--"] {
-                let code = format!("process.env.FLAG + {number}\n{update}x&&run()");
-                assert_eq!(flag_guard(&code), None, "{code:?}");
-                let code = format!("process.env.FLAG + {number} /* c */ \n{update}x&&run()");
-                assert_eq!(flag_guard(&code), None, "{code:?}");
-            }
-            let code = format!("process.env.FLAG + {number}\nx&&run()");
-            assert_eq!(flag_guard(&code), None, "{code:?}");
-        }
-        // Every other trailing dot is member access and leaves the expression
-        // unfinished.
-        for lhs in [
-            "a.", "a1.", "$1.", "1.5.", "1e5.", "0x1.", "1n.", "1..", "obj?.", "f().", "[1].",
-            "a.b.", "x_1.",
-        ] {
-            let code = format!("process.env.FLAG + {lhs}\n++x&&run()");
-            assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
-            let code = format!("process.env.FLAG + {lhs}\nx&&run()");
-            assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
-        }
-    }
-
-    #[test]
-    fn scope_heads_are_found_across_all_trivia() {
-        let guard = |code: &str| flag_guard(code);
-        for (keyword, evidence) in [
-            ("if", "the retained read is in an if condition"),
-            ("while", "the retained read is in a while condition"),
-            ("switch", "the retained read is in a switch condition"),
-        ] {
-            for separator in all_separators() {
-                let code = format!("{keyword}{separator}(process.env.FLAG) run()");
-                assert_eq!(guard(&code), Some(evidence), "{code:?}");
-                // A property call is not a statement head.
-                let code = format!("obj.{keyword}{separator}(process.env.FLAG) run()");
-                assert_eq!(guard(&code), None, "{code:?}");
-            }
-        }
-        for separator in all_separators() {
-            let code = format!("for{separator}(;process.env.FLAG;) run()");
-            assert_eq!(
-                guard(&code),
-                Some("the retained read is in a for condition"),
-                "{code:?}"
-            );
-            let code = format!("obj.for{separator}(;process.env.FLAG;) run()");
-            assert_eq!(guard(&code), None, "{code:?}");
-        }
-    }
-
-    /// Boundary kinds that the env-condition scan treats as line breaks.
-    const BOUNDARIES: [&str; 8] = [
-        "\n",
-        "\r",
-        "\r\n",
-        "\u{2028}",
-        "\u{2029}",
-        "/*\n*/",
-        "/*\r*/",
-        "/*\u{2028}*/",
-    ];
-
-    #[test]
-    fn asi_memo_matches_the_per_line_break_decision() {
-        let followers = [
-            "&&run()",
-            "+suffix&&run()",
-            "++suffix&&run()",
-            "in x&&run()",
-            "suffix&&run()",
-            "",
-        ];
-        for boundary in BOUNDARIES {
-            for follower in followers {
-                for previous in [
-                    "process.env.FLAG",
-                    "process.env.FLAG +",
-                    "process.env.FLAG ++",
-                ] {
-                    for count in [1, 2, 5] {
-                        let code = format!(
-                            "{previous} {}{follower}",
-                            format!("{boundary} // c\u{2028} ").repeat(count)
-                        );
-                        let bytes = code.as_bytes();
-                        let ignored = non_code_ranges(&code);
-                        let mut memo = AsiMemo::default();
-                        let mut index = 0;
-                        while index < bytes.len() {
-                            let in_comment = comment_range(bytes, index, &ignored);
-                            let is_break = match in_comment {
-                                Some((start, end)) => {
-                                    index == start && comment_has_line_terminator(bytes, start, end)
-                                }
-                                None => line_terminator_at(bytes, index).is_some(),
-                            };
-                            if is_break {
-                                assert_eq!(
-                                    memo.terminates(bytes, index, &ignored, None),
-                                    asi_terminates(bytes, index, &ignored, None),
-                                    "{code:?} at {index}"
-                                );
-                            }
-                            index += 1;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn env_guard_line_breaks_are_decided_once_per_trivia_run() {
-        // Thousands of consecutive line breaks between two tokens must not
-        // rescan the remaining trivia at every one of them.
-        const COUNT: usize = 40_000;
-        for boundary in BOUNDARIES {
-            for (follower, expected) in [("&&run()", AND_GUARD), ("+suffix&&run()", AND_GUARD)] {
-                let code = format!("process.env.FLAG{}{follower}", boundary.repeat(COUNT));
-                let started = std::time::Instant::now();
-                let guard = flag_guard(&code);
-                assert!(
-                    started.elapsed() < std::time::Duration::from_secs(5),
-                    "{boundary:?} took {:?}",
-                    started.elapsed()
-                );
-                assert_eq!(guard, expected, "{boundary:?} {follower:?}");
-            }
-            // A read that is already blocked by the first boundary drains
-            // once; the remaining boundaries find nothing pending.
-            let code = format!("process.env.FLAG{}x&&run()", boundary.repeat(COUNT));
-            let started = std::time::Instant::now();
-            assert_eq!(flag_guard(&code), None, "{boundary:?}");
-            assert!(started.elapsed() < std::time::Duration::from_secs(5));
-        }
-    }
-
-    #[test]
-    fn env_guard_scans_many_reads_in_one_pass() {
-        let mut code = String::new();
-        let mut reads = Vec::new();
-        for index in 0..256 {
-            let read = format!("process.env.FLAG{index}");
-            let start = code.len();
-            code.push_str(&read);
-            reads.push((start, start + read.len()));
-            code.push_str("&&run();");
-        }
-        let guards = env_guards(&code, &reads, &[]);
-        assert_eq!(guards.len(), reads.len());
-        assert!(
-            guards
-                .iter()
-                .all(|guard| matches!(guard, Some(EnvGuard::ShortCircuitAnd)))
-        );
     }
 
     #[test]
@@ -3630,6 +1895,299 @@ y=/process.env.F/.test(z),process.env.G"#;
             direct_eval_line("function outer() { return\nfunction eval() {}; } eval(code);")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn namespace_local_var_eval_does_not_shadow_outside_calls() {
+        for keyword in ["namespace", "module"] {
+            assert_eq!(
+                direct_eval_line(&format!(
+                    "{keyword} N {{ var eval = helper; }}\neval(code);"
+                )),
+                Some((1, 0))
+            );
+            assert_eq!(
+                direct_eval_line(&format!("{keyword} N {{ var eval = helper; eval(code); }}")),
+                None
+            );
+            assert_eq!(
+                direct_eval_line(&format!(
+                    "{keyword} N {{ var eval = helper; eval(code); }}\neval(code);"
+                )),
+                Some((1, 0))
+            );
+        }
+        // Nested and dotted namespaces.
+        assert_eq!(
+            direct_eval_line(
+                "namespace A { namespace B { var eval = helper; eval(code); } }\neval(code);"
+            ),
+            Some((1, 0))
+        );
+        assert_eq!(
+            direct_eval_line("namespace A.B { var eval = helper; eval(code); }"),
+            None
+        );
+        assert_eq!(
+            direct_eval_line("export namespace A.B { var eval = helper; }\neval(code);"),
+            Some((1, 0))
+        );
+        assert_eq!(
+            direct_eval_line("declare namespace N { var eval: any; }\neval(code);"),
+            Some((1, 0))
+        );
+        // A `var` in a nested block belongs to the enclosing namespace.
+        assert_eq!(
+            direct_eval_line(
+                "namespace N { if (x) { var eval = helper; } eval(code); }\neval(code);"
+            ),
+            Some((1, 0))
+        );
+        // A function keeps its own `var` boundary inside a namespace.
+        assert_eq!(
+            direct_eval_line("namespace N { function f() { var eval = helper; } eval(code); }"),
+            Some((0, 50))
+        );
+        // Lexical declarations keep the block path.
+        assert_eq!(
+            direct_eval_line("namespace N { let eval = helper; eval(code); }\neval(code);"),
+            Some((1, 0))
+        );
+        // Plain blocks still shadow the surrounding source scope.
+        assert_eq!(direct_eval_line("{ var eval = helper; } eval(code);"), None);
+        // Identifiers that merely resemble the keywords stay ordinary blocks.
+        assert_eq!(
+            direct_eval_line("module.exports = { run() { var eval = helper; } }; eval(code);"),
+            Some((0, 51))
+        );
+        assert_eq!(
+            direct_eval_line("{ var namespace = 1; } { var eval = helper; } eval(code);"),
+            None
+        );
+    }
+
+    #[test]
+    fn namespace_var_eval_scope_table() {
+        // (source, expected direct-eval position). `None` means every call is
+        // shadowed by a binding; `Some` is the first unshadowed call.
+        let cases: &[(&str, Option<(u32, u32)>)] = &[
+            // Quoted ambient module names.
+            (
+                "declare module \"pkg\" { export var eval: any }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "declare module 'pkg' { var eval: any }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "declare module \"pkg\" { var eval: any; eval(code); }",
+                None,
+            ),
+            (
+                "module \"a{b\" { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            // Unicode namespace names.
+            (
+                "namespace \u{3a9} { var eval = helper }\neval(code);",
+                Some((1, 0)),
+            ),
+            ("namespace \u{3a9} { var eval = helper; eval(code); }", None),
+            (
+                "namespace \u{3a9}.\u{3bb}x { var eval = helper }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "module caf\u{e9} { var eval = helper }\neval(code);",
+                Some((1, 0)),
+            ),
+            // The keyword and the name share a line; otherwise automatic
+            // semicolon insertion leaves an ordinary block.
+            ("module\nN\n{ var eval = helper; }\neval(code);", None),
+            ("namespace\nN\n{ var eval = helper; }\neval(code);", None),
+            ("module\n\"pkg\"\n{ var eval = helper; }\neval(code);", None),
+            (
+                "module N\n{ var eval = helper; }\neval(code);",
+                Some((2, 0)),
+            ),
+            (
+                "namespace N.\nM\n{ var eval = helper; }\neval(code);",
+                Some((3, 0)),
+            ),
+            // Same-line comments are trivia between the keyword and the name.
+            (
+                "namespace/* note */N { var eval = helper; } eval(code);",
+                Some((0, 44)),
+            ),
+            (
+                "namespace /* note */ N { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "module/* a */N/* b */.M { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "module/* note */\"pkg\" { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            // A comment that contains a line terminator is a line break.
+            (
+                "namespace /*\n*/ N { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace // note\nN { var eval = helper; }\neval(code);",
+                None,
+            ),
+            // Words that follow the keywords in expressions are not names.
+            (
+                "module in { a: 1 }; { var eval = helper; } eval(code);",
+                None,
+            ),
+            // Modifiers between `export` and the declaration keyword.
+            (
+                "namespace N { export async function eval() {} }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export declare async function eval(): void; }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export async /* c */ function eval() {} }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { async function eval() {} }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            // Exported members are shared by merged declarations.
+            (
+                "namespace N { export var eval = helper; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { eval(code); }\nnamespace N { export var eval = helper; }",
+                None,
+            ),
+            (
+                "module N { export let eval = helper; }\nmodule N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export const eval = helper; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export function eval() {} }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export declare var eval: any; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare module \"pkg\" { export var eval: any }\ndeclare module 'pkg' { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "namespace A.B { export var eval = helper; }\nnamespace A { export namespace B { \
+                 eval(code); } }",
+                None,
+            ),
+            // The merge never reaches outside the merged declarations.
+            (
+                "namespace N { export var eval = helper; }\nnamespace N { }\neval(code);",
+                Some((2, 0)),
+            ),
+            (
+                "namespace N { export var eval = helper; }\nnamespace M { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare module \"a\" { export var eval: any }\ndeclare module \"b\" { \
+                 eval(code); }",
+                Some((1, 21)),
+            ),
+            (
+                "namespace N { export var eval = helper; }\nfunction f() { namespace N { \
+                 eval(code); } }",
+                Some((1, 29)),
+            ),
+            // Non-exported bindings stay local to their own declaration.
+            (
+                "namespace N { var eval = helper; }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "namespace N { let eval = helper; }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "namespace N { export namespace M { export var eval = helper; } }\nnamespace N { \
+                 export namespace M { eval(code); } }",
+                None,
+            ),
+            // A nested namespace that is not exported is a separate symbol in
+            // each outer declaration.
+            (
+                "namespace N { namespace M { export var eval = helper; } }\nnamespace N { \
+                 namespace M { eval(code); } }",
+                Some((1, 28)),
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(direct_eval_line(source), *expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn namespace_scan_known_limits_are_pinned() {
+        // The scan has no parser: merged declarations are matched by their
+        // written qualified name, so a merge through an alias or a class or
+        // function with the same name is not followed, and the exported
+        // binding stays in its own declaration.
+        assert_eq!(
+            direct_eval_line(
+                "namespace N { export var eval = helper; }\nnamespace N\n.M { eval(code); }"
+            ),
+            Some((2, 5))
+        );
+        // Constructs without a recognized shape keep the program-wide `var`
+        // boundary, which suppresses calls elsewhere in the source.
+        assert_eq!(
+            direct_eval_line("declare global { var eval: any }\neval(code);"),
+            None
+        );
+        // Escapes in module names are compared as written.
+        assert_eq!(
+            direct_eval_line(
+                "declare module \"p\\x6bg\" { export var eval: any }\ndeclare module \"pkg\" { \
+                 eval(code); }"
+            ),
+            Some((1, 23))
+        );
+    }
+
+    #[test]
+    fn namespace_local_var_eval_reaches_the_mangling_rule() {
+        let prefix = "const longLocalName = 1;\n";
+        for keyword in ["namespace", "module"] {
+            let outside = format!("{prefix}{keyword} N {{ var eval = helper; }}\neval(code);");
+            let drafts = eval_rule_drafts(&outside, false);
+            assert_eq!(drafts.len(), 1);
+            assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+            assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+            let shadowed = format!("{prefix}{keyword} N {{ var eval = helper; eval(code); }}");
+            assert!(eval_rule_drafts(&shadowed, false).is_empty());
+            // Engine-reported evals are unaffected by the source scan.
+            assert_eq!(eval_rule_drafts(&shadowed, true).len(), 1);
+        }
     }
 
     #[test]
