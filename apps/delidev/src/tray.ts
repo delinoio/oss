@@ -229,6 +229,7 @@ export class TrayPublisher {
     try {
       this.scope ??= this.bridge.begin();
       const scope = await this.scope;
+      if (!this.closed) this.problem(false, PresentationPhase.TrayBegin);
       phase = PresentationPhase.TrayPublish;
       while (this.pending) {
         const next = this.pending;

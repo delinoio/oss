@@ -58,7 +58,8 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: async (event: string, callback: () => void) => {
-    if (native.listenFails) throw new Error("listen failed");
+    if (native.listenFails && event === "tray-activate")
+      throw new Error("listen failed");
     if (event !== "tray-activate") return () => {};
     native.callbacks.add(callback);
     return () => native.callbacks.delete(callback);
@@ -247,6 +248,36 @@ it("opens the native-selected view without sending work or losing the session dr
   expect(native.callbacks.size).toBe(0);
 }, 15000);
 
+function diagnosticsTransport() {
+  return createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({ version: "0.1.0" }),
+      getOverview: () => ({
+        observedAt: "2026-09-27T00:01:00Z",
+        todayFromUnixMs: 1790467200000n,
+        todayUntilUnixMs: 1790467260000n,
+      }),
+    });
+    router.service(SessionService, {
+      listSessions: () => ({ sessions: [] }),
+      listQueue: () => ({ inputs: [] }),
+    });
+    router.service(ResourceService, {
+      listResources: () => ({ resources: [] }),
+      getSnapshot: () => ({ resources: [], cursor: "fixture" }),
+      async *watchEvents(_request, context) {
+        await new Promise<void>((resolve) =>
+          context.signal.addEventListener("abort", () => resolve(), {
+            once: true,
+          }),
+        );
+      },
+    });
+    router.service(InboxService, { listInbox: () => ({ entries: [] }) });
+    router.service(UsageService, { getUsageSummary: () => ({}) });
+  });
+}
+
 // The window renders no global status for tray publication, activation listener
 // or retained action failures, and the tray effects keep running. Each failure
 // leaves one bounded structured warning with only its stable phase and outcome.
@@ -267,33 +298,7 @@ it.each([
     // failure again, so only the publication case lets it run.
     if (failure !== "publish_tray") native.hanging.add("publish_tray");
     native.calls.length = 0;
-    const transport = createRouterTransport((router) => {
-      router.service(SystemService, {
-        getStatus: () => ({ version: "0.1.0" }),
-        getOverview: () => ({
-          observedAt: "2026-09-27T00:01:00Z",
-          todayFromUnixMs: 1790467200000n,
-          todayUntilUnixMs: 1790467260000n,
-        }),
-      });
-      router.service(SessionService, {
-        listSessions: () => ({ sessions: [] }),
-        listQueue: () => ({ inputs: [] }),
-      });
-      router.service(ResourceService, {
-        listResources: () => ({ resources: [] }),
-        getSnapshot: () => ({ resources: [], cursor: "fixture" }),
-        async *watchEvents(_request, context) {
-          await new Promise<void>((resolve) =>
-            context.signal.addEventListener("abort", () => resolve(), {
-              once: true,
-            }),
-          );
-        },
-      });
-      router.service(InboxService, { listInbox: () => ({ entries: [] }) });
-      router.service(UsageService, { getUsageSummary: () => ({}) });
-    });
+    const transport = diagnosticsTransport();
     try {
       // A transient status counts: later healthy work must not hide a regression.
       let everShown = false;
@@ -343,3 +348,53 @@ it.each([
   },
   15000,
 );
+
+// Recovery and disposal cells of the tray rows in the diagnostics table of the
+// desktop contract: a failing phase records one recovery on its next success, a
+// repeated failure adds no record, and a disposed tray records nothing.
+it("records one recovery when a retained tray action read succeeds after failing and nothing after unmount", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  native.failing.clear();
+  native.hanging.clear();
+  native.listenFails = false;
+  native.calls.length = 0;
+  native.failing.add("read_tray_action");
+  const outcomes = (spy: { mock: { calls: unknown[][] } }) =>
+    spy.mock.calls
+      .filter(([name]) => name === "delidev.presentation.outcome")
+      .map(([, record]) => record);
+  try {
+    const view = render(<App transport={diagnosticsTransport()} />);
+    await waitFor(() =>
+      expect(native.calls.filter((c) => c === "read_tray_action").length).toBe(
+        2,
+      ),
+    );
+    expect(outcomes(warn)).toEqual([
+      {
+        phase: PresentationPhase.TrayActionRead,
+        outcome: PresentationOutcome.Failed,
+      },
+    ]);
+    native.failing.delete("read_tray_action");
+    await waitFor(() => expect(outcomes(info)).toHaveLength(1));
+    expect(outcomes(info)).toEqual([
+      {
+        phase: PresentationPhase.TrayActionRead,
+        outcome: PresentationOutcome.Recovered,
+      },
+    ]);
+    expect(outcomes(warn)).toHaveLength(1);
+    native.failing.add("read_tray_action");
+    view.unmount();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+    expect(outcomes(warn)).toHaveLength(1);
+  } finally {
+    warn.mockRestore();
+    info.mockRestore();
+    native.failing.clear();
+  }
+}, 15000);

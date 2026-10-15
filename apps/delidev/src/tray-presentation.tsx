@@ -81,15 +81,7 @@ export function TrayPresentation({
         publish: (scope, revision, summary) =>
           invoke("publish_tray", { scope, revision, summary }),
       },
-      (failed, phase) => {
-        if (canceled) return;
-        if (failed) failures.failed(phase);
-        else {
-          // A completed publication proves that the scope exists.
-          failures.recovered(PresentationPhase.TrayBegin);
-          failures.recovered(PresentationPhase.TrayPublish);
-        }
-      },
+      (failed, phase) => failures.report(phase, failed),
     );
     publisher.current = value;
     value.update(latest.current);
@@ -130,7 +122,7 @@ export function TrayPresentation({
             await invoke("acknowledge_tray_action", { id: action.id });
           }
           retries = 0;
-          if (!canceled) failures.recovered(PresentationPhase.TrayActionRead);
+          failures.recovered(PresentationPhase.TrayActionRead);
         } catch {
           if (!canceled) {
             failures.failed(PresentationPhase.TrayActionRead);
@@ -168,6 +160,7 @@ export function TrayPresentation({
       });
     return () => {
       canceled = true;
+      failures.dispose();
       if (retryTimer) clearTimeout(retryTimer);
       unlisten?.();
       value.close();

@@ -1658,35 +1658,64 @@ Permission reads have a five-second deadline and never prompt. Only the explicit
 
 Native status uses a connection-scoped React Query cache and 30-second reads. The product window renders no status text for a readiness, candidate or presentation-pump failure; requests remain in the inbox and the Settings notification status keeps the truthful native availability. Disabled/unavailable permission does not claim candidates. Settings explicitly distinguishes unrequested permission, denial, bundle/action/service/capacity failures and Linux service availability. API submission, platform permission and actual displayed/seen notifications are separate evidence. No browser notification API, network broker, arbitrary native payload or OS-permission request from a timer is allowed. Component tests, cross compilation and native host initialization do not establish real notification acceptance on any platform.
 
-#### Tray and notification failure diagnostics
+#### Sidebar, tray and notification failure diagnostics
 
-The product window renders nothing for a tray or desktop-notification failure,
-so the renderer records each failing phase as one structured console warning.
-The record has the stable event name `delidev.presentation.outcome` and exactly
-two fields: a closed phase and the outcome `failed`. It never contains raw error
-text, identifiers, paths, summaries or payloads. One log belongs to one tray
-lifetime or one notification connection. A phase warns only on its transition
-from healthy to failing, so a repeating failure and bounded retries add no
-further warning; the first later success of that phase records one `recovered`
-info record with the same two fields.
+The product window renders nothing for a sidebar-preference, tray or
+desktop-notification failure, so the renderer records each failing phase as one
+structured console warning. The record has the stable event name
+`delidev.presentation.outcome` and exactly two fields: a closed phase and the
+outcome `failed` or `recovered`. It never contains raw error text, identifiers,
+paths, summaries, payloads or the sidebar problem classification. Every
+reporter (sidebar provider, tray presentation, notification presentation and
+the tray publisher and notification pump it owns) feeds one pure reducer in
+`presentation-diagnostics.ts`; no reporter keeps its own failing flags.
 
-| Phase                            | Failure event                                                         | Result                                                               | Recovery event                       |
-| -------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------ |
-| `tray-begin`                     | `begin_tray` rejects                                                  | warn; the next summary refresh begins again                          | a completed publication              |
-| `tray-publish`                   | `publish_tray` rejects                                                | warn; the scope is dropped and the next refresh begins again         | a completed publication              |
-| `tray-action-read`               | `read_tray_action` or `acknowledge_tray_action` rejects or is invalid | warn once; bounded retry continues unchanged                         | a completed read or acknowledgment   |
-| `tray-activation-listener`       | the `tray-activate` listener cannot be registered                     | warn; the tray still publishes and no activation is received         | none until the tray is mounted again |
-| `notification-readiness`         | the permission read rejects                                           | warn; no candidate is read and Settings keeps native availability    | a later successful read              |
-| `notification-candidate-read`    | the candidate list read rejects                                       | warn; the pump keeps its previous page and presents nothing new      | a later successful read              |
-| `notification-scope-begin`       | `begin_notifications` rejects or returns an invalid scope             | warn; nothing is claimed and the next page begins again              | a completed presentation batch       |
-| `notification-candidate-invalid` | the page exceeds 50 entries or carries an invalid target              | warn; the page is dropped before native initialization               | a completed presentation batch       |
-| `notification-present`           | native display is denied, failed or uncertain                         | warn; the batch stops and display is never retried                   | a completed presentation batch       |
-| `notification-pump`              | claim verification, claim or report fails                             | warn; pending work is dropped and a submitted notice is not repeated | a completed presentation batch       |
+A phase is one operation. Its failure records once on the healthy-to-failing
+transition, so a repeating failure and bounded retries add no further warning;
+its next success records one `recovered` info record. An operation that was not
+attempted changes nothing. Phases never affect each other: a success of one
+phase never recovers another phase, and two phases that fail in the same batch
+each record their own warning.
 
-Every phase leaves the product UI empty. Disposal or a connection change ends
-the log, so a closed controller emits no late record. The tray publisher and
-the notification pump report only the phase; the presentation component decides
-what is recorded.
+One log belongs to one lifetime: the sidebar provider, one mounted tray
+presentation or one notification connection. Disposal ends the log and a
+disposed log ignores every later event. A replaced connection or a newly
+mounted tray starts a new log with every phase healthy, so it reports its own
+first failure.
+
+Reducer table (`P` is one phase, `Q` any other phase):
+
+| State of `P`  | Failure of `P`               | Success of `P`                      | Disposal of the log                  |
+| ------------- | ---------------------------- | ----------------------------------- | ------------------------------------ |
+| healthy       | warn; `P` is failing         | no record                           | the log is disposed                  |
+| failing       | no record; `P` stays failing | one `recovered` record; `P` healthy | the log is disposed; failing cleared |
+| any, `Q` fail | independent of `Q`           | independent of `Q`                  | not applicable                       |
+| disposed log  | no record                    | no record                           | no record                            |
+
+| Phase                            | Failure event                                                                                                           | Result                                                               | Recovery event                       |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------ |
+| `sidebar-read`                   | a snapshot with problem Unavailable, ReadFailed, InvalidDocument or UnsupportedVersion, including the first native read | warn; saves stay fenced until Reload                                 | a healthy snapshot                   |
+| `sidebar-save`                   | a snapshot with problem WriteFailed, OutcomeUnknown or Changed                                                          | warn; saves stay fenced and the original save is never replayed      | a healthy snapshot                   |
+| `tray-begin`                     | `begin_tray` rejects                                                                                                    | warn; the next summary refresh begins again                          | `begin_tray` resolves                |
+| `tray-publish`                   | `publish_tray` rejects                                                                                                  | warn; the scope is dropped and the next refresh begins again         | a completed publication              |
+| `tray-action-read`               | `read_tray_action` or `acknowledge_tray_action` rejects or is invalid                                                   | warn once; bounded retry continues unchanged                         | a completed read or acknowledgment   |
+| `tray-activation-listener`       | the `tray-activate` listener cannot be registered                                                                       | warn; the tray still publishes and no activation is received         | none until the tray is mounted again |
+| `notification-readiness`         | the permission read rejects                                                                                             | warn; no candidate is read and Settings keeps native availability    | a later successful read              |
+| `notification-candidate-read`    | the candidate list read rejects                                                                                         | warn; the pump keeps its previous page and presents nothing new      | a later successful read              |
+| `notification-scope-begin`       | `begin_notifications` rejects or returns an invalid scope                                                               | warn; nothing is claimed and the next page begins again              | a completed presentation batch       |
+| `notification-candidate-invalid` | the page exceeds 50 entries or carries an invalid target                                                                | warn; the page is dropped before native initialization               | a completed presentation batch       |
+| `notification-present`           | native display is denied, failed or uncertain                                                                           | warn; the batch stops and display is never retried                   | a completed presentation batch       |
+| `notification-pump`              | claim verification, claim or report fails                                                                               | warn; pending work is dropped and a submitted notice is not repeated | a completed presentation batch       |
+
+The sidebar provider does not record its loading placeholder: the initial
+Unavailable value is not an observation. The first native read, even when it is
+a real Unavailable snapshot, is recorded like any other snapshot. A problem in
+the same phase as a failing one adds no record, a problem in the other phase
+adds its own record, and a healthy snapshot recovers both sidebar phases.
+
+Every phase leaves the product UI empty. The tray publisher and the
+notification pump report only the phase and whether its operation failed; the
+presentation component owns the log and decides what is recorded.
 
 #### Notifications settings presentation
 
@@ -6634,9 +6663,8 @@ while a problem fences saves. Every problem and event has one result:
 
 Unavailable, ReadFailed, InvalidDocument, UnsupportedVersion, WriteFailed,
 OutcomeUnknown and Changed all follow the Any problem rows. Each press is
-bounded to one read and no timer retries. The controller logs only the stable
-problem classification when a problem begins, when Reload is requested and when
-it clears.
+bounded to one read and no timer retries. The controller records only the
+`sidebar-read` and `sidebar-save` phases of the diagnostics table above.
 Renderer response/events are monotonic, contradictory snapshots are rejected and
 pending/failed/uncertain writes remain fenced. A structured problem reply
 (Changed, WriteFailed or OutcomeUnknown) to the original save fences the latest

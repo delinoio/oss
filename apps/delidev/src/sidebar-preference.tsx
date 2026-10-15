@@ -9,6 +9,10 @@ import {
 } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import {
+  PresentationFailureLog,
+  PresentationPhase,
+} from "./presentation-diagnostics";
 export enum SidebarPreference {
   Expanded = "expanded",
   Collapsed = "collapsed",
@@ -22,6 +26,22 @@ export enum SidebarProblem {
   OutcomeUnknown = "outcome-unknown",
   Changed = "changed",
 }
+// A read, inspection or document problem belongs to the read phase; only the
+// classifications of a rejected, uncertain or contradicted save belong to the
+// save phase.
+const sidebarProblemPhases: Record<SidebarProblem, PresentationPhase> = {
+  [SidebarProblem.Unavailable]: PresentationPhase.SidebarRead,
+  [SidebarProblem.ReadFailed]: PresentationPhase.SidebarRead,
+  [SidebarProblem.InvalidDocument]: PresentationPhase.SidebarRead,
+  [SidebarProblem.UnsupportedVersion]: PresentationPhase.SidebarRead,
+  [SidebarProblem.WriteFailed]: PresentationPhase.SidebarSave,
+  [SidebarProblem.OutcomeUnknown]: PresentationPhase.SidebarSave,
+  [SidebarProblem.Changed]: PresentationPhase.SidebarSave,
+};
+const sidebarPhases = [
+  PresentationPhase.SidebarRead,
+  PresentationPhase.SidebarSave,
+] as const;
 // Only these classifications describe the outcome of the original save, so only
 // they fence a reply that is older than an already accepted event.
 const saveFailureProblems: ReadonlySet<SidebarProblem> = new Set([
@@ -115,18 +135,14 @@ export function SidebarProvider({
   const running = useRef(false);
   const generation = useRef(0);
   const subscription = useRef<(() => void) | undefined>(undefined);
-  // The product window shows no sidebar problem, so record each transition.
+  // The product window shows no sidebar problem, so the shared reducer records
+  // each phase transition. The initial Unavailable value is only the loading
+  // placeholder: it is never recorded, while a real Unavailable snapshot is
+  // recorded like any other problem.
+  const [diagnostics] = useState(() => new PresentationFailureLog());
   const record = (next: SidebarSnapshot) => {
-    if (next.problem === current.current.problem) return;
-    if (next.problem)
-      console.warn("delidev.sidebar_preference.problem", {
-        problem: next.problem,
-      });
-    // The initial Unavailable value is only the loading placeholder.
-    else if (current.current.problem !== SidebarProblem.Unavailable)
-      console.info("delidev.sidebar_preference.recovered", {
-        problem: current.current.problem,
-      });
+    if (next.problem) diagnostics.failed(sidebarProblemPhases[next.problem]);
+    else sidebarPhases.forEach((phase) => diagnostics.recovered(phase));
   };
   const accept = (value: unknown) => {
     const next = parseSidebar(value);

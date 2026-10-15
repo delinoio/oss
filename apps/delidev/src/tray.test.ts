@@ -170,30 +170,79 @@ it("serializes publication, coalesces refreshes and clears only the original sco
   expect(bridge.begin).toHaveBeenCalledTimes(1);
 });
 
+// Cells of the tray publisher rows in the diagnostics table of the desktop
+// contract. The publisher reports each operation's outcome by phase.
 it.each([
-  ["begin", PresentationPhase.TrayBegin],
-  ["publish", PresentationPhase.TrayPublish],
-] as const)(
-  "reports a native tray %s failure by phase without raw error text",
-  async (failure, phase) => {
-    const problem = vi.fn();
-    const bridge = {
-      begin: vi.fn(async () => {
-        if (failure === "begin") throw new Error("private native detail");
-        return "scope";
-      }),
-      publish: vi.fn(async () => {
-        if (failure === "publish") throw new Error("private native detail");
-      }),
-    };
-    const publisher = new TrayPublisher(bridge, problem);
-    publisher.update(unavailableTray());
-    await vi.waitFor(() => expect(problem).toHaveBeenCalledWith(true, phase));
-    expect(problem).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(problem.mock.calls)).not.toContain("private");
-    publisher.close();
+  {
+    name: "begin rejects: only tray-begin fails and nothing is published",
+    begin: [false],
+    publish: [],
+    calls: [[true, PresentationPhase.TrayBegin]],
   },
-);
+  {
+    name: "publish rejects: begin recovers and only tray-publish fails",
+    begin: [true],
+    publish: [false],
+    calls: [
+      [false, PresentationPhase.TrayBegin],
+      [true, PresentationPhase.TrayPublish],
+    ],
+  },
+  {
+    name: "publish completes: begin and publish both report success",
+    begin: [true],
+    publish: [true],
+    calls: [
+      [false, PresentationPhase.TrayBegin],
+      [false, PresentationPhase.TrayPublish],
+    ],
+  },
+] as const)("reports $name", async ({ begin, publish, calls }) => {
+  const problem = vi.fn();
+  const bridge = {
+    begin: vi.fn(async () => {
+      if (!begin[0]) throw new Error("private native detail");
+      return "scope";
+    }),
+    publish: vi.fn(async () => {
+      if (!publish[0]) throw new Error("private native detail");
+    }),
+  };
+  const publisher = new TrayPublisher(bridge, problem);
+  publisher.update(unavailableTray());
+  await vi.waitFor(() => expect(problem).toHaveBeenCalledTimes(calls.length));
+  expect(problem.mock.calls).toEqual(calls);
+  expect(bridge.publish).toHaveBeenCalledTimes(publish.length);
+  expect(JSON.stringify(problem.mock.calls)).not.toContain("private");
+  publisher.close();
+});
+
+it("a failed publish drops the scope so the next refresh reports begin again, and a closed publisher reports nothing", async () => {
+  const problem = vi.fn();
+  const bridge = {
+    begin: vi.fn(async () => "scope"),
+    publish: vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("private"))
+      .mockResolvedValue(undefined),
+  };
+  const publisher = new TrayPublisher(bridge, problem);
+  publisher.update(unavailableTray());
+  await vi.waitFor(() =>
+    expect(problem).toHaveBeenCalledWith(true, PresentationPhase.TrayPublish),
+  );
+  publisher.update(unavailableTray());
+  await vi.waitFor(() => expect(bridge.publish).toHaveBeenCalledTimes(2));
+  expect(bridge.begin).toHaveBeenCalledTimes(2);
+  expect(problem).toHaveBeenLastCalledWith(
+    false,
+    PresentationPhase.TrayPublish,
+  );
+  const before = problem.mock.calls.length;
+  publisher.close();
+  await vi.waitFor(() => expect(bridge.publish).toHaveBeenCalledTimes(3));
+  expect(problem).toHaveBeenCalledTimes(before);
+});
 
 it("recovers presentation initialization on a later refresh without replaying product work", async () => {
   const problem = vi.fn();
