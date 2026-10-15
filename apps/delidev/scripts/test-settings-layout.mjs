@@ -1971,11 +1971,7 @@ try {
                 });
               const context = `${language}/${theme}/${populated}/${viewport}/${category}: ${JSON.stringify(layout)}`;
               assert.equal(layout.titles, 1, context);
-              assert.equal(
-                layout.titleSize,
-                category === "Connections" ? "28px" : "26px",
-                context,
-              );
+              assert.equal(layout.titleSize, "26px", context);
               assert.equal(
                 layout.padding,
                 viewport[0] >= 1100
