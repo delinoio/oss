@@ -260,20 +260,55 @@ it("registers only the verified first input and reconciles it once by input iden
 it("rejects foreign, malformed and non-first original evidence", () => {
   const f = original();
   expect(
-    f.store.registerOriginal(f.sessionId, f.input(1n, "queued", "x", 2)),
+    f.store.registerOriginal(
+      f.sessionId,
+      f.input(1n, "queued", "x", 2),
+      f.inputId,
+    ),
   ).toBe(false);
   expect(
     f.store.registerOriginal(
       f.sessionId,
       f.input(1n, "queued", "x", 1, newRequestId()),
+      f.inputId,
     ),
   ).toBe(false);
   expect(
     f.store.registerOriginal(f.sessionId, f.input(1n), newRequestId()),
   ).toBe(false);
-  expect(f.store.registerOriginal(f.sessionId, f.native)).toBe(false);
-  expect(f.store.registerOriginal(f.sessionId, undefined)).toBe(false);
+  expect(f.store.registerOriginal(f.sessionId, f.native, f.inputId)).toBe(
+    false,
+  );
+  expect(f.store.registerOriginal(f.sessionId, undefined, f.inputId)).toBe(
+    false,
+  );
   expect(f.store.snapshot()).toHaveLength(0);
+});
+it.each([
+  ["empty", ""],
+  ["malformed", "not-an-entity-id"],
+])("requires a valid initial input identity (%s)", (_name, expected) => {
+  const f = original();
+  expect(f.store.registerOriginal(f.sessionId, f.input(1n), expected)).toBe(
+    false,
+  );
+  expect(f.store.snapshot()).toHaveLength(0);
+});
+it.each([
+  "queued",
+  "claimed",
+  "accepted",
+  "uncertain",
+  "rejected-before-start",
+])("registers a verified original in the %s delivery state", (delivery) => {
+  const f = original();
+  expect(
+    f.store.registerOriginal(f.sessionId, f.input(1n, delivery), f.inputId),
+  ).toBe(true);
+  expect(f.store.snapshot()[0]).toMatchObject({
+    original: true,
+    prompt: "First prompt",
+  });
 });
 it("evicts a settled native mapping before the retained-record bound rejects an original", () => {
   // Fill a store to the bound with one settled native mapping among live rows.
@@ -299,7 +334,7 @@ it("evicts a settled native mapping before the retained-record bound rejects an 
 });
 it("does not dedupe equal text under a different input identity", () => {
   const f = original("Same text");
-  f.store.registerOriginal(f.sessionId, f.input(1n));
+  f.store.registerOriginal(f.sessionId, f.input(1n), f.inputId);
   const other = create(ResourceSchema, {
     ...f.native,
     documentJson: encode({
@@ -314,10 +349,10 @@ it("does not dedupe equal text under a different input identity", () => {
 });
 it("keeps edits and removals ahead of stale receipts and never resurrects removed content", () => {
   const f = original();
-  f.store.registerOriginal(f.sessionId, f.input(1n));
+  f.store.registerOriginal(f.sessionId, f.input(1n), f.inputId);
   f.store.observe(f.sessionId, [f.input(3n, "queued", "Edited prompt")]);
   expect(f.store.snapshot()[0].prompt).toBe("Edited prompt");
-  f.store.registerOriginal(f.sessionId, f.input(1n));
+  f.store.registerOriginal(f.sessionId, f.input(1n), f.inputId);
   expect(f.store.snapshot()[0].prompt).toBe("Edited prompt");
   f.store.observe(f.sessionId, [f.input(4n, "removed", "Edited prompt")]);
   expect(f.store.snapshot()[0]).toMatchObject({
@@ -325,7 +360,11 @@ it("keeps edits and removals ahead of stale receipts and never resurrects remove
     prompt: "",
     attachmentCount: 0,
   });
-  f.store.registerOriginal(f.sessionId, f.input(2n, "queued", "Stale"));
+  f.store.registerOriginal(
+    f.sessionId,
+    f.input(2n, "queued", "Stale"),
+    f.inputId,
+  );
   f.store.observe(f.sessionId, [f.input(3n, "queued", "Stale")]);
   expect(f.store.snapshot()[0]).toMatchObject({
     phase: SubmissionPhase.Removed,
@@ -334,8 +373,10 @@ it("keeps edits and removals ahead of stale receipts and never resurrects remove
 });
 it("discards original projections when the store is disposed", () => {
   const f = original();
-  f.store.registerOriginal(f.sessionId, f.input(1n));
+  f.store.registerOriginal(f.sessionId, f.input(1n), f.inputId);
   f.store.dispose();
   expect(f.store.snapshot()).toHaveLength(0);
-  expect(f.store.registerOriginal(f.sessionId, f.input(1n))).toBe(false);
+  expect(f.store.registerOriginal(f.sessionId, f.input(1n), f.inputId)).toBe(
+    false,
+  );
 });

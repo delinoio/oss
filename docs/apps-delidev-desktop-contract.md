@@ -5124,9 +5124,10 @@ ordinary right-aligned sent user bubble with the first prompt and ordered image
 attachments and no Queued, Sending, Pending or You label or badge; only a
 Rejected or unconfirmed-read state keeps its existing notice. Register it only
 from the creation response's input when its session ID, sequence one and the
-session's `initial_execution.input_id` agree; foreign or malformed evidence is
-rejected. After reload or navigation, reconstruct it solely from the verified
-sequence-one queue row in the queued, claimed, accepted, uncertain or
+session's `initial_execution.input_id` agree; a missing or malformed initial
+input ID, foreign or malformed evidence is rejected, never treated as an
+unconstrained match. After reload or navigation, reconstruct it solely from the
+verified sequence-one queue row in the queued, claimed, accepted, uncertain or
 rejected-before-start delivery state, so the exceptional states keep their
 existing notice instead of dropping the first prompt; a removed input retains no
 content. Startup progress renders below the bubble from the

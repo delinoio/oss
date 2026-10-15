@@ -1849,11 +1849,7 @@ export function SessionView({
   );
   useEffect(() => {
     for (const input of originalQueueRows)
-      submissions.store.registerOriginal(
-        id,
-        input,
-        initialInputId || undefined,
-      );
+      submissions.store.registerOriginal(id, input, initialInputId);
     submissions.store.observe(id, [
       ...(messages.data?.resources ?? []),
       ...pending,

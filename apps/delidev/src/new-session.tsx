@@ -38,6 +38,7 @@ import {
   SystemQuery,
   SystemCapability,
   newRequestId,
+  isEntityId,
   type Resource,
   WorkerCapability,
   supportsResourceSchema,
@@ -325,11 +326,12 @@ export function NewSession({
         !submissionStore.registerOriginal(
           session.id,
           result.change?.input,
-          initialInputId || undefined,
+          initialInputId,
         )
       )
         console.warn("delidev.session_create.original_input_unverified", {
           registered: false,
+          initialInputIdValid: isEntityId(initialInputId),
         });
       endHistoryCycle.current();
       setPrompt("");

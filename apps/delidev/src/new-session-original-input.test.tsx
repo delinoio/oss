@@ -67,7 +67,7 @@ function Probe() {
     </output>
   );
 }
-function fixture(kind: NewSessionKind) {
+function fixture(kind: NewSessionKind, omitInitialInput = false) {
   const agent = resource(EntityKind.AGENT, "Remembered agent"),
     machine = resource(EntityKind.MACHINE, "Runner", { disabled: false });
   const selection = {
@@ -89,9 +89,11 @@ function fixture(kind: NewSessionKind) {
   };
   const createSession = vi.fn(async (_request: CreateSessionRequest) => {
     const inputId = newRequestId();
-    const session = resource(EntityKind.SESSION, "Accepted", {
-      initial_execution: { input_id: inputId },
-    });
+    const session = resource(
+      EntityKind.SESSION,
+      "Accepted",
+      omitInitialInput ? {} : { initial_execution: { input_id: inputId } },
+    );
     session.id = newRequestId();
     const input = create(ResourceSchema, {
       id: inputId,
@@ -205,3 +207,19 @@ it.each([
     expect(f.createSession).toHaveBeenCalledOnce();
   },
 );
+
+it("does not register an original input when the session omits its initial input identity", async () => {
+  const f = fixture(NewSessionKind.Session, true);
+  render(f.view);
+  await waitFor(() =>
+    expect(
+      scrollChoiceValue(screen.getByRole("combobox", { name: "Agent Worker" })),
+    ).toBe(f.agent.id),
+  );
+  const box = screen.getByRole("textbox", { name: "First message" });
+  fireEvent.change(box, { target: { value: "Created first prompt" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create session" }));
+  await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(""));
+  expect(f.createSession).toHaveBeenCalledOnce();
+  expect(JSON.parse(screen.getByTestId("rows").textContent!)).toEqual([]);
+});

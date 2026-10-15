@@ -249,15 +249,17 @@ export class SessionSubmissions {
   registerOriginal(
     sessionId: string,
     resource: Resource | undefined,
-    expectedInputId?: string,
+    expectedInputId: string,
   ) {
-    if (!this.alive || !resource) return false;
+    // The session's initial input identity is mandatory evidence; a missing or
+    // malformed one never degrades to accepting any sequence-one input.
+    if (!this.alive || !resource || !isEntityId(expectedInputId)) return false;
     const queue = queueEvidence(resource);
     if (
       !queue ||
       queue.sessionId !== sessionId ||
       document(resource).sequence !== 1 ||
-      (expectedInputId !== undefined && queue.id !== expectedInputId)
+      queue.id !== expectedInputId
     )
       return false;
     const requestId = `original:${queue.id}`,
