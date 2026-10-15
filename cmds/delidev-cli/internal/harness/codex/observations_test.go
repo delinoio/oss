@@ -168,7 +168,7 @@ func TestProjectMCPStartupRetainsIsolatedAndForeignBoundaries(t *testing.T) {
 			if err != nil || c.execution.active != turn {
 				t.Fatal("passive status changed the native turn", err)
 			}
-			if scenario == "ordinary" {
+			if scenario == "ordinary" || scenario == "unconfigured" {
 				if event.Kind != MetadataEvent || event.Metadata != MCPStartupObserved || !event.Correlated || event.Native != nil {
 					t.Fatal("project startup did not become passive metadata")
 				}

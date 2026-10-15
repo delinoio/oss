@@ -126,7 +126,7 @@ function fixture() {
     fireEvent.click(
       await currentSession().findByRole("option", { name: /retained/ }),
     );
-    expect(input).toHaveProperty("value", "$retained");
+    expect(input).toHaveProperty("value", "$retained ");
     return input;
   };
   const returnToOriginal = async () => {
@@ -156,7 +156,7 @@ it("retains exact skill invocation across retained App session tab switches", as
   const before = await f.select();
   const after = await f.returnToOriginal();
   expect(after).toBe(before);
-  expect(after).toHaveProperty("value", "$retained");
+  expect(after).toHaveProperty("value", "$retained ");
   fireEvent.click(
     currentSession().getByRole("button", { name: "Queue message" }),
   );
@@ -240,7 +240,7 @@ it("accepts a skill before fixed Enter sends the original General Chat draft onc
   fireEvent.change(input, { target: { value: "$ret", selectionStart: 4 } });
   await currentSession().findByRole("option", { name: /retained/ });
   fireEvent.keyDown(input, { key: "Enter" });
-  expect(input).toHaveProperty("value", "$retained");
+  expect(input).toHaveProperty("value", "$retained ");
   expect(f.enqueue).not.toHaveBeenCalled();
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
@@ -248,7 +248,7 @@ it("accepts a skill before fixed Enter sends the original General Chat draft onc
   expect(request.skills?.selections).toEqual([f.selection]);
   expect(
     JSON.parse(new TextDecoder().decode(request.documentJson)).prompt,
-  ).toBe("$retained");
+  ).toBe("$retained ");
   fireEvent.keyDown(input, { key: "Enter", repeat: true });
   expect(f.enqueue).toHaveBeenCalledOnce();
 }, 10_000);
@@ -279,4 +279,63 @@ it("keeps composition-confirmation Enter away from local and connection send own
   expect(f.enqueue).not.toHaveBeenCalled();
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
+}, 10_000);
+
+it("queues a pasted follow-up URL as canonical Markdown", async () => {
+  const f = fixture();
+  render(<App transport={f.transport} />);
+  fireEvent.click(
+    await sidebar().findByRole("button", {
+      name: /General Chat Skill original/,
+    }),
+  );
+  const input = await currentSession().findByRole("textbox", {
+    name: "Message",
+  });
+  const url = "https://example.com/follow-up";
+  fireEvent.paste(input, { clipboardData: { getData: () => url, files: [] } });
+  expect(input).toHaveProperty("value", url);
+  fireEvent.click(
+    currentSession().getByRole("button", { name: "Queue message" }),
+  );
+  await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
+  expect(
+    JSON.parse(
+      new TextDecoder().decode(f.enqueue.mock.calls[0]![0].documentJson),
+    ).prompt,
+  ).toBe(`[${url}](${url})`);
+}, 10_000);
+
+it("refits the session composer when a collapsed link is revealed", async () => {
+  const scrollHeight = vi
+    .spyOn(HTMLTextAreaElement.prototype, "scrollHeight", "get")
+    .mockImplementation(function (this: HTMLTextAreaElement) {
+      return this.value.length * 2;
+    });
+  try {
+    const f = fixture();
+    render(<App transport={f.transport} />);
+    fireEvent.click(
+      await sidebar().findByRole("button", {
+        name: /General Chat Skill original/,
+      }),
+    );
+    const input = (await currentSession().findByRole("textbox", {
+      name: "Message",
+    })) as HTMLTextAreaElement;
+    const url = "https://example.com/follow-up";
+    fireEvent.paste(input, {
+      clipboardData: { getData: () => url, files: [] },
+    });
+    expect(input.value).toBe(url);
+    expect(input.style.height).toBe(`${url.length * 2}px`);
+    input.setSelectionRange(3, 3);
+    fireEvent.select(input);
+    expect(input.value).toBe(`[${url}](${url})`);
+    await waitFor(() =>
+      expect(input.style.height).toBe(`${input.value.length * 2}px`),
+    );
+  } finally {
+    scrollHeight.mockRestore();
+  }
 }, 10_000);

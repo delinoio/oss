@@ -563,9 +563,9 @@ func TestOriginalImageObservationTransportBounds(t *testing.T) {
 	for _, mode := range []string{"normal", "image-observations"} {
 		t.Run(mode, func(t *testing.T) {
 			c, config, _ := startFixture(t, mode)
-			frame, queue := MaxFrame, 8<<20
+			frame, queue := MaxFrame, 32<<20
 			if mode == "image-observations" {
-				frame, queue = 16<<20, 32<<20
+				frame, queue = 16<<20, 64<<20
 			}
 			if c.frameLimit() != frame || c.eventLimit() != queue {
 				t.Fatal("transport frame and queue do not match the selected profile")

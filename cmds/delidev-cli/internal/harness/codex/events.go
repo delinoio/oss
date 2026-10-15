@@ -335,6 +335,11 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	if c.logger != nil && event.Metadata == RemoteControlDisabled {
 		c.logger.InfoContext(ctx, "Codex passive remote control status observed", "owner_id", c.ownerID, "status", event.remoteControlStatus, "policy", RemoteControlDisabled)
 	}
+	if c.logger != nil && event.Kind == NativeExtensionEvent {
+		// Unsupported observations retain only a closed classification in logs;
+		// native method names and payloads remain inside the private adapter.
+		c.logger.WarnContext(ctx, "Codex native extension retained", "owner_id", c.ownerID, "stage", event.ExtensionStage)
+	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil
 }

@@ -17,6 +17,15 @@ use crate::{
 const OWNER: &[u8] = b"pnport cache\n1\n";
 pub const FORMAT: &str = "v1";
 
+pub(crate) fn lock_contended(error: &std::io::Error) -> bool {
+    // Windows ERROR_LOCK_VIOLATION is not guaranteed to map to WouldBlock.
+    // fs2 supplies its native contention code on every supported platform.
+    error.kind() == std::io::ErrorKind::WouldBlock
+        || error
+            .raw_os_error()
+            .is_some_and(|code| Some(code) == fs2::lock_contended_error().raw_os_error())
+}
+
 #[derive(Clone)]
 pub struct Cache {
     pub root: PathBuf,
@@ -73,28 +82,35 @@ pub fn default_path() -> Result<PathBuf> {
 }
 
 pub fn private_dir(path: &Path) -> Result<()> {
-    if !path.exists() {
-        let mut builder = fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            builder.mode(0o700);
-        }
-        builder.create(path).map_err(|_| cache_error())?;
-    }
-    let meta = fs::symlink_metadata(path).map_err(|_| cache_error())?;
-    if !meta.is_dir() || meta.file_type().is_symlink() {
-        return Err(cache_error());
-    }
-    #[cfg(unix)]
+    #[cfg(windows)]
     {
-        use std::os::unix::fs::MetadataExt;
-        if meta.uid() != unsafe { libc::geteuid() } || meta.mode() & 0o077 != 0 {
+        crate::windows::private_directory(path).map_err(|_| cache_error())
+    }
+    #[cfg(not(windows))]
+    {
+        if !path.exists() {
+            let mut builder = fs::DirBuilder::new();
+            builder.recursive(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            builder.create(path).map_err(|_| cache_error())?;
+        }
+        let meta = fs::symlink_metadata(path).map_err(|_| cache_error())?;
+        if !meta.is_dir() || meta.file_type().is_symlink() {
             return Err(cache_error());
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if meta.uid() != unsafe { libc::geteuid() } || meta.mode() & 0o077 != 0 {
+                return Err(cache_error());
+            }
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 fn private_file(path: &Path) -> Result<File> {
@@ -107,11 +123,18 @@ fn private_file(path: &Path) -> Result<File> {
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
+    }
     let file = options.open(path).map_err(|_| cache_error())?;
     let meta = file.metadata().map_err(|_| cache_error())?;
     if !meta.is_file() {
         return Err(cache_error());
     }
+    #[cfg(windows)]
+    crate::windows::validate_private(&file, false).map_err(|_| cache_error())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -129,7 +152,7 @@ impl Cache {
         // Darwin F_GETPATH reports the resolved backing path. Keep the cache
         // root in that same spelling when --cache-dir has a symlinked ancestor,
         // so live descriptor checks and View::translate agree on managed data.
-        let root = fs::canonicalize(root).map_err(|_| cache_error())?;
+        let root = crate::graph::normalize(&fs::canonicalize(root).map_err(|_| cache_error())?);
         let lock = private_file(&root.join(".lock"))?;
         lock.lock_exclusive().map_err(|_| cache_error())?;
         let owner = root.join(".pnport-owner");
@@ -180,7 +203,7 @@ impl Cache {
             wait()?;
             match file.try_lock_exclusive() {
                 Ok(()) => return Ok(file),
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                Err(error) if lock_contended(&error) => {
                     if !contended {
                         tracing::debug!(
                             action = "cache_lock_wait",
@@ -241,11 +264,23 @@ impl Cache {
                 .write_all(&bytes)
                 .and_then(|_| output.sync_all())
                 .map_err(|_| cache_error())?;
+            // Windows directory publication cannot retain handles to staging
+            // descendants. Flush and close state writers before the rename;
+            // the global publication lock still serializes every materializer.
+            drop(output);
+            drop(owner);
             private_file(&stage.path().join("lease"))?;
             let publication = (|| {
                 readonly_tree(&content, wait)?;
                 wait()?;
-                fs::rename(stage.path(), &destination).map_err(|_| cache_error())?;
+                fs::rename(stage.path(), &destination).map_err(|error| {
+                    tracing::debug!(
+                        action = "cache_publication_failed",
+                        native_code = error.raw_os_error(),
+                        "Could not publish the staged cache entry"
+                    );
+                    cache_error()
+                })?;
                 #[cfg(unix)]
                 File::open(self.root.join(FORMAT))
                     .and_then(|f| f.sync_all())
@@ -350,7 +385,7 @@ impl Cache {
                 }
                 let lease = private_file(&entry.path().join("lease"))?;
                 let state = match lease.try_lock_exclusive() {
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => State::Active,
+                    Err(error) if lock_contended(&error) => State::Active,
                     Err(_) => State::Failed,
                     Ok(())
                         if (matches!(operation, Operation::Clean)

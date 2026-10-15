@@ -1,7 +1,6 @@
 package claude
 
 import (
-	"bytes"
 	"encoding/json"
 	"slices"
 
@@ -39,11 +38,10 @@ type initializeResult struct {
 }
 
 type nativeCommand struct {
-	Name         string          `json:"name"`
-	Description  string          `json:"description"`
-	ArgumentHint string          `json:"argumentHint"`
-	Aliases      []string        `json:"aliases,omitempty"`
-	Builtin      json.RawMessage `json:"builtin,omitempty"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	ArgumentHint string   `json:"argumentHint"`
+	Aliases      []string `json:"aliases,omitempty"`
 }
 
 type probeAccount struct {
@@ -98,6 +96,10 @@ func validateInitializeProfile(raw []byte, permission, apiKeySource string) erro
 }
 
 func validateInitializeMode(raw []byte, permission, apiKeySource string, subscription bool) error {
+	raw, err := projectInitializeDescriptors(raw)
+	if err != nil {
+		return err
+	}
 	var result initializeResult
 	tokenSource := "none"
 	if apiKeySource != "" {
@@ -155,6 +157,10 @@ const managedTokenSource = "CLAUDE_CODE_OAUTH_TOKEN"
 // profile. Token presence alone is never readiness: the native process must
 // report that source, no API-key source and no profile identity metadata.
 func validateInitializeManagedToken(raw []byte, permission string) error {
+	raw, err := projectInitializeDescriptors(raw)
+	if err != nil {
+		return err
+	}
 	var result initializeResult
 	if !requireExactNativeKeys(raw, &result) || domain.Decode(raw, &result) != nil || result.Commands == nil ||
 		result.Account == nil || result.Account.APIProvider != "firstParty" ||
@@ -228,9 +234,6 @@ func validateNativeCommands(commands []nativeCommand) error {
 	}
 	names := map[string]bool{}
 	for _, command := range commands {
-		if len(command.Builtin) != 0 && !bytes.Equal(bytes.TrimSpace(command.Builtin), []byte("true")) && !bytes.Equal(bytes.TrimSpace(command.Builtin), []byte("false")) {
-			return incompatible()
-		}
 		if domain.Text(command.Name, "native command", 128, true) != nil || domain.Text(command.Description, "native command description", 16<<10, true) != nil || domain.Text(command.ArgumentHint, "native command argument hint", 2048, false) != nil || len(command.Aliases) > 16 {
 			return incompatible()
 		}

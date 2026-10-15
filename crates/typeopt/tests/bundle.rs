@@ -3886,6 +3886,31 @@ export { reflected };"#,
 }
 
 #[test]
+fn observable_function_source_computed_pattern_key() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const {["toString"]:readSource}=reflected;
+console.log(describe(make(3)),describe(make(7)));
+console.log(readSource.call(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_dynamic_pattern_key() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const key=["to","String"].join("");
+const {[key]:readSource}=reflected;
+console.log(describe(make(3)),describe(make(7)));
+console.log(readSource.call(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
 fn observable_function_source_string_coercion() {
     check_observable_function_source(
         r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
@@ -3971,6 +3996,88 @@ export { reflected };"#;
         report["size"]["minified"].is_null(),
         "{report:#}; plain={plain:#}"
     );
+}
+
+/// `settings.js` keeps its object local, so renaming its properties stays a
+/// real edit even when every chunk is a public entry.
+const LOCAL_PROPERTIES: [(&str, &str); 2] = [
+    (
+        "index.js",
+        r#"import{describeSettings as describe}from"./settings.js";
+console.log(describe(3), describe(7));
+"#,
+    ),
+    (
+        "settings.js",
+        r#"function describeSettings(count) {
+  const local = { verticalSpacing: count, horizontalSpacing: count * 2, highlightColour: count > 4 ? "red" : "blue" };
+  const description = local.verticalSpacing + ":" + local.horizontalSpacing + ":" + local.highlightColour;
+  return description;
+}
+export { describeSettings };
+"#,
+    ),
+];
+
+/// Builds a bundle whose `settings.js` has a real optimization edit and whose
+/// `index.html` is `html`.
+fn html_attribute_bundle(html: &str) -> tempfile::TempDir {
+    bundle(&[
+        ("index.html", html),
+        LOCAL_PROPERTIES[0],
+        LOCAL_PROPERTIES[1],
+    ])
+}
+
+/// An executable attribute with a character reference the parser cannot decode
+/// may read callable source, so `--minify` must publish the unminified edit.
+#[test]
+fn observable_function_source_undecodable_executable_attribute() {
+    for attributes in [
+        r#"onclick="import&Tab;('./settings.js')""#,
+        r#"onclick="Function.prototype&lbrack;'toString'&rbrack;.call(Object)""#,
+        r#"onclick="import&Tab;('./settings.js')" title="plain""#,
+        r#"href="javascript:import&Tab;('./settings.js')""#,
+    ] {
+        let html = if attributes.starts_with("href") {
+            format!("<a {attributes}></a>")
+        } else {
+            format!("<button {attributes}></button>")
+        };
+        let temp = html_attribute_bundle(&html);
+        let plain = optimize(temp.path(), &[]);
+        same_behavior(temp.path());
+        assert!(
+            plain["renamed_properties"].as_u64().unwrap() > 0,
+            "{html}: {plain:#}"
+        );
+        let plain_settings = out(temp.path(), "settings.js");
+        assert_ne!(plain_settings, LOCAL_PROPERTIES[1].1, "{html}");
+        fs::remove_dir_all(temp.path().join("out")).unwrap();
+        let report = optimize(temp.path(), &["--minify"]);
+        same_behavior(temp.path());
+        assert_eq!(out(temp.path(), "settings.js"), plain_settings, "{html}");
+        assert!(report["size"]["minified"].is_null(), "{html}: {report:#}");
+    }
+}
+
+/// The same unknown reference in an attribute that cannot run code leaves the
+/// edited chunk eligible for minification.
+#[test]
+fn observable_function_source_undecodable_non_executable_attribute_still_minifies() {
+    for attributes in [
+        r#"title="&Tab;&lbrack;'toString'&rbrack;""#,
+        r#"data-x="import&Tab;('./settings.js')""#,
+    ] {
+        let html = format!("<p {attributes}></p>");
+        let temp = html_attribute_bundle(&html);
+        let report = optimize(temp.path(), &["--minify"]);
+        same_behavior(temp.path());
+        assert!(
+            report["size"]["minified"].as_u64().unwrap() > 0,
+            "{attributes}: {report:#}"
+        );
+    }
 }
 
 #[test]
@@ -4401,5 +4508,342 @@ fn keeps_behavior_of_class_member_edge_cases() {
     for code in cases {
         let code = format!("{code}export{{}};");
         run(&[("index.js", &code)]);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Closed classes: esbuild and Rolldown `keepNames` static blocks
+// ---------------------------------------------------------------------------
+
+/// The local `keepNames` helper of esbuild: `Object.defineProperty` is
+/// aliased and `__name` is a two-parameter arrow function.
+const KEEP_NAMES_HELPER: &str =
+    "var e=Object.defineProperty,t=(t,n)=>e(t,`name`,{value:n,configurable:!0});";
+
+/// `static{t(this,`IshikawaDB`)}` does not let the class escape, so the
+/// members of the class are renamed and `C.name` keeps its value.
+#[test]
+fn renames_members_of_classes_with_a_keep_names_block() {
+    let code = format!(
+        "{KEEP_NAMES_HELPER}var \
+         g=class{{constructor(){{this.stackOfNodes=[]}}static{{t(this,\
+         `IshikawaDB`)}}pushNode(v){{this.stackOfNodes.push(v);return \
+         this.stackOfNodes.length}}}};const d=new g;console.log(g.name,d.pushNode(1));export{{}};"
+    );
+    let (temp, _) = run(&[("index.js", &code)]);
+    let index = out(temp.path(), "index.js");
+    for name in ["stackOfNodes", "pushNode"] {
+        assert!(!index.contains(name), "{name} kept:\n{index}");
+    }
+    assert!(index.contains("IshikawaDB"), "{index}");
+}
+
+/// The helper is imported from another chunk under another name.
+#[test]
+fn renames_members_of_classes_with_an_imported_keep_names_helper() {
+    let helper = format!("{KEEP_NAMES_HELPER}export{{t as n}};");
+    let (temp, _) = run(&[
+        ("helper.js", &helper),
+        (
+            "index.js",
+            r#"import{n as t}from"./helper.js";var g=class{constructor(){this.stackOfNodes=[]}static{t(this,`IshikawaDB`)}pushNode(v){this.stackOfNodes.push(v);return this.stackOfNodes.length}};const d=new g;console.log(g.name,d.pushNode(1));"#,
+        ),
+    ]);
+    let index = out(temp.path(), "index.js");
+    for name in ["stackOfNodes", "pushNode"] {
+        assert!(!index.contains(name), "{name} kept:\n{index}");
+    }
+    assert!(index.contains("IshikawaDB"), "{index}");
+}
+
+/// Other spellings of the exact helper body are accepted too.
+#[test]
+fn accepts_equivalent_keep_names_helper_spellings() {
+    let helpers = [
+        // A function declaration with a string key and `true`.
+        r#"function t(a,b){return Object.defineProperty(a,"name",{value:b,configurable:true})}"#,
+        // A function expression with an expression statement and swapped
+        // descriptor properties.
+        r#"const t=function(a,b){Object.defineProperty(a,"name",{configurable:true,value:b})};"#,
+        // An arrow function with a block body and a parenthesized call.
+        r#"const t=(a,b)=>{return(Object.defineProperty)(a,"name",{value:b,configurable:!0})};"#,
+        // An alias of `Object.defineProperty` that is declared once.
+        r#"const d=Object.defineProperty;const t=(a,b)=>d(a,"name",{"value":b,"configurable":true});"#,
+    ];
+    for helper in helpers {
+        let code = format!(
+            r#"{helper}class G{{constructor(){{this.longField=1}}readField(){{return this.longField}}static{{t(this,"Named")}}}}console.log(G.name,new G().readField());export{{}};"#
+        );
+        let (temp, _) = run(&[("index.js", &code)]);
+        let index = out(temp.path(), "index.js");
+        for name in ["longField", "readField"] {
+            assert!(!index.contains(name), "{name} kept for {helper}:\n{index}");
+        }
+    }
+}
+
+/// A base class and its subclass can both carry the block.
+#[test]
+fn renames_members_of_a_base_and_a_subclass_with_keep_names_blocks() {
+    let code = format!(
+        "{KEEP_NAMES_HELPER}var \
+         b=class{{constructor(){{this.baseField=1}}static{{t(this,`Base`)}}baseMethod(){{return \
+         this.baseField}}}};var s=class extends \
+         b{{constructor(){{super();this.derivedField=2}}static{{t(this,\
+         `Derived`)}}derivedMethod(){{return \
+         this.baseMethod()+this.derivedField}}}};console.log(b.name,s.name,new \
+         s().derivedMethod());export{{}};"
+    );
+    let (temp, _) = run(&[("index.js", &code)]);
+    let index = out(temp.path(), "index.js");
+    for name in ["baseField", "baseMethod", "derivedField", "derivedMethod"] {
+        assert!(!index.contains(name), "{name} kept:\n{index}");
+    }
+}
+
+/// Every fixture keeps the names of a class whose static block is not the
+/// exact `keepNames` shape, and runs the same before and after.
+#[test]
+fn keeps_members_of_classes_with_other_static_blocks() {
+    let good = r#"const t=(a,b)=>Object.defineProperty(a,"name",{value:b,configurable:true});"#;
+    let cases = [
+        // The helper leaks its first argument.
+        (
+            "reason=HelperShape",
+            r#"const t=(a,b)=>{globalThis.leaked=a;return Object.defineProperty(a,"name",{value:b,configurable:true})};class G{constructor(){this.secretField=1}static{t(this,"G")}}new G;console.log(new globalThis.leaked().secretField);"#,
+        ),
+        // The helper is reassigned.
+        (
+            "reason=HelperWritten",
+            r#"let t=(a,b)=>Object.defineProperty(a,"name",{value:b,configurable:true});t=a=>{globalThis.leaked=a};class G{constructor(){this.secretField=1}static{t(this,"G")}}new G;console.log(new globalThis.leaked().secretField);"#,
+        ),
+        // The helper is declared twice.
+        (
+            "reason=HelperUnresolved",
+            r#"var t=(a,b)=>Object.defineProperty(a,"name",{value:b,configurable:true});var t=a=>{globalThis.leaked=a};class G{constructor(){this.secretField=1}static{t(this,"G")}}new G;console.log(new globalThis.leaked().secretField);"#,
+        ),
+        // `Object` is a module-local binding.
+        (
+            "reason=ShadowedObject",
+            r#"const Object={defineProperty(o){globalThis.leaked=o}};const t=(a,b)=>Object.defineProperty(a,"name",{value:b,configurable:true});class G{constructor(){this.secretField=1}static{t(this,"G")}}new G;console.log(new globalThis.leaked().secretField);"#,
+        ),
+        // The alias of `defineProperty` is reassigned.
+        (
+            "reason=DefinePropertyAlias",
+            r#"let d=Object.defineProperty;d=o=>{globalThis.leaked=o};const t=(a,b)=>d(a,"name",{value:b,configurable:true});class G{constructor(){this.secretField=1}static{t(this,"G")}}new G;console.log(new globalThis.leaked().secretField);"#,
+        ),
+        // The alias is not `Object.defineProperty`.
+        (
+            "reason=DefinePropertyAlias",
+            r#"const d=o=>{globalThis.leaked=o};const t=(a,b)=>d(a,"name",{value:b,configurable:true});class G{constructor(){this.secretField=1}static{t(this,"G")}}new G;console.log(new globalThis.leaked().secretField);"#,
+        ),
+        // The block runs a second statement with `this`.
+        (
+            "reason=NotSingleCall",
+            r#"class G{constructor(){this.secretField=1}static{t(this,"G");globalThis.leaked=this}}new G;console.log(new globalThis.leaked().secretField);"#,
+        ),
+        // The name is not a literal.
+        (
+            "reason=NonLiteralName",
+            r#"globalThis.nameOf="N";class G{constructor(){this.secretField=1}static{t(this,globalThis.nameOf)}}console.log(G.name,new G().secretField);"#,
+        ),
+        // The name is a template with a substitution.
+        (
+            "reason=NonLiteralName",
+            r#"class G{constructor(){this.secretField=1}static{t(this,`N${1+1}`)}}console.log(G.name,new G().secretField);"#,
+        ),
+        // The first argument is derived from `this`.
+        (
+            "reason=ReceiverArgument",
+            r#"class G{constructor(){this.secretField=1}static{t(this.constructor,"N")}}console.log(G.name,new G().secretField);"#,
+        ),
+        // The helper defines `length`.
+        (
+            "reason=HelperShape",
+            r#"const t=(a,b)=>Object.defineProperty(a,"length",{value:b,configurable:true});class G{constructor(){this.secretField=1}static{t(this,"N")}}console.log(G.length,new G().secretField);"#,
+        ),
+        // The descriptor has a third property.
+        (
+            "reason=HelperShape",
+            r#"const t=(a,b)=>Object.defineProperty(a,"name",{value:b,configurable:true,writable:true});class G{constructor(){this.secretField=1}static{t(this,"N")}}console.log(G.name,new G().secretField);"#,
+        ),
+        // The helper reads `arguments`.
+        (
+            "reason=HelperShape",
+            r#"const t=function(a,b){return Object.defineProperty(a,"name",{value:arguments[1],configurable:true})};class G{constructor(){this.secretField=1}static{t(this,"N")}}console.log(G.name,new G().secretField);"#,
+        ),
+        // The helper is async.
+        (
+            "reason=HelperShape",
+            r#"const t=async(a,b)=>Object.defineProperty(a,"name",{value:b,configurable:true});class G{constructor(){this.secretField=1}static{t(this,"N")}}console.log(new G().secretField);"#,
+        ),
+        // The helper has a default parameter.
+        (
+            "reason=HelperShape",
+            r#"const t=(a,b="x")=>Object.defineProperty(a,"name",{value:b,configurable:true});class G{constructor(){this.secretField=1}static{t(this,"N")}}console.log(G.name,new G().secretField);"#,
+        ),
+        // The helper installs a getter instead of a value.
+        (
+            "reason=HelperShape",
+            r#"const t=(a,b)=>Object.defineProperty(a,"name",{get:()=>b,configurable:true});class G{constructor(){this.secretField=1}static{t(this,"N")}}console.log(G.name,new G().secretField);"#,
+        ),
+        // The helper does not set `configurable`.
+        (
+            "reason=HelperShape",
+            r#"const t=(a,b)=>Object.defineProperty(a,"name",{value:b,enumerable:true});class G{constructor(){this.secretField=1}static{t(this,"N")}}console.log(G.name,new G().secretField);"#,
+        ),
+        // A second static block uses `this`.
+        (
+            "reason=NotSingleCall",
+            r#"class G{constructor(){this.secretField=1}static{t(this,"Uid")}static{this.count=0}}console.log(G.name,G.count,new G().secretField);"#,
+        ),
+        // A static method uses `this`.
+        (
+            "\"static-receiver\": 1",
+            r#"class G{constructor(){this.secretField=1}static{t(this,"G")}static make(){return new this}}console.log(G.name,G.make().secretField);"#,
+        ),
+    ];
+    for (needle, code) in cases {
+        let code =
+            if code.contains("const t=") || code.contains("let t=") || code.contains("var t=") {
+                format!("{code}export{{}};")
+            } else {
+                format!("{good}{code}export{{}};")
+            };
+        let temp = bundle(&[("index.js", &code)]);
+        let output = run_typeopt(temp.path(), &[]);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        same_behavior(temp.path());
+        let index = out(temp.path(), "index.js");
+        assert!(
+            index.contains("secretField"),
+            "renamed for {code}:\n{index}"
+        );
+        let log = strip_ansi(&String::from_utf8_lossy(&output.stderr));
+        assert!(log.contains(needle), "expected {needle} for {code}:\n{log}");
+    }
+}
+
+/// A helper in a chunk that no pass may trust (it calls `eval`) is not
+/// proven.
+#[test]
+fn keeps_members_when_the_keep_names_helper_is_in_a_boundary_chunk() {
+    let (temp, _) = run(&[
+        (
+            "helper.js",
+            r#"eval("0");const t=(a,b)=>Object.defineProperty(a,"name",{value:b,configurable:true});export{t};"#,
+        ),
+        (
+            "index.js",
+            r#"import{t}from"./helper.js";class G{constructor(){this.secretField=1}static{t(this,"G")}}console.log(G.name,new G().secretField);"#,
+        ),
+    ]);
+    let index = out(temp.path(), "index.js");
+    assert!(index.contains("secretField"), "{index}");
+}
+
+/// The debug log counts the accepted blocks and names the reason of a
+/// rejected one.
+#[test]
+fn logs_keep_names_static_block_decisions() {
+    let code = format!(
+        r#"{KEEP_NAMES_HELPER}class SecretAlpha{{constructor(){{this.firstField=1}}static{{t(this,`SecretNameAlpha`)}}}}class SecretBeta{{constructor(){{this.secondField=1}}static{{t(this,`SecretNameBeta`)}}static{{this.count=0}}}}console.log(SecretAlpha.name,SecretBeta.name,new SecretAlpha().firstField,new SecretBeta().secondField);export{{}};"#
+    );
+    let temp = bundle(&[("index.js", &code)]);
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(output.status.success());
+    let log = strip_ansi(&String::from_utf8_lossy(&output.stderr));
+    assert!(log.contains("keepNames static block accepted"), "{log}");
+    assert!(
+        log.contains("keepNames-shaped static block rejected"),
+        "{log}"
+    );
+    assert!(log.contains("reason=NotSingleCall"), "{log}");
+    assert!(log.contains("name_blocks=2"), "{log}");
+    // Source identifiers and string literals never reach the log.
+    for secret in [
+        "SecretAlpha",
+        "SecretBeta",
+        "SecretNameAlpha",
+        "SecretNameBeta",
+    ] {
+        assert!(!log.contains(secret), "{secret} logged:\n{log}");
+    }
+}
+
+/// Every way application code can replace `Object` or `Object.defineProperty`
+/// keeps the names, for the aliased helper and for the inlined direct call,
+/// and the program behaves the same before and after.
+#[test]
+fn keeps_members_when_define_property_may_be_replaced() {
+    let helper = r#"const t=(a,b)=>Object.defineProperty(a,"name",{value:b,configurable:true});"#;
+    let direct = r#"class G{constructor(){this.secretField=1}static{Object.defineProperty(this,"name",{value:"G",configurable:true})}}"#;
+    let aliased = r#"const e=Object.defineProperty,t=(a,b)=>e(a,"name",{value:b,configurable:true});class G{constructor(){this.secretField=1}static{t(this,"G")}}"#;
+    let wrapper = r#"{const o=Object.defineProperty;Object.defineProperty=function(a,...r){globalThis.leaked=a;return o.call(this,a,...r)}}"#;
+    let reflect = r#"Reflect.set(Object,"defineProperty",function(a){globalThis.leaked=a})"#;
+    let global = r#"globalThis.Object={defineProperty(a){globalThis.leaked=a}}"#;
+    let define =
+        r#"Object.defineProperty(Object,"defineProperty",{value(a){globalThis.leaked=a}})"#;
+    let assign = r#"Object.assign(Object,{defineProperty(a){globalThis.leaked=a}})"#;
+    let tail = "new G;console.log(new globalThis.leaked().secretField);export{};";
+    for patch in [wrapper, reflect, global, define, assign] {
+        for class in [direct, aliased] {
+            let class = if class == aliased {
+                class.to_owned()
+            } else {
+                format!("{helper}{class}")
+            };
+            let code = format!("{patch};{class}{tail}");
+            let temp = bundle(&[("index.js", &code)]);
+            let output = run_typeopt(temp.path(), &[]);
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            same_behavior(temp.path());
+            let index = out(temp.path(), "index.js");
+            assert!(
+                index.contains("secretField"),
+                "renamed for {code}:\n{index}"
+            );
+            let log = strip_ansi(&String::from_utf8_lossy(&output.stderr));
+            assert!(
+                log.contains("reason=DefinePropertyPatched"),
+                "expected a patch rejection for {code}:\n{log}"
+            );
+        }
+    }
+}
+
+/// Call inlining can replace the helper call with its body before the
+/// property passes run; that form is accepted with the same checks.
+#[test]
+fn handles_keep_names_blocks_after_helper_inlining() {
+    let (temp, _) = run(&[(
+        "index.js",
+        r#"class G{constructor(){this.longField=1}readField(){return this.longField}static{Object.defineProperty(this,`name`,{value:"Direct",configurable:!0})}}console.log(G.name,new G().readField());export{};"#,
+    )]);
+    let index = out(temp.path(), "index.js");
+    for name in ["longField", "readField"] {
+        assert!(!index.contains(name), "{name} kept:\n{index}");
+    }
+    // A shadowed `Object` or a non-literal value keeps the names.
+    for code in [
+        r#"const Object={defineProperty(o){globalThis.leaked=o}};class G{constructor(){this.secretField=1}static{Object.defineProperty(this,"name",{value:"G",configurable:true})}}new G;console.log(new globalThis.leaked().secretField);"#,
+        r#"globalThis.nameOf="N";class G{constructor(){this.secretField=1}static{Object.defineProperty(this,"name",{value:globalThis.nameOf,configurable:true})}}console.log(G.name,new G().secretField);"#,
+        r#"class G{constructor(){this.secretField=1}static{Object.defineProperty(this,"length",{value:"N",configurable:true})}}console.log(G.length,new G().secretField);"#,
+    ] {
+        let code = format!("{code}export{{}};");
+        let (temp, _) = run(&[("index.js", &code)]);
+        let index = out(temp.path(), "index.js");
+        assert!(
+            index.contains("secretField"),
+            "renamed for {code}:\n{index}"
+        );
     }
 }

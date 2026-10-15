@@ -37,6 +37,18 @@ Shared Worker/server batch validation requires a nonempty report of at most 64 K
 
 ## Codex child configuration
 
+Codex can emit child thread status before its original `thread/started`
+notification and completed spawn tool. Validate these early notifications and
+retain at most 4,096 unresolved native thread identities as passive metadata.
+They cannot allocate product child ownership, settle a child, or change the root
+turn. Independent descendant inventory must prove every retained identity before
+completion; unknown ancestry or malformed statuses fail validation. Canonical
+spawn or descendant history still owns published child identity and lifecycle.
+
+Each child has its own valid native session identity. It need not equal the
+root's native session identity. Original parent ancestry, provider and executable
+version still bind child notifications and descendant inventory to the root.
+
 The feature adds independent `SystemCapability.CODEX_SUBAGENT_CONFIGURATION_V1` 22 and `WorkerCapability.CODEX_SUBAGENT_CONFIGURATION_V1` 11, reserved by that original issue before activation in the approved integrated PR. A server capability does not establish native or account acceptance. Unsupported original Workers receive explicit update guidance before the execution claim is committed.
 
 Map only `agents.default_subagent_model`, `agents.default_subagent_reasoning_effort` and numeric `agents.max_concurrent_threads_per_session` in the pinned `thread/start`, `thread/resume` and same-account Fork configuration. Empty model/effort and zero concurrency omit their native keys. Concurrency retains the existing uint32 representation without a product maximum of 64; explicit efforts are bounded exact strings whose support is decided by native execution. Approval-review model remains unsupported. Root model/effort observations retain their independent validation.

@@ -308,7 +308,7 @@ Require a supported current session envelope, exact session/execution/input/prep
 
 The feature permits only the exact server `InitialExecutionPending` code, message and guidance to coexist with Preparing workspace or Waiting to start. Require blocked/not-started first-generation state, no prior/current/active execution or startup record, sequence/count one, complete current original queued-input proof without a claim/native request, and valid pending/ready preparation. Changed or extended problems retain failure precedence. Hide its compact blocked notice only while this valid projection is visible; preserve its original reason/guidance in Info. This exception grants no dispatch, retry or account/native readiness authority.
 
-Pause/Stop, archive, problems, budget blocks, recovery, startup failure, uncertainty, original approval/user-input waits and unconfirmed responses suppress generic activity. Failed, malformed, disconnected or stale observations keep original notices and controls. Incomplete/unread transcript or queue coverage never proves absence of a response or uncertainty; do not enumerate unread history to show progress. Current message evidence extends the existing bounded page projection with owner/input/sequence/kind metadata only, retaining no text, arguments, output or raw claim tokens. Preserve the three payload pages, bounded live tail, original tokens, revisions, removals and source-page focus protection. A per-original-claim/turn suppression latch survives removal, payload eviction and later empty revisions after response/content uncertainty was observed. Exact new execution ownership resets evidence; late older revisions cannot reanimate a stale phase.
+Pause/Stop, archive, problems, budget blocks, recovery, startup failure, uncertainty, original approval/user-input waits and unconfirmed responses suppress generic activity. Failed, malformed, disconnected or stale observations keep original notices and controls. Incomplete/unread transcript or queue coverage never proves absence of a response or uncertainty; do not enumerate unread history to show progress. Current message evidence extends the existing bounded page projection with owner/input/sequence/kind metadata only, retaining no text, arguments, output or raw claim tokens. Preserve the bounded payload window (twenty transcript pages), bounded live tail, original tokens, revisions, removals and source-page focus protection. A per-original-claim/turn suppression latch survives removal, payload eviction and later empty revisions after response/content uncertainty was observed. Exact new execution ownership resets evidence; late older revisions cannot reanimate a stale phase.
 
 Use semantic colors, a decorative spinner and one stable polite status announcement. Repeated successful reads keep the same label/node; locale changes update that node without remounting controllers. Reduced motion disables animation; narrow and 200% reflow use wrapping within the existing region. Rendering/navigation/reconnect/polling never start, resume, retry, dispatch or duplicate execution. No RPC, allocation, persistence, migration, native bridge, dependency, feature flag, percentages, ETA or clone-specific progress is added. Fixture/type-check evidence and skipped owner-assigned native/platform acceptance remain separate.
 
@@ -960,7 +960,7 @@ in the current validated chain, so an empty first page that continues to a
 terminal page whose workers are all excluded by the project shows the guidance;
 only the first page can enable the creation entry. Retain each page's raw count
 as a bounded scalar in the chain's per-page metadata (not in the evictable
-three-page payload window), so an excluded worker on an evicted page still
+payload window), so an excluded worker on an evicted page still
 counts. Initial, Reload, Refresh, Restore, reset and scope changes replace the
 scalars together with the pages, and a failed refresh keeps the previous
 consistent chain.
@@ -1106,10 +1106,41 @@ explicit retry/reload and atomic accepted-range refresh. Domain adapters own
 request construction, complete response validation, safe display projection and
 fresh mutation authority. Projection chains retain identity/revision/order only
 with domain-approved display metadata. Full payloads stay in a separate window
-of at most three reached pages; measured placeholders restore prior pages using
-their accepted tokens and reject changed range identity/order. A focused payload
-page remains protected until focus leaves. Suspension drops full payloads and
-fences late ignored-abort results while retaining permitted domain metadata.
+of at most three reached pages by default; the resident-page bound is a
+configurable chain option (`residentPages`, default three) applied identically
+to append, restore, refresh-window fallback and rehydration, so nearest-page
+selection and focused-page protection hold within whatever bound is set. A
+configured bound is accepted only when its floor is at least the minimum of two
+pages (`MIN_RESIDENT_PAGES`), because the page being read and a different
+protected page must both stay resident. Unset input silently uses the default;
+a non-finite value or one below the minimum (including one and fractions that
+floor to one) is rejected with a typed `ResidentPageRejection` reason, logged as
+`delidev.pagination.resident_pages_rejected`, and the default of three applies.
+Direct chain construction, `usePaginationChain` and conversation retention all
+resolve the bound through the same function.
+Measured placeholders restore prior pages using their accepted tokens and
+reject changed range identity/order. A focused payload page remains protected
+until focus leaves. Suspension drops full payloads and fences late
+ignored-abort results while retaining permitted domain metadata.
+
+The mounted session MESSAGE (transcript) chain alone opts into a larger window
+and payload retention: `residentPages` is 20 (page size stays 50, so at most
+1,000 historical resource records, not a byte budget) and
+`retainPayloadOnSuspend` is true. Loading pages 1 through 20 leaves every body
+resident with no capacity-caused Restore placeholder; page 21 evicts only
+enough unprotected pages to hold 20, and evicted pages keep metadata, geometry
+and exact-token restore. Switching to another session or workspace tab pauses
+reads and fences late responses while keeping the accepted bodies in memory; no
+background read occurs while inactive. A pending or failed return refresh keeps
+the resident bodies visible with the existing stale/error notices and Reload,
+and recovery replaces them atomically. Session-owner closure, connection
+release or replacement erases the payloads and rejects late publication.
+Retention is memory-only: no disk cache, time-to-live or cross-connection
+sharing, and each mounted session keeps its own bounded window. QUEUE,
+INTERACTION and every other list keep three pages and suspension disposal. The
+live-stream limits, mutation admission and explicit Reload semantics are
+unchanged, and retained bodies are display data, never fresh mutation
+authority.
 
 The shared continuation presentation observes the actual scroll root within
 96px, fills underfilled viewports serially and offers keyboard Load more,
@@ -1245,7 +1276,7 @@ HTML, links, ANSI controls or execution instructions. Manual disclosure choices,
 focus and original restore tokens survive revision, locale, reconnect and payload
 eviction; no command/output enters display metadata or persistence.
 
-Conversation display projections may retain only bounded tool owner/name/status metadata in addition to identity/revision/order. Full documents remain in the original three-page payload window and independently bounded live stream. A group spans accepted pages and the final historical/live boundary; an evicted anchor still presents that group's projection. Evicted entry details restore only their original accepted page token. Expanding a group does not enumerate an entire turn or unread history. The list explicitly describes reached-record coverage; the existing history continuation controls retain admission, measured restoration, scroll anchors and focus protection. Disclosure choices, including nested output details, remain within the mounted session/connection owner across revisions, reconnect, localization and payload eviction; disposal resets them. Approval/questions remain expanded and independently actionable in the original tray. No execution, response, composer, artifact, account, protocol, migration or native ownership changes are introduced. English/Korean shared compact disclosures use semantic theme tokens and native keyboard/focus behavior.
+Conversation display projections may retain only bounded tool owner/name/status metadata in addition to identity/revision/order. Full documents remain in the transcript payload window (up to twenty resident pages) and independently bounded live stream. A group spans accepted pages and the final historical/live boundary; an evicted anchor still presents that group's projection. Evicted entry details restore only their original accepted page token. Expanding a group does not enumerate an entire turn or unread history. The list explicitly describes reached-record coverage; the existing history continuation controls retain admission, measured restoration, scroll anchors and focus protection. Disclosure choices, including nested output details, remain within the mounted session/connection owner across revisions, reconnect, localization and payload eviction; disposal resets them. Approval/questions remain expanded and independently actionable in the original tray. No execution, response, composer, artifact, account, protocol, migration or native ownership changes are introduced. English/Korean shared compact disclosures use semantic theme tokens and native keyboard/focus behavior.
 
 User-authored request, queue and review drafts remain scope-local under their
 existing limits, outside evictable authoritative payloads. Selected terminal
@@ -1266,7 +1297,7 @@ Generated authenticated Connect Query reads keep independent project-catalog, un
 
 Append accepted rows in server order and deduplicate by original Resource ID, preserving exact bigint revisions. Empty batches with a new continuation remain traversable; absent continuation stops, and repeated/non-advancing tokens produce a stable failure with explicit Reload list. The empty global project selector remains unfiltered. Only an original empty parent is General Chat; off-catalog parents retain localized Project unavailable groups with stable original-ID presentation numbers. When a later catalog batch names a fallback, retain its rows, expansion and selection until an authoritative named read accepts success. Equal display names never merge identities. A collapsed/unqueried group is not an empty scope.
 
-Home deliberately has **no application row-count cap or Search-only cutoff**. Retained navigation projections contain original IDs/project IDs, exact revisions, names, workspace/execution/archive values, safe title-state descriptions and the validated closed conversation kind/direct parent ID only, alongside accepted page boundaries/continuations. Metadata grows with inventory reached; total Home memory is not constant-bounded. Full Resource documents do not accumulate, and each projected batch query is disposed after its read. One small active invalidation observer per scope refreshes the accepted chain. Ordinary queries retain the existing eight-extra-inactive-payload policy; in-flight requests are protected until settlement. Keep the 100 expanded-project and 50 collapsed-fallback identity bounds; obsolete single-page and 50-project-cursor storage is replaced by accepted Home chains. Collapsing a group retains accepted metadata.
+Home deliberately has **no application row-count cap or Search-only cutoff**. Retained navigation projections contain original IDs/project IDs, exact revisions, names, workspace/execution/archive values, safe title-state descriptions, the validated closed conversation kind/direct parent ID and, for WorkSession/GeneralChat rows only, one optional closed `Harness` enum derived once from the existing `retainedSessionHarness` authority (initial execution configuration; no fork-snapshot fallback when `initial_execution` is present but malformed), alongside accepted page boundaries/continuations. Metadata grows with inventory reached; total Home memory is not constant-bounded. Full Resource documents do not accumulate, and each projected batch query is disposed after its read. One small active invalidation observer per scope refreshes the accepted chain. Ordinary queries retain the existing eight-extra-inactive-payload policy; in-flight requests are protected until settlement. Keep the 100 expanded-project and 50 collapsed-fallback identity bounds; obsolete single-page and 50-project-cursor storage is replaced by accepted Home chains. Collapsing a group retains accepted metadata.
 
 The feature add a loaded conversation forest within each displayed named,
 fallback or General Chat scope. Retain only the original direct parent ID and
@@ -1293,7 +1324,11 @@ paging, scroll, selection, drafts and exact revision-checked row actions.
 
 General Chat, ordinary Local/Worktree sessions, independent Forks and Side Chats
 use distinct repository-owned outline bubble, terminal rectangle, branching path
-and paired-bubble glyphs. Keep currentColor and the 14px row glyph, 32px row height,
+and paired-bubble glyphs. A WorkSession or GeneralChat row with a valid projected
+retained harness shows that harness mark (`sidebar-harness-mark`, fixed 14px square,
+`background-size: contain`, decorative) instead of its bubble or terminal glyph in
+both the wide sidebar and compact drawer; Fork, Sidechat and Unknown rows and rows
+without a valid harness keep their glyphs. Keep currentColor and the 14px row glyph, 32px row height,
 status/archive indicators, title state and selection styling. Accessible row
 descriptions include the localized conversation kind. Hover cards retain the
 original workspace text and workspace glyph. Sidebar Side Chat activation keeps
@@ -2134,6 +2169,18 @@ retains the dark 14px monospace palette, selection, cursor, geometry, shared
 focus and scrollbar tokens in all application themes. Preserve colored underline
 and strike styling without injecting HTML style attributes or stylesheets.
 
+The production rsbuild `output.assetPrefix` is `auto`, never `./`: with `./`,
+emitted CSS in `static/css/` resolved raster harness marks (Codex, Claude Code)
+to nonexistent `static/css/static/image/*`. With `auto`, CSS URLs resolve
+relative to the stylesheet, so the output works at the root, under a nested base
+path and at the bundled desktop origin, and JS chunks, CSS, fonts and WASM keep
+loading. `scripts/asset-prefix.test.mjs` builds the real config, resolves every
+file-backed CSS `url()` against its stylesheet at the root and a nested path,
+compares served bytes with the `public/harness-marks` source digests and fails
+under a `./` negative control. The Agent Worker layout fixture reads the
+production prefix instead of overriding it. OpenCode and Grok marks stay inlined
+SVG data URLs.
+
 Bundle the exported Ghostty WASM as a hashed same-origin asset, pass its emitted
 URL explicitly and serve it as application/wasm. Production adds only
 script-src wasm-unsafe-eval and connect-src self to its existing restrictive
@@ -2356,7 +2403,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - The feature shortcut preferences follow the desktop/localization contracts. Keep the complete static typed action catalog and seven editable overrides, fixed product/editing reservations, scope/input priority and independent guarded creation Enter. `ShortcutPreferenceProvider` owns verified device state above connections; Settings owns only category-local drafts and explicit save/discard/default/capture. Capture consumes events before application dispatch; concurrent dirty drafts and failed/uncertain persistence require explicit recovery. Dispatch/help/ARIA share committed bindings without remounting drafts or replaying requests. Browser persistence is unavailable; no Web Storage, server backup/portable transfer or key/chord/content logging.
 
-- Sidebar conversation hierarchy and icons follow the feature in the desktop Home contract. Project the closed conversation kind and original direct parent ID once from authenticated accepted Session metadata; retain no full Fork/Side Chat snapshot or Resource body. Build forests only within displayed named/fallback/General Chat scopes, preserve server sibling/root order and original IDs, and keep missing parents and broken self/cycle links reachable. Use semantic nesting, separate disclosure/navigation, 12px indentation capped visually at36px, connection-memory expansion and identity-based focus restoration. Opening a descendant reveals loaded ancestors/group without new readers or mutations. Preserve canonical Side Chat parent/child tab routing and child highlight, independent Fork lifetime, dependent cleanup, pagination, drafts, revisions, status/actions and hover workspace information. Distinct localized conversation types use existing14px currentColor outline glyphs; unknown metadata grants no supported/native authority.
+- Sidebar conversation hierarchy and icons follow the feature in the desktop Home contract. Project the closed conversation kind and original direct parent ID once from authenticated accepted Session metadata; retain no full Fork/Side Chat snapshot or Resource body. Build forests only within displayed named/fallback/General Chat scopes, preserve server sibling/root order and original IDs, and keep missing parents and broken self/cycle links reachable. Use semantic nesting, separate disclosure/navigation, 12px indentation capped visually at36px, connection-memory expansion and identity-based focus restoration. Opening a descendant reveals loaded ancestors/group without new readers or mutations. Preserve canonical Side Chat parent/child tab routing and child highlight, independent Fork lifetime, dependent cleanup, pagination, drafts, revisions, status/actions and hover workspace information. Distinct localized conversation types use existing14px currentColor outline glyphs; unknown metadata grants no supported/native authority. WorkSession and GeneralChat rows replace their kind glyph with the retained Codex, Claude Code, OpenCode or Grok Build mark from the projected optional `Harness` when it is valid, in the same decorative (`aria-hidden`) fixed 14px square slot with contained proportions and the existing light/dark variants; absent, unknown or malformed harness keeps the kind glyph, Unknown rows keep their icon, and Fork/Sidechat rows always keep their relationship glyphs. Current Agent, account, model or execution settings never change the mark, and the projection adds no reads, backfill or retained Resource/configuration bodies.
 
 - Existing-session and General Chat compact attachment guidance follows the feature and the desktop composer contract. Keep one localized plus hover/focus tooltip, described-by association, original disabled picker gates, no native title/help button, unchanged Escape focus and inactive/unmount disposal. Creation toolbars and inline guidance retain independent presentation; no attachment or execution authority changes.
 
@@ -3189,7 +3236,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
 
-- `scroll-pagination.ts` owns serial read state, accepted opaque request tokens, atomic range refresh, typed failures, a failed-read latch (`unrecovered`, set by a failed read, kept through Retry and Reload loading stages and cleared only by a settled successful snapshot or reset), explicit exact retry/reload, scope generations and a separate three-page full-payload window. A batch may carry an `accepted` observer that runs only for accepted reads, before payload eviction, so domain metadata projections reach evicted pages. Adapters validate whole responses and retain only safe display projections in accumulated rows. Keep credentials, full configuration documents, previews and native observations outside projections. Payload restoration reuses accepted tokens and rejects changed identity/order; measured placeholders preserve reached content and focused pages retain their payload until focus leaves.
+- `scroll-pagination.ts` owns serial read state, accepted opaque request tokens, atomic range refresh, typed failures, a failed-read latch (`unrecovered`, set by a failed read, kept through Retry and Reload loading stages and cleared only by a settled successful snapshot or reset), explicit exact retry/reload, scope generations and a separate full-payload window (three pages by default, configurable per chain with a minimum of two; rejected bounds use the default; the session transcript chain uses twenty and retains payloads on suspension). A batch may carry an `accepted` observer that runs only for accepted reads, before payload eviction, so domain metadata projections reach evicted pages. Adapters validate whole responses and retain only safe display projections in accumulated rows. Keep credentials, full configuration documents, previews and native observations outside projections. Payload restoration reuses accepted tokens and rejects changed identity/order; measured placeholders preserve reached content and focused pages retain their payload until focus leaves.
 
 - Conversation adapters retain forward ordering and independent bounded live-stream reconciliation; Files retain metadata-only digest-bound ranges and separate previews. `session-files-model.ts` owns per-directory lazy chains, expansion, complete-parent-only absence and one serial observation scheduler; the generated Connect Query reader shares pending settlement across panel/session replacement for the same connection client. An already dispatched Files read uses a dedicated non-aborted settlement signal because Connect abort rejects before an ignored-abort handler finishes; controller cancellation fences publication and skips queued reads. Preserve all server deadlines and current authorization, and leave business mutation/native cancellation unchanged. Collapse cancels/fences unfinished descendants; explicit Refresh supersedes pending tree work and runs root/expanded directories parent-first. Back restores accepted metadata/scroll/nearest focus without rereading and discards preview bytes. Links and special files stay inert; keep exact decimal sizes, digest-bound 100-entry pages and 64KiB previews. Reject a whole directory page with duplicate entry names before accumulation; retain prior accepted metadata and the original retry token. Keep user-authored request/queue/review drafts outside evictable full payloads under their existing limits, with original mutation registries and terminal-watch/selected-review ownership unchanged.
 
@@ -3458,9 +3505,9 @@ The Schedules list and Occurrence history page adapters (`schedulePage`, `occurr
 - Home navigation may retain only the validated closed conversation kind, original direct parent ID relationship hint and child display name from its authenticated session row. Pass that hint to the connection-owned tab store on deliberate activation; retain no fork snapshot, account/native configuration or resource body. Ordinary sessions and independent Forks keep their existing activation callback. The active Sidechat keeps its own sidebar selection while the workspace routes through its original parent. This hint grants no mutation or native authority.
 - Search results carry only the target session ID. Before choosing the top-level host, activation of a result whose child is not already bound to a parent in the connection-owned tab store reads that exact Session through the existing bounded `ResourceQuery.getResource` (one-shot, uncached) and validates its retained metadata with the Home provenance rules. A validated Sidechat opens and selects its child tab under the exact original parent (parent selected top-level, one child tab, no duplicate on repeat); ordinary sessions and independent Forks open top-level. A failed read, a missing or mismatched Resource, a Session envelope that the mounted Session view's synchronization boundary would reject (foreign or empty `sessionId`, nonpositive revision, or unsupported schema), or missing/malformed Sidechat parent metadata shows an explicit localized unavailable notice in Search and selects no host or tab; ownership is never inferred from names. The pending read is bound to the current connection and the latest opening intent: connection replacement (including a same-identity reconnect that retains the shell), unmount, another deliberate open, leaving Search, or submitting a new search that replaces the result set discards a late result before any host or tab selection, and a submission or transport replacement also clears the opening's pending or unavailable status; the latest-intent token is invalidated synchronously in the navigation path rather than in a passive effect, so a read that settles before effects flush cannot override the chosen destination. Each opening retains one `AbortController` whose signal reaches the read; it is aborted whenever the opening is superseded, Search is left or the shell unmounts, so superseded reads neither accumulate nor run after reconnection. No protocol, search-result field or logging of conversation content is added; diagnostics (`delidev.search.session_route_unavailable`, `delidev.search.session_route_discarded`) carry only the opaque session ID and a closed reason.
 
-- The feature tool-turn presentation is owned by `tool-turn-projection.ts` and `tool-turn-transcript.tsx`. Retain only bounded original session/execution/thread/turn and name/status metadata across accepted pages; full tools stay in the three-page payload window and existing bounded live stream. Keep first-reached anchoring, interleaved non-tool order, every Grok observation and standalone invalid-owner fallback. Groups/entries start collapsed even while active; revisions, locale, reconnect and eviction preserve owner-local choices/focus. Original validated renderers own inert details and unavailable states; exact original page tokens restore evicted details without full-turn reads. Shared native compact disclosures preserve independent nested state. Keep request tray, composer and all native/mutation authority separate; follow the desktop transcript/pagination contract.
+- The feature tool-turn presentation is owned by `tool-turn-projection.ts` and `tool-turn-transcript.tsx`. Retain only bounded original session/execution/thread/turn and name/status metadata across accepted pages; full tools stay in the transcript payload window (up to twenty resident pages) and existing bounded live stream. Keep first-reached anchoring, interleaved non-tool order, every Grok observation and standalone invalid-owner fallback. Groups/entries start collapsed even while active; revisions, locale, reconnect and eviction preserve owner-local choices/focus. Original validated renderers own inert details and unavailable states; exact original page tokens restore evicted details without full-turn reads. Shared native compact disclosures preserve independent nested state. Keep request tray, composer and all native/mutation authority separate; follow the desktop transcript/pagination contract.
 
-- The feature startup progress uses the closed read-only session-progress projection in ordinary Session and General Chat. Require current supported session/preparation/execution/input/job/native identity and monotonic revision evidence, live successful reads and complete accepted transcript/queue coverage. Preserve original pause/archive/problem/budget/recovery/startup/uncertainty/approval/user-input precedence and control authority; READY/thread binding is not acceptance. Extend existing bounded page metadata only, never retain message/output content or enumerate unread history. Keep three payload pages, live-tail bounds, exact tokens/removals/focus, follow-up projections and mounted composer/tools/controllers. Stable localized polite status changes only with phase; reduced motion suppresses animation. No native/RPC/allocation/migration/persistence or implicit execution action; follow the desktop progress contract.
+- The feature startup progress uses the closed read-only session-progress projection in ordinary Session and General Chat. Require current supported session/preparation/execution/input/job/native identity and monotonic revision evidence, live successful reads and complete accepted transcript/queue coverage. Preserve original pause/archive/problem/budget/recovery/startup/uncertainty/approval/user-input precedence and control authority; READY/thread binding is not acceptance. Extend existing bounded page metadata only, never retain message/output content or enumerate unread history. Keep the transcript chain's twenty-page payload window, the queue chain's three-page window, live-tail bounds, exact tokens/removals/focus, follow-up projections and mounted composer/tools/controllers. Stable localized polite status changes only with phase; reduced motion suppresses animation. No native/RPC/allocation/migration/persistence or implicit execution action; follow the desktop progress contract.
 
 - The feature selected-account quota presentation alone uses `subscription-account-popover`: 320px border-box/16px padding/12px corners, 24px decorative service mark, full alias/state, every original native window ID in order, validated32px percentage/decorative bar and original reset/observation Timestamp metadata. Historical saved values remain visibly stale/failed; unknown/incomplete/read warnings stay visible. Omit account UUID/identity and technical disclosures/explanation from this popover while retaining UUID selection, duplicate-alias identity, all original value/freshness rules, saved-only recheck/busy admission, management, top-layer placement/scrolling/focus and original reader/controller ownership. Keep the independent read-problem dialog and rail geometry unchanged.
 
@@ -3486,7 +3533,7 @@ The Schedules list and Occurrence history page adapters (`schedulePage`, `occurr
 
 - Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The fixed primary+B shortcut shares dispatch/help/ARIA, ordinary-input admission and existing exclusions; the shell has no expand/collapse toggle or replacement spacer. Preserve focus/caret, compact drawer independence, visible navigation handoffs and shortcut-driven recovery (no window notice) after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
 
-- The feature per-turn timing uses bounded original owner/input/timestamp metadata and one mounted active timer isolated from transcript payload rendering. Anchor a pre-user line before the first bounded original matching native record, then relocate it before the primary input; reject foreign/earlier/inherited scope. Freeze retained terminal timing and unconfirmed disconnect estimates, preserve zero/unavailable, inherited source attribution, Steer identity, three-page anchors/tokens/scroll/focus and drafts. READY/pre-send states cannot create timing. Keep localized semantic wrapping and aria-live off; display timing grants no control/native authority.
+- The feature per-turn timing uses bounded original owner/input/timestamp metadata and one mounted active timer isolated from transcript payload rendering. Anchor a pre-user line before the first bounded original matching native record, then relocate it before the primary input; reject foreign/earlier/inherited scope. Freeze retained terminal timing and unconfirmed disconnect estimates, preserve zero/unavailable, inherited source attribution, Steer identity, transcript page anchors/tokens/scroll/focus and drafts. READY/pre-send states cannot create timing. Keep localized semantic wrapping and aria-live off; display timing grants no control/native authority.
 
 - Local startup, Connections and Connection & diagnostics share the English/Korean closed startup-conflict guidance. Preserve original-owner process/data, explicit confirmed-shutdown or isolated-scope retry, pending-null polling and original focus/connection authority. Never display raw sidecar text or turn guidance into automatic lifecycle actions; follow the feature in the desktop contract.
 
@@ -4970,7 +5017,7 @@ Tool labels and tabs remain reachable by scrolling at narrow/effective 200% layo
 
 The Session information header shows compact, noninteractive saved model and reasoning-effort chips from the immutable initial execution configuration. Their accessible names identify saved selections. Omit unspecified effort; missing, incomplete or unsupported snapshots show unavailable model evidence and retain detailed guidance in Diagnostics. The chips and the Diagnostics saved-configuration section share one validation result: schema version 1, canonical UUID v7 initial execution and Agent identities, a source-scoped model key, positive integer Agent and model revisions no larger than the uint64 envelope (unsafe integers up to 2^64 stay admissible and display as unavailable; larger values could never be server revisions and make the snapshot unavailable), a harness from the closed supported set (`codex`, `claude-code`, `opencode`, `grok-build`), a native model ID that satisfies the server's native model ID bound (well-formed UTF-8, no NUL, not blank under Go `strings.TrimSpace` whitespace and at most 256 UTF-8 bytes), an absent or string effort (exact direct input, never checked against a value list), an options object, accounts and templates arrays, a supported routing policy and an instructions string. The model key is never a resource UUID: it is `source:` followed by the unpadded base64url JSON of the exact source (one API provider ID or one subscription service) and native model ID, and it must agree with the snapshot's own provider or subscription service and native model. A subscription service must be a known service whose native harness equals the saved harness (`chatgpt` with `codex`, `claude` with `claude-code`, `grok` with `grok-build`, `opencode_go` with `opencode`), like the server's `SubscriptionService.Harness()` check. The key must also equal the server's canonical encoding of that identity (fixed field order, compact JSON with Go HTML-safe escaping, unpadded base64url); reordered or duplicate fields, whitespace and non-canonical base64 trailing bits are rejected like the server's `ParseModelKey`. Each failed requirement independently produces the unavailable outcome for the chips and shows incomplete-snapshot guidance in place of the saved-configuration section only; native observations and applied instructions keep their original independent gate (a retained initial execution with its Agent and native model identity) and stay visible when only the strict requirements fail. No value is inferred from the current Agent, resumed executions or native observations. Current Agent edits, resumed executions and native observations cannot replace these saved chips.
 
-Keep the principal Info groups ordered Pull requests, Subagents, Context, then Usage and budget. Hide only successfully empty PR and Subagent sections. The routine Status and recovery heading and Workspace/Result/Archive summary do not appear in Info. The original SessionTools portal and recovery controllers remain mounted, with applicable failures, correction guidance, confirmations, accepted/uncertain/failed jobs and exact retries in Info. Healthy empty hosts reserve no section padding or divider. Native read-only settings and usage observations, source references and safe technical snapshot details appear in Diagnostics. Original interactive native prompts, terminal/stop controls, applied instruction disclosures and storage actions remain below the principal groups, with unchanged source ownership and guards.
+Keep the principal Info groups ordered Pull requests, Subagents, Context, then Usage and budget. Hide only successfully empty PR and Subagent sections. The Subagents section is hidden only for a confirmed complete empty result: a supported owner with an accepted, current, single-page empty snapshot, no continuation token, no read error and no unrecovered failure latch. A healthy revision-triggered background Refresh over that snapshot keeps the section hidden while pending and after it settles, so Context and Usage and budget do not move; the refresh read itself is never suppressed. Initial, Reload, Retry and Additional reads, missing capability, malformed or foreign pages, continuation pages (including a chain whose last page is empty, which is no longer a single-page snapshot) and any failed read stay visible, and a pending Retry or Reload stays visible (honoring the `unrecovered` latch, not only `error`) until a successful accepted result. An accepted child reveals the section and a later complete empty result hides it again. Disposing or replacing the session or transport owner (the conversation pagination chain scope includes a stable transport owner identity, so a replacement transport that keeps the QueryClient also drops the retained snapshot) resets the section to visible so earlier emptiness or a stale response from the old owner cannot hide the new owner's initial state. The routine Status and recovery heading and Workspace/Result/Archive summary do not appear in Info. The original SessionTools portal and recovery controllers remain mounted, with applicable failures, correction guidance, confirmations, accepted/uncertain/failed jobs and exact retries in Info. Healthy empty hosts reserve no section padding or divider. Native read-only settings and usage observations, source references and safe technical snapshot details appear in Diagnostics. Original interactive native prompts, terminal/stop controls, applied instruction disclosures and storage actions remain below the principal groups, with unchanged source ownership and guards.
 
 Usage and budget starts with a full-width input/output row: only In and Out labels are chips; exact locale-formatted integers remain plain text at opposite ends. Read the original session's response-only lifetime summary through the existing authenticated GetUsageSummary RPC. Validate creation metadata, returned bounds, profile, coverage and measures; pin the first server-default upper bound, then read older disjoint half-open ranges of at most 366 days sequentially through session creation. Add only input/output known subtotals and their measured/unavailable counts with BigInt. Missing evidence stays unavailable and measured zero remains zero. Publish only complete collections; retain the last complete result (totals and per-range Diagnostics evidence) as stale after a failed refresh with read-only Retry, including when the failed read is for a newer `execution.latest_response_usage_id` generation. The retained collection belongs to one exact owner (Session ID, the exact validated RFC 3339 creation timestamp including sub-millisecond digits, and authenticated transport); changing any of them clears it, even when the millisecond read bound is unchanged, and a successful read replaces the whole collection at once. A first read with no prior collection shows unavailable totals and the read-failed text. Default Info shows no routine coverage paragraph (including the former known-responses-only text); independent per-range evidence stays in Diagnostics. No native, child, cache or reasoning counts are added. Missing execution/compaction coverage counts remain per range, and separate reads do not establish an atomic ledger snapshot. Refresh on active entry, original usage invalidation and authenticated reconnect; cancellation and original-owner disposal fence delayed results.
 
@@ -5080,6 +5127,36 @@ Removed states from local progress or original authoritative evidence. Enqueue
 acceptance is not runner acceptance or Resume. Native MESSAGE resources remain
 the transcript authority; native input acceptance without a MESSAGE retains its
 explicit projected status.
+
+The original first input of a new Session or General Chat is created atomically
+with the session and is projected the same way, keyed by its input identity
+(`initial_execution.input_id`, the sequence-one queue input). After accepted
+creation, including while preparation is pending, it appears as exactly one
+ordinary right-aligned sent user bubble with the first prompt and ordered image
+attachments and no Queued, Sending, Pending or You label or badge; only a
+Rejected or unconfirmed-read state keeps its existing notice. Register it only
+from the creation response's input when its session ID, sequence one and the
+session's `initial_execution.input_id` agree; a missing or malformed initial
+input ID, foreign or malformed evidence is rejected, never treated as an
+unconstrained match. After reload or navigation, reconstruct it solely from the
+verified sequence-one queue row in the queued, claimed, accepted, uncertain or
+rejected-before-start delivery state, so the exceptional states keep their
+existing notice instead of dropping the first prompt; a removed input retains no
+content. Startup progress renders below the bubble from the
+existing original-operation evidence; the original projection is never counted
+as a later follow-up and neither suppresses nor fabricates startup feedback.
+Exclude the original input from the legacy queue rows, the negotiated
+WaitingQueue and PendingQueueInputs; later queued inputs keep their controls.
+WaitingQueue computes neighbors, page continuation and the final displayed row
+from the filtered order wherever the hidden original sits, so a moved original
+never becomes a move anchor or removes the end-drop target. Admitting an
+original applies the same settled native-mapping eviction as a fresh submission
+before the 1,000-record bound is enforced. A
+user MESSAGE with the same `input_id` replaces the projection once in either
+ordering against the creation response; equal text under a different input ID
+is never deduplicated. Newer queue edits or removal win over stale receipts and
+a removed original keeps no content. Creating this projection makes no extra
+enqueue or Resume call.
 
 The authenticated connection owns these per-session projections across keyed
 view changes and same-identity reconnect. Replacement identities dispose them
@@ -6241,6 +6318,59 @@ Up/Down, Enter/Tab and Escape operate the accessible listbox without creating or
 sending input. IME composition never accepts a candidate or submits. Only the
 active token is replaced, with surrounding Unicode, newlines and caret preserved.
 
+Completion acceptance is one atomic text-and-binding transaction owned by
+`skillCompletionEdit` and `skillCompletionSeparator` in `skill-completion.tsx`.
+Mouse click, Enter and plain Tab run the same function. The token range is the
+whole whitespace-delimited `$` token around the caret (a caret inside a partial
+token replaces the full token, including characters after the caret). The result
+is `prefix + "$name" + separator + suffix`, where the prefix and suffix are the
+exact bytes before and after the token range and the separator is a single
+ASCII space unless the suffix begins with whitespace (`/^\s/u`: space, tab,
+newline or any other Unicode whitespace code unit), in which case the separator is
+empty and that existing whitespace serves as the boundary. Offsets are UTF-16
+code units, matching the textarea selection API. With `end = token.start +
+length("$name")`:
+
+| Draft before (caret `\|`)                     | Draft after                                    | Binding range                            | Caret after |
+| --------------------------------------------- | ---------------------------------------------- | ---------------------------------------- | ----------- |
+| `$add-iss\|`                                  | `$add-issue `                                  | `[0, 10)`                                | `11`        |
+| `한글\n$add-iss\|`                            | `한글\n$add-issue `                            | `[3, 13)`                                | `14`        |
+| `$add-iss\| tail`                             | `$add-issue tail`                              | `[0, 10)`                                | `11`        |
+| `$add-iss\|  tail` (two spaces)               | `$add-issue  tail`                             | `[0, 10)`                                | `11`        |
+| `$add-iss\|<TAB>tail`                         | `$add-issue<TAB>tail`                          | `[0, 10)`                                | `11`        |
+| `$add-iss\|<LF>tail`                          | `$add-issue<LF>tail`                           | `[0, 10)`                                | `11`        |
+| `$add-iss\|$other`                            | `$add-issue $other`                            | `[0, 10)`                                | `11`        |
+| `x $add-\|zzz tail`                           | `x $add-issue tail`                            | `[2, 12)`                                | `13`        |
+| `before $add-z\|zz`                           | `before $add-issue `                           | `[7, 17)`                                | `18`        |
+| Another selected token after the edited range | text as above; that binding keeps its identity | shifted by the length change of the edit | unchanged   |
+
+The caret is always `end + 1`: just after the inserted space, or just past
+only the first character of existing whitespace (never past a second whitespace
+character, and past only the `\r` of a `\r\n` pair). The table is identical for click,
+Enter and plain Tab. The new selection is collapsed (`selectionStart` equals
+`selectionEnd`), the textarea keeps or regains focus without scrolling ancestors,
+the panel is dismissed and nothing is sent. Because the caret leaves the token, the
+panel does not reopen until the user edits or moves into a `$` token again.
+
+The binding covers only the literal `$name` bytes `[token.start, end)`; the
+separator is never part of the binding and the exact four-field selection (Worker
+device, inventory, skill and content revision) is retained. Typing after
+acceptance (for example `please`) therefore extends the plain text after the
+separator, keeps the binding and still reaches the send path with the same four
+fields. Deleting the separator re-attaches the token to following text and removes
+the binding by the existing token-edit rule.
+
+The owner's `change(next, bindings)` call still decides admission. When it returns
+`false` (the 256 KiB prompt limit applies to the completed text including the
+separator), acceptance changes no text, binding, selection, focus or panel state.
+Acceptance is a programmatic controlled-value replacement, as before: it adds no
+separate undo transaction and does not rewrite native undo history. IME
+composition, `repeat`, modifier and AltGraph keys, unavailable rows,
+disabled/inert/hidden owners, pending or uncertain locks and stale inventory or
+scope still refuse acceptance before any of the above runs. Project creation,
+General Chat creation, session follow-up and queue editing all use this one
+transaction; prompt-history replacement keeps its separate unbound semantics.
+
 Selected bindings are separate from visible text and exact uncertain mutations
 retain them. The authenticated connection owns each session draft as one bounded
 text-and-binding value across session navigation, Settings and same-identity
@@ -6392,6 +6522,76 @@ Skill completion handles keys first. IME, modifiers, selections and pending or u
 ## Quota percentage colors
 
 API quota bars share the subscription percentage color rule: interpolate danger-text → warning-text at 0–50% and warning-text → success-text at 50–100%, using the displayed rounded integer and active semantic tokens. Accent, WebKit and Mozilla fills use one uniform color independent of freshness; text continues to distinguish retained and unavailable evidence. This presentation grants no quota recovery or account authority.
+
+### Composer Markdown links
+
+All four composer placements (project creation, General Chat creation, session
+follow-up and queued input edit) share the `useSkillCompletion` controller, which
+also owns prompt Markdown links. The pure model lives in
+`prompt-markdown-links.ts` and the adapter-owned undo history in
+`prompt-edit-history.ts`. No backend, schema, proto or dependency changes.
+
+- **Canonical draft.** The draft, the submitted payload, skill binding offsets,
+  history entries and copy/cut text are always the canonical Markdown. The single
+  accessible multiline textarea shows a derived display text (`displayValue`);
+  only the display collapses. Reveal and collapse never edit the draft or
+  invalidate bindings. Offsets map between both coordinate systems; an edit that
+  crosses a link boundary covers the whole link.
+- **Conversion triggers.** A pasted plain-text bare HTTP(S) URL converts
+  immediately to `[URL](URL)`. A typed URL converts when one space or newline
+  delimiter is inserted; the delimiter is kept. A URL at the buffer end, text
+  restored by history or draft recovery, and edits during IME composition are
+  never converted. Image paste ownership stays with the attachment input.
+- **Detection and escaping.** Conversion reuses `findUrlTokens` and
+  `validHttpUrl` (length, credential and punctuation rules), so `www.`,
+  `mailto:`, `javascript:`, non-HTTP(S), invalid, credential-bearing and
+  overlong URLs stay unchanged. URLs inside existing links, images, inline code,
+  fenced code and autolinks are skipped, so conversion is idempotent and never
+  nests. Label `\`, `[`, `]` and destination `\`, `(`, `)` are backslash-escaped;
+  the parsed destination always equals the original URL.
+  Label brackets pair on one line in a single linear pass. A label with nested
+  or unmatched unescaped brackets, such as `[see [docs]](url)`, is still
+  link-shaped syntax: its whole range stays protected, but it is never collapsed
+  because it is not a plain label. A destination longer than four times the URL
+  limit is protected up to the scanned prefix and is never a link. Protected
+  ranges and URL tokens are sorted, so overlap checks use one shared cursor and
+  stay linear for prompts up to the 256 KiB limit. A closed fenced block ends at
+  its closing fence; text after it is scanned normally. This is a deliberately
+  conservative subset of CommonMark; constructs that need a full parser protect
+  more text rather than convert a URL inside them.
+- **Presentation.** A valid inline HTTP(S) link displays as its label with the
+  `--link` color and underline when the caret or selection does not intersect
+  it. A caret strictly inside, or a selection overlapping, the link reveals the
+  full source; leaving collapses it. Invalid Markdown remains visible source.
+  Titles are never fetched.
+  The collapsed display decodes label escapes (for example `\[::1\]` shows as
+  `[::1]`), and offsets map through a per-link escape table; an offset between a
+  backslash and its escaped character rounds to the character start, and an edit
+  replaces the whole escape sequence. After a reveal, the session composer
+  re-measures its height from the displayed text, not only from the draft.
+- **History.** Programmatic conversion clears the native undo stack, so every
+  edit is recorded in `PromptEditHistory`. Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z, Ctrl+Y
+  (non-macOS) and native `historyUndo`/`historyRedo` run through it. A conversion
+  and the paste or delimiter that triggered it are one undo/redo step. History
+  resets when the draft changes outside the adapter or the transport is
+  replaced, because history alignment compares only text and an equal-text
+  snapshot must not revive another transport's skill bindings. Project prompt
+  history recall passes canonical selections to the adapter, which maps them to
+  display offsets; the history hook never writes raw offsets into the textarea
+  when the adapter owns the draft.
+- **Limit.** A conversion that would exceed the 256 KiB canonical prompt limit is
+  dropped atomically and the original URL stays; the triggering edit is still
+  subject to the normal limit.
+- **Opening.** Cmd+click (macOS) or Ctrl+click (Windows/Linux) with no other
+  modifier and the primary button opens exactly the parsed URL once through
+  `openExternalUrl` (`open_external_url`) without submit, text change or
+  navigation. Plain, wrong-modifier, Alt/Shift combinations, middle and right
+  clicks do nothing. Without a native opener the link stays editable text.
+  Native failures show the localized `external-link.*` alert from the composer
+  warning slot, preserve the draft and never retry.
+- **Logging.** Conversions log a `prompt link conversion` debug event with the
+  trigger and count, never the URL; failed opens log a warning with the failure
+  code only.
 
 ### Quota reset countdowns
 
@@ -7005,7 +7205,7 @@ One mounted active timer updates only the timing line once per second. Initializ
 
 Repeated and older revisions cannot reset the retained estimate or transfer it to a different turn. Reconcile a newer consistent original observation without decreasing already measured time; reject same-revision timestamp conflicts, regressive server timestamps and changed acceptance. Disposal, inactive navigation and document hiding cancel the timer. Preserve the measured value, including its subsecond remainder, and resume the same confirmed observation without adding hidden time. Disconnected, failed-read or uncertain active observations show unconfirmed state and freeze the last displayed value until authoritative reads return; they never invent a terminal end. Only loss of synchronization of the owning Session resource counts: a non-Live stream, stream or message read failure, uncertain control mutation, required recovery or unconfirmed execution responses. A definitive control rejection (for example Conflict) and independent queue or interaction read failures stay visible through their own surfaces and never stop, freeze or relabel a Live synchronized timer. A newly confirmed valid server observation can advance the retained anchor. Completed history remains the immutable server terminal-minus-acceptance interval even if an active anchor is absent. Inherited Fork timing stays labelled and attributed to its original source; a child turn has its own independent interval.
 
-Bounded reached-record timing projections retain only original owner/input identity, timestamps and inherited provenance. Preserve the three-page payload window, exact restore tokens, historical anchors, live bounds, scroll owner, composer draft and focus. Timing wraps semantically at narrow widths and zoom, uses `aria-live="off"`, and never announces every tick. It cannot change execution controls or native/mutation authority.
+Bounded reached-record timing projections retain only original owner/input identity, timestamps and inherited provenance. Preserve the bounded payload window, exact restore tokens, historical anchors, live bounds, scroll owner, composer draft and focus. Timing wraps semantically at narrow widths and zoom, uses `aria-live="off"`, and never announces every tick. It cannot change execution controls or native/mutation authority.
 
 ## Local startup conflict guidance
 
@@ -7193,7 +7393,7 @@ proof, so Info stays visible while the recovery read loads, fails again or
 stalls, and only a read accepted into a settled successful snapshot (or a new
 chain) releases the latch. Budget evidence rereads keep their own
 fail-closed rule. A terminal token proves
-traversal only; when the three-page payload bound has evicted any retained page,
+traversal only; when the payload bound (twenty pages for the transcript, three for queue and interactions) has evicted any retained page,
 that read is incomplete and Info stays visible, while the bound and the explicit
 restoration controls are unchanged. Pending, absent, failed or
 unavailable budget evidence, and evidence of another session identity, retain
@@ -7351,7 +7551,7 @@ activation or replaced transport from proving fresh loading.
 
 Transcript load evidence is a pagination-chain `observed` flag, not residence of
 the first payload page. Only a successful Initial, Refresh or Reload read from the
-first page sets it, so evicting that payload (at most three payload pages stay
+first page sets it, so evicting that payload (at most the chain's resident-page bound of payload pages stay
 resident) never blocks a reselected Session whose refresh succeeded. Suspend,
 reset, an in-flight or failed whole-chain read, and Restore or Additional reads
 never grant it; Additional reads inside a visit leave it unchanged and never
@@ -7568,7 +7768,7 @@ Retained interaction projections hold only bounded metadata. `interactionProject
 
 The shared synchronization `Remove` update carries the watched `entityKind` of the originating event. An authoritative stream Remove of an interaction (`entityKind` interaction) is recorded in the owning session's `InteractionPresentationStore` as an identity-only tombstone before any following Snapshot can clear the stream-scoped removed set. The tombstone drops the retained projection and fences that identity: the compact receipt, page-scoped count and tray-emptiness blocker stay absent through later Snapshots and through restoration of an older list page that still lists the id, and later observations of it are not retained. Removals of other kinds, including messages and queue entries never seen in the Snapshot, never reach the store and cannot consume or evict an interaction tombstone. Tombstones hold no documents, are bounded to 2000 identities per session store (oldest forgotten first) and are never shared across session stores. An unresolved question that merely leaves the resident payload page without a Remove keeps its receipt after a Snapshot. Removal sends no answer, cancels no native work, acknowledges no Inbox item and leaves retained original mutation bytes and the mutation registry untouched; approval forms, unrelated ids and revision ordering are unchanged.
 
-An accepted list read joins the same latest-authoritative-revision projection for every reached page before any payload is discarded. The pagination chain runs an optional per-batch `accepted` observer only after the read passes its generation, cancellation, session, cursor-boundary and continuation checks and before payload eviction, so pages outside the three-page payload window still advance their interaction projections (revision, presentation, closure and response state) while only the lightweight projection is retained. A valid accepted or confirmed-closed question with no unresolved response or retained mutation therefore loses its compact receipt, page-scoped count and tray-emptiness blocker after a list refresh alone, without restoring the evicted page. A retained original mutation and unresolved, contradictory or invalid observations stay visible under the existing rules. Canceled, superseded or boundary-rejected reads never run the observer, observation is revision-monotonic so older or equal revisions never overwrite newer metadata, and an observer failure never fails the read. The observer receives only already-validated rows of the owning session and interaction kind, and no answer content is logged.
+An accepted list read joins the same latest-authoritative-revision projection for every reached page before any payload is discarded. The pagination chain runs an optional per-batch `accepted` observer only after the read passes its generation, cancellation, session, cursor-boundary and continuation checks and before payload eviction, so pages outside the interaction chain's three-page payload window still advance their interaction projections (revision, presentation, closure and response state) while only the lightweight projection is retained. A valid accepted or confirmed-closed question with no unresolved response or retained mutation therefore loses its compact receipt, page-scoped count and tray-emptiness blocker after a list refresh alone, without restoring the evicted page. A retained original mutation and unresolved, contradictory or invalid observations stay visible under the existing rules. Canceled, superseded or boundary-rejected reads never run the observer, observation is revision-monotonic so older or equal revisions never overwrite newer metadata, and an observer failure never fails the read. The observer receives only already-validated rows of the owning session and interaction kind, and no answer content is logged.
 
 A successful retry through an evicted compact receipt applies the same acceptance validation as the resident form: the returned interaction must carry the receipt's request ID, the current session and interaction kind, a supported resource schema, and a revision newer than the submitted mutation's expected revision. The comparison basis is the revision the original retained request was submitted against, not the mutable presentation projection revision, so an exact receipt replay whose result equals an already advanced projection still retires its draft. The session-level accepted-result notification owns this retirement, so it completes even when payload restoration replaced the compact receipt before the retried RPC finished and the receipt's own presenter callback no longer runs. Only then does it clear that one request's retained edit draft; absent, mismatched, unsupported, stale or equal-revision results (relative to the submitted revision) and failed or uncertain retries preserve the draft. Unrelated drafts, the original retry UUID and bytes, response validation and native acceptance rules are unchanged, and the resident success path is not altered.
 
