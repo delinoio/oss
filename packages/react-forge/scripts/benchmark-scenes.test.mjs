@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import React from "react";
@@ -27,6 +33,34 @@ import {
 } from "./benchmark-scenes-core.mjs";
 
 const file = fileURLToPath(new URL("./benchmark-scenes.mjs", import.meta.url));
+
+function git(cwd, ...args) {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout;
+}
+
+async function withTemporaryRepository(callback) {
+  const repository = await mkdtemp(join(tmpdir(), "forge-source-status-"));
+  try {
+    git(repository, "init", "--quiet");
+    git(repository, "config", "user.email", "test@example.com");
+    git(repository, "config", "user.name", "Test");
+    git(repository, "config", "commit.gpgsign", "false");
+    await callback(repository);
+  } finally {
+    await rm(repository, { recursive: true, force: true });
+  }
+}
+
+async function commitFiles(repository, files) {
+  for (const [name, content] of Object.entries(files)) {
+    await mkdir(dirname(join(repository, name)), { recursive: true });
+    await writeFile(join(repository, name), content);
+  }
+  git(repository, "add", "--all");
+  git(repository, "commit", "--quiet", "-m", "fixture");
+}
 
 test("fixed grids preserve topology, bytes and repeatable source content", () => {
   const expectations = {
@@ -488,5 +522,86 @@ test("cancellation reaps the owned child without replacing prior output", async 
       controller.abort();
       await settled;
     }
+  });
+});
+
+test("source status treats bracket destinations literally", async () => {
+  await withTemporaryRepository(async (repository) => {
+    await commitFiles(repository, {
+      "reports/a.json": "a\n",
+      "reports/[ab].json": "ab\n",
+    });
+    const destination = join(repository, "reports", "[ab].json");
+    assert.equal(await sourceStatus(destination, repository), "");
+    await writeFile(destination, "changed destination\n");
+    assert.equal(await sourceStatus(destination, repository), "");
+    await writeFile(join(repository, "reports", "a.json"), "changed source\n");
+    const status = await sourceStatus(destination, repository);
+    assert.equal(status, " M reports/a.json\n");
+    assert.equal(Boolean(status.trim()), true);
+  });
+});
+
+test("source status treats star destinations literally", async () => {
+  await withTemporaryRepository(async (repository) => {
+    await commitFiles(repository, { "reports/seed.txt": "seed\n" });
+    const destination = join(repository, "reports", "*.json");
+    await writeFile(destination, "literal star destination\n");
+    assert.equal(await sourceStatus(destination, repository), "");
+    await writeFile(join(repository, "reports", "other.json"), "other\n");
+    const status = await sourceStatus(destination, repository);
+    assert.equal(status, "?? reports/other.json\n");
+    assert.equal(Boolean(status.trim()), true);
+  });
+});
+
+test("source status is clean when only the exact destination differs", async () => {
+  await withTemporaryRepository(async (repository) => {
+    await commitFiles(repository, {
+      "reports/plain.json": "plain\n",
+      "reports/[ab].json": "ab\n",
+    });
+    for (const name of ["plain.json", "[ab].json", "new report.json"]) {
+      const destination = join(repository, "reports", name);
+      await writeFile(destination, `changed ${name}\n`);
+      const status = await sourceStatus(destination, repository);
+      assert.equal(status, "");
+      assert.equal(Boolean(status.trim()), false);
+      git(repository, "checkout", "--quiet", "--", ".");
+      await rm(join(repository, "reports", "new report.json"), {
+        force: true,
+      });
+    }
+  });
+});
+
+test("source status excludes nothing outside the repository and handles nested spaces", async () => {
+  await withTemporaryRepository(async (repository) => {
+    await commitFiles(repository, { "docs/seed.txt": "seed\n" });
+    const outside = await mkdtemp(join(tmpdir(), "forge-source-outside-"));
+    try {
+      await writeFile(join(repository, "dirty.txt"), "dirty\n");
+      const outsideDestination = join(outside, "report.json");
+      assert.equal(
+        await sourceStatus(outsideDestination, repository),
+        "?? dirty.txt\n",
+      );
+      assert.equal(
+        await sourceStatus(join(repository, "..", "report.json"), repository),
+        "?? dirty.txt\n",
+      );
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+    await rm(join(repository, "dirty.txt"));
+    const nested = join(repository, "benchmark reports", "run 1", "out.json");
+    await mkdir(dirname(nested), { recursive: true });
+    await writeFile(nested, "nested\n");
+    assert.equal(await sourceStatus(nested, repository), "");
+    await writeFile(join(repository, "benchmark reports", "other.json"), "x\n");
+    assert.equal(
+      await sourceStatus(nested, repository),
+      '?? "benchmark reports/other.json"\n',
+    );
   });
 });
