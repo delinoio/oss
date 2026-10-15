@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -31,6 +32,10 @@ type PublicationConfig struct {
 type pendingPublication struct {
 	RequestID domain.ID             `json:"request_id"`
 	Event     domain.ExecutionEvent `json:"event"`
+	// ChildNames is additive private display metadata retained with the exact
+	// event so a replay after a lost acknowledgment sends identical request
+	// bytes. Journals written before this field decode with no names.
+	ChildNames []domain.SubagentDisplayName `json:"child_names,omitempty"`
 }
 
 type publicationJournal struct {
@@ -59,6 +64,14 @@ type ExecutionPublisher struct {
 	input         domain.ExecutionJobInput
 	closed        bool
 	release       func() error
+}
+
+// restoredEvent rejoins the retained display metadata to its event so journal
+// recovery validates the same batch the server will validate.
+func (p *pendingPublication) restoredEvent() domain.ExecutionEvent {
+	event := p.Event
+	event.ChildNames = p.ChildNames
+	return event
 }
 
 func publicationUncertain() *domain.Error {
@@ -111,7 +124,7 @@ func OpenExecutionPublisher(config PublicationConfig) (publisher *ExecutionPubli
 		if domain.Decode(raw, &retained) != nil || retained.Version != state.Version || retained.JobID != state.JobID || retained.InstanceID != state.InstanceID || retained.ServerID != state.ServerID || retained.DeviceID != state.DeviceID || retained.Revision != state.Revision || retained.AssignmentDigest != state.AssignmentDigest || retained.LastSequence > domain.MaxExecutionEvents {
 			return nil, publicationUncertain()
 		}
-		if p := retained.Pending; p != nil && (p.RequestID.Validate() != nil || p.Event.Validate() != nil || p.Event.ExecutionID != input.ExecutionID || p.Event.Sequence != retained.LastSequence+1) {
+		if p := retained.Pending; p != nil && (p.RequestID.Validate() != nil || p.restoredEvent().Validate() != nil || p.Event.ExecutionID != input.ExecutionID || p.Event.Sequence != retained.LastSequence+1) {
 			return nil, publicationUncertain()
 		}
 		state = retained
@@ -169,8 +182,9 @@ func (p *ExecutionPublisher) Publish(ctx context.Context, event domain.Execution
 	if err := domain.Decode(raw, &frozen); err != nil {
 		return err
 	}
+	frozen.ChildNames = slices.Clone(event.ChildNames)
 	state := p.state
-	state.Pending = &pendingPublication{RequestID: domain.NewID(), Event: frozen}
+	state.Pending = &pendingPublication{RequestID: domain.NewID(), Event: frozen, ChildNames: slices.Clone(event.ChildNames)}
 	p.state = state
 	return p.sendPending(ctx)
 }
@@ -201,7 +215,11 @@ func (p *ExecutionPublisher) sendPending(ctx context.Context) error {
 	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	response, err := p.config.Client.PublishExecution(bounded, authenticated(p.config.Credential, &pb.PublishExecutionRequest{Mutation: &pb.Mutation{RequestId: string(pending.RequestID), Id: string(p.state.JobID), ExpectedRevision: p.state.Revision}, MachineId: string(p.config.Credential.MachineID), InstanceId: string(p.state.InstanceID), EventJson: raw}))
+	var names []*pb.ExecutionChildDisplayName
+	for _, entry := range pending.ChildNames {
+		names = append(names, &pb.ExecutionChildDisplayName{ChildId: string(entry.ChildID), Name: entry.Name})
+	}
+	response, err := p.config.Client.PublishExecution(bounded, authenticated(p.config.Credential, &pb.PublishExecutionRequest{Mutation: &pb.Mutation{RequestId: string(pending.RequestID), Id: string(p.state.JobID), ExpectedRevision: p.state.Revision}, MachineId: string(p.config.Credential.MachineID), InstanceId: string(p.state.InstanceID), EventJson: raw, ChildDisplayNames: names}))
 	if err != nil || response == nil || response.Msg == nil || response.Msg.AcknowledgedSequence != pending.Event.Sequence {
 		code := domain.RecoveryRequired
 		if err != nil {

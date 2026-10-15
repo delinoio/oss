@@ -5,7 +5,52 @@ import (
 	"encoding/json"
 	"slices"
 	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 )
+
+// MaxSubagentDisplayNameRunes bounds a native agent nickname in Unicode
+// characters, as accepted from Codex and retained as display metadata.
+const MaxSubagentDisplayNameRunes = 256
+
+// SubagentDisplayName is additive private display metadata for one child of a
+// subagent-observed batch. It travels beside, never inside, the closed schema-1
+// observation JSON so older readers keep their strict shape. ChildID is the
+// original product child ID, never a native identity.
+type SubagentDisplayName struct {
+	ChildID ID     `json:"child_id"`
+	Name    string `json:"name"`
+}
+
+// ValidSubagentDisplayName reports whether a native nickname may be displayed:
+// nonblank, well-formed UTF-8 of at most 256 characters and no control runes.
+func ValidSubagentDisplayName(name string) bool {
+	if !utf8.ValidString(name) || strings.TrimSpace(name) == "" || utf8.RuneCountInString(name) > MaxSubagentDisplayNameRunes {
+		return false
+	}
+	return !strings.ContainsFunc(name, unicode.IsControl)
+}
+
+// ValidateSubagentDisplayNames joins names to the exact batch by product child
+// ID. It rejects duplicate, foreign and invalid entries before any retention.
+func ValidateSubagentDisplayNames(batch []SubagentObservation, names []SubagentDisplayName) error {
+	if len(names) > len(batch) {
+		return invalidSubagent()
+	}
+	members := make(map[ID]bool, len(batch))
+	for _, child := range batch {
+		members[child.ID] = true
+	}
+	seen := make(map[ID]bool, len(names))
+	for _, entry := range names {
+		if entry.ChildID.Validate() != nil || !members[entry.ChildID] || seen[entry.ChildID] || !ValidSubagentDisplayName(entry.Name) {
+			return invalidSubagent()
+		}
+		seen[entry.ChildID] = true
+	}
+	return nil
+}
 
 type SubagentStatus string
 type SubagentSource string
@@ -102,6 +147,9 @@ type SubagentRecord struct {
 	FirstSequence uint64              `json:"first_sequence,string"`
 	LastSequence  uint64              `json:"last_sequence,string"`
 	Observation   SubagentObservation `json:"observation"`
+	// DisplayName is private server-owned display metadata. The Resource
+	// boundary strips it from the closed document and projects it separately.
+	DisplayName string `json:"display_name,omitempty"`
 }
 type SubagentEvidence struct {
 	Source   SubagentSource `json:"source"`

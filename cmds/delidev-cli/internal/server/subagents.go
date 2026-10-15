@@ -146,6 +146,10 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 	if !owned {
 		return executionEventConflict()
 	}
+	names := make(map[domain.ID]string, len(event.ChildNames))
+	for _, entry := range event.ChildNames {
+		names[entry.ChildID] = entry.Name
+	}
 	for _, child := range event.Subagents {
 		usage := child.Usage
 		codex := input.Configuration.Harness == domain.Codex
@@ -201,8 +205,14 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 				return executionEventConflict()
 			}
 		}
+		// Only native Codex nicknames exist; Claude and OpenCode keep fallbacks.
+		displayName, named := names[child.ID]
+		if named && (!codex || !strings.HasPrefix(string(child.Source), "codex-")) {
+			return executionEventConflict()
+		}
 		first, revision := event.Sequence, uint64(0)
 		evidence := []domain.SubagentEvidence{}
+		retainedName := ""
 		if _, exists := p.Subagents[child.NativeID]; exists {
 			record, err := tx.Get(domain.SubagentKind, child.ID)
 			if err != nil {
@@ -214,6 +224,7 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 			}
 			first, revision = prior.FirstSequence, record.Revision
 			evidence = prior.Sources
+			retainedName = prior.DisplayName
 			if child.RequestedModel != nil && prior.Observation.RequestedModel != nil && *child.RequestedModel != *prior.Observation.RequestedModel {
 				return executionEventConflict()
 			}
@@ -241,7 +252,12 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 			return domain.Fail(domain.ResourceExhausted, "Child source coverage reached its bound.", "Retain its original observations; no evidence was truncated.")
 		}
 		evidence = append(evidence, domain.SubagentEvidence{Source: child.Source, SourceID: child.SourceID, Sequence: event.Sequence, Usage: usage})
-		value := domain.SubagentRecord{Sources: evidence, ExecutionID: input.ExecutionID, Harness: input.Configuration.Harness, Version: input.Installation.Version, RootID: event.NativeThreadID, FirstSequence: first, LastSequence: event.Sequence, Observation: child}
+		value := domain.SubagentRecord{Sources: evidence, ExecutionID: input.ExecutionID, Harness: input.Configuration.Harness, Version: input.Installation.Version, RootID: event.NativeThreadID, FirstSequence: first, LastSequence: event.Sequence, Observation: child, DisplayName: retainedName}
+		if named {
+			// A later valid observation of the same child may update its name;
+			// an omission above preserves the last valid one.
+			value.DisplayName = displayName
+		}
 		if _, err := tx.Put(domain.SubagentKind, child.ID, revision, session.ID, session.ProjectID, value); err != nil {
 			return err
 		}

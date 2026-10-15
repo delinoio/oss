@@ -32,7 +32,22 @@ func subagentStatus(status string) (domain.SubagentStatus, error) {
 	return "", incompatible()
 }
 
+// agentNickname accepts only a native nonblank string of at most 256 Unicode
+// characters. Missing, null, blank or invalid nicknames are simply unavailable;
+// they never invalidate the otherwise valid child observation.
+func agentNickname(raw json.RawMessage) (string, bool) {
+	var name string
+	if len(raw) == 0 || json.Unmarshal(raw, &name) != nil || !domain.ValidSubagentDisplayName(name) {
+		return "", false
+	}
+	return name, true
+}
+
 func (c *Client) childEvent(batch []domain.SubagentObservation) (Event, error) {
+	return c.childEventNamed(batch, nil)
+}
+
+func (c *Client) childEventNamed(batch []domain.SubagentObservation, names []domain.SubagentDisplayName) (Event, error) {
 	state := domain.SubagentState{}
 	for id, o := range c.subagents {
 		state[id] = domain.SubagentOwner{ID: o.ID, ParentID: o.ParentID, Status: o.Status}
@@ -73,7 +88,7 @@ func (c *Client) childEvent(batch []domain.SubagentObservation) (Event, error) {
 		}
 		c.subagents[o.NativeID] = o
 	}
-	return Event{Kind: SubagentEvent, ThreadID: c.thread, TurnID: turn, Correlated: true, Subagents: batch}, nil
+	return Event{Kind: SubagentEvent, ThreadID: c.thread, TurnID: turn, Correlated: true, Subagents: batch, SubagentNames: names}, nil
 }
 
 // Consume only original canonical collab items. Requested model is independent
@@ -203,6 +218,7 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 		return Event{}, incompatible()
 	}
 	batch := []domain.SubagentObservation{}
+	names := []domain.SubagentDisplayName{}
 	cursor := ""
 	seen := map[string]bool{}
 	for page := 0; page < 16; page++ {
@@ -252,6 +268,9 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 				return Event{}, err
 			}
 			o.Source, o.SourceID = domain.CodexHistorySource, string(t.ID)
+			if name, ok := agentNickname(t.AgentNickname); ok {
+				names = append(names, domain.SubagentDisplayName{ChildID: o.ID, Name: name})
+			}
 			batch = append(batch, o)
 			if len(batch) > 128 {
 				return Event{}, incompatible()
@@ -276,7 +295,7 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 			return Event{}, incompatible()
 		}
 	}
-	event, err := c.childEvent(batch)
+	event, err := c.childEventNamed(batch, names)
 	if err != nil {
 		return Event{}, err
 	}
@@ -306,7 +325,11 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			}
 			o.Source, o.SourceID = domain.CodexHistorySource, string(t.ID)
 			o.Usage, o.Output, o.ObservedModel = nil, nil, nil
-			e, err := c.childEvent([]domain.SubagentObservation{o})
+			var names []domain.SubagentDisplayName
+			if name, ok := agentNickname(t.AgentNickname); ok {
+				names = append(names, domain.SubagentDisplayName{ChildID: o.ID, Name: name})
+			}
+			e, err := c.childEventNamed([]domain.SubagentObservation{o}, names)
 			return e, true, err
 		}
 	}

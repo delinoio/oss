@@ -35,6 +35,14 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 	if err := domain.Decode(req.Msg.EventJson, &event); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
+	// Additive private display metadata joins the closed event by product child
+	// ID. It is validated with the event, before any retention.
+	for _, entry := range req.Msg.ChildDisplayNames {
+		if entry == nil {
+			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A child display name entry is required.", "Publish bounded names for children in the same batch."), correlation)
+		}
+		event.ChildNames = append(event.ChildNames, domain.SubagentDisplayName{ChildID: domain.ID(entry.ChildId), Name: entry.Name})
+	}
 	if err := event.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
@@ -43,7 +51,10 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		Job, Machine, Instance, Device domain.ID
 		Revision                       uint64
 		Event                          domain.ExecutionEvent
-	}{domain.ID(meta.Id), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), actor.DeviceID, meta.ExpectedRevision, event}
+		// Exact display metadata is part of receipt identity. Publications
+		// without names keep their historical identity bytes (omitempty).
+		ChildNames []domain.SubagentDisplayName `json:"ChildNames,omitempty"`
+	}{domain.ID(meta.Id), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), actor.DeviceID, meta.ExpectedRevision, event, event.ChildNames}
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "execution.publish", identity, func(tx *store.Tx) (any, error) {
 		if err := currentInstance(tx, identity.Machine, identity.Instance); err != nil {
 			return nil, err

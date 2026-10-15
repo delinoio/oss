@@ -60,6 +60,8 @@ func (f *threadFixture) handleSubagentRead(id json.RawMessage, method string, ra
 			a["sessionId"], b["sessionId"] = a["id"], b["id"]
 			a["parentThreadId"] = f.thread["id"]
 			b["parentThreadId"] = a["id"]
+			// One valid native nickname and one blank nickname that must fall back.
+			a["agentNickname"], b["agentNickname"] = "Atlas", "  "
 			f.subagents = []map[string]any{b, a}
 		}
 		write(id, map[string]any{"data": f.subagents, "nextCursor": nil, "backwardsCursor": nil})

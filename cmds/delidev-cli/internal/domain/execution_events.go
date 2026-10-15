@@ -187,6 +187,10 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
+	// ChildNames is additive private display metadata for subagent-observed
+	// batches. It never enters the closed event JSON: the Worker transports it
+	// as typed protobuf entries beside event_json and the server joins it back.
+	ChildNames         []SubagentDisplayName              `json:"-"`
 	FunctionOutput     *FunctionOutputUpdate              `json:"function_output,omitempty"`
 	DynamicTool        *DynamicToolUpdate                 `json:"dynamic_tool,omitempty"`
 	Subagents          []SubagentObservation              `json:"subagents,omitempty"`
@@ -236,7 +240,7 @@ type ExecutionEvent struct {
 }
 
 func (e ExecutionEvent) Validate() error {
-	if e.Kind != ExecutionSubagentObserved && e.Subagents != nil {
+	if e.Kind != ExecutionSubagentObserved && (e.Subagents != nil || len(e.ChildNames) != 0) {
 		return invalidSubagent()
 	}
 	if e.Version != 1 || e.Sequence == 0 || e.Sequence > MaxExecutionEvents {
@@ -265,6 +269,9 @@ func (e ExecutionEvent) Validate() error {
 			if child.Validate() != nil {
 				return invalidSubagent()
 			}
+		}
+		if err := ValidateSubagentDisplayNames(e.Subagents, e.ChildNames); err != nil {
+			return err
 		}
 	case ExecutionGrokToolObserved:
 		if e.GrokTool == nil || e.GrokTool.Validate() != nil {
