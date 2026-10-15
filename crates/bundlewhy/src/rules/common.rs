@@ -1752,9 +1752,37 @@ fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
             .any(|(begin, end)| (*begin..*end).contains(&start));
         (!in_ranges(&ignored, start) && !shadowed).then_some(start)
     })?;
-    let line = source[..start].matches('\n').count();
-    let column = start - source[..start].rfind('\n').map_or(0, |index| index + 1);
+    let (line, column) = line_and_column(source, start);
     Some((u32::try_from(line).ok()?, u32::try_from(column).ok()?))
+}
+
+/// Zero-based line and byte column of `offset`, counting every ECMAScript
+/// line terminator (CRLF is one terminator) so the position agrees with the
+/// scanners that end comments and statements at those terminators.
+fn line_and_column(source: &str, offset: usize) -> (usize, usize) {
+    let bytes = source.as_bytes();
+    let mut line = 0usize;
+    let mut line_start = 0usize;
+    let mut index = 0usize;
+    while index < offset {
+        let length = line_terminator_len(bytes, index);
+        if length == 0 {
+            index += 1;
+            continue;
+        }
+        // A CR directly followed by LF is a single terminator.
+        let length = if bytes[index] == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
+            2
+        } else {
+            length
+        };
+        index += length;
+        if index <= offset {
+            line += 1;
+            line_start = index;
+        }
+    }
+    (line, offset - line_start)
 }
 
 fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
@@ -2695,6 +2723,27 @@ y=/process.env.F/.test(z),process.env.G"#;
                 .iter()
                 .all(|guard| matches!(guard, Some(EnvGuard::ShortCircuitAnd)))
         );
+    }
+
+    #[test]
+    fn direct_eval_positions_count_every_line_terminator() {
+        for terminator in LINE_TERMINATORS {
+            let source = format!("// note{terminator}eval(code)");
+            assert_eq!(direct_eval_line(&source), Some((1, 0)), "{source:?}");
+            let source = format!("a{terminator}b{terminator}  return eval(x)");
+            assert_eq!(direct_eval_line(&source), Some((2, 9)), "{source:?}");
+            let source = format!("{terminator}{terminator}eval(x)");
+            assert_eq!(direct_eval_line(&source), Some((2, 0)), "{source:?}");
+        }
+        // CRLF is one terminator; a CR and an LF that are not adjacent are
+        // two.
+        assert_eq!(line_and_column("a\r\nb", 3), (1, 0));
+        assert_eq!(line_and_column("a\r\r\nb", 4), (2, 0));
+        assert_eq!(line_and_column("a\n\rb", 3), (2, 0));
+        assert_eq!(line_and_column("a\u{2028}b", 4), (1, 0));
+        // The column counts bytes after the last terminator.
+        assert_eq!(line_and_column("\u{2029}\u{e9}x", 5), (1, 2));
+        assert_eq!(line_and_column("abc", 2), (0, 2));
     }
 
     #[test]
