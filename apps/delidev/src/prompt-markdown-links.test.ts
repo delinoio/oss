@@ -434,6 +434,11 @@ const FUZZ_PIECES = [
   "```\n",
   "[ref]:\n  ",
   "[ref]: /u\n  'T https://t.test'\n",
+  "![alt https://r.test][ref]",
+  "[https://r.test][]",
+  "[ref]",
+  "[ref]: i.png\n",
+  '<a href="https://h.test">',
   "![i](https://e.com/i.png)",
   "$skill",
   "한https://a.test/g ",
@@ -878,6 +883,106 @@ describe("reference definitions", () => {
       expect(Date.now() - started).toBeLessThan(5000);
       if (scan.complete) continue;
       expect(convertBareUrls(text, 0, text.length, scan).changed).toBe(false);
+    }
+  });
+});
+
+describe("reference links and images", () => {
+  const URL = "https://example.test";
+  const converted = `[${URL}](${URL})`;
+  it("protects full, collapsed and shortcut images", () => {
+    for (const text of [
+      `![see ${URL} x][logo]\n\n[logo]: image.png`,
+      `[logo]: image.png\n\n![see ${URL} x][logo]`,
+      `![see ${URL} x][]\n\n[see ${URL} x]: image.png`,
+      `![${URL} x]\n\n[${URL} x]: image.png`,
+      `![${URL} x][]\n\n[${URL} x]: image.png`,
+      `![alt ${URL} x][Logo  Name]\n\n[logo name]: image.png`,
+      `![a [b](https://b.test) ${URL} x][logo]\n\n[logo]: image.png`,
+      `![multi\nline ${URL} x][logo]\n\n[logo]: image.png`,
+      `![see ${URL} x][logo]\n\n[logo]:\n  image.png\n  "t"`,
+    ])
+      expect(convert(text)).toBe(text);
+  });
+  it("protects full, collapsed and shortcut links", () => {
+    for (const text of [
+      `[see ${URL} x][docs]\n\n[docs]: /u`,
+      `[see ${URL} x][]\n\n[see ${URL} x]: /u`,
+      `[${URL} x]\n\n[${URL} x]: /u`,
+      `[${URL} x][]\n\n[${URL} x]: /u`,
+      `[docs]: /u\n\ntext [x ${URL} y][DOCS]`,
+      `[see ${URL} x](bad url\n\n[see ${URL} x]: /u`,
+    ])
+      expect(convert(text)).toBe(text);
+  });
+  it("covers the whole image, bang included, and nothing more", () => {
+    const text = `a ![x][logo] b\n\n[logo]: i.png`;
+    const ranges = scanMarkdown(text).protectedRanges;
+    expect(ranges[0]).toEqual({ start: 2, end: 12 });
+    // An escaped bang is a literal character before an ordinary reference.
+    const escaped = scanMarkdown(`\\![x][logo]\n\n[logo]: i.png`);
+    expect(escaped.protectedRanges[0]).toEqual({ start: 2, end: 11 });
+  });
+  it("converts text whose label has no definition", () => {
+    for (const text of [
+      `![see ${URL} x][nope]\n\n[logo]: image.png`,
+      `[see ${URL} x][nope]`,
+      `[see ${URL} x]\n\n[docs]: /u`,
+      `[see ${URL} x][]`,
+      `![see ${URL} x]`,
+    ]) {
+      const result = convert(text);
+      expect(result).not.toBe(text);
+      expect(result).toContain(` ${converted} x]`);
+    }
+    // A label that holds a bracket or is overlong is never a reference.
+    const nested = `[x ${URL} y][a[b]c]\n\n[a[b]c]: /u`;
+    expect(convert(nested)).toContain(converted);
+    const long = "l".repeat(1000);
+    expect(convert(`[x ${URL} y][${long}]\n\n[${long}]: /u`)).toContain(
+      converted,
+    );
+  });
+  it("keeps an inner inline link inside a reference label found", () => {
+    const text = `[a [b](https://b.test) ${URL}][docs]\n\n[docs]: /u`;
+    const scan = scanMarkdown(text);
+    expect(scan.links.map((link) => link.url)).toEqual(["https://b.test"]);
+    expect(convert(text)).toBe(text);
+  });
+  it("scans reference-heavy and bracket-heavy text within the budget", () => {
+    for (const text of [
+      `${"[a][a]".repeat(40_000)}\n[a]: /u`,
+      `${"[".repeat(30_000)}${"]".repeat(30_000)}\n[a]: /u`,
+      `[a]: /u\n${"![a][a][a][] ".repeat(20_000)}`,
+      `[a]: /u\n${"[x".repeat(40_000)}`,
+    ]) {
+      const started = Date.now();
+      const scan = scanMarkdown(text);
+      expect(Date.now() - started).toBeLessThan(5000);
+      if (!scan.complete)
+        expect(convertBareUrls(text, 0, text.length, scan).changed).toBe(false);
+    }
+  });
+  it("protects raw HTML tags and their attribute values", () => {
+    for (const text of [
+      `<a href="${URL}">`,
+      `<a href='${URL}' title="x">`,
+      `<img src=${URL}/i.png alt="a">`,
+      `<a\n  href="${URL}"\n>`,
+      `<a href="${URL}"/>`,
+      `</a>`,
+    ])
+      expect(convert(text)).toBe(text);
+    // Text that only resembles a tag converts normally.
+    expect(convert(`a < b ${URL} > c`)).toBe(`a < b ${converted} > c`);
+    expect(convert(`<b ${URL}>`)).toBe(`<b ${converted}>`);
+  });
+  it("scans every line-ending form alike", () => {
+    const text = `![see ${URL} x][logo]\n\n[logo]:\n  image.png\n\n${URL}\n`;
+    for (const ending of ["\r\n", "\r"] as const) {
+      const exact = withEndings(text, ending);
+      expect(normalizeLineEndings(convert(exact))).toBe(convert(text));
+      expect(convert(exact)).toContain(`${ending}${converted}${ending}`);
     }
   });
 });

@@ -1376,6 +1376,49 @@ it("R28 multiline definition: a URL on a continuation line stays source text how
   expect(probe.canonical).toBe(`[docs]:\n\n[${URL}](${URL})`);
 });
 
+// --- Reference links and images (R29) ---------------------------------------
+
+it("R29 reference forms: a URL inside a reference, collapsed or shortcut link or image stays source text", () => {
+  const URL = "https://example.test";
+  for (const [head, tail, definition] of [
+    ["![see ", " x][logo]", "[logo]: image.png"],
+    ["![see ", " x][]", `[see ${URL} x]: image.png`],
+    ["![", " x]", `[${URL} x]: image.png`],
+    ["[see ", " x][docs]", "[docs]: /u"],
+    ["[see ", " x][]", `[see ${URL} x]: /u`],
+    ["[", " x]", `[${URL} x]: /u`],
+  ] as const) {
+    for (const ending of ["\n", "\r\n", "\r"]) {
+      // The definition comes first, so the reference resolves while typing.
+      const prefix = `${definition}${ending}${ending}${head}`;
+      const { input, view } = mount(prefix);
+      select(input, input.value.length);
+      paste(input, `${URL}${tail}`);
+      expect(probe.canonical).toBe(`${prefix}${URL}${tail}`);
+      // A delimiter typed right after the URL converts nothing either.
+      const at = input.value.indexOf(" x]");
+      select(input, at);
+      nativeEdit(
+        input,
+        `${input.value.slice(0, at)} ${input.value.slice(at)}`,
+        at + 1,
+      );
+      expect(probe.canonical).not.toContain("](");
+      expect(probe.canonical).toContain(`${URL} `);
+      view.unmount();
+    }
+  }
+  // Without a matching definition the same paste converts the URL.
+  const { input } = mount("[logo]: image.png\n\n![see ");
+  select(input, input.value.length);
+  paste(input, `${URL} x][nope]`);
+  expect(probe.canonical).toBe(
+    `[logo]: image.png\n\n![see [${URL}](${URL}) x][nope]`,
+  );
+  undo(input);
+  expect(probe.canonical).toBe("[logo]: image.png\n\n![see ");
+});
+
 // Seeded random walk over the whole state machine. After every operation the
 // field must show exactly the projection of the canonical text for the
 // canonical selection, selection maps must agree, and undoing every edit must
@@ -1388,6 +1431,8 @@ function walker(seed: number) {
   };
 }
 const WALK_PASTES = [
+  "![see https://r.test x][ref]\n\n[ref]: i.png\n",
+  "[https://r.test x]\n[https://r.test x]: /u\n",
   "[docs]:\n  https://d.test\n  'T https://t.test'\n",
   "[docs]:\n  ",
   "https://a.test/p?q=[1]",

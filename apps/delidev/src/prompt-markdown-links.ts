@@ -570,10 +570,14 @@ function scanDefinitions(
   return labels;
 }
 
+// Raw HTML open and closing tags keep their attribute values verbatim.
+const HTML_TAG =
+  /^<\/?[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][\w:.-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*\s*\/?>/u;
+
 /**
  * Finds valid inline HTTP(S) links plus every range where bare URLs must stay
- * untouched (any inline link or image, code spans, fenced code, autolinks and
- * reference definitions). Every
+ * untouched (any inline, reference or shortcut link or image, code spans,
+ * fenced code, autolinks, raw HTML tags and reference definitions). Every
  * line-ending form (LF, CRLF, lone CR) scans alike: the text is read through
  * its LF-normalized form and all offsets are mapped back to the exact text.
  * Work is linear in the text length with a fixed budget; an exhausted budget
@@ -636,19 +640,66 @@ function scanNormalized(text: string): MarkdownScan {
     } else if (char === "]") {
       if (text[index + 1] === "(") markers.push(index);
       if (stack.length) closeOf.set(stack.pop()!, index);
-    } else if (
+    } else if (char === "<") {
       // An escaped `<` was skipped above, so reaching it means it is real.
-      char === "<" &&
-      /^<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>/u.test(
-        text.slice(index, index + 2100),
-      )
-    ) {
-      const close = text.indexOf(">", index);
-      protectedRanges.push({ start: index, end: close + 1 });
-      index = close;
+      const head = text.slice(index, index + 2100);
+      const tag =
+        /^<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>/u.exec(head) ??
+        HTML_TAG.exec(head);
+      if (tag) {
+        protectedRanges.push({ start: index, end: index + tag[0].length });
+        index += tag[0].length - 1;
+      }
     }
   }
-  scanDefinitions(text, budget, protectedRanges);
+  const definitions = scanDefinitions(text, budget, protectedRanges);
+  // True when a bracket opens strictly between `from` and `to`.
+  const opensBetween = (from: number, to: number) => {
+    let low = 0,
+      high = opens.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (opens[mid]! <= from) low = mid + 1;
+      else high = mid;
+    }
+    return opens[low] !== undefined && opens[low]! < to;
+  };
+  // End of a full, collapsed or shortcut reference whose text brackets span
+  // `[open, close]`, when its label resolves to a definition. A label holds no
+  // bracket, so only the innermost, pairwise disjoint pairs are ever sliced.
+  const referenceEnd = (open: number, close: number): number | undefined => {
+    if (!budget.spend(4)) return undefined;
+    const ownLabel = (): string | undefined => {
+      if (
+        close - open - 1 > MAX_REFERENCE_LABEL ||
+        opensBetween(open, close) ||
+        !budget.spend(close - open)
+      )
+        return undefined;
+      return text.slice(open + 1, close);
+    };
+    if (text[close + 1] === "[") {
+      const second = closeOf.get(close + 1);
+      if (
+        second !== undefined &&
+        second - close - 2 <= MAX_REFERENCE_LABEL &&
+        !opensBetween(close + 1, second) &&
+        budget.spend(second - close)
+      ) {
+        const given = text.slice(close + 2, second),
+          label = /\S/u.test(given) ? given : ownLabel();
+        if (
+          label !== undefined &&
+          definitions.has(normalizeReferenceLabel(label))
+        )
+          return second + 1;
+      }
+    }
+    const own = ownLabel();
+    return own !== undefined && definitions.has(normalizeReferenceLabel(own))
+      ? close + 1
+      : undefined;
+  };
   let consumed = 0;
   for (const open of opens) {
     if (open < consumed) continue;
@@ -694,6 +745,13 @@ function scanNormalized(text: string): MarkdownScan {
         continue;
       }
     }
+    // Not an inline link: a reference, collapsed or shortcut form whose label
+    // resolves to a definition protects its whole range, image bang included.
+    // Its text may still hold an inline link, so scanning continues inside.
+    if (definitions.size === 0) continue;
+    const end = referenceEnd(open, close);
+    if (end !== undefined) protectedRanges.push({ start, end });
+    if (budget.exhausted) break;
   }
   return {
     links,
