@@ -15,7 +15,7 @@ import (
 // otherwise differently cased identity/settings fields can overwrite them.
 func decodeNativeObject(raw []byte, target any) error {
 	var fields map[string]json.RawMessage
-	if domain.Decode(raw, &fields) != nil || fields == nil {
+	if domain.DecodeBounded(raw, &fields, maxImageInputFrame) != nil || fields == nil {
 		return lifecycleUncertain()
 	}
 	shape := reflect.TypeOf(target).Elem()
@@ -29,7 +29,7 @@ func decodeNativeObject(raw []byte, target any) error {
 			return lifecycleUncertain()
 		}
 	}
-	return domain.Decode(raw, target)
+	return domain.DecodeBounded(raw, target, maxImageInputFrame)
 }
 
 func (b *ExecutionBinding) validateSystemInit(raw []byte) error {

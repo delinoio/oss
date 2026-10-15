@@ -119,7 +119,13 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	if input.Configuration.Subscription {
 		expectedProxyPath = ""
 		var finish func(bool) error
-		nativeProfile, managedToken, finish, err = beginClaudeSubscriptionExecution(ctx, config, owner, input)
+		// The workspace manager pins the canonical Worker root. Checkpoint reads
+		// inside subscription preparation must use that same root: a configured
+		// alias such as macOS /tmp otherwise fails the checkpoint path proof before
+		// a continuation can acquire its original account lease.
+		subscriptionConfig := config
+		subscriptionConfig.Root = manager.Root
+		nativeProfile, managedToken, finish, err = beginClaudeSubscriptionExecution(ctx, subscriptionConfig, owner, input)
 		if err != nil {
 			return nil, err
 		}
@@ -206,6 +212,16 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			return nil, publicationUncertain()
 		}
 	}
+	nativeConfig.ImageInputs = input.Configuration.ImageInputDeclared
+	images, err := claudeInputImages(manager.Root, input, logger)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		for _, image := range images {
+			clear(image.Bytes)
+		}
+	}()
 	config.startup.setPhase(domain.StartupInitialize)
 	var api *claude.APISession
 	intent := claude.ContinueSuccessfulRun
@@ -247,7 +263,12 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	if err := binding.ClaimInput(ctx, input.TurnRequestID, input.InputID, input.Input.Prompt); err != nil {
 		return nil, err
 	}
-	applied, err := api.SendInput(ctx, input.InputID, input.Input.Prompt, intent)
+	var applied claude.AppliedSettings
+	if len(images) > 0 {
+		applied, err = api.SendImageInput(ctx, input.InputID, input.Input.Prompt, images, intent)
+	} else {
+		applied, err = api.SendInput(ctx, input.InputID, input.Input.Prompt, intent)
+	}
 	if err != nil {
 		return nil, err
 	}

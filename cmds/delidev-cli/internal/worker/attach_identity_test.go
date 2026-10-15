@@ -141,3 +141,7 @@ func TestEveryNegotiatedCapabilityRotatesAttachIdentityOnSupportChange(t *testin
 		t.Fatal("no negotiated capability was exercised")
 	}
 }
+
+func TestClaudeImageInputsAttachmentRenegotiatesProfileWhenSupportChanges(t *testing.T) {
+	assertCapabilityAttachmentRenegotiatesProfile(t, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1)
+}

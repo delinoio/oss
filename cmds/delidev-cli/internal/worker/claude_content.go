@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"reflect"
+	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
@@ -122,7 +123,7 @@ func (c *ClaudeContentPublisher) PublishInput(ctx context.Context) error {
 		return publicationUncertain()
 	}
 	id := domain.NewID()
-	message := &domain.ExecutionMessageUpdate{ID: id, NativeID: string(b.journal.InputID), Role: domain.UserMessage, InputID: b.journal.InputID, Text: b.publisher.input.Input.Prompt}
+	message := &domain.ExecutionMessageUpdate{ID: id, NativeID: string(b.journal.InputID), Role: domain.UserMessage, InputID: b.journal.InputID, Text: b.publisher.input.Input.Prompt, Attachments: slices.Clone(b.publisher.input.Input.Attachments)}
 	for _, kind := range []domain.ExecutionEventKind{domain.ExecutionMessageStarted, domain.ExecutionMessageCompleted} {
 		c.queue = append(c.queue, claudeContentCommit{event: domain.ExecutionEvent{Kind: kind, Message: message}, input: kind == domain.ExecutionMessageCompleted})
 	}

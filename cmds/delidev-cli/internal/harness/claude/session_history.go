@@ -11,6 +11,7 @@ import (
 // Only pending compaction messages need private bytes, released at completion.
 // Child and auxiliary completeness remain separate from this root ledger.
 type sessionHistory struct {
+	images      map[domain.ID][]imageContext
 	messages    []HistoryMessageProof
 	compactions []HistoryCompactionProof
 	actions     []HistoryCompactionActionProof
@@ -33,6 +34,11 @@ func (h *sessionHistory) observe(observed LifecycleObservation) error {
 		return nil
 	}
 	event := observed.Native
+	if observed.Kind == InputAccepted {
+		if err := h.retainImageReplay(observed.InputID, event.Body); err != nil {
+			return err
+		}
+	}
 	if observed.Kind == CompactionObserved {
 		if h.boundary != nil || len(h.compactions) >= maxStreamIdentities {
 			return historyUncertain()
@@ -97,7 +103,7 @@ func (h *sessionHistory) observe(observed LifecycleObservation) error {
 	}
 	if event.Type == "user" || event.Type == "assistant" {
 		var fields map[string]json.RawMessage
-		if domain.Decode(event.Body, &fields) != nil {
+		if domain.DecodeBounded(event.Body, &fields, maxImageInputFrame) != nil {
 			return historyUncertain()
 		}
 		if !bytes.Equal(bytes.TrimSpace(fields["parent_tool_use_id"]), []byte("null")) {

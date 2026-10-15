@@ -285,7 +285,8 @@ func checkpointConfigurationDigest(config APIStreamConfig, origin, instructionsS
 	value := struct {
 		Version, Executable, Directory, Runtime, Home, Workspace, Model, Effort, Permission, Instructions, Origin string
 		WorkspaceRoots                                                                                            []string `json:",omitempty"`
-	}{config.Version, config.Process.Executable, config.Process.Directory, config.Process.Cwd, config.Home, config.Workspace, config.Model, string(config.Effort), string(config.Permission), instructionsSHA256, origin, config.WorkspaceRoots}
+		ImageInputs                                                                                               bool     `json:",omitempty"`
+	}{config.Version, config.Process.Executable, config.Process.Directory, config.Process.Cwd, config.Home, config.Workspace, config.Model, string(config.Effort), string(config.Permission), instructionsSHA256, origin, config.WorkspaceRoots, config.ImageInputs}
 	raw, _ := json.Marshal(value)
 	if len(config.ManagedToken) != 0 {
 		// A managed-token checkpoint is distinct from relay and device-profile

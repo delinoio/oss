@@ -474,3 +474,32 @@ func TestImageSessionCapacityRejectsBeforeStagingAndPreservesExactReceipt(t *tes
 		t.Fatal(err)
 	}
 }
+
+func TestClaudeImageRPCClaimsOnlyWithIndependentWorkerProfile(t *testing.T) {
+	f, c, raw := imageRPCFixture(t, domain.ClaudeCode)
+	ctx := context.Background()
+	_, err := f.workerClient.AttachWorker(ctx, ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.machine = currentCatalogResource(t, f.accountFixture, f.machine)
+	imageWorkerFixture(t, f, c)
+	operation := domain.NewID()
+	upload := finishImage(t, f, c, beginImage(t, f, c, raw, domain.NewID(), operation, ""), raw)
+	selection := f.selection
+	selection.Prompt = ""
+	document, _ := json.Marshal(selection)
+	req := &pb.CreateSessionRequest{RequestId: string(operation), DocumentJson: document, Attachments: []*pb.ImageAttachment{upload.Attachment}}
+	reply, err := sessionClient(f.accountFixture).CreateSession(ctx, ownerRequest(f.identity, req))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var input domain.QueuedInput
+	if domain.Decode(reply.Msg.Change.Input.DocumentJson, &input) != nil || len(input.Attachments) != 1 || string(input.Attachments[0].ID) != upload.Attachment.Id {
+		t.Fatal("Claude input lost original attachment")
+	}
+	replay, err := sessionClient(f.accountFixture).CreateSession(ctx, ownerRequest(f.identity, req))
+	if err != nil || !replay.Msg.Change.Replayed {
+		t.Fatal("Claude image receipt did not replay", err)
+	}
+}

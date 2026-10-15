@@ -7638,3 +7638,7 @@ Settings > System has a Browser category directly after Appearance (`SettingsCat
 ## Native record version validation
 
 Desktop validators for retained native interaction, usage and subagent records (Claude, OpenCode, Grok and Codex) accept the record's observed native version when it is a valid SemVer at or above the harness baseline, using the shared `harnessVersionAllowed` predicate in `apps/delidev/src/harness-version.ts`. Records below the baseline or with a malformed version stay unavailable and expose no response controls. Equality with a pinned baseline is never required, so a newer admitted installation's requests, usage and child observations remain actionable and visible.
+
+### Claude image attachment admission
+
+The shared image draft permits Claude Code only when every source model declares image input and the original server and Runner report the independent System 106 / Worker 71 pair in addition to 45/25. Follow-ups use the frozen original declaration. Keep the existing draft, upload and error presentation; missing peers retain unsupported guidance without discarding original images. Follow the [image input contract](cmds-delidev-image-input-contract.md#closed-adapter-profiles).

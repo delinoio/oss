@@ -178,7 +178,7 @@ func TestImageModelDeclarationKeepsOmittedTextConfigurationCompatible(t *testing
 }
 
 func TestImageInputHarnessProfile(t *testing.T) {
-	for harness, want := range map[Harness]bool{Codex: true, OpenCode: true, ClaudeCode: false, GrokBuild: false} {
+	for harness, want := range map[Harness]bool{Codex: true, OpenCode: true, ClaudeCode: true, GrokBuild: false} {
 		if harness.ImageInputs() != want {
 			t.Fatalf("%s image profile = %v", harness, !want)
 		}
@@ -187,7 +187,7 @@ func TestImageInputHarnessProfile(t *testing.T) {
 	if err := ValidateImageAttachmentsForHarness(OpenCode, []ImageAttachment{ref}); err != nil {
 		t.Fatal(err)
 	}
-	for _, harness := range []Harness{ClaudeCode, GrokBuild} {
+	for _, harness := range []Harness{GrokBuild} {
 		if SafeError(ValidateImageAttachmentsForHarness(harness, []ImageAttachment{ref})).Code != Unsupported {
 			t.Fatalf("%s accepted images", harness)
 		}
@@ -228,7 +228,7 @@ func TestExecutionConfigurationFreezesOpenCodeImageDeclaration(t *testing.T) {
 		{OpenCode, []string{"text", "image"}, true},
 		{OpenCode, []string{"text"}, false},
 		{Codex, []string{"text", "image"}, true},
-		{ClaudeCode, []string{"text", "image"}, false},
+		{ClaudeCode, []string{"text", "image"}, true},
 		{GrokBuild, []string{"text", "image"}, false},
 	} {
 		identity := ModelIdentity{ProviderID: provider, NativeID: "fixture-model"}
@@ -246,7 +246,7 @@ func TestExecutionConfigurationFreezesOpenCodeImageDeclaration(t *testing.T) {
 			t.Fatalf("%s declaration serialization changed: %s", test.harness, raw)
 		}
 	}
-	config := ExecutionConfiguration{Harness: ClaudeCode, ImageInputDeclared: true}
+	config := ExecutionConfiguration{Harness: GrokBuild, ImageInputDeclared: true}
 	if SafeError(config.Validate()).Code == "" {
 		t.Fatal("retained non-image harness declaration accepted")
 	}
@@ -265,7 +265,9 @@ func TestOpenCodeImageCapabilityRefinesTheBaseImageCapability(t *testing.T) {
 		"opencode refined":         {OpenCode, refined, true},
 		"opencode refinement only": {OpenCode, []WorkerCapability{OpenCodeImageInputsV1}, false},
 		"opencode none":            {OpenCode, nil, false},
-		"claude refined":           {ClaudeCode, refined, true},
+		"claude without pair":      {ClaudeCode, refined, false},
+		"claude paired":            {ClaudeCode, []WorkerCapability{ImageInputsV1, ClaudeImageInputsV1}, true},
+		"claude refinement only":   {ClaudeCode, []WorkerCapability{ClaudeImageInputsV1}, false},
 	} {
 		if ImageInputWorkerSupported(test.harness, test.capabilities) != test.supported {
 			t.Errorf("%s: supported != %v", name, test.supported)
