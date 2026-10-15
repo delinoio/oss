@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
+    sync::LazyLock,
 };
 
 use regex::Regex;
@@ -172,7 +173,7 @@ fn regex_allowed(
             .iter()
             .any(|keyword| {
                 head.ends_with(keyword)
-                    && !head[..head.len() - keyword.len()].ends_with(is_identifier_char)
+                    && !head[..head.len() - keyword.len()].ends_with(is_identifier_part)
             })
         }
         _ => false,
@@ -702,10 +703,21 @@ fn strip_comments_for_prefix<'a>(
     }
 }
 
-/// True for a character that can continue a JavaScript identifier, including
-/// non-ASCII letters and digits, `_`, `$` and the zero-width joiners.
-fn is_identifier_char(character: char) -> bool {
-    character.is_alphanumeric() || matches!(character, '_' | '$' | '\u{200c}' | '\u{200d}')
+/// True for a character that can continue a JavaScript identifier
+/// (`IdentifierPart`): any Unicode `ID_Continue` character (letters, digits,
+/// combining marks, connector punctuation such as `_`), `$`, and the
+/// zero-width joiners U+200C and U+200D.
+///
+/// Every scan that must tell a keyword from a longer name uses this one
+/// definition. Identifier escapes (`\u0069f`) are not decoded.
+fn is_identifier_part(character: char) -> bool {
+    if character.is_ascii() {
+        return character.is_ascii_alphanumeric() || matches!(character, '_' | '$');
+    }
+    static ID_CONTINUE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^\p{ID_Continue}$").expect("static regex"));
+    matches!(character, '\u{200c}' | '\u{200d}')
+        || ID_CONTINUE.is_match(character.encode_utf8(&mut [0; 4]))
 }
 
 /// True when `prefix` (the code before an opening parenthesis, as returned by
@@ -727,7 +739,7 @@ fn ends_with_control_keyword(
     }
     let start = prefix.len() - keyword.len();
     match code[..start].chars().next_back() {
-        Some(character) if is_identifier_char(character) || character == '#' => false,
+        Some(character) if is_identifier_part(character) || character == '#' => false,
         _ => !strip_comments_for_prefix(code, start, ignored).ends_with('.'),
     }
 }
@@ -746,7 +758,7 @@ fn scope_context(
         // the surrounding condition. A bracket after an operator starts an
         // array literal, whose contents do not form a guard by themselves.
         if last.is_some_and(|character| {
-            is_identifier_char(character)
+            is_identifier_part(character)
                 || matches!(character, ']' | ')' | '}' | '\'' | '"' | '`' | '.')
         }) {
             return parent;
@@ -769,7 +781,7 @@ fn scope_context(
         }
     }
     if last.is_some_and(|character| {
-        is_identifier_char(character) || matches!(character, ']' | ')' | '.')
+        is_identifier_part(character) || matches!(character, ']' | ')' | '.')
     }) {
         ScopeContext::Invalid
     } else {
@@ -1140,9 +1152,7 @@ fn collect_parameter_names(code: &str, names: &mut Vec<String>) {
             }
         } else {
             let start = before
-                .rfind(|character: char| {
-                    !(character.is_alphanumeric() || character == '_' || character == '$')
-                })
+                .rfind(|character: char| !is_identifier_part(character))
                 .map_or(0, |index| index + 1);
             if start < before.len() {
                 names.push(before[start..].to_owned());
@@ -1309,9 +1319,7 @@ fn collect_binding_names(pattern: &str, names: &mut Vec<String>) {
                 .chars()
                 .next()
                 .is_some_and(|first| first.is_alphabetic() || first == '_' || first == '$')
-            && name.chars().all(|character| {
-                character.is_alphanumeric() || character == '_' || character == '$'
-            })
+            && name.chars().all(is_identifier_part)
         {
             names.push(name.to_owned());
         }
@@ -1406,9 +1414,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         // parameter lists. `catch (eval) {` does bind `eval`.
         let keyword = code[..whole.start()]
             .trim_end()
-            .rsplit(|character: char| {
-                !(character.is_alphanumeric() || character == '_' || character == '$')
-            })
+            .rsplit(|character: char| !is_identifier_part(character))
             .next()
             .unwrap_or("");
         if whole.as_str().ends_with('{')
@@ -1467,9 +1473,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         };
         let keyword = code[..open]
             .trim_end()
-            .rsplit(|character: char| {
-                !(character.is_alphanumeric() || character == '_' || character == '$')
-            })
+            .rsplit(|character: char| !is_identifier_part(character))
             .next()
             .unwrap_or("");
         if !arrow && is_control_flow_parentheses(&code, open, keyword) {
@@ -1515,7 +1519,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
     // are scoped like their ASCII counterparts. ZWNJ and ZWJ are permitted
     // after the first identifier character by the ECMAScript grammar.
     let single_arrow =
-        Regex::new(r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*\s*=>\s*\{")
+        Regex::new(r"(?:\p{ID_Start}|[$_])(?:\p{ID_Continue}|[$_\u{200C}\u{200D}])*\s*=>\s*\{")
             .expect("static regex");
     for found in single_arrow.find_iter(&code) {
         let open = found.end() - 1;
@@ -1633,9 +1637,10 @@ fn is_control_flow_parentheses(code: &str, open: usize, keyword: &str) -> bool {
     let await_start = prefix.len().saturating_sub("await".len());
     let before_await = prefix[..await_start].trim_end();
     before_await.strip_suffix("for").is_some_and(|before_for| {
-        before_for.chars().next_back().is_none_or(|character| {
-            !(character.is_alphanumeric() || character == '_' || character == '$')
-        })
+        before_for
+            .chars()
+            .next_back()
+            .is_none_or(|character| !is_identifier_part(character))
     })
 }
 
@@ -1694,7 +1699,7 @@ fn named_function_is_expression(code: &str, start: usize) -> bool {
         return true;
     }
     let keyword = prefix
-        .rsplit(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .rsplit(|character: char| !is_identifier_part(character))
         .next();
     if !matches!(
         keyword,
@@ -2653,6 +2658,14 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "\u{4e2d}",
                 "a\u{200d}",
                 "\u{3b1}\u{3b2}",
+                // Combining marks, connector punctuation, ZWNJ and
+                // `Other_ID_Continue` characters continue an identifier too.
+                "a\u{301}",
+                "\u{203f}",
+                "a\u{200c}",
+                "a\u{b7}",
+                "\u{e33}",
+                "\u{1d7d8}",
             ] {
                 for gap in ["", " ", " /* c */ ", " // c\n"] {
                     let code = format!("{name}{keyword}{gap}({arguments}");
@@ -2662,6 +2675,79 @@ y=/process.env.F/.test(z),process.env.G"#;
             // A keyword inside a longer identifier is not the identifier's end.
             let code = format!("{keyword}Value({arguments}");
             assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn identifier_parts_follow_ecmascript_id_continue() {
+        for character in [
+            'a',
+            'Z',
+            '0',
+            '_',
+            '$',
+            '\u{e9}',
+            '\u{4e2d}',
+            '\u{301}',
+            '\u{200c}',
+            '\u{200d}',
+            '\u{203f}',
+            '\u{b7}',
+            '\u{e33}',
+            '\u{3099}',
+            '\u{1d7d8}',
+            '\u{ff9e}',
+        ] {
+            assert!(is_identifier_part(character), "{character:?}");
+        }
+        for character in [
+            ' ',
+            '-',
+            '.',
+            '#',
+            '(',
+            '\n',
+            '\r',
+            '\u{2028}',
+            '\u{2029}',
+            '\u{a0}',
+            '\u{2e2e}',
+            '\u{1f600}',
+        ] {
+            assert!(!is_identifier_part(character), "{character:?}");
+        }
+        // The definition matches the Unicode property over the whole BMP and
+        // the first supplementary plane, apart from the three ECMAScript
+        // additions.
+        let property = Regex::new(r"^\p{ID_Continue}$").unwrap();
+        for code in 0..0x2_0000u32 {
+            let Some(character) = char::from_u32(code) else {
+                continue;
+            };
+            let expected = property.is_match(&character.to_string())
+                || matches!(character, '$' | '\u{200c}' | '\u{200d}');
+            assert_eq!(is_identifier_part(character), expected, "{code:#x}");
+        }
+    }
+
+    #[test]
+    fn combining_marks_keep_keywords_from_guarding() {
+        let read = "process.env.FLAG";
+        for terminator in LINE_TERMINATORS {
+            for (keyword, _) in CONTROL_KEYWORDS {
+                let arguments = keyword_arguments(keyword, read);
+                for name in ["a\u{301}", "\u{203f}", "a\u{200c}", "a\u{200d}"] {
+                    let code = format!("{name}{keyword} // c{terminator}({arguments}");
+                    assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+                }
+            }
+            // A keyword-like suffix of a longer name before a comment is an
+            // operand, so the next slash divides.
+            let code = format!("a\u{301}else // c{terminator}/{read}/ 2");
+            assert!(
+                !in_ranges(&non_code_ranges(&code), code.find(read).unwrap()),
+                "{code:?}"
+            );
         }
     }
 
