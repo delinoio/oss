@@ -295,6 +295,24 @@
   width: auto;
 }
 .settings-content[aria-label]
+  .subscription-provider-card
+  .subscription-provider-actions {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.settings-content[aria-label]
+  .subscription-provider-card
+  .subscription-provider-actions
+  button {
+  grid-column: auto;
+  grid-row: auto;
+  min-height: 40px;
+}
+.settings-content[aria-label]
   .settings-content-column
   .subscription-settings
   section
@@ -514,7 +532,6 @@
   }
 }
 @container (width < 640px) {
-  .settings-content[aria-label] .account-provider-choices,
   .settings-content[aria-label] .agent-core-columns {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -560,6 +577,13 @@
     grid-column: 2;
     grid-row: auto;
     justify-self: start;
+  }
+  .settings-content[aria-label]
+    .subscription-provider-card
+    .subscription-provider-actions {
+    grid-column: 2;
+    grid-row: auto;
+    justify-content: flex-start;
   }
 }
 

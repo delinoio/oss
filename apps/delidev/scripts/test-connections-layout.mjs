@@ -94,6 +94,12 @@ try {
           null,
         );
         assert.equal(await page.locator(".connections-attention").count(), 1);
+        // The local main window has no Current connection section or empty host.
+        assert.equal(await page.locator(".connections-current").count(), 0);
+        assert.equal(
+          await page.locator(".connections-page > section").count(),
+          0,
+        );
         assert(
           await page
             .locator(".settings-content")

@@ -243,8 +243,7 @@ impl Connector {
     // shutdown immediately and measure their remaining grace against this same
     // deadline, so a slow phase never grants the other a fresh allowance.
     fn shutdown_owned_until(&self, deadline: Instant) -> Result<()> {
-        self.exiting
-            .store(true, std::sync::atomic::Ordering::Release);
+        self.retire_exiting();
         tracing::info!(
             operation = "desktop_sidecar_shutdown",
             phase = "aggregate-deadline-set",
@@ -1180,6 +1179,19 @@ mod tests {
         Arc::new(Connector::new(script, root.join("private")).unwrap())
     }
     const HELLO: &str = "print(json.dumps({'version':2,'result':{'endpoint':'http://127.0.0.1:51234','generation':'019c2381-9300-7000-8000-000000000001','key':'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk'}}),flush=True)";
+
+    // Writer table for the dispatch flag `Connector::exiting`: the owned-child
+    // shutdown must be ordered with a browser dispatch's commit-to-spawn
+    // transition.
+    #[test]
+    fn owned_shutdown_is_ordered_with_the_browser_commit() {
+        let temp = tempfile::tempdir().unwrap();
+        let connector = fixture(temp.path(), "");
+        crate::browser_opener::retirement_fixture::assert_writer_waits_for_commit(
+            &connector.exiting,
+            || connector.shutdown_owned().unwrap(),
+        );
+    }
 
     #[test]
     fn startup_modes_share_one_version_two_resident_host() {

@@ -348,7 +348,9 @@ impl Project {
             imported: from_html,
             all_public,
             import_map,
+            source_reflection,
         } = html_scripts(dir)?;
+        crate::app::set_bundle_html_reflection(source_reflection);
         // Without an import map, a package specifier would load a module
         // outside the bundle: the program is not closed.
         if let Some(specifier) = bare.filter(|_| !import_map) {
@@ -1447,6 +1449,10 @@ struct HtmlScripts {
     all_public: bool,
     /// A page has an import map, which can resolve package specifiers.
     import_map: bool,
+    /// Executable inline HTML code can observe callable source from an
+    /// imported chunk. It is outside `snapshot.sources`, so publication must
+    /// carry this boundary into the minification gate explicitly.
+    source_reflection: bool,
 }
 
 /// How the chunks of a bundle import each other.
@@ -1953,6 +1959,7 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                     let Some(code) = code else {
                         continue;
                     };
+                    found.source_reflection |= crate::minify::may_observe_function_source(code);
                     let dynamic = crate::bundle::literal_dynamic_imports(code);
                     if dynamic.non_literal {
                         found.all_public = true;
@@ -2020,6 +2027,7 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                     None => {
                         // Inline code can import chunks: they become public.
                         let code = tag.text.as_deref().unwrap_or_default();
+                        found.source_reflection |= crate::minify::may_observe_function_source(code);
                         let dynamic = crate::bundle::literal_dynamic_imports(code);
                         // A computed specifier can name any chunk.
                         if dynamic.non_literal {

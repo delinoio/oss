@@ -2,6 +2,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -15,6 +16,7 @@ import {
   sameReference,
   type BaseReference,
 } from "./session-diff-model";
+import { PendingCloseRegistry } from "./session-pending-close";
 
 export enum SessionTabKind {
   Conversation = "conversation",
@@ -111,6 +113,27 @@ type ComparisonTab = Extract<SessionTab, { kind: SessionTabKind.Comparison }>;
 
 /** Connection-owned descriptors contain no resource bodies, preview bytes or requests. */
 export class SessionTabsStore {
+  constructor(private pendingCloses = new PendingCloseRegistry()) {
+    // A sibling window proved a Close complete: retained Sessions here have no
+    // inventory poll, so drop the dead descriptor without re-broadcasting.
+    this.pendingCloses.onSettled((key) => {
+      try {
+        const [profile, pageId] = JSON.parse(key) as [string, string];
+        if (typeof profile === "string" && typeof pageId === "string")
+          this.closePageInSessions(profile, pageId);
+      } catch {
+        // A malformed key from another window is ignored.
+      }
+    });
+  }
+  /** (Re)opens the cross-window pending-close channel; idempotent. */
+  connect() {
+    this.pendingCloses.connect();
+  }
+  /** Releases holds and closes the channel when the store is discarded. */
+  dispose() {
+    this.pendingCloses.dispose();
+  }
   private terminals = new Map<string, TerminalPresentation>();
   terminalPresentation(id: string) {
     let value = this.terminals.get(id);
@@ -299,6 +322,11 @@ export class SessionTabsStore {
    * acknowledgment idempotent. No native operation is issued.
    */
   closePageEverywhere(profile: string, pageId: string) {
+    this.closePageInSessions(profile, pageId);
+    // The proof is profile-scoped: sibling product windows drop it as well.
+    this.pendingCloses.settle(this.pendingCloseKey(profile, pageId));
+  }
+  private closePageInSessions(profile: string, pageId: string) {
     const key = sessionTabKey({
       kind: SessionTabKind.Page,
       profile,
@@ -312,13 +340,40 @@ export class SessionTabsStore {
       .map(([id]) => id);
     for (const id of holders) this.closePage(id, profile, pageId);
   }
+  // Unsettled original Close operations by profile/page key. The close is
+  // profile-scoped, so every Session and every same-origin product window
+  // keeps the descriptor until the owning view observes the original proof.
+  // Product windows have independent renderer memory, so the registry also
+  // exchanges its holds over a same-origin channel.
+  private pendingCloseKey(profile: string, pageId: string) {
+    return JSON.stringify([profile, pageId]);
+  }
+  /** Marks a page as owned by an unsettled Close; `owner` identifies the holder.
+   * Resolves once every other product window recorded the hold. */
+  holdPendingClose(profile: string, pageId: string, owner: object) {
+    return this.pendingCloses.hold(
+      this.pendingCloseKey(profile, pageId),
+      owner,
+    );
+  }
+  /** Whether `owner`'s hold is still announced (false after pagehide/dispose). */
+  holdsPendingClose(profile: string, pageId: string, owner: object) {
+    return this.pendingCloses.holds(
+      this.pendingCloseKey(profile, pageId),
+      owner,
+    );
+  }
+  /** Releases one holder once its Close settled, was rejected or was abandoned. */
+  releasePendingClose(profile: string, pageId: string, owner: object) {
+    this.pendingCloses.release(this.pendingCloseKey(profile, pageId), owner);
+  }
   /**
    * Aligns the Page descriptors with one native inventory of the admitted
    * profile. Pages already listed keep their order and selection and only
    * refresh their label; newly discovered pages are appended in inventory
    * order without being selected; descriptors the inventory no longer lists
    * (and foreign-profile descriptors) are removed unless a pending close still
-   * owns them. A restoration never opens or selects a page.
+   * owns them in any Session or product window. A restoration never opens or selects a page.
    */
   reconcilePages(
     id: string,
@@ -332,7 +387,11 @@ export class SessionTabsStore {
       if (
         tab.kind === SessionTabKind.Page &&
         (tab.profile !== profile || !listed.has(tab.id)) &&
-        !(tab.profile === profile && owned.has(tab.id))
+        !(
+          tab.profile === profile &&
+          (owned.has(tab.id) ||
+            this.pendingCloses.has(this.pendingCloseKey(profile, tab.id)))
+        )
       )
         this.closePage(id, tab.profile, tab.id);
     }
@@ -500,12 +559,31 @@ export class SessionTabsStore {
 }
 const Context = createContext<SessionTabsStore | undefined>(undefined);
 export function SessionTabsProvider({ children }: { children: ReactNode }) {
-  const [store] = useState(() => new SessionTabsStore());
+  const [store] = useState(
+    () =>
+      new SessionTabsStore(new PendingCloseRegistry({ deferConnect: true })),
+  );
+  useEffect(() => {
+    store.connect();
+    return () => store.dispose();
+  }, [store]);
   return <Context.Provider value={store}>{children}</Context.Provider>;
 }
 export function useSessionTabsStore() {
   const context = useContext(Context),
-    [fallback] = useState(() => new SessionTabsStore());
+    [fallback] = useState(
+      () =>
+        new SessionTabsStore(new PendingCloseRegistry({ deferConnect: true })),
+    );
+  useEffect(() => {
+    // The fallback store only serves callers outside a provider.
+    if (context) {
+      fallback.dispose();
+      return;
+    }
+    fallback.connect();
+    return () => fallback.dispose();
+  }, [context, fallback]);
   return context ?? fallback;
 }
 export function useSessionTabs(id: string) {

@@ -3218,7 +3218,6 @@ function SettingsWorkspace({
                     <div>
                       {connectionSettings ?? (
                         <section
-                          data-settings-search-target="current-connection"
                           aria-label={copy("settings.connections.current")}
                         >
                           <h2>{copy("settings.connections.current")}</h2>

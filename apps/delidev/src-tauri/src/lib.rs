@@ -287,6 +287,14 @@ pub struct Connector {
 }
 
 impl Connector {
+    /// Marks the application as exiting. `exiting` is the flag every external
+    /// link dispatch observes, so every production writer must call this
+    /// instead of storing to the field: the store then takes the same lock as
+    /// the browser's commit-to-spawn transition (`browser_opener::retire`).
+    pub(crate) fn retire_exiting(&self) {
+        browser_opener::retire(&self.exiting);
+    }
+
     // The verified local connection captures non-secret authority once. Empty
     // callback polling rechecks that fixed descriptor without starting a CLI or
     // competing with unrelated connector commands. Changed descriptors require
