@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	toml "github.com/pelletier/go-toml/v2"
@@ -21,6 +22,8 @@ type isolationCell struct {
 	input string
 	// keys are the requested project keys.
 	keys []string
+	// foldCase selects the case-insensitive platform comparison.
+	foldCase bool
 	// invalid marks a shape that must be rejected without any change.
 	invalid bool
 	// check inspects the isolated document.
@@ -62,6 +65,21 @@ func noMCPAnywhere(t *testing.T, document map[string]any) {
 }
 
 func isolationCells() []isolationCell {
+	trustedAndUntrusted := func(trusted ...string) func(*testing.T, map[string]any) {
+		return func(t *testing.T, document map[string]any) {
+			t.Helper()
+			projects := tableAt(t, document, "projects")
+			for key, raw := range projects {
+				want := "untrusted"
+				if slices.Contains(trusted, key) {
+					want = "trusted"
+				}
+				if got := raw.(map[string]any)["trust_level"]; got != want {
+					t.Errorf("project %q trust %v, want %v", key, got, want)
+				}
+			}
+		}
+	}
 	return []isolationCell{
 		// Config shape x profile selection.
 		{name: "empty-document", input: "", keys: []string{"/p"}, check: func(t *testing.T, d map[string]any) { noMCPAnywhere(t, d) }},
@@ -101,11 +119,26 @@ func isolationCells() []isolationCell {
 			}
 		}},
 		{name: "features-scalar", input: "features = 3\n", keys: []string{"/p"}, invalid: true},
+		// Path spelling.
+		{name: "existing-trusted-key-with-dot-segments", input: "[projects.\"/w/p/./\"]\ntrust_level = \"trusted\"\n[projects.\"/w/other\"]\ntrust_level = \"trusted\"\n", keys: []string{"/w/p"}, check: trustedAndUntrusted("/w/other")},
+		{name: "existing-trusted-key-with-trailing-separator", input: "[projects.\"/w/p/\"]\ntrust_level = \"trusted\"\n", keys: []string{"/w/p"}, check: trustedAndUntrusted()},
+		{name: "existing-trusted-key-differs-by-case-on-case-sensitive-platform", input: "[projects.\"/W/P\"]\ntrust_level = \"trusted\"\n", keys: []string{"/w/p"}, check: trustedAndUntrusted("/W/P")},
+		{name: "existing-trusted-key-differs-by-case-on-case-insensitive-platform", input: "[projects.\"/W/P\"]\ntrust_level = \"trusted\"\n", keys: []string{"/w/p"}, foldCase: true, check: trustedAndUntrusted()},
+		{name: "existing-entry-keeps-unrelated-fields", input: "[projects.\"/w/p/\"]\ntrust_level = \"trusted\"\nextra = 3\n", keys: []string{"/w/p"}, check: func(t *testing.T, d map[string]any) {
+			if tableAt(t, d, "projects", "/w/p/")["extra"] != int64(3) {
+				t.Fatal("unrelated project field lost")
+			}
+		}},
+		{name: "existing-project-entry-scalar", input: "[projects]\n\"/w/p\" = 3\n", keys: []string{"/w/p"}, invalid: true},
+		{name: "existing-equivalent-project-entry-scalar", input: "[projects]\n\"/w/p/\" = 3\n", keys: []string{"/w/p"}, invalid: true},
 	}
 }
 
 // isolateCell runs one cell under the comparison of its platform.
 func isolateCell(document map[string]any, cell isolationCell) (bool, error) {
+	previous := projectKeysFoldCase
+	projectKeysFoldCase = cell.foldCase
+	defer func() { projectKeysFoldCase = previous }()
 	return isolateHomeDocument(document, cell.keys)
 }
 
@@ -150,7 +183,7 @@ func TestIsolationStateTableCells(t *testing.T) {
 
 func TestIsolateHomeConfigAppliesEveryCellThroughTheFile(t *testing.T) {
 	for _, cell := range isolationCells() {
-		if cell.invalid {
+		if cell.invalid || cell.foldCase {
 			continue
 		}
 		t.Run(cell.name, func(t *testing.T) {

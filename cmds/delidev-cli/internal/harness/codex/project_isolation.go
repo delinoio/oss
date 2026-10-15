@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -204,9 +205,30 @@ func (c *Client) verifyMCPInventory(ctx context.Context, cwd string) error {
 	return nil
 }
 
+// projectKeysFoldCase is true where the platform compares paths without case.
+var projectKeysFoldCase = runtime.GOOS == "windows"
+
+// normalizeProjectKey is the comparison form of a project directory: cleaned
+// and, on a case-insensitive platform, case-folded. Two spellings of one
+// directory (a trailing separator, dot segments, a different case on Windows)
+// have the same comparison form; Codex resolves trust through a normalized
+// lookup, so every spelling that normalizes alike must carry the same trust.
+func normalizeProjectKey(path string, foldCase bool) string {
+	if path == "" {
+		return ""
+	}
+	path = filepath.Clean(path)
+	if foldCase {
+		path = strings.ToLower(path)
+	}
+	return path
+}
+
 // projectTrustKeys returns the deduplicated keys Codex may use to record trust
-// for the directories: each directory, its nearest Git repository root and,
-// for a linked worktree, the main repository root.
+// for the directories: each directory in its cleaned and symlink-resolved
+// spelling, the nearest Git repository root and, for a linked worktree, the
+// main repository root of each spelling. The caller's raw spelling is never
+// written.
 func projectTrustKeys(directories []string) []string {
 	var keys []string
 	add := func(path string) {
@@ -215,10 +237,20 @@ func projectTrustKeys(directories []string) []string {
 		}
 	}
 	for _, directory := range directories {
-		add(directory)
-		root, main := gitRoots(directory)
-		add(root)
-		add(main)
+		if directory == "" {
+			continue
+		}
+		cleaned := filepath.Clean(directory)
+		spellings := []string{cleaned}
+		if resolved, err := filepath.EvalSymlinks(cleaned); err == nil && resolved != cleaned {
+			spellings = append(spellings, filepath.Clean(resolved))
+		}
+		for _, spelling := range spellings {
+			add(spelling)
+			root, main := gitRoots(spelling)
+			add(root)
+			add(main)
+		}
 	}
 	return keys
 }
@@ -282,7 +314,8 @@ const pluginsFeature = "plugins"
 //   - every profile loses a plugins feature override and features.plugins is
 //     false, which disables plugin loading and with it every MCP server a plugin
 //     contributes through its own .mcp.json;
-//   - every requested project key is untrusted.
+//   - every equivalent spelling of a requested project key, and the requested
+//     key itself, is untrusted.
 //
 // Any other shape of a table this function must edit is invalid and rejected.
 func isolateHomeDocument(document map[string]any, keys []string) (bool, error) {
@@ -350,6 +383,17 @@ func isolateHomeDocument(document map[string]any, keys []string) (bool, error) {
 			changed = true
 		}
 		return nil
+	}
+	requested := map[string]struct{}{}
+	for _, key := range keys {
+		requested[normalizeProjectKey(key, projectKeysFoldCase)] = struct{}{}
+	}
+	for _, existing := range sortedKeys(projects) {
+		if _, equivalent := requested[normalizeProjectKey(existing, projectKeysFoldCase)]; equivalent {
+			if err := untrust(existing); err != nil {
+				return false, err
+			}
+		}
 	}
 	for _, key := range keys {
 		if err := untrust(key); err != nil {

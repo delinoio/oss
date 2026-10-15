@@ -38,6 +38,7 @@ func TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP(t *testing.T) {
 	}
 	scenarios := []string{"repository-layer", "private-home-layer", "retained-trusted-home", "resume", "selected-profile"}
 	scenarios = append(scenarios, "plugin")
+	scenarios = append(scenarios, "non-clean-spelling")
 	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
 			var requests atomic.Int64
@@ -61,8 +62,12 @@ func TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP(t *testing.T) {
 			cfg := nativeFixtureConfig(t, binary, "http://127.0.0.1:1")
 			cfg.API = &APIConfig{ServerOrigin: provider.URL, Token: apiFixtureToken()}
 			workspace := cfg.Process.Cwd
-			if output, err := exec.Command("git", "init", "-q", workspace).CombinedOutput(); err != nil {
-				t.Fatalf("git init: %v %s", err, output)
+			// The non-Git spelling cell has no repository root key to compensate for
+			// an unnormalized directory key.
+			if scenario != "non-clean-spelling" {
+				if output, err := exec.Command("git", "init", "-q", workspace).CombinedOutput(); err != nil {
+					t.Fatalf("git init: %v %s", err, output)
+				}
 			}
 			marker := filepath.Join(filepath.Dir(cfg.Home), "mcp-marker")
 			server := fmt.Sprintf("[mcp_servers.marker]\ncommand = \"/usr/bin/touch\"\nargs = [%q]\n", marker)
@@ -73,7 +78,7 @@ func TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP(t *testing.T) {
 				appendNativeConfig(t, filepath.Join(cfg.Home, "config.toml"), "\nprofile = \"review\"\n"+strings.Replace(server, "[mcp_servers.marker]", "[profiles.review.mcp_servers.marker]", 1))
 			case "plugin":
 				writeNativeMarkerPlugin(t, cfg.Home, marker)
-			case "retained-trusted-home":
+			case "retained-trusted-home", "non-clean-spelling":
 				// An earlier thread of the retained home recorded trust.
 				appendNativeConfig(t, filepath.Join(cfg.Home, "config.toml"), fmt.Sprintf("\n[projects.%q]\ntrust_level = \"trusted\"\n", workspace))
 				fallthrough
@@ -93,6 +98,10 @@ func TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP(t *testing.T) {
 			}
 			defer client.Close()
 			settings := ThreadSettings{Model: "fixture-model", Provider: APIProvider, Effort: "high", Cwd: workspace, Options: domain.AgentOptions{Permission: domain.PermissionWorkspaceWrite, ApprovalPolicy: "on-request"}}
+			if scenario == "non-clean-spelling" {
+				// An equivalent but non-clean spelling of the trusted canonical key.
+				settings.Cwd = workspace + string(os.PathSeparator) + "." + string(os.PathSeparator)
+			}
 			var bound ThreadResult
 			if scenario == "resume" {
 				// Complete one turn, close the connection and resume the retained

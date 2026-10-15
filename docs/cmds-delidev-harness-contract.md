@@ -1237,7 +1237,10 @@ independent Fork `thread/fork`).
    strict TOML) and applies the state table below. It records
    `trust_level = "untrusted"` for the thread directory, its nearest Git
    repository root, the main repository root of a linked worktree and every
-   workspace root, and replaces any retained `trusted` value of those keys.
+   workspace root, each in its cleaned and symlink-resolved spelling (never the
+   caller's raw spelling), and replaces a retained `trusted` value of those keys
+   and of every existing key that normalizes to the same directory (a trailing
+   separator, dot segments and, on Windows, a different case).
    It removes the top-level `mcp_servers` table and the `mcp_servers` table of
    every profile table, selected or not, because the selected profile merges over
    the top-level configuration (DeliDev never authors an MCP or profile selection
@@ -1323,16 +1326,25 @@ unchanged and fails with `reason=trust-unwritable`.
 | Plugin source            | `features` or a profile's `features` is not a table                    | Rejected; file unchanged                                                             |
 | Plugin source            | Effective `features.plugins` is absent, `null` or `true` after binding | Rejected with `plugins-enabled` before any input (a managed policy can re-enable it) |
 | Plugin source            | Effective `features` is malformed                                      | Rejected with `inventory-unreadable` before any input                                |
+| Path spelling            | Clean absolute directory                                               | Written as is                                                                        |
+| Path spelling            | Trailing separator, dot segments or repeated separators                | Only the cleaned key is written                                                      |
+| Path spelling            | Symlinked directory                                                    | The symlink spelling and the resolved spelling are written                           |
+| Path spelling            | Existing `trusted` key that normalizes to the same directory           | Set to `untrusted`; unrelated keys and fields are kept                               |
+| Path spelling            | Existing key that differs only by case, case-sensitive platform        | A different directory; left unchanged                                                |
+| Path spelling            | Existing key that differs only by case, Windows                        | The same directory; set to `untrusted`                                               |
+| Path spelling            | Non-Git directory                                                      | The directory key alone isolates it                                                  |
+| Path spelling            | Existing project entry (equivalent or not) is not a table              | Rejected; file unchanged                                                             |
 
 Tests: `project_isolation_test.go` (table, profile derivation, pinned defaults,
 trust keys including linked worktrees, atomic idempotent replacement, invalid
 files, concurrent members, start and resume rows, inventory rejection rows and
 logs), `project_isolation_cells_test.go` (the state table above),
+`project_isolation_path_test.go` (path normalization),
 the shared-owner binding test, and the explicit installed-native
 `TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP` and
 `TestManualNativeForkNeverLaunchesUnselectedMCP` suites, which run the
 repository-layer, private-home-layer, retained-trusted-home, resume,
-selected-profile and enabled-plugin cases
+selected-profile, enabled-plugin and non-clean-spelling cases
 against Codex 0.159.2 with a scripted loopback provider and no real account.
 Real-account acceptance is not performed.
 
