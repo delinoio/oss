@@ -2538,6 +2538,7 @@ jobs:
           targets: ${{ matrix.target }}
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify native runtime and installed package on this host
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
@@ -2566,16 +2567,22 @@ jobs:
           pnpm --filter @delino/pnport test:cache:prepare "$cache_fixture"
           pnpm --filter @delino/pnport test:cache "$cache_fixture" "$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport"
       - name: Measure identical cold and warm workloads on this native host
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           node packages/pnport/scripts/benchmark.mjs "$RUNNER_TEMP/pnport-typescript" "$RUNNER_TEMP/pnport-benchmark" "packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" "$GITHUB_SHA"
       - name: Save revision-bound numeric benchmark results
+        if: runner.os != 'Windows'
         uses: actions/upload-artifact@v7
         with:
           name: pnport-benchmark-${{ matrix.suffix }}-${{ github.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pnport-benchmark/benchmark.json
           if-no-files-found: error
           retention-days: 30
+      - name: Verify Windows source and installed development archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/ci/pnport-windows.ps1 -Target "$env:PNPORT_TARGET" -Suffix "$env:PNPORT_SUFFIX"
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
