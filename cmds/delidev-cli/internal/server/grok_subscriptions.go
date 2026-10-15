@@ -617,7 +617,10 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		if lease.Action == domain.SubscriptionLogout && (state.RevokedGeneration == "" || state.RevokedGeneration != lease.Generation) {
 			usable = false
 		}
-		if state.Pending != nil && state.Pending.Canceled {
+		// Only the lease's own operation can cancel it. An execute lease carries no
+		// operation: the pending operation is a logout or refresh that was accepted
+		// while the execution ran and belongs to someone else.
+		if state.Pending != nil && state.Pending.ID == lease.OperationID && state.Pending.Canceled {
 			usable = false
 		}
 		vault, err := s.secrets()
@@ -732,7 +735,7 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			if lease.Action == domain.SubscriptionLogout && (state.RevokedGeneration == "" || state.RevokedGeneration != lease.Generation) {
 				usable = false
 			}
-			if state.Pending != nil {
+			if state.Pending != nil && state.Pending.ID == lease.OperationID {
 				if err := subscriptionActorValid(tx, state.Pending.Actor); err != nil {
 					return nil, err
 				}
@@ -751,9 +754,13 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 				state.RecoveryRequired = true
 				a.Health = domain.AccountFailed
 			} else {
-				// A confirmed execute cleanup releases the lease even when the native
-				// process left no usable credential or was recovered after a restart:
-				// the stored generation stays current and nothing is redistributed.
+				// A confirmed execute cleanup releases the lease even when the
+				// execution produced no usable credential (a failed or canceled run,
+				// which is exactly how an accepted logout ends it, or a recovery after a
+				// restart): the Worker proved
+				// the process exit and the private-home removal, and nothing is
+				// redistributed, so the generation stays as it was and the accepted
+				// logout or refresh that waited for the lease can proceed.
 				state.Lease = nil
 				state.Members = nil
 				if recovery {

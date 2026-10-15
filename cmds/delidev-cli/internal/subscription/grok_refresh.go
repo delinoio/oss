@@ -19,9 +19,10 @@ const GrokTokenEndpoint = GrokIssuer + "/oauth2/token"
 // retries or follows a redirect.
 //
 // The classification matches ExchangeCode. A definitive provider rejection
-// (HTTP 400 or 401 whose whole body is one OAuth error object, for example
-// invalid_grant) is
-// GrokReasonTokenRejected: the provider refused the token, so nothing rotated.
+// (HTTP 400 or 401 whose whole body is one OAuth error object with no token
+// member, for example invalid_grant) is GrokReasonTokenRejected: the provider
+// refused the token, so nothing rotated. A body that has both an error and a
+// token member is a contradiction and stays uncertain.
 // Every transport failure, cancellation, truncated or oversized body and
 // unexpected status is GrokReasonTokenUncertain, and a malformed success body is
 // GrokReasonTokenResponse; in both cases the provider may already have rotated
@@ -43,15 +44,17 @@ func (c GrokOAuthClient) Refresh(ctx context.Context, refreshToken []byte) (Grok
 	if err != nil {
 		return GrokTokens{}, err
 	}
-	body, parsed := parseGrokTokenBody(raw)
-	if status != http.StatusOK {
-		if parsed && (status == http.StatusBadRequest || status == http.StatusUnauthorized) && body.Error != "" {
-			return GrokTokens{}, grokFailure(GrokReasonTokenRejected)
-		}
+	body, outcome := classifyGrokTokenResponse(status, raw)
+	switch outcome {
+	case grokTokenOutcomeRejected:
+		return GrokTokens{}, grokFailure(GrokReasonTokenRejected)
+	case grokTokenOutcomeMalformed:
+		return GrokTokens{}, grokFailure(GrokReasonTokenResponse)
+	case grokTokenOutcomeUncertain:
 		return GrokTokens{}, grokFailure(GrokReasonTokenUncertain)
 	}
 	seconds, numErr := body.ExpiresIn.Int64()
-	if !parsed || numErr != nil || seconds <= 0 || seconds > 86400*365 || !strings.EqualFold(body.TokenType, "bearer") ||
+	if numErr != nil || seconds <= 0 || seconds > 86400*365 || !strings.EqualFold(body.TokenType, "bearer") ||
 		!grokSecret(body.AccessToken) || body.RefreshToken != "" && !grokSecret(body.RefreshToken) || body.IDToken != "" && !grokSecret(body.IDToken) {
 		return GrokTokens{}, grokFailure(GrokReasonTokenResponse)
 	}

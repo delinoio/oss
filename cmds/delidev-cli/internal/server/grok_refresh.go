@@ -558,7 +558,13 @@ func (s *Service) markGrokRecovery(id, operation domain.ID) (bool, error) {
 // A claimed refresh stays in recovery and is never resolved automatically.
 func grokRefreshNeedsRecovery(a domain.Account) bool {
 	st := a.Subscription
-	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionGrok || a.Removal != nil || a.Connection == nil || st == nil || st.Generation == "" || st.Lease != nil || !st.RecoveryRequired {
+	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionGrok || a.Removal != nil || a.Connection == nil || st == nil || st.Generation == "" || !st.RecoveryRequired {
+		return false
+	}
+	// An execution lease predates the refresh that queued behind it, so the
+	// refresh may settle while that lease stays fenced. Any other lease belongs
+	// to the refresh itself and is never settled here.
+	if st.Lease != nil && st.Lease.Action != domain.SubscriptionExecute {
 		return false
 	}
 	o := st.ServerOperation
@@ -594,10 +600,14 @@ func (s *Service) recoverGrokRefresh(ctx context.Context, id, operation domain.I
 		// credential was never touched, so the health the refresh was admitted
 		// under returns (an expired account stays expired, it is not made ready).
 		if a.Health == domain.AccountFailed {
-			a.Health = domain.AccountReady
-			if o.HealthBefore != "" {
-				a.Health = o.HealthBefore
-			}
+			a.Health = grokHealthAfterQueuedFence(*o)
+		}
+		if st.Lease != nil && st.Lease.Epoch != s.subscriptionServerEpoch() {
+			// A refresh that waited for an execution lease is fenced by the restart
+			// together with that lease. The refresh settles, but the lease predates
+			// the restart and only its original Worker can release it, so the fence
+			// stands for the lease and clears with its release.
+			st.RecoveryRequired, a.Health = true, domain.AccountFailed
 		}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
