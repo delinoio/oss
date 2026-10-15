@@ -496,6 +496,29 @@ fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
 /// for `++` and `--`: a line terminator before them is a restricted
 /// production, so they start a new statement.
 fn asi_terminates(code: &str, terminator: usize, after: usize, ignored: &[(usize, usize)]) -> bool {
+    statement_boundary(code, terminator, after, ignored, false)
+}
+
+/// Whether the line terminator at `terminator` ends an expression-bodied
+/// arrow function: the [`asi_terminates`] rule, plus a `{` after an operand.
+/// A `{` cannot continue an expression, so there it opens a block statement
+/// (`(eval) => eval` + line terminator + `{ eval(code) }`).
+fn arrow_body_ends(
+    code: &str,
+    terminator: usize,
+    after: usize,
+    ignored: &[(usize, usize)],
+) -> bool {
+    statement_boundary(code, terminator, after, ignored, true)
+}
+
+fn statement_boundary(
+    code: &str,
+    terminator: usize,
+    after: usize,
+    ignored: &[(usize, usize)],
+    block_starts_statement: bool,
+) -> bool {
     let ends_expression = match previous_significant_token(code, terminator, ignored) {
         Token::Word { text, member } => member || !OPEN_KEYWORDS.contains(&text),
         Token::Punct(text) => matches!(text, ")" | "]" | "}" | "++" | "--" | ";"),
@@ -511,9 +534,10 @@ fn asi_terminates(code: &str, terminator: usize, after: usize, ignored: &[(usize
         Token::Punct("++" | "--") => false,
         // `!=` and `!==` continue; a prefix `!` starts a new statement.
         Token::Punct("!") => code[position..].starts_with("!="),
+        Token::Punct("{") => !block_starts_statement,
         Token::Punct(text) => text
             .chars()
-            .all(|character| "%&()*+,-./:;<=>?[]^{|}".contains(character)),
+            .all(|character| "%&()*+,-./:;<=>?[]^|}".contains(character)),
         Token::Edge | Token::Number | Token::Literal => false,
     }
 }
@@ -1717,13 +1741,14 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         }
         let body = whole.end();
         let open = if whole.as_str().ends_with('{') {
-            Some(body - 1)
+            Some(body - 1).filter(|open| !literal_between(source, ignored, whole.start(), *open))
         } else {
             code[body..]
                 .bytes()
                 .position(|byte| !byte.is_ascii_whitespace())
                 .map(|offset| body + offset)
                 .filter(|open| bytes.get(*open) == Some(&b'{'))
+                .filter(|open| !literal_between(source, ignored, body, *open))
         };
         let block = open.and_then(|open| blocks.iter().find(|(start, _)| *start == open).copied());
         let end = block.map_or_else(
@@ -1769,9 +1794,22 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
                 .trim_start_matches("...");
             collect_binding_names(target, &mut names);
         }
-        let block = blocks.iter().find(|(start, _)| *start == body).copied();
+        // A literal between the parameters and the next `{` makes that brace
+        // part of a later statement: the arrow body is the literal expression.
+        let literal_body = literal_between(source, ignored, close, body);
+        let block = blocks
+            .iter()
+            .find(|(start, _)| *start == body && !literal_body)
+            .copied();
+        let expression_start = if literal_body {
+            source[close..]
+                .find("=>")
+                .map_or(body, |offset| close + offset + 2)
+        } else {
+            body
+        };
         let end = block.map_or_else(
-            || arrow_expression_end(source, body, ignored),
+            || arrow_expression_end(source, expression_start, ignored),
             |(_, close)| close,
         );
         if let Some(block) = block
@@ -1828,10 +1866,20 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
     scopes
 }
 
+/// True when a string, template or regular expression literal lies in
+/// `from..to`. The scopes are found on a copy of the code whose literals are
+/// blanked, so a literal body (`=> 's'`) would otherwise look like whitespace
+/// before the next `{`.
+fn literal_between(source: &str, ignored: &[(usize, usize)], from: usize, to: usize) -> bool {
+    ignored
+        .iter()
+        .any(|range| range.0 >= from && range.0 < to && !is_comment_range(source, *range))
+}
+
 /// End of an expression-bodied arrow function whose body starts at `from`:
 /// the first top-level `;` or `,`, the closer of the enclosing group, or a
 /// line terminator at which automatic semicolon insertion starts a new
-/// statement ([`asi_terminates`]). A line terminator before a binary operator
+/// statement ([`arrow_body_ends`]). A line terminator before a binary operator
 /// (`(eval) => 1` + CR + `+eval(code)`) continues the body.
 fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -> usize {
     let bytes = source.as_bytes();
@@ -1847,7 +1895,7 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
         }
         let terminator = line_terminator_len(bytes, index);
         if terminator > 0 {
-            if depth == 0 && asi_terminates(source, index, index + terminator, ignored) {
+            if depth == 0 && arrow_body_ends(source, index, index + terminator, ignored) {
                 return index;
             }
             index += terminator;
@@ -3171,6 +3219,30 @@ y=/process.env.F/.test(z),process.env.G"#;
         // The operand of `await` is a regular expression, not a division.
         let code = "async () => await // c\r/process.env.FLAG/.test(x) && run()";
         assert!(in_ranges(&non_code_ranges(code), code.find(read).unwrap()));
+    }
+
+    #[test]
+    fn a_block_after_an_arrow_expression_is_a_new_statement() {
+        for terminator in LINE_TERMINATORS {
+            for body in ["eval", "g(1)", "a.b", "[1]", "'s'", "1"] {
+                for comment in ["", "// c", "/* c */"] {
+                    // The line terminator ends the arrow body, so `eval` in
+                    // the block is the global one.
+                    let source = format!(
+                        "const f = (eval) => {body}{terminator}{comment}{terminator}{{ eval(code) \
+                         }}"
+                    );
+                    assert!(direct_eval_line(&source).is_some(), "{source:?}");
+                    // After an operator the block is the arrow body.
+                    let source = "const f = (eval) => { eval(code) }".to_string();
+                    assert_eq!(direct_eval_line(&source), None, "{source:?}");
+                    let source = format!(
+                        "const f = (eval) =>{terminator}{comment}{terminator}{{ eval(code) }}"
+                    );
+                    assert_eq!(direct_eval_line(&source), None, "{source:?}");
+                }
+            }
+        }
     }
 
     #[test]
