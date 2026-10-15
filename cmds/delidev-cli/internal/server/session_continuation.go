@@ -69,7 +69,9 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if session.Compaction != nil && session.Compaction.ExecutionID == assignment.ExecutionID {
 		candidate.Continuation.Compaction = session.Compaction
 	}
-	input, err := checkedExecutionAssignment(tx, sr, session, machine, candidate)
+	// The candidate still holds the predecessor's input; the size of the queued
+	// document is measured below, once that input is replaced.
+	input, err := checkedExecutionAssignmentUnsized(tx, sr, session, machine, candidate)
 	if err != nil {
 		return store.Record{}, err
 	}
@@ -108,6 +110,15 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if err := input.Validate(); err != nil {
 		return store.Record{}, err
 	}
+	// The earlier check measured the predecessor's input. Measure the real
+	// document once the queued prompt is installed, before any write.
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return store.Record{}, err
+	}
+	if err := domain.RequireExecutionJobInput(raw, nil); err != nil {
+		return store.Record{}, err
+	}
 	next.Delivery, next.ExecutionID, next.NativeRequestID = domain.InputClaimed, input.ExecutionID, input.TurnRequestID
 	if _, err := tx.Put(domain.QueueKind, ir.ID, ir.Revision, sr.ID, sr.ProjectID, next); err != nil {
 		return store.Record{}, err
@@ -118,10 +129,6 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	session.Execution, session.Problem, session.NextExecutionIntent = nil, nil, ""
 	session.CurrentNativeHistory = ""
 	if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
-		return store.Record{}, err
-	}
-	raw, err := json.Marshal(input)
-	if err != nil {
 		return store.Record{}, err
 	}
 	return tx.PutJob(domain.NewID(), 0, sr.ID, sr.ProjectID, domain.Job{Type: domain.ExecuteSessionJob, State: domain.JobQueued, MachineID: session.MachineID, Input: raw, AcceptedAt: time.Now().UTC()})

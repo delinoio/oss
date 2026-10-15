@@ -30,7 +30,7 @@ func occurrenceSelectionFailure(err error) *domain.Error {
 		return nil
 	}
 	switch problem.Code {
-	case domain.InvalidArgument, domain.NotFound, domain.PermissionDenied, domain.MissingInput, domain.Unsupported, domain.Unavailable:
+	case domain.InvalidArgument, domain.NotFound, domain.PermissionDenied, domain.MissingInput, domain.Unsupported, domain.Unavailable, domain.ResourceExhausted:
 		return problem
 	default:
 		return nil
@@ -45,7 +45,12 @@ func planOccurrenceSession(tx *store.Tx, id, occurrenceID domain.ID, occurrence 
 		return value, workspace.PrepareRequest{}, err
 	}
 	preparation, err := sessionWorkspaceRequestWithNames(tx, id, value, occurrence.DirectoryNames)
-	return value, preparation, err
+	if err != nil {
+		return value, preparation, err
+	}
+	// Selection-time rejection records a visible failed occurrence instead of
+	// retrying an assignment that can never fit one execution Job document.
+	return value, preparation, requireExecutionJobBudget(tx, value, preparation, domain.SessionInput{Prompt: occurrence.Selection.Prompt, Mode: occurrence.Selection.Mode})
 }
 
 // From the first job write onward, every error must leave the outer transaction.
