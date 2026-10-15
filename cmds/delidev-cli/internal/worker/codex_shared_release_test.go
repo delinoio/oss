@@ -451,7 +451,26 @@ func TestSharedHomeReleaseVerificationTimeline(t *testing.T) {
 			t.Fatalf("the retry did not verify the release: err=%v unverified=%v", err, hold.unverified)
 		}
 	})
-	t.Run("probe close fails, then another holder meets the retry: not a handoff", func(t *testing.T) {
+	t.Run("probe close fails and the lock stays held: the retry closes the kept probe lease", func(t *testing.T) {
+		f, hold := setup(t)
+		// The probe reports a close error without releasing its lock, so the
+		// lock stays held by a lease that only the hold can still close.
+		hookSharedHomeRelease(t, nil, func(*nativeprofile.Lease) error { return errors.New("injected probe close failure") }, nil)
+		if err := hold.release(); err == nil || !hold.unverified {
+			t.Fatalf("a failed probe release was accepted: err=%v unverified=%v", err, hold.unverified)
+		}
+		if f.lockIsFree(t) {
+			t.Fatal("the probe lock was released without a close")
+		}
+		hookSharedHomeRelease(t, nil, func(probe *nativeprofile.Lease) error { return probe.Close() }, nil)
+		if err := hold.release(); err != nil || hold.unverified {
+			t.Fatalf("the retry did not close the kept probe lease: err=%v unverified=%v", err, hold.unverified)
+		}
+		if !f.lockIsFree(t) {
+			t.Fatal("the lock stayed held after the retry")
+		}
+	})
+	t.Run("probe close fails, then another holder meets a retry whose close fails: not a handoff", func(t *testing.T) {
 		f, hold := setup(t)
 		hookSharedHomeRelease(t, nil, func(probe *nativeprofile.Lease) error {
 			_ = probe.Close()
@@ -464,15 +483,52 @@ func TestSharedHomeReleaseVerificationTimeline(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		hookSharedHomeRelease(t, func(*nativeprofile.Lease) error { return errors.New("injected close failure") }, nil, nil)
 		if err := hold.release(); err == nil || !hold.unverified {
-			t.Fatalf("a holder after a failed probe close was taken as a handoff: err=%v unverified=%v", err, hold.unverified)
+			t.Fatalf("a holder after a failed close was taken as a handoff: err=%v unverified=%v", err, hold.unverified)
 		}
-		hookSharedHomeRelease(t, nil, func(probe *nativeprofile.Lease) error { return probe.Close() }, nil)
+		hookSharedHomeRelease(t, func(lease *nativeprofile.Lease) error { return lease.Close() }, func(probe *nativeprofile.Lease) error { return probe.Close() }, nil)
 		if err := other.release(); err != nil {
 			t.Fatal(err)
 		}
 		if err := hold.release(); err != nil || hold.unverified {
 			t.Fatalf("the retry did not verify the release: err=%v unverified=%v", err, hold.unverified)
+		}
+	})
+	t.Run("probe close fails, then the kept lease closes and another holder meets the retry: handoff", func(t *testing.T) {
+		f, hold := setup(t)
+		hookSharedHomeRelease(t, nil, func(probe *nativeprofile.Lease) error {
+			_ = probe.Close()
+			return errors.New("injected probe close failure")
+		}, nil)
+		if err := hold.release(); err == nil {
+			t.Fatal("a failed probe release was accepted")
+		}
+		other, err := holdSharedCodexHome(context.Background(), f.config, f.machine, f.account)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := hold.release(); err != nil || hold.unverified {
+			t.Fatalf("a holder after the kept lease closed cleanly was not a handoff: err=%v unverified=%v", err, hold.unverified)
+		}
+		hookSharedHomeRelease(t, nil, func(probe *nativeprofile.Lease) error { return probe.Close() }, nil)
+		if err := other.release(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("close fails and the lock stays held: the retry closes the kept lease", func(t *testing.T) {
+		f, hold := setup(t)
+		hookSharedHomeRelease(t, func(*nativeprofile.Lease) error { return errors.New("injected close failure") }, nil, nil)
+		err := hold.release()
+		if reason, ok := nativeprofile.Reasoned(err); !ok || reason != nativeprofile.ReasonBusy || !hold.unverified {
+			t.Fatalf("a held lock was accepted as released: err=%v unverified=%v", err, hold.unverified)
+		}
+		hookSharedHomeRelease(t, func(lease *nativeprofile.Lease) error { return lease.Close() }, nil, nil)
+		if err := hold.release(); err != nil || hold.unverified {
+			t.Fatalf("the retry did not close the kept lease: err=%v unverified=%v", err, hold.unverified)
+		}
+		if !f.lockIsFree(t) {
+			t.Fatal("the lock stayed held after the retry")
 		}
 	})
 	t.Run("home replaced: unverified even after a clean close", func(t *testing.T) {

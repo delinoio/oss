@@ -3012,19 +3012,27 @@ second case is a handoff: an exclusive continuation that was already retrying
 acquired the lock between the close and the probe. The probe meets `profile_busy`
 then, which after a clean close proves that the lock was released and passed on,
 so it is not a failure and nothing is parked. A holder met after a failed close
-(or after a failed probe close) is not proven to be a handoff, because it cannot
-be told apart from a lock that was never released, so that release stays
-unverified. A probe whose own close fails is never taken for free either: the hold
-stays unverified and the next call probes again.
+is not proven to be a handoff, because it cannot be told apart from a lock that
+was never released, so that release stays unverified.
 
-| Close and probe                                        | Release                                    |
-| ------------------------------------------------------ | ------------------------------------------ |
-| clean close, probe takes and closes the lock           | verified                                   |
-| clean close, another holder meets the probe            | verified (handoff)                         |
-| failed close, probe takes and closes the lock          | verified; the close error is reported once |
-| failed close, another holder meets the probe           | not verified                               |
-| probe takes the lock but its close fails               | not verified; retried by the next call     |
-| probe fails for another cause, such as a replaced home | not verified                               |
+The hold keeps the lease whose close is not confirmed. A lease whose close failed
+is never dropped while the lock may still be held through it: the next call
+closes that same lease again before it probes, so a failed close cannot leave a
+lock that nothing can release and that every later probe meets as `profile_busy`.
+A probe that took the lock proves the held lease released it, so a probe lease
+whose own close failed replaces the held lease as the kept one. A holder met by
+the call that follows is a handoff only when that retried close succeeded.
+
+| Close of the held or kept lease | Probe                   | Probe close | Release                                    | Kept lease for the next call |
+| ------------------------------- | ----------------------- | ----------- | ------------------------------------------ | ---------------------------- |
+| clean                           | takes the lock          | clean       | verified                                   | none                         |
+| clean                           | meets another holder    | n/a         | verified (handoff)                         | none                         |
+| clean                           | takes the lock          | fails       | not verified                               | the probe lease              |
+| clean                           | fails for another cause | n/a         | not verified                               | none                         |
+| fails                           | takes the lock          | clean       | verified; the close error is reported once | none                         |
+| fails                           | takes the lock          | fails       | not verified                               | the probe lease              |
+| fails                           | meets another holder    | n/a         | not verified (not a handoff)               | the lease whose close failed |
+| fails                           | fails for another cause | n/a         | not verified                               | the lease whose close failed |
 
 The release and the Finish settle as follows. The owner path is the founding
 owner retiring through its last member; the exclusive path is a version 2

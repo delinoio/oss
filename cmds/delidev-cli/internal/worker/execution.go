@@ -266,7 +266,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				return nil, err
 			}
 			if hold.root() != nativeHome {
-				_ = hold.release()
+				if err := hold.release(); err != nil {
+					config.codexOwners.parkUnverifiedRelease(input.AccountID, hold)
+				}
 				return nil, executionCheckpointUncertain()
 			}
 			accountHold = hold

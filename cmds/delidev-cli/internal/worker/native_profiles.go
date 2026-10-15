@@ -341,7 +341,10 @@ type sharedHomeHold struct {
 	config  Config
 	machine domain.ID
 	account domain.ID
-	lease   *nativeprofile.Lease
+	// lease is the lock handle whose close is not confirmed yet: the held lease,
+	// or the probe lease after its close failed. It is dropped only once a close
+	// succeeded or a probe proved the lock free.
+	lease *nativeprofile.Lease
 	// unverified is set once the lock was closed and cleared only after the
 	// release was proven: a probe took the lock again and closed it without an
 	// error, or another holder took it after a clean close (a handoff).
@@ -383,18 +386,23 @@ func (h *sharedHomeHold) root() string { return h.lease.Root }
 // release closes the lock and verifies that a new holder can take it. It only
 // unlocks: history, caches and helper files stay retained. It is idempotent and
 // safe on a nil hold; a release that is not verified stays unverified and is
-// verified again by the next call. Outcomes after the close:
+// verified again by the next call. The hold keeps the lease whose close was not
+// confirmed, so the next call closes that same lease again instead of probing a
+// lock that nothing can release any more. Outcomes after the close:
 //
 //   - the probe takes the lock and closes it without error: verified.
 //   - the probe takes the lock but closing it fails: unverified, because the
-//     probe's own release was not proven; the next call probes again, and a
-//     holder it meets then is not a handoff because it may be the failed probe.
+//     probe's own release was not proven. The probe lease replaces the held
+//     lease, since taking the lock proves the held lease released it; the next
+//     call closes the probe lease again, and a holder it meets after that clean
+//     close is a handoff.
 //   - the probe meets another holder after a clean close: verified, because that
 //     holder (an admitted exclusive continuation) took the lock our close freed.
 //   - the probe meets another holder after a failed close: unverified, because a
-//     lock that was never released looks the same.
+//     lock that was never released looks the same. The lease whose close failed
+//     is kept and closed again by the next call.
 //   - the probe fails for any other reason, for example a replaced home:
-//     unverified.
+//     unverified. A lease whose close failed is kept.
 //
 // A close error followed by a verified probe is reported once, and the lock is
 // proven free.
@@ -406,8 +414,11 @@ func (h *sharedHomeHold) release() error {
 	defer h.mu.Unlock()
 	var closeErr error
 	if h.lease != nil {
-		closeErr, h.lease, h.unverified = closeSharedHomeLease(h.lease), nil, true
-		h.closedClean = closeErr == nil
+		closeErr = closeSharedHomeLease(h.lease)
+		h.unverified, h.closedClean = true, closeErr == nil
+		if closeErr == nil {
+			h.lease = nil
+		}
 		afterSharedHomeClose()
 	}
 	if !h.unverified {
@@ -424,13 +435,14 @@ func (h *sharedHomeHold) release() error {
 		return errors.Join(closeErr, err)
 	}
 	if probeErr := closeSharedHomeProbe(probe); probeErr != nil {
-		// The probe's own lock may still be held, so a holder met by the next
-		// probe is not proven to be a handoff.
-		h.closedClean = false
+		// The probe's own lock may still be held, so keep its lease for the next
+		// call to close, and a holder met by that call is a handoff only after
+		// the close succeeded.
+		h.lease, h.closedClean = probe, false
 		h.log("shared_codex_home_release_unverified", probeErr)
 		return errors.Join(closeErr, probeErr)
 	}
-	h.unverified = false
+	h.lease, h.unverified = nil, false
 	if closeErr != nil {
 		h.log("shared_codex_home_release_failed", closeErr)
 		return closeErr
