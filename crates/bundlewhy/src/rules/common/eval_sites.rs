@@ -699,12 +699,48 @@ impl<'a> Scanner<'a> {
 
     // -- Words -------------------------------------------------------------
 
+    /// Reports whether the `class` word at `index` starts a class header
+    /// instead of being a JSX tag or attribute name (`<class-list>`,
+    /// `<div class="a">`).
+    ///
+    /// A class header is `class`, an optional name, and then `{`, a type
+    /// parameter list, `extends` or `implements`. A tag name is also rejected
+    /// by its position after `<` or `</`. A boolean attribute followed by a
+    /// spread (`<div class {...props}>`) has the shape of an anonymous class;
+    /// the spread then closes as an empty body and the next brace is a block,
+    /// so a direct call stays visible.
+    fn class_header_follows(&self, index: usize) -> bool {
+        let opens_tag = match self.previous(index) {
+            Some(previous) if previous.is_punct("<") => true,
+            Some(previous) if previous.is_punct("/") => index
+                .checked_sub(2)
+                .is_some_and(|before| self.tokens[before].is_punct("<")),
+            _ => false,
+        };
+        if opens_tag {
+            return false;
+        }
+        let mut next = index + 1;
+        if self.tokens.get(next).is_some_and(|name| {
+            name.kind == TokenKind::Word && !matches!(name.text, "extends" | "implements")
+        }) {
+            next += 1;
+        }
+        self.tokens.get(next).is_some_and(|token| {
+            token.is_punct("{")
+                || token.is_punct("<")
+                || token.is_word("extends")
+                || token.is_word("implements")
+        })
+    }
+
     fn word(&mut self, index: usize) {
         let token = self.token(index);
         let previous = self.previous(index);
         let after_dot = previous.is_some_and(|token| token.is_punct(".") || token.is_punct("?."));
         let next = self.tokens.get(index + 1).copied();
         let third = self.tokens.get(index + 2).copied();
+        let class_header = token.text == "class" && self.class_header_follows(index);
         let top = self.top_mut();
         match top.decorator {
             Decorator::AfterAt => {
@@ -731,7 +767,7 @@ impl<'a> Scanner<'a> {
                 // type body, not the keyword of a nested class.
                 top.member_start = false;
             }
-            "class" => {
+            "class" if class_header => {
                 top.header = Header::Class;
                 top.member_start = false;
             }
@@ -1189,6 +1225,57 @@ mod tests {
                 &[DECLARATION],
             ),
             ("const x = a in\n{ eval(v) {} };", &[DECLARATION]),
+        ]);
+    }
+
+    #[test]
+    fn jsx_names_are_not_class_headers() {
+        assert_table(&[
+            (
+                "const view = <class-list>{eval(code)}</class-list>;",
+                &[CALL],
+            ),
+            ("const view = <class>{eval(code)}</class>;", &[CALL]),
+            (
+                "const view = <class.Item>{eval(code)}</class.Item>;",
+                &[CALL],
+            ),
+            ("const view = <ns:class>{eval(code)}</ns:class>;", &[CALL]),
+            ("const view = <class-list />;\neval(code);", &[CALL]),
+            (
+                "const view = <class {...props}>{eval(code)}</class>;",
+                &[CALL],
+            ),
+            ("const view = <div class=\"a\">{eval(code)}</div>;", &[CALL]),
+            (
+                "const view = <div class={name}>{eval(code)}</div>;",
+                &[CALL],
+            ),
+            ("const view = <div class>{eval(code)}</div>;", &[CALL]),
+            ("const view = <div class />;\neval(code);", &[CALL]),
+            (
+                "const view = <div class id=\"a\">{eval(code)}</div>;",
+                &[CALL],
+            ),
+            (
+                "const view = <div id=\"a\" class>{eval(code)}</div>;",
+                &[CALL],
+            ),
+            (
+                "const view = <div class {...props}>{eval(code)}</div>;",
+                &[CALL],
+            ),
+            // A class keyword that follows a tag still opens a class header.
+            (
+                "const view = <class-list />;\nclass C { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            ("const C = class<T> { eval(v) {} };", &[DECLARATION]),
+            ("const C = class Named { eval(v) {} };", &[DECLARATION]),
+            (
+                "const C = class implements I { eval(v) {} };",
+                &[DECLARATION],
+            ),
         ]);
     }
 
