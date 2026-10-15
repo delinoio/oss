@@ -233,13 +233,106 @@ const TEXT_ASSET_EXTENSIONS: &[&str] = &["svg"];
 /// file text (`?raw`).
 const ASSET_QUERY_KEYS: &[&str] = &["raw", "url", "inline", "no-inline"];
 
-/// Splits a module path at its first `?` into the file part and the import
-/// query. A `#fragment` ends the query.
-fn split_query(path: &str) -> (&str, Option<&str>) {
-    match path.split_once('?') {
-        Some((file, rest)) => (file, Some(rest.split_once('#').map_or(rest, |(q, _)| q))),
-        None => (path, None),
+/// The parts of one bundler resource string. This is the single place that
+/// decides which suffix of a module identifier or source-map source is
+/// identity and which part names the backing file; every identity comparison
+/// (collected modules, source-map sources, shared-file counting) goes through
+/// [`split_resource`].
+///
+/// | input                  | file              | query         | fragment |
+/// |------------------------|-------------------|---------------|----------|
+/// | `/app/a.js`            | `/app/a.js`       | none          | none     |
+/// | `/app/a.js?raw`        | `/app/a.js`       | `raw`         | none     |
+/// | `/app/a.js?raw#one`    | `/app/a.js`       | `raw`         | `one`    |
+/// | `/app/a.js#one`        | `/app/a.js`       | none          | `one`    |
+/// | `/app/a.js#one?raw`    | `/app/a.js`       | none          | `one?raw`|
+/// | `/app/a.js?`           | `/app/a.js`       | empty         | none     |
+/// | `/app/a.js#`           | `/app/a.js`       | none          | empty    |
+/// | `\0virtual:a?x#y`      | `virtual:a`       | `x`           | `y`      |
+/// | `C:\app\a.vue?x#y`    | `C:\app\a.vue`    | `x`           | `y`      |
+///
+/// - The query starts at the first `?` and ends at the first `#` after it. The
+///   fragment starts at the first `#` and runs to the end, so a `?` after a `#`
+///   belongs to the fragment (URL syntax).
+/// - Query and fragment are both part of the resource identity: bundlers derive
+///   different modules from one file by either (`Comp.vue?vue&type=style`,
+///   `a.js?raw#one` and `a.js?raw#two` are three resources). Only the file part
+///   names the backing file.
+/// - Leading NUL bytes are the Rollup/Vite marker of a virtual module. They are
+///   not part of the name, and `virtual_module` records that the resource has
+///   no backing file.
+/// - A Windows path (drive letter or UNC prefix) uses `\` as separator, and
+///   [`ResourceParts::file_path`] treats it as `/` on every platform so a
+///   source map written on Windows compares equal to the collected module path.
+///   A POSIX path keeps `\` as an ordinary file-name character.
+/// - Loader prefixes (`css-loader!/app/a.vue`) are not part of this split; see
+///   [`strip_loader_prefix`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ResourceParts<'a> {
+    pub file: &'a str,
+    pub query: Option<&'a str>,
+    pub fragment: Option<&'a str>,
+    pub virtual_module: bool,
+}
+
+impl ResourceParts<'_> {
+    /// The lexically normalized backing file path, with the Windows separator
+    /// rule of the table above applied.
+    pub fn file_path(&self) -> PathBuf {
+        if is_windows_path(self.file) {
+            normalize(Path::new(&self.file.replace('\\', "/")))
+        } else {
+            normalize(Path::new(self.file))
+        }
     }
+}
+
+/// True for a Windows drive-letter (`C:\`, `C:/`) or UNC (`\\host`) path.
+fn is_windows_path(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let drive = bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/');
+    drive || text.starts_with("\\\\")
+}
+
+/// Splits a resource string into file, query and fragment (see
+/// [`ResourceParts`]).
+pub(crate) fn split_resource(text: &str) -> ResourceParts<'_> {
+    let stripped = strip_nul_prefix(text);
+    let virtual_module = stripped.len() != text.len();
+    let (before_fragment, fragment) = match stripped.split_once('#') {
+        Some((head, fragment)) => (head, Some(fragment)),
+        None => (stripped, None),
+    };
+    let (file, query) = match before_fragment.split_once('?') {
+        Some((file, query)) => (file, Some(query)),
+        None => (before_fragment, None),
+    };
+    ResourceParts {
+        file,
+        query,
+        fragment,
+        virtual_module,
+    }
+}
+
+/// Removes the leading NUL bytes that mark a virtual module identifier.
+pub(crate) fn strip_nul_prefix(text: &str) -> &str {
+    text.trim_start_matches('\0')
+}
+
+/// Returns the resource after the last loader separator (`css-loader!/a.vue`).
+pub(crate) fn strip_loader_prefix(id: &str) -> &str {
+    id.rsplit_once('!').map_or(id, |(_, resource)| resource)
+}
+
+/// Splits a module path at its first `?` into the file part and the import
+/// query. A `#fragment` ends the query and is not part of the file part.
+pub(crate) fn split_query(path: &str) -> (&str, Option<&str>) {
+    let parts = split_resource(path);
+    (parts.file, parts.query)
 }
 
 /// True when `path` carries an import query, which makes it a module derived
@@ -260,9 +353,11 @@ fn has_asset_query(path: &str) -> bool {
 }
 
 /// Returns the lowercase extension of the file name of `path`, ignoring any
-/// `?query` and `#fragment` suffix.
+/// `?query` and `#fragment` suffix. This reads a file name on disk, not a
+/// resource identity: a `#` inside the stem (`C#.png`) stays part of the name,
+/// and a fragment after the extension (`logo.svg#icon`) is cut off.
 fn extension_of(path: &str) -> Option<String> {
-    let (file, _) = split_query(path);
+    let file = path.split_once('?').map_or(path, |(file, _)| file);
     let name = file.rsplit(['/', '\\']).next().unwrap_or(file);
     name.rsplit_once('.')
         .filter(|(stem, _)| !stem.is_empty())
@@ -2053,6 +2148,136 @@ mod tests {
     }
 
     #[test]
+    fn split_resource_follows_the_documented_table() {
+        // (input, file, query, fragment, virtual module, normalized file path)
+        type Case = (
+            &'static str,
+            &'static str,
+            Option<&'static str>,
+            Option<&'static str>,
+            bool,
+            &'static str,
+        );
+        let cases: &[Case] = &[
+            ("/app/a.js", "/app/a.js", None, None, false, "/app/a.js"),
+            (
+                "/app/a.js?raw",
+                "/app/a.js",
+                Some("raw"),
+                None,
+                false,
+                "/app/a.js",
+            ),
+            (
+                "/app/a.js?raw#one",
+                "/app/a.js",
+                Some("raw"),
+                Some("one"),
+                false,
+                "/app/a.js",
+            ),
+            (
+                "/app/a.js#one",
+                "/app/a.js",
+                None,
+                Some("one"),
+                false,
+                "/app/a.js",
+            ),
+            (
+                "/app/a.js#one?raw",
+                "/app/a.js",
+                None,
+                Some("one?raw"),
+                false,
+                "/app/a.js",
+            ),
+            (
+                "/app/a.js?",
+                "/app/a.js",
+                Some(""),
+                None,
+                false,
+                "/app/a.js",
+            ),
+            (
+                "/app/a.js#",
+                "/app/a.js",
+                None,
+                Some(""),
+                false,
+                "/app/a.js",
+            ),
+            (
+                "/app/a.js?a?b#c#d",
+                "/app/a.js",
+                Some("a?b"),
+                Some("c#d"),
+                false,
+                "/app/a.js",
+            ),
+            (
+                "/app/./x/../a.js?q",
+                "/app/./x/../a.js",
+                Some("q"),
+                None,
+                false,
+                "/app/a.js",
+            ),
+            (
+                "\0virtual:a?x#y",
+                "virtual:a",
+                Some("x"),
+                Some("y"),
+                true,
+                "virtual:a",
+            ),
+            ("\0\0virtual:a", "virtual:a", None, None, true, "virtual:a"),
+            (
+                "C:\\app\\a.vue?x#y",
+                "C:\\app\\a.vue",
+                Some("x"),
+                Some("y"),
+                false,
+                "C:/app/a.vue",
+            ),
+            (
+                "C:/app/a.vue",
+                "C:/app/a.vue",
+                None,
+                None,
+                false,
+                "C:/app/a.vue",
+            ),
+            (
+                "\\\\host\\share\\a.js#f",
+                "\\\\host\\share\\a.js",
+                None,
+                Some("f"),
+                false,
+                "/host/share/a.js",
+            ),
+            // A backslash in a POSIX path is an ordinary file-name character.
+            (
+                "/app/a\\b.js?q",
+                "/app/a\\b.js",
+                Some("q"),
+                None,
+                false,
+                "/app/a\\b.js",
+            ),
+        ];
+        for (input, file, query, fragment, virtual_module, path) in cases {
+            let parts = split_resource(input);
+            assert_eq!(parts.file, *file, "{input}");
+            assert_eq!(parts.query, *query, "{input}");
+            assert_eq!(parts.fragment, *fragment, "{input}");
+            assert_eq!(parts.virtual_module, *virtual_module, "{input}");
+            assert_eq!(parts.file_path(), PathBuf::from(path), "{input}");
+        }
+    }
+
+    #[test]
     fn live_file_failure_classifier_table() {
         use std::io::ErrorKind;
         // (kind, classification, proves removal)
@@ -2546,6 +2771,21 @@ mod tests {
             }
             assert_eq!(selected, parent.join(expected), "{setup:?} {module}");
         }
+    }
+
+    #[test]
+    fn loader_and_nul_prefixes_are_stripped_by_the_shared_helpers() {
+        let cases = [
+            ("css-loader!/app/a.vue?x", "/app/a.vue?x"),
+            ("a!b!/app/a.vue", "/app/a.vue"),
+            ("/app/a.vue", "/app/a.vue"),
+            ("!/app/a.vue", "/app/a.vue"),
+        ];
+        for (id, resource) in cases {
+            assert_eq!(strip_loader_prefix(id), resource, "{id}");
+        }
+        assert_eq!(strip_nul_prefix("\0virtual:a"), "virtual:a");
+        assert_eq!(strip_nul_prefix("virtual:a"), "virtual:a");
     }
 
     #[test]
