@@ -448,15 +448,15 @@ pub fn probe_entry(path: &Path) -> Result<(), LiveFileFailure> {
         .map_err(|error| LiveFileFailure::from_io(&error))
 }
 
-/// Reads a file only when it resolves (after symlinks) to a path accepted by
-/// `vet` and is a regular file of at most `max_bytes`. Every failure is
-/// classified as a `LiveFileFailure`, including a file removed or replaced
-/// between the metadata check and the read.
-pub fn read_vetted_file(
+/// Resolves a path (after symlinks) and checks that it is accepted by `vet`
+/// and is a regular file of at most `max_bytes`. Every failure is classified
+/// as a `LiveFileFailure`. Reads and existence probes of vetted files share
+/// this check so both classify the same cases as `NotPermitted`.
+fn resolve_vetted(
     path: &Path,
     vet: impl FnOnce(&Path) -> bool,
     max_bytes: u64,
-) -> Result<Vec<u8>, LiveFileFailure> {
+) -> Result<PathBuf, LiveFileFailure> {
     let resolved = std::fs::canonicalize(path).map_err(|error| LiveFileFailure::from_io(&error))?;
     if !vet(&resolved) {
         return Err(LiveFileFailure::NotPermitted);
@@ -466,6 +466,30 @@ pub fn read_vetted_file(
     if !metadata.is_file() || metadata.len() > max_bytes {
         return Err(LiveFileFailure::NotPermitted);
     }
+    Ok(resolved)
+}
+
+/// Checks that the file behind a path exists and is vetted like a read: it
+/// resolves (after symlinks) to a path accepted by `vet` and is a regular file
+/// of at most `max_bytes`. The content is not read.
+pub fn probe_vetted_file(
+    path: &Path,
+    vet: impl FnOnce(&Path) -> bool,
+    max_bytes: u64,
+) -> Result<(), LiveFileFailure> {
+    resolve_vetted(path, vet, max_bytes).map(|_| ())
+}
+
+/// Reads a file only when it resolves (after symlinks) to a path accepted by
+/// `vet` and is a regular file of at most `max_bytes`. Every failure is
+/// classified as a `LiveFileFailure`, including a file removed or replaced
+/// between the metadata check and the read.
+pub fn read_vetted_file(
+    path: &Path,
+    vet: impl FnOnce(&Path) -> bool,
+    max_bytes: u64,
+) -> Result<Vec<u8>, LiveFileFailure> {
+    let resolved = resolve_vetted(path, vet, max_bytes)?;
     let mut bytes = Vec::new();
     std::fs::File::open(&resolved)
         .and_then(|file| {
@@ -2205,6 +2229,53 @@ mod tests {
                 );
                 assert_eq!(store.into_files()[0].stale, stale, "{label}");
             }
+        }
+    }
+
+    /// An existence probe and a read vet a path identically: every cell gives
+    /// the same classification for both.
+    #[test]
+    fn probe_vetted_file_matches_read_vetted_file_for_every_cell() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(root.join("ok.js"), "ok").unwrap();
+        std::fs::write(root.join("big.js"), "0123456789").unwrap();
+        std::fs::create_dir(root.join("dir.js")).unwrap();
+        std::fs::write(root.join("blocker"), "file").unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("out.js"), "ok").unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(outside.path().join("out.js"), root.join("escape.js"))
+                .unwrap();
+            std::os::unix::fs::symlink(root.join("gone.js"), root.join("dangling.js")).unwrap();
+        }
+        // (name, max bytes, expected)
+        let mut table: Vec<(&str, u64, Result<(), LiveFileFailure>)> = vec![
+            ("ok.js", 8, Ok(())),
+            ("missing.js", 8, Err(LiveFileFailure::Missing)),
+            ("big.js", 8, Err(LiveFileFailure::NotPermitted)),
+            ("dir.js", 8, Err(LiveFileFailure::NotPermitted)),
+            (
+                "blocker/a.js",
+                8,
+                Err(LiveFileFailure::Unreadable(
+                    std::io::ErrorKind::NotADirectory,
+                )),
+            ),
+        ];
+        #[cfg(unix)]
+        {
+            table.push(("escape.js", 8, Err(LiveFileFailure::NotPermitted)));
+            table.push(("dangling.js", 8, Err(LiveFileFailure::Missing)));
+        }
+        for (name, max_bytes, expected) in table {
+            let path = root.join(name);
+            let vet = |resolved: &Path| resolved.starts_with(&root);
+            let probed = probe_vetted_file(&path, vet, max_bytes);
+            let read = read_vetted_file(&path, vet, max_bytes).map(|_| ());
+            assert_eq!(probed, expected, "probe {name}");
+            assert_eq!(read, expected, "read {name}");
         }
     }
 

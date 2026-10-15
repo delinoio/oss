@@ -21,8 +21,8 @@ use crate::{
     rules::export_usage::{MAX_EDGES_PER_PATH, MAX_PATHS},
     sources::{
         LiveFileFailure, as_text, filesystem_path, freshness_unverified_problem,
-        is_binary_asset_path, is_generated_asset_module, probe_entry, read_vetted_file,
-        safe_project_relative, sha256_hex,
+        is_binary_asset_path, is_generated_asset_module, probe_entry, probe_vetted_file,
+        read_vetted_file, safe_project_relative, sha256_hex,
     },
 };
 
@@ -640,6 +640,18 @@ fn read_project_file(canonical_root: &Path, relative: &Path) -> Result<Vec<u8>, 
     )
 }
 
+/// Checks an existence-only project file with the same vetting as
+/// [`read_project_file`]: a directory, an oversized or special file and a
+/// symlink leaving the root are `LiveFileFailure::NotPermitted`, never a
+/// verified existence.
+fn probe_project_file(canonical_root: &Path, relative: &Path) -> Result<(), LiveFileFailure> {
+    probe_vetted_file(
+        &canonical_root.join(relative),
+        |resolved| resolved.starts_with(canonical_root),
+        MAX_STALE_CHECK_BYTES,
+    )
+}
+
 /// True when the saved source is a bundler-generated asset module whose hash
 /// cannot match the live file. Bundles saved before asset modules were left out
 /// of the project-relative map still list such sources (for example a PNG
@@ -744,7 +756,7 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
         // or an I/O failure such as permission denied) is never reported stale;
         // it only leaves its freshness unverified.
         if existence_only {
-            source.stale = match probe_entry(&canonical_root.join(&relative)) {
+            source.stale = match probe_project_file(&canonical_root, &relative) {
                 Ok(()) => false,
                 Err(failure) if failure.is_removal() => true,
                 Err(failure) => {
@@ -1920,6 +1932,8 @@ mod tests {
         Removed,
         /// A directory in place of the file.
         Directory,
+        /// A regular file over the stale-check size limit.
+        Oversized,
         /// The parent of the path is a regular file (not-a-directory error).
         ParentIsFile,
         /// A symlink whose target was removed.
@@ -1947,6 +1961,10 @@ mod tests {
             Backing::Edited => std::fs::write(&file, "edited").unwrap(),
             Backing::Removed => {}
             Backing::Directory => std::fs::create_dir(&file).unwrap(),
+            Backing::Oversized => {
+                let oversized = std::fs::File::create(&file).unwrap();
+                oversized.set_len(MAX_STALE_CHECK_BYTES + 1).unwrap();
+            }
             Backing::ParentIsFile => {
                 std::fs::remove_dir(&src).unwrap();
                 std::fs::write(&src, "file").unwrap();
@@ -2000,12 +2018,14 @@ mod tests {
             (Backing::Edited, (true, 0), (false, 0)),
             (Backing::Removed, (true, 0), (true, 0)),
             // A directory exists but cannot be read as a file.
-            (Backing::Directory, (false, 1), (false, 0)),
+            (Backing::Directory, (false, 1), (false, 1)),
+            // Over the size limit: vetted like a read, never a verified file.
+            (Backing::Oversized, (false, 1), (false, 1)),
             (Backing::ParentIsFile, (false, 1), (false, 1)),
             #[cfg(unix)]
             (Backing::DanglingSymlink, (true, 0), (true, 0)),
             #[cfg(unix)]
-            (Backing::EscapingSymlink, (false, 1), (false, 0)),
+            (Backing::EscapingSymlink, (false, 1), (false, 1)),
             #[cfg(unix)]
             (Backing::PermissionDenied, (false, 1), (false, 1)),
         ];
