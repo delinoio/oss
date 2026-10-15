@@ -3444,6 +3444,28 @@ export { reflected };"#,
 }
 
 #[test]
+fn observable_function_source_string_coercion() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(String(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_template_coercion() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(`${reflected}`.includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
 fn observable_function_source_safe_chunk_still_minifies() {
     let index = format!(
         "{}\nconsole.log('toString is only text', (13).toString(16));\n",

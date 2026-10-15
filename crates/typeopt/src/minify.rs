@@ -31,7 +31,7 @@ use swc_core::{
         ast::{
             AssignExpr, AssignPat, AssignTarget, CallExpr, Callee, EsVersion, Expr, ExprOrSpread,
             ExprStmt, Id, Ident, MemberExpr, MemberProp, ModuleItem, ObjectPatProp, Pat, Program,
-            PropName, SimpleAssignTarget, Stmt, VarDeclarator,
+            PropName, SimpleAssignTarget, Stmt, Tpl, VarDeclarator,
         },
         codegen::{
             Config, Emitter,
@@ -434,6 +434,24 @@ struct SourceReflection {
 }
 
 impl Visit for SourceReflection {
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        call.visit_children_with(self);
+        // `String(value)` performs the same callable-to-string conversion as
+        // an explicit `toString` call.
+        if let Callee::Expr(callee) = &call.callee
+            && matches!(&**callee, Expr::Ident(ident) if ident.sym == "String")
+        {
+            self.member_to_string = true;
+        }
+    }
+
+    fn visit_tpl(&mut self, template: &Tpl) {
+        template.visit_children_with(self);
+        if !template.exprs.is_empty() {
+            self.member_to_string = true;
+        }
+    }
+
     fn visit_member_expr(&mut self, member: &MemberExpr) {
         member.visit_children_with(self);
         match &member.prop {
