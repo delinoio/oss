@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     chunks::{Chunk, measure},
-    collect::{Collection, ManglingSetting, MinifyOverride},
+    collect::{Collection, ManglingSetting},
     engine::BundlerChoice,
     error::{ErrorCode, problem},
     model::{
@@ -202,11 +202,11 @@ fn coverage(
                 // Rolldown's `"dce-only"` still removes dead code, so the
                 // stage is neither inapplicable nor covered by a detector.
                 OptimizationCategory::DeadCodeElimination
-                    if collection.minify_override == MinifyOverride::OutputHookDceOnly =>
+                    if collection.minify_override.dce_only() =>
                 {
                     (
                         CoverageState::Unavailable,
-                        "A plugin output hook limited minification to dead-code elimination \
+                        "The output `minify` option limits minification to dead-code elimination \
                          (`dce-only`). Rolldown still removes dead code in this mode and \
                          bundlewhy has no verified detector for it. Absence of findings is not \
                          evidence."
@@ -2708,21 +2708,38 @@ mod tests {
     }
 
     #[test]
-    fn output_hook_minify_overrides_are_attributed_to_the_hook() {
-        // (collection value, expected final option text, dead-code coverage)
+    fn output_minify_overrides_are_attributed_to_their_source() {
+        // (collection value, cause named in the summary, final value text,
+        // dead-code coverage)
+        let hook = "A plugin outputOptions hook set the final output minify option to";
+        let option = "build.rolldownOptions.output.minify is";
         let cases = [
             (
                 "output-hook-disabled",
+                hook,
                 "false",
                 CoverageState::NotApplicable,
             ),
             (
                 "output-hook-dce-only",
+                hook,
+                "\"dce-only\"",
+                CoverageState::Unavailable,
+            ),
+            (
+                "output-option-disabled",
+                option,
+                "false",
+                CoverageState::NotApplicable,
+            ),
+            (
+                "output-option-dce-only",
+                option,
                 "\"dce-only\"",
                 CoverageState::Unavailable,
             ),
         ];
-        for (override_kind, final_value, dce_state) in cases {
+        for (override_kind, cause, final_value, dce_state) in cases {
             let fixture = run_fixture(BundlerChoice::Vite, |value| {
                 value["minifyEnabled"] = serde_json::json!(false);
                 value["minifyOverride"] = serde_json::json!(override_kind);
@@ -2733,16 +2750,28 @@ mod tests {
                 .iter()
                 .find(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
                 .unwrap_or_else(|| panic!("{override_kind}: missing minification finding"));
+            let summary = &diagnostic.summary;
             assert!(
-                diagnostic.summary.contains("plugin outputOptions hook")
-                    && diagnostic.summary.contains(final_value)
-                    && diagnostic.summary.contains("build.minify is oxc"),
-                "{override_kind}: {}",
-                diagnostic.summary
+                summary.contains(cause)
+                    && summary.contains(final_value)
+                    && summary.contains("build.minify is oxc"),
+                "{override_kind}: {summary}"
+            );
+            // A configured option never blames a hook, and a hook is never
+            // blamed for a configured option.
+            assert_eq!(
+                summary.contains("plugin outputOptions hook"),
+                override_kind.contains("hook"),
+                "{override_kind}: {summary}"
             );
             let direction = &diagnostic.corrective_action.as_ref().unwrap().direction;
             assert!(
                 !direction.contains("Enable build.minify"),
+                "{override_kind}: {direction}"
+            );
+            assert_eq!(
+                direction.contains("plugin outputOptions"),
+                override_kind.contains("hook"),
                 "{override_kind}: {direction}"
             );
             let coverage_of = |category: OptimizationCategory| {

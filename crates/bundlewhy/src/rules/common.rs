@@ -943,13 +943,10 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
     }
     let vite = context.collection.bundler == "vite";
     let override_kind = context.collection.minify_override;
-    // A plugin output hook that turned the minifier off is named as the cause:
-    // `build.minify` still reads as enabled in that case.
+    // An output option, or a plugin output hook, that turned the selected
+    // minifier off is named as the cause: `build.minify` still reads as
+    // enabled in that case.
     let (option, value) = match override_kind {
-        MinifyOverride::OutputHookDisabled => (FINAL_OUTPUT_MINIFY_OPTION, "false".to_owned()),
-        MinifyOverride::OutputHookDceOnly => {
-            (FINAL_OUTPUT_MINIFY_OPTION, "\"dce-only\"".to_owned())
-        }
         MinifyOverride::None => {
             let option = if vite {
                 "build.minify"
@@ -964,41 +961,66 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
                 .unwrap_or_else(|| "false".to_owned());
             (option, value)
         }
+        _ => {
+            let option = if override_kind.by_hook() {
+                FINAL_OUTPUT_MINIFY_OPTION
+            } else {
+                OUTPUT_MINIFY_OPTION
+            };
+            let value = if override_kind.dce_only() {
+                "\"dce-only\"".to_owned()
+            } else {
+                "false".to_owned()
+            };
+            (option, value)
+        }
     };
-    let (summary, direction, evidence_label) = match override_kind {
-        MinifyOverride::None => (
+    let (summary, direction, evidence_label) = if override_kind == MinifyOverride::None {
+        (
             format!(
                 "{option} is {value}, so dead-code elimination, name mangling and other minifier \
                  optimizations do not run."
             ),
             format!("Enable {option} for production builds."),
             "resolved bundler configuration",
-        ),
-        MinifyOverride::OutputHookDisabled => (
+        )
+    } else {
+        let cause = if override_kind.by_hook() {
+            format!("A plugin outputOptions hook set the final output minify option to {value}")
+        } else {
+            format!("{OUTPUT_MINIFY_OPTION} is {value}")
+        };
+        let effect = if override_kind.dce_only() {
+            "compression and name mangling do not run. Rolldown still removes dead code in this \
+             mode; bundlewhy has no verified detector for that stage."
+        } else {
+            "dead-code elimination, name mangling and other minifier optimizations do not run."
+        };
+        let direction = match (override_kind.by_hook(), override_kind.dce_only()) {
+            (true, true) => {
+                "Remove the plugin outputOptions change that limits minify to dead-code \
+                 elimination, or enable it for production builds."
+            }
+            (true, false) => {
+                "Remove the plugin outputOptions change that disables minify, or enable it for \
+                 production builds."
+            }
+            (false, _) => {
+                "Remove build.rolldownOptions.output.minify or enable it for production builds."
+            }
+        };
+        (
             format!(
-                "A plugin outputOptions hook set the final output minify option to {value} \
-                 although build.minify is {}, so dead-code elimination, name mangling and other \
-                 minifier optimizations do not run.",
+                "{cause} although build.minify is {}, so {effect}",
                 build_minify_value(context)
             ),
-            "Remove the plugin outputOptions change that disables minify, or enable it for \
-             production builds."
-                .to_owned(),
-            "final Rolldown output options",
-        ),
-        MinifyOverride::OutputHookDceOnly => (
-            format!(
-                "A plugin outputOptions hook set the final output minify option to {value} \
-                 although build.minify is {}, so compression and name mangling do not run. \
-                 Rolldown still removes dead code in this mode; bundlewhy has no verified \
-                 detector for that stage.",
-                build_minify_value(context)
-            ),
-            "Remove the plugin outputOptions change that limits minify to dead-code elimination, \
-             or enable it for production builds."
-                .to_owned(),
-            "final Rolldown output options",
-        ),
+            direction.to_owned(),
+            if override_kind.by_hook() {
+                "final Rolldown output options"
+            } else {
+                "resolved bundler configuration"
+            },
+        )
     };
     let config_file = context.collection.config_file.clone();
     let located = match &config_file {
@@ -1038,6 +1060,9 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
         export_usage: None,
     });
 }
+
+/// Label of the configured Rolldown output `minify` option in diagnostics.
+const OUTPUT_MINIFY_OPTION: &str = "build.rolldownOptions.output.minify";
 
 /// Label of the finalized Rolldown output `minify` option in diagnostics.
 const FINAL_OUTPUT_MINIFY_OPTION: &str = "final build.rolldownOptions.output.minify";

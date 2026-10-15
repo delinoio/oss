@@ -45,7 +45,8 @@ pub struct Collection {
     pub export_usage: Option<CollectedExportUsage>,
 }
 
-/// Which plugin output hook turned the selected Oxc minifier off.
+/// Which output option or plugin output hook turned the selected Oxc minifier
+/// off while `build.minify` still selects it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MinifyOverride {
@@ -53,11 +54,28 @@ pub enum MinifyOverride {
     /// runs.
     #[default]
     None,
-    /// A hook set the final output `minify` option to `false`.
+    /// The configured `build.rolldownOptions.output.minify` is `false`.
+    OutputOptionDisabled,
+    /// The configured `build.rolldownOptions.output.minify` is `"dce-only"`,
+    /// which keeps dead-code elimination but skips compression and name
+    /// mangling.
+    OutputOptionDceOnly,
+    /// A hook changed the final output `minify` option to `false`.
     OutputHookDisabled,
-    /// A hook set the final output `minify` option to `"dce-only"`, which
-    /// keeps dead-code elimination but skips compression and name mangling.
+    /// A hook changed the final output `minify` option to `"dce-only"`.
     OutputHookDceOnly,
+}
+
+impl MinifyOverride {
+    /// True when the final value is `"dce-only"`.
+    pub fn dce_only(self) -> bool {
+        matches!(self, Self::OutputOptionDceOnly | Self::OutputHookDceOnly)
+    }
+
+    /// True when a plugin hook, not the configuration, set the final value.
+    pub fn by_hook(self) -> bool {
+        matches!(self, Self::OutputHookDisabled | Self::OutputHookDceOnly)
+    }
 }
 
 /// Whether the minifier mangles names for the analyzed output.

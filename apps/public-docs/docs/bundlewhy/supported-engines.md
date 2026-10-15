@@ -23,7 +23,7 @@ To analyze anyway, pass `--allow-unsupported-engine`. bundlewhy then uses the in
 
 If the build uses a JavaScript minifier other than the default in the matrix, bundlewhy still analyzes module-graph categories such as tree shaking and chunk splitting. Minifier categories are marked unavailable and the run reports `BW_MINIFIER_NON_DEFAULT`.
 
-If minification is disabled, bundlewhy reports a confirmed configuration diagnostic and `BW_MINIFICATION_DISABLED`. When a Vite plugin `outputOptions` hook turns the Oxc minifier off while `build.minify` is still enabled, the diagnostic names the hook and the final `minify` value (`final build.rolldownOptions.output.minify` in the configuration summary). A hook that sets `"dce-only"` still lets Rolldown remove dead code, so bundlewhy marks dead-code elimination unavailable instead of not applicable and does not claim that it does not run.
+If minification is disabled, bundlewhy reports a confirmed configuration diagnostic and `BW_MINIFICATION_DISABLED`. When the output `minify` option turns the Oxc minifier off while `build.minify` is still enabled, the diagnostic names its source and the final value (`final build.rolldownOptions.output.minify` in the configuration summary): your own `build.rolldownOptions.output.minify` when it has the final value, or a plugin `outputOptions` hook when the final value differs from it. A final `"dce-only"` still lets Rolldown remove dead code, so bundlewhy marks dead-code elimination unavailable instead of not applicable and does not claim that it does not run.
 
 ## Name mangling setting
 

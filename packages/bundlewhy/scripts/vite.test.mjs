@@ -14,6 +14,7 @@ import {
   MinifyOverride,
   normalizeCollectionRoot,
   resolveEffectiveMangle,
+  resolveConfiguredMinifyKind,
   resolveEffectiveMinifier,
   resolveFinalizedMangleSetting,
   resolveFinalizedMinifyActive,
@@ -188,6 +189,22 @@ test("finalized output options decide whether the Oxc minifier runs", () => {
     );
   }
 
+  // The configured kind reads the project's own output option.
+  assert.equal(resolveConfiguredMinifyKind(undefined), undefined);
+  assert.equal(resolveConfiguredMinifyKind({}), undefined);
+  assert.equal(
+    resolveConfiguredMinifyKind({ minify: false }),
+    FinalizedMinifyKind.Disabled,
+  );
+  assert.equal(
+    resolveConfiguredMinifyKind([{ minify: "dce-only" }]),
+    FinalizedMinifyKind.DceOnly,
+  );
+  assert.equal(
+    resolveConfiguredMinifyKind({ minify: { mangle: false } }),
+    FinalizedMinifyKind.Enabled,
+  );
+
   const none = MinifyOverride.None;
   // A plugin hook can turn minification on after `build.minify: false`.
   assert.deepEqual(
@@ -204,18 +221,30 @@ test("finalized output options decide whether the Oxc minifier runs", () => {
   // result names the finalized value that the hook set.
   for (const buildMinify of [undefined, true, "oxc"]) {
     const name = "oxc";
-    for (const [finalizedKind, override] of [
-      [FinalizedMinifyKind.Disabled, MinifyOverride.OutputHookDisabled],
-      [FinalizedMinifyKind.DceOnly, MinifyOverride.OutputHookDceOnly],
+    // [final kind, configured kind, attribution]. The project's own output
+    // option owns the value only when the configured kind equals the final one.
+    const E = FinalizedMinifyKind.Enabled;
+    const D = FinalizedMinifyKind.Disabled;
+    const O = FinalizedMinifyKind.DceOnly;
+    for (const [finalizedKind, configuredKind, override] of [
+      [D, undefined, MinifyOverride.OutputHookDisabled],
+      [D, E, MinifyOverride.OutputHookDisabled],
+      [D, O, MinifyOverride.OutputHookDisabled],
+      [D, D, MinifyOverride.OutputOptionDisabled],
+      [O, undefined, MinifyOverride.OutputHookDceOnly],
+      [O, E, MinifyOverride.OutputHookDceOnly],
+      [O, D, MinifyOverride.OutputHookDceOnly],
+      [O, O, MinifyOverride.OutputOptionDceOnly],
     ]) {
       assert.deepEqual(
         resolveEffectiveMinifier({
           buildMinify,
           finalizedActive: false,
           finalizedKind,
+          configuredKind,
         }),
         { enabled: false, name, override },
-        `${String(buildMinify)} ${finalizedKind}`,
+        `${String(buildMinify)} ${finalizedKind} configured ${configuredKind}`,
       );
     }
     for (const finalizedActive of [true, undefined]) {
@@ -740,6 +769,38 @@ test("Vite diagnostic reads the mangle setting from the finalized output options
       config: `build: { minify: false }, plugins: [{ name: "test:noop", outputOptions() {} }]`,
       expected: "disabled",
       minifyEnabled: false,
+    },
+    {
+      name: "configured-output-minify-false",
+      config: `build: { minify: "oxc", rolldownOptions: { output: { minify: false } } }`,
+      expected: "disabled",
+      minifyEnabled: false,
+      minifyOverride: "output-option-disabled",
+      finalMinify: "false",
+    },
+    {
+      name: "configured-output-minify-dce-only",
+      config: `build: { minify: "oxc", rolldownOptions: { output: { minify: "dce-only" } } }`,
+      expected: "disabled",
+      minifyEnabled: false,
+      minifyOverride: "output-option-dce-only",
+      finalMinify: "dce-only",
+    },
+    {
+      name: "hook-replaces-configured-output-minify",
+      config: `build: { minify: "oxc", rolldownOptions: { output: { minify: true } } }, plugins: [${pluginSource("false")}]`,
+      expected: "disabled",
+      minifyEnabled: false,
+      minifyOverride: "output-hook-disabled",
+      finalMinify: "false",
+    },
+    {
+      name: "hook-changes-configured-disabled-to-dce-only",
+      config: `build: { minify: "oxc", rolldownOptions: { output: { minify: false } } }, plugins: [${pluginSource('"dce-only"')}]`,
+      expected: "disabled",
+      minifyEnabled: false,
+      minifyOverride: "output-hook-dce-only",
+      finalMinify: "dce-only",
     },
     {
       name: "plugin-sets-dce-only",

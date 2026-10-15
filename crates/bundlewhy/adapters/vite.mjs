@@ -172,6 +172,8 @@ export const FinalizedMinifyKind = Object.freeze({
 /** Why minification does not run, recorded in a collection. */
 export const MinifyOverride = Object.freeze({
   None: "none",
+  OutputOptionDisabled: "output-option-disabled",
+  OutputOptionDceOnly: "output-option-dce-only",
   OutputHookDisabled: "output-hook-disabled",
   OutputHookDceOnly: "output-hook-dce-only",
 });
@@ -194,6 +196,16 @@ export function resolveFinalizedMinifyKind(normalizedOptions) {
   if (minify === false) return FinalizedMinifyKind.Disabled;
   if (minify === "dce-only") return FinalizedMinifyKind.DceOnly;
   return FinalizedMinifyKind.Enabled;
+}
+
+/**
+ * Reads the kind of the `minify` option that the project configured in
+ * `build.rolldownOptions.output` (a single-entry array is read as its entry).
+ * `undefined` when the project did not configure it.
+ */
+export function resolveConfiguredMinifyKind(output) {
+  const entry = Array.isArray(output) ? output[0] : output;
+  return resolveFinalizedMinifyKind(entry);
 }
 
 /**
@@ -237,15 +249,18 @@ export function resolveEffectiveMangle({ buildMinify, configured, finalized }) {
  * `"dce-only"`. `"terser"` and `"esbuild"` keep the minifier they name,
  * because the Rolldown output option says nothing about them.
  *
- * `override` names the finalized value when a plugin hook, not `build.minify`,
- * turned the selected Oxc minifier off, so a diagnostic can attribute the
- * decision to the hook. Rolldown's `"dce-only"` keeps dead-code elimination,
- * which the other value does not.
+ * `override` names the finalized value when the output `minify` option, not
+ * `build.minify`, turned the selected Oxc minifier off. The value is attributed
+ * to the project's own `build.rolldownOptions.output.minify` when the
+ * configured kind equals the finalized one, and to a plugin hook otherwise, so a
+ * diagnostic never blames a hook that does not exist. Rolldown's `"dce-only"`
+ * keeps dead-code elimination, which the other value does not.
  */
 export function resolveEffectiveMinifier({
   buildMinify,
   finalizedActive,
   finalizedKind,
+  configuredKind,
 }) {
   if (buildMinify === false && finalizedActive === true) {
     return { enabled: true, name: "oxc", override: MinifyOverride.None };
@@ -255,10 +270,17 @@ export function resolveEffectiveMinifier({
   const hookDisabled = oxcSelected && finalizedActive === false;
   let override = MinifyOverride.None;
   if (hookDisabled) {
-    override =
-      finalizedKind === FinalizedMinifyKind.DceOnly
+    const dceOnly = finalizedKind === FinalizedMinifyKind.DceOnly;
+    const configured = configuredKind === finalizedKind;
+    if (configured) {
+      override = dceOnly
+        ? MinifyOverride.OutputOptionDceOnly
+        : MinifyOverride.OutputOptionDisabled;
+    } else {
+      override = dceOnly
         ? MinifyOverride.OutputHookDceOnly
         : MinifyOverride.OutputHookDisabled;
+    }
   }
   return {
     enabled: buildMinify !== false && !hookDisabled,
@@ -385,6 +407,10 @@ function collectorPlugin(state) {
             config.build.rollupOptions?.treeshake,
         ),
         mangle: resolveMangleSetting(
+          config.build.rolldownOptions?.output ??
+            config.build.rollupOptions?.output,
+        ),
+        minifyKind: resolveConfiguredMinifyKind(
           config.build.rolldownOptions?.output ??
             config.build.rollupOptions?.output,
         ),
@@ -696,6 +722,7 @@ await runAdapter(async (request) => {
     buildMinify: minify,
     finalizedActive: state.finalizedMinifyActive,
     finalizedKind: state.finalizedMinifyKind,
+    configuredKind: resolved.minifyKind,
   });
   const configSummary = {
     "build.minify": summarizeValue(minify),
@@ -706,7 +733,8 @@ await runAdapter(async (request) => {
       ? {}
       : {
           "final build.rolldownOptions.output.minify":
-            minifyOverride === MinifyOverride.OutputHookDceOnly
+            minifyOverride === MinifyOverride.OutputHookDceOnly ||
+            minifyOverride === MinifyOverride.OutputOptionDceOnly
               ? "dce-only"
               : "false",
         }),
