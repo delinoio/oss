@@ -391,6 +391,7 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	<-checked
 	bounded, stop := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 30*time.Second)
 	defer stop()
+	_ = s.grokFault(grokFaultBeforeLoginFinish)
 	if err := s.finishGrokLogin(bounded, id, original, &outcome); err != nil {
 		s.logGrok(bounded, slog.LevelWarn, "grok_login_finish_failed", original, grokStepFinish, "code", domain.SafeError(err).Code)
 		s.fenceUnsettledGrokOperation(bounded, id, original)
@@ -607,6 +608,26 @@ func grokDiagnosticFor(o domain.ServerSubscriptionOperation, outcome grokOutcome
 	return &domain.GrokDiagnostic{Phase: domain.GrokDiagnosticLogin, Code: outcome.code, CorrelationID: o.ID}
 }
 
+// grokLateCancelOutcome applies a cancellation or a vanished actor to the settled
+// outcome of a login. Before the exchange claim, or for an outcome that already
+// failed, it is an ordinary cancellation. A successful claimed exchange is
+// published (the cancellation came too late) unless the actor is gone, which fences
+// it; an uncertain outcome stays as it is.
+func grokLateCancelOutcome(claimed, success bool, result domain.SubscriptionLoginState, code domain.Code, canceled, actorGone bool) (bool, domain.SubscriptionLoginState, domain.Code) {
+	if result == domain.SubscriptionRecovery {
+		return success, result, code
+	}
+	switch {
+	case claimed && success && actorGone:
+		return false, domain.SubscriptionRecovery, domain.RecoveryRequired
+	case claimed && success:
+		return success, result, code
+	case canceled || actorGone:
+		return false, domain.SubscriptionCanceled, domain.Canceled
+	}
+	return success, result, code
+}
+
 // finishGrokLogin writes the settled outcome. A success seals and stages the
 // bundle in the protected vault, then publishes the generation, the identity
 // commitment and the connection in one commit. Failures never touch the vault.
@@ -642,10 +663,11 @@ func (s *Service) finishGrokLogin(ctx context.Context, id domain.ID, o domain.Se
 			return subscriptionDenied()
 		}
 		// A cancellation never hides an uncertain claimed exchange: that outcome
-		// stays in recovery so the claim is never forgotten or resent.
-		if (st.Pending.Canceled || subscriptionActorValid(tx, o.Actor) != nil) && result != domain.SubscriptionRecovery {
-			success, result, code = false, domain.SubscriptionCanceled, domain.Canceled
-		}
+		// stays in recovery so the claim is never forgotten or resent. Once the
+		// exchange succeeded, the tokens are issued: a cancellation that lands after
+		// that point is too late and the login publishes, while a vanished actor
+		// leaves nobody to publish for and keeps the redeemed grant fenced.
+		success, result, code = grokLateCancelOutcome(outcome.claimed, success, result, code, st.Pending.Canceled, subscriptionActorValid(tx, o.Actor) != nil)
 		if success {
 			if st.IdentityCommitment != "" && commitment != st.IdentityCommitment {
 				success, result, code = false, domain.SubscriptionFailed, domain.Conflict
@@ -690,10 +712,9 @@ func (s *Service) finishGrokLogin(ctx context.Context, id domain.ID, o domain.Se
 		if st == nil || st.ServerOperation == nil || st.ServerOperation.ID != o.ID || !st.ServerOperation.NativeStarted || st.Generation != o.Generation || st.RecoveryRequired || st.Pending == nil || st.Pending.ID != o.ID {
 			return nil, subscriptionDenied()
 		}
-		if (st.Pending.Canceled || subscriptionActorValid(tx, o.Actor) != nil) && result != domain.SubscriptionRecovery {
-			// Canceled before publication: no credential is kept.
-			success, result, code = false, domain.SubscriptionCanceled, domain.Canceled
-			diagnostic = nil
+		if next, nextResult, nextCode := grokLateCancelOutcome(outcome.claimed, success, result, code, st.Pending.Canceled, subscriptionActorValid(tx, o.Actor) != nil); nextResult != result {
+			success, result, code = next, nextResult, nextCode
+			diagnostic = grokDiagnosticFor(o, grokOutcome{state: result, code: code})
 		}
 		st.ServerOperation.GrokDiagnostic = diagnostic
 		if success {

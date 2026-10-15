@@ -50,11 +50,15 @@ type grokFaultPoint string
 
 const (
 	// grokFaultAfterLease runs after the lease transaction (login and refresh).
-	grokFaultAfterLease    grokFaultPoint = "after_lease"
-	grokFaultAfterClaim    grokFaultPoint = "after_claim"
-	grokFaultAfterResponse grokFaultPoint = "after_response"
-	grokFaultAfterStage    grokFaultPoint = "after_stage"
-	grokFaultAfterPersist  grokFaultPoint = "after_persist"
+	grokFaultAfterLease grokFaultPoint = "after_lease"
+	// grokFaultBeforeLoginFinish runs after the login steps returned and before the
+	// settlement reads the pending operation: the window in which a cancellation
+	// can race the outcome.
+	grokFaultBeforeLoginFinish grokFaultPoint = "before_login_finish"
+	grokFaultAfterClaim        grokFaultPoint = "after_claim"
+	grokFaultAfterResponse     grokFaultPoint = "after_response"
+	grokFaultAfterStage        grokFaultPoint = "after_stage"
+	grokFaultAfterPersist      grokFaultPoint = "after_persist"
 
 	// Logout fault points.
 	grokFaultAfterRevokeClaim        grokFaultPoint = "after_revoke_claim"
