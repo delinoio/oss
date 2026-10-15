@@ -9,15 +9,16 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 use swc_core::{
-    common::{FileName, GLOBALS, Globals, SourceMap, sync::Lrc},
+    common::{FileName, GLOBALS, Globals, Mark, SourceMap, SyntaxContext, sync::Lrc},
     ecma::{
         ast::{
             BindingIdent, CallExpr, Callee, ClassDecl, ClassExpr, EsVersion, Expr, FnDecl, FnExpr,
-            ImportDecl, ImportSpecifier, Lit, MemberProp, ModuleExportName, ObjectLit, Prop,
+            Id, ImportDecl, ImportSpecifier, Lit, MemberProp, ModuleExportName, ObjectLit, Prop,
             PropName, PropOrSpread,
         },
         parser::{EsSyntax, Syntax, parse_file_as_program},
-        visit::{Visit, VisitWith},
+        transforms::base::resolver,
+        visit::{Visit, VisitMutWith, VisitWith},
     },
 };
 
@@ -1333,8 +1334,8 @@ fn rehash(
 /// comments, template text and regular expressions.
 fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
     struct WorkboxBindings {
-        direct: BTreeSet<String>,
-        namespace: BTreeSet<String>,
+        direct: BTreeSet<Id>,
+        namespace: BTreeSet<Id>,
         ambiguous: BTreeSet<String>,
         declared: BTreeSet<String>,
     }
@@ -1342,9 +1343,6 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
     impl WorkboxBindings {
         fn mark_declared(&mut self, name: &str) {
             self.declared.insert(name.to_owned());
-            if self.direct.contains(name) {
-                self.ambiguous.insert(name.to_owned());
-            }
             if matches!(name, "precache" | "precacheAndRoute") {
                 self.ambiguous.insert(name.to_owned());
             }
@@ -1357,7 +1355,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
             for specifier in &declaration.specifiers {
                 if let ImportSpecifier::Namespace(namespace) = specifier {
                     if workbox {
-                        self.namespace.insert(namespace.local.sym.to_string());
+                        self.namespace.insert(namespace.local.to_id());
                     } else {
                         self.mark_declared(namespace.local.sym.as_ref());
                     }
@@ -1380,7 +1378,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
                     if self.declared.contains(&local) {
                         self.ambiguous.insert(local.clone());
                     }
-                    self.direct.insert(local);
+                    self.direct.insert(named.local.to_id());
                 } else {
                     self.mark_declared(named.local.sym.as_ref());
                 }
@@ -1424,8 +1422,8 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
     struct Entries<'a> {
         text: &'a str,
         base: u32,
-        direct_workbox_bindings: BTreeSet<String>,
-        namespace_workbox_bindings: BTreeSet<String>,
+        direct_workbox_bindings: BTreeSet<Id>,
+        namespace_workbox_bindings: BTreeSet<Id>,
         ambiguous_bindings: BTreeSet<String>,
         values: Vec<(String, usize, usize, bool)>,
     }
@@ -1489,7 +1487,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
                 Callee::Expr(callee) => match &**callee {
                     Expr::Ident(name) => (
                         Some(name.sym.as_ref()),
-                        self.direct_workbox_bindings.contains(name.sym.as_ref())
+                        self.direct_workbox_bindings.contains(&name.to_id())
                             || (matches!(name.sym.as_ref(), "precache" | "precacheAndRoute")
                                 && !self.ambiguous_bindings.contains(name.sym.as_ref())),
                     ),
@@ -1506,7 +1504,10 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
             };
             if name.is_some_and(|name| {
                 matches!(name, "precache" | "precacheAndRoute")
-                    || self.direct_workbox_bindings.contains(name)
+                    || self
+                        .direct_workbox_bindings
+                        .iter()
+                        .any(|(symbol, _)| symbol.as_ref() == name)
             }) && let Some(first) = call.args.first()
                 && let Expr::Array(array) = &*first.expr
             {
@@ -1523,10 +1524,11 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         }
     }
 
-    fn is_workbox_receiver(receiver: &Expr, namespace_workbox_bindings: &BTreeSet<String>) -> bool {
+    fn is_workbox_receiver(receiver: &Expr, namespace_workbox_bindings: &BTreeSet<Id>) -> bool {
         match receiver {
             Expr::Ident(name) => {
-                name.sym == "workbox" || namespace_workbox_bindings.contains(name.sym.as_ref())
+                (name.sym == "workbox" && name.ctxt == SyntaxContext::empty())
+                    || namespace_workbox_bindings.contains(&name.to_id())
             }
             Expr::Member(member) => {
                 let MemberProp::Ident(name) = &member.prop else {
@@ -1546,7 +1548,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
     let file = source_map.new_source_file(Lrc::new(FileName::Anon), text.to_owned());
     GLOBALS.set(&Globals::new(), || {
         let mut errors = Vec::new();
-        let Ok(program) = parse_file_as_program(
+        let Ok(mut program) = parse_file_as_program(
             &file,
             Syntax::Es(EsSyntax::default()),
             EsVersion::latest(),
@@ -1558,6 +1560,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         if !errors.is_empty() {
             return Vec::new();
         }
+        program.visit_mut_with(&mut resolver(Mark::new(), Mark::new(), false));
         let mut bindings = WorkboxBindings {
             direct: BTreeSet::new(),
             namespace: BTreeSet::new(),

@@ -3295,6 +3295,57 @@ fn ignores_shadowed_workbox_aliases() {
 }
 
 #[test]
+fn refreshes_imported_workbox_alias_outside_shadowed_scope() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[0] = (
+        "index.html",
+        r#"<script type="importmap">{"imports":{"workbox-precaching":"/workbox.js"}}</script><script type="module" src="./app.js"></script><script type="module" src="./sw.js"></script>"#,
+    );
+    chunks.push((
+        "app.js",
+        r#"import"./assets/index-AAAAAAAA.js";function unused(){return"removed"}console.log("app");"#,
+    ));
+    chunks.push((
+        "sw.js",
+        r#"import{precacheAndRoute as cache}from"workbox-precaching";cache([{url:"app.js",revision:""}]);function run(cache){cache([{url:"app.js",revision:"old"}])}run(cache);"#,
+    ));
+    chunks.push(("workbox.js", "export function precacheAndRoute() {}"));
+    let temp = bundle(&chunks);
+    let output = run_typeopt(temp.path(), &[]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("cannot refresh empty precache revision"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn ignores_local_workbox_receiver_with_empty_revision() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[0] = (
+        "index.html",
+        r#"<script type="importmap">{"imports":{"workbox-precaching":"/workbox.js"}}</script><script type="module" src="./app.js"></script><script type="module" src="./sw.js"></script>"#,
+    );
+    chunks.push((
+        "app.js",
+        r#"import"./assets/index-AAAAAAAA.js";function unused(){return"removed"}console.log("app");"#,
+    ));
+    chunks.push((
+        "sw.js",
+        r#"const workbox={precacheAndRoute(){}};workbox.precacheAndRoute([{url:"app.js",revision:""}]);"#,
+    ));
+    let temp = bundle(&chunks);
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(out(temp.path(), "sw.js").contains(r#"url:"app.js",revision:"""#));
+}
+
+#[test]
 fn keeps_pinned_and_hashed_precache_manifests() {
     let sw = r#"self.workbox.precacheAndRoute([{url:"index.html",revision:"old"}]);"#;
     for (name, options) in [
