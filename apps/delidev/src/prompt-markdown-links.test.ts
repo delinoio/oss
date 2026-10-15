@@ -148,6 +148,37 @@ describe("link scanning", () => {
       if (!text.startsWith("[[")) expect(links).toHaveLength(0);
     }
   });
+  it("treats an escaped image marker as a literal bang before an ordinary link", () => {
+    // Only an odd run of backslashes escapes the bang.
+    for (const text of [
+      "\\![Docs](https://docs.test)",
+      "\\\\\\![Docs](https://docs.test)",
+      "x \\![Docs](https://docs.test) y",
+    ]) {
+      const links = scanMarkdown(text).links;
+      expect(links).toHaveLength(1);
+      expect(links[0]!.start).toBe(text.indexOf("[Docs"));
+      expect(text[links[0]!.start - 1]).toBe("!");
+    }
+    for (const text of [
+      "\\\\![Docs](https://docs.test)",
+      "\\\\\\\\![Docs](https://docs.test)",
+      "![Docs](https://docs.test)",
+      "a\\\\![Docs](https://docs.test)",
+    ]) {
+      expect(scanMarkdown(text).links).toHaveLength(0);
+      expect(convert(text)).toBe(text);
+    }
+    expect(convert("\\![see https://a.test](https://docs.test)")).toBe(
+      "\\![see https://a.test](https://docs.test)",
+    );
+  });
+  it("protects an autolink after an escaped backslash but not after an escape", () => {
+    expect(convert("\\\\<https://x.test>")).toBe("\\\\<https://x.test>");
+    expect(convert("\\<https://x.test>")).toBe(
+      "\\<[https://x.test](https://x.test)>",
+    );
+  });
   it("keeps the inner link of a nested label as the only link", () => {
     const links = scanMarkdown("[[a](https://x.test)](https://y.test)").links;
     expect(links.map((link) => link.url)).toEqual(["https://x.test"]);

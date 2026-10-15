@@ -423,6 +423,50 @@ it("R22 deeply nested labels: the scan stays within its budget, only the innermo
   );
 });
 
+it("R23 escaped image marker: the bang is literal text and the link collapses and opens", async () => {
+  native.invoke.mockResolvedValue(undefined);
+  vi.spyOn(HTMLElement.prototype, "getClientRects").mockImplementation(
+    function (this: HTMLElement) {
+      return (
+        this.hasAttribute("data-markdown-link")
+          ? [{ left: 0, right: 100, top: 0, bottom: 20 }]
+          : []
+      ) as never;
+    },
+  );
+  const draft = "\\![Docs](https://e.com/d)";
+  const { input } = mount(draft);
+  expect(probe.canonical).toBe(draft);
+  expect(input.value).toBe("\\!Docs");
+  fireEvent.mouseDown(input, {
+    button: 0,
+    ctrlKey: true,
+    clientX: 10,
+    clientY: 10,
+  });
+  fireEvent.mouseUp(input, { clientX: 10, clientY: 10 });
+  fireEvent.click(input, {
+    button: 0,
+    ctrlKey: true,
+    clientX: 10,
+    clientY: 10,
+  });
+  await act(async () => {});
+  expect(native.invoke).toHaveBeenCalledWith("open_external_url", {
+    url: "https://e.com/d",
+  });
+  // An even run of backslashes leaves a real image: nothing collapses.
+  cleanup();
+  const image = "\\\\![Docs](https://e.com/d)";
+  const real = mount(image);
+  expect(real.input.value).toBe(image);
+  select(real.input, image.length);
+  paste(real.input, " https://b.test/y ");
+  expect(probe.canonical).toBe(
+    `${image} [https://b.test/y](https://b.test/y) `,
+  );
+});
+
 it("R05 paste with files: image ownership stays with the form handler", () => {
   const attach = vi.fn();
   render(fixture()("", { attach }));

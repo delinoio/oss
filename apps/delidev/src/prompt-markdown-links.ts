@@ -359,8 +359,8 @@ export function scanMarkdown(text: string): MarkdownScan {
       if (text[index + 1] === "(") markers.push(index);
       if (stack.length) closeOf.set(stack.pop()!, index);
     } else if (
+      // An escaped `<` was skipped above, so reaching it means it is real.
       char === "<" &&
-      (index === 0 || text[index - 1] !== "\\") &&
       /^<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>/u.test(
         text.slice(index, index + 2100),
       )
@@ -387,7 +387,8 @@ export function scanMarkdown(text: string): MarkdownScan {
     const parsed = parseDestination(text, close + 2, budget);
     if (budget.exhausted) break;
     if (!parsed) continue;
-    const image = open > 0 && text[open - 1] === "!" && !escapedAt(text, open),
+    const image =
+        open > 0 && text[open - 1] === "!" && !escapedAt(text, open - 1),
       start = image ? open - 1 : open;
     // An image description is flattened text, so it may hold links; the whole
     // image is protected before any nested-label rejection applies. Only a
