@@ -36,6 +36,8 @@ import { EstimateAmounts, EstimateCosts } from "./estimate-costs";
 import { ResourceChoice } from "./configuration-fields";
 import { Problem } from "./ui";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
+import { useDestinationDispatch } from "./destination-window";
+import { Surface } from "./surface";
 import {
   useUsageFilters,
   UsageRangePreset,
@@ -286,6 +288,7 @@ export function Usage({
 }) {
   const productLabel = useProductLabels();
   const navigationIntent = useNavigationIntent();
+  const dispatch = useDestinationDispatch();
   useLocale();
   const [detail, setDetail] = useState<PriceSelection>();
 
@@ -635,7 +638,11 @@ export function Usage({
               aria-controls={`${tabId}-${value}-panel`}
               aria-selected={tab === value}
               tabIndex={tab === value ? 0 : -1}
-              onClick={() => selectTab(value)}
+              onClick={(event) =>
+                dispatch(event, { surface: Surface.Usage, tab: value }, () =>
+                  selectTab(value),
+                )
+              }
               onFocus={(event) => revealTabItem(event.currentTarget)}
               onKeyDown={(event) => {
                 const next =

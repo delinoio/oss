@@ -143,7 +143,7 @@ func ownedJob(name string) (windows.Handle, error) {
 	}
 	return job, nil
 }
-func startProcess(command *exec.Cmd, dir string, owner domain.ID, terminal *TerminalSize) (_ *managedProcess, returned error) {
+func startProcess(command *exec.Cmd, dir string, owner domain.ID, terminal *TerminalSize, _ SessionContext) (_ *managedProcess, returned error) {
 	if err := security.PrivateDir(dir); err != nil {
 		return nil, err
 	}

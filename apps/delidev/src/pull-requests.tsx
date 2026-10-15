@@ -65,6 +65,8 @@ import {
   type SettingsNavigationEntry,
 } from "./settings";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
+import { useDestinationDispatch } from "./destination-window";
+import { Surface } from "./surface";
 import {
   useRetainedMutation,
   useRetainedMutationIntents,
@@ -132,6 +134,7 @@ function RepositoryNavigationRow({
   toggleDetails: () => void;
 }) {
   useLocale();
+  const dispatch = useDestinationDispatch();
   const detailsId = useId();
   const name = label;
   const config = document(row);
@@ -159,7 +162,13 @@ function RepositoryNavigationRow({
           className="sidebar-repository-row"
           aria-label={name}
           aria-pressed={selected}
-          onClick={choose}
+          onClick={(event) =>
+            dispatch(
+              event,
+              { surface: Surface.PullRequests, item: row.id },
+              choose,
+            )
+          }
         >
           <svg
             className="sidebar-icon sidebar-repository-icon"

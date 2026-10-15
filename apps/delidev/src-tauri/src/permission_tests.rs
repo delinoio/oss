@@ -166,6 +166,86 @@ fn app_information_allows_only_trusted_local_webviews() {
     }
 }
 
+const DESTINATION_WINDOW_COMMAND: &str = "open_destination_window";
+
+#[test]
+fn destination_window_has_one_closed_declared_command() {
+    let manifests: BTreeMap<String, Manifest> = serde_json::from_str(MANIFESTS).unwrap();
+    let app = &manifests[APP_ACL_KEY];
+    assert!(
+        app.commands
+            .iter()
+            .any(|command| command == DESTINATION_WINDOW_COMMAND)
+    );
+    let permission = &app.permissions["destination-window"];
+    assert_eq!(permission.commands.allow, [DESTINATION_WINDOW_COMMAND]);
+    assert!(permission.commands.deny.is_empty());
+}
+
+#[test]
+fn destination_window_admits_product_webviews_and_denies_children_and_remote() {
+    for target in [Target::MacOS, Target::Windows, Target::Linux] {
+        let manifests: BTreeMap<String, Manifest> = serde_json::from_str(MANIFESTS).unwrap();
+        let capabilities: BTreeMap<String, Capability> =
+            serde_json::from_str(CAPABILITIES).unwrap();
+        let resolved = Resolved::resolve(&manifests, capabilities, target).unwrap();
+        assert!(resolved.has_app_acl);
+        assert!(!resolved.allowed_commands.contains_key("*"));
+        let authority = RuntimeAuthority::new(
+            #[cfg(debug_assertions)]
+            manifests,
+            resolved,
+        );
+        for label in ["main", "local-fixture", "server-fixture"] {
+            assert!(
+                authority
+                    .resolve_access(DESTINATION_WINDOW_COMMAND, label, label, &Origin::Local)
+                    .is_some(),
+                "registered product webview must open a destination window on {target}"
+            );
+            for child in [
+                "external-fixture",
+                "browser-fixture",
+                "tray-actions",
+                "widget-fixture",
+                "auxiliary-fixture",
+            ] {
+                assert!(
+                    authority
+                        .resolve_access(DESTINATION_WINDOW_COMMAND, label, child, &Origin::Local)
+                        .is_none(),
+                    "parent window cannot grant its child a destination window on {target}"
+                );
+            }
+            assert!(
+                authority
+                    .resolve_access(
+                        DESTINATION_WINDOW_COMMAND,
+                        label,
+                        label,
+                        &Origin::Remote {
+                            url: "https://untrusted.invalid/".parse().unwrap(),
+                        },
+                    )
+                    .is_none(),
+                "remote origin cannot open a destination window on {target}"
+            );
+        }
+        for label in [
+            "other",
+            "tray-actions",
+            "widget-fixture",
+            "auxiliary-fixture",
+        ] {
+            assert!(
+                authority
+                    .resolve_access(DESTINATION_WINDOW_COMMAND, label, label, &Origin::Local)
+                    .is_none()
+            );
+        }
+    }
+}
+
 const SHORTCUT_COMMANDS: [&str; 3] = [
     "read_shortcut_preferences",
     "update_shortcut_preferences",

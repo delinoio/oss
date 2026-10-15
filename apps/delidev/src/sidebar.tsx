@@ -16,6 +16,10 @@ import {
 import { SubscriptionRail } from "./subscription-rail";
 import { SidebarMore } from "./sidebar-more";
 import {
+  useDestinationDispatch,
+  useDestinationSurface,
+} from "./destination-window";
+import {
   NavigationPreferenceBoundary,
   useNavigationPreference,
 } from "./navigation-preference";
@@ -522,6 +526,7 @@ function SessionRow({
   open: (id: string, sidechatParent?: string, name?: string) => void;
 }) {
   useLocale();
+  const dispatch = useDestinationDispatch();
   const tooltipId = useId();
   const element = useRef<HTMLButtonElement>(null);
   const hover = useSessionHover(element);
@@ -590,11 +595,22 @@ function SessionRow({
         onPointerLeave={hover.onPointerLeave}
         onFocus={actionMenuOpen ? undefined : hover.onFocus}
         onBlur={hover.onBlur}
-        onClick={() => {
-          hover.dismiss();
-          if (row.sidechatParent) open(row.id, row.sidechatParent, row.name);
-          else open(row.id);
-        }}
+        onClick={(event) =>
+          dispatch(
+            event,
+            {
+              surface: Surface.Sessions,
+              session: row.sidechatParent ?? row.id,
+              sidechat: row.sidechatParent ? row.id : undefined,
+            },
+            () => {
+              hover.dismiss();
+              if (row.sidechatParent)
+                open(row.id, row.sidechatParent, row.name);
+              else open(row.id);
+            },
+          )
+        }
       >
         <Icon
           name={
@@ -1090,6 +1106,7 @@ function SidebarContent({
   setDrawerOpen?: (open: boolean) => void;
 }) {
   const productLabel = useProductLabels();
+  const dispatch = useDestinationDispatch();
   const usagePinned = useNavigationPreference().snapshot.usage_pinned;
   const disclosureContentId3 = useId();
   useLocale();
@@ -1098,6 +1115,10 @@ function SidebarContent({
       typeof window.matchMedia === "function" &&
       window.matchMedia("(max-width: 759px)").matches,
   );
+  // The compact drawer is a modal dialog that makes the main content inert, so
+  // a destination window failure from a pane control is presented inside it.
+  // The wide pane is not modal and keeps the page presentation.
+  const destinationSurface = useDestinationSurface(compact && drawerOpen);
   const drawer = useRef<HTMLDialogElement>(null);
   const rail = useRef<HTMLElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -1615,27 +1636,43 @@ function SidebarContent({
               label={copy("sidebar.sessions_6fa3cb")}
               icon="sessions"
               current={sessionNavigation}
-              onClick={() => navigate(Surface.Sessions)}
+              onClick={(event) =>
+                dispatch(event, { surface: Surface.Sessions }, () =>
+                  navigate(Surface.Sessions),
+                )
+              }
             />
             <SidebarButton
               label={copy("sidebar.pullRequests_d9e3f2")}
               icon="pull-requests"
               current={surface === Surface.PullRequests}
-              onClick={() => navigate(Surface.PullRequests)}
+              onClick={(event) =>
+                dispatch(event, { surface: Surface.PullRequests }, () =>
+                  navigate(Surface.PullRequests),
+                )
+              }
             />
             {usagePinned ? (
               <SidebarButton
                 label={copy("sidebar.usage_8d5982")}
                 icon="usage"
                 current={surface === Surface.Usage}
-                onClick={() => navigate(Surface.Usage)}
+                onClick={(event) =>
+                  dispatch(event, { surface: Surface.Usage }, () =>
+                    navigate(Surface.Usage),
+                  )
+                }
               />
             ) : null}
             <SidebarButton
               label={copy("sidebar.schedules_221ff1")}
               icon="schedules"
               current={surface === Surface.Schedules}
-              onClick={() => navigate(Surface.Schedules)}
+              onClick={(event) =>
+                dispatch(event, { surface: Surface.Schedules }, () =>
+                  navigate(Surface.Schedules),
+                )
+              }
             />
             <SidebarMore
               usageActive={surface === Surface.Usage}
@@ -1692,6 +1729,7 @@ function SidebarContent({
           </nav>
           <dialog
             ref={drawer}
+            {...destinationSurface.props}
             role={compact ? "dialog" : "region"}
             className={`sidebar-pane-dialog${compact && drawerOpen ? " is-drawer" : ""}`}
             aria-label={
@@ -1708,6 +1746,7 @@ function SidebarContent({
             <div
               className={`sidebar-pane${sessionNavigation ? " is-home" : ""}`}
             >
+              {destinationSurface.notice}
               <header className="sidebar-header">
                 <h1>{copy("sidebar.delidev_44fcad")}</h1>
                 {sessionNavigation ? (
@@ -1716,7 +1755,11 @@ function SidebarContent({
                       type="button"
                       className="sidebar-header-button"
                       aria-label={copy("sidebar.inbox_94835e")}
-                      onClick={() => navigateHeader(Surface.Inbox)}
+                      onClick={(event) =>
+                        dispatch(event, { surface: Surface.Inbox }, () =>
+                          navigateHeader(Surface.Inbox),
+                        )
+                      }
                     >
                       <Icon name="inbox" />
                     </button>
@@ -1724,7 +1767,11 @@ function SidebarContent({
                       type="button"
                       className="sidebar-header-button"
                       aria-label={copy("sidebar.search_49c266")}
-                      onClick={() => navigateHeader(Surface.Search)}
+                      onClick={(event) =>
+                        dispatch(event, { surface: Surface.Search }, () =>
+                          navigateHeader(Surface.Search),
+                        )
+                      }
                     >
                       <Icon name="search" />
                     </button>
