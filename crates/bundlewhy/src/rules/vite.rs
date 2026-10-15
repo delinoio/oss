@@ -27,7 +27,13 @@ pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
         return;
     }
     side_effect_retained(context, drafts);
+    if context.is_cancelled() {
+        return;
+    }
     commonjs_wrapped(context, drafts);
+    if context.is_cancelled() {
+        return;
+    }
     ineffective_dynamic_import(context, drafts);
 }
 
@@ -43,6 +49,11 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         .filter_map(|chunk| chunk.facade_module_id.as_deref())
         .collect();
     for module in &collection.modules {
+        // Poll before each module so Ctrl+C or `CancelRun` is observed between
+        // modules instead of after the final-emission attribution of every one.
+        if context.is_cancelled() {
+            return;
+        }
         // Rendered code with no rendered export qualifies. Whether the module
         // declares exports decides how much the finding can claim (see
         // `ExportUse`).
@@ -663,6 +674,11 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
         .find(|name| name.starts_with("__commonJS"))
         .cloned();
     for module in &collection.modules {
+        // Poll before each module so Ctrl+C or `CancelRun` is observed between
+        // modules instead of after the final-emission attribution of every one.
+        if context.is_cancelled() {
+            return;
+        }
         if !module.included || module.input_format.as_deref() != Some("cjs") {
             continue;
         }
@@ -789,6 +805,11 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
         .map(|chunk| chunk.file.as_str())
         .collect();
     for module in &collection.modules {
+        // Poll before each module so Ctrl+C or `CancelRun` is observed between
+        // modules instead of after the final-emission attribution of every one.
+        if context.is_cancelled() {
+            return;
+        }
         let graph_blocked = !module.importers.is_empty()
             && !module.dynamic_importers.is_empty()
             && !module
@@ -1156,6 +1177,53 @@ mod tests {
             assert!(log.contains("module=module-"), "{exports:?}: {log}");
             assert!(!log.contains("ruleSet"), "{exports:?}: {log}");
             assert!(!log.contains("loader.js"), "{exports:?}: {log}");
+        }
+    }
+
+    /// Mirrors the cancellation table in the contract: every Vite module loop
+    /// polls the signal before each module and stops once it is set.
+    #[test]
+    fn module_loops_stop_when_the_run_is_cancelled() {
+        type Detector = fn(&mut Context<'_>, &mut Vec<DiagnosticDraft>);
+        let detectors: [(&str, Detector); 3] = [
+            ("side_effect_retained", side_effect_retained),
+            ("commonjs_wrapped", commonjs_wrapped),
+            ("ineffective_dynamic_import", ineffective_dynamic_import),
+        ];
+        let modules: Vec<_> = (0..5)
+            .map(|index| crate::collect::CollectedModule {
+                id: format!("/project/src/m{index}.js"),
+                path: Some(format!("/project/src/m{index}.js")),
+                included: true,
+                ..crate::collect::CollectedModule::default()
+            })
+            .collect();
+        let collection = crate::collect::Collection {
+            modules,
+            ..crate::collect::Collection::default()
+        };
+        // (poll that first reports cancellation, polls the loop may make)
+        for (name, detector) in detectors {
+            for (cancel_at, expected_polls) in [(0usize, 1usize), (2, 3), (usize::MAX, 5)] {
+                let polls = std::sync::atomic::AtomicUsize::new(0);
+                let cancelled =
+                    || polls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= cancel_at;
+                let mut context = Context::new(
+                    &collection,
+                    std::path::PathBuf::from("/project"),
+                    "project".to_owned(),
+                    Vec::new(),
+                    crate::sources::SourceStore::new(false),
+                );
+                context.cancelled = Some(&cancelled);
+                let mut drafts = Vec::new();
+                detector(&mut context, &mut drafts);
+                assert_eq!(
+                    polls.load(std::sync::atomic::Ordering::SeqCst),
+                    expected_polls,
+                    "{name} cancel_at={cancel_at}"
+                );
+            }
         }
     }
 }
