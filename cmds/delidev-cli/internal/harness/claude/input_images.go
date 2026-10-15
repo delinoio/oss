@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
+	"math/big"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -208,13 +209,16 @@ func (h *sessionHistory) retainImageReplay(input domain.ID, raw json.RawMessage)
 // come from the validated native replay. The cache location is inert metadata:
 // it never grants a file read, publication, deletion or workspace capability.
 func imageContextText(text string, expected imageContext, session domain.ID, roots ...string) bool {
+	if expected.width <= 0 || expected.height <= 0 || expected.displayedWidth <= 0 || expected.displayedHeight <= 0 {
+		return false
+	}
 	prefix := "[Image: source: "
 	if !strings.HasPrefix(text, prefix) || !strings.HasSuffix(text, "]") {
 		return false
 	}
 	body := strings.TrimSuffix(strings.TrimPrefix(text, prefix), "]")
 	if expected.width != expected.displayedWidth || expected.height != expected.displayedHeight {
-		suffix := fmt.Sprintf(", original %dx%d, displayed at %dx%d. Multiply coordinates by %.2f to map to original image.", expected.width, expected.height, expected.displayedWidth, expected.displayedHeight, float64(expected.width)/float64(expected.displayedWidth))
+		suffix := fmt.Sprintf(", original %dx%d, displayed at %dx%d. Multiply coordinates by %s to map to original image.", expected.width, expected.height, expected.displayedWidth, expected.displayedHeight, nativeImageScale(expected.width, expected.displayedWidth))
 		if !strings.HasSuffix(body, suffix) {
 			return false
 		}
@@ -341,4 +345,19 @@ func imageContextFailure(s *APISession, stage int) error {
 		s.config.Process.Logger.Warn("claude_image_context_invalid", "stage", stage)
 	}
 	return historyUncertain()
+}
+
+// Match JavaScript Number.toFixed(2), including positive halfway values. Go's
+// default formatter rounds ties to even, which rejects valid native dimensions
+// such as 4250/2000 (the CLI emits 2.13). Keep the exact binary float fraction.
+func nativeImageScale(width, displayed int) string {
+	ratio := new(big.Rat).SetFloat64(float64(width) / float64(displayed))
+	ratio.Mul(ratio, big.NewRat(100, 1))
+	whole, remainder := new(big.Int), new(big.Int)
+	whole.QuoRem(ratio.Num(), ratio.Denom(), remainder)
+	if remainder.Lsh(remainder, 1).Cmp(ratio.Denom()) >= 0 {
+		whole.Add(whole, big.NewInt(1))
+	}
+	value := whole.Int64()
+	return fmt.Sprintf("%d.%02d", value/100, value%100)
 }

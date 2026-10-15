@@ -55,6 +55,6 @@ func inspectCompletedClaudeCheckpoint(ctx context.Context, root string, ref Comp
 		}
 		executable = installation.ResolvedPath
 	}
-	config := claude.APIStreamConfig{Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: c.JobID, Executable: executable, Cwd: history}, Version: native.Version, Home: filepath.Join(history, "claude"), Workspace: cwd, WorkspaceRoots: c.WorkspaceRoots, SessionID: c.SessionID, Model: native.Model, Permission: claude.NativePermission(native.Permission), Effort: claude.NativeEffort(native.Effort), API: claude.APIConfig{ServerOrigin: credential.Endpoint}}
+	config := claude.APIStreamConfig{ImageInputs: native.ImageInputs, Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: c.JobID, Executable: executable, Cwd: history}, Version: native.Version, Home: filepath.Join(history, "claude"), Workspace: cwd, WorkspaceRoots: c.WorkspaceRoots, SessionID: c.SessionID, Model: native.Model, Permission: claude.NativePermission(native.Permission), Effort: claude.NativeEffort(native.Effort), API: claude.APIConfig{ServerOrigin: credential.Endpoint}}
 	return claude.InspectCheckpoint(ctx, config, native.InstructionsDigest, saved.Native, saved.NativeReference)
 }

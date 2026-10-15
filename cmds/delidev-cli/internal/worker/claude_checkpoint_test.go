@@ -163,3 +163,22 @@ func TestClaudeCheckpointRefusesUnprovedClosureBeforeWriting(t *testing.T) {
 		t.Fatal("unproved closure wrote a checkpoint")
 	}
 }
+
+func TestClaudeCheckpointBindsOriginalOrderedImageReferences(t *testing.T) {
+	f, checkpoint := claudeCheckpointMetadataFixture(t)
+	first, second := openCodeImageAttachment(t, 1), openCodeImageAttachment(t, 2)
+	first.MachineID, second.MachineID = f.input.MachineID, f.input.MachineID
+	input := domain.SessionInput{Prompt: f.input.Input.Prompt, Attachments: []domain.ImageAttachment{first, second}}
+	f.ref.PromptDigest = input.InputDigest()
+	f.ref.AcceptedInputs = []domain.ExecutionInputBinding{domain.BindSessionInput(f.input.InputID, input)}
+	checkpoint.NativeReference.InputSHA256 = hex.EncodeToString(f.ref.PromptDigest[:])
+	if !checkpoint.matches(f.ref) {
+		t.Fatal("image checkpoint did not match original references")
+	}
+	input.Attachments[0], input.Attachments[1] = input.Attachments[1], input.Attachments[0]
+	f.ref.PromptDigest = input.InputDigest()
+	f.ref.AcceptedInputs = []domain.ExecutionInputBinding{domain.BindSessionInput(f.input.InputID, input)}
+	if checkpoint.matches(f.ref) {
+		t.Fatal("reordered image references borrowed the original native checkpoint")
+	}
+}

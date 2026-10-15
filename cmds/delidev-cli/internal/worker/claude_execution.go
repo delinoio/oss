@@ -119,7 +119,13 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	if input.Configuration.Subscription {
 		expectedProxyPath = ""
 		var finish func(bool) error
-		nativeProfile, managedToken, finish, err = beginClaudeSubscriptionExecution(ctx, config, owner, input)
+		// The workspace manager pins the canonical Worker root. Checkpoint reads
+		// inside subscription preparation must use that same root: a configured
+		// alias such as macOS /tmp otherwise fails the checkpoint path proof before
+		// a continuation can acquire its original account lease.
+		subscriptionConfig := config
+		subscriptionConfig.Root = manager.Root
+		nativeProfile, managedToken, finish, err = beginClaudeSubscriptionExecution(ctx, subscriptionConfig, owner, input)
 		if err != nil {
 			return nil, err
 		}

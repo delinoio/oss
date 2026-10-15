@@ -236,7 +236,11 @@ func TestManualNativeScriptedImageCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err = s.SendImageInput(ctx, domain.NewID(), lifecycleFixtureText, []ImageInput{image}, ContinueSuccessfulRun); err != nil {
+	prompt := lifecycleFixtureText
+	if os.Getenv("DELIDEV_NATIVE_CLAUDE_IMAGE_ONLY") == "1" {
+		prompt = ""
+	}
+	if _, err = s.SendImageInput(ctx, domain.NewID(), prompt, []ImageInput{image}, ContinueSuccessfulRun); err != nil {
 		t.Fatal(err)
 	}
 	finished := false

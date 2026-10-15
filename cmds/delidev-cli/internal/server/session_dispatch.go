@@ -648,10 +648,9 @@ func (s *Service) runExecutionDispatchTicks(parent context.Context, ticks <-chan
 	}
 }
 
-// requireOpenCodeImageWorker keeps an OpenCode assignment that declares image
-// input away from a Worker that predates the OpenCode image profile. Such a
-// Worker rejects the frozen declaration even for a text-only input, so the
-// server refuses it before dispatch instead of leaving the job to fail there.
+// requireOpenCodeImageWorker fences declared OpenCode and Claude image
+// profiles against older Workers, including text-only assignments whose frozen
+// declaration predates the current connection. Keep the input queued.
 func requireOpenCodeImageWorker(c domain.ExecutionConfiguration, capabilities []domain.WorkerCapability) error {
 	if (c.Harness == domain.OpenCode || c.Harness == domain.ClaudeCode) && c.ImageInputDeclared && !domain.ImageInputWorkerSupported(c.Harness, capabilities) {
 		return domain.Fail(domain.Unsupported, "The original Runner Device lacks the selected native image profile.", "Update and reconnect that Runner Device; the saved input stays queued and no image is dropped.")

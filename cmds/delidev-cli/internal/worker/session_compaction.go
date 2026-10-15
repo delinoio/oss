@@ -263,7 +263,7 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 	if err != nil {
 		return nil, err
 	}
-	native := claude.APIStreamConfig{Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Logger: logger, Env: env}, Version: installation.Version, Workspace: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), SessionID: i.Assignment.SessionID, Model: i.Assignment.Configuration.NativeModel, Permission: permission, Effort: effort, Instructions: instructions, API: claude.APIConfig{ServerOrigin: c.Credential.Endpoint}}
+	native := claude.APIStreamConfig{ImageInputs: i.Assignment.Configuration.ImageInputDeclared, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Logger: logger, Env: env}, Version: installation.Version, Workspace: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), SessionID: i.Assignment.SessionID, Model: i.Assignment.Configuration.NativeModel, Permission: permission, Effort: effort, Instructions: instructions, API: claude.APIConfig{ServerOrigin: c.Credential.Endpoint}}
 	phase = compactionRestore
 	closed, err := readClaudeContinuation(ctx, config.Root, c.Credential, i.Restore, manifest, native)
 	if err != nil {

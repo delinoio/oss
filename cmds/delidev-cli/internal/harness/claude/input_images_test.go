@@ -121,3 +121,14 @@ func TestClaudeImageHistoryPinsNativePreprocessedBytes(t *testing.T) {
 		t.Fatal("changed native image history acquired continuation authority")
 	}
 }
+
+func TestClaudeImageScaleMatchesNativeJavaScriptRounding(t *testing.T) {
+	for _, test := range []struct {
+		width, displayed int
+		scale            string
+	}{{4064, 2000, "2.03"}, {4250, 2000, "2.13"}, {5350, 2000, "2.67"}} {
+		if actual := nativeImageScale(test.width, test.displayed); actual != test.scale {
+			t.Fatalf("native scale %d/%d = %s, want %s", test.width, test.displayed, actual, test.scale)
+		}
+	}
+}

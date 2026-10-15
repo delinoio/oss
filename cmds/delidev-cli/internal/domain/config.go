@@ -840,7 +840,7 @@ func (m Machine) Validate() error {
 		seenCapabilities[capability] = true
 	}
 	if !OpenCodeImageInputsPaired(m.WorkerCapabilities) || !ClaudeImageInputsPaired(m.WorkerCapabilities) {
-		return Fail(InvalidArgument, "OpenCode image support requires base image input support.", "Report the OpenCode image capability only together with the base image input capability.")
+		return Fail(InvalidArgument, "Native image support requires base image input support.", "Report each native image capability only together with the base image input capability.")
 	}
 	if !OpenCodeForkReasoningPaired(m.WorkerCapabilities) {
 		return Fail(InvalidArgument, "OpenCode Fork reasoning support requires base OpenCode Fork support.", "Report the reasoning capability only together with the base OpenCode Fork capability.")

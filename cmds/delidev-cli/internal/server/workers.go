@@ -211,7 +211,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	// Profile v2 peers hold both pairs; a reasoning-only report is never a
 	// valid peer state and must not be persisted.
 	if !domain.OpenCodeImageInputsPaired(capabilities) || !domain.ClaudeImageInputsPaired(capabilities) {
-		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported OpenCode image support without base image input support.", "Report the OpenCode image capability only together with the base image input capability."), correlation)
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported native image support without base image input support.", "Report each native image capability only together with the base image input capability."), correlation)
 	}
 	if !domain.OpenCodeForkReasoningPaired(capabilities) {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported OpenCode Fork reasoning without base OpenCode Fork support.", "Report the reasoning capability only together with the base OpenCode Fork capability."), correlation)
