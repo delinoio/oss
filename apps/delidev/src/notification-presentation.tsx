@@ -4,7 +4,7 @@ import {
   SettingsActionPresentation,
 } from "./settings-action";
 import { copy, useLocale } from "./localization";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
@@ -21,6 +21,10 @@ import {
   notificationReadiness,
   notificationReady,
 } from "./notifications";
+import {
+  PresentationFailureLog,
+  PresentationPhase,
+} from "./presentation-diagnostics";
 import { useSettingsOpening } from "./settings-lifetime";
 
 const readinessKey = ["native-notification-readiness"] as const;
@@ -43,7 +47,6 @@ function useReadiness(active = true) {
 }
 
 export function NotificationPresentation() {
-  useLocale();
   const enabled = isTauri();
   const transport = useTransport();
   const service = useMemo(
@@ -63,7 +66,18 @@ export function NotificationPresentation() {
     },
   );
   const pump = useRef<NotificationPump>(undefined);
-  const [failed, setFailed] = useState(false);
+  // The window renders no status for these failures, so the warnings below are
+  // the only renderer-side evidence. One log belongs to one connection.
+  const failures = useMemo(() => new PresentationFailureLog(), [service]);
+  useEffect(() => {
+    failures.report(PresentationPhase.NotificationReadiness, readiness.isError);
+  }, [failures, readiness.isError]);
+  useEffect(() => {
+    failures.report(
+      PresentationPhase.NotificationCandidateRead,
+      candidates.isError,
+    );
+  }, [failures, candidates.isError]);
   // Keep the native scope for the lifetime of this connection. Permission polls
   // must not replace callbacks for already submitted notifications.
   useEffect(() => {
@@ -76,7 +90,7 @@ export function NotificationPresentation() {
         present: (scope, notice) =>
           invoke("present_notification", { scope, notice }),
       },
-      setFailed,
+      (failed, phase) => failures.report(phase, failed),
       () => {
         void candidates.refetch();
       },
@@ -87,18 +101,12 @@ export function NotificationPresentation() {
       value.close();
       if (pump.current === value) pump.current = undefined;
     };
-  }, [enabled, service, candidates.refetch]);
+  }, [enabled, service, failures, candidates.refetch]);
   useEffect(() => {
     if (ready && !candidates.isError && candidates.data)
       pump.current?.update(candidates.data.candidates);
   }, [ready, candidates.isError, candidates.data, candidates.dataUpdatedAt]);
-  return enabled && (failed || candidates.isError || readiness.isError) ? (
-    <p role="status">
-      {copy(
-        "notification-presentation.desktopNotificationsCouldNotBeConfirmed_8b02e8",
-      )}
-    </p>
-  ) : null;
+  return null;
 }
 
 export function NativeNotificationSettings({ active }: { active: boolean }) {

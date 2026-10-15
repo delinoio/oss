@@ -6,7 +6,6 @@
   "appearance.theThemeCouldNotBeSaved_fb5c7d": "The theme could not be saved. The last committed selection remains active. Check configuration access, then reload appearance before trying again.",
   "appearance.theSaveOutcomeIsUnknownReload_ef1864": "The save outcome is unknown. Reload appearance to inspect the committed selection before trying again.",
   "appearance.appearanceChangedElsewhereReloadAppearanceBefore_c210e8": "Appearance changed elsewhere. Reload appearance before choosing again.",
-  "appearance.appearance_463630": "Appearance: <s0/>",
   "appearance.deviceAppearance_880cb9": "Device appearance",
   "appearance.theme_efb52e": "Theme",
   "appearance.system_6725e7": "System",

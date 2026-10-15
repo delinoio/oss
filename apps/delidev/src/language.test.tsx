@@ -545,3 +545,36 @@ test("a newer window event discards the local search and keeps the input mounted
   expect(document.activeElement).toBe(input);
   expect(value.bridge.update).not.toHaveBeenCalled();
 });
+
+test.each(Object.values(LanguageProblem))(
+  "a %s problem renders no global alert outside Settings and one local alert with Reload inside",
+  async (problem) => {
+    const value = fixture();
+    vi.mocked(value.bridge.read).mockResolvedValue({
+      revision: 1,
+      language: LanguagePreference.System,
+      resolved_language: SupportedLanguage.English,
+      problem,
+    });
+    const main = render(
+      <LanguageProvider bridge={value.bridge}>
+        <p>Main content</p>
+      </LanguageProvider>,
+    );
+    await waitFor(() => expect(value.bridge.read).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(main.container.textContent).toBe("Main content");
+    main.unmount();
+    render(
+      <LanguageProvider bridge={value.bridge}>
+        <LanguageSettings />
+      </LanguageProvider>,
+    );
+    await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(1));
+    expect(
+      screen.getByRole("button", { name: "Reload language" }),
+    ).toBeTruthy();
+  },
+);
