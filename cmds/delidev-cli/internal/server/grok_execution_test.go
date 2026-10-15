@@ -784,3 +784,35 @@ func TestGrokExecuteRecoveryKeepsTheAccountRevokedWhileALogoutIsPending(t *testi
 		t.Fatalf("recovery exposed health %q while the logout is still pending", a.Health)
 	}
 }
+
+// A restart fences both an accepted logout and the execute lease it waited for.
+// The logout settles without sending anything (the scanner), the stale lease stays
+// fenced for its original Worker, and that cleanup must leave the account revoked,
+// not ready, because the logout was requested and has not succeeded.
+func TestGrokRestartedLogoutAndExecuteLeaseSettleToARevokedAccount(t *testing.T) {
+	f := newGrokExecutionFixture(t)
+	jobs := f.prepareJobs(0)
+	lease, err := f.takeJob(jobs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	f.service.subscriptionEpoch = domain.NewID()
+	if err := f.service.initializeServerSubscriptions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.recoverGrokLogout(ownerContext(), f.input.AccountID, domain.ID(op.OperationId)); err != nil {
+		t.Fatal(err)
+	}
+	_, a := f.record()
+	if a.Subscription.Pending != nil || !a.Subscription.RecoveryRequired || a.Subscription.Lease == nil {
+		t.Fatal("the settled logout released the stale execute lease's fence")
+	}
+	if _, err := f.finishWith(lease, domain.NewID(), nil, false, false, true); err != nil {
+		t.Fatalf("the original Worker's recovery was refused: %v", err)
+	}
+	_, a = f.record()
+	if a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountRevoked {
+		t.Fatalf("recovery left health %q after the logout settled without success", a.Health)
+	}
+}
