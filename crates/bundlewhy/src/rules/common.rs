@@ -1682,17 +1682,108 @@ fn for_header_scope(
     if !is_for {
         return None;
     }
-    let mut cursor = close + 1;
-    while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
-        cursor += 1;
-    }
-    let end = match block_close.get(&cursor) {
-        Some(body_close) if bytes.get(cursor) == Some(&b'{') => *body_close,
-        _ => code[cursor.min(bytes.len())..]
-            .find([';', '\n'])
-            .map_or(bytes.len(), |offset| cursor + offset),
-    };
+    let (end, _) = statement_extent(code, bytes, close + 1, parens, block_close, 0);
     Some((open, end))
+}
+
+/// The deepest nesting of control statements that [`statement_extent`] follows.
+const MAX_STATEMENT_DEPTH: usize = 64;
+
+/// Finds the statement that starts at `start`. Returns where its scope ends
+/// (the closing brace of a block, or the `;` or line end of a simple
+/// statement) and the position after the statement. A control statement
+/// (`if`, `else`, `while`, `for`, `with`, `do`) includes its body, so a nested
+/// body does not end the statement early.
+fn statement_extent(
+    code: &str,
+    bytes: &[u8],
+    start: usize,
+    parens: &[(usize, usize)],
+    block_close: &HashMap<usize, usize>,
+    depth: usize,
+) -> (usize, usize) {
+    let skip_space = |mut cursor: usize| {
+        while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        cursor
+    };
+    let word_at = |cursor: usize| {
+        let length = code[cursor.min(code.len())..]
+            .find(|character: char| {
+                !(character.is_alphanumeric() || character == '_' || character == '$')
+            })
+            .unwrap_or(code.len() - cursor.min(code.len()));
+        &code[cursor.min(code.len())..cursor.min(code.len()) + length]
+    };
+    let head_close = |cursor: usize| {
+        (bytes.get(cursor) == Some(&b'('))
+            .then(|| parens.iter().find(|(open, _)| *open == cursor))
+            .flatten()
+            .map(|(_, close)| *close)
+    };
+    let cursor = skip_space(start);
+    if bytes.get(cursor) == Some(&b'{')
+        && let Some(close) = block_close.get(&cursor)
+    {
+        return (*close, close + 1);
+    }
+    if depth < MAX_STATEMENT_DEPTH {
+        let word = word_at(cursor);
+        let after_word = skip_space(cursor + word.len());
+        match word {
+            "if" | "while" | "for" | "with" => {
+                let mut head = after_word;
+                if word == "for" && word_at(head) == "await" {
+                    head = skip_space(head + "await".len());
+                }
+                if let Some(close) = head_close(head) {
+                    let (end, next) =
+                        statement_extent(code, bytes, close + 1, parens, block_close, depth + 1);
+                    let after_body = skip_space(next);
+                    if word == "if" && word_at(after_body) == "else" {
+                        return statement_extent(
+                            code,
+                            bytes,
+                            after_body + "else".len(),
+                            parens,
+                            block_close,
+                            depth + 1,
+                        );
+                    }
+                    return (end, next);
+                }
+            }
+            "do" => {
+                let (end, next) = statement_extent(
+                    code,
+                    bytes,
+                    cursor + "do".len(),
+                    parens,
+                    block_close,
+                    depth + 1,
+                );
+                let tail = skip_space(next);
+                if word_at(tail) == "while"
+                    && let Some(close) = head_close(skip_space(tail + "while".len()))
+                {
+                    let after = skip_space(close + 1);
+                    let next = if bytes.get(after) == Some(&b';') {
+                        after + 1
+                    } else {
+                        close + 1
+                    };
+                    return (end.max(close), next);
+                }
+                return (end, next);
+            }
+            _ => {}
+        }
+    }
+    let end = code[cursor.min(bytes.len())..]
+        .find([';', '\n'])
+        .map_or(bytes.len(), |offset| cursor + offset);
+    (end, (end + 1).min(bytes.len()))
 }
 
 /// Finds a block-bodied function or arrow body after a parameter list.
@@ -3755,6 +3846,62 @@ y=/process.env.F/.test(z),process.env.G"#;
                 Some("eval(code)"),
             ),
             ("for (let eval = 1; ; ) { eval(x); eval(y); }", None),
+            // The loop statement includes a control statement as its body.
+            (
+                "for (let eval = helper; ready;) if (cond) {\n  eval(code);\n}\neval(other);",
+                Some("eval(other)"),
+            ),
+            (
+                "for (let eval = helper; ready;) if (cond) {\n  eval(code);\n}",
+                None,
+            ),
+            (
+                "for (const eval of list) if (a) { eval(x); } else { eval(y); } eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (const eval of list) if (a) eval(x); else eval(y); eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (const eval of list) if (a) eval(x);\nelse if (b) {\n \
+                 eval(y);\n}\neval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = 1;;) while (more) { eval(x); } eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = 1;;) for (const k of ks) { eval(k); } eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = 1;;) for await (const k of ks) { eval(k); } eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = 1;;) with (scope) { eval(x); } eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = 1;;) do { eval(x); } while (more); eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = 1;;) do eval(x); while (more)\neval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = 1;;) if (a) if (b) { eval(x); } else { eval(y); } eval(code);",
+                Some("eval(code)"),
+            ),
+            // A name that only starts with a statement keyword is a simple
+            // statement.
+            (
+                "for (const eval of list) iffy(eval(x));\neval(code);",
+                Some("eval(code)"),
+            ),
             (
                 "for (const eval of list)\n  eval(x);\neval(code);",
                 Some("eval(code)"),
