@@ -415,6 +415,17 @@ Ordinary tests use a private executable fixture only. Opt-in installed macOS tes
 
 ### Claude Code applied settings evidence
 
+Claude full-session initialization binds `apiKeySource` to the original auth
+profile: `ANTHROPIC_API_KEY` for API execution and `none` for native subscription
+or managed-token execution, after the separate account initialization proof.
+The `2.1.287` lifecycle may report the two bundled plugin descriptors
+`cc-plugin-agents-md` and `cc-plugin-plugin-authoring`, each with path `builtin`
+and its exact `<name>@builtin` source. Other, duplicate or substituted plugin
+descriptors remain unsupported. Optional absolute bounded `messaging_socket_path`,
+boolean `per_turn_effort_active` and `view_mode: default` metadata are discarded
+without opening a socket or granting tool authority. Empty MCP, original
+identity/settings, private memory and cleanup checks remain mandatory.
+
 The `2.1.287` settings response may also report a bounded private
 `remote_control_policy_lock_reason`, boolean `ultracodeAvailable` and explicitly
 false `ultracodeRequested`. These optional presentation fields are discarded;

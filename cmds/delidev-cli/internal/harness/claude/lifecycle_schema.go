@@ -34,34 +34,59 @@ func decodeNativeObject(raw []byte, target any) error {
 
 func (b *ExecutionBinding) validateSystemInit(raw []byte) error {
 	var init struct {
-		Type           string            `json:"type"`
-		Subtype        string            `json:"subtype"`
-		Session        domain.ID         `json:"session_id"`
-		UUID           string            `json:"uuid"`
-		Cwd            string            `json:"cwd"`
-		Model          string            `json:"model"`
-		Permission     NativePermission  `json:"permissionMode"`
-		Source         string            `json:"apiKeySource"`
-		Version        string            `json:"claude_code_version"`
-		OutputStyle    string            `json:"output_style"`
-		Tools          []string          `json:"tools"`
-		MCPServers     []json.RawMessage `json:"mcp_servers"`
-		Commands       []string          `json:"slash_commands"`
-		Terminal       []string          `json:"terminal_slash_commands"`
-		Agents         []string          `json:"agents"`
-		Skills         []string          `json:"skills"`
-		Plugins        []json.RawMessage `json:"plugins"`
-		Capabilities   []string          `json:"capabilities"`
-		AnalyticsOff   *bool             `json:"analytics_disabled"`
-		FeedbackOff    *bool             `json:"product_feedback_disabled"`
-		Memory         map[string]string `json:"memory_paths"`
-		FastMode       string            `json:"fast_mode_state"`
-		FastModeReason string            `json:"fast_mode_disabled_reason"`
+		Type            string            `json:"type"`
+		Subtype         string            `json:"subtype"`
+		Session         domain.ID         `json:"session_id"`
+		UUID            string            `json:"uuid"`
+		Cwd             string            `json:"cwd"`
+		Model           string            `json:"model"`
+		Permission      NativePermission  `json:"permissionMode"`
+		Source          string            `json:"apiKeySource"`
+		Version         string            `json:"claude_code_version"`
+		OutputStyle     string            `json:"output_style"`
+		Tools           []string          `json:"tools"`
+		MCPServers      []json.RawMessage `json:"mcp_servers"`
+		Commands        []string          `json:"slash_commands"`
+		Terminal        []string          `json:"terminal_slash_commands"`
+		Agents          []string          `json:"agents"`
+		Skills          []string          `json:"skills"`
+		Plugins         []json.RawMessage `json:"plugins"`
+		Capabilities    []string          `json:"capabilities"`
+		AnalyticsOff    *bool             `json:"analytics_disabled"`
+		FeedbackOff     *bool             `json:"product_feedback_disabled"`
+		Memory          map[string]string `json:"memory_paths"`
+		FastMode        string            `json:"fast_mode_state"`
+		FastModeReason  string            `json:"fast_mode_disabled_reason"`
+		MessagingSocket json.RawMessage   `json:"messaging_socket_path,omitempty"`
+		PerTurnEffort   json.RawMessage   `json:"per_turn_effort_active,omitempty"`
+		ViewMode        json.RawMessage   `json:"view_mode,omitempty"`
 	}
-	if decodeNativeObject(raw, &init) != nil || init.Cwd != b.workspace || init.Model != b.model || init.Permission != b.permission || init.Source != "ANTHROPIC_API_KEY" || !domain.ValidNativeVersionMetadata(init.Version) || init.OutputStyle != "default" ||
-		init.MCPServers == nil || len(init.MCPServers) != 0 || init.Plugins == nil || len(init.Plugins) != 0 || init.AnalyticsOff == nil || !*init.AnalyticsOff || init.FeedbackOff == nil || !*init.FeedbackOff || init.FastMode != "off" || init.FastModeReason != "sdk_opt_in_required" ||
+	source := "ANTHROPIC_API_KEY"
+	if b.subscriptionAuth {
+		source = "none"
+	}
+	if decodeNativeObject(raw, &init) != nil || init.Cwd != b.workspace || init.Model != b.model || init.Permission != b.permission || init.Source != source || !domain.ValidNativeVersionMetadata(init.Version) || init.OutputStyle != "default" ||
+		init.MCPServers == nil || len(init.MCPServers) != 0 || !validNativeBuiltinPlugins(init.Plugins) || init.AnalyticsOff == nil || !*init.AnalyticsOff || init.FeedbackOff == nil || !*init.FeedbackOff || init.FastMode != "off" || init.FastModeReason != "sdk_opt_in_required" ||
 		!uniqueText(init.Tools, 256, 256) || !uniqueText(init.Commands, 256, 256) || !uniqueText(init.Terminal, 256, 256) || !uniqueText(init.Agents, 256, 256) || !uniqueText(init.Skills, 256, 256) || !uniqueText(init.Capabilities, 256, 256) {
 		return lifecycleUncertain()
+	}
+	if len(init.MessagingSocket) != 0 {
+		var path *string
+		if json.Unmarshal(init.MessagingSocket, &path) != nil || path == nil || domain.Text(*path, "native messaging socket", 4096, true) != nil || !filepath.IsAbs(*path) {
+			return lifecycleUncertain()
+		}
+	}
+	if len(init.PerTurnEffort) != 0 {
+		var active *bool
+		if json.Unmarshal(init.PerTurnEffort, &active) != nil || active == nil {
+			return lifecycleUncertain()
+		}
+	}
+	if len(init.ViewMode) != 0 {
+		var mode *string
+		if json.Unmarshal(init.ViewMode, &mode) != nil || mode == nil || *mode != "default" {
+			return lifecycleUncertain()
+		}
 	}
 	for _, tool := range []string{"Bash", "Read", "Write", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode"} {
 		if !slices.Contains(init.Tools, tool) {
@@ -83,6 +108,27 @@ func (b *ExecutionBinding) validateSystemInit(raw []byte) error {
 		b.advertisedTools["Agent"] = true
 	}
 	return nil
+}
+
+// Only the two native bundled descriptors observed in 2.1.287 are allowed.
+// This inventory never authorizes loading an installed or user plugin.
+func validNativeBuiltinPlugins(raw []json.RawMessage) bool {
+	if raw == nil || len(raw) > 2 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, item := range raw {
+		var plugin struct {
+			Name   string `json:"name"`
+			Path   string `json:"path"`
+			Source string `json:"source"`
+		}
+		if decodeNativeObject(item, &plugin) != nil || !slices.Contains([]string{"cc-plugin-agents-md", "cc-plugin-plugin-authoring"}, plugin.Name) || seen[plugin.Name] || plugin.Path != "builtin" || plugin.Source != plugin.Name+"@builtin" {
+			return false
+		}
+		seen[plugin.Name] = true
+	}
+	return true
 }
 
 // TerminalReason is the pinned native loop's reason, not a fabricated common

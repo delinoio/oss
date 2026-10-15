@@ -22,6 +22,54 @@ func lifecycleFixture(t *testing.T) (*ExecutionBinding, APIStreamConfig) {
 	return binding, config
 }
 
+func TestNativeSubscriptionInitializationBindsAuthAndBuiltinMetadata(t *testing.T) {
+	for _, name := range []string{"managed", "device", "api", "foreign-source", "foreign-plugin", "plugin-path", "plugin-source", "duplicate-plugin", "invalid-effort", "invalid-socket", "changed-view"} {
+		t.Run(name, func(t *testing.T) {
+			_, cfg := lifecycleFixture(t)
+			if name == "device" {
+				cfg.Subscription = &NativeSubscriptionProfile{Home: cfg.Home}
+			} else if name != "api" {
+				cfg.ManagedToken = []byte(managedTokenFixtureToken)
+			}
+			b, err := BindExecution(cfg, domain.NewID(), lifecycleFixtureText)
+			if err != nil {
+				t.Fatal(err)
+			}
+			event := lifecycleInit(t, b)
+			source := "none"
+			if name == "api" || name == "foreign-source" {
+				source = "ANTHROPIC_API_KEY"
+			}
+			event = lifecycleChange(t, event, "apiKeySource", source)
+			plugins := []any{map[string]any{"name": "cc-plugin-agents-md", "path": "builtin", "source": "cc-plugin-agents-md@builtin"}, map[string]any{"name": "cc-plugin-plugin-authoring", "path": "builtin", "source": "cc-plugin-plugin-authoring@builtin"}}
+			event = lifecycleChange(t, event, "messaging_socket_path", filepath.Join(filepath.Dir(cfg.Home), "fixture.sock"))
+			event = lifecycleChange(t, event, "per_turn_effort_active", true)
+			event = lifecycleChange(t, event, "view_mode", "default")
+			switch name {
+			case "foreign-plugin":
+				plugins[0].(map[string]any)["name"] = "foreign-plugin"
+			case "plugin-path":
+				plugins[0].(map[string]any)["path"] = "/foreign/plugin"
+			case "plugin-source":
+				plugins[0].(map[string]any)["source"] = "foreign-source"
+			case "duplicate-plugin":
+				plugins[1] = plugins[0]
+			case "invalid-effort":
+				event = lifecycleChange(t, event, "per_turn_effort_active", "true")
+			case "invalid-socket":
+				event = lifecycleChange(t, event, "messaging_socket_path", "relative.sock")
+			case "changed-view":
+				event = lifecycleChange(t, event, "view_mode", "foreign")
+			}
+			event = lifecycleChange(t, event, "plugins", plugins)
+			err = b.validateSystemInit(event.Body)
+			if (err == nil) != (name == "managed" || name == "device" || name == "api") {
+				t.Fatalf("unexpected initialization result: %v", err)
+			}
+		})
+	}
+}
+
 func lifecycleMessage(t *testing.T, b *ExecutionBinding, kind string, fields map[string]any) StreamEvent {
 	t.Helper()
 	fields["type"], fields["session_id"] = kind, b.session

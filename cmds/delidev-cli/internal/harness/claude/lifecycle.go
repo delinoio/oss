@@ -112,6 +112,7 @@ type ExecutionBinding struct {
 	workspace              string
 	home                   string
 	permission             NativePermission
+	subscriptionAuth       bool
 	command                CommandState
 	initialized            bool
 	accepted               bool
@@ -151,7 +152,7 @@ func BindExecution(config APIStreamConfig, input domain.ID, text string) (*Execu
 		!filepath.IsAbs(config.Workspace) || filepath.Clean(config.Workspace) != config.Workspace || !filepath.IsAbs(config.Home) || filepath.Clean(config.Home) != config.Home || !validNativePermission(config.Permission) {
 		return nil, apiConfigurationError()
 	}
-	return &ExecutionBinding{session: config.SessionID, input: input, digest: sha256.Sum256([]byte(text)), model: config.Model, workspace: config.Workspace, home: historyHome(config), permission: config.Permission, seen: map[string]bool{}, logger: config.Process.Logger, owner: config.Process.OwnerID, protected: security.NewProtectedJSON(config.ProtectedValues())}, nil
+	return &ExecutionBinding{session: config.SessionID, input: input, digest: sha256.Sum256([]byte(text)), model: config.Model, workspace: config.Workspace, home: historyHome(config), permission: config.Permission, subscriptionAuth: config.Subscription != nil || len(config.ManagedToken) != 0, seen: map[string]bool{}, logger: config.Process.Logger, owner: config.Process.OwnerID, protected: security.NewProtectedJSON(config.ProtectedValues())}, nil
 }
 
 func validNativePermission(permission NativePermission) bool {
