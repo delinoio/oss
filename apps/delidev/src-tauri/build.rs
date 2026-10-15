@@ -62,6 +62,7 @@ fn main() {
             "saved_worker_proof",
             "saved_worker_control",
             "show_connection_manager",
+            "open_destination_window",
             "watch_tray_status",
             "read_tray_status",
             "activate_tray_status",

@@ -151,7 +151,7 @@ func init() {
 			}
 			write(request.ID, map[string]any{"data": []any{}, "nextCursor": nil, "backwardsCursor": nil})
 		case "config/read":
-			write(request.ID, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": map[string]any{}}, "origins": nil, "layers": nil})
+			write(request.ID, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": map[string]any{}, "features": map[string]any{"plugins": false}, "mcp_servers": map[string]any{}}, "origins": nil, "layers": nil})
 		case "thread/start":
 			id := domain.NewID()
 			thread = map[string]any{"id": id, "sessionId": id, "cliVersion": codex.SupportedVersion, "cwd": request.Params["cwd"], "modelProvider": "openai", "createdAt": int64(1), "updatedAt": int64(1), "ephemeral": false, "preview": "", "projectId": nil, "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}, "historyMode": "legacy", "extra": nil, "canAcceptDirectInput": true}

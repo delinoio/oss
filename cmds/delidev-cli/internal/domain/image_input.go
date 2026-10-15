@@ -29,6 +29,13 @@ const ImageInputsV1 WorkerCapability = "image-inputs-v1"
 // an OpenCode job that declares image input, so ImageInputsV1 never implies it.
 const OpenCodeImageInputsV1 WorkerCapability = "opencode-image-inputs-v1"
 
+// ClaudeImageInputsV1 negotiates the original Claude image stream/history profile.
+const ClaudeImageInputsV1 WorkerCapability = "claude-image-inputs-v1"
+
+func ClaudeImageInputsPaired(capabilities []WorkerCapability) bool {
+	return !slices.Contains(capabilities, ClaudeImageInputsV1) || slices.Contains(capabilities, ImageInputsV1)
+}
+
 // OpenCodeImageInputsPaired reports whether a Worker capability set keeps the
 // OpenCode image capability bound to the base image capability. A set without
 // the OpenCode capability is trivially paired.
@@ -40,7 +47,7 @@ func OpenCodeImageInputsPaired(capabilities []WorkerCapability) bool {
 // attachments for the harness: Codex needs the base capability, and OpenCode
 // additionally needs its independent capability.
 func ImageInputWorkerSupported(harness Harness, capabilities []WorkerCapability) bool {
-	return slices.Contains(capabilities, ImageInputsV1) && (harness != OpenCode || slices.Contains(capabilities, OpenCodeImageInputsV1))
+	return slices.Contains(capabilities, ImageInputsV1) && (harness != OpenCode || slices.Contains(capabilities, OpenCodeImageInputsV1)) && (harness != ClaudeCode || slices.Contains(capabilities, ClaudeImageInputsV1))
 }
 
 // MaxOpenCodeInputImagesBytes bounds the combined original image bytes of one

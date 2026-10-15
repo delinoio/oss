@@ -99,13 +99,13 @@ func TestOrdinaryMacShellHomeKeepsProviderHomePrivate(t *testing.T) {
 	cfg := Config{Mode: ThreadProtocol, Process: process.Config{Env: []string{"HOME=/private/provider", "CODEX_HOME=/private/provider/codex"}}}
 	cfg.OrdinaryTools = executionenv.Resolve("darwin", []string{"HOME=/Users/original user"}, t.TempDir())
 	configureOrdinaryTools(&cfg)
-	if !slices.Contains(cfg.Process.Args, `shell_environment_policy.set.HOME="/Users/original user"`) || !slices.Contains(cfg.Process.Env, "HOME=/private/provider") || !slices.Contains(cfg.Process.Env, "CODEX_HOME=/private/provider/codex") {
+	if cfg.Process.SessionContext != process.CurrentUserGUI || !slices.Contains(cfg.Process.Args, `shell_environment_policy.set.HOME="/Users/original user"`) || !slices.Contains(cfg.Process.Env, "HOME=/private/provider") || !slices.Contains(cfg.Process.Env, "CODEX_HOME=/private/provider/codex") {
 		t.Fatal("ordinary shell home changed provider isolation or lost quoting")
 	}
 	cfg.Mode = SubscriptionProtocol
 	cfg.Process.Args = nil
 	configureOrdinaryTools(&cfg)
-	if len(cfg.Process.Args) != 0 {
+	if len(cfg.Process.Args) != 0 || cfg.Process.SessionContext != process.BackgroundSession {
 		t.Fatal("subscription lifecycle borrowed ordinary shell home")
 	}
 }

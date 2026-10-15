@@ -39,14 +39,15 @@ A launch creates durable ownership and reaches a start barrier before receiving 
 
 Natural exit, cancellation and parent disconnection reconcile owned descendants before confirming resource release. PID absence alone is not proof; use start identity plus the execution owner and an OS ownership scope. Recovery never signals a PID whose recorded start identity differs. A missing or unreadable ownership journal for a launched process is an explicit recovery error. Uncertainty blocks replacement and credential/runtime destruction.
 
-Linux uses a dedicated re-executed subreaper per process scope; its kernel child-reaping result proves descendant completion. If that supervisor is itself killed before durable completion, missing ancestry cannot be reconstructed safely; keep uncertainty until independent proof, such as a changed boot identity. macOS uses an independently launched, uniquely named per-execution supervisor and its inherited XNU resource coalition, verifying membership and process birth before signaling. Unsupported kernel interfaces fail explicitly. Windows uses `PROC_THREAD_ATTRIBUTE_JOB_LIST` to atomically create a suspended child inside a non-breakaway kill-on-close Job Object, then persists its start identity before resume; retained job identity supports recovery and prevents unrelated PID termination.
+Linux uses a dedicated re-executed subreaper per process scope; its kernel child-reaping result proves descendant completion. If that supervisor is itself killed before durable completion, missing ancestry cannot be reconstructed safely; keep uncertainty until independent proof, such as a changed boot identity. macOS uses an independently launched, uniquely named per-execution supervisor and its inherited XNU resource coalition, verifying membership and process birth before signaling. Unsupported kernel interfaces fail explicitly. A typed current-user-GUI option may select an existing same-user macOS GUI login domain for ordinary tools that need its Keychain; otherwise the original background domain remains. Persist the selected exact domain in the original scope, retain independent per-execution coalitions and start barriers, and never create, adopt or terminate a login session. Existing scope recovery keeps its original domain. Windows uses `PROC_THREAD_ATTRIBUTE_JOB_LIST` to atomically create a suspended child inside a non-breakaway kill-on-close Job Object, then persists its start identity before resume; retained job identity supports recovery and prevents unrelated PID termination.
 
 A Unix stdout/stderr pipe setup failure after the start barrier but before command launch persists completed ownership before supervisor exit. Failure to persist that proof retains recovery uncertainty; native-started failures still require descendant reconciliation.
 
-On macOS, a Worker whose original launchctl manager reports `Aqua` starts its
-independent supervisor in the same user's GUI domain with session type `Aqua`.
-Other Workers retain the user-domain `Background` profile. This preserves the
-original GUI security session for user tools such as gh's login-keychain access.
+On macOS, ordinary Codex and Claude execution request the typed current-user-GUI
+option. When that login domain exists, the independent supervisor uses session
+type `Aqua`. Other execution retains the user-domain `Background` profile. This
+preserves login-keychain access for ordinary tools without changing auxiliary
+process contexts.
 The journal retains the selected original domain for exact cleanup; coalition,
 process-birth, start-barrier and descendant-join requirements remain unchanged.
 

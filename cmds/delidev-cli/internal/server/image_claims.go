@@ -171,12 +171,12 @@ func checkQueuedImageEdit(tx *store.Tx, session domain.Session, prompt string, r
 // a text-only one. The caller leaves the job queued instead of claiming it. A
 // payload that does not decode is left to the claim checks that own it.
 func queuedOpenCodeImageWorkerMissing(machine domain.Machine, job domain.Job) bool {
-	if slices.Contains(machine.WorkerCapabilities, domain.OpenCodeImageInputsV1) {
+	if slices.Contains(machine.WorkerCapabilities, domain.OpenCodeImageInputsV1) && slices.Contains(machine.WorkerCapabilities, domain.ClaudeImageInputsV1) {
 		return false
 	}
 	declares := func(configurations ...domain.ExecutionConfiguration) bool {
 		for _, c := range configurations {
-			if c.Harness == domain.OpenCode && c.ImageInputDeclared {
+			if (c.Harness == domain.OpenCode || c.Harness == domain.ClaudeCode) && c.ImageInputDeclared && !domain.ImageInputWorkerSupported(c.Harness, machine.WorkerCapabilities) {
 				return true
 			}
 		}

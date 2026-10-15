@@ -23,6 +23,7 @@ pub mod browser_discovery;
 mod browser_opener;
 pub mod browser_preferences;
 pub mod date_format;
+pub mod destination_route;
 pub mod external_url;
 pub mod image_export;
 pub mod language;

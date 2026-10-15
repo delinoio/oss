@@ -135,6 +135,9 @@ func (s *APISession) readRetainedTranscript(ctx context.Context, additionalProte
 	if err != nil {
 		return TranscriptObservation{}, err
 	}
+	if err := s.retainImageContexts(ctx); err != nil {
+		return TranscriptObservation{}, err
+	}
 	observed, err := readMainTranscriptWithInlineTools(ctx, historyHome(s.config), s.config.SessionID, s.config.Workspace, h.messages, h.compactions, h.actions, h.resumes, &tools, s.config.Process.Logger, append(s.config.ProtectedValues(), additionalProtected...)...)
 	if err != nil {
 		return TranscriptObservation{}, err

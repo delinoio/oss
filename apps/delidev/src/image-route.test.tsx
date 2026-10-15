@@ -42,7 +42,10 @@ function wrapper(
         capabilities: [
           SystemCapability.IMAGE_INPUTS_V1,
           ...(openCode.system
-            ? [SystemCapability.OPENCODE_IMAGE_INPUTS_V1]
+            ? [
+                SystemCapability.OPENCODE_IMAGE_INPUTS_V1,
+                SystemCapability.CLAUDE_IMAGE_INPUTS_V1,
+              ]
             : []),
         ],
       }),
@@ -60,7 +63,10 @@ function wrapper(
                   worker_capabilities: [
                     WorkerCapability.IMAGE_INPUTS_V1,
                     ...(openCode.worker
-                      ? [WorkerCapability.OPENCODE_IMAGE_INPUTS_V1]
+                      ? [
+                          WorkerCapability.OPENCODE_IMAGE_INPUTS_V1,
+                          WorkerCapability.CLAUDE_IMAGE_INPUTS_V1,
+                        ]
                       : []),
                   ],
                 }
@@ -124,7 +130,7 @@ it("keeps OpenCode text-only routes and the other harnesses unsupported", async 
   expect(await ready({ harness: "opencode", routes: [route([])] })).toBe(false);
   expect(
     await ready({ harness: "claude-code", routes: [route(["image"])] }),
-  ).toBe(false);
+  ).toBe(true);
   expect(
     await ready({ harness: "grok-build", routes: [route(["image"])] }),
   ).toBe(false);
@@ -140,7 +146,7 @@ it("uses the frozen execution snapshot for queued follow-ups", async () => {
   );
   expect(await ready(agent, { harness: "codex", declared: false })).toBe(true);
   expect(await ready(agent, { harness: "claude-code", declared: true })).toBe(
-    false,
+    true,
   );
   expect(await ready(agent, { harness: "sidechat", declared: true })).toBe(
     false,
@@ -167,4 +173,23 @@ it("keeps OpenCode unavailable until both sides negotiate the independent pair",
       ),
     ).toBe(true);
   }
+});
+
+it("requires Claude image declaration and both independently negotiated peers", async () => {
+  const agent = { harness: "claude-code", routes: [route(["text", "image"])] };
+  expect(await ready(agent)).toBe(true);
+  expect(await ready({ ...agent, routes: [route(["text"])] })).toBe(false);
+  for (const peers of [
+    { system: false, worker: true },
+    { system: true, worker: false },
+    { system: false, worker: false },
+  ]) {
+    expect(await ready(agent, undefined, peers)).toBe(false);
+    expect(
+      await ready(agent, { harness: "claude-code", declared: true }, peers),
+    ).toBe(false);
+  }
+  expect(await ready(agent, { harness: "claude-code", declared: false })).toBe(
+    false,
+  );
 });

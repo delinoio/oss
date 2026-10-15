@@ -16,7 +16,10 @@ import (
 
 const maxStreamFrame = 1 << 20
 const maxStreamPending = 128
-const maxStreamEvents = 128
+
+// Durable publication can lag a burst of small native streaming deltas. Keep
+// their descriptor bound separate from the unchanged aggregate payload limit.
+const maxStreamEvents = 4096
 const maxStreamBytes = 8 << 20
 const maxStreamIdentities = 4096
 
@@ -64,6 +67,7 @@ type streamArrival struct {
 // Stream owns Claude's NDJSON control/input transport, not session authority.
 // It never initializes, sends input, grants permissions or retries on its own.
 type Stream struct {
+	frameLimit     int
 	protected      security.ProtectedJSON
 	process        *process.Handle
 	logger         *slog.Logger
@@ -98,8 +102,16 @@ func streamEnded() *domain.Error {
 }
 
 func StartStream(ctx context.Context, config process.Config) (*Stream, error) {
+	return startStream(ctx, config, false)
+}
+
+func startStream(ctx context.Context, config process.Config, images bool) (*Stream, error) {
 	life, cancel := context.WithCancel(ctx)
 	s := &Stream{cancel: cancel, done: make(chan struct{}), gate: make(chan struct{}, 1), notify: make(chan struct{}, 1), seen: map[domain.ID]bool{}, pending: map[domain.ID]*streamPending{}, incoming: map[string]streamArrival{}}
+	s.frameLimit = maxStreamFrame
+	if images {
+		s.frameLimit = maxImageInputFrame
+	}
 	s.logger, s.owner = config.Logger, config.OwnerID
 	s.protected = security.NewProtectedJSON(config.ProtectedValues)
 	if s.logger == nil {
@@ -280,7 +292,16 @@ func (s *Stream) Next(ctx context.Context) (StreamEvent, error) {
 }
 
 func (s *Stream) queueLocked(event StreamEvent) error {
-	if len(s.events) >= maxStreamEvents || s.eventBytes+event.size > maxStreamBytes {
+	limit := maxStreamBytes
+	if s.frameLimit == maxImageInputFrame {
+		limit = 2 * maxImageInputFrame
+	}
+	if len(s.events) >= maxStreamEvents || s.eventBytes+event.size > limit {
+		if s.logger != nil {
+			s.logger.Warn("claude_event_queue_exhausted", "owner_id", s.owner,
+				"event_count", len(s.events) >= maxStreamEvents,
+				"event_bytes", s.eventBytes+event.size > limit)
+		}
 		return domain.Fail(domain.ResourceExhausted, "Claude Code event buffering reached its bound.", "Reconcile the interrupted native stream before explicit continuation.")
 	}
 	s.events = append(s.events, event)
@@ -533,7 +554,7 @@ func (s *Stream) receive(raw []byte) error {
 		return streamIncompatible()
 	}
 	var fields map[string]json.RawMessage
-	if domain.Decode(raw, &fields) != nil || fields == nil {
+	if domain.DecodeBounded(raw, &fields, s.nativeFrameLimit()) != nil || fields == nil {
 		return streamIncompatible()
 	}
 	var kind string
@@ -692,7 +713,7 @@ func (w *streamFrames) Write(data []byte) (int, error) {
 		if end >= 0 {
 			size = end
 		}
-		if len(w.buffer)+size > maxStreamFrame {
+		if len(w.buffer)+size > w.stream.nativeFrameLimit() {
 			w.buffer, w.stopped = nil, true
 			w.stream.fail(domain.Fail(domain.ResourceExhausted, "Claude Code stream frame exceeds its bound.", "Reconcile the interrupted native session before continuing."))
 			break
@@ -710,4 +731,11 @@ func (w *streamFrames) Write(data []byte) (int, error) {
 		w.buffer = nil
 	}
 	return length, nil
+}
+
+func (s *Stream) nativeFrameLimit() int {
+	if s.frameLimit > 0 {
+		return s.frameLimit
+	}
+	return maxStreamFrame
 }

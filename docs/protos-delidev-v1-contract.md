@@ -1697,3 +1697,7 @@ System `SUBSCRIPTION_CLEANUP_RECOVERY_V1 = 64` independently negotiates the expa
 ## Server-owned Claude token capabilities
 
 System `CLAUDE_SERVER_LOGIN_V1 = 67`, System `CLAUDE_MANAGED_EXECUTION_V1 = 68` and Worker `MANAGED_CLAUDE_EXECUTION_V1 = 41` are reserved in `allocations.json`, declared, advertised and regenerated for Go and TypeScript. They are independent of System 38 and 30 and Worker 20. No message, field or RPC is added: the existing SubscriptionService request, progress, cancel, code submission, protected Take and Finish carry the server-owned flow, and the Take response bundle carries the sealed envelope only to a Worker advertising 41. Unsupported servers show update guidance; unsupported Workers affect execution eligibility only. No SQLite migration is added.
+
+## Claude image input profile
+
+Claude image delivery uses the independently negotiated System 106 / Worker 71 pair, original Worker-owned bytes, native preprocessing replay and attachment-aware checkpoint identities. Follow the [image input contract](cmds-delidev-image-input-contract.md#closed-adapter-profiles). Original text-only streams and checkpoints retain their prior identities; unknown peers gain no image authority.

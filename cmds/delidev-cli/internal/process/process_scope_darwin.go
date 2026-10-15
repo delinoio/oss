@@ -50,17 +50,14 @@ func coalitionActive(id uint64) (uint64, error) {
 	return usage[0] - usage[1], nil
 }
 func bootIdentity() (string, error) { return unix.Sysctl("kern.bootsessionuuid") }
-func prepareScope(s *processScope, _ string) error {
+func prepareScope(s *processScope, _ string, session SessionContext) error {
 	s.Label = "io.delino.delidev.execution." + string(domain.NewID())
 	s.Domain = fmt.Sprintf("user/%d", os.Getuid())
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	manager := exec.CommandContext(ctx, "/bin/launchctl", "managername")
-	manager.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C"}
-	if output, err := manager.Output(); err == nil && strings.TrimSpace(string(output)) == "Aqua" {
-		// Preserve the original GUI security session so ordinary user tools can
-		// access their existing login keychain. Background Workers stay there.
-		s.Domain = fmt.Sprintf("gui/%d", os.Getuid())
+	if session == CurrentUserGUI {
+		gui := fmt.Sprintf("gui/%d", os.Getuid())
+		if err := launchctl("print", gui); err == nil {
+			s.Domain = gui
+		}
 	}
 	return nil
 }

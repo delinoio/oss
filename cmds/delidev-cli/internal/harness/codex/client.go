@@ -481,6 +481,7 @@ func configureOrdinaryTools(config *Config) {
 		config.OrdinaryTools = executionenv.Ordinary{}
 	}
 	config.Process.Env = config.OrdinaryTools.Apply(config.Process.Env)
+	config.Process.SessionContext = config.OrdinaryTools.ProcessSession()
 	if home := config.OrdinaryTools.ShellHome(); home != "" {
 		// gh's macOS credential store lookup also depends on the shell HOME.
 		// Set only the native shell policy; provider HOME and CODEX_HOME remain

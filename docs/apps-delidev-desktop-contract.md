@@ -1574,6 +1574,121 @@ Completed removals have a separately paginated, read-only history in Saved serve
 
 Profile-owned Worker controls accept the same closed lifecycle action and original stop generation as local controls, with no renderer-selected profile ID. Go's `connection worker-*` commands validate the pinned client and retain grant/pairing requests before network effects. Native reads validate the same profile before and after private Worker proof retrieval; the command handler also rechecks the original window instance before returning. A saved window can therefore select Local sessions/schedules with fresh proof for this computer while its server runs elsewhere. Independent profile Workers have independent device/machine identities and process generations. Registration, current server authorization, controller status and session cleanup remain separate facts; no mutation is automatically repeated by status polling or window reopening.
 
+### Destination windows
+
+An internal destination control opens its target in one additional product window when the user primary-clicks it with the platform primary modifier. The window is created on the invoking window's original Local or Saved connection, shows the typed destination through its own authenticated route restoration, and grants no authority beyond a window created from the File menu. External URLs, protected browser pages, OAuth, File > New Window and every shortcut mapping keep their behavior. Web previews and mobile never attempt the native operation.
+
+#### Click classification
+
+`navigation-disposition.ts` owns the closed `NavigationDisposition` enum (`CurrentWindow`, `NewWindow`) and one pure classifier. A click selects `NewWindow` only when every condition holds: the primary mouse button, a pointer activation (`detail` above zero, so keyboard and assistive activation never qualify), exactly the platform primary modifier, no Alt. Shift is allowed. The platform comes from the shared shortcut platform probe (`ShortcutPlatform.Mac` when `navigator.platform` matches `mac`).
+
+| Modifiers held (pointer click, primary button) | macOS         | Windows/Linux |
+| ---------------------------------------------- | ------------- | ------------- |
+| none                                           | CurrentWindow | CurrentWindow |
+| Shift                                          | CurrentWindow | CurrentWindow |
+| Command (Meta)                                 | NewWindow     | CurrentWindow |
+| Command + Shift                                | NewWindow     | CurrentWindow |
+| Control                                        | CurrentWindow | NewWindow     |
+| Control + Shift                                | CurrentWindow | NewWindow     |
+| Control + Meta (with or without Shift)         | CurrentWindow | CurrentWindow |
+| any primary modifier + Alt                     | CurrentWindow | CurrentWindow |
+| Alt only                                       | CurrentWindow | CurrentWindow |
+
+| Activation                                                       | Disposition                      |
+| ---------------------------------------------------------------- | -------------------------------- |
+| Middle or right button, any modifiers                            | CurrentWindow                    |
+| Keyboard or assistive activation (`detail` 0)                    | CurrentWindow                    |
+| Primary modifier click while the host is a web preview or mobile | CurrentWindow, no native attempt |
+
+A handled `NewWindow` click calls `preventDefault` and `stopPropagation` so no duplicate DOM, default or ancestor navigation runs, and it never runs the control's current-window handler.
+
+#### Eligible controls
+
+Only controls whose single purpose is to show a typed destination use the shared dispatcher (`useDestinationDispatch`); each passes a `ProductRoute` and its existing handler.
+
+| Control                                                                     | Typed destination                        | Disposition source |
+| --------------------------------------------------------------------------- | ---------------------------------------- | ------------------ |
+| Sidebar rail Sessions, Pull requests, Schedules, pinned Usage, More > Usage | screen                                   | click              |
+| Sidebar header Inbox and Search                                             | screen                                   | click              |
+| Sidebar Session and Sidechat rows                                           | Session, or parent Session plus Sidechat | click              |
+| Search result (Sidechat results resolve their original parent first)        | Session, or parent Session plus Sidechat | click              |
+| Inbox entry row, Inbox Open session                                         | Inbox entry, Session                     | click              |
+| Schedule row                                                                | Schedule                                 | click              |
+| Pull requests repository row                                                | repository                               | click              |
+| Settings category list                                                      | category                                 | click              |
+| Usage tab                                                                   | tab                                      | click              |
+| Fork dialog Open forked session                                             | Session, or parent Session plus Sidechat | click              |
+
+Excluded, never receiving the new-window disposition: New session, New general chat and New project, creation and mutation controls, disclosures, filters, sorting, pagination, menus and their triggers, the command palette, Session workspace tab selection, Settings search field targets, retry/refresh/dismiss controls and Pin Usage.
+
+#### Renderer operation states
+
+The Shell owns one controller (`useDestinationWindowController`). Descendants read it through `DestinationWindowProvider`; outside a Shell the inert default makes every control keep its current-window behavior.
+
+| State       | Entered by                              | New-window click                                                      | Exits to                             |
+| ----------- | --------------------------------------- | --------------------------------------------------------------------- | ------------------------------------ |
+| Idle        | start, completed or failed operation    | admits one operation, clears a shown failure                          | Pending                              |
+| Pending     | an admitted operation                   | suppressed (default and bubbling), dropped, not queued, no navigation | Idle on success, Failed on rejection |
+| Failed      | native rejection or unknown error       | admits a new operation (the notice is cleared)                        | Pending, or Idle on dismiss          |
+| Unavailable | host is not Tauri (web preview, mobile) | not claimed: the control's handler runs                               | n/a                                  |
+
+Failure shows one localized `role="alert"` notice with a dismiss button through the existing notice treatment. It never navigates the current window, retries automatically, changes the selection, scroll, draft or drawer, or creates a resource. The notice is presented by exactly one surface, the nearest registered surface that encloses the control that was clicked. A modal dialog makes the rest of the document inert, so a notice rendered only in the page would be neither readable nor dismissible for a control inside a dialog.
+
+| Caller context                                                                                 | Presenting surface                 | Lifetime of the notice                                             |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| Page content: Search results, Inbox, Schedules, Pull requests, Settings categories, Usage tabs | Shell main content                 | Until dismissed or the next operation starts                       |
+| Wide sidebar pane and rail (not modal)                                                         | Shell main content                 | As the page                                                        |
+| Compact sidebar drawer (modal dialog): Inbox, Search and Session rows                          | The drawer, at the top of its pane | As the page; closing the drawer moves a visible notice to the page |
+| Open More list (popover): Usage                                                                | The list, below its rows           | As the page; closing the list moves a visible notice to the page   |
+| Modal dialog: Fork dialog Open forked session                                                  | The dialog, below its heading      | As the page; closing the dialog moves a visible notice to the page |
+| Nested modal dialogs                                                                           | The innermost enclosing dialog     | As the modal dialog                                                |
+| Any surface that closed before the operation failed                                            | Shell main content                 | As the page                                                        |
+
+Surfaces register through one shared hook; the shared Modal registers every modal dialog it presents. A control outside every registered surface uses the page. A new caller context needs a row in this table and a presentation test before it ships. A Search result opening shares the existing pending/unavailable Search status: the original parent is resolved first, an unreadable result shows the existing alert, and no window opens.
+
+Destination window code paths log only phases, closed failure codes and closed reasons. They never log a route, an opaque Session, Sidechat or item ID, a title or connection data, including when the log site is shared with a current-window path.
+
+| Log site                                                                           | Event                                      | Fields                                         |
+| ---------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------- |
+| Controller admission (`requested`, `dropped`) and settlement (`settled`)           | `delidev.destination_window`               | `phase`                                        |
+| Controller rejection (`failed`)                                                    | `delidev.destination_window`               | `phase`, closed failure code                   |
+| Search result resolution for a new window (metadata read failed or malformed)      | `delidev.search.session_route_unavailable` | closed reason only (anonymous resolution mode) |
+| Search result resolution for the current window (retained for its own diagnostics) | `delidev.search.session_route_unavailable` | closed reason and opaque Session ID            |
+| Native command (`requested`, `authorized`, `created`, `failed`)                    | `destination_window` operation             | `operation`, `phase`, closed failure code      |
+
+The Search resolution takes its logging mode from the caller: the destination window path always requests the anonymous mode, so a never-visited result whose metadata cannot be read or is malformed leaves no identifier in the renderer log. A repository scan test keeps the destination window sources limited to the fields above.
+
+#### Native operation
+
+`open_destination_window` (`window_host.rs`) takes only a `DestinationRoute` (`destination_route.rs`): a closed screen enum (Sessions, Pull requests, Usage, Schedules, Inbox, Search, Settings), optional canonical UUIDv7 `session`, `sidechat`, `item` and closed `category` / `tab` enums. Unknown fields, unknown enum values, creation screens, URLs and slots that the screen does not own are rejected as invalid input before any window work. The serialized initial route query is the only destination carrier; the new window is created with `WebviewUrl::App("index.html?...")` and does not use `window.open`, relax the popup policy or transfer state.
+
+| Caller                                                                | Result                                              |
+| --------------------------------------------------------------------- | --------------------------------------------------- |
+| Registered Local `main` / `local-*` document                          | admitted; creates a Local window                    |
+| Registered Saved `server-*` document with an unchanged paired profile | admitted; creates a window for the same profile     |
+| Saved profile revoked, replaced or removal-pending                    | `permission-denied` / `invalid-evidence`; no window |
+| Source window closed, replaced or no longer registered                | `permission-denied` / `invalid-evidence`; no window |
+| Tray panel, widget, browser, external or other auxiliary webview      | denied by the ACL; no command access                |
+| Remote origin                                                         | denied by the ACL                                   |
+| Most recently focused window                                          | never consulted; the IPC window is the caller       |
+
+The ACL grants `destination-window` to the `main` / `local-*` and `server-*` capabilities only; `build.rs`, `permissions/destination-window.toml` and `permission_tests.rs` stay synchronized.
+
+| Phase / fence    | Rule                                                                                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Requested        | validate the route; refuse when native shutdown has begun (`stopped`) or shortcut capture fences windows (`busy`)                                                  |
+| Source admission | capture the invoking window's authority off the UI loop; one pending operation per source window instance (`busy`)                                                 |
+| Authorized       | Saved callers re-inspect the profile and compare every authority field; recheck the source window after asynchronous work                                          |
+| Creation         | the task joins the shutdown fence; the main-thread step rechecks the registered source, then reuses the existing admission, label, cleanup and cancellation guards |
+| Created          | the window is registered ready and focused; cleanup on any late failure destroys the partial window                                                                |
+| Failed           | the renderer receives the closed failure code; no fallback window, retry or partial window                                                                         |
+
+Native logs (`destination_window`) record only the phase and a failure code, never routes, IDs, titles, URLs or connection data. No RPC, storage, schema or capability number is added.
+
+#### Destination window initial route
+
+The new renderer reads its route from the query before its first route read (`readInitialRoute`), so the destination is present at the first render. It restores selection through its own authenticated reads: stale, deleted or inaccessible targets show the existing route-restoration unavailable behavior, loading and error states apply unchanged, and nothing is created. The window starts with a fresh renderer: no drafts, query cache, unsaved configuration or other windows' state transfer.
+
 ### Native tray and menu bar
 
 The native File menu item New Window has no keyboard accelerator: it is activated by menu click only, and Command/Control+N is the renderer New session shortcut that opens the New session page in the current window. Command/Control+T no longer opens a product window. Each menu click is handled by one app-level handler, creating one window per activation through the existing Local/Saved window admission. Close Window has no native accelerator; `CmdOrCtrl+W` is the fixed renderer SessionCloseTab shortcut closing only the selected closeable session workspace tab (Conversation stays pinned and the chord never closes or hides a window; W stays reserved against customization; external page-focused forwarding is unchanged; Keyboard Help dismisses before closure; terminal focus is eligible), and the existing menu order is preserved.
@@ -7638,3 +7753,7 @@ Settings > System has a Browser category directly after Appearance (`SettingsCat
 ## Native record version validation
 
 Desktop validators for retained native interaction, usage and subagent records (Claude, OpenCode, Grok and Codex) accept the record's observed native version when it is a valid SemVer at or above the harness baseline, using the shared `harnessVersionAllowed` predicate in `apps/delidev/src/harness-version.ts`. Records below the baseline or with a malformed version stay unavailable and expose no response controls. Equality with a pinned baseline is never required, so a newer admitted installation's requests, usage and child observations remain actionable and visible.
+
+### Claude image attachment admission
+
+The shared image draft permits Claude Code only when every source model declares image input and the original server and Runner report the independent System 106 / Worker 71 pair in addition to 45/25. Follow-ups use the frozen original declaration. Keep the existing draft, upload and error presentation; missing peers retain unsupported guidance without discarding original images. Follow the [image input contract](cmds-delidev-image-input-contract.md#closed-adapter-profiles).

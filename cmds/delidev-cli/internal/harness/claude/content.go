@@ -696,6 +696,16 @@ func decodeContentDelta(raw []byte) (ContentDeltaKind, string, error) {
 		return "", "", lifecycleUncertain()
 	}
 	var value *string
+	if estimate, present := fields["estimated_tokens"]; present && kind == ThinkingDelta {
+		// Native thinking deltas can carry nullable streaming estimates. The
+		// separate thinking_tokens event owns progress publication; this field
+		// must never become reasoning text or provider usage.
+		var tokens *uint64
+		if json.Unmarshal(estimate, &tokens) != nil {
+			return "", "", lifecycleUncertain()
+		}
+		delete(fields, "estimated_tokens")
+	}
 	if len(fields) != 2 || json.Unmarshal(fields[key], &value) != nil || value == nil || domain.Text(*value, "native content delta", domain.MaxMessageText, false) != nil {
 		return "", "", lifecycleUncertain()
 	}

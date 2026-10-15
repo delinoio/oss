@@ -353,6 +353,10 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	if err := c.verifySidechat(ctx, settings.Cwd, ""); err != nil {
 		return result, err
 	}
+	// Project trust must be settled before Codex can record it for this thread.
+	if err := c.isolateProject(ctx, settings, &params); err != nil {
+		return result, err
+	}
 	params.ThreadID = threadID
 	if method == resumeThread {
 		exclude := true
@@ -426,6 +430,12 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	if err := c.verifySidechat(ctx, settings.Cwd, thread.ID); err != nil {
 		c.problem = threadUncertain()
 		return result, c.problem
+	}
+	// The thread exists but no input has been sent: an inherited MCP server
+	// fails here, the Worker closes this connection and the input stays unsent.
+	if err := c.verifyMCPInventory(ctx, settings.Cwd); err != nil {
+		c.problem = domain.SafeError(err)
+		return result, err
 	}
 	c.execution = newExecutionState(*thread, *effective)
 	if c.sharedEvents != nil {

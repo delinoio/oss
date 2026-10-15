@@ -56,6 +56,8 @@ import {
 } from "./inbox-drafts";
 import { ResourceChoice } from "./configuration-fields";
 import { SidebarSurface } from "./sidebar-context";
+import { useDestinationDispatch } from "./destination-window";
+import { Surface } from "./surface";
 import { EntranceMotion, useEntranceActivation } from "./entrance-motion";
 
 const inboxIdentity = (view: InboxView) => view.entry!.id;
@@ -213,6 +215,7 @@ export function Inbox({
 }) {
   const productLabel = useProductLabels();
   const navigationIntent = useNavigationIntent();
+  const dispatch = useDestinationDispatch();
   useLocale();
   const emptyFilters = {
     source: InboxSource.UNSPECIFIED,
@@ -729,7 +732,11 @@ export function Inbox({
                                     : copy("inbox.readStateUnavailable_c6a29d"),
                             })}
                             onClick={(event) =>
-                              selectItem(entry.id, event.detail === 0)
+                              dispatch(
+                                event,
+                                { surface: Surface.Inbox, item: entry.id },
+                                () => selectItem(entry.id, event.detail === 0),
+                              )
                             }
                           >
                             <span
@@ -950,6 +957,7 @@ function InboxDetail({
   openOperational?: (resource: Resource) => void;
 }) {
   const productLabel = useProductLabels();
+  const dispatch = useDestinationDispatch();
   useLocale();
   const entry = view.entry!;
   const data = document(entry);
@@ -1004,7 +1012,13 @@ function InboxDetail({
       <div className="actions inbox-detail-actions">
         <button
           className="primary"
-          onClick={() => open(entry.sessionId)}
+          onClick={(event) =>
+            dispatch(
+              event,
+              { surface: Surface.Sessions, session: entry.sessionId },
+              () => open(entry.sessionId),
+            )
+          }
           disabled={!entry.sessionId}
         >
           {copy("inbox.openSession_b205bb")}

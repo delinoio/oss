@@ -65,7 +65,10 @@ const (
 	// Independently negotiated OpenCode image attachments: the Worker resolves
 	// validated private image files into native file parts and verifies the closed
 	// native expansion. Requires capability 25.
-	WorkerCapability_WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1       WorkerCapability = 70
+	WorkerCapability_WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1 WorkerCapability = 70
+	// Claude original image input, native preprocessing replay and retained history.
+	// Requires capability 25.
+	WorkerCapability_WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1         WorkerCapability = 71
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1      WorkerCapability = 26
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1               WorkerCapability = 24
 	WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1                WorkerCapability = 25
@@ -125,6 +128,7 @@ var (
 		68: "WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1",
 		69: "WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1",
 		70: "WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1",
+		71: "WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1",
 		26: "WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1",
 		24: "WORKER_CAPABILITY_NATIVE_SKILLS_V1",
 		25: "WORKER_CAPABILITY_IMAGE_INPUTS_V1",
@@ -178,6 +182,7 @@ var (
 		"WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1":          68,
 		"WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1": 69,
 		"WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1":                70,
+		"WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1":                  71,
 		"WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1":               26,
 		"WORKER_CAPABILITY_NATIVE_SKILLS_V1":                        24,
 		"WORKER_CAPABILITY_IMAGE_INPUTS_V1":                         25,
@@ -4759,7 +4764,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12_cache_write_inputB\t\n" +
 	"\a_outputB\x13\n" +
 	"\x11_reasoning_outputB\b\n" +
-	"\x06_total*\xf3\x13\n" +
+	"\x06_total*\xa1\x14\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x121\n" +
 	"-WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1\x10)\x12,\n" +
@@ -4785,7 +4790,8 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	".WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1\x10C\x124\n" +
 	"0WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1\x10D\x12=\n" +
 	"9WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1\x10E\x12.\n" +
-	"*WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1\x10F\x12/\n" +
+	"*WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1\x10F\x12,\n" +
+	"(WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1\x10G\x12/\n" +
 	"+WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1\x10\x1a\x12&\n" +
 	"\"WORKER_CAPABILITY_NATIVE_SKILLS_V1\x10\x18\x12%\n" +
 	"!WORKER_CAPABILITY_IMAGE_INPUTS_V1\x10\x19\x120\n" +

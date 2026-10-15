@@ -93,6 +93,8 @@ Repositories use required remote URLs with optional Local folder connections und
 
 The [desktop File menu](apps-delidev-desktop-contract.md#native-tray-and-menu-bar) opens a new product window by menu click only, with no keyboard accelerator, through one native app-level handler (Command+N on macOS and Control+N on Windows/Linux open the New session page in the current window). Close Window has no keyboard accelerator (Command/Control+W closes the active session tool tab in the renderer) and retains existing Local/Saved window ownership.
 
+Internal destination controls open their typed destination in a new product window on the primary-modified click (Command+click on macOS, Control+click on Windows/Linux, with or without Shift), through one native command bound to the invoking window and its original Local/Saved connection. Plain and keyboard activation keep current-window navigation; the new window restores its own route through its authenticated reads and receives no session, Sidechat, terminal, browser page, draft or query data. See [destination windows](apps-delidev-desktop-contract.md#destination-windows).
+
 New schedule creation adds frequency presets and a creation-only three-section layout under the [desktop contract](apps-delidev-desktop-contract.md#new-schedule-creation), while strict schedule definitions and server recurrence authority remain unchanged.
 
 The desktop provides connection-scoped reusable [in-app toast notifications](apps-delidev-desktop-contract.md#in-app-toast-notifications), initially for acknowledged notification-preference and immediate configuration saves. These transient observations preserve independent OS delivery, Inbox state, mutation receipts and native acceptance boundaries.

@@ -63,7 +63,7 @@ func canonicalHistoryPayload(raw json.RawMessage) (HistoryRole, [sha256.Size]byt
 func historyPayloadDigest(raw json.RawMessage, child bool) (HistoryRole, [sha256.Size]byte, error) {
 	var fields map[string]json.RawMessage
 	var role HistoryRole
-	if domain.Decode(raw, &fields) != nil || json.Unmarshal(fields["role"], &role) != nil || (role != HistoryUser && role != HistoryAssistant) || len(fields["content"]) == 0 || bytes.Equal(fields["content"], []byte("null")) {
+	if domain.DecodeBounded(raw, &fields, maxImageInputFrame) != nil || json.Unmarshal(fields["role"], &role) != nil || (role != HistoryUser && role != HistoryAssistant) || len(fields["content"]) == 0 || bytes.Equal(fields["content"], []byte("null")) {
 		return "", [sha256.Size]byte{}, historyUncertain()
 	}
 	var content any
@@ -135,7 +135,7 @@ func observeHistoryMessage(event StreamEvent, session domain.ID, parentTool stri
 	}
 	// Other native envelope fields remain owned by the typed lifecycle adapter.
 	var fields map[string]json.RawMessage
-	if event.Kind != NativeMessage || (event.Type != "user" && event.Type != "assistant") || session.Validate() != nil || domain.Decode(event.Body, &fields) != nil {
+	if event.Kind != NativeMessage || (event.Type != "user" && event.Type != "assistant") || session.Validate() != nil || domain.DecodeBounded(event.Body, &fields, maxImageInputFrame) != nil {
 		return HistoryMessageProof{}, historyUncertain()
 	}
 	if json.Unmarshal(fields["type"], &envelope.Type) != nil || json.Unmarshal(fields["uuid"], &envelope.ID) != nil || json.Unmarshal(fields["session_id"], &envelope.Session) != nil || envelope.Session != session || !nativeUUID(envelope.ID) || string(envelope.Type) != event.Type {
@@ -237,7 +237,7 @@ func verifyResumedTranscript(ctx context.Context, raw []byte, session domain.ID,
 			return TranscriptObservation{}, domain.SafeError(err)
 		}
 		var fields map[string]json.RawMessage
-		if domain.Decode(line, &fields) != nil || fields == nil {
+		if domain.DecodeBounded(line, &fields, maxImageInputFrame) != nil || fields == nil {
 			return TranscriptObservation{}, historyUncertain()
 		}
 		var kind string

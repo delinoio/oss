@@ -109,6 +109,9 @@ type ExecutionBinding struct {
 	session                domain.ID
 	input                  domain.ID
 	digest                 [sha256.Size]byte
+	imageInput             bool
+	imagePrompt            string
+	imageRefs              []domain.ImageAttachment
 	model                  string
 	workspace              string
 	home                   string
@@ -149,7 +152,11 @@ type ExecutionBinding struct {
 }
 
 func BindExecution(config APIStreamConfig, input domain.ID, text string) (*ExecutionBinding, error) {
-	if config.Version != "" && !domain.ValidNativeVersionMetadata(config.Version) || config.SessionID.Validate() != nil || input.Validate() != nil || domain.Text(text, "native input", 256<<10, true) != nil || domain.Text(config.Model, "native model", 256, true) != nil ||
+	return bindExecution(config, input, text, false)
+}
+
+func bindExecution(config APIStreamConfig, input domain.ID, text string, images bool) (*ExecutionBinding, error) {
+	if config.Version != "" && !domain.ValidNativeVersionMetadata(config.Version) || config.SessionID.Validate() != nil || input.Validate() != nil || domain.Text(text, "native input", 256<<10, !images) != nil || domain.Text(config.Model, "native model", 256, true) != nil ||
 		!filepath.IsAbs(config.Workspace) || filepath.Clean(config.Workspace) != config.Workspace || !filepath.IsAbs(config.Home) || filepath.Clean(config.Home) != config.Home || !validNativePermission(config.Permission) {
 		return nil, apiConfigurationError()
 	}
@@ -224,7 +231,7 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 		}
 	}
 	var fields map[string]json.RawMessage
-	if domain.Decode(event.Body, &fields) != nil {
+	if domain.DecodeBounded(event.Body, &fields, maxImageInputFrame) != nil {
 		return LifecycleObservation{}, lifecycleUncertain()
 	}
 	var header struct {
@@ -448,14 +455,22 @@ func (b *ExecutionBinding) acceptReplay(raw []byte) error {
 		Message   json.RawMessage `json:"message"`
 	}
 	var message struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
 	}
-	if decodeNativeObject(raw, &replay) != nil || decodeNativeObject(replay.Message, &message) != nil || b.accepted || b.finished || !b.initialized || b.command != CommandStarted || replay.UUID != b.input || replay.Parent != nil || len(replay.Origin) != 0 || message.Role != "user" || sha256.Sum256([]byte(message.Content)) != b.digest {
+	if decodeNativeObject(raw, &replay) != nil || decodeNativeObject(replay.Message, &message) != nil || b.accepted || b.finished || !b.initialized || b.command != CommandStarted || replay.UUID != b.input || replay.Parent != nil || len(replay.Origin) != 0 || message.Role != "user" || !b.matchesReplayContent(message.Content) {
 		return lifecycleUncertain()
 	}
 	if _, err := time.Parse(time.RFC3339Nano, replay.Timestamp); err != nil {
 		return lifecycleUncertain()
 	}
 	return nil
+}
+
+func (b *ExecutionBinding) matchesReplayContent(raw json.RawMessage) bool {
+	if b.imageInput {
+		return b.matchesImageReplay(raw)
+	}
+	var text string
+	return json.Unmarshal(raw, &text) == nil && sha256.Sum256([]byte(text)) == b.digest
 }

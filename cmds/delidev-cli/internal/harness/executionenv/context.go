@@ -8,11 +8,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 )
 
 // Ordinary is an in-memory context supplied only by an executing Worker.
 // Its zero value grants no user configuration access; never serialize it.
 type Ordinary struct {
+	macOS             bool
 	ghDirectory       string
 	shellHome         string
 	sessionBusAddress string
@@ -63,7 +66,7 @@ func Resolve(goos string, env []string, cwd string) Ordinary {
 	if !filepath.IsAbs(directory) {
 		directory = filepath.Join(cwd, directory)
 	}
-	context := Ordinary{ghDirectory: filepath.Clean(directory)}
+	context := Ordinary{ghDirectory: filepath.Clean(directory), macOS: goos == "darwin"}
 	if home := get("HOME"); goos == "darwin" && filepath.IsAbs(home) && len(home) <= 4096 && !strings.ContainsAny(home, "\x00\r\n") {
 		context.shellHome = filepath.Clean(home)
 	}
@@ -111,3 +114,12 @@ func (c Ordinary) Available() bool { return c.ghDirectory != "" }
 // ShellHome lets ordinary macOS shell tools locate the user's login keychain.
 // The native provider process keeps its independently owned private HOME.
 func (c Ordinary) ShellHome() string { return c.shellHome }
+
+// ProcessSession preserves macOS login Keychain access for ordinary tools. It
+// grants no credential or process ownership; headless Workers retain Background.
+func (c Ordinary) ProcessSession() process.SessionContext {
+	if c.macOS && c.Available() {
+		return process.CurrentUserGUI
+	}
+	return process.BackgroundSession
+}

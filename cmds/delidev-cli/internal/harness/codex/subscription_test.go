@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	toml "github.com/pelletier/go-toml/v2"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -24,6 +26,43 @@ func managedFixtureBundle(rotation string) []byte {
 	}
 	raw, _ := json.Marshal(map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": map[string]string{"id_token": token, "access_token": token, "refresh_token": "synthetic-refresh-" + rotation, "account_id": "account-fixture"}, "last_refresh": at})
 	return raw
+}
+
+// fixtureHomeIsolated reports whether project isolation already recorded an
+// untrusted project in the private home, which is when Codex stops loading the
+// repository layer.
+func fixtureHomeIsolated() bool {
+	raw, err := os.ReadFile(filepath.Join(os.Getenv("CODEX_HOME"), "config.toml"))
+	return err == nil && strings.Contains(string(raw), "untrusted")
+}
+
+// fixtureProjectUntrusted reports whether the private home records the
+// directory as untrusted.
+func fixtureProjectUntrusted(directory string) bool {
+	raw, err := os.ReadFile(filepath.Join(os.Getenv("CODEX_HOME"), "config.toml"))
+	if err != nil {
+		return false
+	}
+	var document struct {
+		Projects map[string]struct {
+			TrustLevel string `toml:"trust_level"`
+		} `toml:"projects"`
+	}
+	return toml.Unmarshal(raw, &document) == nil && document.Projects[directory].TrustLevel == "untrusted"
+}
+
+// fixtureSurvivorActive reports whether a survivor of the given timing is
+// visible to the current read. The capture file appears with the first native
+// thread operation.
+func fixtureSurvivorActive(timing string) bool {
+	_, captured := os.Stat(os.Getenv("DELIDEV_CODEX_CAPTURE"))
+	switch timing {
+	case "pre":
+		return captured != nil && fixtureHomeIsolated()
+	case "post":
+		return captured == nil
+	}
+	return false
 }
 
 func managedFixtureHandle(mode string, id json.RawMessage, method string, params json.RawMessage, write func(json.RawMessage, any)) bool {
@@ -42,7 +81,41 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 		if mode == "thread-managed-workspace-override" && input.Cwd == os.Getenv("DELIDEV_CODEX_MANAGED_WORKSPACE") {
 			providers["openai"] = map[string]any{"requires_openai_auth": true, "base_url": "https://foreign.invalid"}
 		}
-		features := map[string]any{}
+		// Project isolation disables plugin loading in the private home, so the
+		// effective configuration reports the explicit false.
+		features := map[string]any{"plugins": false}
+		var featuresValue any = features
+		mcp := any(nil)
+		if capture := os.Getenv("DELIDEV_CODEX_CAPTURE"); (strings.HasPrefix(mode, "thread-managed-mcp-") || strings.HasPrefix(mode, "thread-managed-plugins-")) && capture != "" {
+			if _, err := os.Stat(capture); err == nil {
+				// A thread exists: record this effective-inventory read in order.
+				out, openErr := os.OpenFile(capture, os.O_APPEND|os.O_WRONLY, 0o600)
+				if openErr != nil {
+					os.Exit(47)
+				}
+				_ = json.NewEncoder(out).Encode(map[string]any{"method": method, "params": map[string]any{"cwd": input.Cwd}})
+				_ = out.Close()
+				switch mode {
+				case "thread-managed-mcp-error":
+					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": -32603, "message": "fixture-protected-diagnostic"}})
+					return true
+				case "thread-managed-mcp-nonempty":
+					mcp = map[string]any{"inherited": map[string]any{"command": "/usr/bin/true"}}
+				case "thread-managed-mcp-empty":
+					mcp = map[string]any{}
+				case "thread-managed-mcp-malformed":
+					mcp = "not-a-table"
+				case "thread-managed-plugins-enabled":
+					features["plugins"] = true
+				case "thread-managed-plugins-absent":
+					delete(features, "plugins")
+				case "thread-managed-plugins-null":
+					features["plugins"] = nil
+				case "thread-managed-plugins-malformed-features":
+					featuresValue = "not-a-table"
+				}
+			}
+		}
 		if mode == "thread-managed-image-enabled" {
 			features["image_generation"] = true
 		}
@@ -57,8 +130,39 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 				tamperHelperFixtureAlias()
 			}
 		}
-		config := map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": features}
-		if mode == "thread-managed-mcp-inventory" && input.Cwd == os.Getenv("DELIDEV_CODEX_MANAGED_WORKSPACE") {
+		// DELIDEV_CODEX_SURVIVOR=<layer>:<pre|post>:<server|plugins> models a layer
+		// the private home cannot edit (system or managed policy), or one that
+		// isolation failed to neutralize. "pre" reports it on the read that follows
+		// project isolation and precedes the native thread call; "post" reports it
+		// only once a thread exists.
+		if survivor := strings.Split(os.Getenv("DELIDEV_CODEX_SURVIVOR"), ":"); len(survivor) == 3 && fixtureSurvivorActive(survivor[1]) && survivor[2] == "plugins" {
+			features["plugins"] = true
+		}
+		config := map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": featuresValue, "mcp_servers": mcp}
+		if survivor := strings.Split(os.Getenv("DELIDEV_CODEX_SURVIVOR"), ":"); len(survivor) == 3 && fixtureSurvivorActive(survivor[1]) && survivor[2] == "server" {
+			entry := map[string]any{"command": "private-" + survivor[0] + "-command"}
+			// DELIDEV_CODEX_SURVIVOR_ENABLED is the raw JSON of the entry's enabled
+			// value; unset leaves the key absent.
+			if raw := os.Getenv("DELIDEV_CODEX_SURVIVOR_ENABLED"); raw != "" {
+				var value any
+				if json.Unmarshal([]byte(raw), &value) != nil {
+					os.Exit(48)
+				}
+				entry["enabled"] = value
+			}
+			config["mcp_servers"] = map[string]any{survivor[0] + "-server": entry}
+		}
+		// DELIDEV_CODEX_MARKER_ROOT names a directory whose own .codex/config.toml
+		// defines an MCP server. Codex activates that layer exactly while the
+		// private home does not record the directory untrusted, however the
+		// directory was located (project_root_markers included).
+		if root := os.Getenv("DELIDEV_CODEX_MARKER_ROOT"); root != "" && !fixtureProjectUntrusted(root) {
+			config["mcp_servers"] = map[string]any{"marker-root-server": map[string]any{"command": "private-marker-root-command"}}
+		}
+		// Only the read before project isolation reports the workspace servers:
+		// isolation settles the project untrusted first, so Codex ignores the
+		// repository layer for every later read, before and after the thread.
+		if mode == "thread-managed-mcp-inventory" && !fixtureHomeIsolated() && input.Cwd == os.Getenv("DELIDEV_CODEX_MANAGED_WORKSPACE") {
 			config["mcp_servers"] = map[string]any{"project-server": map[string]any{"command": "private-project-command"}, "disabled-server": map[string]any{"command": "private-command", "enabled": false}}
 		}
 		write(id, map[string]any{"config": config, "origins": nil, "layers": nil})

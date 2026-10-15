@@ -193,6 +193,24 @@ impl<'a> Context<'a> {
         )
     }
 
+    /// Label of a module for logs. A bundler module identifier can carry
+    /// inline loader options or resource queries, which can hold credentials
+    /// or values of the local environment, so the raw identifier is never
+    /// logged. A collected module is named by its display path (the resource
+    /// path without query or loader options); any other identifier is named by
+    /// a prefix of its SHA-256 digest, which identifies it within one log
+    /// without revealing it.
+    pub fn module_log_label(&self, module_id: &str) -> String {
+        match self
+            .modules
+            .get(module_id)
+            .and_then(|module| module.path.as_deref())
+        {
+            Some(path) => self.display_path(Path::new(path)),
+            None => format!("module-{}", &sha256_hex(module_id.as_bytes())[..16]),
+        }
+    }
+
     pub fn module_display_by_id(&self, id: &str) -> String {
         self.modules.get(id).map_or_else(
             || id.trim_start_matches('\0').to_owned(),

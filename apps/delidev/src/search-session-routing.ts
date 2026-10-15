@@ -42,16 +42,32 @@ export enum SearchSessionRoute {
   Unavailable = "unavailable",
 }
 
+/**
+ * Which diagnostics fields a resolution may log. A resolution that backs a
+ * destination window request is `Anonymous`: destination window code paths log
+ * only phases, closed failure codes and closed reasons, never an opaque ID.
+ */
+export enum SearchResolutionLogging {
+  /** The current-window path may log the opaque session ID with the reason. */
+  Identified = "identified",
+  /** The destination window path logs the closed reason only. */
+  Anonymous = "anonymous",
+}
+
 const unavailable = (
   id: string,
   reason: string,
-  transient = false,
+  transient: boolean,
+  logging: SearchResolutionLogging,
 ): SearchSessionResolution => {
-  // Structured, content-free diagnostics: only the opaque session ID and reason.
-  console.warn("delidev.search.session_route_unavailable", {
-    sessionId: id,
-    reason,
-  });
+  // Structured, content-free diagnostics: the closed reason, plus the opaque
+  // session ID only when the caller is not a destination window request.
+  console.warn(
+    "delidev.search.session_route_unavailable",
+    logging === SearchResolutionLogging.Identified
+      ? { sessionId: id, reason }
+      : { reason },
+  );
   return { route: SearchSessionRoute.Unavailable, transient };
 };
 
@@ -143,6 +159,7 @@ export async function resolveSearchSession(
   transport: Transport,
   id: string,
   signal?: AbortSignal,
+  logging: SearchResolutionLogging = SearchResolutionLogging.Identified,
 ): Promise<SearchSessionResolution> {
   const options = createQueryOptions(
     ResourceQuery.getResource,
@@ -166,7 +183,7 @@ export async function resolveSearchSession(
     });
     const resource = response.resource;
     if (!resource || resource.id !== id || resource.kind !== EntityKind.SESSION)
-      return unavailable(id, "missing-or-mismatched-resource");
+      return unavailable(id, "missing-or-mismatched-resource", false, logging);
     // Apply the same envelope checks as the mounted Session view's
     // synchronization boundary before trusting any Fork/Sidechat metadata.
     if (
@@ -175,7 +192,7 @@ export async function resolveSearchSession(
       resource.revision <= 0n ||
       !supportsResourceSchema(resource)
     )
-      return unavailable(id, "invalid-resource-envelope");
+      return unavailable(id, "invalid-resource-envelope", false, logging);
     const provenance = conversationProvenance(resource, document(resource));
     switch (provenance.conversationKind) {
       case ConversationKind.Sidechat:
@@ -185,19 +202,19 @@ export async function resolveSearchSession(
               parent: provenance.sidechatParent,
               name: resourceName(resource),
             }
-          : unavailable(id, "missing-sidechat-parent");
+          : unavailable(id, "missing-sidechat-parent", false, logging);
       case ConversationKind.Fork:
       case ConversationKind.GeneralChat:
       case ConversationKind.WorkSession:
         return { route: SearchSessionRoute.TopLevel };
       default:
-        return unavailable(id, "malformed-parent-metadata");
+        return unavailable(id, "malformed-parent-metadata", false, logging);
     }
   } catch (error) {
     // A cancelled read belongs to a superseded opening: nothing to report.
     if (signal?.aborted)
       return { route: SearchSessionRoute.Unavailable, transient: true };
-    return unavailable(id, "read-failed", !inaccessibleFailure(error));
+    return unavailable(id, "read-failed", !inaccessibleFailure(error), logging);
   } finally {
     signal?.removeEventListener("abort", abort);
   }

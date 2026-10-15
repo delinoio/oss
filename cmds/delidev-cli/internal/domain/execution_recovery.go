@@ -87,6 +87,7 @@ func (r ExecutionRecoveryRequest) Validate() error {
 // Claude inspection compares immutable launch settings without receiving the
 // instruction body, prompt, answer, credential or authority for a new process.
 type ClaudeRecoveryReference struct {
+	ImageInputs        bool                       `json:"image_inputs,omitempty"`
 	Startup            *ExecutionStartupSelection `json:"startup,omitempty"`
 	ClaimVersion       uint32                     `json:"claim_version"`
 	Version            string                     `json:"version"`
