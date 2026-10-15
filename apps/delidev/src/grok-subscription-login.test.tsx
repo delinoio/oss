@@ -2561,6 +2561,101 @@ it("shows no address copy notice when the address was hidden before the clipboar
   expect(screen.queryByText(addressNotice())).toBeNull();
 }, 20000);
 
+// Copy attempt cells (the copy attempt table of grok-login-machine.ts): a
+// completion that outlives its attempt shows nothing.
+//
+//   situation when the clipboard settles                         notice
+//   address hidden, then offered again (earlier attempt)         none
+//   address hidden, offered again, a new attempt settled first   the new one
+//   two attempts settle out of order, earlier one last           the latest
+//   two attempts settle out of order, earlier one first          the latest
+const deferredClipboard = () => {
+  const pending: Array<{ value: string; settle: (ok: boolean) => void }> = [];
+  stubClipboard(
+    (value) =>
+      new Promise<void>((resolve, reject) => {
+        pending.push({
+          value,
+          settle: (ok) => (ok ? resolve() : reject(new Error("denied"))),
+        });
+      }),
+  );
+  return pending;
+};
+const settleAll = async (run: () => void) => {
+  await act(async () => {
+    run();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+};
+
+it("ignores an address copy that settles after the address was hidden and offered again", async () => {
+  const pending = deferredClipboard();
+  const f = deviceFixture();
+  await startDevice(f);
+  await failVerificationOpen(f);
+  fireEvent.click(screen.getByRole("button", { name: copyAddressName() }));
+  expect(pending).toHaveLength(1);
+  // A successful open hides the address; a later failed open reveals it again.
+  fireEvent.click(screen.getByRole("button", { name: openName() }));
+  await waitFor(() => expect(nativeOpen(f)).toHaveLength(2));
+  await waitFor(addressHidden);
+  f.native.mockRejectedValueOnce("browser-launch-failed");
+  fireEvent.click(screen.getByRole("button", { name: openName() }));
+  await screen.findByRole("textbox", { name: addressName() });
+  await settleAll(() => pending[0].settle(true));
+  expect(screen.queryByText(addressNotice())).toBeNull();
+  // The address is offered again, so a new attempt shows its own notice.
+  fireEvent.click(screen.getByRole("button", { name: copyAddressName() }));
+  expect(pending).toHaveLength(2);
+  await settleAll(() => pending[1].settle(true));
+  expect(screen.getByText(addressNotice())).toBeTruthy();
+}, 20000);
+
+it("ignores a failed address copy that settles after the address was hidden and offered again", async () => {
+  const pending = deferredClipboard();
+  const f = deviceFixture();
+  await startDevice(f);
+  await failVerificationOpen(f);
+  fireEvent.click(screen.getByRole("button", { name: copyAddressName() }));
+  fireEvent.click(screen.getByRole("button", { name: openName() }));
+  await waitFor(() => expect(nativeOpen(f)).toHaveLength(2));
+  await waitFor(addressHidden);
+  f.native.mockRejectedValueOnce("browser-launch-failed");
+  fireEvent.click(screen.getByRole("button", { name: openName() }));
+  await screen.findByRole("textbox", { name: addressName() });
+  await settleAll(() => pending[0].settle(false));
+  expect(
+    screen.queryByText(copy("grok-subscription.device.addressCopyFailed")),
+  ).toBeNull();
+}, 20000);
+
+it.each([
+  ["the earlier copy settling last", [1, 0]],
+  ["the earlier copy settling first", [0, 1]],
+] as const)(
+  "shows only the latest copy notice with %s",
+  async (_name, order) => {
+    const pending = deferredClipboard();
+    const f = deviceFixture();
+    await startDevice(f);
+    await failVerificationOpen(f);
+    // The code and the address are both offered after a failed open.
+    fireEvent.click(screen.getByRole("button", { name: copyCodeName() }));
+    fireEvent.click(screen.getByRole("button", { name: copyAddressName() }));
+    expect(pending.map((entry) => entry.value)).toEqual([
+      DEVICE_CODE,
+      DEVICE_URL,
+    ]);
+    for (const index of order) {
+      await settleAll(() => pending[index].settle(true));
+      expect(screen.queryByText(codeNotice())).toBeNull();
+    }
+    expect(screen.getByText(addressNotice())).toBeTruthy();
+  },
+  20000,
+);
+
 it("hides the verification address once the server accepted the cancellation", async () => {
   const f = deviceFixture();
   await startDevice(f);

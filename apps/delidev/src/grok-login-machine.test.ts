@@ -3,6 +3,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  GrokCopyAttemptRelation,
+  GrokCopyEvent,
+  GrokCopyPhase,
   GrokCopyTarget,
   GrokHelp,
   GrokLoginEvent,
@@ -14,7 +17,11 @@ import {
   GrokProblemRule,
   GrokRetry,
   GrokRetryRule,
+  grokCopyAfterPhase,
+  grokCopyCells,
+  grokCopyEvents,
   grokCopyOffered,
+  grokCopyTransition,
   grokLoginCell,
   grokLoginEvents,
   grokLoginPhases,
@@ -23,9 +30,11 @@ import {
   grokPhaseSpecs,
   grokPollEvent,
   grokRetryOutcomes,
+  initialGrokCopyState,
   initialGrokLoginState,
   statusProblem,
   transition,
+  type GrokCopyState,
   type GrokLoginState,
 } from "./grok-login-machine";
 import english from "./locales/en/grok-subscription.json";
@@ -639,6 +648,19 @@ function renderTables(): string {
       `| \`${shortKey(key)}\` | ${[...setBy.get(key)!].map((e) => `\`${e}\``).join(", ")} | ${holders.length ? `only after ${holders.map((e) => `\`${e}\``).join(", ")}` : "never"} |`,
     );
   }
+  out.push(
+    "",
+    "#### Copy attempts",
+    "",
+    "Copy link, Copy code and Copy address start an attempt with a new identity, and only the latest attempt may show a notice. A completion or notice timer names the attempt it belongs to; one that names an earlier attempt is ignored. An attempt ends (`retired`) the moment the current phase stops offering its value or the task is disposed, so a value that was hidden and offered again never receives the completion of the earlier attempt, and two writes that settle out of order show only the latest. Starting an attempt removes the previous notice. Events not listed for a copy state leave it unchanged.",
+    "",
+    "| Copy state | Event | Attempt named | Next copy state |",
+    "| ---------- | ----- | ------------- | --------------- |",
+  );
+  for (const cell of grokCopyCells)
+    out.push(
+      `| \`${cell.from}\` | \`${cell.event}\` | ${cell.relation} | \`${cell.to}\` |`,
+    );
   out.push("", end);
   return out.join("\n");
 }
@@ -657,6 +679,162 @@ const squeeze = (text: string) =>
         : line,
     )
     .join("\n");
+
+describe("copy attempts", () => {
+  const phases = Object.values(GrokCopyPhase);
+  const targets = Object.values(GrokCopyTarget);
+  const stateOf = (phase: GrokCopyPhase, attempt = 3): GrokCopyState => ({
+    phase,
+    target: phase === GrokCopyPhase.Idle ? undefined : GrokCopyTarget.Code,
+    attempt,
+  });
+  it("lists every copy state, event and attempt relation exactly once", () => {
+    const relations = (event: GrokCopyEvent) =>
+      [
+        GrokCopyEvent.Succeeded,
+        GrokCopyEvent.Rejected,
+        GrokCopyEvent.NoticeExpired,
+      ].includes(event)
+        ? 2
+        : 1;
+    expect(grokCopyCells).toHaveLength(
+      phases.length *
+        grokCopyEvents.reduce((sum, event) => sum + relations(event), 0),
+    );
+    expect(
+      new Set(grokCopyCells.map((c) => `${c.from}|${c.event}|${c.relation}`))
+        .size,
+    ).toBe(grokCopyCells.length);
+  });
+  // One test per table cell, derived from the table.
+  for (const cell of grokCopyCells)
+    it(`${cell.from} + ${cell.event} (${cell.relation}) -> ${cell.to}`, () => {
+      const state = stateOf(cell.from);
+      const attempt =
+        cell.relation === GrokCopyAttemptRelation.Unnamed
+          ? undefined
+          : cell.relation === GrokCopyAttemptRelation.Latest
+            ? state.attempt
+            : state.attempt - 1;
+      const next = grokCopyTransition(state, cell.event, {
+        attempt,
+        target: GrokCopyTarget.Address,
+      });
+      expect(next.phase).toBe(cell.to);
+      if (cell.event === GrokCopyEvent.Started) {
+        // A new identity supersedes every earlier attempt.
+        expect(next.attempt).toBe(state.attempt + 1);
+        expect(next.target).toBe(GrokCopyTarget.Address);
+      } else {
+        expect(next.attempt).toBe(state.attempt);
+        // An ignored event returns the very same state.
+        if (cell.to === cell.from) expect(next).toBe(state);
+        expect(next.target).toBe(
+          cell.to === GrokCopyPhase.Idle ? undefined : state.target,
+        );
+      }
+      // Only a latest, still pending attempt may show a notice.
+      const shows = [GrokCopyPhase.Copied, GrokCopyPhase.Failed];
+      if (shows.includes(cell.to) && !shows.includes(cell.from)) {
+        expect(cell.from).toBe(GrokCopyPhase.Pending);
+        expect(cell.relation).toBe(GrokCopyAttemptRelation.Latest);
+      }
+    });
+  it("retires the latest attempt exactly when its own value stops being offered", () => {
+    for (const method of methods)
+      for (const phase of grokLoginPhases)
+        for (const target of targets)
+          for (const copyPhase of phases) {
+            const state: GrokCopyState = {
+              ...stateOf(copyPhase),
+              target: copyPhase === GrokCopyPhase.Idle ? undefined : target,
+            };
+            const ui = grokLoginPresentation({
+              method,
+              phase,
+              retry: GrokRetry.None,
+            });
+            const after = grokCopyAfterPhase(state, ui);
+            if (copyPhase === GrokCopyPhase.Idle || grokCopyOffered(ui, target))
+              expect(after).toBe(state);
+            else expect(after.phase).toBe(GrokCopyPhase.Idle);
+          }
+  });
+  it("ignores a completion that outlives its value hidden and offered again", () => {
+    // Waiting for the address after a failed open; the device code stays.
+    const waiting = {
+      method: GrokLoginMethod.DeviceCode,
+      retry: GrokRetry.None,
+    };
+    const address = grokLoginPresentation({
+      ...waiting,
+      phase: P.DeviceAddress,
+    });
+    const opened = grokLoginPresentation({ ...waiting, phase: P.DeviceOpened });
+    let copy = grokCopyTransition(initialGrokCopyState, GrokCopyEvent.Started, {
+      target: GrokCopyTarget.Address,
+    });
+    const first = copy.attempt;
+    copy = grokCopyAfterPhase(copy, opened);
+    expect(copy.phase).toBe(GrokCopyPhase.Idle);
+    copy = grokCopyAfterPhase(copy, address);
+    expect(
+      grokCopyTransition(copy, GrokCopyEvent.Succeeded, { attempt: first }),
+    ).toBe(copy);
+    expect(
+      grokCopyTransition(copy, GrokCopyEvent.Rejected, { attempt: first }),
+    ).toBe(copy);
+    // A new attempt after the value is offered again works normally.
+    copy = grokCopyTransition(copy, GrokCopyEvent.Started, {
+      target: GrokCopyTarget.Address,
+    });
+    expect(
+      grokCopyTransition(copy, GrokCopyEvent.Succeeded, { attempt: first }),
+    ).toBe(copy);
+    expect(
+      grokCopyTransition(copy, GrokCopyEvent.Succeeded, {
+        attempt: copy.attempt,
+      }).phase,
+    ).toBe(GrokCopyPhase.Copied);
+  });
+  it("shows only the latest of two attempts that settle out of order", () => {
+    for (const order of [
+      [1, 2],
+      [2, 1],
+    ]) {
+      let copy = grokCopyTransition(
+        initialGrokCopyState,
+        GrokCopyEvent.Started,
+        { target: GrokCopyTarget.Link },
+      );
+      copy = grokCopyTransition(copy, GrokCopyEvent.Started, {
+        target: GrokCopyTarget.Code,
+      });
+      for (const attempt of order)
+        copy = grokCopyTransition(copy, GrokCopyEvent.Succeeded, { attempt });
+      expect(copy.phase).toBe(GrokCopyPhase.Copied);
+      expect(copy.target).toBe(GrokCopyTarget.Code);
+      expect(copy.attempt).toBe(2);
+    }
+  });
+  it("lets a replaced notice's timer neither clear nor outlive the newer notice", () => {
+    let copy = grokCopyTransition(initialGrokCopyState, GrokCopyEvent.Started, {
+      target: GrokCopyTarget.Link,
+    });
+    copy = grokCopyTransition(copy, GrokCopyEvent.Succeeded, { attempt: 1 });
+    copy = grokCopyTransition(copy, GrokCopyEvent.Started, {
+      target: GrokCopyTarget.Code,
+    });
+    copy = grokCopyTransition(copy, GrokCopyEvent.Rejected, { attempt: 2 });
+    expect(
+      grokCopyTransition(copy, GrokCopyEvent.NoticeExpired, { attempt: 1 }),
+    ).toBe(copy);
+    expect(
+      grokCopyTransition(copy, GrokCopyEvent.NoticeExpired, { attempt: 2 })
+        .phase,
+    ).toBe(GrokCopyPhase.Idle);
+  });
+});
 
 describe("contract document", () => {
   it("renders the transition tables of the Grok subscription contract", () => {

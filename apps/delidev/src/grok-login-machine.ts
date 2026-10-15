@@ -746,6 +746,136 @@ export function grokCopyOffered(
   }
 }
 
+// Copy attempts. A clipboard write settles later than the click that started
+// it, so every attempt carries an identity and only the latest attempt may show
+// a notice. An attempt is retired when the phase stops offering its value or
+// the task is disposed, and a newer attempt supersedes it, so a completion that
+// outlives its attempt (a value hidden and revealed again, two writes settling
+// out of order, a notice timer of a replaced notice) never changes anything.
+export enum GrokCopyPhase {
+  // Nothing is pending and no notice is shown.
+  Idle = "idle",
+  // The latest attempt waits for the clipboard; no notice is shown.
+  Pending = "pending",
+  // The latest attempt copied its value; the copied notice is shown.
+  Copied = "copied",
+  // The latest attempt could not copy; the failure notice is shown.
+  Failed = "failed",
+}
+export enum GrokCopyEvent {
+  // Copy link, Copy code or Copy address was activated for a value the current
+  // phase offers.
+  Started = "started",
+  // The clipboard settled the attempt the event names.
+  Succeeded = "succeeded",
+  Rejected = "rejected",
+  // The current phase stopped offering the value of the latest attempt, or the
+  // task was disposed.
+  Retired = "retired",
+  // The notice timer of the attempt the event names fired.
+  NoticeExpired = "notice-expired",
+}
+export enum GrokCopyAttemptRelation {
+  // The event does not name an attempt.
+  Unnamed = "unnamed",
+  // The event names the latest attempt (it may already be retired).
+  Latest = "latest",
+  // The event names an earlier attempt that a newer one superseded.
+  Superseded = "superseded",
+}
+export interface GrokCopyState {
+  phase: GrokCopyPhase;
+  // The value of the latest attempt; absent while idle.
+  target?: GrokCopyTarget;
+  // The identity of the latest attempt; it only grows.
+  attempt: number;
+}
+export const initialGrokCopyState: GrokCopyState = {
+  phase: GrokCopyPhase.Idle,
+  attempt: 0,
+};
+export interface GrokCopyCell {
+  from: GrokCopyPhase;
+  event: GrokCopyEvent;
+  relation: GrokCopyAttemptRelation;
+  to: GrokCopyPhase;
+}
+const C = GrokCopyPhase;
+const CE = GrokCopyEvent;
+const R = GrokCopyAttemptRelation;
+const copyPhases = Object.values(GrokCopyPhase);
+export const grokCopyEvents = Object.values(GrokCopyEvent);
+const namedEvents: GrokCopyEvent[] = [
+  CE.Succeeded,
+  CE.Rejected,
+  CE.NoticeExpired,
+];
+// Every cell is listed so the contract table shows ignored completions too.
+const copyCells = new Map<string, GrokCopyCell>();
+for (const from of copyPhases)
+  for (const event of grokCopyEvents)
+    for (const relation of namedEvents.includes(event)
+      ? [R.Latest, R.Superseded]
+      : [R.Unnamed]) {
+      let to = from;
+      if (event === CE.Started) to = C.Pending;
+      else if (event === CE.Retired) to = C.Idle;
+      else if (relation === R.Latest) {
+        if (from === C.Pending && event === CE.Succeeded) to = C.Copied;
+        if (from === C.Pending && event === CE.Rejected) to = C.Failed;
+        if (event === CE.NoticeExpired && from !== C.Pending) to = C.Idle;
+      }
+      copyCells.set(`${from}|${event}|${relation}`, {
+        from,
+        event,
+        relation,
+        to,
+      });
+    }
+export const grokCopyCells = [...copyCells.values()];
+export const grokCopyRelation = (
+  state: GrokCopyState,
+  event: GrokCopyEvent,
+  attempt?: number,
+): GrokCopyAttemptRelation =>
+  !namedEvents.includes(event)
+    ? R.Unnamed
+    : attempt === state.attempt
+      ? R.Latest
+      : R.Superseded;
+export function grokCopyTransition(
+  state: GrokCopyState,
+  event: GrokCopyEvent,
+  detail: { attempt?: number; target?: GrokCopyTarget } = {},
+): GrokCopyState {
+  const cell = copyCells.get(
+    `${state.phase}|${event}|${grokCopyRelation(state, event, detail.attempt)}`,
+  );
+  if (!cell) return state;
+  if (event === CE.Started)
+    return {
+      phase: cell.to,
+      target: detail.target,
+      attempt: state.attempt + 1,
+    };
+  if (cell.to === state.phase) return state;
+  return {
+    phase: cell.to,
+    target: cell.to === C.Idle ? undefined : state.target,
+    attempt: state.attempt,
+  };
+}
+// The retirement that follows a phase change: the latest attempt ends exactly
+// when the phase stops offering its value, whatever else it still offers.
+export function grokCopyAfterPhase(
+  state: GrokCopyState,
+  offered: Pick<GrokLoginPresentation, "copyLink" | "copyCode" | "copyAddress">,
+): GrokCopyState {
+  return state.target && !grokCopyOffered(offered, state.target)
+    ? grokCopyTransition(state, CE.Retired)
+    : state;
+}
+
 export interface GrokLoginPresentation {
   stage?: GrokLoginStage;
   native: GrokNativeBinding;

@@ -142,10 +142,10 @@ Every flag that reaches a browser spawn is written only through
 that orders each with the commit-to-spawn transition (a writer started while a
 dispatch holds the commit lock cannot change its flag until the process exists):
 
-| Flag                                  | Production writers                                                         | Ordered by                                                    |
-| ------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| per-opening device cancel flag        | Dispose, window close, `stop`, revocation exhaustion                       | the device-opening retirement tests                           |
-| per-attempt callback stop flag        | dropping the attempt                                                       | the attempt retirement tests                                  |
+| Flag                                  | Production writers                                                          | Ordered by                                                                     |
+| ------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| per-opening device cancel flag        | Dispose, window close, `stop`, revocation exhaustion                        | the device-opening retirement tests                                            |
+| per-attempt callback stop flag        | dropping the attempt                                                        | the attempt retirement tests                                                   |
 | `Connector::exiting` (external links) | `Connector::retire_exiting`: supervision stop request, owned-child shutdown | the shared fixture run against each writer; a source scan forbids a bare store |
 
 An installed browser launch (ordinary links only, never OAuth authorization)
@@ -572,6 +572,45 @@ No event changes this phase.
 | `requestUnconfirmed`     | `start-uncertain`                                                     | only after `start-uncertain`  |
 | `statusUnconfirmed`      | `poll-error`                                                          | never                         |
 | `verificationOpenFailed` | `verification-open-failed`                                            | never                         |
+
+#### Copy attempts
+
+Copy link, Copy code and Copy address start an attempt with a new identity, and only the latest attempt may show a notice. A completion or notice timer names the attempt it belongs to; one that names an earlier attempt is ignored. An attempt ends (`retired`) the moment the current phase stops offering its value or the task is disposed, so a value that was hidden and offered again never receives the completion of the earlier attempt, and two writes that settle out of order show only the latest. Starting an attempt removes the previous notice. Events not listed for a copy state leave it unchanged.
+
+| Copy state | Event            | Attempt named | Next copy state |
+| ---------- | ---------------- | ------------- | --------------- |
+| `idle`     | `started`        | unnamed       | `pending`       |
+| `idle`     | `succeeded`      | latest        | `idle`          |
+| `idle`     | `succeeded`      | superseded    | `idle`          |
+| `idle`     | `rejected`       | latest        | `idle`          |
+| `idle`     | `rejected`       | superseded    | `idle`          |
+| `idle`     | `retired`        | unnamed       | `idle`          |
+| `idle`     | `notice-expired` | latest        | `idle`          |
+| `idle`     | `notice-expired` | superseded    | `idle`          |
+| `pending`  | `started`        | unnamed       | `pending`       |
+| `pending`  | `succeeded`      | latest        | `copied`        |
+| `pending`  | `succeeded`      | superseded    | `pending`       |
+| `pending`  | `rejected`       | latest        | `failed`        |
+| `pending`  | `rejected`       | superseded    | `pending`       |
+| `pending`  | `retired`        | unnamed       | `idle`          |
+| `pending`  | `notice-expired` | latest        | `pending`       |
+| `pending`  | `notice-expired` | superseded    | `pending`       |
+| `copied`   | `started`        | unnamed       | `pending`       |
+| `copied`   | `succeeded`      | latest        | `copied`        |
+| `copied`   | `succeeded`      | superseded    | `copied`        |
+| `copied`   | `rejected`       | latest        | `copied`        |
+| `copied`   | `rejected`       | superseded    | `copied`        |
+| `copied`   | `retired`        | unnamed       | `idle`          |
+| `copied`   | `notice-expired` | latest        | `idle`          |
+| `copied`   | `notice-expired` | superseded    | `copied`        |
+| `failed`   | `started`        | unnamed       | `pending`       |
+| `failed`   | `succeeded`      | latest        | `failed`        |
+| `failed`   | `succeeded`      | superseded    | `failed`        |
+| `failed`   | `rejected`       | latest        | `failed`        |
+| `failed`   | `rejected`       | superseded    | `failed`        |
+| `failed`   | `retired`        | unnamed       | `idle`          |
+| `failed`   | `notice-expired` | latest        | `idle`          |
+| `failed`   | `notice-expired` | superseded    | `failed`        |
 
 <!-- grok-login-machine:end -->
 

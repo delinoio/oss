@@ -34,6 +34,8 @@ import {
   subscriptionAliasDocument,
 } from "./subscription-resource";
 import {
+  GrokCopyEvent,
+  GrokCopyPhase,
   GrokCopyTarget,
   GrokHelp,
   GrokLoginEvent,
@@ -42,22 +44,21 @@ import {
   GrokNameField,
   GrokNativeBinding,
   GrokRetry,
+  grokCopyAfterPhase,
   grokCopyOffered,
+  grokCopyTransition,
   grokLoginPresentation,
   grokPollEvent,
   grokRetryOutcomes,
+  initialGrokCopyState,
   initialGrokLoginState,
   transition,
+  type GrokCopyState,
   type GrokLoginState,
 } from "./grok-login-machine";
 import "./subscription-onboarding.css";
 
 export { GrokLoginMethod, GrokLoginStage };
-enum CopyState {
-  Idle = "idle",
-  Copied = "copied",
-  Failed = "failed",
-}
 // A response whose receipt this controller rejects locally: the account, alias,
 // operation, revision or ownership it carries is not the one that was
 // requested. The server already answered, so replaying the same request would
@@ -240,8 +241,9 @@ interface View {
   // device login waits, the validated address only after the opener failed.
   userCode?: string;
   address?: string;
-  copyState: CopyState;
-  copyTarget: GrokCopyTarget;
+  // The copy attempt state of the machine's copy table; the notice is shown
+  // exactly while it is Copied or Failed.
+  copy: GrokCopyState;
 }
 interface Pending {
   opening: string;
@@ -257,9 +259,9 @@ interface Pending {
   busy: boolean;
   // The single transition-table state; see grok-login-machine.ts.
   machine: GrokLoginState;
+  // The copy attempt table state and the timer of its visible notice.
+  copy: GrokCopyState;
   copyTimer?: ReturnType<typeof setTimeout>;
-  // The value the visible copy notice belongs to.
-  copyTarget: GrokCopyTarget;
   // The exact original request of the retained mutation. It is held exactly
   // while machine.retry is not None and replays only through Retry original
   // request.
@@ -292,6 +294,29 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
         () => undefined,
       );
   };
+  // Installs the next copy attempt state. The notice timer belongs to the
+  // state it was armed for, so every change replaces it.
+  const setCopy = (p: Pending, next: GrokCopyState): Partial<View> => {
+    if (next === p.copy) return {};
+    p.copy = next;
+    if (p.copyTimer) clearTimeout(p.copyTimer);
+    p.copyTimer = undefined;
+    if (
+      next.phase === GrokCopyPhase.Copied ||
+      next.phase === GrokCopyPhase.Failed
+    ) {
+      const attempt = next.attempt;
+      p.copyTimer = setTimeout(
+        () => dispatchCopy(p, GrokCopyEvent.NoticeExpired, attempt),
+        copiedNoticeMilliseconds,
+      );
+    }
+    return { copy: next };
+  };
+  const dispatchCopy = (p: Pending, event: GrokCopyEvent, attempt: number) => {
+    if (live(p))
+      update(p, setCopy(p, grokCopyTransition(p.copy, event, { attempt })));
+  };
   // Applies one event to the transition table. Every state change, retained
   // closure, original-link release and native disposal follows from the table.
   const apply = (p: Pending, event: GrokLoginEvent) => {
@@ -310,16 +335,11 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       after.native === GrokNativeBinding.Disposed
     )
       disposeNative(p);
-    // A copy notice belongs to the value it copied: it survives only while that
-    // very value is still offered, whatever else the phase still offers.
-    const copyable = grokCopyOffered(after, p.copyTarget);
-    if (!copyable && p.copyTimer) {
-      clearTimeout(p.copyTimer);
-      p.copyTimer = undefined;
-    }
+    // The latest copy attempt ends exactly when its value stops being offered,
+    // whatever else the phase still offers.
     update(p, {
       machine: next,
-      ...(copyable ? {} : { copyState: CopyState.Idle }),
+      ...setCopy(p, grokCopyAfterPhase(p.copy, after)),
       ...(after.copyCode ? {} : { userCode: undefined, address: undefined }),
     });
   };
@@ -440,7 +460,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       disposed: false,
       polling: false,
       busy: false,
-      copyTarget: GrokCopyTarget.Link,
+      copy: initialGrokCopyState,
       machine: initialGrokLoginState(Boolean(native), method),
     };
     pending.current = p;
@@ -449,8 +469,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       name: grokDefaultAlias,
       suggested: false,
       busy: false,
-      copyState: CopyState.Idle,
-      copyTarget: GrokCopyTarget.Link,
+      copy: initialGrokCopyState,
     });
     if (!native) return;
     const create = {
@@ -764,29 +783,21 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     if (!value || !grokCopyOffered(grokLoginPresentation(p.machine), target))
       return;
     const clipboard = globalThis.navigator?.clipboard;
-    const settle = (copyState: CopyState) => {
-      // The clipboard settles later: a value that stopped being offered while
-      // the write was pending shows no notice.
-      if (
-        !live(p) ||
-        !grokCopyOffered(grokLoginPresentation(p.machine), target)
-      )
-        return;
-      p.copyTarget = target;
-      update(p, { copyState, copyTarget: target });
-      if (p.copyTimer) clearTimeout(p.copyTimer);
-      p.copyTimer = setTimeout(
-        () => update(p, { copyState: CopyState.Idle }),
-        copiedNoticeMilliseconds,
-      );
-    };
+    // The clipboard settles later: only the latest attempt, still pending, may
+    // show a notice (see the copy attempt table of the machine).
+    const started = grokCopyTransition(p.copy, GrokCopyEvent.Started, {
+      target,
+    });
+    update(p, setCopy(p, started));
+    const settle = (event: GrokCopyEvent) =>
+      dispatchCopy(p, event, started.attempt);
     if (!clipboard) {
-      settle(CopyState.Failed);
+      settle(GrokCopyEvent.Rejected);
       return;
     }
     void clipboard.writeText(value).then(
-      () => settle(CopyState.Copied),
-      () => settle(CopyState.Failed),
+      () => settle(GrokCopyEvent.Succeeded),
+      () => settle(GrokCopyEvent.Rejected),
     );
   };
   // Opens the validated device verification page through the closed native
@@ -1115,11 +1126,13 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
         {naming ? <span aria-hidden="true">✓</span> : null}
         {copy(statusKeys[stage])}
       </p>
-      {v.copyState !== CopyState.Idle ? (
+      {v.copy.target &&
+      (v.copy.phase === GrokCopyPhase.Copied ||
+        v.copy.phase === GrokCopyPhase.Failed) ? (
         <p role="status">
           {copy(
-            copyNotices[v.copyTarget][
-              v.copyState === CopyState.Copied ? "copied" : "failed"
+            copyNotices[v.copy.target][
+              v.copy.phase === GrokCopyPhase.Copied ? "copied" : "failed"
             ],
           )}
         </p>
