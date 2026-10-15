@@ -1105,7 +1105,7 @@ fn scope_context(
     // or an async function; in classic script code `await(x)` is an ordinary
     // call. The classifier ran once for the whole chunk.
     if UNARY_KEYWORDS.iter().any(|keyword| {
-        ends_with_control_keyword(code, prefix, keyword, members, ignored)
+        ends_with_control_keyword(code, prefix, token, keyword, members, ignored)
             && (*keyword != "await"
                 || await_operators
                     .binary_search(&(prefix.len() - keyword.len()))
