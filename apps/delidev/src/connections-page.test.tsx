@@ -284,7 +284,9 @@ it.each(
     fireEvent.click(
       await screen.findByRole("button", { name: "Stop local server" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Confirm server stop" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm server stop" }),
+    );
     await screen.findByText(marker);
     view.rerender(
       <PlacementHarness
@@ -299,7 +301,8 @@ it.each(
       ),
     );
     const page = document.querySelector(".connections-page");
-    if (page) expect(within(page as HTMLElement).queryByText(marker)).toBeNull();
+    if (page)
+      expect(within(page as HTMLElement).queryByText(marker)).toBeNull();
     expect(stop).toHaveBeenCalledTimes(1);
   },
 );
@@ -308,9 +311,9 @@ it("lists only Saved servers content and Advanced in the local Connections page"
   render(<value.Harness />);
   await screen.findByRole("button", { name: "Open Studio server" });
   const page = document.querySelector(".connections-page") as HTMLElement;
-  expect(
-    within(page).getByText("Advanced").closest("details")?.open,
-  ).toBe(false);
+  expect(within(page).getByText("Advanced").closest("details")?.open).toBe(
+    false,
+  );
   expect(
     within(page).getByText("Advanced controls need attention."),
   ).toBeTruthy();
@@ -321,9 +324,7 @@ it("lists only Saved servers content and Advanced in the local Connections page"
     within(page).queryByRole("heading", { name: "Current connection" }),
   ).toBeNull();
   expect(within(page).queryByText("Connected")).toBeNull();
-  expect(placementOf(screen.getByText("This computer"))).toBe(
-    Placement.Hidden,
-  );
+  expect(placementOf(screen.getByText("This computer"))).toBe(Placement.Hidden);
 });
 it("renders the saved-server window Current connection slot and delivers it to the page slots", async () => {
   let delivered: ConnectionPageSlots | undefined;
@@ -340,9 +341,9 @@ it("shows stored profiles without probes or mutations", async () => {
   render(<value.Harness />);
   await screen.findByRole("button", { name: "Open Studio server" });
   expect(
-    within(document.querySelector(".connections-page") as HTMLElement).queryByText(
-      "Connected",
-    ),
+    within(
+      document.querySelector(".connections-page") as HTMLElement,
+    ).queryByText("Connected"),
   ).toBeNull();
   expect(screen.getAllByText("Saved")).toHaveLength(2);
   expect(screen.queryByRole("dialog", { name: "Saved servers" })).toBeNull();
@@ -364,17 +365,25 @@ it("retains the original stop confirmation and exact uncertain request across pa
   render(<value.Harness />);
   await screen.findByRole("button", { name: "Open Studio server" });
   // Connections exposes no Stop target; the diagnostics modal still does.
-  expect(screen.queryByRole("button", { name: "Stop local server" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Stop local server" }),
+  ).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Stop local server" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Stop local server" }),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
   fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Confirm server stop" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Confirm server stop" }),
+  );
   await screen.findByRole("button", { name: "Retry the same server stop" });
   fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
-  expect(screen.queryByRole("button", { name: "Retry the same server stop" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Retry the same server stop" }),
+  ).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
@@ -394,13 +403,17 @@ it("never shows the accepted-stop status or uncertain retry inside the Connectio
   await screen.findByRole("button", { name: "Open Studio server" });
   const page = document.querySelector(".connections-page") as HTMLElement;
   fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Stop local server" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Stop local server" }),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Confirm server stop" }));
   await screen.findByRole("button", { name: "Retry the same server stop" });
   fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
   expect(within(page).queryByText(/Retry the same server stop/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
-  fireEvent.click(screen.getByRole("button", { name: "Retry the same server stop" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry the same server stop" }),
+  );
   await waitFor(() => expect(value.stop).toHaveBeenCalledTimes(2));
   await screen.findByText(/Stop accepted/);
   fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));

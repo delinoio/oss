@@ -6088,16 +6088,16 @@ The page offers the main Local window no other Start or Stop entry. The desktop-
 
 Local server controls placement in the main Local window (`LocalServerState` is the status; Ready means the verified connection is ready, every other state means the connection is not ready). The connection diagnostics modal host wins over every other destination, the Connections page never hosts the controls, and the inline fallback is the visible in-place host used only when the connection is not ready and neither the modal nor the Connections page presents it:
 
-| LocalServerState | Connections page | Diagnostics modal | Controls render in | Inline fallback |
-| --- | --- | --- | --- | --- |
-| checking, retrying, stopped, blocked | closed | closed | inline fallback | visible |
-| checking, retrying, stopped, blocked | open | closed | hidden host | hidden |
-| checking, retrying, stopped, blocked | closed | open | diagnostics modal | hidden |
-| checking, retrying, stopped, blocked | open | open | diagnostics modal | hidden |
-| ready (including accepted and uncertain stop) | closed | closed | hidden host | hidden |
-| ready (including accepted and uncertain stop) | open | closed | hidden host | hidden |
-| ready (including accepted and uncertain stop) | closed | open | diagnostics modal | hidden |
-| ready (including accepted and uncertain stop) | open | open | diagnostics modal | hidden |
+| LocalServerState                              | Connections page | Diagnostics modal | Controls render in | Inline fallback |
+| --------------------------------------------- | ---------------- | ----------------- | ------------------ | --------------- |
+| checking, retrying, stopped, blocked          | closed           | closed            | inline fallback    | visible         |
+| checking, retrying, stopped, blocked          | open             | closed            | hidden host        | hidden          |
+| checking, retrying, stopped, blocked          | closed           | open              | diagnostics modal  | hidden          |
+| checking, retrying, stopped, blocked          | open             | open              | diagnostics modal  | hidden          |
+| ready (including accepted and uncertain stop) | closed           | closed            | hidden host        | hidden          |
+| ready (including accepted and uncertain stop) | open             | closed            | hidden host        | hidden          |
+| ready (including accepted and uncertain stop) | closed           | open              | diagnostics modal  | hidden          |
+| ready (including accepted and uncertain stop) | open             | open              | diagnostics modal  | hidden          |
 
 The connection-screen Start local server and Retry controls and the diagnostics modal are unchanged.
 
