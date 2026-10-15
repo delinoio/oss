@@ -835,3 +835,471 @@ func TestRepeatedPublicationFailuresLeaveNoProfileDirectories(t *testing.T) {
 		t.Fatalf("leftover directories: %d", len(entries))
 	}
 }
+
+// The shared Codex owner purpose is account scoped and registers an existing
+// per-account directory in place without allocating a managed profile.
+func TestSharedOwnerPurposeIsAccountScopedAndRegistersInPlace(t *testing.T) {
+	root := testRoot(t)
+	r, _ := workerRegistry(t, root, nil)
+	account := domain.NewID()
+	if err := (Key{Owner: OwnerWorker, Machine: domain.NewID(), Harness: domain.Codex, Purpose: PurposeSharedOwner}).Validate(); err == nil {
+		t.Fatal("a shared owner key without an account was accepted")
+	}
+	if err := (Key{Owner: OwnerWorker, Machine: domain.NewID(), Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account, Conversation: domain.NewID()}).Validate(); err == nil {
+		t.Fatal("a shared owner key with a conversation was accepted")
+	}
+	relative := "runtimes/accounts/" + string(account) + "/codex"
+	home := filepath.Join(root, filepath.FromSlash(relative))
+	if err := security.PrivateDir(home); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "history"), []byte("kept"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	key := Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}
+	info, err := r.RegisterLegacy(context.Background(), key, relative)
+	if err != nil || info.Origin != OriginLegacy || info.Root != home {
+		t.Fatalf("shared owner home was not registered in place: %+v %v", info, err)
+	}
+	lease, err := r.Acquire(context.Background(), key)
+	if err != nil || lease.ID != info.ID || lease.Root != home {
+		t.Fatalf("acquire did not reuse the registered home: %v", err)
+	}
+	defer lease.Close()
+	if _, err := r.Acquire(context.Background(), key); err == nil {
+		t.Fatal("a held shared owner home was locked twice")
+	}
+	if raw, err := os.ReadFile(filepath.Join(home, "history")); err != nil || string(raw) != "kept" {
+		t.Fatal("registration changed retained history")
+	}
+}
+
+// keyFor builds a valid key of the purpose's scope for the harness.
+func keyFor(purpose Purpose, harness domain.Harness, account, conversation domain.ID) Key {
+	scope, _ := purpose.Scope()
+	key := Key{Harness: harness, Purpose: purpose}
+	if scope != ScopeSystem {
+		key.Account = account
+	}
+	if scope == ScopeConversation {
+		key.Conversation = conversation
+	}
+	return key
+}
+
+// Every purpose is checked against every harness through every registry entry
+// point. The registered-only shared owner purpose is defined for Codex alone;
+// it is never created by Acquire, but an entry registered in place is locked
+// and looked up like any other profile.
+func TestPurposeHarnessMatrixAcrossAcquireRegisterLegacyAndLookup(t *testing.T) {
+	ctx := context.Background()
+	harnesses := []domain.Harness{domain.Codex, domain.ClaudeCode, domain.OpenCode, domain.GrokBuild}
+	for purpose := range purposeScopes {
+		for _, harness := range harnesses {
+			purpose, harness := purpose, harness
+			t.Run(string(purpose)+"/"+string(harness), func(t *testing.T) {
+				root := testRoot(t)
+				r, _ := workerRegistry(t, root, nil)
+				key := keyFor(purpose, harness, domain.NewID(), domain.NewID())
+				defined := purpose != PurposeSharedOwner || harness == domain.Codex
+				relative := "retained/" + string(purpose) + "-" + string(harness)
+				home := filepath.Join(root, filepath.FromSlash(relative))
+				if err := security.PrivateDir(home); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(home, "history"), []byte("kept"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := r.normalize(key); (err == nil) != defined {
+					t.Fatalf("Validate defined=%v err=%v", defined, err)
+				}
+				if !defined {
+					if _, err := r.Acquire(ctx, key); err == nil {
+						t.Fatal("Acquire accepted an undefined purpose for the harness")
+					}
+					if _, err := r.RegisterLegacy(ctx, key, relative); err == nil {
+						t.Fatal("RegisterLegacy accepted an undefined purpose for the harness")
+					}
+					if _, _, err := r.Lookup(ctx, key); err == nil {
+						t.Fatal("Lookup accepted an undefined purpose for the harness")
+					}
+					return
+				}
+				if _, ok, err := r.Lookup(ctx, key); err != nil || ok {
+					t.Fatalf("an unseen key was found: %v", err)
+				}
+				lease, err := r.Acquire(ctx, key)
+				if purpose.RegisteredOnly() {
+					if err == nil {
+						_ = lease.Close()
+						t.Fatal("Acquire created a registered-only profile")
+					}
+					if reason, ok := Reasoned(err); !ok || reason != ReasonLegacyUnverified {
+						t.Fatalf("Acquire failed without the closed cause: %v", err)
+					}
+					if _, ok, _ := r.Lookup(ctx, key); ok {
+						t.Fatal("a rejected Acquire registered the key")
+					}
+					if entries, _ := os.ReadDir(filepath.Join(root, "native-profiles", "p")); len(entries) != 0 {
+						t.Fatalf("a rejected Acquire left %d profile directories", len(entries))
+					}
+				} else {
+					if err != nil || lease.Origin != OriginManaged || !lease.Created {
+						t.Fatalf("Acquire did not create a managed profile: %v", err)
+					}
+					_ = lease.Close()
+					// A managed key keeps its single identity; a second registration
+					// of retained history for it is a conflict.
+					if _, err := r.RegisterLegacy(ctx, key, relative); err == nil {
+						t.Fatal("RegisterLegacy replaced a managed profile")
+					}
+					return
+				}
+				info, err := r.RegisterLegacy(ctx, key, relative)
+				if err != nil || info.Origin != OriginLegacy || info.Root != home {
+					t.Fatalf("RegisterLegacy: %+v %v", info, err)
+				}
+				found, ok, err := r.Lookup(ctx, key)
+				if err != nil || !ok || found.ID != info.ID {
+					t.Fatalf("Lookup after registration: %v", err)
+				}
+				locked, err := r.Acquire(ctx, key)
+				if err != nil || locked.ID != info.ID || locked.Root != home || locked.Created {
+					t.Fatalf("Acquire of the registered entry: %v", err)
+				}
+				defer locked.Close()
+				if raw, err := os.ReadFile(filepath.Join(home, "history")); err != nil || string(raw) != "kept" {
+					t.Fatal("registration changed retained history")
+				}
+			})
+		}
+	}
+}
+
+// A restored registry that binds the shared owner purpose to a non-Codex
+// harness is invalid as a whole and is never rewritten.
+func TestRegistryLoadRejectsSharedOwnerForOtherHarnesses(t *testing.T) {
+	root := testRoot(t)
+	r, _ := workerRegistry(t, root, nil)
+	account := domain.NewID()
+	relative := "runtimes/accounts/" + string(account) + "/codex"
+	if err := security.PrivateDir(filepath.Join(root, filepath.FromSlash(relative))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.RegisterLegacy(context.Background(), Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}, relative); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(r.registryPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := bytes.Replace(raw, []byte(`"harness":"codex"`), []byte(`"harness":"claude-code"`), 1)
+	if bytes.Equal(raw, tampered) {
+		t.Fatalf("registry encoding changed: %s", raw)
+	}
+	if err := os.WriteFile(r.registryPath(), tampered, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.Lookup(context.Background(), Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}); err == nil {
+		t.Fatal("a shared owner entry for another harness was loaded")
+	} else if reason, ok := Reasoned(err); !ok || reason != ReasonRegistryInvalid {
+		t.Fatalf("restored registry was not rejected as invalid: %v", err)
+	}
+	if after, _ := os.ReadFile(r.registryPath()); !bytes.Equal(after, tampered) {
+		t.Fatal("the invalid registry was rewritten")
+	}
+}
+
+// A registered-only purpose exists only as a legacy directory registered in
+// place that holds no conversation history. Registration enforces that, and a
+// restored registry that breaks it is invalid as a whole at every entry point,
+// even when its managed directory and owner record are intact: Acquire must
+// never lock such an entry as an ordinary profile. Every cell is one entry
+// point against one broken entry shape.
+func TestRegistryLoadRejectsBrokenRegisteredOnlyEntries(t *testing.T) {
+	ctx := context.Background()
+	type shape struct {
+		name   string
+		tamper func(t *testing.T, r *Registry, root string, account domain.ID) Key
+	}
+	shapes := []shape{
+		{"managed origin with its directory and owner record", func(t *testing.T, r *Registry, root string, account domain.ID) Key {
+			auth := Key{Harness: domain.Codex, Purpose: PurposeAuth, Account: account}
+			lease, err := r.Acquire(ctx, auth)
+			if err != nil || lease.Origin != OriginManaged {
+				t.Fatalf("managed profile: %v", err)
+			}
+			_ = lease.Close()
+			owner := filepath.Join(r.managedPath(lease.ID), "owner.json")
+			for _, path := range []string{r.registryPath(), owner} {
+				raw, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				tampered := bytes.Replace(raw, []byte(`"purpose":"auth"`), []byte(`"purpose":"shared_owner"`), 1)
+				if bytes.Equal(raw, tampered) {
+					t.Fatalf("encoding changed: %s", raw)
+				}
+				if err := os.WriteFile(path, tampered, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}
+		}},
+		{"legacy origin holding a conversation history", func(t *testing.T, r *Registry, root string, account domain.ID) Key {
+			relative := "runtimes/accounts/" + string(account) + "/codex"
+			if err := security.PrivateDir(filepath.Join(root, filepath.FromSlash(relative))); err != nil {
+				t.Fatal(err)
+			}
+			key := Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}
+			if _, err := r.RegisterLegacy(ctx, key, relative); err != nil {
+				t.Fatal(err)
+			}
+			file, err := r.load()
+			if err != nil || len(file.Profiles) != 1 {
+				t.Fatalf("registry: %v", err)
+			}
+			file.Profiles[0].Histories = []domain.ID{domain.NewID()}
+			raw, err := json.Marshal(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(r.registryPath(), raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			return key
+		}},
+	}
+	entryPoints := map[string]func(r *Registry, key Key, relative string) error{
+		"Lookup": func(r *Registry, key Key, _ string) error { _, _, err := r.Lookup(ctx, key); return err },
+		"Peek":   func(r *Registry, key Key, _ string) error { _, _, err := r.Peek(key); return err },
+		"Acquire": func(r *Registry, key Key, _ string) error {
+			lease, err := r.Acquire(ctx, key)
+			if err == nil {
+				_ = lease.Close()
+			}
+			return err
+		},
+		"RegisterLegacy": func(r *Registry, key Key, relative string) error {
+			_, err := r.RegisterLegacy(ctx, key, relative)
+			return err
+		},
+	}
+	for _, s := range shapes {
+		for name, call := range entryPoints {
+			s, name, call := s, name, call
+			t.Run(s.name+"/"+name, func(t *testing.T) {
+				root := testRoot(t)
+				r, _ := workerRegistry(t, root, nil)
+				account := domain.NewID()
+				key := s.tamper(t, r, root, account)
+				before, _ := os.ReadFile(r.registryPath())
+				err := call(r, key, "runtimes/accounts/"+string(account)+"/codex")
+				if err == nil {
+					t.Fatal("a broken registered-only entry was accepted")
+				}
+				if reason, ok := Reasoned(err); !ok || reason != ReasonRegistryInvalid {
+					t.Fatalf("restored registry was not rejected as invalid: %v", err)
+				}
+				if after, _ := os.ReadFile(r.registryPath()); !bytes.Equal(after, before) {
+					t.Fatal("the invalid registry was rewritten")
+				}
+			})
+		}
+	}
+}
+
+// Registering a registered-only purpose with a conversation history is
+// rejected before anything is written, so the invariant holds on both sides of
+// a registry round trip.
+func TestRegisterLegacyRejectsHistoriesForRegisteredOnlyPurpose(t *testing.T) {
+	root := testRoot(t)
+	r, _ := workerRegistry(t, root, nil)
+	account := domain.NewID()
+	relative := "runtimes/accounts/" + string(account) + "/codex"
+	if err := security.PrivateDir(filepath.Join(root, filepath.FromSlash(relative))); err != nil {
+		t.Fatal(err)
+	}
+	key := Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}
+	if _, err := r.RegisterLegacy(context.Background(), key, relative, domain.NewID()); err == nil {
+		t.Fatal("a registered-only purpose accepted a conversation history")
+	}
+	if _, ok, err := r.Lookup(context.Background(), key); err != nil || ok {
+		t.Fatalf("a rejected registration left an entry: ok=%v err=%v", ok, err)
+	}
+	// An entry registered without histories cannot gain one later either, or the
+	// next registry load would reject the whole registry.
+	if _, err := r.RegisterLegacy(context.Background(), key, relative); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.RecordHistory(context.Background(), key, domain.NewID()); err == nil {
+		t.Fatal("a registered-only purpose recorded a conversation history")
+	}
+	if _, ok, err := r.Lookup(context.Background(), key); err != nil || !ok {
+		t.Fatalf("a rejected history left the registry unusable: ok=%v err=%v", ok, err)
+	}
+}
+
+// Closing a lease is final only once the lock close succeeded. A failed close
+// leaves the lease open, so a later call closes the handle again and reports
+// that result: it never turns a close the lock did not confirm into a success.
+// Each cell is the state of the lease against one Close call.
+func TestLeaseCloseIsFinalOnlyAfterASuccessfulLockClose(t *testing.T) {
+	ctx := context.Background()
+	key := Key{Harness: domain.Codex, Purpose: PurposeAuth, Account: domain.NewID()}
+	t.Run("open then closed twice", func(t *testing.T) {
+		r, _ := workerRegistry(t, testRoot(t), nil)
+		lease, err := r.Acquire(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := lease.Close(); err != nil {
+			t.Fatalf("first close: %v", err)
+		}
+		if err := lease.Close(); err != nil {
+			t.Fatalf("a close after a successful close must stay nil: %v", err)
+		}
+		again, err := r.Acquire(ctx, key)
+		if err != nil {
+			t.Fatalf("a closed lease still held the lock: %v", err)
+		}
+		_ = again.Close()
+	})
+	t.Run("failed close stays failed and open", func(t *testing.T) {
+		r, _ := workerRegistry(t, testRoot(t), nil)
+		lease, err := r.Acquire(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Closing the lock handle behind the lease makes every lease close fail
+		// the way an unconfirmed release does.
+		if err := lease.lock.Close(); err != nil {
+			t.Fatal(err)
+		}
+		for call := 1; call <= 3; call++ {
+			if err := lease.Close(); err == nil {
+				t.Fatalf("close %d reported success for a lock close that never succeeded", call)
+			}
+		}
+		if lease.closed {
+			t.Fatal("a failed close marked the lease closed")
+		}
+	})
+}
+
+// Peek is the read-only lookup: it answers from the registry on disk and never
+// creates the registry directories, their lock file or any profile, so it works
+// on a read-only root. Every cell below is one state of the registry.
+func TestPeekIsReadOnlyForEveryRegistryState(t *testing.T) {
+	ctx := context.Background()
+	key := func(account domain.ID) Key {
+		return Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}
+	}
+	snapshot := func(t *testing.T, root string) map[string]string {
+		t.Helper()
+		seen := map[string]string{}
+		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil || path == root {
+				return nil
+			}
+			content := ""
+			if info.Mode().IsRegular() {
+				raw, _ := os.ReadFile(path)
+				content = string(raw)
+			}
+			seen[path] = info.Mode().String() + ":" + content
+			return nil
+		})
+		return seen
+	}
+	same := func(t *testing.T, before, after map[string]string) {
+		t.Helper()
+		if len(before) != len(after) {
+			t.Fatalf("peek changed the owner root: %v -> %v", before, after)
+		}
+		for path, state := range before {
+			if after[path] != state {
+				t.Fatalf("peek changed %s", path)
+			}
+		}
+	}
+	t.Run("registry absent", func(t *testing.T) {
+		root := testRoot(t)
+		r, _ := workerRegistry(t, root, nil)
+		before := snapshot(t, root)
+		if _, ok, err := r.Peek(key(domain.NewID())); err != nil || ok {
+			t.Fatalf("absent registry: ok=%v err=%v", ok, err)
+		}
+		same(t, before, snapshot(t, root))
+		if _, err := os.Lstat(r.Base()); !os.IsNotExist(err) {
+			t.Fatal("peek created the registry directory")
+		}
+	})
+	t.Run("registry directory without a registry file", func(t *testing.T) {
+		root := testRoot(t)
+		r, _ := workerRegistry(t, root, nil)
+		if err := security.PrivateDir(r.Base()); err != nil {
+			t.Fatal(err)
+		}
+		before := snapshot(t, root)
+		if _, ok, err := r.Peek(key(domain.NewID())); err != nil || ok {
+			t.Fatalf("empty registry directory: ok=%v err=%v", ok, err)
+		}
+		same(t, before, snapshot(t, root))
+	})
+	t.Run("registered and unregistered keys on a read-only registry", func(t *testing.T) {
+		root := testRoot(t)
+		r, _ := workerRegistry(t, root, nil)
+		account := domain.NewID()
+		relative := "runtimes/accounts/" + string(account) + "/codex"
+		if err := security.PrivateDir(filepath.Join(root, filepath.FromSlash(relative))); err != nil {
+			t.Fatal(err)
+		}
+		registered, err := r.RegisterLegacy(ctx, key(account), relative)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before := snapshot(t, root)
+		found, ok, err := r.Peek(key(account))
+		if err != nil || !ok || found.ID != registered.ID || found.Root != registered.Root {
+			t.Fatalf("registered key: %+v ok=%v err=%v", found, ok, err)
+		}
+		if _, ok, err := r.Peek(key(domain.NewID())); err != nil || ok {
+			t.Fatalf("unregistered key: ok=%v err=%v", ok, err)
+		}
+		same(t, before, snapshot(t, root))
+	})
+	t.Run("invalid registry file", func(t *testing.T) {
+		root := testRoot(t)
+		r, _ := workerRegistry(t, root, nil)
+		if err := security.PrivateDir(r.Base()); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(r.registryPath(), []byte("{not json"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		before := snapshot(t, root)
+		if _, _, err := r.Peek(key(domain.NewID())); err == nil {
+			t.Fatal("an invalid registry was accepted")
+		} else if reason, ok := Reasoned(err); !ok || reason != ReasonRegistryInvalid {
+			t.Fatalf("invalid registry reason: %v", err)
+		}
+		same(t, before, snapshot(t, root))
+	})
+	t.Run("registry directory is a link", func(t *testing.T) {
+		root := testRoot(t)
+		r, _ := workerRegistry(t, root, nil)
+		elsewhere := filepath.Join(root, "elsewhere")
+		if err := security.PrivateDir(elsewhere); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(elsewhere, r.Base()); err != nil {
+			t.Skip("symlinks unavailable")
+		}
+		if _, _, err := r.Peek(key(domain.NewID())); err == nil {
+			t.Fatal("a linked registry directory was read")
+		} else if reason, ok := Reasoned(err); !ok || reason != ReasonRegistryInvalid {
+			t.Fatalf("linked registry reason: %v", err)
+		}
+	})
+}

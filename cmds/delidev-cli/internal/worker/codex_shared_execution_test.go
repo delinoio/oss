@@ -15,6 +15,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -25,6 +26,10 @@ import (
 type sharedCodexServer struct {
 	*sharedClaudeServer
 	bundle []byte
+	// observe runs when a Finish request arrives, before the server commits it.
+	// It models a continuation whose Take is admitted the moment the lease is
+	// removed.
+	observe func(*pb.FinishSubscriptionRequest)
 }
 
 func (s *sharedCodexServer) TakeSubscription(ctx context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (*connect.Response[pb.TakeSubscriptionResponse], error) {
@@ -36,6 +41,9 @@ func (s *sharedCodexServer) TakeSubscription(ctx context.Context, req *connect.R
 }
 
 func (s *sharedCodexServer) FinishSubscription(ctx context.Context, req *connect.Request[pb.FinishSubscriptionRequest]) (*connect.Response[pb.FinishSubscriptionResponse], error) {
+	if s.observe != nil {
+		s.observe(req.Msg)
+	}
 	if req.Msg.FinishScope == pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER && len(req.Msg.Bundle) != 0 {
 		s.t.Error("member carried authentication")
 	}
@@ -159,6 +167,25 @@ func testSharedCodexWorkerSessions(t *testing.T, count int, retry, loss bool) {
 		publication := &PublicationConfig{Credential: credential, Instance: jobs[i].InstanceID, Assignment: resource, Client: &managedExecutionPublicationRPC{nativeHome: home}}
 		configs[i] = Config{Root: root, Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil)), execution: publication, executionContext: ctx, codexMembers: true, codexOwners: registry}
 	}
+	// Timeline of every Finish against the shared account home lock. A Finish
+	// that removes the account lease admits an exclusive continuation's Take, so
+	// that Take, modeled by a lock probe on arrival, must find the lock free for
+	// every owner Finish attempt and must find it held while the owner lives.
+	type finishProbe struct {
+		scope pb.SubscriptionFinishScope
+		err   error
+	}
+	var probesMu sync.Mutex
+	var probes []finishProbe
+	server.observe = func(req *pb.FinishSubscriptionRequest) {
+		lease, err := acquireSharedCodexHome(ctx, configs[0], first.input.MachineID, first.input.AccountID)
+		if err == nil {
+			_ = lease.Close()
+		}
+		probesMu.Lock()
+		probes = append(probes, finishProbe{scope: req.FinishScope, err: err})
+		probesMu.Unlock()
+	}
 	var wg sync.WaitGroup
 	for i := range configs {
 		wg.Add(1)
@@ -172,6 +199,27 @@ func testSharedCodexWorkerSessions(t *testing.T, count int, retry, loss bool) {
 		}()
 	}
 	wg.Wait()
+	checkProbes := func() {
+		probesMu.Lock()
+		defer probesMu.Unlock()
+		owners := 0
+		for _, probe := range probes {
+			switch probe.scope {
+			case pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER:
+				owners++
+				if probe.err != nil {
+					t.Fatalf("an owner Finish attempt reached the server while the shared home was locked: %v", probe.err)
+				}
+			case pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER:
+				if reason, ok := nativeprofile.Reasoned(probe.err); !ok || reason != nativeprofile.ReasonBusy {
+					t.Fatalf("the owner released the shared home before its last member finished: %v", probe.err)
+				}
+			}
+		}
+		if owners == 0 {
+			t.Fatal("no owner Finish was observed")
+		}
+	}
 	if loss {
 		for i, result := range results {
 			if result.err == nil {
@@ -188,6 +236,7 @@ func testSharedCodexWorkerSessions(t *testing.T, count int, retry, loss bool) {
 			t.Fatalf("member %d failed: %#v, %v", i, result.completion, result.err)
 		}
 	}
+	checkProbes()
 	serverModel.mu.Lock()
 	defer serverModel.mu.Unlock()
 	wantFinishes := count
@@ -240,5 +289,15 @@ func testSharedCodexWorkerSessions(t *testing.T, count int, retry, loss bool) {
 	}
 	if _, err := os.Lstat(filepath.Join(home, "auth.json")); !os.IsNotExist(err) {
 		t.Fatal("account authentication remained after owner retirement")
+	}
+	// The shared account home is a registered in-place profile whose lock the
+	// founding owner released on retirement, with the history left in place.
+	profile, err := acquireSharedCodexHome(ctx, Config{Root: root}, first.input.MachineID, first.input.AccountID)
+	if err != nil {
+		t.Fatalf("retired owner left the shared account home locked or unregistered: %v", err)
+	}
+	defer profile.Close()
+	if profile.Root != home || profile.Origin != nativeprofile.OriginLegacy || profile.Key.Purpose != nativeprofile.PurposeSharedOwner {
+		t.Fatalf("shared account home is not registered in place: %s", profile.Root)
 	}
 }

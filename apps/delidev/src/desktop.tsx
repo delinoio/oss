@@ -469,11 +469,13 @@ function LocalDesktop({ entrance }: { entrance: EntranceProps }) {
                 appInformationSettings={
                   <AppInformationSlot onTarget={setAppInformationTarget} />
                 }
+                // The Connections page never hosts the local controls. Only the
+                // diagnostics modal receives their view; otherwise it stays hidden
+                // while that page is open and uses the inline fallback elsewhere.
                 connectionTarget={
-                  showConnection
-                    ? (connectionTarget ?? undefined)
-                    : pageSlots?.current
+                  showConnection ? (connectionTarget ?? undefined) : undefined
                 }
+                connectionPageOpen={Boolean(pageSlots)}
                 localServer={controls}
               />
             </WorkerNetworkControlProvider>

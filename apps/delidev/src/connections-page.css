@@ -13,11 +13,6 @@
   border-radius: 8px;
   padding: 16px;
 }
-.connections-current .local-server {
-  padding: 0;
-  border: 0;
-  margin: 0;
-}
 .connections-page p,
 .connections-page small {
   overflow-wrap: anywhere;

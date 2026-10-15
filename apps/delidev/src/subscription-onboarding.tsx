@@ -41,7 +41,7 @@ export interface SubscriptionOnboardingProps {
   busy: boolean;
   problem?: string;
   diagnostic?: CodexDiagnostic;
-  /** Safe Grok Build failure metadata; Grok remains Coming soon in the catalog. */
+  /** Safe Grok Build failure metadata of a refused or failed Grok operation. */
   grokDiagnostic?: GrokDiagnostic;
   inspect?: () => void;
   canReopen: boolean;

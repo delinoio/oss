@@ -22,8 +22,10 @@ const maxLegacyCodexHistoryBytes = 64 << 20
 // importCodexV1History validates the original checkpoint and original native
 // file before copying only that thread's rollout into its account-owned home.
 // The original checkpoint and legacy file remain immutable. An ambiguous
-// reverted rollout or changed file stays recovery-required.
-func importCodexV1History(ctx context.Context, root string, ref ExecutionCheckpointRef) (CodexExecutionCheckpoint, string, error) {
+// reverted rollout or changed file stays recovery-required. The copy writes the
+// account-wide home, so it runs only while the caller holds that home's lock or
+// runs under the owner that holds it; without it nothing is written.
+func importCodexV1History(ctx context.Context, root string, ref ExecutionCheckpointRef, hold *sharedHomeHold) (CodexExecutionCheckpoint, string, error) {
 	checkpoint, err := ReadCodexExecutionCheckpoint(root, ref)
 	if err != nil || checkpoint.Version != 1 || !ref.Subscription {
 		return CodexExecutionCheckpoint{}, "", executionCheckpointUncertain()
@@ -56,6 +58,9 @@ func importCodexV1History(ctx context.Context, root string, ref ExecutionCheckpo
 		return CodexExecutionCheckpoint{}, "", executionCheckpointUncertain()
 	}
 	target := filepath.Join(home, rel)
+	if !hold.holds(home) {
+		return CodexExecutionCheckpoint{}, "", executionCheckpointUncertain()
+	}
 	if err := security.PrivateDir(filepath.Dir(target)); err != nil || security.CheckPrivateDir(home) != nil {
 		return CodexExecutionCheckpoint{}, "", executionCheckpointUncertain()
 	}

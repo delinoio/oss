@@ -287,6 +287,14 @@ impl Target {
                     return reject(detail(Reason::TypeConstraint, "target:annotated-binding"));
                 }
                 let statement = list.parent();
+                // Removing a loop header's declaration would remove the
+                // condition and body along with the function binding.
+                if statement.kind() != SyntaxKind::VariableStatement {
+                    return reject(detail(
+                        Reason::UnsupportedSyntax,
+                        "target:non-standalone-binding",
+                    ));
+                }
                 // A `let` or `var` that nothing writes (checked above) holds
                 // the function from its initialization on, like a `const`.
                 // A `var` is function-scoped, so a site after an enclosing

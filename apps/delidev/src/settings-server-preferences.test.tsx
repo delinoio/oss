@@ -1248,6 +1248,42 @@ it("assigns all policy groups to Project defaults and only Network to Server pre
   expect(value.save).not.toHaveBeenCalled();
 });
 
+it("starts Server preferences with Network settings expanded on every category entry and starts its gated reads without policy reads or writes", async () => {
+  const value = fixture([resource(EntityKind.SETTINGS, known)], undefined, [
+    SystemCapability.SERVER_OUTBOUND_PROXY_V1,
+  ]);
+  render(value.view(<Settings />));
+  const networkReads = () =>
+    value.list.mock.calls.filter(
+      ([request]) => request.filter?.kind === EntityKind.NETWORK_PROFILE,
+    ).length;
+  const policyReads = () =>
+    value.list.mock.calls.filter(
+      ([request]) => request.filter?.kind === EntityKind.SETTINGS,
+    ).length;
+  expect(networkReads()).toBe(0);
+  fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
+  const disclosure = () =>
+    screen.getByRole("button", { name: "Network settings" });
+  expect(disclosure().getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("heading", { name: "Current route" })).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await waitFor(() => expect(networkReads()).toBeGreaterThan(0));
+  expect(policyReads()).toBe(0);
+  expect(screen.queryByRole("form")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  fireEvent.click(disclosure());
+  expect(disclosure().getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("heading", { name: "Current route" })).toBeNull();
+  choosePreferences();
+  await screen.findByRole("form", { name: "Project defaults form" });
+  expect(screen.queryByRole("button", { name: "Network settings" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
+  expect(disclosure().getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("heading", { name: "Current route" })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
+});
+
 it("redirects the retained Git destination to the sole policy editor", async () => {
   const value = fixture([resource(EntityKind.SETTINGS, known)]);
   render(

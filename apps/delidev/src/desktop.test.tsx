@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
+import { createRouterTransport } from "@connectrpc/connect";
 import {
   act,
   fireEvent,
@@ -433,48 +433,70 @@ it("never turns a stopped launch observation into readiness or a restart", async
   ).toBe(false);
 });
 
-it("retains the original Stop and confirmation across diagnostics hiding and Settings disposal", async () => {
-  const stop = vi.fn(async (_request: unknown) => ({}));
-  stop.mockRejectedValueOnce(
-    new ConnectError("Receipt lost", Code.Unavailable),
-  );
-  localFixture(stop);
-  render(<Desktop />);
-  await screen.findByText("Your sessions, in one place");
-  const open = () => {
+it.each(Object.values(LocalServerState))(
+  "keeps the local server section out of Connections while the status is %s and restores the inline fallback outside it",
+  async (state) => {
+    localFixture();
+    const original = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command: string, args?: unknown) =>
+      command === "local_server_status"
+        ? { state, attempts: 1, retry_ms: 2000 }
+        : original(command, args),
+    );
+    render(<Desktop />);
+    await screen.findByText("Your sessions, in one place");
+    const visible = (text: string | RegExp) =>
+      screen
+        .queryAllByText(text)
+        .filter((node) => !node.closest("[hidden], [inert]"));
+    const inline =
+      state === LocalServerState.Stopped || state === LocalServerState.Blocked;
+    // Outside Connections only the not-ready fallback presents the controls.
+    await waitFor(() =>
+      expect(visible("This computer").length > 0).toBe(
+        state !== LocalServerState.Ready,
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     fireEvent.click(screen.getByRole("button", { name: "Connections" }));
-  };
-  const hide = () => {
+    expect(screen.getByRole("heading", { name: "Saved servers" })).toBeTruthy();
+    expect(screen.getByText("Advanced")).toBeTruthy();
+    const page = document.querySelector(".connections-page") as HTMLElement;
+    expect(page).not.toBeNull();
+    expect(page.querySelector(":scope > section")).toBeNull();
+    expect(page.querySelector(".connections-current")).toBeNull();
+    for (const text of [
+      "Current connection",
+      "This computer",
+      "Local server",
+      "Connected",
+      /Stopping the server disconnects/,
+    ])
+      expect(within(page).queryByText(text)).toBeNull();
+    // Nothing of the controller is presented anywhere while Connections is open.
+    expect(visible("This computer")).toHaveLength(0);
+    expect(
+      screen.queryByRole("button", {
+        name: /Start local server|Stop local server/,
+      }),
+    ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
-  };
-  open();
-  fireEvent.click(screen.getByText("Local server"));
-  fireEvent.click(screen.getByRole("button", { name: "Stop local server" }));
-  hide();
-  open();
-  expect(
-    screen.getByRole("button", { name: "Confirm server stop" }),
-  ).toBeTruthy();
-  expect(stop).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Confirm server stop" }));
-  await screen.findByRole("button", { name: "Retry the same server stop" });
-  hide();
-  open();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Retry the same server stop" }),
-  );
-  await waitFor(() => expect(stop).toHaveBeenCalledTimes(2));
-  expect(stop.mock.calls[1][0]).toEqual(stop.mock.calls[0][0]);
-  expect(
-    bridge.invoke.mock.calls.some(
-      ([command]) => command === "connect_local" || command === "retry_local",
-    ),
-  ).toBe(false);
-  // This case repeatedly mounts the complete Settings tree while retaining its
-  // sibling connection controller. Allow slow test hosts without relaxing RPC or
-  // native deadlines or the identical-request assertions above.
-}, 60_000);
+    await waitFor(() =>
+      expect(visible("This computer").length > 0).toBe(
+        state !== LocalServerState.Ready,
+      ),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Start local server" }) !== null,
+    ).toBe(inline);
+    expect(
+      bridge.invoke.mock.calls.some(
+        ([command]) => command === "connect_local" || command === "retry_local",
+      ),
+    ).toBe(false);
+  },
+  30_000,
+);
 
 it("keeps same-server windows on independent Home and new-session drafts", async () => {
   savedFixture();

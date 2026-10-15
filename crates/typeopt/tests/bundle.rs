@@ -3317,6 +3317,235 @@ fn ignores_precache_entries_outside_the_bundle() {
 // --minify
 // ---------------------------------------------------------------------------
 
+/// A reflected callable can live in a different chunk from the read of its
+/// source. Both runs must publish the same optimized callable text.
+fn check_observable_function_source(index: &str, callable: &str) {
+    let settings = format!(
+        "{}\n{callable}\n//# sourceMappingURL=settings.js.map\n",
+        VERBOSE[1].1
+    );
+    let map = r#"{"version":3,"sources":["src/settings.ts"],"names":[],"mappings":"AAAA"}"#;
+    let temp = bundle(&[
+        ("index.js", index),
+        ("settings.js", &settings),
+        ("settings.js.map", map),
+    ]);
+    let plain = optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    assert!(
+        plain["renamed_properties"].as_u64().unwrap() > 0,
+        "{plain:#}"
+    );
+    let plain_settings = out(temp.path(), "settings.js");
+    assert_ne!(plain_settings, settings);
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    let report = optimize(temp.path(), &["--minify"]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "settings.js"), plain_settings);
+    assert!(report["size"]["minified"].is_null(), "{report:#}");
+    let map = sourcemap::SourceMap::from_slice(out(temp.path(), "settings.js.map").as_bytes())
+        .expect("composed source map");
+    assert_eq!(map.get_source(0), Some("src/settings.ts"));
+}
+
+#[test]
+fn observable_function_source_direct_call() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(Function.prototype.toString.call(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_direct_method() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(reflected.toString().includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_helper_alias() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const readSource=Function.prototype.toString;
+function helper(value){return readSource.call(value)}
+console.log(describe(make(3)),describe(make(7)));
+console.log(helper(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_class_and_method() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,Reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(Function.prototype.toString.call(Reflected).includes("reflection-marker"));"#,
+        r#"class Reflected { /* reflection-marker */ value() { return 1; } }
+export { Reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_computed_alias() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const key="toString";
+const readSource=Function.prototype[key];
+console.log(describe(make(3)),describe(make(7)));
+console.log(readSource.call(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_dynamic_member() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const key=["to","String"].join("");
+console.log(describe(make(3)),describe(make(7)));
+console.log(reflected[key]().includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_escaped_member() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(reflected["to\u0053tring"]().includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_destructured_alias() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const FunctionAlias=Function;
+const {toString:readSource}=FunctionAlias.prototype;
+console.log(describe(make(3)),describe(make(7)));
+console.log(readSource.call(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_string_coercion() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(String(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_template_coercion() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(`${reflected}`.includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_direct_eval() {
+    let index = r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(eval("reflected.toString()").includes("reflection-marker"));"#;
+    let settings = format!(
+        "{}\n{}\n//# sourceMappingURL=settings.js.map\n",
+        VERBOSE[1].1,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+    let temp = bundle(&[
+        ("index.js", index),
+        ("settings.js", &settings),
+        (
+            "settings.js.map",
+            r#"{"version":3,"sources":["src/settings.ts"],"names":[],"mappings":"AAAA"}"#,
+        ),
+    ]);
+    let plain = optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    let plain_settings = out(temp.path(), "settings.js");
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    let report = optimize(temp.path(), &["--minify"]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "settings.js"), plain_settings);
+    assert!(
+        report["size"]["minified"].is_null(),
+        "{report:#}; plain={plain:#}"
+    );
+}
+
+#[test]
+fn observable_function_source_inline_html_script() {
+    let settings = r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module">import{reflected}from"./settings.js";console.log(reflected.toString().includes("reflection-marker"));</script><script type="module" src="./index.js"></script>"#,
+        ),
+        ("settings.js", settings),
+        (
+            "index.js",
+            r#"import{makeSettings}from"./other.js";console.log(makeSettings(3).verticalSpacing);"#,
+        ),
+        (
+            "other.js",
+            r#"function makeSettings(count){return{verticalSpacing:count,horizontalSpacing:count*2}}export{makeSettings};"#,
+        ),
+    ]);
+    let plain = optimize(temp.path(), &[]);
+    let plain_other = out(temp.path(), "other.js");
+    assert_ne!(
+        plain_other,
+        r#"function makeSettings(count){return{verticalSpacing:count,horizontalSpacing:count*2}}export{makeSettings};"#
+    );
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    let report = optimize(temp.path(), &["--minify"]);
+    assert_eq!(out(temp.path(), "other.js"), plain_other);
+    assert!(
+        report["size"]["minified"].is_null(),
+        "{report:#}; plain={plain:#}"
+    );
+}
+
+#[test]
+fn observable_function_source_safe_chunk_still_minifies() {
+    let index = format!(
+        "{}\nconsole.log('toString is only text', (13).toString(16));\n",
+        VERBOSE[0].1
+    );
+    let temp = bundle(&[("index.js", &index), VERBOSE[1]]);
+    let report = optimize(temp.path(), &["--minify"]);
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+}
+
 const VERBOSE: [(&str, &str); 2] = [
     (
         "index.js",
@@ -3361,6 +3590,115 @@ fn minifies_edited_chunks() {
     assert!(settings.len() < plain_settings.len(), "{settings}");
     // Exports keep their names for importers.
     assert!(settings.contains("makeSettings") && settings.contains("describeSettings"));
+}
+
+#[test]
+fn minifies_legal_notices_with_overlapping_comment_text() {
+    let settings = format!(
+        "function unused() {{ /** @license MIT */ return 42; }}\n/** @license MIT additional \
+         terms */\n{}",
+        VERBOSE[1].1
+    );
+    let temp = bundle(&[("index.js", VERBOSE[0].1), ("settings.js", &settings)]);
+    let report = optimize(
+        temp.path(),
+        &["--minify", "--disable-pass", "residual-dependency-removal"],
+    );
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    let published = out(temp.path(), "settings.js");
+    assert!(!published.contains("unused"), "{published}");
+    assert_eq!(
+        published.matches("/** @license MIT */").count(),
+        1,
+        "{published}"
+    );
+    assert_eq!(
+        published
+            .matches("/** @license MIT additional terms */")
+            .count(),
+        1,
+        "{published}"
+    );
+}
+
+#[test]
+fn minifies_legal_notice_even_when_its_text_occurs_in_a_string() {
+    let index = format!(
+        "{}\nimport {{ noticeText }} from './settings.js'; console.log(noticeText);",
+        VERBOSE[0].1
+    );
+    let settings = format!(
+        "function unused() {{ /** @license MIT */ return 42; }}\nexport const noticeText = '* \
+         @license MIT ';\n{}",
+        VERBOSE[1].1
+    );
+    let temp = bundle(&[("index.js", &index), ("settings.js", &settings)]);
+    let report = optimize(
+        temp.path(),
+        &["--minify", "--disable-pass", "residual-dependency-removal"],
+    );
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    let published = out(temp.path(), "settings.js");
+    assert!(!published.contains("unused"), "{published}");
+    assert_eq!(
+        published.matches("/** @license MIT */").count(),
+        1,
+        "{published}"
+    );
+    assert!(published.contains("* @license MIT "), "{published}");
+}
+
+#[test]
+fn minifies_legal_notice_control_with_composed_source_map() {
+    let index = format!(
+        "{}\nimport {{ noticeText }} from './settings.js'; console.log(noticeText);",
+        VERBOSE[0].1
+    );
+    let settings = format!(
+        "/** @license MIT */\nexport const noticeText = 'unrelated';\n{}//# \
+         sourceMappingURL=settings.js.map\n",
+        VERBOSE[1].1
+    );
+    let map = r#"{"version":3,"sources":["src/settings.ts"],"names":[],"mappings":"AAAA"}"#;
+    let temp = bundle(&[
+        ("index.js", &index),
+        ("settings.js", &settings),
+        ("settings.js.map", map),
+    ]);
+    let report = optimize(
+        temp.path(),
+        &["--minify", "--disable-pass", "residual-dependency-removal"],
+    );
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    let published = out(temp.path(), "settings.js");
+    assert_eq!(
+        published.matches("/** @license MIT */").count(),
+        1,
+        "{published}"
+    );
+    assert!(published.contains("noticeText"), "{published}");
+    assert!(
+        published
+            .trim_end()
+            .ends_with("//# sourceMappingURL=settings.js.map"),
+        "{published}"
+    );
+    let map =
+        sourcemap::SourceMap::from_slice(out(temp.path(), "settings.js.map").as_bytes()).unwrap();
+    assert_eq!(map.get_source(0), Some("src/settings.ts"));
+    assert!(map.tokens().count() > 0);
 }
 
 /// The published map leads from the minified code to the original sources.

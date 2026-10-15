@@ -10,6 +10,14 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
+/* Placeholders keep the previous page height as min-height; rows and Restore
+   stay at content height instead of stretching to it. */
+.settings-content.settings-repositories
+  .repository-list
+  > [data-payload-page][data-payload-state="placeholder"] {
+  align-content: start;
+  align-items: start;
+}
 .settings-content.settings-repositories .repository-row {
   min-width: 0;
   padding: 16px;
