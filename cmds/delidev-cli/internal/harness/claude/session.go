@@ -226,12 +226,12 @@ func (s *APISession) Next(ctx context.Context) (LifecycleObservation, error) {
 		observation, err = s.current.Observe(event)
 	}
 	if err != nil || observation.Kind == PrivateObservation {
-		if observation.Kind == PrivateObservation && s.interrupt != nil && s.config.Process.Logger != nil {
+		if observation.Kind == PrivateObservation && s.config.Process.Logger != nil {
 			var header struct {
 				Subtype string `json:"subtype"`
 			}
 			_ = json.Unmarshal(event.Body, &header)
-			s.config.Process.Logger.Warn("claude_stop_private_observation", "owner_id", s.config.Process.OwnerID, "event_kind", event.Kind, "system", event.Type == "system", "api_retry", header.Subtype == "api_retry", "rate_limit", event.Type == "rate_limit_event", "auth_status", event.Type == "auth_status")
+			s.config.Process.Logger.Warn("claude_private_observation_rejected", "owner_id", s.config.Process.OwnerID, "event_kind", event.Kind, "system", event.Type == "system", "api_retry", header.Subtype == "api_retry", "rate_limit", event.Type == "rate_limit_event", "auth_status", event.Type == "auth_status")
 		}
 		return observation, s.latch(sessionEventPhase, lifecycleUncertain())
 	}

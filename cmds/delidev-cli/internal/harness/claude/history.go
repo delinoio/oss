@@ -253,6 +253,11 @@ func verifyResumedTranscript(ctx context.Context, raw []byte, session domain.ID,
 				return TranscriptObservation{}, historyUncertain()
 			}
 			continue
+		case "cost-state":
+			if child != nil || !validHistoryCostState(fields) {
+				return TranscriptObservation{}, historyUncertain()
+			}
+			continue
 		case "mode":
 			// The pinned CLI persists this non-permission session mode when
 			// closing a resumed process, including native Plan sessions. It

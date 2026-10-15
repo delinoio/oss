@@ -2,6 +2,7 @@ package claude
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -226,14 +227,23 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 			}
 		} else {
 			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-			if err != nil {
+			if errors.Is(err, os.ErrExist) {
+				// A proven no-send retry reuses this persistent session profile.
+				// Preserve only the exact original private instructions; never
+				// replace a changed file or follow a substituted symlink.
+				raw, readErr := security.ReadPrivate(path, 256<<10)
+				if readErr != nil || string(raw) != config.Instructions {
+					return process.Config{}, apiConfigurationError()
+				}
+			} else if err != nil {
 				return process.Config{}, apiConfigurationError()
-			}
-			_, written := file.WriteString(config.Instructions)
-			synced := file.Sync()
-			closed := file.Close()
-			if written != nil || synced != nil || closed != nil {
-				return process.Config{}, apiConfigurationError()
+			} else {
+				_, written := file.WriteString(config.Instructions)
+				synced := file.Sync()
+				closed := file.Close()
+				if written != nil || synced != nil || closed != nil {
+					return process.Config{}, apiConfigurationError()
+				}
 			}
 		}
 		args = append(args, "--append-system-prompt-file="+path)

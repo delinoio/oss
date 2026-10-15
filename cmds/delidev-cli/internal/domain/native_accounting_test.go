@@ -129,3 +129,33 @@ func TestOpenCodeAccountingPricesDisjointStepsWithUnavailableZeros(t *testing.T)
 		t.Fatal("assistant summary fabricated a step")
 	}
 }
+
+func TestClaudeAccountingRetainsClosedOriginalSubscriptionIdentity(t *testing.T) {
+	for _, name := range []string{"claude", "chatgpt", "grok", "opencode-go", "mixed", "foreign-key"} {
+		t.Run(name, func(t *testing.T) {
+			unit := nativeUnitFixture()
+			unit.Observation.ProviderID = ""
+			unit.Observation.SubscriptionService = SubscriptionClaude
+			switch name {
+			case "chatgpt":
+				unit.Observation.SubscriptionService = SubscriptionChatGPT
+			case "grok":
+				unit.Observation.SubscriptionService = SubscriptionGrok
+			case "opencode-go":
+				unit.Observation.SubscriptionService = SubscriptionOpenCodeGo
+			case "mixed":
+				unit.Observation.ProviderID = NewID()
+			}
+			unit.Observation.ModelID = (ModelIdentity{SubscriptionService: unit.Observation.SubscriptionService, NativeID: "fixture"}).Key()
+			if name == "foreign-key" {
+				unit.Observation.ModelID = (ModelIdentity{ProviderID: NewID(), NativeID: "fixture"}).Key()
+			}
+			if (unit.Validate() == nil) != (name == "claude") {
+				t.Fatal("incorrect Claude accounting source accepted")
+			}
+			if name == "claude" && *unit.Counts().Input != "25" {
+				t.Fatal("subscription changed original token accounting")
+			}
+		})
+	}
+}

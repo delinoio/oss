@@ -2,6 +2,12 @@
 
 ## Scope
 
+An explicitly admitted Claude no-send retry reuses the persistent session's
+private instructions file only when its complete bytes still match the accepted
+instructions. It does not rewrite the file or follow symlinks. Changed or
+unreadable instructions retain the startup failure; matching bytes alone grant
+no retry authority.
+
 This amendment owns native execution startup in
 `cmds/delidev-cli/internal/domain`, `internal/server`, `internal/worker` and
 `internal/harness`, with desktop presentation in `apps/delidev/src` and the

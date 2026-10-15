@@ -121,3 +121,45 @@ func TestClaudeUncorrelatedDenialDoesNotCreateAccountingUnit(t *testing.T) {
 		t.Fatal("uncorrelated denial entered accounting", summary, err)
 	}
 }
+
+func TestClaudeSubscriptionUsagePublishesOriginalServiceAndAccounting(t *testing.T) {
+	f := newClaudePublicationFixture(t, domain.ExecuteMode)
+	input := f.input
+	input.Configuration.ProviderID = ""
+	input.Configuration.Subscription = true
+	input.Configuration.SubscriptionService = domain.SubscriptionClaude
+	input.Configuration.ModelID = (domain.ModelIdentity{SubscriptionService: domain.SubscriptionClaude, NativeID: input.Configuration.NativeModel}).Key()
+	input.ConfigurationDigest, _ = input.Configuration.Digest()
+	count := domain.ClaudeUsageCount("1")
+	event := f.event(domain.ExecutionClaudeUsageObserved, 1)
+	event.ObservationID = domain.NewID()
+	event.ClaudeUsage = &domain.ClaudeUsageObservation{Source: domain.ClaudeInputResultUsage, NativeEventID: string(domain.NewID()), Result: &domain.ClaudeResultUsage{MainLoop: &domain.ClaudeProviderUsage{Input: &count, CacheRead: &count, CacheWrite: &count, Output: &count}}}
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claude-subscription-usage", nil, func(tx *store.Tx) (any, error) {
+		session, err := tx.Get(domain.SessionKind, input.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		return nil, publishClaudeUsage(tx, input, session, event)
+	})
+	if err != nil {
+		t.Fatal("subscription result transaction rejected", err)
+	}
+	row, err := f.service.Store.Get(context.Background(), domain.UsageKind, event.ObservationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation, err := store.Decode[domain.ClaudeUsageRecord](row)
+	if err != nil || observation.SubscriptionService != domain.SubscriptionClaude || observation.ProviderID != "" || observation.ModelID != input.Configuration.ModelID {
+		t.Fatal("original subscription attribution lost", err)
+	}
+	err = f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+		summary, err := tx.UsageSummary(domain.UsageSelection{From: time.Now().Add(-time.Hour), Until: time.Now().Add(time.Hour), AccountingProfile: domain.NativeUnitsV1Accounting})
+		if err == nil && (summary.NativeAccounting[0].Totals.Units != 1 || summary.NativeAccounting[0].Totals.Input.KnownTotal != "3") {
+			t.Fatal("original main-loop unit missing")
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
