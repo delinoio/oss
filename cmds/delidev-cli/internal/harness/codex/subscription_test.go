@@ -26,6 +26,28 @@ func managedFixtureBundle(rotation string) []byte {
 	return raw
 }
 
+// fixtureHomeIsolated reports whether project isolation already recorded an
+// untrusted project in the private home, which is when Codex stops loading the
+// repository layer.
+func fixtureHomeIsolated() bool {
+	raw, err := os.ReadFile(filepath.Join(os.Getenv("CODEX_HOME"), "config.toml"))
+	return err == nil && strings.Contains(string(raw), "untrusted")
+}
+
+// fixtureSurvivorActive reports whether a survivor of the given timing is
+// visible to the current read. The capture file appears with the first native
+// thread operation.
+func fixtureSurvivorActive(timing string) bool {
+	_, captured := os.Stat(os.Getenv("DELIDEV_CODEX_CAPTURE"))
+	switch timing {
+	case "pre":
+		return captured != nil && fixtureHomeIsolated()
+	case "post":
+		return captured == nil
+	}
+	return false
+}
+
 func managedFixtureHandle(mode string, id json.RawMessage, method string, params json.RawMessage, write func(json.RawMessage, any)) bool {
 	if !strings.HasPrefix(mode, "managed-") && !strings.HasPrefix(mode, "thread-managed-") {
 		return false
@@ -91,11 +113,22 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 				tamperHelperFixtureAlias()
 			}
 		}
+		// DELIDEV_CODEX_SURVIVOR=<layer>:<pre|post>:<server|plugins> models a layer
+		// the private home cannot edit (system or managed policy), or one that
+		// isolation failed to neutralize. "pre" reports it on the read that follows
+		// project isolation and precedes the native thread call; "post" reports it
+		// only once a thread exists.
+		if survivor := strings.Split(os.Getenv("DELIDEV_CODEX_SURVIVOR"), ":"); len(survivor) == 3 && fixtureSurvivorActive(survivor[1]) && survivor[2] == "plugins" {
+			features["plugins"] = true
+		}
 		config := map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": featuresValue, "mcp_servers": mcp}
-		// Only the read before the thread exists reports the workspace servers: project
-		// isolation settles the project untrusted first, so the repository layer is
-		// inactive for the post-bind inventory verification.
-		if _, threadExists := os.Stat(os.Getenv("DELIDEV_CODEX_CAPTURE")); mode == "thread-managed-mcp-inventory" && threadExists != nil && input.Cwd == os.Getenv("DELIDEV_CODEX_MANAGED_WORKSPACE") {
+		if survivor := strings.Split(os.Getenv("DELIDEV_CODEX_SURVIVOR"), ":"); len(survivor) == 3 && fixtureSurvivorActive(survivor[1]) && survivor[2] == "server" {
+			config["mcp_servers"] = map[string]any{survivor[0] + "-server": map[string]any{"command": "private-" + survivor[0] + "-command"}}
+		}
+		// Only the read before project isolation reports the workspace servers:
+		// isolation settles the project untrusted first, so Codex ignores the
+		// repository layer for every later read, before and after the thread.
+		if mode == "thread-managed-mcp-inventory" && !fixtureHomeIsolated() && input.Cwd == os.Getenv("DELIDEV_CODEX_MANAGED_WORKSPACE") {
 			config["mcp_servers"] = map[string]any{"project-server": map[string]any{"command": "private-project-command"}, "disabled-server": map[string]any{"command": "private-command", "enabled": false}}
 		}
 		write(id, map[string]any{"config": config, "origins": nil, "layers": nil})

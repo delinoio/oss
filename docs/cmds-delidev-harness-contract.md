@@ -1259,7 +1259,7 @@ repository's own `.codex/config.toml` layer, and MCP tables merge across layers,
 so a repository-defined server would launch and its startup status would fail
 the execution after input acceptance. CLI overrides (`mcp_servers={}`, a
 `projects.<root>.trust_level` override or `project_root_markers`) were verified
-ineffective on Codex 0.159.2, so the adapter isolates the thread in two steps
+ineffective on Codex 0.159.2, so the adapter isolates the thread in three steps
 inside the shared thread binding (`thread/start`, `thread/resume` and the
 independent Fork `thread/fork`).
 
@@ -1303,26 +1303,41 @@ independent Fork `thread/fork`).
    request stays `workspace-write`. Model, effort, service tier, reviewer and
    subagent options are untouched, and the existing effective-settings
    comparison still applies.
+3. **Pre-thread inventory probe.** The rewrite cannot remove a definition from a
+   layer outside the private home: a system or managed policy can define an MCP
+   server or re-enable plugins, and the installed Codex may launch such a server
+   while `thread/start`, `thread/resume` or `thread/fork` runs. Immediately
+   after the rewrite and before the native thread operation is sent, the adapter
+   therefore runs the inventory check below (`config/read` with the thread
+   directory, which reflects every layer including policy, and with the project
+   already untrusted so the repository layer is inactive). A surviving server or
+   plugin source fails with `unsupported` in the profile phase before any thread
+   exists, logs `stage=mcp-inventory-preflight` with the same closed reasons, and
+   sends no thread operation. Because no thread exists, the connection is not
+   latched to one; the Worker still closes its owned native process through the
+   normal cleanup path.
 
 After the thread exists and before the connection can send any input or
-`turn/start`, `config/read` with the thread directory must report an absent,
-null or empty `mcp_servers` and an explicit `features.plugins = false`. An
-absent, null or enabled plugin feature (for example a managed policy that
-re-enables plugins) fails with `reason=plugins-enabled`, because a plugin-backed
-server would then be missing from the reported inventory.
+`turn/start`, the same check runs again as drift detection
+(`stage=mcp-inventory-verification`). `config/read` with the thread directory
+must report an absent, null or empty `mcp_servers` and an explicit
+`features.plugins = false`. An absent, null or enabled plugin feature (for
+example a managed policy that re-enables plugins) fails with
+`reason=plugins-enabled`, because a plugin-backed server would then be missing
+from the reported inventory.
 A non-empty or unparseable inventory, a malformed `features` table, a native
 error or a failed read fails with `unsupported` in the profile phase, latches
-the connection (no input or second thread), logs
+the connection after a thread exists (no input or second thread), logs
 `codex_native_isolation_rejected` with only `owner_id`,
-`stage=mcp-inventory-verification` and a closed `reason`
-(`inventory-nonempty`, `inventory-unreadable` or `plugins-enabled`), and never
-exposes server names, commands or native error text. The Worker closes its owned
-native process through the normal cleanup path, so the failure is reported
+`stage` (`mcp-inventory-preflight` or `mcp-inventory-verification`) and a closed
+`reason` (`inventory-nonempty`, `inventory-unreadable` or `plugins-enabled`), and
+never exposes server names, commands or native error text. The Worker closes its
+owned native process through the normal cleanup path, so the failure is reported
 before input acknowledgment and the queued input remains retryable under the
 existing safe-retry rules; an acknowledged input is never replayed. An MCP
 definition outside the private home and repository (system or managed policy)
-cannot be isolated this way and takes this failure path. Selected-MCP support is
-separate future work. The passive managed `codex_apps` startup status and
+cannot be isolated this way and takes the pre-thread failure path, so the
+isolation never lets it start. Selected-MCP support is separate future work. The passive managed `codex_apps` startup status and
 unrelated foreign MCP events keep their existing handling in the observation
 boundary.
 
@@ -1373,11 +1388,33 @@ unchanged and fails with `reason=trust-unwritable`.
 | Lock lifecycle           | Distinct homes                                                         | Distinct entries, never shared                                                       |
 | Lock lifecycle           | Success, unchanged file, invalid file, rejected request                | The lock is released on every path; no entry is retained                             |
 
+The effective inventory is checked at two moments, and a configuration layer can
+contribute a server or re-enable plugins at either. Every row has a test
+(`project_isolation_layers_test.go` for the rejecting and accepting rows, the
+private-home state table above for the removed ones):
+
+| Layer                                          | Timing                                          | State                                                 | Result                                                                         |
+| ---------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------ |
+| System                                         | Pre-thread probe                                | Defines an MCP server                                 | Rejected `inventory-nonempty` (`mcp-inventory-preflight`); no thread operation |
+| System                                         | Pre-thread probe                                | Enables plugins                                       | Rejected `plugins-enabled` (`mcp-inventory-preflight`); no thread operation    |
+| System                                         | Post-bind check                                 | Defines an MCP server or enables plugins              | Rejected (`mcp-inventory-verification`); no input                              |
+| Managed policy                                 | Pre-thread probe                                | Defines an MCP server                                 | Rejected `inventory-nonempty` (`mcp-inventory-preflight`); no thread operation |
+| Managed policy                                 | Pre-thread probe                                | Re-enables plugins                                    | Rejected `plugins-enabled` (`mcp-inventory-preflight`); no thread operation    |
+| Managed policy                                 | Post-bind check                                 | Defines an MCP server or re-enables plugins           | Rejected (`mcp-inventory-verification`); no input                              |
+| User (private home, top level)                 | Rewrite                                         | Defines `mcp_servers` or enables plugins              | Removed or set to `false` before the probe                                     |
+| User (private home, top level)                 | Pre-thread probe and post-bind check            | A definition is still effective                       | Rejected at that moment                                                        |
+| Profile (selected or not, in the private home) | Rewrite                                         | Defines `mcp_servers` or a `plugins` feature override | Removed before the probe                                                       |
+| Profile (selected or not, in the private home) | Pre-thread probe and post-bind check            | A definition is still effective                       | Rejected at that moment                                                        |
+| Project (repository `.codex/config.toml`)      | Provider configuration read, before the rewrite | Defines an MCP server while the project is trusted    | Visible only to that read; it authorizes no server                             |
+| Project (repository `.codex/config.toml`)      | Pre-thread probe and post-bind check            | Layer inactive because the project is untrusted       | Accepted                                                                       |
+| Project (repository `.codex/config.toml`)      | Pre-thread probe and post-bind check            | A definition is still effective                       | Rejected at that moment                                                        |
+
 Tests: `project_isolation_test.go` (table, profile derivation, pinned defaults,
 trust keys including linked worktrees, atomic idempotent replacement, invalid
 files, concurrent members, start and resume rows, inventory rejection rows and
 logs), `project_isolation_cells_test.go` (the state table above),
 `project_isolation_path_test.go` (path normalization),
+`project_isolation_layers_test.go` (the layer and timing table above),
 `project_isolation_lock_test.go` (lock lifecycle),
 the shared-owner binding test, and the explicit installed-native
 `TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP` and

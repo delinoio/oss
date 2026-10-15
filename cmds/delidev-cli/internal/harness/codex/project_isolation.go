@@ -27,7 +27,10 @@ import (
 // private CODEX_HOME before the thread starts, pins the native defaults that
 // the untrusted marker would otherwise change, removes every MCP definition and
 // plugin source the private configuration could contribute, and verifies the
-// effective MCP inventory after the thread exists and before any input.
+// effective MCP inventory twice: before the native thread call, so that a
+// definition the private home cannot remove (system or managed policy) never
+// reaches a Codex that launches servers while a thread starts, and again after
+// the thread exists and before any input to catch drift.
 
 // isolationStage names the closed stage of a rejected isolation step.
 type isolationStage string
@@ -35,6 +38,9 @@ type isolationStage string
 const (
 	isolationStageProjectTrust isolationStage = "project-trust-isolation"
 	isolationStageMCPInventory isolationStage = "mcp-inventory-verification"
+	// isolationStageMCPPreflight is the inventory check that runs before the
+	// native thread call.
+	isolationStageMCPPreflight isolationStage = "mcp-inventory-preflight"
 	projectTrustUntrusted                     = "untrusted"
 	maxProjectIsolationConfig                 = 1 << 20
 	maxProjectIsolationGitFile                = 4096
@@ -144,7 +150,12 @@ func (c *Client) rejectIsolation(ctx context.Context, stage isolationStage, reas
 }
 
 // isolateProject marks every project key of the thread untrusted in the
-// private home and pins the defaults that marker changes.
+// private home, pins the defaults that marker changes and then requires the
+// effective inventory for the thread directory to be empty before the caller
+// issues thread/start, thread/resume or thread/fork. A definition from a layer
+// the private home cannot edit (system or managed policy) survives the rewrite
+// and Codex may launch it while the thread is created, so only this probe can
+// keep it from starting; the post-bind check cannot.
 func (c *Client) isolateProject(ctx context.Context, settings ThreadSettings, params *threadParams) error {
 	if !policyFor(c.isolationProfile()).SeedTrust {
 		return nil
@@ -154,12 +165,19 @@ func (c *Client) isolateProject(ctx context.Context, settings ThreadSettings, pa
 		return c.rejectIsolation(ctx, isolationStageProjectTrust, isolationTrustUnwritable)
 	}
 	pinIsolatedDefaults(params)
-	return nil
+	return c.verifyMCPInventoryAt(ctx, settings.Cwd, isolationStageMCPPreflight)
 }
 
-// verifyMCPInventory reads the effective configuration of the bound thread
-// directory and requires an absent, null or empty mcp_servers table.
+// verifyMCPInventory is the post-bind check: the thread exists, no input has
+// been sent, and the effective inventory must still be empty.
 func (c *Client) verifyMCPInventory(ctx context.Context, cwd string) error {
+	return c.verifyMCPInventoryAt(ctx, cwd, isolationStageMCPInventory)
+}
+
+// verifyMCPInventoryAt reads the effective configuration of the thread
+// directory and requires an absent, null or empty mcp_servers table and an
+// explicit false plugin feature. The stage names the timing in the closed log.
+func (c *Client) verifyMCPInventoryAt(ctx context.Context, cwd string, stage isolationStage) error {
 	if !policyFor(c.isolationProfile()).VerifyInventory {
 		return nil
 	}
@@ -171,7 +189,7 @@ func (c *Client) verifyMCPInventory(ctx context.Context, cwd string) error {
 		if ctx.Err() != nil {
 			return domain.SafeError(ctx.Err())
 		}
-		return c.rejectIsolation(ctx, isolationStageMCPInventory, isolationInventoryUnreadable)
+		return c.rejectIsolation(ctx, stage, isolationInventoryUnreadable)
 	}
 	var result struct {
 		Config  map[string]json.RawMessage `json:"config"`
@@ -179,16 +197,16 @@ func (c *Client) verifyMCPInventory(ctx context.Context, cwd string) error {
 		Layers  json.RawMessage            `json:"layers"`
 	}
 	if response.ErrorCode != nil || domain.Decode(response.Result, &result) != nil || result.Config == nil {
-		return c.rejectIsolation(ctx, isolationStageMCPInventory, isolationInventoryUnreadable)
+		return c.rejectIsolation(ctx, stage, isolationInventoryUnreadable)
 	}
 	raw := result.Config["mcp_servers"]
 	if len(raw) != 0 && string(raw) != "null" {
 		var entries map[string]json.RawMessage
 		if json.Unmarshal(raw, &entries) != nil || entries == nil {
-			return c.rejectIsolation(ctx, isolationStageMCPInventory, isolationInventoryUnreadable)
+			return c.rejectIsolation(ctx, stage, isolationInventoryUnreadable)
 		}
 		if len(entries) != 0 {
-			return c.rejectIsolation(ctx, isolationStageMCPInventory, isolationInventoryNonEmpty)
+			return c.rejectIsolation(ctx, stage, isolationInventoryNonEmpty)
 		}
 	}
 	// A plugin contributes MCP servers through its own .mcp.json, which
@@ -197,10 +215,10 @@ func (c *Client) verifyMCPInventory(ctx context.Context, cwd string) error {
 	// the explicit false; anything else lets a plugin server launch.
 	var features map[string]json.RawMessage
 	if raw := result.Config["features"]; len(raw) != 0 && string(raw) != "null" && json.Unmarshal(raw, &features) != nil {
-		return c.rejectIsolation(ctx, isolationStageMCPInventory, isolationInventoryUnreadable)
+		return c.rejectIsolation(ctx, stage, isolationInventoryUnreadable)
 	}
 	if string(features[pluginsFeature]) != "false" {
-		return c.rejectIsolation(ctx, isolationStageMCPInventory, isolationPluginsEnabled)
+		return c.rejectIsolation(ctx, stage, isolationPluginsEnabled)
 	}
 	return nil
 }

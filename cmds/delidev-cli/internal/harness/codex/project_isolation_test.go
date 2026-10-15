@@ -260,6 +260,13 @@ type isolationRun struct {
 
 func runManagedIsolation(t *testing.T, mode string, resume bool, mutate func(*ThreadSettings)) isolationRun {
 	t.Helper()
+	return runManagedIsolationWithEnv(t, mode, resume, mutate)
+}
+
+// runManagedIsolationWithEnv adds fixture environment entries (for example a
+// DELIDEV_CODEX_SURVIVOR layer) to the native process.
+func runManagedIsolationWithEnv(t *testing.T, mode string, resume bool, mutate func(*ThreadSettings), env ...string) isolationRun {
+	t.Helper()
 	settings := threadSettings(t)
 	settings.Provider = "openai"
 	if mutate != nil {
@@ -271,6 +278,7 @@ func runManagedIsolation(t *testing.T, mode string, resume bool, mutate func(*Th
 	config.Process.Logger = slog.New(slog.NewTextHandler(&logs, nil))
 	capture := filepath.Join(config.Process.Cwd, "thread-operations.jsonl")
 	config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_CAPTURE="+capture)
+	config.Process.Env = append(config.Process.Env, env...)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	t.Cleanup(cancel)
 	client, err := Open(ctx, config)
