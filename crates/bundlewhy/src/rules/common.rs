@@ -165,12 +165,18 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
     let scan_until = |mut position: usize, terminator: u8, template: bool| -> (usize, bool) {
         while position < bytes.len() {
             match bytes[position] {
+                b'\\'
+                    if bytes.get(position + 1) == Some(&b'\r')
+                        && bytes.get(position + 2) == Some(&b'\n') =>
+                {
+                    position += 3;
+                }
                 b'\\' => position += 2,
                 byte if byte == terminator => return (position + 1, false),
                 b'$' if template && bytes.get(position + 1) == Some(&b'{') => {
                     return (position + 2, true);
                 }
-                b'\n' if !template => return (position, false),
+                b'\n' | b'\r' if !template => return (position, false),
                 _ => position += 1,
             }
         }
@@ -206,7 +212,7 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
             }
             b'/' if bytes.get(index + 1) == Some(&b'/') => {
                 let end = code[index..]
-                    .find('\n')
+                    .find(is_line_terminator)
                     .map_or(bytes.len(), |offset| index + offset);
                 ranges.push((index, end));
                 index = end;
@@ -221,18 +227,30 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
             b'/' if regex_allowed(previous_significant, index) => {
                 let mut position = index + 1;
                 let mut in_class = false;
+                let mut closed = false;
                 while position < bytes.len() {
+                    if line_terminator_at(bytes, position).is_some() {
+                        break;
+                    }
                     match bytes[position] {
                         b'\\' => position += 1,
                         b'[' => in_class = true,
                         b']' => in_class = false,
-                        b'/' if !in_class => break,
-                        b'\n' => break,
+                        b'/' if !in_class => {
+                            closed = true;
+                            break;
+                        }
                         _ => {}
                     }
                     position += 1;
                 }
-                let end = (position + 1).min(bytes.len());
+                // An unterminated literal stops before its line terminator so
+                // that the terminator stays visible to the ASI decision.
+                let end = if closed {
+                    position + 1
+                } else {
+                    position.min(bytes.len())
+                };
                 ranges.push((index, end));
                 index = end;
                 previous_significant = Some(b'"');
@@ -245,9 +263,13 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                         *depth -= 1;
                     }
                 }
-                if !byte.is_ascii_whitespace() {
-                    previous_significant = Some(byte);
+                if let Some(character) = char_at(bytes, index)
+                    && (is_js_whitespace(character) || is_line_terminator(character))
+                {
+                    index += character.len_utf8();
+                    continue;
                 }
+                previous_significant = Some(byte);
                 index += 1;
             }
         }
@@ -260,20 +282,117 @@ fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
     index > 0 && offset < ranges[index - 1].1
 }
 
-fn next_code_index(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<usize> {
+/// ECMAScript `WhiteSpace`: tab, vertical tab, form feed, space, no-break
+/// space, zero-width no-break space (BOM) and every Unicode `Zs` code point.
+fn is_js_whitespace(character: char) -> bool {
+    matches!(
+        character,
+        '\u{0009}' | '\u{000B}' | '\u{000C}' | '\u{0020}' | '\u{00A0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}'
+    )
+}
+
+/// ECMAScript `LineTerminator`: LF, CR, LS (U+2028) and PS (U+2029).
+fn is_line_terminator(character: char) -> bool {
+    matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+}
+
+/// Decodes the UTF-8 character that starts at `index`.
+fn char_at(bytes: &[u8], index: usize) -> Option<char> {
+    let length = match *bytes.get(index)? {
+        0x00..=0x7f => 1,
+        0xc0..=0xdf => 2,
+        0xe0..=0xef => 3,
+        0xf0..=0xf7 => 4,
+        _ => return None,
+    };
+    std::str::from_utf8(bytes.get(index..index + length)?)
+        .ok()?
+        .chars()
+        .next()
+}
+
+/// Decodes the UTF-8 character that ends right before `end`.
+fn char_before(bytes: &[u8], end: usize) -> Option<char> {
+    let mut start = end.checked_sub(1)?;
+    while start > 0 && end - start < 4 && bytes[start] & 0xc0 == 0x80 {
+        start -= 1;
+    }
+    char_at(bytes, start).filter(|character| start + character.len_utf8() == end)
+}
+
+/// Byte length of the line terminator that starts at `index`, if any.
+fn line_terminator_at(bytes: &[u8], index: usize) -> Option<usize> {
+    char_at(bytes, index)
+        .filter(|character| is_line_terminator(*character))
+        .map(char::len_utf8)
+}
+
+/// The comment range (`//...` or `/*...*/`) that contains `index`, if any.
+/// Other ignored ranges (strings, templates, regular expressions) are tokens.
+fn comment_range(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> Option<(usize, usize)> {
+    let position = ignored.partition_point(|(start, _)| *start <= index);
+    let (start, end) = *ignored.get(position.checked_sub(1)?)?;
+    (index < end && matches!(bytes.get(start..start + 2), Some(b"//" | b"/*")))
+        .then_some((start, end))
+}
+
+/// True for a `/* ... */` comment that contains a line terminator. JavaScript
+/// treats such a comment as a line terminator.
+fn comment_has_line_terminator(bytes: &[u8], start: usize, end: usize) -> bool {
+    bytes.get(start..start + 2) == Some(b"/*")
+        && std::str::from_utf8(&bytes[start..end])
+            .is_ok_and(|text| text.contains(is_line_terminator))
+}
+
+/// Result of skipping the trivia between two tokens.
+struct Trivia {
+    /// Start of the next token, or `None` at the end of the input.
+    next: Option<usize>,
+    /// Whether a line terminator (including one inside a block comment) was
+    /// crossed on the way.
+    crossed_terminator: bool,
+}
+
+/// Skips every character that separates two tokens: JavaScript whitespace,
+/// line terminators and comments. Strings, templates and regular expressions
+/// are tokens and stop the scan.
+fn skip_trivia(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Trivia {
     let mut index = start;
+    let mut crossed_terminator = false;
     while index < bytes.len() {
-        if in_ranges(ignored, index) || bytes[index].is_ascii_whitespace() {
-            index += 1;
-        } else {
-            return Some(index);
+        if in_ranges(ignored, index) {
+            let Some((comment_start, comment_end)) = comment_range(bytes, index, ignored) else {
+                break;
+            };
+            crossed_terminator |= comment_has_line_terminator(bytes, comment_start, comment_end);
+            index = comment_end;
+            continue;
+        }
+        match char_at(bytes, index) {
+            Some(character) if is_js_whitespace(character) => index += character.len_utf8(),
+            Some(character) if is_line_terminator(character) => {
+                crossed_terminator = true;
+                index += character.len_utf8();
+            }
+            _ => {
+                return Trivia {
+                    next: Some(index),
+                    crossed_terminator,
+                };
+            }
         }
     }
-    None
+    Trivia {
+        next: (index < bytes.len()).then_some(index),
+        crossed_terminator,
+    }
 }
 
 fn next_code_byte(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<u8> {
-    next_code_index(bytes, start, ignored).map(|index| bytes[index])
+    skip_trivia(bytes, start, ignored)
+        .next
+        .map(|index| bytes[index])
 }
 
 /// Returns true when the next code token is exactly `operator` doubled
@@ -287,19 +406,153 @@ fn is_adjacent_doubled_operator(
     bytes.get(token + 1) == Some(&operator) && !in_ranges(ignored, token + 1)
 }
 
-fn asi_terminates(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> bool {
-    let Some(token) = next_code_index(bytes, index + 1, ignored) else {
+fn is_identifier_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$') || byte >= 0x80
+}
+
+/// End (exclusive) of the last token before `end`, skipping whitespace, line
+/// terminators and comments backwards.
+fn previous_token_end(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> Option<usize> {
+    let mut position = end;
+    while position > 0 {
+        if let Some((comment_start, _)) = comment_range(bytes, position - 1, ignored) {
+            position = comment_start;
+            continue;
+        }
+        match char_before(bytes, position) {
+            Some(character) if is_js_whitespace(character) || is_line_terminator(character) => {
+                position -= character.len_utf8();
+            }
+            _ => return Some(position),
+        }
+    }
+    None
+}
+
+/// The identifier-like word that ends at `end`, if the token there is one.
+fn word_before(bytes: &[u8], end: usize) -> &str {
+    let mut start = end;
+    while start > 0 && is_identifier_byte(bytes[start - 1]) {
+        start -= 1;
+    }
+    std::str::from_utf8(&bytes[start..end]).unwrap_or("")
+}
+
+/// Keywords that need an operand after them, so a line terminator behind
+/// them cannot end the statement. `return`, `throw`, `break`, `continue` and
+/// `yield` are restricted productions and are deliberately absent.
+const OPERAND_KEYWORDS: [&str; 8] = [
+    "typeof",
+    "void",
+    "delete",
+    "new",
+    "in",
+    "instanceof",
+    "await",
+    "case",
+];
+
+/// True when the token that ends at `end` can end an operand (identifier,
+/// literal, closing bracket), so that a following `++` or `--` is postfix.
+fn token_ends_operand(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> bool {
+    let last = bytes[end - 1];
+    if in_ranges(ignored, end - 1) {
+        return !ends_template_substitution(bytes, end - 1, ignored);
+    }
+    if is_identifier_byte(last) {
+        let word = word_before(bytes, end);
+        return !OPERAND_KEYWORDS.contains(&word)
+            || end > word.len() && bytes[end - word.len() - 1] == b'.';
+    }
+    matches!(last, b')' | b']' | b'}')
+}
+
+/// True when the ignored range that holds `index` is template text that ends
+/// by opening a `${` substitution.
+fn ends_template_substitution(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> bool {
+    let position = ignored.partition_point(|(start, _)| *start <= index);
+    let Some(&(start, end)) = position.checked_sub(1).and_then(|at| ignored.get(at)) else {
+        return false;
+    };
+    matches!(bytes[start], b'`' | b'}') && end - start >= 2 && &bytes[end - 2..end] == b"${"
+}
+
+/// True when the tokens before `end` leave an expression unfinished, such as a
+/// trailing binary operator, so that the next line continues it.
+fn expression_is_unfinished(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> bool {
+    let Some(token_end) = previous_token_end(bytes, end, ignored) else {
+        return false;
+    };
+    let last = bytes[token_end - 1];
+    if in_ranges(ignored, token_end - 1) {
+        return ends_template_substitution(bytes, token_end - 1, ignored);
+    }
+    match last {
+        sign @ (b'+' | b'-') => {
+            // Tokens are matched greedily, so a run of an odd length ends in
+            // a single binary or unary sign.
+            let mut run_start = token_end - 1;
+            while run_start > 0
+                && bytes[run_start - 1] == sign
+                && !in_ranges(ignored, run_start - 1)
+            {
+                run_start -= 1;
+            }
+            if (token_end - run_start) % 2 == 1 {
+                return true;
+            }
+            // A trailing `++` or `--` is postfix after an operand and a prefix
+            // operator otherwise.
+            !previous_token_end(bytes, run_start, ignored)
+                .is_some_and(|before| token_ends_operand(bytes, before, ignored))
+        }
+        b'!' | b'%' | b'&' | b'(' | b'*' | b',' | b'.' | b'/' | b':' | b'<' | b'=' | b'>'
+        | b'?' | b'[' | b'^' | b'|' | b'~' => true,
+        byte if is_identifier_byte(byte) => {
+            let word = word_before(bytes, token_end);
+            OPERAND_KEYWORDS.contains(&word)
+                && !(token_end > word.len() && bytes[token_end - word.len() - 1] == b'.')
+        }
+        _ => false,
+    }
+}
+
+/// Decides whether a line break ends the current statement. `start` is the
+/// first byte of the line break: a line terminator, or a block comment that
+/// contains one.
+fn asi_terminates(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> bool {
+    let trivia = skip_trivia(bytes, start, ignored);
+    let Some(token) = trivia.next else {
         return true;
     };
+    if !trivia.crossed_terminator {
+        return false;
+    }
+    // No semicolon is inserted while the previous line leaves an expression
+    // unfinished, whatever starts the next line.
+    if expression_is_unfinished(bytes, start, ignored) {
+        return false;
+    }
     match bytes[token] {
         // A prefix `++`/`--` starts a new statement after a line terminator
         // (restricted production), while a single `+`/`-` continues the
         // current expression as a binary operator.
         operator @ (b'+' | b'-') => is_adjacent_doubled_operator(bytes, token, operator, ignored),
+        // A template literal after an expression is a tagged template.
+        b'`' => false,
         b'!' | b'%' | b'&' | b'(' | b')' | b'*' | b',' | b'.' | b'/' | b':' | b';' | b'<'
         | b'=' | b'>' | b'?' | b'[' | b']' | b'^' | b'{' | b'}' | b'|' | b'~' => false,
-        _ => true,
+        _ => !matches!(next_word(bytes, token), "in" | "instanceof"),
     }
+}
+
+/// The identifier-like word that starts at `start`.
+fn next_word(bytes: &[u8], start: usize) -> &str {
+    let mut end = start;
+    while end < bytes.len() && is_identifier_byte(bytes[end]) {
+        end += 1;
+    }
+    std::str::from_utf8(&bytes[start..end]).unwrap_or("")
 }
 
 #[derive(Clone, Copy)]
@@ -364,6 +617,20 @@ struct ScanScope {
     arrow_expression: bool,
 }
 
+/// Marks the unguarded reads that are still pending in `scope` as blocked: a
+/// statement boundary ended them before any branch operator used them.
+fn block_pending_reads(scope: &mut ScanScope, guards: &[Option<EnvGuard>], blocked: &mut [bool]) {
+    for read in scope
+        .pending_reads
+        .drain(..)
+        .chain(scope.conditional_pending.drain(..))
+    {
+        if guards[read].is_none() {
+            blocked[read] = true;
+        }
+    }
+}
+
 fn env_guards(
     code: &str,
     reads: &[(usize, usize)],
@@ -405,6 +672,15 @@ fn env_guards(
             && ignored[ignored_index].0 <= index
             && index < ignored[ignored_index].1
         {
+            // A block comment that contains a line terminator is itself a
+            // line break; the rest of an ignored range never matters.
+            let (start, end) = ignored[ignored_index];
+            if index == start
+                && comment_has_line_terminator(bytes, start, end)
+                && asi_terminates(bytes, start, ignored)
+            {
+                block_pending_reads(&mut scopes[current_scope], &guards, &mut blocked);
+            }
             continue;
         }
 
@@ -424,17 +700,8 @@ fn env_guards(
             current_scope = parent;
         }
 
-        if bytes[index] == b'\n' && asi_terminates(bytes, index, ignored) {
-            for read in scopes[current_scope].pending_reads.drain(..) {
-                if guards[read].is_none() {
-                    blocked[read] = true;
-                }
-            }
-            for read in scopes[current_scope].conditional_pending.drain(..) {
-                if guards[read].is_none() {
-                    blocked[read] = true;
-                }
-            }
+        if line_terminator_at(bytes, index).is_some() && asi_terminates(bytes, index, ignored) {
+            block_pending_reads(&mut scopes[current_scope], &guards, &mut blocked);
         }
 
         match bytes[index] {
@@ -2230,6 +2497,178 @@ y=/process.env.F/.test(z),process.env.G"#;
             "console.log(process.env.FLAG); ready&&run()",
         ] {
             assert_eq!(guard(code), None, "{code:?}");
+        }
+    }
+
+    const JS_WHITESPACE: [char; 18] = [
+        '\u{0009}', '\u{000B}', '\u{000C}', '\u{0020}', '\u{00A0}', '\u{1680}', '\u{2000}',
+        '\u{2001}', '\u{2002}', '\u{2003}', '\u{2004}', '\u{2005}', '\u{2006}', '\u{2007}',
+        '\u{2008}', '\u{2009}', '\u{200A}', '\u{FEFF}',
+    ];
+    const JS_WHITESPACE_TAIL: [char; 3] = ['\u{202F}', '\u{205F}', '\u{3000}'];
+    const LINE_TERMINATORS: [&str; 5] = ["\n", "\r", "\r\n", "\u{2028}", "\u{2029}"];
+
+    fn flag_guard(code: &str) -> Option<&'static str> {
+        let read = "process.env.FLAG";
+        let start = code.find(read).unwrap();
+        env_guard(code, start, start + read.len(), &non_code_ranges(code)).map(EnvGuard::evidence)
+    }
+
+    const AND_GUARD: Option<&str> = Some("the retained read controls a && short-circuit branch");
+
+    #[test]
+    fn js_whitespace_and_line_terminators_are_classified_exactly() {
+        for character in JS_WHITESPACE.into_iter().chain(JS_WHITESPACE_TAIL) {
+            assert!(is_js_whitespace(character), "{character:?}");
+            assert!(!is_line_terminator(character), "{character:?}");
+        }
+        for character in ['\n', '\r', '\u{2028}', '\u{2029}'] {
+            assert!(is_line_terminator(character), "{character:?}");
+            assert!(!is_js_whitespace(character), "{character:?}");
+        }
+        // Not WhiteSpace in ECMAScript: NEL, the zero-width spaces and the
+        // Mongolian vowel separator.
+        for character in [
+            '\u{0085}', '\u{180E}', '\u{200B}', '\u{200C}', '\u{2060}', 'a', '+',
+        ] {
+            assert!(!is_js_whitespace(character), "{character:?}");
+            assert!(!is_line_terminator(character), "{character:?}");
+        }
+    }
+
+    #[test]
+    fn skip_trivia_reports_whether_a_terminator_was_crossed() {
+        let skip = |code: &str| {
+            let trivia = skip_trivia(code.as_bytes(), 0, &non_code_ranges(code));
+            (trivia.next, trivia.crossed_terminator)
+        };
+        assert_eq!(skip("  \u{a0}\u{feff}\t+"), (Some(8), false));
+        assert_eq!(skip("/* c */ // d"), (None, false));
+        assert_eq!(skip("/* a\nb */+"), (Some(9), true));
+        assert_eq!(skip("// c\n+"), (Some(5), true));
+        assert_eq!(skip(" \u{2028}+"), (Some(4), true));
+        assert_eq!(skip("\"s\"+"), (Some(0), false));
+        assert_eq!(skip("\n"), (None, true));
+    }
+
+    #[test]
+    fn env_guard_separators_between_tokens_follow_javascript_trivia() {
+        // WhiteSpace before a single sign keeps the continuation; before a
+        // doubled sign the line break still starts a new statement.
+        for whitespace in JS_WHITESPACE.into_iter().chain(JS_WHITESPACE_TAIL) {
+            for (sign, expected) in [
+                ("+", AND_GUARD),
+                ("-", AND_GUARD),
+                ("++", None),
+                ("--", None),
+            ] {
+                let code = format!("process.env.FLAG\n{whitespace}{sign}suffix&&run()");
+                assert_eq!(flag_guard(&code), expected, "{code:?}");
+                let code = format!("process.env.FLAG{whitespace}\n{sign}suffix&&run()");
+                assert_eq!(flag_guard(&code), expected, "{code:?}");
+            }
+            // Whitespace between two signs makes two tokens: binary plus a
+            // unary sign, never a doubled update operator.
+            for sign in ["+", "-"] {
+                let code = format!("process.env.FLAG\n{sign}{whitespace}{sign}suffix&&run()");
+                assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
+            }
+        }
+        // Every LineTerminator separates statements before a doubled sign and
+        // continues the expression before a single sign.
+        for terminator in LINE_TERMINATORS {
+            for (sign, expected) in [
+                ("+", AND_GUARD),
+                ("-", AND_GUARD),
+                ("++", None),
+                ("--", None),
+            ] {
+                let code = format!("process.env.FLAG{terminator}{sign}suffix&&run()");
+                assert_eq!(flag_guard(&code), expected, "{code:?}");
+                let code = format!("process.env.FLAG {terminator} {sign}suffix&&run()");
+                assert_eq!(flag_guard(&code), expected, "{code:?}");
+                // A line comment ends at any line terminator.
+                let code = format!("process.env.FLAG // c{terminator}{sign}suffix&&run()");
+                assert_eq!(flag_guard(&code), expected, "{code:?}");
+                // A block comment that contains a line terminator is a line
+                // break itself.
+                let code = format!("process.env.FLAG/*{terminator}*/{sign}suffix&&run()");
+                assert_eq!(flag_guard(&code), expected, "{code:?}");
+                let code = format!("process.env.FLAG/* a{terminator}b */ {sign}suffix&&run()");
+                assert_eq!(flag_guard(&code), expected, "{code:?}");
+                let code = format!("process.env.FLAG /* a */ /*{terminator}*/ {sign}suffix&&run()");
+                assert_eq!(flag_guard(&code), expected, "{code:?}");
+            }
+        }
+        // A block comment without a line terminator is not a line break.
+        for code in [
+            "process.env.FLAG/* c */&&run()",
+            "process.env.FLAG /* a */ /* b */ + suffix&&run()",
+            "process.env.FLAG\n+/* c */+suffix&&run()",
+            "process.env.FLAG\n-/*\n*/-suffix&&run()",
+        ] {
+            assert_eq!(flag_guard(code), AND_GUARD, "{code:?}");
+        }
+        // A string, template or statement terminator is a token, not trivia.
+        for code in [
+            "process.env.FLAG\n\"+\"&&run()",
+            "process.env.FLAG\n'+'&&run()",
+            "process.env.FLAG\n7&&run()",
+            "process.env.FLAG;\n+suffix&&run()",
+        ] {
+            assert_eq!(flag_guard(code), None, "{code:?}");
+        }
+        assert_eq!(flag_guard("process.env.FLAG\n`x`&&run()"), AND_GUARD);
+        // A regular expression after non-ASCII whitespace is still a literal.
+        let code = "x=\u{a0}/process.env.FLAG/.test(y)\u{2028}z";
+        assert!(in_ranges(
+            &non_code_ranges(code),
+            code.find("process").unwrap()
+        ));
+    }
+
+    #[test]
+    fn env_guard_unfinished_expressions_continue_across_line_breaks() {
+        // The previous line ends in an operator, so the next line continues it
+        // even when a doubled sign or another statement-like token follows.
+        for code in [
+            "process.env.FLAG +\n++suffix&&run()",
+            "process.env.FLAG -\n--suffix&&run()",
+            "process.env.FLAG +\n+suffix&&run()",
+            "process.env.FLAG -\n-suffix&&run()",
+            "process.env.FLAG +\nsuffix&&run()",
+            "process.env.FLAG *\nsuffix&&run()",
+            "process.env.FLAG ===\nsuffix&&run()",
+            "process.env.FLAG in\nsuffix&&run()",
+            "process.env.FLAG instanceof\nsuffix&&run()",
+            "process.env.FLAG + ++\nsuffix&&run()",
+            "process.env.FLAG +++\nsuffix&&run()",
+            "process.env.FLAG +/* c */\n++suffix&&run()",
+            "process.env.FLAG +/*\n*/++suffix&&run()",
+            "process.env.FLAG + // c\n++suffix&&run()",
+            "process.env.FLAG +\u{a0}\n\u{feff}++suffix&&run()",
+            "process.env.FLAG +\u{2028}++suffix&&run()",
+            "process.env.FLAG\n+\n++suffix&&run()",
+            "process.env.FLAG\n+ ++suffix&&run()",
+            "process.env.FLAG\n-\u{a0}--suffix&&run()",
+            "process.env.FLAG\nin suffix&&run()",
+            "process.env.FLAG\ninstanceof suffix&&run()",
+        ] {
+            assert_eq!(flag_guard(code), AND_GUARD, "{code:?}");
+        }
+        // The previous line is a complete statement, so the doubled sign starts
+        // the next one.
+        for code in [
+            "process.env.FLAG++\n++suffix&&run()",
+            "process.env.FLAG--\n--suffix&&run()",
+            "process.env.FLAG ++ // c\n++suffix&&run()",
+            "process.env.FLAG\u{a0}++\u{2029}++suffix&&run()",
+            "process.env.FLAG)\n++suffix&&run()",
+            "process.env.FLAG]\n++suffix&&run()",
+            "process.env.FLAG;\n++suffix&&run()",
+            "process.env.FLAG\nsuffix&&run()",
+        ] {
+            assert_eq!(flag_guard(code), None, "{code:?}");
         }
     }
 
