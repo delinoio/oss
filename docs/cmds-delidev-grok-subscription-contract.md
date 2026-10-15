@@ -247,7 +247,9 @@ id with the other method is a conflict.
   (`PermissionDenied`, the same code as a denied browser login);
   `expired_token` and the local deadline end it as expired. The local deadline is
   the minimum of the provider's `expires_in` and the remaining operation window
-  (15 minutes), measured on an injectable clock; the loop waits out a remainder
+  (15 minutes),
+  and every poll is itself bounded by the time left before it (a response that would
+  arrive later is never accepted and the poll settles as uncertain), measured on an injectable clock; the loop waits out a remainder
   shorter than the interval and then expires without another poll. Any other
   OAuth error (HTTP 400 or 401) is a definitive rejection (failed,
   `PermissionDenied`).
