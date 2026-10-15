@@ -1,10 +1,13 @@
 //! Turns an adapter collection into an `Analysis` plus stored source files.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     chunks::{Chunk, measure},
-    collect::Collection,
+    collect::{CollectedModule, Collection},
     engine::BundlerChoice,
     error::{ErrorCode, problem},
     model::{
@@ -289,6 +292,43 @@ fn coverage(
         .collect()
 }
 
+/// Backing paths whose every collected module the bundler classified as an
+/// asset module (for example Rspack `asset/resource`).
+///
+/// Adapters strip loader prefixes and queries from module identifiers, so
+/// distinct modules (an `asset/*` rule and an executable loader or query
+/// variant of the same resource) can share one backing path. Source evidence is
+/// recorded per path, so a path is exempt only when no collected module with
+/// that path can emit executable code; one non-asset module keeps the gap.
+fn bundler_asset_paths(modules: &[CollectedModule]) -> HashSet<PathBuf> {
+    let mut asset_paths = HashSet::new();
+    let mut executable_paths = HashSet::new();
+    for module in modules {
+        let Some(path) = module.path.as_deref() else {
+            continue;
+        };
+        let path = crate::sources::normalize(Path::new(path));
+        let is_asset = module
+            .module_type
+            .as_deref()
+            .is_some_and(|module_type| module_type == "asset" || module_type.starts_with("asset/"));
+        if is_asset {
+            asset_paths.insert(path);
+        } else {
+            executable_paths.insert(path);
+        }
+    }
+    asset_paths.retain(|path| !executable_paths.contains(path));
+    if !asset_paths.is_empty() {
+        tracing::debug!(
+            asset_paths = asset_paths.len(),
+            shared_with_executable = executable_paths.len(),
+            "classified bundler asset module paths"
+        );
+    }
+    asset_paths
+}
+
 pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     let collection = input.collection;
     let ownership_root = effective_root(collection, &input.project_root);
@@ -363,17 +403,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             AssetExemption::None
         },
     );
-    store.asset_modules = collection
-        .modules
-        .iter()
-        .filter(|module| {
-            module.module_type.as_deref().is_some_and(|module_type| {
-                module_type == "asset" || module_type.starts_with("asset/")
-            })
-        })
-        .filter_map(|module| module.path.as_deref())
-        .map(|path| crate::sources::normalize(Path::new(path)))
-        .collect();
+    store.asset_modules = bundler_asset_paths(&collection.modules);
     store.allowed = collection
         .modules
         .iter()
@@ -2856,6 +2886,87 @@ mod tests {
                 .unwrap();
             assert_ne!(mangling.state, CoverageState::Partial, "{module_type}");
         }
+    }
+
+    /// Adds a second collected module with the same backing path as the
+    /// `icon.svg` fixture module, as an Rspack executable loader or query
+    /// variant of one resource does after the adapter strips its identifier.
+    fn add_same_path_variant(
+        value: &mut serde_json::Value,
+        module: &serde_json::Value,
+        module_type: &str,
+    ) {
+        let mut variant = module.clone();
+        variant["id"] = "svg-loader!/project/src/icon.svg?component".into();
+        variant["name"] = "./src/icon.svg?component".into();
+        variant["moduleType"] = module_type.into();
+        value["modules"].as_array_mut().unwrap().push(variant);
+    }
+
+    #[test]
+    fn rspack_asset_evidence_does_not_exempt_an_executable_variant_of_the_path() {
+        for variant_type in ["javascript/auto", "javascript/esm", "css/auto"] {
+            let fixture = rspack_svg_eval_fixture(|value, module| {
+                module["moduleType"] = "asset/resource".into();
+                add_same_path_variant(value, module, variant_type);
+            });
+            let analysis = &fixture.output.analysis;
+            assert_eq!(analysis.status, RunStatus::Partial, "{variant_type}");
+            assert_eq!(
+                analysis
+                    .problems
+                    .iter()
+                    .filter(|entry| entry.code == "BW_SOURCE_UNVERIFIED")
+                    .count(),
+                1,
+                "{variant_type}"
+            );
+            let mangling = analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::NameMangling)
+                .unwrap();
+            assert_eq!(mangling.state, CoverageState::Partial, "{variant_type}");
+        }
+    }
+
+    #[test]
+    fn rspack_asset_variants_of_the_same_path_stay_exempt() {
+        let fixture = rspack_svg_eval_fixture(|value, module| {
+            module["moduleType"] = "asset/resource".into();
+            add_same_path_variant(value, module, "asset/inline");
+        });
+        let analysis = &fixture.output.analysis;
+        assert!(
+            !analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_SOURCE_UNVERIFIED")
+        );
+    }
+
+    #[test]
+    fn bundler_asset_paths_ignore_module_order_and_virtual_modules() {
+        let module = |path: Option<&str>, module_type: Option<&str>| CollectedModule {
+            path: path.map(str::to_owned),
+            module_type: module_type.map(str::to_owned),
+            ..CollectedModule::default()
+        };
+        let asset = module(Some("/p/a/../icon.svg"), Some("asset/resource"));
+        let executable = module(Some("/p/icon.svg"), Some("javascript/auto"));
+        let other = module(Some("/p/logo.svg"), Some("asset"));
+        let virtual_module = module(None, Some("javascript/auto"));
+        let untyped = module(Some("/p/untyped.svg"), None);
+        let forward = bundler_asset_paths(&[
+            asset.clone(),
+            executable.clone(),
+            other.clone(),
+            virtual_module.clone(),
+            untyped.clone(),
+        ]);
+        let reverse = bundler_asset_paths(&[untyped, virtual_module, other, executable, asset]);
+        assert_eq!(forward, reverse);
+        assert_eq!(forward, HashSet::from([PathBuf::from("/p/logo.svg")]));
     }
 
     #[test]
