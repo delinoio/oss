@@ -942,6 +942,165 @@ test("a failing project build is still reported after the observer repeat", () =
   assert.equal(error.code, "BW_BUILD_FAILED");
 });
 
+// The repeat build starts from a freshly loaded configuration, so project
+// state that a compiler uses up (a plugin instance that rejects a second
+// compiler) is new. The plugin below fails when it is applied a second time.
+// Mirrors the "Repeat build" table in the contract.
+const singleUseBody = `class SingleUsePlugin {
+  apply() {
+    if (this.applied) throw new Error("single-use plugin applied twice");
+    this.applied = true;
+  }
+}
+`;
+
+function loadCount(dir, name) {
+  const file = path.join(dir, name);
+  return fs.existsSync(file) ? fs.readFileSync(file, "utf8").length : 0;
+}
+
+const repeatShapes = [
+  {
+    name: "ES module object",
+    file: "rspack.config.mjs",
+    source: (dir) => `import fs from "node:fs";
+fs.appendFileSync(${JSON.stringify(path.join(dir, "loads.txt"))}, "x");
+${singleUseBody}export default {
+  mode: "production",
+  context: import.meta.dirname,
+  entry: "./src/main.js",
+  plugins: [new SingleUsePlugin()],
+};
+`,
+  },
+  {
+    name: "CommonJS object",
+    file: "rspack.config.cjs",
+    source: (
+      dir,
+    ) => `require("node:fs").appendFileSync(${JSON.stringify(path.join(dir, "loads.txt"))}, "x");
+${singleUseBody}module.exports = {
+  mode: "production",
+  context: __dirname,
+  entry: "./src/main.js",
+  plugins: [new SingleUsePlugin()],
+};
+`,
+  },
+  {
+    name: "configuration function",
+    file: "rspack.config.mjs",
+    source: (dir) => `import fs from "node:fs";
+fs.appendFileSync(${JSON.stringify(path.join(dir, "loads.txt"))}, "x");
+${singleUseBody}export default () => ({
+  mode: "production",
+  context: import.meta.dirname,
+  entry: "./src/main.js",
+  plugins: [new SingleUsePlugin()],
+});
+`,
+  },
+];
+
+for (const shape of repeatShapes) {
+  test(`the repeat build gets fresh project plugins (${shape.name})`, () => {
+    const dir = wrappedProject();
+    fs.writeFileSync(path.join(dir, shape.file), shape.source(dir));
+    const { status, events, collection, calls } = runWrapped(
+      dir,
+      "compilation-hook-throws",
+      { configFile: path.join(dir, shape.file) },
+    );
+    const loads = loadCount(dir, "loads.txt");
+    fs.rmSync(dir, { recursive: true, force: true });
+    // The observer build fails, the repeat succeeds with a new plugin
+    // instance and the project's build is not reported as failed.
+    assert.equal(status, 0, JSON.stringify(events));
+    assert.equal(collection.exportUsage.available, false);
+    assert.equal(
+      collection.exportUsage.reason,
+      ExportUsageReason.BuildFailedWithObserver,
+    );
+    assert.deepEqual(calls, [
+      ["SingleUsePlugin", ...OBSERVER],
+      ["SingleUsePlugin"],
+    ]);
+    assert.equal(loads, 2);
+    assert.ok(
+      !collection.overrides.some((entry) => entry.includes("RsdoctorPlugin")),
+    );
+  });
+}
+
+test("a build without the observer loads the configuration once", () => {
+  const dir = wrappedProject();
+  const source = repeatShapes[0].source(dir);
+  fs.writeFileSync(path.join(dir, "rspack.config.mjs"), source);
+  const { status, events, calls } = runWrapped(dir, "intact");
+  const loads = loadCount(dir, "loads.txt");
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0, JSON.stringify(events));
+  assert.equal(calls.length, 1);
+  assert.equal(loads, 1);
+});
+
+test("an entry function is called once even when the build is repeated", () => {
+  const dir = wrappedProject();
+  fs.writeFileSync(
+    path.join(dir, "rspack.config.mjs"),
+    `import fs from "node:fs";
+${singleUseBody}export default {
+  mode: "production",
+  context: import.meta.dirname,
+  entry: () => {
+    fs.appendFileSync(${JSON.stringify(path.join(dir, "entry-calls.txt"))}, "x");
+    return "./src/main.js";
+  },
+  plugins: [new SingleUsePlugin()],
+};
+`,
+  );
+  const { status, events, collection } = runWrapped(
+    dir,
+    "compilation-hook-throws",
+  );
+  const calls = loadCount(dir, "entry-calls.txt");
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0, JSON.stringify(events));
+  assert.equal(calls, 1);
+  assert.equal(
+    collection.exportUsage.reason,
+    ExportUsageReason.BuildFailedWithObserver,
+  );
+  assert.ok(
+    collection.overrides.includes("entry function resolved once by bundlewhy"),
+  );
+});
+
+test("a configuration that cannot be loaded again is a configuration failure", () => {
+  const dir = wrappedProject();
+  fs.writeFileSync(
+    path.join(dir, "rspack.config.mjs"),
+    `import fs from "node:fs";
+const marker = ${JSON.stringify(path.join(dir, "loaded.txt"))};
+if (fs.existsSync(marker)) throw new Error("second load");
+fs.writeFileSync(marker, "x");
+export default { mode: "production", context: import.meta.dirname, entry: "./src/main.js" };
+`,
+  );
+  const { status, events, collection } = runWrapped(
+    dir,
+    "compilation-hook-throws",
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.notEqual(status, 0);
+  assert.equal(collection, null);
+  assert.equal(
+    events.find((event) => event.event === "error").code,
+    "BW_CONFIG_LOAD_FAILED",
+  );
+});
+
 test("rspack adapter does not add a second RsdoctorPlugin to the project", () => {
   const dir = wrappedProject({
     config: `import { createRequire } from "node:module";

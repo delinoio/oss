@@ -102,8 +102,30 @@ export function checkEngineVersion(request, packageName, version) {
   );
 }
 
-export async function importFile(file) {
-  return import(pathToFileURL(file).href);
+let freshImports = 0;
+
+/**
+ * Imports a module file. With `fresh`, the file is evaluated again instead of
+ * returning the cached module, so objects that it creates at load time (for
+ * example plugin instances) are new. Only the file itself is evaluated again;
+ * the modules that it imports stay cached.
+ */
+export async function importFile(file, { fresh = false } = {}) {
+  const url = pathToFileURL(file);
+  if (fresh) {
+    // A CommonJS file is cached by path, an ES module by URL: clear the first
+    // and give the second a URL that has not been imported yet.
+    const cache = createRequire(import.meta.url).cache;
+    delete cache[file];
+    try {
+      delete cache[fs.realpathSync(file)];
+    } catch {
+      // The import below reports a file that cannot be read.
+    }
+    freshImports += 1;
+    url.searchParams.set("bundlewhy-fresh", String(freshImports));
+  }
+  return import(url.href);
 }
 
 const packageCache = new Map();

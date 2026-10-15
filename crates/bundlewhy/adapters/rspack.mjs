@@ -48,7 +48,7 @@ const STATS_OPTIONS = Object.freeze({
   cachedModules: true,
 });
 
-async function loadConfig(request, rspack) {
+async function loadConfig(request, rspack, { fresh = false } = {}) {
   if (!request.configFile) {
     throw new AdapterError(
       AdapterErrorCode.ConfigLoadFailed,
@@ -59,7 +59,7 @@ async function loadConfig(request, rspack) {
   let loaded;
   try {
     // .ts configurations rely on Node.js type stripping (erasable syntax only).
-    loaded = (await importFile(request.configFile)).default;
+    loaded = (await importFile(request.configFile, { fresh })).default;
   } catch (error) {
     throw new AdapterError(
       AdapterErrorCode.ConfigLoadFailed,
@@ -463,7 +463,50 @@ await runAdapter(async (request) => {
   const rspack = rspackModule.rspack ?? rspackModule;
   const version = rspackModule.rspackVersion ?? rspackPackage.version;
 
-  const config = await loadConfig(request, rspackModule);
+  // The configuration is loaded again for the repeat build (see below), so
+  // every step that turns it into the diagnostic build's configuration lives
+  // in one function.
+  const prepareBuild = async ({ fresh, resolvedEntry }) => {
+    const config = await loadConfig(request, rspackModule, { fresh });
+    const overrides = [
+      "mode=production",
+      `output.path=${path.basename(request.buildDir)} (bundlewhy run directory)`,
+      "output.clean=true",
+      "devtool=source-map",
+      "watch=false",
+    ];
+    // Resolve an entry function once and build with its result, so the
+    // library check sees exactly what the compiler builds. The repeat build
+    // keeps the first result instead of calling the function again.
+    if (resolvedEntry) {
+      config.entry = resolvedEntry.value;
+      overrides.push("entry function resolved once by bundlewhy");
+    } else if (typeof config.entry === "function") {
+      try {
+        config.entry = await config.entry();
+      } catch (error) {
+        throw new AdapterError(
+          AdapterErrorCode.ConfigLoadFailed,
+          `The entry function failed: ${error?.message ?? error}`,
+          "Fix the error thrown by the entry function, then start a new run.",
+        );
+      }
+      overrides.push("entry function resolved once by bundlewhy");
+      resolvedEntry = { value: config.entry };
+    }
+    const diagnosticConfig = {
+      ...config,
+      mode: "production",
+      context: config.context ?? request.projectRoot,
+      devtool: "source-map",
+      watch: false,
+      output: { ...(config.output ?? {}), path: request.buildDir, clean: true },
+    };
+    return { config, overrides, diagnosticConfig, resolvedEntry };
+  };
+
+  let prepared = await prepareBuild({ fresh: false, resolvedEntry: null });
+  let { config, overrides, diagnosticConfig } = prepared;
   const minimizer = describeMinimizer(rspackModule, config);
   const rawTarget = config.target ?? "web";
   // Inspect every raw target entry; the summary below is for display only.
@@ -478,38 +521,8 @@ await runAdapter(async (request) => {
   const target = Array.isArray(rawTarget)
     ? rawTarget.map((entry) => summarizeValue(entry)).join(", ")
     : summarizeValue(rawTarget);
-  const overrides = [
-    "mode=production",
-    `output.path=${path.basename(request.buildDir)} (bundlewhy run directory)`,
-    "output.clean=true",
-    "devtool=source-map",
-    "watch=false",
-  ];
-  // Resolve an entry function once and build with its result, so the
-  // library check sees exactly what the compiler builds.
-  if (typeof config.entry === "function") {
-    try {
-      config.entry = await config.entry();
-    } catch (error) {
-      throw new AdapterError(
-        AdapterErrorCode.ConfigLoadFailed,
-        `The entry function failed: ${error?.message ?? error}`,
-        "Fix the error thrown by the entry function, then start a new run.",
-      );
-    }
-    overrides.push("entry function resolved once by bundlewhy");
-  }
-  const diagnosticConfig = {
-    ...config,
-    mode: "production",
-    context: config.context ?? request.projectRoot,
-    devtool: "source-map",
-    watch: false,
-    output: { ...(config.output ?? {}), path: request.buildDir, clean: true },
-  };
   // The value that the build receives for `plugins`, read once so that a
-  // getter cannot answer differently later. It is restored unchanged when the
-  // observer is removed again.
+  // getter cannot answer differently later.
   const projectPlugins = diagnosticConfig.plugins;
   const exportUsage = prepareExportUsage(rspackModule, projectPlugins);
   const observerAttached = exportUsage.state.unavailable === null;
@@ -535,12 +548,20 @@ await runAdapter(async (request) => {
     if (!observed) {
       exportUsage.state.unavailable ??=
         ExportUsageReason.BuildFailedWithObserver;
-      if (projectPlugins === undefined) delete diagnosticConfig.plugins;
-      else diagnosticConfig.plugins = projectPlugins;
       progress(
         "building",
         "Repeating the production build without the export usage observer",
       );
+      // The failed build may have used up single-use project state (a plugin
+      // instance that rejects a second compiler, for example). The repeat
+      // therefore starts from a freshly loaded configuration, and its own
+      // failure, including a configuration that cannot be loaded again, is
+      // the project's result.
+      prepared = await prepareBuild({
+        fresh: true,
+        resolvedEntry: prepared.resolvedEntry,
+      });
+      ({ config, overrides, diagnosticConfig } = prepared);
     }
   }
   if (!observed) {
