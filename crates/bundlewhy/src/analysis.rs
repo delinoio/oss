@@ -1357,14 +1357,12 @@ mod tests {
         // Rolldown reports no retention reason, so the cause is inferred.
         assert_eq!(register.status, EvidenceStatus::Inferred);
         assert!(!register.summary.contains("must run"));
-        assert!(
-            register
-                .corrective_action
-                .as_ref()
-                .unwrap()
-                .direction
-                .contains("\"sideEffects\"")
-        );
+        // The fixture module declares an export and the collection holds no
+        // importer binding data, so the direction asks to check importers and
+        // does not advise changing side-effect declarations.
+        let register_direction = &register.corrective_action.as_ref().unwrap().direction;
+        assert!(register_direction.contains("Check which importers"));
+        assert!(!register_direction.contains("\"sideEffects\""));
         assert!(
             !register
                 .corrective_action
