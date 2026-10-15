@@ -497,7 +497,21 @@ fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
 /// for `++` and `--`: a line terminator before them is a restricted
 /// production, so they start a new statement.
 fn asi_terminates(code: &str, terminator: usize, after: usize, ignored: &[(usize, usize)]) -> bool {
-    statement_boundary(code, terminator, after, ignored, false)
+    statement_boundary(code, terminator, after, ignored, false, AwaitWord::Operator)
+}
+
+/// How a bare `await` token is read by a statement-boundary decision.
+///
+/// `await` is the unary operator only in a module and inside an `async`
+/// function body; elsewhere it is an identifier that can end an expression, so
+/// a line terminator after it is an automatic semicolon. A caller that tracks
+/// the function context passes the proven reading. A caller without that
+/// context reads `await` as the operator, which is a documented limit of the
+/// scan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AwaitWord {
+    Operator,
+    Identifier,
 }
 
 /// Whether the line terminator at `terminator` ends an expression-bodied
@@ -509,8 +523,9 @@ pub(super) fn arrow_body_ends(
     terminator: usize,
     after: usize,
     ignored: &[(usize, usize)],
+    await_word: AwaitWord,
 ) -> bool {
-    statement_boundary(code, terminator, after, ignored, true)
+    statement_boundary(code, terminator, after, ignored, true, await_word)
 }
 
 fn statement_boundary(
@@ -519,9 +534,14 @@ fn statement_boundary(
     after: usize,
     ignored: &[(usize, usize)],
     block_starts_statement: bool,
+    await_word: AwaitWord,
 ) -> bool {
     let ends_expression = match previous_significant_token(code, terminator, ignored) {
-        Token::Word { text, member } => member || !OPEN_KEYWORDS.contains(&text),
+        Token::Word { text, member } => {
+            member
+                || !OPEN_KEYWORDS.contains(&text)
+                || (text == "await" && await_word == AwaitWord::Identifier)
+        }
         Token::Punct(text) => matches!(text, ")" | "]" | "}" | "++" | "--" | ";"),
         Token::Edge | Token::Number | Token::Literal | Token::Template => true,
     };
@@ -941,10 +961,11 @@ pub(super) fn is_identifier_part(character: char) -> bool {
 /// `éif`, `a\u{301}if`); a property, method or private name written after a
 /// member access, even when whitespace, line terminators or comments separate
 /// the dot from the name (`obj.if`, `obj?.while`, `obj. /* c */ for`,
-/// `this.#if`); and a method declaration. A keyword is a method name after a
-/// comma or `*` (`{a, if(){}}`, `*if(){}`), and, inside object-literal or class
-/// members (`members`), as the first token of a member or after `get`, `set`,
-/// `static` or `async`.
+/// `this.#if`); and a method declaration. Inside object-literal or class
+/// members (`members`), a keyword is a method name after a comma or `*`
+/// (`{a, if(){}}`, `*if(){}`), as the first token of a member or after `get`,
+/// `set`, `static` or `async`. Outside members the comma and `*` precede an
+/// operand (`(a, typeof(x))`, `a * await(x)`), so the keyword is not a name.
 fn ends_with_control_keyword(
     code: &str,
     prefix: &str,
@@ -966,7 +987,10 @@ fn ends_with_control_keyword(
     let start = prefix.len() - keyword.len();
     let before = strip_comments_for_prefix(code, start, ignored);
     match before.chars().next_back() {
-        Some(',' | '*') => false,
+        // A comma or `*` before a keyword is a method-name separator only in
+        // a member list. In an expression it precedes a unary operator
+        // (`(a, typeof(x))`, `a * await(x)`).
+        Some(',' | '*') => !members,
         Some('{' | '}' | ';') => !members,
         Some(character) if members && is_identifier_part(character) => {
             !matches!(trailing_word(before), "get" | "set" | "static" | "async")
@@ -1920,7 +1944,15 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
         }
         let terminator = line_terminator_len(bytes, index);
         if terminator > 0 {
-            if depth == 0 && arrow_body_ends(source, index, index + terminator, ignored) {
+            if depth == 0
+                && arrow_body_ends(
+                    source,
+                    index,
+                    index + terminator,
+                    ignored,
+                    AwaitWord::Operator,
+                )
+            {
                 return index;
             }
             index += terminator;
@@ -4323,6 +4355,94 @@ y=/process.env.F/.test(z),process.env.G"#;
         code.push_str("export {}");
         let ignored = non_code_ranges(&code);
         assert_eq!(await_operator_offsets(&code, &ignored).len(), 3000);
+    }
+
+    #[test]
+    fn a_bare_await_identifier_ends_a_concise_arrow_in_a_synchronous_context() {
+        let gate = await_gate();
+        for terminator in LINE_TERMINATORS {
+            // `await` is an identifier in the synchronous arrow, so the line
+            // break ends the arrow and the next `await` belongs to `outer`.
+            for code in [
+                format!(
+                    "var await = 1; async function outer() {{ const inner = () => \
+                     await{terminator}{gate} }}"
+                ),
+                format!(
+                    "var await = 1; async function outer() {{ const inner = (a) => await // \
+                     c{terminator}{gate} }}"
+                ),
+                format!(
+                    "var await = 1; async function outer() {{ const inner = a => await /* c \
+                     */{terminator}{gate} }}"
+                ),
+            ] {
+                assert_await_is_an_operator(&code);
+            }
+        }
+    }
+
+    #[test]
+    fn a_block_after_a_call_statement_keeps_the_enclosing_async_context() {
+        let gate = await_gate();
+        // Each prefix ends a statement; the brace after it starts a block, not
+        // a method body.
+        for prefix in [
+            "foo()",
+            "foo.bar()",
+            "foo(a, b)",
+            "foo[\"x\"]()",
+            "foo[x]()",
+            "new Foo()",
+        ] {
+            for terminator in LINE_TERMINATORS {
+                for code in [
+                    format!("async function outer() {{ {prefix}{terminator}{{ {gate} }} }}"),
+                    format!("export {{}};{terminator}{prefix}{terminator}{{ {gate} }}"),
+                ] {
+                    assert_await_is_an_operator(&code);
+                }
+                // The same shape in an object literal or class body declares
+                // a method, which is synchronous.
+                let name = prefix.trim_end_matches("()");
+                if name == "foo" {
+                    for code in [
+                        format!(
+                            "async function outer() {{ const o = {{ foo(){terminator}{{ {gate} }} \
+                             }} }}"
+                        ),
+                        format!(
+                            "async function outer() {{ class C {{ foo(){terminator}{{ {gate} }} \
+                             }} }}"
+                        ),
+                    ] {
+                        assert_eq!(await_guard(&code), None, "{code:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn method_name_separators_do_not_apply_to_unary_operators_outside_members() {
+        let read = AWAIT_READ;
+        for operator in UNARY_KEYWORDS {
+            for separator in [",", "*", ", /* c */", " *\n"] {
+                // An expression: the separator precedes an operand.
+                let expression =
+                    format!("if ((sideEffect(){separator} {operator}({read}) === 1)) run()");
+                for (context, code, _) in keyword_contexts(&expression) {
+                    if operator == "await" && context == "classic script" {
+                        continue;
+                    }
+                    assert_eq!(
+                        await_guard(&code),
+                        Some(AWAIT_CONDITION),
+                        "{context}: {code:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

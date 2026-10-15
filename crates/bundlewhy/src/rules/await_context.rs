@@ -14,7 +14,7 @@
 //! ordinary call.
 
 use super::common::{
-    arrow_body_ends, brace_holds_members, class_heading_precedes, is_identifier_part,
+    AwaitWord, arrow_body_ends, brace_holds_members, class_heading_precedes, is_identifier_part,
     is_line_terminator,
 };
 
@@ -270,6 +270,15 @@ impl Scan<'_> {
         })
     }
 
+    /// The body of a method declaration whose name ends at `name`. A method
+    /// exists only in an object literal or class body; after a call in a
+    /// statement list (`foo()` + line break + `{`) the brace is an ordinary
+    /// block that keeps the enclosing context.
+    fn method_body(&self, name: usize, enclosing: Option<usize>) -> Option<bool> {
+        self.encloses_members(enclosing)
+            .then(|| self.method_is_async(name))
+    }
+
     /// Classifies the `{` at `brace`: `Some(true)` for an async function,
     /// async arrow or async method body, `Some(false)` for any other function
     /// or method body, and `None` for a block, object literal or class body,
@@ -286,7 +295,7 @@ impl Scan<'_> {
         let head = open.checked_sub(1)?;
         match self.tokens[head].kind {
             // A computed method name: `async [name]() {}`.
-            Kind::Punct(b']') => Some(self.method_is_async(self.matching_open[head]?)),
+            Kind::Punct(b']') => self.method_body(self.matching_open[head]?, enclosing),
             // An anonymous generator: `function* () {}`.
             Kind::Punct(b'*') => {
                 let function = head.checked_sub(1)?;
@@ -294,7 +303,7 @@ impl Scan<'_> {
                     .then(|| self.async_before(function))
             }
             // A string-literal method name: `async "name"() {}`.
-            Kind::Literal if self.is_string_literal(head) => Some(self.method_is_async(head)),
+            Kind::Literal if self.is_string_literal(head) => self.method_body(head, enclosing),
             Kind::Word if self.is_member(head) => None,
             Kind::Word => {
                 if self.text(head) == "function" {
@@ -323,7 +332,7 @@ impl Scan<'_> {
                     return Some(self.async_before(function));
                 }
                 // A method or accessor of an object literal or class.
-                Some(self.method_is_async(head))
+                self.method_body(head, enclosing)
             }
             _ => None,
         }
@@ -334,7 +343,11 @@ impl Scan<'_> {
     /// one that the environment scan uses for its statement boundaries
     /// ([`arrow_body_ends`]), so a continuation such as `??`, `?.` or a binary
     /// operator keeps a concise arrow body open here too.
-    fn line_break_ends_statement(&self, index: usize) -> bool {
+    ///
+    /// `await_word` says how a bare `await` before the line break reads: the
+    /// operator takes its operand from the next line, an identifier ends the
+    /// statement.
+    fn line_break_ends_statement(&self, index: usize, await_word: AwaitWord) -> bool {
         index > 0
             && self.tokens[index].newline_before
             && arrow_body_ends(
@@ -342,6 +355,7 @@ impl Scan<'_> {
                 self.tokens[index - 1].end,
                 self.tokens[index].start,
                 self.ignored,
+                await_word,
             )
     }
 
@@ -351,13 +365,19 @@ impl Scan<'_> {
             is_async: false,
             opener: None,
         }];
-        let mut is_module = false;
+        let is_module = (0..self.tokens.len()).any(|index| self.declares_module(index));
         let mut sites: Vec<(usize, bool)> = Vec::new();
         for index in 0..self.tokens.len() {
             let token = self.tokens[index];
             // A line break ends a concise arrow body when the next token
             // cannot continue it.
-            if self.line_break_ends_statement(index) {
+            let enclosing_async = frames.last().is_some_and(|frame| frame.is_async);
+            let await_word = if is_module || enclosing_async {
+                AwaitWord::Operator
+            } else {
+                AwaitWord::Identifier
+            };
+            if self.line_break_ends_statement(index, await_word) {
                 pop_arrow_bodies(&mut frames);
             }
             let enclosing_async = frames.last().is_some_and(|frame| frame.is_async);
@@ -425,12 +445,8 @@ impl Scan<'_> {
                         });
                     }
                 }
-                Kind::Word => {
-                    if self.is_word(index, "await") && self.is_punct(index + 1, b'(') {
-                        sites.push((token.start, enclosing_async));
-                    } else if self.declares_module(index) {
-                        is_module = true;
-                    }
+                Kind::Word if self.is_word(index, "await") && self.is_punct(index + 1, b'(') => {
+                    sites.push((token.start, enclosing_async));
                 }
                 _ => {}
             }
