@@ -33,12 +33,14 @@ export const ADAPTER_VERSION = "1";
  * checks disagree with the IDs emitted by the build.
  */
 export function normalizeCollectionRoot(root, preserveSymlinks = false) {
-  if (preserveSymlinks) return root;
+  // Vite normalizes root separators before configResolved, including when it
+  // preserves symlinks or cannot resolve a lexical path yet.
+  if (preserveSymlinks) return root.replaceAll("\\", "/");
   // Vite keeps the resolved lexical root when realpath cannot access it yet.
   try {
-    return fs.realpathSync(root);
+    return fs.realpathSync(root).replaceAll("\\", "/");
   } catch {
-    return root;
+    return root.replaceAll("\\", "/");
   }
 }
 

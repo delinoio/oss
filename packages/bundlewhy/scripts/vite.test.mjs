@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { normalizeCollectionRoot } from "../../../crates/bundlewhy/adapters/vite.mjs";
 
 const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -21,6 +22,16 @@ const vitePackagePath = createRequire(
   path.join(packageRoot, "package.json"),
 ).resolve("vite/package.json");
 const viteCli = path.join(path.dirname(vitePackagePath), "bin/vite.js");
+
+test("collection roots use Vite's separator format in every resolution mode", () => {
+  const lexicalRoot = "C:\\project\\web";
+  assert.equal(normalizeCollectionRoot(lexicalRoot, true), "C:/project/web");
+  assert.equal(normalizeCollectionRoot(lexicalRoot), "C:/project/web");
+  assert.equal(
+    normalizeCollectionRoot(process.cwd()),
+    fs.realpathSync(process.cwd()).replaceAll("\\", "/"),
+  );
+});
 
 function makeProject(t) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "bundlewhy-vite-root-"));
