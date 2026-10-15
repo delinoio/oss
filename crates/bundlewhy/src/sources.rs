@@ -194,7 +194,7 @@ const ASSET_QUERY_KEYS: &[&str] = &["raw", "url", "inline", "no-inline"];
 
 /// Splits a module path at its first `?` into the file part and the import
 /// query. A `#fragment` ends the query.
-fn split_query(path: &str) -> (&str, Option<&str>) {
+pub(crate) fn split_query(path: &str) -> (&str, Option<&str>) {
     match path.split_once('?') {
         Some((file, rest)) => (file, Some(rest.split_once('#').map_or(rest, |(q, _)| q))),
         None => (path, None),

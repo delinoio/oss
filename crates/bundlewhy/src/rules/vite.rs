@@ -222,7 +222,12 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                 ),
                 Condition::new(
                     "No rendered code remains",
-                    ConditionOutcome::Unmet,
+                    // Only verified final emission shows that code remains.
+                    if matches!(emission, FinalEmission::Unverified { .. }) {
+                        ConditionOutcome::Unknown
+                    } else {
+                        ConditionOutcome::Unmet
+                    },
                     format!(
                         "renderedLength: {} bytes (intermediate Rolldown output); {final_detail}",
                         module.rendered_length
