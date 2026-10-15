@@ -87,13 +87,21 @@ export function useProjectPromptHistory({
   blocked,
   textarea,
   replace,
+  draft,
 }: {
   projectId: string;
   enabled: boolean;
   active: boolean;
   blocked: boolean;
   textarea: RefObject<HTMLTextAreaElement | null>;
-  replace: (text: string, caret: number) => void;
+  /** Selection offsets address the draft text; a `draft` owner maps them to its display. */
+  replace: (text: string, start: number, end: number) => void;
+  /** Canonical Markdown draft and selection when the textarea shows a collapsed display text. */
+  draft?: (field: HTMLTextAreaElement) => {
+    text: string;
+    start: number;
+    end: number;
+  };
 }) {
   useLocale();
   const transport = useTransport();
@@ -183,7 +191,7 @@ export function useProjectPromptHistory({
     const next = navigation.current.move(
       event.key === "ArrowUp" ? "older" : "newer",
       entries.map((entry) => entry.prompt),
-      {
+      draft?.(field) ?? {
         text: field.value,
         start: field.selectionStart,
         end: field.selectionEnd,
@@ -191,7 +199,7 @@ export function useProjectPromptHistory({
     );
     if (!next) return false;
     event.preventDefault();
-    replace(next.text, next.start);
+    replace(next.text, next.start, next.end);
     if (!navigation.current.active) void query.refetch();
     const original = { projectId, transport };
     queueMicrotask(() => {
@@ -201,7 +209,9 @@ export function useProjectPromptHistory({
         !editable()
       )
         return;
-      textarea.current?.setSelectionRange(next.start, next.end);
+      // A draft owner maps canonical offsets to its collapsed display text and
+      // applies the selection itself; raw offsets would land past collapsed links.
+      if (!draft) textarea.current?.setSelectionRange(next.start, next.end);
     });
     return true;
   };

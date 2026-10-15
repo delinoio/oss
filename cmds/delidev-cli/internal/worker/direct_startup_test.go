@@ -89,6 +89,34 @@ func TestDirectStartupMissingExecutableReportsNoSendWithoutInspection(t *testing
 	}
 }
 
+// A Claude assignment with a missing explicit executable must fail from the
+// startup selection alone: no PATH or harness fallback may launch a different
+// Claude binary, and no pre-inspected installation evidence is consulted.
+func TestDirectStartupClaudeMissingExecutableNeverFallsBackToPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fixture executable is a POSIX shell script")
+	}
+	pathDirectory := t.TempDir()
+	marker := filepath.Join(pathDirectory, "launched")
+	if err := os.WriteFile(filepath.Join(pathDirectory, "claude"), []byte("#!/bin/sh\necho launched > '"+marker+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", pathDirectory)
+	root := filepath.Join(t.TempDir(), "private")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	input := domain.ExecutionJobInput{Version: 4, Startup: &domain.ExecutionStartupSelection{Harness: domain.ClaudeCode, ExplicitPath: filepath.Join(root, "not-installed")}}
+	config := Config{Root: root, startup: &executionStartupAttempt{}}
+	_, err := resolveExecutionStartup(context.Background(), config, domain.NewID(), input)
+	if domain.SafeError(err).Code != domain.NotFound {
+		t.Fatal("missing explicit Claude executable did not fail precisely", err)
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Fatal("startup fell back to the PATH Claude executable")
+	}
+}
+
 func TestForkStartupRetainsOriginalExecutableAfterCreationJournalDeletion(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "private")
 	if err := security.PrivateDir(root); err != nil {

@@ -50,6 +50,7 @@ use anyhow::Result;
 
 use super::{
     analysis::{Ctx, RefKind, skip_outer, walk_up_outer},
+    passes::runtime_facts::builtin_intact,
     token_start,
 };
 use crate::{
@@ -537,6 +538,8 @@ struct Builder<'a, 'c> {
     tokens: HashMap<Node, Value>,
     objects: Vec<Object>,
     intrinsic: Vec<Option<Preservation>>,
+    /// Cached answer of `define_property_intact`.
+    define_property_intact: Option<bool>,
     token_info: Vec<Token>,
     /// Static access spans, referenced by index.
     spans: Vec<Occurrence>,
@@ -2637,6 +2640,7 @@ pub(super) fn analyze(ctx: &mut Ctx, options: Options) -> Result<Vec<Object>> {
         tokens: HashMap::new(),
         objects: Vec::new(),
         intrinsic: Vec::new(),
+        define_property_intact: None,
         token_info: Vec::new(),
         spans: Vec::new(),
         uses: Vec::new(),

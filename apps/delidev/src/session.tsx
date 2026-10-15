@@ -890,6 +890,20 @@ export const TranscriptItem = memo(function TranscriptItem({
   );
 });
 
+/**
+ * Retained delivery states in which a verified sequence-one input is
+ * reconstructed as the sent first message. Exceptional states (uncertain,
+ * rejected-before-start) keep their notice through SubmissionStatus; removed
+ * inputs retain no content and are never reconstructed.
+ */
+const originalDeliveryStates: readonly string[] = [
+  "queued",
+  "claimed",
+  "accepted",
+  "uncertain",
+  "rejected-before-start",
+];
+
 const submissionLabels = {
   [SubmissionPhase.Preparing]: "session.submissionPreparing",
   [SubmissionPhase.Sending]: "session.submissionSending",
@@ -1539,13 +1553,6 @@ export function SessionView({
   useLayoutEffect(() => {
     const input = composer.current;
     if (!input) return;
-    input.style.height = "auto";
-    const maximum = Number.parseFloat(getComputedStyle(input).maxHeight);
-    input.style.height = `${Math.min(input.scrollHeight, Number.isFinite(maximum) ? maximum : 180)}px`;
-  }, [draft, session?.id]);
-  useLayoutEffect(() => {
-    const input = composer.current;
-    if (!input) return;
     let width = input.clientWidth;
     const workspace = input.closest<HTMLElement>(".session-workspace");
     // Conversation containers can be shorter than the retained workspace after
@@ -1606,6 +1613,15 @@ export function SessionView({
     active: conversationActive,
     disabled: locked,
   });
+  // The textarea shows the collapsed display text, so revealing a link changes
+  // its wrapped height even though the canonical draft is unchanged.
+  useLayoutEffect(() => {
+    const input = composer.current;
+    if (!input) return;
+    input.style.height = "auto";
+    const maximum = Number.parseFloat(getComputedStyle(input).maxHeight);
+    input.style.height = `${Math.min(input.scrollHeight, Number.isFinite(maximum) ? maximum : 180)}px`;
+  }, [draft, skills.displayValue, session?.id]);
   const revert = useSessionRevert({
     session,
     active: conversationActive,
@@ -1801,7 +1817,41 @@ export function SessionView({
     id,
     !!queue.data && !queue.data.nextPageToken,
   );
+  // The first input is identified by the session's initial execution. Only a
+  // verified, readable sequence-one queue row with that exact identity is
+  // reconstructed as a sent message and excluded from the queue presenters.
+  const initialInputId = text(object(data.initial_execution).input_id);
+  const projectableOriginal = (input: Resource) =>
+    readDocument(input).sequence === 1 &&
+    originalDeliveryStates.includes(text(readDocument(input).delivery)) &&
+    submissionQueueReadable(input) &&
+    // A startup image rejection keeps its retained retry presentation.
+    !isImageStartupRejectedInput(input, session);
+  const originalQueueRows = initialInputId
+    ? pending.filter(
+        (input) => input.id === initialInputId && projectableOriginal(input),
+      )
+    : [];
+  const originalInputIds = new Set<string>(
+    initialInputId &&
+      pending.every(
+        (input) => input.id !== initialInputId || projectableOriginal(input),
+      )
+      ? [initialInputId]
+      : [],
+  );
+  // Startup evidence also recognizes legacy sequence-one rows as the original.
+  const startupOriginalInputIds = new Set<string>(
+    [
+      initialInputId,
+      ...pending
+        .filter((input) => readDocument(input).sequence === 1)
+        .map((input) => input.id),
+    ].filter(Boolean),
+  );
   useEffect(() => {
+    for (const input of originalQueueRows)
+      submissions.store.registerOriginal(id, input, initialInputId);
     submissions.store.observe(id, [
       ...(messages.data?.resources ?? []),
       ...pending,
@@ -1989,7 +2039,9 @@ export function SessionView({
   useEffect(() => {
     if (confirmedEmptyRequests) setRequestsOpen(false);
   }, [confirmedEmptyRequests]);
-  const queued = pending.filter(isQueuedInput);
+  const queued = pending.filter(
+    (row) => isQueuedInput(row) && !originalInputIds.has(row.id),
+  );
   const imageRejected = pending.filter((row) =>
     isImageStartupRejectedInput(row, session),
   );
@@ -2157,6 +2209,7 @@ export function SessionView({
     (row) =>
       row.sessionId === id &&
       !row.native &&
+      !(row.original && row.phase === SubmissionPhase.Removed) &&
       !rows.some((message) => {
         return (
           Boolean(row.queueId) && row.queueId === nativeSubmissionInput(message)
@@ -2303,24 +2356,63 @@ export function SessionView({
   // Accepted receipt of a later follow-up (published by the retained enqueue
   // before its queue refresh or stream arrival) is such evidence even while the
   // retained queue snapshot still lists only the original input.
-  const originalInputIds = new Set<string>(
-    [
-      text(object(data.initial_execution).input_id),
-      ...pending
-        .filter((input) => readDocument(input).sequence === 1)
-        .map((input) => input.id),
-    ].filter(Boolean),
+  const originalSubmissions = projectedSubmissions.filter(
+    (row) => row.original,
   );
+  const followUpSubmissions = projectedSubmissions.filter(
+    (row) => !row.original,
+  );
+  // The original first input is an ordinary sent message: no delivery label
+  // unless the status is a failure or unconfirmed read that needs a notice.
+  const renderSubmission = (row: (typeof projectedSubmissions)[number]) => {
+    const phase = row.observationUnavailable
+      ? SubmissionPhase.Uncertain
+      : row.phase;
+    const labelled =
+      !row.original ||
+      [SubmissionPhase.Uncertain, SubmissionPhase.Rejected].includes(phase);
+    return (
+      <article
+        key={row.requestId}
+        data-submission={row.requestId}
+        className="message message-user"
+        aria-label={copy("session.submittedUserMessage")}
+      >
+        {labelled ? <SubmissionStatus phase={phase} /> : null}
+        {row.prompt ? <pre>{row.prompt}</pre> : null}
+        {row.attachments.length ? (
+          <RetainedImages
+            value={row.attachments.map((image) => ({
+              id: image.id,
+              machine_id: image.machineId,
+              media_type: imageMime[image.mediaType],
+              byte_length: Number(image.byteLength),
+              sha256: image.sha256,
+            }))}
+            sessionId={id}
+            active={conversationActive}
+          />
+        ) : row.attachmentCount ? (
+          <p>
+            {copy("session.submittedImages", {
+              count: row.attachmentCount,
+            })}
+          </p>
+        ) : null}
+      </article>
+    );
+  };
   const startupLocalFollowUp = projectedSubmissions.some(
     (row) =>
-      [
+      !row.original &&
+      ([
         SubmissionPhase.Preparing,
         SubmissionPhase.Sending,
         SubmissionPhase.Rejected,
         SubmissionPhase.Uncertain,
       ].includes(row.phase) ||
-      !row.queueId ||
-      !originalInputIds.has(row.queueId),
+        !row.queueId ||
+        !startupOriginalInputIds.has(row.queueId)),
   );
   // Sidechat children keep their own Info in every initial execution phase.
   const sidechatChild =
@@ -2791,6 +2883,7 @@ export function SessionView({
                         )}
                       />
                     ) : null}
+                    {originalSubmissions.map(renderSubmission)}
                     {observeStartupOwner &&
                     !startupOwnerCurrent &&
                     !startupMachine.isPending &&
@@ -2806,7 +2899,7 @@ export function SessionView({
                     hasStartupOperations &&
                     data.archive === "active" &&
                     ["not-started", "running"].includes(text(data.outcome)) &&
-                    !projectedSubmissions.length &&
+                    !followUpSubmissions.length &&
                     !rows.length &&
                     !messages.rows.length &&
                     (startupTimes.workspace?.seconds !== undefined ||
@@ -2882,42 +2975,7 @@ export function SessionView({
                         messages={rows}
                       />
                     ) : null}
-                    {projectedSubmissions.map((row) => (
-                      <article
-                        key={row.requestId}
-                        data-submission={row.requestId}
-                        className="message message-user"
-                        aria-label={copy("session.submittedUserMessage")}
-                      >
-                        <SubmissionStatus
-                          phase={
-                            row.observationUnavailable
-                              ? SubmissionPhase.Uncertain
-                              : row.phase
-                          }
-                        />
-                        {row.prompt ? <pre>{row.prompt}</pre> : null}
-                        {row.attachments.length ? (
-                          <RetainedImages
-                            value={row.attachments.map((image) => ({
-                              id: image.id,
-                              machine_id: image.machineId,
-                              media_type: imageMime[image.mediaType],
-                              byte_length: Number(image.byteLength),
-                              sha256: image.sha256,
-                            }))}
-                            sessionId={id}
-                            active={conversationActive}
-                          />
-                        ) : row.attachmentCount ? (
-                          <p>
-                            {copy("session.submittedImages", {
-                              count: row.attachmentCount,
-                            })}
-                          </p>
-                        ) : null}
-                      </article>
-                    ))}
+                    {followUpSubmissions.map(renderSubmission)}
                   </div>
                   <div className="session-input-tray">
                     {!confirmedEmptyRequests ? (
@@ -3002,7 +3060,9 @@ export function SessionView({
                     ) : null}
                     <PendingQueueInputs
                       sessionId={id}
-                      presentInputIds={presentedQueueIds}
+                      presentInputIds={
+                        new Set([...presentedQueueIds, ...originalInputIds])
+                      }
                       refresh={queue.refresh}
                     />
                     {waitingSupported ? (
@@ -3018,6 +3078,7 @@ export function SessionView({
                           Boolean(live.error)
                         }
                         refreshHistory={queue.refresh}
+                        excludeInputIds={originalInputIds}
                       />
                     ) : null}
                     {!waitingSupported ? (
@@ -3061,7 +3122,11 @@ export function SessionView({
                             id,
                             false,
                           )
-                            .filter(isQueuedInput)
+                            .filter(
+                              (row) =>
+                                isQueuedInput(row) &&
+                                !originalInputIds.has(row.id),
+                            )
                             .map((row) => (
                               <QueuedInput
                                 compact
@@ -3387,7 +3452,7 @@ export function SessionView({
                             ShortcutId.SessionNewline,
                           )}
                           id={`prompt-${id}`}
-                          value={draft}
+                          value={skills.displayValue}
                           onChange={(event) =>
                             skills.onChange(
                               event.target.value,

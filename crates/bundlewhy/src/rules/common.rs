@@ -7,11 +7,14 @@ use std::{
 
 use regex::Regex;
 
+use self::env_guard::env_guards;
 use super::{Context, DiagnosticDraft, RuleId};
 use crate::{
     collect::CollectedModule,
     model::{Condition, ConditionOutcome, Evidence, EvidenceStatus},
 };
+
+mod env_guard;
 
 pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     duplicate_packages(context, drafts);
@@ -126,62 +129,37 @@ fn reads_process_env(text: &str, name: &str) -> bool {
     .is_ok_and(|pattern| pattern.is_match(text))
 }
 
-/// How a keyword-looking word behaves in the lexical scans of this module.
-///
-/// Reserved words can never be identifiers, so the word before a token is
-/// always the keyword. Contextual words (`of`, `yield`, `await`) are keywords
-/// only in some positions and valid callable identifiers elsewhere, such as
-/// `of(x)`; the scans cannot tell the positions apart without a parser.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum KeywordKind {
-    Reserved,
-    Contextual,
-}
-
 /// One row per word that precedes an expression. `regex_follows` is whether a
-/// `/` after the word starts a regular expression literal. `operand_follows` is
-/// whether a `(` after the word opens a parenthesized operand instead of a call
-/// argument list.
+/// `/` after the word starts a regular expression literal.
 struct ExpressionKeyword {
     word: &'static str,
-    kind: KeywordKind,
     regex_follows: bool,
-    operand_follows: bool,
 }
 
-const fn keyword(
-    word: &'static str,
-    kind: KeywordKind,
-    regex_follows: bool,
-    operand_follows: bool,
-) -> ExpressionKeyword {
+const fn keyword(word: &'static str, regex_follows: bool) -> ExpressionKeyword {
     ExpressionKeyword {
         word,
-        kind,
         regex_follows,
-        operand_follows,
     }
 }
 
 const EXPRESSION_KEYWORDS: &[ExpressionKeyword] = &[
-    keyword("return", KeywordKind::Reserved, true, true),
-    keyword("throw", KeywordKind::Reserved, true, true),
-    keyword("void", KeywordKind::Reserved, true, true),
-    keyword("typeof", KeywordKind::Reserved, true, true),
-    keyword("delete", KeywordKind::Reserved, true, true),
-    keyword("case", KeywordKind::Reserved, true, true),
-    keyword("default", KeywordKind::Reserved, true, true),
-    keyword("extends", KeywordKind::Reserved, true, true),
-    keyword("else", KeywordKind::Reserved, true, true),
-    keyword("do", KeywordKind::Reserved, true, true),
-    keyword("in", KeywordKind::Reserved, true, true),
-    keyword("instanceof", KeywordKind::Reserved, false, true),
-    // `new (x)` constructs `x` and `new x(...)` is a call, so a parenthesis
-    // after `new` never opens an operand that a chain can short-circuit.
-    keyword("new", KeywordKind::Reserved, true, false),
-    keyword("of", KeywordKind::Contextual, true, true),
-    keyword("yield", KeywordKind::Contextual, true, true),
-    keyword("await", KeywordKind::Contextual, false, true),
+    keyword("return", true),
+    keyword("throw", true),
+    keyword("void", true),
+    keyword("typeof", true),
+    keyword("delete", true),
+    keyword("case", true),
+    keyword("default", true),
+    keyword("extends", true),
+    keyword("else", true),
+    keyword("do", true),
+    keyword("in", true),
+    keyword("instanceof", false),
+    keyword("new", true),
+    keyword("of", true),
+    keyword("yield", true),
+    keyword("await", false),
 ];
 
 /// Whether `byte` can be part of an identifier. Non-ASCII bytes count so that a
@@ -322,545 +300,6 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
 fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
     let index = ranges.partition_point(|(start, _)| *start <= offset);
     index > 0 && offset < ranges[index - 1].1
-}
-
-/// Whether `offset` is inside a `//` or `/* */` comment range. Literal ranges
-/// never start with `//` or `/*`, so the first bytes tell the kinds apart.
-fn is_comment_at(bytes: &[u8], ranges: &[(usize, usize)], offset: usize) -> bool {
-    let index = ranges.partition_point(|(start, _)| *start <= offset);
-    if index == 0 || offset >= ranges[index - 1].1 {
-        return false;
-    }
-    let start = ranges[index - 1].0;
-    bytes[start] == b'/' && matches!(bytes.get(start + 1), Some(b'/' | b'*'))
-}
-
-fn next_code_byte(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<u8> {
-    let mut index = start;
-    while index < bytes.len() {
-        if in_ranges(ignored, index) || bytes[index].is_ascii_whitespace() {
-            index += 1;
-        } else {
-            return Some(bytes[index]);
-        }
-    }
-    None
-}
-
-fn asi_terminates(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> bool {
-    let Some(next) = next_code_byte(bytes, index + 1, ignored) else {
-        return true;
-    };
-    match next {
-        b'+' => next_code_byte(bytes, index + 2, ignored) != Some(b'+'),
-        b'-' => next_code_byte(bytes, index + 2, ignored) != Some(b'-'),
-        b'!' | b'%' | b'&' | b'(' | b')' | b'*' | b',' | b'.' | b'/' | b':' | b';' | b'<'
-        | b'=' | b'>' | b'?' | b'[' | b']' | b'^' | b'{' | b'}' | b'|' | b'~' => false,
-        _ => true,
-    }
-}
-
-#[derive(Clone, Copy)]
-enum EnvGuard {
-    ShortCircuitAnd,
-    ShortCircuitOr,
-    NullishCoalescing,
-    OptionalChain,
-    Conditional,
-    If,
-    While,
-    Switch,
-    For,
-}
-
-impl EnvGuard {
-    fn evidence(self) -> &'static str {
-        match self {
-            Self::ShortCircuitAnd => "the retained read controls a && short-circuit branch",
-            Self::ShortCircuitOr => "the retained read controls a || short-circuit branch",
-            Self::NullishCoalescing => "the retained read controls a ?? fallback branch",
-            Self::OptionalChain => {
-                "the retained read is the base of an optional chain, so a nullish value \
-                 short-circuits the chain"
-            }
-            Self::Conditional => "the retained read controls a conditional (?:) branch",
-            Self::If => "the retained read is in an if condition",
-            Self::While => "the retained read is in a while condition",
-            Self::Switch => "the retained read is in a switch condition",
-            Self::For => "the retained read is in a for condition",
-        }
-    }
-}
-
-/// Recognize only a generated branch whose test contains this read. A plain
-/// value read in a call, assignment or another data expression is not a DCE
-/// blocker.
-#[cfg(test)]
-fn env_guard(code: &str, start: usize, end: usize, ignored: &[(usize, usize)]) -> Option<EnvGuard> {
-    env_guards(code, &[(start, end)], ignored)
-        .into_iter()
-        .next()
-        .flatten()
-}
-
-#[derive(Clone, Copy)]
-enum ScopeContext {
-    Neutral,
-    Invalid,
-    Guard(EnvGuard),
-    For(ForClause),
-}
-
-#[derive(Clone, Copy)]
-enum ForClause {
-    Initializer,
-    Test,
-    Update,
-}
-
-struct ScanScope {
-    parent: usize,
-    context: ScopeContext,
-    conditional_questions: usize,
-    pending_reads: Vec<usize>,
-    conditional_pending: Vec<usize>,
-    arrow_expression: bool,
-}
-
-/// Whether the read `[start, end)` is the direct base of the optional chain
-/// operator at `question`: only whitespace, comments and wrapping parentheses
-/// that open right at the read may sit between them. A read that is an
-/// argument, key or operand inside a larger expression is not the base.
-fn is_direct_optional_chain_base(
-    bytes: &[u8],
-    start: usize,
-    end: usize,
-    question: usize,
-    ignored: &[(usize, usize)],
-) -> bool {
-    // Only whitespace and comments are skipped. String, template and regular
-    // expression literals end an expression, so they stay visible as the
-    // token before a parenthesis (`/x/(read)?.y` calls the literal).
-    let is_trivia = |position: usize| {
-        bytes[position].is_ascii_whitespace() || is_comment_at(bytes, ignored, position)
-    };
-    let skip_forward = |mut position: usize| {
-        while position < bytes.len() && is_trivia(position) {
-            position += 1;
-        }
-        position
-    };
-    // Last code byte position before `position`, if any.
-    let skip_backward = |mut position: usize| {
-        while position > 0 && is_trivia(position - 1) {
-            position -= 1;
-        }
-        position.checked_sub(1)
-    };
-    let (mut low, mut high) = (start, end);
-    loop {
-        let next = skip_forward(high);
-        if next == question {
-            return true;
-        }
-        if bytes.get(next) != Some(&b')') {
-            return false;
-        }
-        let Some(open) = skip_backward(low) else {
-            return false;
-        };
-        if bytes[open] != b'(' {
-            return false;
-        }
-        // A parenthesis that follows an expression is a call argument list,
-        // so the read is an argument rather than the chain base.
-        if let Some(before) = skip_backward(open) {
-            let byte = bytes[before];
-            // `}` ends a function, class or object expression that can be
-            // called directly. A block-ending brace followed by a statement
-            // that starts with `(` is indistinguishable without a parser, so
-            // it is read as a call too (see Known limits in the docs).
-            let call_like = is_identifier_byte(byte)
-                || matches!(byte, b')' | b']' | b'}' | b'.' | b'/' | b'\'' | b'"' | b'`');
-            if call_like {
-                let mut word_start = before + 1;
-                while word_start > 0 && is_identifier_byte(bytes[word_start - 1]) {
-                    word_start -= 1;
-                }
-                let preceded_by_member = word_start > 0 && bytes[word_start - 1] == b'.';
-                // A contextual word such as `of` may be a function name:
-                // `of(process.env.FLAG)?.x` calls `of`, so only reserved words
-                // make the parenthesis an operand.
-                let keyword =
-                    expression_keyword(&bytes[word_start..=before]).is_some_and(|entry| {
-                        entry.operand_follows && entry.kind == KeywordKind::Reserved
-                    });
-                if !keyword || preceded_by_member {
-                    return false;
-                }
-            }
-        }
-        low = open;
-        high = next + 1;
-    }
-}
-
-fn env_guards(
-    code: &str,
-    reads: &[(usize, usize)],
-    ignored: &[(usize, usize)],
-) -> Vec<Option<EnvGuard>> {
-    if reads.is_empty() {
-        return Vec::new();
-    }
-    let bytes = code.as_bytes();
-    let mut guards = vec![None; reads.len()];
-    let mut blocked = vec![false; reads.len()];
-    let mut contexts = vec![ScopeContext::Neutral; reads.len()];
-    let mut scopes = vec![ScanScope {
-        parent: 0,
-        context: ScopeContext::Neutral,
-        conditional_questions: 0,
-        pending_reads: Vec::new(),
-        conditional_pending: Vec::new(),
-        arrow_expression: false,
-    }];
-    let mut current_scope = 0;
-    let mut next_start = 0;
-    let mut next_end = 0;
-    let mut ignored_index = 0;
-
-    for index in 0..bytes.len() {
-        while next_start < reads.len() && reads[next_start].0 == index {
-            contexts[next_start] = scopes[current_scope].context;
-            next_start += 1;
-        }
-        while next_end < reads.len() && reads[next_end].1 <= index {
-            scopes[current_scope].pending_reads.push(next_end);
-            next_end += 1;
-        }
-        while ignored_index < ignored.len() && ignored[ignored_index].1 <= index {
-            ignored_index += 1;
-        }
-        if ignored_index < ignored.len()
-            && ignored[ignored_index].0 <= index
-            && index < ignored[ignored_index].1
-        {
-            continue;
-        }
-
-        if scopes[current_scope].arrow_expression
-            && matches!(bytes[index], b',' | b';' | b')' | b']' | b'}')
-        {
-            let parent = scopes[current_scope].parent;
-            let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
-            let conditional_pending =
-                std::mem::take(&mut scopes[current_scope].conditional_pending);
-            // An expression-bodied arrow evaluates to a function object at
-            // the enclosing expression. Do not let its unguarded reads flow
-            // into an enclosing branch operator. Guards found inside the
-            // arrow body remain recorded on their own reads.
-            drop(pending_reads);
-            drop(conditional_pending);
-            current_scope = parent;
-        }
-
-        if bytes[index] == b'\n' && asi_terminates(bytes, index, ignored) {
-            for read in scopes[current_scope].pending_reads.drain(..) {
-                if guards[read].is_none() {
-                    blocked[read] = true;
-                }
-            }
-            for read in scopes[current_scope].conditional_pending.drain(..) {
-                if guards[read].is_none() {
-                    blocked[read] = true;
-                }
-            }
-        }
-
-        match bytes[index] {
-            b'(' | b'[' | b'{' => {
-                let context = scope_context(
-                    code,
-                    index,
-                    bytes[index],
-                    scopes[current_scope].context,
-                    ignored,
-                );
-                scopes.push(ScanScope {
-                    parent: current_scope,
-                    context,
-                    conditional_questions: 0,
-                    pending_reads: Vec::new(),
-                    conditional_pending: Vec::new(),
-                    arrow_expression: false,
-                });
-                current_scope = scopes.len() - 1;
-            }
-            b')' | b']' | b'}' if current_scope != 0 => {
-                let parent = scopes[current_scope].parent;
-                let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
-                let conditional_pending =
-                    std::mem::take(&mut scopes[current_scope].conditional_pending);
-                scopes[parent].pending_reads.extend(pending_reads);
-                scopes[parent].pending_reads.extend(conditional_pending);
-                scopes[parent].pending_reads.sort_unstable();
-                current_scope = parent;
-            }
-            b';' => {
-                let context = scopes[current_scope].context;
-                match context {
-                    ScopeContext::For(ForClause::Test) => {
-                        for read in scopes[current_scope].pending_reads.drain(..) {
-                            if guards[read].is_none() {
-                                guards[read] = Some(EnvGuard::For);
-                            }
-                        }
-                    }
-                    _ => {
-                        for read in scopes[current_scope].pending_reads.drain(..) {
-                            if guards[read].is_none() {
-                                blocked[read] = true;
-                            }
-                        }
-                    }
-                }
-                for read in scopes[current_scope].conditional_pending.drain(..) {
-                    if matches!(context, ScopeContext::For(ForClause::Test)) {
-                        if guards[read].is_none() {
-                            guards[read] = Some(EnvGuard::For);
-                        }
-                    } else if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-                if let ScopeContext::For(clause) = context {
-                    scopes[current_scope].context = ScopeContext::For(match clause {
-                        ForClause::Initializer => ForClause::Test,
-                        ForClause::Test | ForClause::Update => ForClause::Update,
-                    });
-                }
-            }
-            b',' => {
-                for read in scopes[current_scope].pending_reads.drain(..) {
-                    if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-                for read in scopes[current_scope].conditional_pending.drain(..) {
-                    if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-            }
-            b':' => {
-                if scopes[current_scope].conditional_questions > 0 {
-                    let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
-                    scopes[current_scope]
-                        .conditional_pending
-                        .extend(pending_reads);
-                    scopes[current_scope].conditional_questions -= 1;
-                } else {
-                    for read in scopes[current_scope].pending_reads.drain(..) {
-                        if guards[read].is_none() {
-                            blocked[read] = true;
-                        }
-                    }
-                    for read in scopes[current_scope].conditional_pending.drain(..) {
-                        if guards[read].is_none() {
-                            blocked[read] = true;
-                        }
-                    }
-                }
-            }
-            b'=' if bytes.get(index + 1) == Some(&b'>') => {
-                if next_code_byte(bytes, index + 2, ignored) != Some(b'{') {
-                    scopes.push(ScanScope {
-                        parent: current_scope,
-                        context: ScopeContext::Neutral,
-                        conditional_questions: 0,
-                        pending_reads: Vec::new(),
-                        conditional_pending: Vec::new(),
-                        arrow_expression: true,
-                    });
-                    current_scope = scopes.len() - 1;
-                }
-            }
-            b'=' if bytes.get(index + 1) != Some(&b'=')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'=')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'!')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'<')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'>') =>
-            {
-                for read in scopes[current_scope].pending_reads.drain(..) {
-                    if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-                for read in scopes[current_scope].conditional_pending.drain(..) {
-                    if guards[read].is_none() {
-                        blocked[read] = true;
-                    }
-                }
-            }
-            b'&' if bytes.get(index + 1) == Some(&b'&') => {
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none() {
-                        guards[read] = Some(EnvGuard::ShortCircuitAnd);
-                    }
-                }
-            }
-            b'|' if bytes.get(index + 1) == Some(&b'|') => {
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none() {
-                        guards[read] = Some(EnvGuard::ShortCircuitOr);
-                    }
-                }
-            }
-            b'?' if bytes.get(index + 1) == Some(&b'?') => {
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none() {
-                        guards[read] = Some(EnvGuard::NullishCoalescing);
-                    }
-                }
-            }
-            b'?' if bytes.get(index + 1) == Some(&b'.')
-                && !bytes
-                    .get(index + 2)
-                    .is_some_and(|byte| byte.is_ascii_digit()) =>
-            {
-                // `a?.b`, `a?.[k]` and `a?.()` short-circuit on a nullish
-                // base. Only the read that is the direct base qualifies; other
-                // pending reads in the scope are arguments or operands.
-                // Reads are queued in source order, so the direct base can only
-                // be the last one; checking it alone keeps the scan linear.
-                if let Some(&read) = scopes[current_scope].pending_reads.last()
-                    && guards[read].is_none()
-                    && is_direct_optional_chain_base(
-                        bytes,
-                        reads[read].0,
-                        reads[read].1,
-                        index,
-                        ignored,
-                    )
-                {
-                    guards[read] = Some(EnvGuard::OptionalChain);
-                }
-            }
-            b'?' if bytes.get(index + 1) != Some(&b'.')
-                && bytes.get(index.wrapping_sub(1)) != Some(&b'?') =>
-            {
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none() {
-                        guards[read] = Some(EnvGuard::Conditional);
-                    }
-                }
-                scopes[current_scope].conditional_questions += 1;
-            }
-            _ => {}
-        }
-    }
-
-    while scopes[current_scope].arrow_expression {
-        let parent = scopes[current_scope].parent;
-        current_scope = parent;
-    }
-
-    guards
-        .into_iter()
-        .zip(contexts.into_iter().zip(blocked))
-        .map(|(guard, (context, blocked))| match context {
-            // An invalid enclosing expression blocks inherited branch
-            // evidence, but an operator found inside that expression still
-            // directly controls its own branch.
-            ScopeContext::Invalid => guard,
-            ScopeContext::Neutral => guard,
-            ScopeContext::Guard(fallback) if !blocked => guard.or(Some(fallback)),
-            ScopeContext::Guard(_) => guard,
-            ScopeContext::For(ForClause::Test) if !blocked => guard.or(Some(EnvGuard::For)),
-            ScopeContext::For(_) => guard,
-        })
-        .collect()
-}
-
-fn scope_prefix<'a>(code: &'a str, index: usize, ignored: &[(usize, usize)]) -> &'a str {
-    let mut end = code[..index].trim_end().len();
-    loop {
-        let Some(comment_index) = ignored
-            .partition_point(|(_, stop)| *stop <= end)
-            .checked_sub(1)
-        else {
-            return &code[..end];
-        };
-        let (start, stop) = ignored[comment_index];
-        if stop != end || !code[start..stop].starts_with("/*") {
-            return &code[..end];
-        }
-        end = code[..start].trim_end().len();
-    }
-}
-
-fn scope_context(
-    code: &str,
-    index: usize,
-    opener: u8,
-    parent: ScopeContext,
-    ignored: &[(usize, usize)],
-) -> ScopeContext {
-    let prefix = scope_prefix(code, index, ignored);
-    if opener == b'[' {
-        // A bracket after an expression is a computed member access and keeps
-        // the surrounding condition. A bracket after an operator starts an
-        // array literal, whose contents do not form a guard by themselves.
-        if prefix.as_bytes().last().is_some_and(|byte| {
-            byte.is_ascii_alphanumeric()
-                || matches!(
-                    *byte,
-                    b'_' | b'$' | b']' | b')' | b'}' | b'\'' | b'"' | b'`' | b'.'
-                )
-        }) {
-            return parent;
-        }
-        return ScopeContext::Invalid;
-    }
-    if opener != b'(' {
-        return ScopeContext::Invalid;
-    }
-    if prefix.ends_with("for")
-        && prefix
-            .as_bytes()
-            .get(..prefix.len() - "for".len())
-            .and_then(|prefix| prefix.last())
-            .is_none_or(|byte| {
-                !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
-            })
-    {
-        return ScopeContext::For(ForClause::Initializer);
-    }
-    for (keyword, guard) in [
-        ("if", EnvGuard::If),
-        ("while", EnvGuard::While),
-        ("switch", EnvGuard::Switch),
-    ] {
-        if prefix.ends_with(keyword)
-            && prefix
-                .as_bytes()
-                .get(..prefix.len() - keyword.len())
-                .and_then(|prefix| prefix.last())
-                .is_none_or(|byte| {
-                    !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
-                })
-        {
-            return ScopeContext::Guard(guard);
-        }
-    }
-    if prefix.as_bytes().last().is_some_and(|byte| {
-        byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'$' | b']' | b')' | b'.')
-    }) {
-        ScopeContext::Invalid
-    } else {
-        parent
-    }
 }
 
 fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
@@ -1481,6 +920,10 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         })
         .collect();
     let mut bodies: Vec<(usize, usize)> = function_bodies.iter().map(|(_, body)| *body).collect();
+    // TypeScript `namespace` and `module` bodies own their `var` declarations
+    // just like function bodies.
+    let namespaces = namespace_bodies(source, &code, ignored, &blocks);
+    bodies.extend(namespaces.iter().map(|namespace| namespace.body));
     let mut scopes = Vec::new();
     // Parameter lists followed by a body: `(...) {` or `(...) =>`.
     let parameters = Regex::new(r"\(([^()]*)\)\s*(?:=>|\{)").expect("static regex");
@@ -1601,8 +1044,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
     // are scoped like their ASCII counterparts. ZWNJ and ZWJ are permitted
     // after the first identifier character by the ECMAScript grammar.
     let single_arrow =
-        Regex::new(r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*\s*=>\s*\{")
-            .expect("static regex");
+        Regex::new(&format!(r"{UNICODE_IDENTIFIER}\s*=>\s*\{{")).expect("static regex");
     for found in single_arrow.find_iter(&code) {
         let open = found.end() - 1;
         if let Some(body) = blocks.iter().find(|(start, _)| *start == open) {
@@ -1631,8 +1073,185 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             _ => enclosing(found.start()),
         };
         scopes.push(scope);
+        // An exported member is visible in every declaration that merges into
+        // the same namespace symbol; other declarations stay local to their
+        // own body.
+        if exported_declaration(&code, found.start())
+            && let Some(namespace) = namespaces
+                .iter()
+                .find(|namespace| namespace.body == enclosing(found.start()))
+        {
+            scopes.extend(
+                namespaces
+                    .iter()
+                    .filter(|merged| merged.key == namespace.key)
+                    .map(|merged| merged.body),
+            );
+        }
     }
     scopes
+}
+
+/// ECMAScript identifier syntax: Unicode `ID_Start` or `$`/`_`, then
+/// `ID_Continue`, `$`, `_`, ZWNJ or ZWJ.
+const UNICODE_IDENTIFIER: &str =
+    r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*";
+
+/// Words that can follow `module`/`namespace` in expressions such as
+/// `module in {}`; they are never namespace names.
+const NON_NAMESPACE_WORDS: [&str; 3] = ["in", "instanceof", "of"];
+
+/// A TypeScript `namespace`/`module` declaration body. Declarations with the
+/// same `key` merge into one symbol and share its exported members.
+struct NamespaceBody {
+    key: String,
+    body: (usize, usize),
+}
+
+/// Finds TypeScript namespace and module bodies, including dotted names,
+/// nested declarations, Unicode names and quoted ambient module names.
+///
+/// The keyword and the name must share a line, as in TypeScript's grammar, so
+/// automatic semicolon insertion keeps `module\nN\n{}` an ordinary block.
+/// Keys follow the textual qualified name; an exported nested declaration
+/// extends the key of its enclosing namespace, while any other nested
+/// declaration gets a block-local key because it cannot merge with outer
+/// declarations.
+fn namespace_bodies(
+    source: &str,
+    code: &str,
+    ignored: &[(usize, usize)],
+    blocks: &[(usize, usize)],
+) -> Vec<NamespaceBody> {
+    let keyword = Regex::new(r"\b(namespace|module)").expect("static regex");
+    let path = Regex::new(&format!(
+        r"^({UNICODE_IDENTIFIER}(?:\s*\.\s*{UNICODE_IDENTIFIER})*)\s*\{{"
+    ))
+    .expect("static regex");
+    let mut namespaces: Vec<NamespaceBody> = Vec::new();
+    for found in keyword.find_iter(code) {
+        let kind = found.as_str();
+        // Literals are masked in `code`, so measure the same-line trivia gap in
+        // the original source.
+        let Some(cursor) = same_line_trivia_end(source, ignored, found.end()) else {
+            continue;
+        };
+        // Member accesses such as `module.exports` or `a.namespace` are not
+        // declarations.
+        let preceding = code[..found.start()]
+            .bytes()
+            .rev()
+            .find(|byte| !byte.is_ascii_whitespace());
+        if matches!(preceding, Some(b'.' | b'$')) {
+            continue;
+        }
+        let rest = &code[cursor..];
+        let (name, open) = if let Some(captures) = path.captures(rest)
+            && let (Some(name), Some(all)) = (captures.get(1), captures.get(0))
+        {
+            let name: String = name
+                .as_str()
+                .split('.')
+                .map(str::trim)
+                .collect::<Vec<_>>()
+                .join(".");
+            if NON_NAMESPACE_WORDS.contains(&name.as_str()) {
+                continue;
+            }
+            (name, cursor + all.end() - 1)
+        } else if kind == "module"
+            && matches!(source.as_bytes().get(cursor), Some(b'"' | b'\''))
+            && let Some(&(_, end)) = ignored.iter().find(|(start, _)| *start == cursor)
+            && let Some(offset) = code[end..].find(|character: char| !character.is_whitespace())
+            && code.as_bytes().get(end + offset) == Some(&b'{')
+        {
+            // `declare module "pkg" {}`: the literal is masked in `code`.
+            (
+                format!("'{}'", &source[cursor + 1..end.saturating_sub(1)]),
+                end + offset,
+            )
+        } else {
+            continue;
+        };
+        let Some(body) = blocks.iter().find(|(start, _)| *start == open).copied() else {
+            continue;
+        };
+        let parent = blocks
+            .iter()
+            .filter(|(start, end)| *start < found.start() && found.start() < *end)
+            .min_by_key(|(start, end)| end - start);
+        let key = match parent {
+            None => name,
+            // Only an exported nested namespace is a member of its parent
+            // symbol; any other nested declaration merges only inside its
+            // own enclosing body.
+            Some(parent) => match namespaces.iter().find(|outer| outer.body == *parent) {
+                Some(outer) if exported_declaration(code, found.start()) => {
+                    format!("{}.{name}", outer.key)
+                }
+                _ => format!("@{}.{name}", parent.0),
+            },
+        };
+        namespaces.push(NamespaceBody { key, body });
+    }
+    namespaces
+}
+
+/// Skips whitespace and comments that stay on one line, starting at `from`.
+/// Returns the position of the next token, or `None` when no trivia separates
+/// it from `from` or a line terminator intervenes. A multi-line comment that
+/// contains a line terminator counts as a line break, as in TypeScript.
+fn same_line_trivia_end(source: &str, ignored: &[(usize, usize)], from: usize) -> Option<usize> {
+    let is_line_terminator =
+        |character: char| matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}');
+    let mut cursor = from;
+    loop {
+        let rest = &source[cursor..];
+        if let Some(character) = rest.chars().next()
+            && character.is_whitespace()
+            && !is_line_terminator(character)
+        {
+            cursor += character.len_utf8();
+            continue;
+        }
+        if rest.starts_with("/*")
+            && let Some(&(_, end)) = ignored.iter().find(|(start, _)| *start == cursor)
+            && !source[cursor..end.min(source.len())].contains(is_line_terminator)
+        {
+            cursor = end.min(source.len());
+            continue;
+        }
+        break;
+    }
+    (cursor > from).then_some(cursor)
+}
+
+/// Modifiers that can sit between `export` and a declaration keyword, for
+/// example `export declare var` or `export async function`.
+const DECLARATION_MODIFIERS: [&str; 2] = ["declare", "async"];
+
+/// Whether the declaration starting at `start` is directly preceded by
+/// `export`, optionally followed by any of `DECLARATION_MODIFIERS` in any
+/// order. Comments are masked in `code`, so they count as whitespace.
+fn exported_declaration(code: &str, start: usize) -> bool {
+    let word_boundary = |before: &str| {
+        before.chars().next_back().is_none_or(|character| {
+            !(character.is_alphanumeric() || character == '_' || character == '$')
+        })
+    };
+    let mut prefix = code[..start].trim_end();
+    'modifiers: loop {
+        for modifier in DECLARATION_MODIFIERS {
+            if let Some(before) = prefix.strip_suffix(modifier)
+                && word_boundary(before)
+            {
+                prefix = before.trim_end();
+                continue 'modifiers;
+            }
+        }
+        break;
+    }
+    prefix.strip_suffix("export").is_some_and(word_boundary)
 }
 
 /// Finds a block-bodied function or arrow body after a parameter list.
@@ -2187,6 +1806,19 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn regex_after_keyword_follows_the_keyword_table() {
+        for entry in EXPRESSION_KEYWORDS {
+            let code = format!("{} /process.env.FLAG/.test(x)", entry.word);
+            let start = code.find("process.env.FLAG").unwrap();
+            let ranges = non_code_ranges(&code);
+            assert_eq!(in_ranges(&ranges, start), entry.regex_follows, "{code}");
+        }
+        let code = "xreturn /process.env.FLAG/.test(x)";
+        let start = code.find("process.env.FLAG").unwrap();
+        assert!(!in_ranges(&non_code_ranges(code), start), "{code}");
+    }
+
+    #[test]
     fn arrow_parameters_are_found_behind_return_type_annotations() {
         let names = declared_names("const run = (descriptiveName: string): void => eval(code);");
         assert!(names.contains(&"descriptiveName".to_owned()));
@@ -2213,344 +1845,6 @@ y=/process.env.F/.test(z),process.env.G"#;
             "if (process.env.FEATURE_FLAGS) {}",
             "FEATURE_FLAG"
         ));
-    }
-
-    #[test]
-    fn env_reads_require_a_generated_branch() {
-        let guard = |code: &str, read: &str| {
-            let start = code.find(read).unwrap();
-            env_guard(code, start, start + read.len(), &non_code_ranges(code))
-                .map(EnvGuard::evidence)
-        };
-        for code in [
-            "console.log(process.env.VERSION);",
-            "const version=process.env.VERSION;ready&&run()",
-            "console.log(process.env.VERSION),ready&&run()",
-            "if(console.log(process.env.VERSION))run()",
-            "if(process.env.VERSION,ready)run()",
-            "if((process.env.VERSION),ready)run()",
-            "if([process.env.VERSION])run()",
-            "if({value:process.env.VERSION})run()",
-            "console.log(process.env.VERSION, '&&')",
-        ] {
-            assert_eq!(guard(code, "process.env.VERSION"), None, "{code}");
-        }
-        assert_eq!(guard("console.log(({}).VERSION)", "({}).VERSION"), None);
-        assert_eq!(
-            guard("'on'===process.env.VERSION&&run()", "process.env.VERSION"),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard(
-                "(sideEffect(), process.env.VERSION)&&run()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard("({}).VERSION==='on'&&run()", "({}).VERSION"),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard("if((process.env.VERSION))run()", "process.env.VERSION"),
-            Some("the retained read is in an if condition")
-        );
-        assert_eq!(
-            guard(
-                "if({on:true}[process.env.VERSION])run()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read is in an if condition")
-        );
-        assert_eq!(
-            guard(
-                "if(ready?process.env.VERSION:false)run()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read is in an if condition")
-        );
-        assert_eq!(
-            guard(
-                "if/*!license*/(process.env.VERSION)run()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read is in an if condition")
-        );
-        for code in [
-            "obj.if(process.env.VERSION)run()",
-            "obj.switch(process.env.VERSION)run()",
-        ] {
-            assert_eq!(guard(code, "process.env.VERSION"), None, "{code}");
-        }
-        assert_eq!(
-            guard("process.env.VERSION?on():off()", "process.env.VERSION"),
-            Some("the retained read controls a conditional (?:) branch")
-        );
-        assert_eq!(
-            guard("process.env.VERSION??fallback", "process.env.VERSION"),
-            Some("the retained read controls a ?? fallback branch")
-        );
-        assert_eq!(
-            guard("(()=>process.env.VERSION)&&run()", "process.env.VERSION"),
-            None
-        );
-        assert_eq!(
-            guard(
-                "function run(){process.env.VERSION&&work()}",
-                "process.env.VERSION"
-            ),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard(
-                "for (; process.env.VERSION; ) work()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read is in a for condition")
-        );
-        assert_eq!(
-            guard(
-                "for (process.env.VERSION; ; ) work()",
-                "process.env.VERSION"
-            ),
-            None
-        );
-        assert_eq!(
-            guard(
-                "for (; ; process.env.VERSION) work()",
-                "process.env.VERSION"
-            ),
-            None
-        );
-        assert_eq!(
-            guard(
-                "ready ? process.env.VERSION : fallback && work()",
-                "process.env.VERSION"
-            ),
-            None
-        );
-        assert_eq!(
-            guard(
-                "(ready ? process.env.VERSION : fallback) && work()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard(
-                "process.env.VERSION ? yes : no && work()",
-                "process.env.VERSION"
-            ),
-            Some("the retained read controls a conditional (?:) branch")
-        );
-        assert_eq!(
-            guard("process.env.VERSION\nready&&run()", "process.env.VERSION"),
-            None
-        );
-        assert_eq!(
-            guard("process.env.VERSION\n&&run()", "process.env.VERSION"),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard("if (process.env.VERSION\n) run()", "process.env.VERSION"),
-            Some("the retained read is in an if condition")
-        );
-    }
-
-    #[test]
-    fn optional_chain_base_reads_are_guards() {
-        let guard = |code: &str, read: &str| {
-            let start = code.find(read).unwrap();
-            env_guard(code, start, start + read.len(), &non_code_ranges(code))
-                .map(EnvGuard::evidence)
-        };
-        let chain = Some(EnvGuard::OptionalChain.evidence());
-        assert!(
-            EnvGuard::OptionalChain
-                .evidence()
-                .contains("short-circuits")
-        );
-        for code in [
-            "process.env.FLAG?.trim();",
-            "process.env.FLAG?.[key()];",
-            "process.env.FLAG?.();",
-            "(process.env.FLAG)?.trim();",
-            "((process.env.FLAG))?.trim();",
-            "( /* c */ process.env.FLAG /* c */ )?.trim();",
-            "process.env.FLAG\n?.trim();",
-            "x=process.env.FLAG?.trim();",
-            "return (process.env.FLAG)?.trim();",
-        ] {
-            assert_eq!(guard(code, "process.env.FLAG"), chain, "{code}");
-        }
-        assert_eq!(guard("({}).FLAG?.trim();", "({}).FLAG"), chain);
-        for code in [
-            "obj?.method(process.env.FLAG);",
-            "obj?.[process.env.FLAG];",
-            "(process.env.FLAG === \"on\")?.toString();",
-            "console.log(process.env.FLAG);",
-            "console.log(process.env.FLAG);obj?.method();",
-            "run(process.env.FLAG)?.value;",
-            "obj.run(process.env.FLAG)?.value;",
-            "const x = function(){}(process.env.FLAG)?.value;",
-            "const x = class{}(process.env.FLAG)?.value;",
-            "const x = {}(process.env.FLAG)?.value;",
-            "if (a) {}\n(process.env.FLAG)?.value;",
-            "process.env.FLAG.length?.toString();",
-            "const a=process.env.FLAG;b?.c();",
-            "const a=process.env.FLAG\nb?.c();",
-            "(process.env.FLAG,other)?.trim();",
-        ] {
-            assert_eq!(guard(code, "process.env.FLAG"), None, "{code}");
-        }
-        // Existing operators keep their evidence next to optional chains.
-        assert_eq!(
-            guard("process.env.FLAG&&run?.()", "process.env.FLAG"),
-            Some("the retained read controls a && short-circuit branch")
-        );
-        assert_eq!(
-            guard("process.env.FLAG?run():stop()", "process.env.FLAG"),
-            Some("the retained read controls a conditional (?:) branch")
-        );
-        assert_eq!(
-            guard("process.env.FLAG??run?.()", "process.env.FLAG"),
-            Some("the retained read controls a ?? fallback branch")
-        );
-    }
-
-    #[test]
-    fn keyword_before_parenthesized_read_follows_the_keyword_table() {
-        let guard = |code: &str| {
-            let start = code.find("process.env.FLAG").unwrap();
-            env_guard(
-                code,
-                start,
-                start + "process.env.FLAG".len(),
-                &non_code_ranges(code),
-            )
-            .map(EnvGuard::evidence)
-        };
-        let chain = Some(EnvGuard::OptionalChain.evidence());
-        for entry in EXPRESSION_KEYWORDS {
-            let word = entry.word;
-            // Reserved words make the parenthesis an operand; contextual words
-            // may be function names, so the read is only an argument.
-            let operand = entry.operand_follows && entry.kind == KeywordKind::Reserved;
-            for template in [
-                "WORD(process.env.FLAG)?.x;",
-                "WORD (process.env.FLAG)?.x;",
-                "WORD/* c */(process.env.FLAG)?.x;",
-                "a=WORD\n(process.env.FLAG)?.x;",
-                "x;WORD(process.env.FLAG)?.x;",
-            ] {
-                let code = template.replace("WORD", word);
-                let expected = if operand { chain } else { None };
-                assert_eq!(guard(&code), expected, "{code}");
-            }
-            // A member name or a longer identifier is never the keyword.
-            for template in [
-                "obj.WORD(process.env.FLAG)?.x;",
-                "obj?.WORD(process.env.FLAG)?.x;",
-                "xWORD(process.env.FLAG)?.x;",
-                "WORDx(process.env.FLAG)?.x;",
-                "WORD_(process.env.FLAG)?.x;",
-                "$WORD(process.env.FLAG)?.x;",
-                "\u{e9}WORD(process.env.FLAG)?.x;",
-            ] {
-                let code = template.replace("WORD", word);
-                assert_eq!(guard(&code), None, "{code}");
-            }
-        }
-        // Pinned limit: a real `for ... of (read)?.x` header cannot be told
-        // from a call to a function named `of` without a parser, so the
-        // conservative reading is a call and no guard is reported.
-        assert_eq!(guard("for(const a of(process.env.FLAG)?.x){}"), None);
-        assert_eq!(guard("for(const a in(process.env.FLAG)?.x){}"), chain);
-    }
-
-    #[test]
-    fn literal_before_parenthesized_read_is_a_callee() {
-        let guard = |code: &str| {
-            let start = code.find("process.env.FLAG").unwrap();
-            env_guard(
-                code,
-                start,
-                start + "process.env.FLAG".len(),
-                &non_code_ranges(code),
-            )
-            .map(EnvGuard::evidence)
-        };
-        let chain = Some(EnvGuard::OptionalChain.evidence());
-        for literal in ["/x/", "/x/gi", "/[/]/", "\"s\"", "'s'", "`t`", "`a${b}c`"] {
-            for template in [
-                "try{LIT(process.env.FLAG)?.value}catch{}",
-                "x=LIT(process.env.FLAG)?.value;",
-                "x=LIT /* c */ (process.env.FLAG)?.value;",
-                "x=LIT // c\n(process.env.FLAG)?.value;",
-            ] {
-                let code = template.replace("LIT", literal);
-                assert_eq!(guard(&code), None, "{code}");
-            }
-        }
-        // Comments between the operator and the read are still skipped.
-        for code in [
-            "x=/* c */(process.env.FLAG)?.value;",
-            "x=// c\n(process.env.FLAG)?.value;",
-            "x=`${(process.env.FLAG)?.value}`;",
-        ] {
-            assert_eq!(guard(code), chain, "{code}");
-        }
-    }
-
-    #[test]
-    fn optional_chain_scan_marks_every_read_among_many() {
-        let mut code = String::new();
-        let mut reads = Vec::new();
-        for index in 0..200 {
-            if index > 0 {
-                code.push_str("&&");
-            }
-            let start = code.len();
-            code.push_str(&format!("process.env.F{index}"));
-            reads.push((start, code.len()));
-            code.push_str("?.x");
-        }
-        let ignored = non_code_ranges(&code);
-        let guards = env_guards(&code, &reads, &ignored);
-        assert!(guards.iter().all(Option::is_some));
-    }
-
-    #[test]
-    fn regex_after_keyword_follows_the_keyword_table() {
-        for entry in EXPRESSION_KEYWORDS {
-            let code = format!("{} /process.env.FLAG/.test(x)", entry.word);
-            let start = code.find("process.env.FLAG").unwrap();
-            let ranges = non_code_ranges(&code);
-            assert_eq!(in_ranges(&ranges, start), entry.regex_follows, "{code}");
-        }
-        let code = "xreturn /process.env.FLAG/.test(x)";
-        let start = code.find("process.env.FLAG").unwrap();
-        assert!(!in_ranges(&non_code_ranges(code), start), "{code}");
-    }
-
-    #[test]
-    fn env_guard_scans_many_reads_in_one_pass() {
-        let mut code = String::new();
-        let mut reads = Vec::new();
-        for index in 0..256 {
-            let read = format!("process.env.FLAG{index}");
-            let start = code.len();
-            code.push_str(&read);
-            reads.push((start, start + read.len()));
-            code.push_str("&&run();");
-        }
-        let guards = env_guards(&code, &reads, &[]);
-        assert_eq!(guards.len(), reads.len());
-        assert!(
-            guards
-                .iter()
-                .all(|guard| matches!(guard, Some(EnvGuard::ShortCircuitAnd)))
-        );
     }
 
     #[test]
@@ -2653,6 +1947,299 @@ y=/process.env.F/.test(z),process.env.G"#;
             direct_eval_line("function outer() { return\nfunction eval() {}; } eval(code);")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn namespace_local_var_eval_does_not_shadow_outside_calls() {
+        for keyword in ["namespace", "module"] {
+            assert_eq!(
+                direct_eval_line(&format!(
+                    "{keyword} N {{ var eval = helper; }}\neval(code);"
+                )),
+                Some((1, 0))
+            );
+            assert_eq!(
+                direct_eval_line(&format!("{keyword} N {{ var eval = helper; eval(code); }}")),
+                None
+            );
+            assert_eq!(
+                direct_eval_line(&format!(
+                    "{keyword} N {{ var eval = helper; eval(code); }}\neval(code);"
+                )),
+                Some((1, 0))
+            );
+        }
+        // Nested and dotted namespaces.
+        assert_eq!(
+            direct_eval_line(
+                "namespace A { namespace B { var eval = helper; eval(code); } }\neval(code);"
+            ),
+            Some((1, 0))
+        );
+        assert_eq!(
+            direct_eval_line("namespace A.B { var eval = helper; eval(code); }"),
+            None
+        );
+        assert_eq!(
+            direct_eval_line("export namespace A.B { var eval = helper; }\neval(code);"),
+            Some((1, 0))
+        );
+        assert_eq!(
+            direct_eval_line("declare namespace N { var eval: any; }\neval(code);"),
+            Some((1, 0))
+        );
+        // A `var` in a nested block belongs to the enclosing namespace.
+        assert_eq!(
+            direct_eval_line(
+                "namespace N { if (x) { var eval = helper; } eval(code); }\neval(code);"
+            ),
+            Some((1, 0))
+        );
+        // A function keeps its own `var` boundary inside a namespace.
+        assert_eq!(
+            direct_eval_line("namespace N { function f() { var eval = helper; } eval(code); }"),
+            Some((0, 50))
+        );
+        // Lexical declarations keep the block path.
+        assert_eq!(
+            direct_eval_line("namespace N { let eval = helper; eval(code); }\neval(code);"),
+            Some((1, 0))
+        );
+        // Plain blocks still shadow the surrounding source scope.
+        assert_eq!(direct_eval_line("{ var eval = helper; } eval(code);"), None);
+        // Identifiers that merely resemble the keywords stay ordinary blocks.
+        assert_eq!(
+            direct_eval_line("module.exports = { run() { var eval = helper; } }; eval(code);"),
+            Some((0, 51))
+        );
+        assert_eq!(
+            direct_eval_line("{ var namespace = 1; } { var eval = helper; } eval(code);"),
+            None
+        );
+    }
+
+    #[test]
+    fn namespace_var_eval_scope_table() {
+        // (source, expected direct-eval position). `None` means every call is
+        // shadowed by a binding; `Some` is the first unshadowed call.
+        let cases: &[(&str, Option<(u32, u32)>)] = &[
+            // Quoted ambient module names.
+            (
+                "declare module \"pkg\" { export var eval: any }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "declare module 'pkg' { var eval: any }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "declare module \"pkg\" { var eval: any; eval(code); }",
+                None,
+            ),
+            (
+                "module \"a{b\" { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            // Unicode namespace names.
+            (
+                "namespace \u{3a9} { var eval = helper }\neval(code);",
+                Some((1, 0)),
+            ),
+            ("namespace \u{3a9} { var eval = helper; eval(code); }", None),
+            (
+                "namespace \u{3a9}.\u{3bb}x { var eval = helper }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "module caf\u{e9} { var eval = helper }\neval(code);",
+                Some((1, 0)),
+            ),
+            // The keyword and the name share a line; otherwise automatic
+            // semicolon insertion leaves an ordinary block.
+            ("module\nN\n{ var eval = helper; }\neval(code);", None),
+            ("namespace\nN\n{ var eval = helper; }\neval(code);", None),
+            ("module\n\"pkg\"\n{ var eval = helper; }\neval(code);", None),
+            (
+                "module N\n{ var eval = helper; }\neval(code);",
+                Some((2, 0)),
+            ),
+            (
+                "namespace N.\nM\n{ var eval = helper; }\neval(code);",
+                Some((3, 0)),
+            ),
+            // Same-line comments are trivia between the keyword and the name.
+            (
+                "namespace/* note */N { var eval = helper; } eval(code);",
+                Some((0, 44)),
+            ),
+            (
+                "namespace /* note */ N { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "module/* a */N/* b */.M { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "module/* note */\"pkg\" { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            // A comment that contains a line terminator is a line break.
+            (
+                "namespace /*\n*/ N { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace // note\nN { var eval = helper; }\neval(code);",
+                None,
+            ),
+            // Words that follow the keywords in expressions are not names.
+            (
+                "module in { a: 1 }; { var eval = helper; } eval(code);",
+                None,
+            ),
+            // Modifiers between `export` and the declaration keyword.
+            (
+                "namespace N { export async function eval() {} }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export declare async function eval(): void; }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export async /* c */ function eval() {} }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { async function eval() {} }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            // Exported members are shared by merged declarations.
+            (
+                "namespace N { export var eval = helper; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { eval(code); }\nnamespace N { export var eval = helper; }",
+                None,
+            ),
+            (
+                "module N { export let eval = helper; }\nmodule N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export const eval = helper; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export function eval() {} }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export declare var eval: any; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare module \"pkg\" { export var eval: any }\ndeclare module 'pkg' { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "namespace A.B { export var eval = helper; }\nnamespace A { export namespace B { \
+                 eval(code); } }",
+                None,
+            ),
+            // The merge never reaches outside the merged declarations.
+            (
+                "namespace N { export var eval = helper; }\nnamespace N { }\neval(code);",
+                Some((2, 0)),
+            ),
+            (
+                "namespace N { export var eval = helper; }\nnamespace M { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare module \"a\" { export var eval: any }\ndeclare module \"b\" { \
+                 eval(code); }",
+                Some((1, 21)),
+            ),
+            (
+                "namespace N { export var eval = helper; }\nfunction f() { namespace N { \
+                 eval(code); } }",
+                Some((1, 29)),
+            ),
+            // Non-exported bindings stay local to their own declaration.
+            (
+                "namespace N { var eval = helper; }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "namespace N { let eval = helper; }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "namespace N { export namespace M { export var eval = helper; } }\nnamespace N { \
+                 export namespace M { eval(code); } }",
+                None,
+            ),
+            // A nested namespace that is not exported is a separate symbol in
+            // each outer declaration.
+            (
+                "namespace N { namespace M { export var eval = helper; } }\nnamespace N { \
+                 namespace M { eval(code); } }",
+                Some((1, 28)),
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(direct_eval_line(source), *expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn namespace_scan_known_limits_are_pinned() {
+        // The scan has no parser: merged declarations are matched by their
+        // written qualified name, so a merge through an alias or a class or
+        // function with the same name is not followed, and the exported
+        // binding stays in its own declaration.
+        assert_eq!(
+            direct_eval_line(
+                "namespace N { export var eval = helper; }\nnamespace N\n.M { eval(code); }"
+            ),
+            Some((2, 5))
+        );
+        // Constructs without a recognized shape keep the program-wide `var`
+        // boundary, which suppresses calls elsewhere in the source.
+        assert_eq!(
+            direct_eval_line("declare global { var eval: any }\neval(code);"),
+            None
+        );
+        // Escapes in module names are compared as written.
+        assert_eq!(
+            direct_eval_line(
+                "declare module \"p\\x6bg\" { export var eval: any }\ndeclare module \"pkg\" { \
+                 eval(code); }"
+            ),
+            Some((1, 23))
+        );
+    }
+
+    #[test]
+    fn namespace_local_var_eval_reaches_the_mangling_rule() {
+        let prefix = "const longLocalName = 1;\n";
+        for keyword in ["namespace", "module"] {
+            let outside = format!("{prefix}{keyword} N {{ var eval = helper; }}\neval(code);");
+            let drafts = eval_rule_drafts(&outside, false);
+            assert_eq!(drafts.len(), 1);
+            assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+            assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+            let shadowed = format!("{prefix}{keyword} N {{ var eval = helper; eval(code); }}");
+            assert!(eval_rule_drafts(&shadowed, false).is_empty());
+            // Engine-reported evals are unaffected by the source scan.
+            assert_eq!(eval_rule_drafts(&shadowed, true).len(), 1);
+        }
     }
 
     #[test]
