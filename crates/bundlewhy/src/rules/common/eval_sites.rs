@@ -7,6 +7,11 @@
 //! so no decision depends on guessing the context from the text behind the
 //! token.
 //!
+//! Every keyword decision (`class`, `function`, `interface`, `type`, the
+//! operator keywords and the modifiers) is made on a `Word` token, which is
+//! not a member name after `.` or `?.` (a `Property` token) and not a string,
+//! a template, a comment or a regular expression (a `Value` token).
+//!
 //! The pass is a lexical scan, not a parser. When a construct needs a real
 //! parser to decide, the token is reported as a direct call so that a possible
 //! direct `eval` is never hidden. The documented known limits are pinned by
@@ -58,8 +63,11 @@ pub(super) fn classify_eval_sites(source: &str, ignored: &[(usize, usize)]) -> V
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum TokenKind {
-    /// An identifier or keyword.
+    /// An identifier or keyword that is not a member name.
     Word,
+    /// A member name after `.` or `?.`. It is never a keyword, so keyword
+    /// tables and keyword checks do not apply to it.
+    Property,
     /// A private name such as `#eval`.
     Private,
     /// A number, string, template piece or regular expression literal.
@@ -181,7 +189,17 @@ fn tokenize<'a>(source: &'a str, ignored: &[(usize, usize)]) -> Vec<Token<'a>> {
                 .char_indices()
                 .find(|(_, next)| !is_identifier_part(*next))
                 .map_or(rest.len(), |(offset, _)| offset);
-            (TokenKind::Word, length)
+            let after_dot = tokens
+                .last()
+                .is_some_and(|last: &Token<'_>| last.is_punct(".") || last.is_punct("?."));
+            (
+                if after_dot {
+                    TokenKind::Property
+                } else {
+                    TokenKind::Word
+                },
+                length,
+            )
         } else if character.is_ascii_digit() {
             let mut length = 0usize;
             let mut characters = rest.char_indices().peekable();
@@ -308,7 +326,7 @@ const STATEMENT_MODIFIERS: &[&str] = &["export", "declare", "abstract", "default
 /// delimiter. `in_type` makes `void` a type instead of an operator.
 fn ends_operand(token: &Token<'_>, in_type: bool) -> bool {
     match token.kind {
-        TokenKind::Value | TokenKind::Private => true,
+        TokenKind::Value | TokenKind::Private | TokenKind::Property => true,
         TokenKind::Word => {
             if token.text == "void" {
                 in_type
@@ -325,7 +343,7 @@ fn ends_operand(token: &Token<'_>, in_type: bool) -> bool {
 /// apply.
 fn continues_after(token: &Token<'_>, in_type: bool) -> bool {
     match token.kind {
-        TokenKind::Value | TokenKind::Private => false,
+        TokenKind::Value | TokenKind::Private | TokenKind::Property => false,
         TokenKind::Word => {
             if token.text == "void" {
                 !in_type
@@ -368,7 +386,7 @@ fn continues_before(token: &Token<'_>) -> bool {
         ),
         // A template literal after an expression is a tagged template.
         TokenKind::Value => token.text.starts_with('`'),
-        TokenKind::Private => false,
+        TokenKind::Private | TokenKind::Property => false,
     }
 }
 
@@ -471,9 +489,11 @@ struct Frame<'a> {
     statement_first: Option<Token<'a>>,
     /// The frame is an `interface` body, which ends its statement.
     closes_statement: bool,
+    /// Index of the last `function` word that was read as the keyword.
+    function_at: Option<usize>,
 }
 
-impl Frame<'_> {
+impl<'a> Frame<'a> {
     fn new(kind: FrameKind, type_mode: TypeMode, closes_statement: bool) -> Self {
         Self {
             kind,
@@ -488,6 +508,7 @@ impl Frame<'_> {
             statement_tokens: 0,
             statement_first: None,
             closes_statement,
+            function_at: None,
         }
     }
 
@@ -542,7 +563,7 @@ impl<'a> Scanner<'a> {
         let before = self.count_token(token);
         self.record_site(index);
         match token.kind {
-            TokenKind::Word => self.word(index),
+            TokenKind::Word | TokenKind::Property => self.word(index),
             TokenKind::Private | TokenKind::Value => self.operand(),
             TokenKind::Punct => self.punct(index, before),
         }
@@ -617,6 +638,7 @@ impl<'a> Scanner<'a> {
         let kind = match token.kind {
             TokenKind::Private if token.text == "#eval" => EvalSiteKind::PrivateName,
             TokenKind::Word if token.text == "eval" => self.classify_eval(index),
+            TokenKind::Property if token.text == "eval" => EvalSiteKind::MemberAccess,
             _ => return,
         };
         self.sites.push(EvalSite {
@@ -629,8 +651,8 @@ impl<'a> Scanner<'a> {
     ///
     /// | Context at the token                               | Kind          |
     /// |----------------------------------------------------|---------------|
-    /// | after `.` or `?.`                                   | member access |
-    /// | after `function` or `function *`                    | declaration   |
+    /// | after `.` or `?.` (a property token)                | member access |
+    /// | after the `function` keyword or `function *`        | declaration   |
     /// | decorator expression                                | direct call   |
     /// | class body, outside a field initializer             | declaration   |
     /// | type body at a member start                         | signature     |
@@ -639,19 +661,18 @@ impl<'a> Scanner<'a> {
     /// | statement start, then `{` on the same line or `:`   | declaration   |
     /// | anywhere else                                       | direct call   |
     fn classify_eval(&self, index: usize) -> EvalSiteKind {
+        let top = self.top();
+        // `function_at` is set only for a `function` word that was read as the
+        // keyword, so a member name such as `object.function` never counts.
         let previous = self.previous(index);
-        if previous.is_some_and(|token| token.is_punct(".") || token.is_punct("?.")) {
-            return EvalSiteKind::MemberAccess;
-        }
-        let function_keyword = previous.is_some_and(|token| token.is_word("function"))
-            || (previous.is_some_and(|token| token.is_punct("*"))
-                && index
-                    .checked_sub(2)
-                    .is_some_and(|before| self.tokens[before].is_word("function")));
-        if function_keyword {
+        let after_function = top.function_at.is_some_and(|keyword| {
+            index.checked_sub(1) == Some(keyword)
+                || (previous.is_some_and(|token| token.is_punct("*"))
+                    && index.checked_sub(2) == Some(keyword))
+        });
+        if after_function {
             return EvalSiteKind::Declaration;
         }
-        let top = self.top();
         if top.decorator == Decorator::AfterAt {
             return EvalSiteKind::DirectCall;
         }
@@ -758,6 +779,11 @@ impl<'a> Scanner<'a> {
             return;
         }
         let at_start = top.kind.has_members() && top.member_start;
+        if token.text == "function" && !(at_start && top.kind.declares_named_members()) {
+            // At a member start in a class body, an object literal or a type
+            // body, `function` is a member name, not the keyword.
+            top.function_at = Some(index);
+        }
         match token.text {
             "class" if at_start && top.kind.declares_named_members() => {
                 // `class` is a member name in a class body, object literal or
@@ -1060,7 +1086,7 @@ fn ends_type(token: &Token<'_>) -> bool {
 /// Reports whether `next` can start the member name that follows `modifier`.
 fn starts_member_name(next: &Token<'_>, modifier: &str) -> bool {
     match next.kind {
-        TokenKind::Word | TokenKind::Value | TokenKind::Private => true,
+        TokenKind::Word | TokenKind::Value | TokenKind::Private | TokenKind::Property => true,
         TokenKind::Punct => {
             matches!(next.text, "[" | "*" | "@") || (modifier == "static" && next.text == "{")
         }
@@ -1274,6 +1300,84 @@ mod tests {
                 "const C = class implements I { eval(v) {} };",
                 &[DECLARATION],
             ),
+        ]);
+    }
+
+    #[test]
+    fn only_the_function_keyword_makes_a_declaration_name() {
+        assert_table(&[
+            // `function` after `.` or `?.` is a member name.
+            ("const result = obj.function * eval(code);", &[CALL]),
+            ("const result = obj?.function * eval(code);", &[CALL]),
+            ("const result = obj.\nfunction * eval(code);", &[CALL]),
+            ("const result = obj.function\n* eval(code);", &[CALL]),
+            ("const result = obj.function + eval(code);", &[CALL]),
+            ("obj.function\neval(code);", &[CALL]),
+            (
+                "class C { run() { return a.function * eval(code); } }",
+                &[CALL],
+            ),
+            // `function` as the name of a class, object or type member is not
+            // the keyword either.
+            ("class C { function() {} eval(v) {} }", &[DECLARATION]),
+            ("class C { function = 1\n eval(v) {} }", &[DECLARATION]),
+            ("class C { function\n *eval(v) {} }", &[DECLARATION]),
+            ("const o = { function() {}, eval(v) {} };", &[DECLARATION]),
+            ("const o = { function: 1, eval(v) {} };", &[DECLARATION]),
+            ("const o = { function() { eval(code); } };", &[CALL]),
+            (
+                "interface X { function(value: string): void; eval(v: string): void }",
+                &[SIGNATURE],
+            ),
+            // The keyword still names a function declaration or expression.
+            ("function eval(code) { return code; }", &[DECLARATION]),
+            ("function * eval(code) { yield code; }", &[DECLARATION]),
+            ("function* eval(code) { yield code; }", &[DECLARATION]),
+            ("async function eval(code) {}", &[DECLARATION]),
+            ("async function* eval(code) {}", &[DECLARATION]),
+            ("export function eval(code) {}", &[DECLARATION]),
+            ("export default function eval(code) {}", &[DECLARATION]),
+            ("export default function* eval(code) {}", &[DECLARATION]),
+            ("declare function eval(code: string): void;", &[DECLARATION]),
+            ("const f = function eval(code) {};", &[DECLARATION]),
+            ("const f = function* eval(code) {};", &[DECLARATION]),
+            ("run(function eval(code) {});", &[DECLARATION]),
+            ("class C { value = function eval(code) {} }", &[DECLARATION]),
+            ("const o = { run: function eval(code) {} };", &[DECLARATION]),
+            ("a = b ? function eval(code) {} : null;", &[DECLARATION]),
+            // A call after a function expression is a call.
+            ("const f = function () {}; eval(code);", &[CALL]),
+            ("const f = function () {} * eval(code);", &[CALL]),
+        ]);
+    }
+
+    #[test]
+    fn keywords_after_a_dot_are_member_names() {
+        assert_table(&[
+            // Operator keywords after `.` end the operand, so the next line
+            // starts a new member.
+            ("class C { value = a.in\n eval(x) {} }", &[DECLARATION]),
+            ("class C { value = a.of\n eval(x) {} }", &[DECLARATION]),
+            ("class C { value = a.new\n eval(x) {} }", &[DECLARATION]),
+            ("class C { value = a.typeof\n eval(x) {} }", &[DECLARATION]),
+            ("class C { value = a.extends\n eval(x) {} }", &[DECLARATION]),
+            (
+                "class C { value = a.instanceof\n eval(x) {} }",
+                &[DECLARATION],
+            ),
+            ("class C { value = a?.await\n eval(x) {} }", &[DECLARATION]),
+            ("class C { value = a.void\n eval(x) {} }", &[DECLARATION]),
+            ("class C { value = a.is\n eval(x) {} }", &[DECLARATION]),
+            // The keyword itself still continues the initializer.
+            ("class C { value = typeof\n eval(x) {} }", &[CALL]),
+            ("class C { value = a in\n eval(x) {} }", &[CALL]),
+            // `a.return` is a value, not the restricted keyword, so a brace on
+            // the next line is not cut off from an operand.
+            ("const o = a.return\n{ eval(v) {} };", &[DECLARATION]),
+            // A property named like a declaration keyword opens nothing.
+            ("x.interface\neval(code)", &[CALL]),
+            ("x.type\nx.class\neval(code)", &[CALL]),
+            ("x.extends\nclass C { eval(v) {} }", &[DECLARATION]),
         ]);
     }
 

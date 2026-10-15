@@ -2621,6 +2621,18 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn a_member_named_function_does_not_hide_a_direct_eval() {
+        for (source, expected) in [
+            ("const result = obj.function * eval(code);", Some((0, 30))),
+            ("const result = obj?.function * eval(code);", Some((0, 31))),
+        ] {
+            assert_eq!(direct_eval_line(source), expected, "{source}");
+        }
+        // The keyword still names a declaration, which is not a call.
+        assert_eq!(direct_eval_line("function * eval(code) {}"), None);
+    }
+
+    #[test]
     fn function_bodies_skip_typescript_return_annotations() {
         let source = "function run(): void { var eval = helper; } eval(code);";
         assert!(direct_eval_line(source).is_some());
