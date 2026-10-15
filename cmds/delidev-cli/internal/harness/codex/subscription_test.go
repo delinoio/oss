@@ -123,7 +123,17 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 		}
 		config := map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": featuresValue, "mcp_servers": mcp}
 		if survivor := strings.Split(os.Getenv("DELIDEV_CODEX_SURVIVOR"), ":"); len(survivor) == 3 && fixtureSurvivorActive(survivor[1]) && survivor[2] == "server" {
-			config["mcp_servers"] = map[string]any{survivor[0] + "-server": map[string]any{"command": "private-" + survivor[0] + "-command"}}
+			entry := map[string]any{"command": "private-" + survivor[0] + "-command"}
+			// DELIDEV_CODEX_SURVIVOR_ENABLED is the raw JSON of the entry's enabled
+			// value; unset leaves the key absent.
+			if raw := os.Getenv("DELIDEV_CODEX_SURVIVOR_ENABLED"); raw != "" {
+				var value any
+				if json.Unmarshal([]byte(raw), &value) != nil {
+					os.Exit(48)
+				}
+				entry["enabled"] = value
+			}
+			config["mcp_servers"] = map[string]any{survivor[0] + "-server": entry}
 		}
 		// Only the read before project isolation reports the workspace servers:
 		// isolation settles the project untrusted first, so Codex ignores the

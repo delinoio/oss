@@ -175,8 +175,9 @@ func (c *Client) verifyMCPInventory(ctx context.Context, cwd string) error {
 }
 
 // verifyMCPInventoryAt reads the effective configuration of the thread
-// directory and requires an absent, null or empty mcp_servers table and an
-// explicit false plugin feature. The stage names the timing in the closed log.
+// directory and requires an mcp_servers table without an enabled entry (absent,
+// null, empty or only entries with enabled = false) and an explicit false
+// plugin feature. The stage names the timing in the closed log.
 func (c *Client) verifyMCPInventoryAt(ctx context.Context, cwd string, stage isolationStage) error {
 	if !policyFor(c.isolationProfile()).VerifyInventory {
 		return nil
@@ -199,15 +200,16 @@ func (c *Client) verifyMCPInventoryAt(ctx context.Context, cwd string, stage iso
 	if response.ErrorCode != nil || domain.Decode(response.Result, &result) != nil || result.Config == nil {
 		return c.rejectIsolation(ctx, stage, isolationInventoryUnreadable)
 	}
-	raw := result.Config["mcp_servers"]
-	if len(raw) != 0 && string(raw) != "null" {
-		var entries map[string]json.RawMessage
-		if json.Unmarshal(raw, &entries) != nil || entries == nil {
-			return c.rejectIsolation(ctx, stage, isolationInventoryUnreadable)
-		}
-		if len(entries) != 0 {
-			return c.rejectIsolation(ctx, stage, isolationInventoryNonEmpty)
-		}
+	// config/read keeps an entry whose enabled value is false in the effective
+	// table although Codex never launches it, so only an enabled entry is an
+	// inventory. The startup inventory classifier is the single source of that
+	// rule; a malformed table or a non-boolean enabled value is unreadable.
+	enabled, err := configuredMCPStartupServers(result.Config["mcp_servers"])
+	if err != nil {
+		return c.rejectIsolation(ctx, stage, isolationInventoryUnreadable)
+	}
+	if len(enabled) != 0 {
+		return c.rejectIsolation(ctx, stage, isolationInventoryNonEmpty)
 	}
 	// A plugin contributes MCP servers through its own .mcp.json, which
 	// config/read never lists. The private configuration disables the plugin

@@ -1320,12 +1320,17 @@ independent Fork `thread/fork`).
 After the thread exists and before the connection can send any input or
 `turn/start`, the same check runs again as drift detection
 (`stage=mcp-inventory-verification`). `config/read` with the thread directory
-must report an absent, null or empty `mcp_servers` and an explicit
-`features.plugins = false`. An absent, null or enabled plugin feature (for
+must report an `mcp_servers` without an enabled entry (absent, null, empty or
+only entries with `enabled = false`, which `config/read` still lists although
+Codex never launches them) and an explicit `features.plugins = false`. An entry
+counts as enabled when its `enabled` key is absent or `true`; the startup
+inventory classifier (`configuredMCPStartupServers`) is the single source of
+that rule, and an `enabled` value of any other type (including `null`) is
+unreadable. An absent, null or enabled plugin feature (for
 example a managed policy that re-enables plugins) fails with
 `reason=plugins-enabled`, because a plugin-backed server would then be missing
 from the reported inventory.
-A non-empty or unparseable inventory, a malformed `features` table, a native
+An inventory with an enabled entry, an unparseable inventory, a malformed `features` table, a native
 error or a failed read fails with `unsupported` in the profile phase, latches
 the connection after a thread exists (no input or second thread), logs
 `codex_native_isolation_rejected` with only `owner_id`,
@@ -1393,21 +1398,24 @@ contribute a server or re-enable plugins at either. Every row has a test
 (`project_isolation_layers_test.go` for the rejecting and accepting rows, the
 private-home state table above for the removed ones):
 
-| Layer                                          | Timing                                          | State                                                 | Result                                                                         |
-| ---------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------ |
-| System                                         | Pre-thread probe                                | Defines an MCP server                                 | Rejected `inventory-nonempty` (`mcp-inventory-preflight`); no thread operation |
-| System                                         | Pre-thread probe                                | Enables plugins                                       | Rejected `plugins-enabled` (`mcp-inventory-preflight`); no thread operation    |
-| System                                         | Post-bind check                                 | Defines an MCP server or enables plugins              | Rejected (`mcp-inventory-verification`); no input                              |
-| Managed policy                                 | Pre-thread probe                                | Defines an MCP server                                 | Rejected `inventory-nonempty` (`mcp-inventory-preflight`); no thread operation |
-| Managed policy                                 | Pre-thread probe                                | Re-enables plugins                                    | Rejected `plugins-enabled` (`mcp-inventory-preflight`); no thread operation    |
-| Managed policy                                 | Post-bind check                                 | Defines an MCP server or re-enables plugins           | Rejected (`mcp-inventory-verification`); no input                              |
-| User (private home, top level)                 | Rewrite                                         | Defines `mcp_servers` or enables plugins              | Removed or set to `false` before the probe                                     |
-| User (private home, top level)                 | Pre-thread probe and post-bind check            | A definition is still effective                       | Rejected at that moment                                                        |
-| Profile (selected or not, in the private home) | Rewrite                                         | Defines `mcp_servers` or a `plugins` feature override | Removed before the probe                                                       |
-| Profile (selected or not, in the private home) | Pre-thread probe and post-bind check            | A definition is still effective                       | Rejected at that moment                                                        |
-| Project (repository `.codex/config.toml`)      | Provider configuration read, before the rewrite | Defines an MCP server while the project is trusted    | Visible only to that read; it authorizes no server                             |
-| Project (repository `.codex/config.toml`)      | Pre-thread probe and post-bind check            | Layer inactive because the project is untrusted       | Accepted                                                                       |
-| Project (repository `.codex/config.toml`)      | Pre-thread probe and post-bind check            | A definition is still effective                       | Rejected at that moment                                                        |
+| Layer                                                     | Timing                                          | State                                                       | Result                                                                         |
+| --------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| System                                                    | Pre-thread probe                                | Defines an MCP server                                       | Rejected `inventory-nonempty` (`mcp-inventory-preflight`); no thread operation |
+| System                                                    | Pre-thread probe                                | Enables plugins                                             | Rejected `plugins-enabled` (`mcp-inventory-preflight`); no thread operation    |
+| System                                                    | Post-bind check                                 | Defines an MCP server or enables plugins                    | Rejected (`mcp-inventory-verification`); no input                              |
+| Managed policy                                            | Pre-thread probe                                | Defines an MCP server                                       | Rejected `inventory-nonempty` (`mcp-inventory-preflight`); no thread operation |
+| Managed policy                                            | Pre-thread probe                                | Re-enables plugins                                          | Rejected `plugins-enabled` (`mcp-inventory-preflight`); no thread operation    |
+| Managed policy                                            | Post-bind check                                 | Defines an MCP server or re-enables plugins                 | Rejected (`mcp-inventory-verification`); no input                              |
+| User (private home, top level)                            | Rewrite                                         | Defines `mcp_servers` or enables plugins                    | Removed or set to `false` before the probe                                     |
+| User (private home, top level)                            | Pre-thread probe and post-bind check            | A definition is still effective                             | Rejected at that moment                                                        |
+| Profile (selected or not, in the private home)            | Rewrite                                         | Defines `mcp_servers` or a `plugins` feature override       | Removed before the probe                                                       |
+| Profile (selected or not, in the private home)            | Pre-thread probe and post-bind check            | A definition is still effective                             | Rejected at that moment                                                        |
+| Project (repository `.codex/config.toml`)                 | Provider configuration read, before the rewrite | Defines an MCP server while the project is trusted          | Visible only to that read; it authorizes no server                             |
+| Project (repository `.codex/config.toml`)                 | Pre-thread probe and post-bind check            | Layer inactive because the project is untrusted             | Accepted                                                                       |
+| Project (repository `.codex/config.toml`)                 | Pre-thread probe and post-bind check            | A definition is still effective                             | Rejected at that moment                                                        |
+| Any layer above (system, managed, user, profile, project) | Pre-thread probe and post-bind check            | Effective entry has `enabled = false`                       | Accepted; the entry cannot launch                                              |
+| Any layer above                                           | Pre-thread probe and post-bind check            | Effective entry has `enabled = true` or no `enabled` key    | Rejected `inventory-nonempty` at that moment                                   |
+| Any layer above                                           | Pre-thread probe and post-bind check            | Effective entry has a non-boolean or `null` `enabled` value | Rejected `inventory-unreadable` at that moment                                 |
 
 Tests: `project_isolation_test.go` (table, profile derivation, pinned defaults,
 trust keys including linked worktrees, atomic idempotent replacement, invalid
@@ -1415,6 +1423,7 @@ files, concurrent members, start and resume rows, inventory rejection rows and
 logs), `project_isolation_cells_test.go` (the state table above),
 `project_isolation_path_test.go` (path normalization),
 `project_isolation_layers_test.go` (the layer and timing table above),
+`project_isolation_enabled_test.go` (the enabled-state rows for every layer, timing and operation),
 `project_isolation_lock_test.go` (lock lifecycle),
 the shared-owner binding test, and the explicit installed-native
 `TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP` and
