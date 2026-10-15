@@ -962,7 +962,13 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             .map_or(bytes.len(), |offset| found.end() + offset);
         scopes.push((found.start(), end));
     }
-    let single_arrow = Regex::new(r"\b[A-Za-z_$][\w$]*\s*=>\s*\{").expect("static regex");
+    // A single-parameter arrow does not have parentheses to identify its
+    // body. Use ECMAScript's Unicode identifier classes so names such as `λ`
+    // are scoped like their ASCII counterparts. ZWNJ and ZWJ are permitted
+    // after the first identifier character by the ECMAScript grammar.
+    let single_arrow =
+        Regex::new(r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*\s*=>\s*\{")
+            .expect("static regex");
     for found in single_arrow.find_iter(&code) {
         let open = found.end() - 1;
         if let Some(body) = blocks.iter().find(|(start, _)| *start == open) {
@@ -1628,6 +1634,7 @@ y=/process.env.F/.test(z),process.env.G"#;
             direct_eval_line("const run = (value): void => { var eval = helper; }; eval(code);")
                 .is_some()
         );
+        assert!(direct_eval_line("const run = λ => { var eval = helper; }; eval(code);").is_some());
         assert_eq!(
             direct_eval_line(
                 "async function run() { for await (const item of items) { var eval = helper; } \
