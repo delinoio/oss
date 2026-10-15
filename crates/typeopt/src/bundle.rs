@@ -1335,10 +1335,15 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
     struct WorkboxBindings {
         direct: BTreeSet<String>,
         ambiguous: BTreeSet<String>,
+        declared: BTreeSet<String>,
     }
 
     impl WorkboxBindings {
         fn mark_declared(&mut self, name: &str) {
+            self.declared.insert(name.to_owned());
+            if self.direct.contains(name) {
+                self.ambiguous.insert(name.to_owned());
+            }
             if matches!(name, "precache" | "precacheAndRoute") {
                 self.ambiguous.insert(name.to_owned());
             }
@@ -1362,7 +1367,11 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
                     })
                     .unwrap_or(named.local.sym.as_ref());
                 if workbox && matches!(imported, "precache" | "precacheAndRoute") {
-                    self.direct.insert(named.local.sym.to_string());
+                    let local = named.local.sym.to_string();
+                    if self.declared.contains(&local) {
+                        self.ambiguous.insert(local.clone());
+                    }
+                    self.direct.insert(local);
                 } else {
                     self.mark_declared(named.local.sym.as_ref());
                 }
@@ -1538,6 +1547,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         let mut bindings = WorkboxBindings {
             direct: BTreeSet::new(),
             ambiguous: BTreeSet::new(),
+            declared: BTreeSet::new(),
         };
         program.visit_with(&mut bindings);
         let mut visitor = Entries {

@@ -3254,6 +3254,24 @@ fn refreshes_precache_entries_with_escaped_urls() {
 }
 
 #[test]
+fn ignores_shadowed_workbox_aliases() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[0] = (
+        "index.html",
+        r#"<script type="importmap">{"imports":{"workbox-precaching":"/workbox.js"}}</script><script type="module" src="./sw.js"></script>"#,
+    );
+    chunks.push((
+        "sw.js",
+        r#"import{precacheAndRoute as cache}from"workbox-precaching";function run(cache){cache([{url:"assets/index-AAAAAAAA.js",revision:"old"}])}run(cache);"#,
+    ));
+    chunks.push(("workbox.js", "export function precacheAndRoute() {}"));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    assert!(published.contains("revision:\"old\""), "{published}");
+}
+
+#[test]
 fn keeps_pinned_and_hashed_precache_manifests() {
     let sw = r#"self.workbox.precacheAndRoute([{url:"index.html",revision:"old"}]);"#;
     for (name, options) in [
