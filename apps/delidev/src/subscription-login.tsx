@@ -1,6 +1,9 @@
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useClaudeSubscriptionLogin } from "./claude-subscription-login";
-import { useGrokSubscriptionLogin } from "./grok-subscription-login";
+import {
+  GrokLoginMethod,
+  useGrokSubscriptionLogin,
+} from "./grok-subscription-login";
 import {
   useLocale,
   ownedMessage,
@@ -221,7 +224,11 @@ export function useSubscriptionLogin(
       update(p, { busy: false });
     }
   };
-  const begin = (service: SubscriptionServiceId, initial?: Resource) => {
+  const begin = (
+    service: SubscriptionServiceId,
+    initial?: Resource,
+    grokDeviceCode = false,
+  ) => {
     // Claude sign-in is always the server-owned setup-token flow; callers gate
     // it on System capability 67 and no Runner Device ever participates.
     if (service === SubscriptionServiceId.Claude) {
@@ -230,7 +237,11 @@ export function useSubscriptionLogin(
     }
     if (service === SubscriptionServiceId.Grok) {
       // Grok keeps its own controller; it never reuses the ChatGPT view.
-      if (!pending.current && !claude.workflow) grok.begin();
+      // The method is the user's explicit choice and never switches later.
+      if (!pending.current && !claude.workflow)
+        grok.begin(
+          grokDeviceCode ? GrokLoginMethod.DeviceCode : GrokLoginMethod.Browser,
+        );
       return;
     }
     if (claude.workflow || grok.workflow) return;

@@ -39,29 +39,33 @@ import {
   subscriptionAliasDocument,
 } from "./subscription-resource";
 import {
+  GrokCopyEvent,
+  GrokCopyPhase,
+  GrokCopyTarget,
   GrokHelp,
   GrokLoginEvent,
   GrokLifetimeTrigger,
+  GrokLoginMethod,
   GrokLoginStage,
   GrokNameField,
   GrokNativeBinding,
   GrokRetry,
+  grokCopyAfterPhase,
+  grokCopyOffered,
+  grokCopyTransition,
   grokLifetimeCells,
   grokLoginPresentation,
   grokPollEvent,
   grokRetryOutcomes,
+  initialGrokCopyState,
   initialGrokLoginState,
   transition,
+  type GrokCopyState,
   type GrokLoginState,
 } from "./grok-login-machine";
 import "./subscription-onboarding.css";
 
-export { GrokLoginStage };
-enum CopyState {
-  Idle = "idle",
-  Copied = "copied",
-  Failed = "failed",
-}
+export { GrokLoginMethod, GrokLoginStage };
 // A response whose receipt this controller rejects locally: the account, alias,
 // operation, revision or ownership it carries is not the one that was
 // requested. The server already answered, so replaying the same request would
@@ -73,6 +77,23 @@ class GrokReceiptRejected extends Error {}
 enum NativeFailureReason {
   Incompatible = "incompatible",
 }
+const copyNotices: Record<
+  GrokCopyTarget,
+  { copied: MessageKey; failed: MessageKey }
+> = {
+  [GrokCopyTarget.Link]: {
+    copied: "grok-subscription.linkCopied",
+    failed: "grok-subscription.copyFailed",
+  },
+  [GrokCopyTarget.Code]: {
+    copied: "grok-subscription.device.codeCopied",
+    failed: "grok-subscription.device.codeCopyFailed",
+  },
+  [GrokCopyTarget.Address]: {
+    copied: "grok-subscription.device.addressCopied",
+    failed: "grok-subscription.device.addressCopyFailed",
+  },
+};
 // The account is created with this alias and keeps it until the naming step.
 const grokDefaultAlias = "Grok";
 const copiedNoticeMilliseconds = 4000;
@@ -98,6 +119,13 @@ const statusKeys: Record<GrokLoginStage, MessageKey> = {
   [GrokLoginStage.Recovery]: "grok-subscription.status.recovery",
   [GrokLoginStage.Failed]: "grok-subscription.status.failed",
 };
+const deviceHelpKeys: Partial<Record<GrokLoginStage, MessageKey>> = {
+  [GrokLoginStage.Canceled]: "grok-subscription.device.help.canceled",
+  [GrokLoginStage.Expired]: "grok-subscription.device.help.expired",
+  [GrokLoginStage.Unsupported]: "grok-subscription.device.help.unsupported",
+  [GrokLoginStage.Recovery]: "grok-subscription.help.recovery",
+  [GrokLoginStage.Failed]: "grok-subscription.device.help.failed",
+};
 const helpKeys: Partial<Record<GrokLoginStage, MessageKey>> = {
   [GrokLoginStage.Waiting]: "grok-subscription.help.waiting",
   [GrokLoginStage.Canceled]: "grok-subscription.help.canceled",
@@ -119,6 +147,7 @@ const grokQueryKeys = [
   "nonce",
   "referrer",
 ];
+const deviceCodePattern = /^[A-Z0-9-]{4,32}$/;
 const opaque = (value: string) => /^[A-Za-z0-9._~-]{1,512}$/.test(value);
 
 // Mirrors the trusted native receiver's fixed xAI profile. The server owns PKCE
@@ -172,6 +201,40 @@ export function grokLoginURL(raw: string): boolean {
   }
 }
 
+// Validates the transient device verification address and user code pair. The
+// address must be the fixed xAI device page; an embedded user_code must equal
+// the displayed code so the page and the screen can never disagree. A query
+// delimiter requires exactly that one parameter: URL.href keeps an empty "?" or
+// "#" while the native parser rejects both, so neither may pass here.
+export function grokDeviceVerification(raw: string, code: string): boolean {
+  try {
+    if (raw.length > 512 || !/^[!-~]+$/.test(raw) || raw.includes("#"))
+      return false;
+    if (!deviceCodePattern.test(code)) return false;
+    const url = new URL(raw),
+      query = url.searchParams;
+    if (
+      url.href !== raw ||
+      url.protocol !== "https:" ||
+      url.host !== "accounts.x.ai" ||
+      url.username ||
+      url.password ||
+      url.hash ||
+      url.pathname !== "/oauth2/device"
+    )
+      return false;
+    if (!raw.includes("?")) return true;
+    const keys = [...query.keys()];
+    return (
+      keys.length === 1 &&
+      keys[0] === "user_code" &&
+      query.get("user_code") === code
+    );
+  } catch {
+    return false;
+  }
+}
+
 // The machine owns everything that decides what the screen offers; this view
 // only adds presentation values that never gate an action.
 interface View {
@@ -180,7 +243,14 @@ interface View {
   suggested: boolean;
   busy: boolean;
   diagnostic?: GrokDiagnostic;
-  copyState: CopyState;
+  // Transient device display values, never persisted, logged or cached. The
+  // machine's presentation decides whether either is shown: the code while the
+  // device login waits, the validated address only after the opener failed.
+  userCode?: string;
+  address?: string;
+  // The copy attempt state of the machine's copy table; the notice is shown
+  // exactly while it is Copied or Failed.
+  copy: GrokCopyState;
 }
 interface Pending {
   opening: string;
@@ -188,6 +258,7 @@ interface Pending {
   account?: Resource;
   operation: string;
   url: string;
+  userCode: string;
   bound: boolean;
   callbackDispatched: boolean;
   disposed: boolean;
@@ -195,6 +266,8 @@ interface Pending {
   busy: boolean;
   // The single transition-table state; see grok-login-machine.ts.
   machine: GrokLoginState;
+  // The copy attempt table state and the timer of its visible notice.
+  copy: GrokCopyState;
   copyTimer?: ReturnType<typeof setTimeout>;
   // The exact original request of the retained mutation. It is held exactly
   // while machine.retry is not None and replays only through Retry original
@@ -228,6 +301,29 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
         () => undefined,
       );
   };
+  // Installs the next copy attempt state. The notice timer belongs to the
+  // state it was armed for, so every change replaces it.
+  const setCopy = (p: Pending, next: GrokCopyState): Partial<View> => {
+    if (next === p.copy) return {};
+    p.copy = next;
+    if (p.copyTimer) clearTimeout(p.copyTimer);
+    p.copyTimer = undefined;
+    if (
+      next.phase === GrokCopyPhase.Copied ||
+      next.phase === GrokCopyPhase.Failed
+    ) {
+      const attempt = next.attempt;
+      p.copyTimer = setTimeout(
+        () => dispatchCopy(p, GrokCopyEvent.NoticeExpired, attempt),
+        copiedNoticeMilliseconds,
+      );
+    }
+    return { copy: next };
+  };
+  const dispatchCopy = (p: Pending, event: GrokCopyEvent, attempt: number) => {
+    if (live(p))
+      update(p, setCopy(p, grokCopyTransition(p.copy, event, { attempt })));
+  };
   // Applies one event to the transition table. Every state change, retained
   // closure, original-link release and native disposal follows from the table.
   const apply = (p: Pending, event: GrokLoginEvent) => {
@@ -237,20 +333,21 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     p.machine = next;
     if (next.retry === GrokRetry.None) p.retry = undefined;
     const after = grokLoginPresentation(next);
-    if (after.settled || after.canceling) p.url = "";
+    if (after.settled || after.canceling) {
+      p.url = "";
+      p.userCode = "";
+    }
     if (
-      grokLoginPresentation(previous).native !== GrokNativeBinding.Disposed &&
+      grokLoginPresentation(previous).native === GrokNativeBinding.Owed &&
       after.native === GrokNativeBinding.Disposed
     )
       disposeNative(p);
-    // The copy notice belongs to a link that is no longer offered.
-    if (!after.copyLink && p.copyTimer) {
-      clearTimeout(p.copyTimer);
-      p.copyTimer = undefined;
-    }
+    // The latest copy attempt ends exactly when its value stops being offered,
+    // whatever else the phase still offers.
     update(p, {
       machine: next,
-      ...(after.copyLink ? {} : { copyState: CopyState.Idle }),
+      ...setCopy(p, grokCopyAfterPhase(p.copy, after)),
+      ...(after.copyCode ? {} : { userCode: undefined, address: undefined }),
     });
   };
   const dispatch = (p: Pending, event: GrokLoginEvent) => {
@@ -261,6 +358,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   const dispose = (p: Pending) => {
     p.disposed = true;
     p.url = "";
+    p.userCode = "";
     if (p.copyTimer) clearTimeout(p.copyTimer);
     p.copyTimer = undefined;
     apply(p, GrokLoginEvent.Dispose);
@@ -309,17 +407,21 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   // Runs one action. A replayable mutation (kind) retains its exact original
   // request after an uncertain outcome and settles through its own events, so
   // the retained request keeps its mutation-specific problem across every
-  // replay. An auxiliary action (no kind) never owns or consumes a retry.
+  // replay. An auxiliary action (Open browser again, Open verification page)
+  // names its own start and failure events and never owns or consumes a retry.
   const run = async (
     p: Pending,
     action: () => Promise<void>,
-    kind?: Exclude<GrokRetry, GrokRetry.None>,
+    mode:
+      | Exclude<GrokRetry, GrokRetry.None>
+      | { started: GrokLoginEvent; failed: GrokLoginEvent },
   ) => {
     if (!live(p) || p.busy) return;
+    const kind = typeof mode === "string" ? mode : undefined;
     p.busy = true;
     dispatch(
       p,
-      kind ? GrokLoginEvent.ReplayStarted : GrokLoginEvent.AuxiliaryStarted,
+      typeof mode === "string" ? GrokLoginEvent.ReplayStarted : mode.started,
     );
     update(p, { busy: true });
     try {
@@ -341,7 +443,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           // rejects locally, ends the attempt without a retry.
           dispatch(p, uncertain ? outcomes.uncertain : outcomes.refused);
           p.retry = p.machine.retry === kind ? action : undefined;
-        } else dispatch(p, GrokLoginEvent.ReopenFailed);
+        } else if (typeof mode !== "string") dispatch(p, mode.failed);
       }
     } finally {
       p.busy = false;
@@ -349,19 +451,21 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     }
   };
 
-  const begin = () => {
+  const begin = (method: GrokLoginMethod = GrokLoginMethod.Browser) => {
     if (!active || pending.current || opening?.disposed) return;
     const p: Pending = {
       opening: newRequestId(),
       generation: "",
       operation: "",
       url: "",
+      userCode: "",
       bound: false,
       callbackDispatched: false,
       disposed: false,
       polling: false,
       busy: false,
-      machine: initialGrokLoginState(Boolean(native)),
+      copy: initialGrokCopyState,
+      machine: initialGrokLoginState(Boolean(native), method),
     };
     pending.current = p;
     setView({
@@ -369,7 +473,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       name: grokDefaultAlias,
       suggested: false,
       busy: false,
-      copyState: CopyState.Idle,
+      copy: initialGrokCopyState,
     });
     if (!native) return;
     const create = {
@@ -418,7 +522,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           requestId: newRequestId(),
         },
         action: SubscriptionAction.LOGIN,
-        deviceCode: false,
+        deviceCode: method === GrokLoginMethod.DeviceCode,
       };
       const result = await clients.subscription.requestSubscription(login);
       if (!live(p)) return;
@@ -512,6 +616,21 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           stage !== GrokLoginStage.Waiting
         )
           return;
+        if (p.machine.method === GrokLoginMethod.DeviceCode) {
+          // Slow-down and pending polls are server-side and carry no new
+          // presentation. The first valid pair is pinned for the whole login.
+          if (
+            !grokDeviceVerification(progress.url, progress.userCode) ||
+            (p.url && p.url !== progress.url) ||
+            (p.userCode && p.userCode !== progress.userCode)
+          )
+            throw new Error("Invalid original device authorization");
+          p.url = progress.url;
+          p.userCode = progress.userCode;
+          dispatch(p, GrokLoginEvent.CodeReady);
+          update(p, { userCode: p.userCode, address: p.url });
+          return;
+        }
         if (
           progress.userCode ||
           !grokLoginURL(progress.url) ||
@@ -637,53 +756,100 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       !grokLoginPresentation(p.machine).openBrowser
     )
       return;
-    void run(p, async () => {
-      let result;
-      try {
-        result = await native(
-          p.opening,
-          OAuthNativeAction.GrokSubscriptionReopen,
-          p.generation,
-          p.operation,
-          p.url,
-        );
-      } catch (error) {
-        if (error !== NativeFailureReason.Incompatible) throw error;
-        // The same closed refusal as the first open: stop offering reopen.
-        dispatch(p, GrokLoginEvent.ReopenIncompatible);
-        return;
-      }
-      if (!live(p)) return;
-      if (
-        !isEntityId(result.generation) ||
-        (p.generation && result.generation !== p.generation)
-      )
-        throw new Error("Original browser binding changed");
-      p.generation = result.generation;
-      dispatch(p, GrokLoginEvent.ReopenSucceeded);
-    });
+    void run(
+      p,
+      async () => {
+        let result;
+        try {
+          result = await native(
+            p.opening,
+            OAuthNativeAction.GrokSubscriptionReopen,
+            p.generation,
+            p.operation,
+            p.url,
+          );
+        } catch (error) {
+          if (error !== NativeFailureReason.Incompatible) throw error;
+          // The same closed refusal as the first open: stop offering reopen.
+          dispatch(p, GrokLoginEvent.ReopenIncompatible);
+          return;
+        }
+        if (!live(p)) return;
+        if (
+          !isEntityId(result.generation) ||
+          (p.generation && result.generation !== p.generation)
+        )
+          throw new Error("Original browser binding changed");
+        p.generation = result.generation;
+        dispatch(p, GrokLoginEvent.ReopenSucceeded);
+      },
+      {
+        started: GrokLoginEvent.AuxiliaryStarted,
+        failed: GrokLoginEvent.ReopenFailed,
+      },
+    );
   };
-  const copyLink = () => {
+  const copyValue = (target: GrokCopyTarget) => {
     const p = pending.current;
-    if (!p || !live(p) || !p.url || !grokLoginPresentation(p.machine).copyLink)
+    if (!p || !live(p)) return;
+    const value = target === GrokCopyTarget.Code ? p.userCode : p.url;
+    // Only a value the machine currently offers is copied.
+    if (!value || !grokCopyOffered(grokLoginPresentation(p.machine), target))
       return;
     const clipboard = globalThis.navigator?.clipboard;
-    const settle = (copyState: CopyState) => {
-      if (!live(p)) return;
-      update(p, { copyState });
-      if (p.copyTimer) clearTimeout(p.copyTimer);
-      p.copyTimer = setTimeout(
-        () => update(p, { copyState: CopyState.Idle }),
-        copiedNoticeMilliseconds,
-      );
-    };
+    // The clipboard settles later: only the latest attempt, still pending, may
+    // show a notice (see the copy attempt table of the machine).
+    const started = grokCopyTransition(p.copy, GrokCopyEvent.Started, {
+      target,
+    });
+    update(p, setCopy(p, started));
+    const settle = (event: GrokCopyEvent) =>
+      dispatchCopy(p, event, started.attempt);
     if (!clipboard) {
-      settle(CopyState.Failed);
+      settle(GrokCopyEvent.Rejected);
       return;
     }
-    void clipboard.writeText(p.url).then(
-      () => settle(CopyState.Copied),
-      () => settle(CopyState.Failed),
+    void clipboard.writeText(value).then(
+      () => settle(GrokCopyEvent.Succeeded),
+      () => settle(GrokCopyEvent.Rejected),
+    );
+  };
+  // Opens the validated device verification page through the closed native
+  // device-authorization action. Like every OAuth/subscription authorization it
+  // uses the system default browser and never the General/Local browser choice
+  // that applies to ordinary links. It never opens a second browser on its own.
+  // The machine records that an open was requested before the native call, so
+  // every exit disposes the opening and retires a dispatch that is admitted but
+  // not yet finished.
+  const openVerification = () => {
+    const p = pending.current;
+    if (
+      !p ||
+      !live(p) ||
+      !native ||
+      !p.url ||
+      p.retry ||
+      p.machine.method !== GrokLoginMethod.DeviceCode ||
+      !grokLoginPresentation(p.machine).openVerification
+    )
+      return;
+    const url = p.url;
+    void run(
+      p,
+      async () => {
+        await native(
+          p.opening,
+          OAuthNativeAction.GrokDeviceAuthorizationOpen,
+          "",
+          p.operation,
+          url,
+        );
+        dispatch(p, GrokLoginEvent.VerificationOpenSucceeded);
+      },
+      {
+        started: GrokLoginEvent.VerificationOpenStarted,
+        failed: GrokLoginEvent.VerificationOpenFailed,
+      },
     );
   };
   const cancel = () => {
@@ -807,7 +973,10 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       changeName={(name) => setView((v) => v && { ...v, name })}
       saveName={save}
       reopen={reopen}
-      copyLink={copyLink}
+      copyLink={() => copyValue(GrokCopyTarget.Link)}
+      copyCode={() => copyValue(GrokCopyTarget.Code)}
+      copyAddress={() => copyValue(GrokCopyTarget.Address)}
+      openVerification={openVerification}
       cancel={cancel}
       retry={retry}
       leave={leave}
@@ -830,9 +999,52 @@ interface OnboardingProps {
   saveName: () => void;
   reopen: () => void;
   copyLink: () => void;
+  copyCode: () => void;
+  copyAddress: () => void;
+  openVerification: () => void;
   cancel: () => void;
   retry: () => void;
   leave: () => void;
+}
+// Selects only the given element's text, for a keyboard-reachable manual copy.
+const selectContents = (element: HTMLElement) => {
+  const selection = element.ownerDocument.defaultView?.getSelection();
+  if (!selection) return;
+  const range = element.ownerDocument.createRange();
+  range.selectNodeContents(element);
+  selection.removeAllRanges();
+  selection.addRange(range);
+};
+// A keyboard-reachable, read-only value. Focus and Ctrl/Cmd+A select exactly
+// this value so the manual copy fallback works after a clipboard failure and
+// never needs a pointer.
+function SelectableValue(props: {
+  label: string;
+  className: string;
+  children: string;
+}) {
+  return (
+    <output
+      aria-label={props.label}
+      aria-live="off"
+      aria-readonly="true"
+      role="textbox"
+      tabIndex={0}
+      className={props.className}
+      onFocus={(event) => selectContents(event.currentTarget)}
+      onKeyDown={(event) => {
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          event.key.toLowerCase() === "a"
+        ) {
+          event.preventDefault();
+          selectContents(event.currentTarget);
+        }
+      }}
+    >
+      {props.children}
+    </output>
+  );
 }
 
 function GrokSubscriptionOnboarding(props: OnboardingProps) {
@@ -862,11 +1074,13 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
   }, [visible, active, naming, locked]);
   // Waiting guidance follows what really happened: the browser opened, only the
   // copyable link remains, or nothing is offered yet.
+  const device = v.machine.method === GrokLoginMethod.DeviceCode;
   const helpByKind: Record<GrokHelp, MessageKey | undefined> = {
     [GrokHelp.None]: undefined,
     [GrokHelp.Waiting]: "grok-subscription.help.waiting",
     [GrokHelp.WaitingLink]: "grok-subscription.help.waitingLink",
-    [GrokHelp.Stage]: helpKeys[stage],
+    [GrokHelp.DeviceWaiting]: "grok-subscription.device.help.waiting",
+    [GrokHelp.Stage]: (device ? deviceHelpKeys : helpKeys)[stage],
   };
   const help = helpByKind[ui.help];
   return (
@@ -915,12 +1129,14 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
         {naming ? <span aria-hidden="true">✓</span> : null}
         {copy(statusKeys[stage])}
       </p>
-      {v.copyState !== CopyState.Idle ? (
+      {v.copy.target &&
+      (v.copy.phase === GrokCopyPhase.Copied ||
+        v.copy.phase === GrokCopyPhase.Failed) ? (
         <p role="status">
           {copy(
-            v.copyState === CopyState.Copied
-              ? "grok-subscription.linkCopied"
-              : "grok-subscription.copyFailed",
+            copyNotices[v.copy.target][
+              v.copy.phase === GrokCopyPhase.Copied ? "copied" : "failed"
+            ],
           )}
         </p>
       ) : null}
@@ -975,10 +1191,63 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
       ) : (
         <>
           {help ? <p>{copy(help)}</p> : null}
+          {ui.copyCode && v.userCode ? (
+            <div className="grok-device-code">
+              <p>{copy("grok-subscription.device.codeLabel")}</p>
+              <SelectableValue
+                label={copy("grok-subscription.device.codeAria")}
+                className="grok-device-user-code"
+              >
+                {v.userCode}
+              </SelectableValue>
+            </div>
+          ) : null}
+          {ui.copyAddress && v.address ? (
+            <div className="grok-device-code">
+              <p>{copy("grok-subscription.device.addressLabel")}</p>
+              <SelectableValue
+                label={copy("grok-subscription.device.addressAria")}
+                className="grok-device-verification-address"
+              >
+                {v.address}
+              </SelectableValue>
+            </div>
+          ) : null}
           {v.diagnostic ? (
             <GrokDiagnosticNotice diagnostic={v.diagnostic} />
           ) : null}
           <SettingsTaskActions className="">
+            {ui.openVerification ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Open}
+                type="button"
+                className="primary"
+                disabled={busy || ui.retry}
+                onClick={props.openVerification}
+              >
+                {copy("grok-subscription.device.openVerification")}
+              </SettingsActionButton>
+            ) : null}
+            {ui.copyCode ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Copy}
+                type="button"
+                disabled={!active}
+                onClick={props.copyCode}
+              >
+                {copy("grok-subscription.device.copyCode")}
+              </SettingsActionButton>
+            ) : null}
+            {ui.copyAddress ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Copy}
+                type="button"
+                disabled={!active}
+                onClick={props.copyAddress}
+              >
+                {copy("grok-subscription.device.copyAddress")}
+              </SettingsActionButton>
+            ) : null}
             {ui.openBrowser ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Open}

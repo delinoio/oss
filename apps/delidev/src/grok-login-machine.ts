@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { MessageKey } from "./localization";
 
-// The pure state machine behind the Grok browser sign-in controller. The
+// The pure state machine behind the Grok browser and device-code sign-in controller. The
 // transition table below is the only source of truth for what the screen
 // offers, which problem it shows, which retry closure is retained and when the
 // native receiver is disposed. The contract table in
@@ -22,7 +22,14 @@ export enum GrokLoginStage {
   Failed = "failed",
 }
 
-// A phase fixes the stage, the visible actions and the native binding.
+// The explicit sign-in method chosen by the user. It never changes mid-login.
+export enum GrokLoginMethod {
+  Browser = "browser",
+  DeviceCode = "device-code",
+}
+
+// A phase fixes the stage, the visible actions and (with the method) the
+// native binding.
 export enum GrokLoginPhase {
   // The desktop has no trusted native control, so nothing can start.
   DesktopRequired = "desktop-required",
@@ -41,6 +48,15 @@ export enum GrokLoginPhase {
   WaitingNoBrowser = "waiting-no-browser",
   // The receiver refused with Incompatible; only the copyable link remains.
   WaitingLinkOnly = "waiting-link-only",
+  // Device code: the validated verification address and user code are pinned
+  // and shown; no open was requested yet.
+  DeviceWaiting = "device-waiting",
+  // Device code: an open of the verification page was requested (pending or
+  // confirmed); only a native Dispose retires an admitted dispatch.
+  DeviceOpened = "device-opened",
+  // Device code: the native opener failed, so the validated address is shown
+  // for manual use in any browser.
+  DeviceAddress = "device-address",
   // A cancellation was acknowledged or observed while the server was preparing.
   PreparingCanceling = "preparing-canceling",
   // A cancellation was acknowledged or observed while the server was waiting.
@@ -67,10 +83,11 @@ export enum GrokRetry {
 }
 
 export enum GrokNativeBinding {
-  // No native receiver was contacted for this opening.
+  // The opening owns no native state, so leaving it needs no native call.
   None = "none",
-  // An open was requested; only a native Dispose retires it.
-  Requested = "requested",
+  // A native Dispose is owed: a browser login owns its receiver for the whole
+  // opening, and a device login owns native state once an open was requested.
+  Owed = "owed",
   Disposed = "disposed",
 }
 
@@ -84,6 +101,7 @@ export enum GrokHelp {
   None = "none",
   Waiting = "waiting",
   WaitingLink = "waitingLink",
+  DeviceWaiting = "deviceWaiting",
   Stage = "stage",
 }
 
@@ -105,6 +123,12 @@ export enum GrokLoginEvent {
   PollError = "poll-error",
   // The original link passed validation for the first time.
   LinkReady = "link-ready",
+  // The validated device verification address and user code are pinned.
+  CodeReady = "code-ready",
+  // Open verification page: requested, confirmed, or failed.
+  VerificationOpenStarted = "verification-open-started",
+  VerificationOpenSucceeded = "verification-open-succeeded",
+  VerificationOpenFailed = "verification-open-failed",
   // First native open of the original link.
   OpenSucceeded = "open-succeeded",
   OpenIncompatible = "open-incompatible",
@@ -137,6 +161,7 @@ export enum GrokLoginEvent {
 }
 
 export interface GrokLoginState {
+  method: GrokLoginMethod;
   phase: GrokLoginPhase;
   problem?: MessageKey;
   retry: GrokRetry;
@@ -169,6 +194,7 @@ export const statusProblem: MessageKey =
 const P = GrokLoginPhase;
 const E = GrokLoginEvent;
 
+const devicePhases = [P.DeviceWaiting, P.DeviceOpened, P.DeviceAddress];
 const inFlight = [
   P.Preparing,
   P.AwaitingLink,
@@ -176,6 +202,7 @@ const inFlight = [
   P.Waiting,
   P.WaitingNoBrowser,
   P.WaitingLinkOnly,
+  ...devicePhases,
 ];
 const winding = [P.PreparingCanceling, P.WaitingCanceling];
 // Opening exists only inside one poll tick, so a status read never meets it.
@@ -185,6 +212,7 @@ const observable = [
   P.Waiting,
   P.WaitingNoBrowser,
   P.WaitingLinkOnly,
+  ...devicePhases,
   ...winding,
 ];
 const settledPhases = [
@@ -201,6 +229,8 @@ const aliveEverywhere = [P.Starting, ...inFlight, ...winding, ...settledPhases];
 
 export interface GrokLoginCell {
   event: GrokLoginEvent;
+  // The only method the event belongs to; omitted: both.
+  method?: GrokLoginMethod;
   from: GrokLoginPhase;
   to: GrokLoginPhase;
   problem: GrokProblemRule;
@@ -210,6 +240,7 @@ export interface GrokLoginCell {
 }
 interface Entry {
   event: GrokLoginEvent;
+  method?: GrokLoginMethod;
   from: GrokLoginPhase[];
   // Omitted: the phase is unchanged.
   to?: GrokLoginPhase | Partial<Record<GrokLoginPhase, GrokLoginPhase>>;
@@ -226,6 +257,9 @@ const toCanceling: Partial<Record<GrokLoginPhase, GrokLoginPhase>> = {
   [P.Waiting]: P.WaitingCanceling,
   [P.WaitingNoBrowser]: P.WaitingCanceling,
   [P.WaitingLinkOnly]: P.WaitingCanceling,
+  [P.DeviceWaiting]: P.WaitingCanceling,
+  [P.DeviceOpened]: P.WaitingCanceling,
+  [P.DeviceAddress]: P.WaitingCanceling,
 };
 const terminalPoll = (event: GrokLoginEvent, to: GrokLoginPhase): Entry => ({
   event,
@@ -237,15 +271,26 @@ const terminalPoll = (event: GrokLoginEvent, to: GrokLoginPhase): Entry => ({
 
 const entries: Entry[] = [
   {
+    // Server stages only advance, so a preparing read after the login waited
+    // keeps the phase; every readable status still recovers the polling notice.
     event: E.PollPreparing,
-    from: [P.Preparing, P.PreparingCanceling],
+    from: observable,
     problem: GrokProblemRule.ClearStatusOnly,
     retry: GrokRetryRule.Keep,
   },
   {
     event: E.PollPreparingCanceled,
-    from: [P.Preparing, P.PreparingCanceling],
-    to: P.PreparingCanceling,
+    from: observable,
+    to: {
+      [P.Preparing]: P.PreparingCanceling,
+      [P.AwaitingLink]: P.WaitingCanceling,
+      [P.Waiting]: P.WaitingCanceling,
+      [P.WaitingNoBrowser]: P.WaitingCanceling,
+      [P.WaitingLinkOnly]: P.WaitingCanceling,
+      [P.DeviceWaiting]: P.WaitingCanceling,
+      [P.DeviceOpened]: P.WaitingCanceling,
+      [P.DeviceAddress]: P.WaitingCanceling,
+    },
     problem: GrokProblemRule.Set,
     problemKey: "grok-subscription.problem.canceling",
     retry: GrokRetryRule.Clear,
@@ -289,6 +334,7 @@ const entries: Entry[] = [
   },
   {
     event: E.LinkReady,
+    method: GrokLoginMethod.Browser,
     from: [P.AwaitingLink],
     to: P.Opening,
     problem: GrokProblemRule.Keep,
@@ -296,6 +342,7 @@ const entries: Entry[] = [
   },
   {
     event: E.OpenSucceeded,
+    method: GrokLoginMethod.Browser,
     from: [P.Opening],
     to: P.Waiting,
     problem: GrokProblemRule.ClearAdvisory,
@@ -303,6 +350,7 @@ const entries: Entry[] = [
   },
   {
     event: E.OpenIncompatible,
+    method: GrokLoginMethod.Browser,
     from: [P.Opening],
     to: P.WaitingLinkOnly,
     problem: GrokProblemRule.SetAdvisory,
@@ -311,6 +359,7 @@ const entries: Entry[] = [
   },
   {
     event: E.OpenFailed,
+    method: GrokLoginMethod.Browser,
     from: [P.Opening],
     to: P.WaitingNoBrowser,
     problem: GrokProblemRule.SetAdvisory,
@@ -319,6 +368,7 @@ const entries: Entry[] = [
   },
   {
     event: E.ReopenSucceeded,
+    method: GrokLoginMethod.Browser,
     from: [P.Waiting, P.WaitingNoBrowser],
     to: P.Waiting,
     problem: GrokProblemRule.ClearAdvisory,
@@ -326,6 +376,7 @@ const entries: Entry[] = [
   },
   {
     event: E.ReopenIncompatible,
+    method: GrokLoginMethod.Browser,
     from: [P.Waiting, P.WaitingNoBrowser],
     to: P.WaitingLinkOnly,
     problem: GrokProblemRule.SetAdvisory,
@@ -334,6 +385,7 @@ const entries: Entry[] = [
   },
   {
     event: E.ReopenFailed,
+    method: GrokLoginMethod.Browser,
     from: [P.Waiting, P.WaitingNoBrowser],
     problem: GrokProblemRule.SetAdvisory,
     problemKey: "grok-subscription.problem.browserFailed",
@@ -341,6 +393,7 @@ const entries: Entry[] = [
   },
   {
     event: E.CallbackTakeFailed,
+    method: GrokLoginMethod.Browser,
     from: [P.Waiting],
     problem: GrokProblemRule.SetAdvisory,
     problemKey: "grok-subscription.problem.callbackUncertain",
@@ -348,9 +401,42 @@ const entries: Entry[] = [
   },
   {
     event: E.CallbackForwardFailed,
+    method: GrokLoginMethod.Browser,
     from: [P.Waiting],
     problem: GrokProblemRule.SetAdvisory,
     problemKey: "grok-subscription.problem.forwardUncertain",
+    retry: GrokRetryRule.Keep,
+  },
+  {
+    event: E.CodeReady,
+    method: GrokLoginMethod.DeviceCode,
+    from: [P.AwaitingLink],
+    to: P.DeviceWaiting,
+    problem: GrokProblemRule.Keep,
+    retry: GrokRetryRule.Keep,
+  },
+  {
+    event: E.VerificationOpenStarted,
+    method: GrokLoginMethod.DeviceCode,
+    from: devicePhases,
+    to: P.DeviceOpened,
+    problem: GrokProblemRule.ClearAdvisory,
+    retry: GrokRetryRule.Keep,
+  },
+  {
+    event: E.VerificationOpenSucceeded,
+    method: GrokLoginMethod.DeviceCode,
+    from: [P.DeviceOpened],
+    problem: GrokProblemRule.ClearAdvisory,
+    retry: GrokRetryRule.Keep,
+  },
+  {
+    event: E.VerificationOpenFailed,
+    method: GrokLoginMethod.DeviceCode,
+    from: [P.DeviceOpened],
+    to: P.DeviceAddress,
+    problem: GrokProblemRule.SetAdvisory,
+    problemKey: "grok-subscription.problem.verificationOpenFailed",
     retry: GrokRetryRule.Keep,
   },
   {
@@ -361,6 +447,7 @@ const entries: Entry[] = [
   },
   {
     event: E.AuxiliaryStarted,
+    method: GrokLoginMethod.Browser,
     from: [P.Waiting, P.WaitingNoBrowser],
     problem: GrokProblemRule.ClearAdvisory,
     retry: GrokRetryRule.Keep,
@@ -495,6 +582,7 @@ for (const entry of entries)
       typeof entry.to === "string" ? entry.to : (entry.to?.[from] ?? from);
     cells.set(id, {
       event: entry.event,
+      method: entry.method,
       from,
       to,
       problem: entry.problem,
@@ -513,10 +601,12 @@ export const grokLoginCell = (
 
 export const initialGrokLoginState = (
   nativeAvailable: boolean,
+  method: GrokLoginMethod = GrokLoginMethod.Browser,
 ): GrokLoginState =>
   nativeAvailable
-    ? { phase: P.Starting, retry: GrokRetry.None }
+    ? { method, phase: P.Starting, retry: GrokRetry.None }
     : {
+        method,
         phase: P.DesktopRequired,
         problem: "grok-subscription.problem.desktopRequired",
         retry: GrokRetry.None,
@@ -527,7 +617,8 @@ export function transition(
   event: GrokLoginEvent,
 ): GrokLoginState {
   const cell = grokLoginCell(state.phase, event);
-  if (!cell) return state;
+  // An event of the other sign-in method is never applied.
+  if (!cell || (cell.method && cell.method !== state.method)) return state;
   const retained = state.retry !== GrokRetry.None;
   let problem = state.problem;
   switch (cell.problem) {
@@ -564,52 +655,58 @@ export function transition(
     retry === state.retry
   )
     return state;
-  return { phase: cell.to, problem, retry };
+  return { method: state.method, phase: cell.to, problem, retry };
 }
 
 interface PhaseSpec {
   stage?: GrokLoginStage;
-  native: GrokNativeBinding;
   openBrowser: boolean;
   copyLink: boolean;
+  // Device code: Open verification page, and the pinned user code with Copy
+  // code, and the validated address with Copy address.
+  openVerification: boolean;
+  copyCode: boolean;
+  copyAddress: boolean;
   cancel: boolean;
   name: GrokNameField;
   help: GrokHelp;
 }
-const none = GrokNativeBinding.None,
-  requested = GrokNativeBinding.Requested,
-  disposed = GrokNativeBinding.Disposed;
 const quiet = {
   openBrowser: false,
   copyLink: false,
+  openVerification: false,
+  copyCode: false,
+  copyAddress: false,
   cancel: false,
   name: GrokNameField.Hidden,
   help: GrokHelp.None,
 };
 const S = GrokLoginStage;
-// What each phase shows and owns. Cancel, Open browser again and Copy link are
-// offered only here; Retry original request follows the retained retry kind.
+const device = {
+  ...quiet,
+  stage: S.Waiting,
+  openVerification: true,
+  copyCode: true,
+  cancel: true,
+  help: GrokHelp.DeviceWaiting,
+};
+// What each phase shows. Cancel, Open browser again, Copy link and the device
+// controls are offered only here; Retry original request follows the retained
+// retry kind.
 export const grokPhaseSpecs: Record<GrokLoginPhase, PhaseSpec> = {
-  [P.DesktopRequired]: {
-    ...quiet,
-    stage: S.Unsupported,
-    native: none,
-    help: GrokHelp.Stage,
-  },
-  [P.Starting]: { ...quiet, stage: S.Preparing, native: none },
-  [P.Preparing]: { ...quiet, stage: S.Preparing, native: none, cancel: true },
-  [P.AwaitingLink]: { ...quiet, stage: S.Waiting, native: none, cancel: true },
+  [P.DesktopRequired]: { ...quiet, stage: S.Unsupported, help: GrokHelp.Stage },
+  [P.Starting]: { ...quiet, stage: S.Preparing },
+  [P.Preparing]: { ...quiet, stage: S.Preparing, cancel: true },
+  [P.AwaitingLink]: { ...quiet, stage: S.Waiting, cancel: true },
   [P.Opening]: {
     ...quiet,
     stage: S.Preparing,
-    native: requested,
     copyLink: true,
     cancel: true,
   },
   [P.Waiting]: {
     ...quiet,
     stage: S.Waiting,
-    native: requested,
     openBrowser: true,
     copyLink: true,
     cancel: true,
@@ -618,7 +715,6 @@ export const grokPhaseSpecs: Record<GrokLoginPhase, PhaseSpec> = {
   [P.WaitingNoBrowser]: {
     ...quiet,
     stage: S.Waiting,
-    native: requested,
     openBrowser: true,
     copyLink: true,
     cancel: true,
@@ -627,57 +723,208 @@ export const grokPhaseSpecs: Record<GrokLoginPhase, PhaseSpec> = {
   [P.WaitingLinkOnly]: {
     ...quiet,
     stage: S.Waiting,
-    native: requested,
     copyLink: true,
     cancel: true,
     help: GrokHelp.WaitingLink,
   },
-  [P.PreparingCanceling]: { ...quiet, stage: S.Preparing, native: disposed },
-  [P.WaitingCanceling]: { ...quiet, stage: S.Waiting, native: disposed },
-  [P.Naming]: {
-    ...quiet,
-    stage: S.Naming,
-    native: disposed,
-    name: GrokNameField.Editable,
-  },
-  [P.Canceled]: {
-    ...quiet,
-    stage: S.Canceled,
-    native: disposed,
-    help: GrokHelp.Stage,
-  },
-  [P.Expired]: {
-    ...quiet,
-    stage: S.Expired,
-    native: disposed,
-    help: GrokHelp.Stage,
-  },
-  [P.Unsupported]: {
-    ...quiet,
-    stage: S.Unsupported,
-    native: disposed,
-    help: GrokHelp.Stage,
-  },
-  [P.Recovery]: {
-    ...quiet,
-    stage: S.Recovery,
-    native: disposed,
-    help: GrokHelp.Stage,
-  },
-  [P.Failed]: {
-    ...quiet,
-    stage: S.Failed,
-    native: disposed,
-    help: GrokHelp.Stage,
-  },
-  [P.StartRefused]: {
-    ...quiet,
-    stage: S.Failed,
-    native: none,
-    help: GrokHelp.Stage,
-  },
-  [P.Disposed]: { ...quiet, native: disposed },
+  [P.DeviceWaiting]: device,
+  [P.DeviceOpened]: device,
+  [P.DeviceAddress]: { ...device, copyAddress: true },
+  [P.PreparingCanceling]: { ...quiet, stage: S.Preparing },
+  [P.WaitingCanceling]: { ...quiet, stage: S.Waiting },
+  [P.Naming]: { ...quiet, stage: S.Naming, name: GrokNameField.Editable },
+  [P.Canceled]: { ...quiet, stage: S.Canceled, help: GrokHelp.Stage },
+  [P.Expired]: { ...quiet, stage: S.Expired, help: GrokHelp.Stage },
+  [P.Unsupported]: { ...quiet, stage: S.Unsupported, help: GrokHelp.Stage },
+  [P.Recovery]: { ...quiet, stage: S.Recovery, help: GrokHelp.Stage },
+  [P.Failed]: { ...quiet, stage: S.Failed, help: GrokHelp.Stage },
+  [P.StartRefused]: { ...quiet, stage: S.Failed, help: GrokHelp.Stage },
+  [P.Disposed]: { ...quiet },
 };
+
+// The native state an opening owns in a phase. A browser login owns its
+// receiver from the start; a device login owns native state only once the user
+// asked to open the verification page, so leaving a never-opened device login
+// makes no native call.
+export function grokNativeBinding(
+  phase: GrokLoginPhase,
+  method: GrokLoginMethod,
+): GrokNativeBinding {
+  switch (phase) {
+    case P.DesktopRequired:
+      return GrokNativeBinding.None;
+    case P.Starting:
+    case P.Preparing:
+    case P.AwaitingLink:
+    case P.DeviceWaiting:
+      return method === GrokLoginMethod.Browser
+        ? GrokNativeBinding.Owed
+        : GrokNativeBinding.None;
+    case P.Opening:
+    case P.Waiting:
+    case P.WaitingNoBrowser:
+    case P.WaitingLinkOnly:
+    case P.DeviceOpened:
+    case P.DeviceAddress:
+      return GrokNativeBinding.Owed;
+    default:
+      return GrokNativeBinding.Disposed;
+  }
+}
+
+// What a copy action copies and which copy notice belongs to it. Every value
+// is display-only.
+export enum GrokCopyTarget {
+  Link = "link",
+  Code = "code",
+  Address = "address",
+}
+// A copy notice belongs to the value it copied and survives exactly while the
+// current phase still offers that value (the Copy link, Copy code and Copy
+// address columns of the phase table), whatever else it offers.
+export function grokCopyOffered(
+  offered: Pick<GrokLoginPresentation, "copyLink" | "copyCode" | "copyAddress">,
+  target: GrokCopyTarget,
+): boolean {
+  switch (target) {
+    case GrokCopyTarget.Link:
+      return offered.copyLink;
+    case GrokCopyTarget.Code:
+      return offered.copyCode;
+    case GrokCopyTarget.Address:
+      return offered.copyAddress;
+  }
+}
+
+// Copy attempts. A clipboard write settles later than the click that started
+// it, so every attempt carries an identity and only the latest attempt may show
+// a notice. An attempt is retired when the phase stops offering its value or
+// the task is disposed, and a newer attempt supersedes it, so a completion that
+// outlives its attempt (a value hidden and revealed again, two writes settling
+// out of order, a notice timer of a replaced notice) never changes anything.
+export enum GrokCopyPhase {
+  // Nothing is pending and no notice is shown.
+  Idle = "idle",
+  // The latest attempt waits for the clipboard; no notice is shown.
+  Pending = "pending",
+  // The latest attempt copied its value; the copied notice is shown.
+  Copied = "copied",
+  // The latest attempt could not copy; the failure notice is shown.
+  Failed = "failed",
+}
+export enum GrokCopyEvent {
+  // Copy link, Copy code or Copy address was activated for a value the current
+  // phase offers.
+  Started = "started",
+  // The clipboard settled the attempt the event names.
+  Succeeded = "succeeded",
+  Rejected = "rejected",
+  // The current phase stopped offering the value of the latest attempt, or the
+  // task was disposed.
+  Retired = "retired",
+  // The notice timer of the attempt the event names fired.
+  NoticeExpired = "notice-expired",
+}
+export enum GrokCopyAttemptRelation {
+  // The event does not name an attempt.
+  Unnamed = "unnamed",
+  // The event names the latest attempt (it may already be retired).
+  Latest = "latest",
+  // The event names an earlier attempt that a newer one superseded.
+  Superseded = "superseded",
+}
+export interface GrokCopyState {
+  phase: GrokCopyPhase;
+  // The value of the latest attempt; absent while idle.
+  target?: GrokCopyTarget;
+  // The identity of the latest attempt; it only grows.
+  attempt: number;
+}
+export const initialGrokCopyState: GrokCopyState = {
+  phase: GrokCopyPhase.Idle,
+  attempt: 0,
+};
+export interface GrokCopyCell {
+  from: GrokCopyPhase;
+  event: GrokCopyEvent;
+  relation: GrokCopyAttemptRelation;
+  to: GrokCopyPhase;
+}
+const C = GrokCopyPhase;
+const CE = GrokCopyEvent;
+const R = GrokCopyAttemptRelation;
+const copyPhases = Object.values(GrokCopyPhase);
+export const grokCopyEvents = Object.values(GrokCopyEvent);
+const namedEvents: GrokCopyEvent[] = [
+  CE.Succeeded,
+  CE.Rejected,
+  CE.NoticeExpired,
+];
+// Every cell is listed so the contract table shows ignored completions too.
+const copyCells = new Map<string, GrokCopyCell>();
+for (const from of copyPhases)
+  for (const event of grokCopyEvents)
+    for (const relation of namedEvents.includes(event)
+      ? [R.Latest, R.Superseded]
+      : [R.Unnamed]) {
+      let to = from;
+      if (event === CE.Started) to = C.Pending;
+      else if (event === CE.Retired) to = C.Idle;
+      else if (relation === R.Latest) {
+        if (from === C.Pending && event === CE.Succeeded) to = C.Copied;
+        if (from === C.Pending && event === CE.Rejected) to = C.Failed;
+        if (event === CE.NoticeExpired && from !== C.Pending) to = C.Idle;
+      }
+      copyCells.set(`${from}|${event}|${relation}`, {
+        from,
+        event,
+        relation,
+        to,
+      });
+    }
+export const grokCopyCells = [...copyCells.values()];
+export const grokCopyRelation = (
+  state: GrokCopyState,
+  event: GrokCopyEvent,
+  attempt?: number,
+): GrokCopyAttemptRelation =>
+  !namedEvents.includes(event)
+    ? R.Unnamed
+    : attempt === state.attempt
+      ? R.Latest
+      : R.Superseded;
+export function grokCopyTransition(
+  state: GrokCopyState,
+  event: GrokCopyEvent,
+  detail: { attempt?: number; target?: GrokCopyTarget } = {},
+): GrokCopyState {
+  const cell = copyCells.get(
+    `${state.phase}|${event}|${grokCopyRelation(state, event, detail.attempt)}`,
+  );
+  if (!cell) return state;
+  if (event === CE.Started)
+    return {
+      phase: cell.to,
+      target: detail.target,
+      attempt: state.attempt + 1,
+    };
+  if (cell.to === state.phase) return state;
+  return {
+    phase: cell.to,
+    target: cell.to === C.Idle ? undefined : state.target,
+    attempt: state.attempt,
+  };
+}
+// The retirement that follows a phase change: the latest attempt ends exactly
+// when the phase stops offering its value, whatever else it still offers.
+export function grokCopyAfterPhase(
+  state: GrokCopyState,
+  offered: Pick<GrokLoginPresentation, "copyLink" | "copyCode" | "copyAddress">,
+): GrokCopyState {
+  return state.target && !grokCopyOffered(offered, state.target)
+    ? grokCopyTransition(state, CE.Retired)
+    : state;
+}
 
 export interface GrokLoginPresentation {
   stage?: GrokLoginStage;
@@ -686,6 +933,9 @@ export interface GrokLoginPresentation {
   // browser again are disabled while a retry closure is retained.
   openBrowser: boolean;
   copyLink: boolean;
+  openVerification: boolean;
+  copyCode: boolean;
+  copyAddress: boolean;
   cancel: boolean;
   retry: boolean;
   name: GrokNameField;
@@ -702,9 +952,12 @@ export function grokLoginPresentation(
   const retained = state.retry !== GrokRetry.None;
   return {
     stage: spec.stage,
-    native: spec.native,
+    native: grokNativeBinding(state.phase, state.method),
     openBrowser: spec.openBrowser,
     copyLink: spec.copyLink,
+    openVerification: spec.openVerification,
+    copyCode: spec.copyCode,
+    copyAddress: spec.copyAddress,
     cancel: spec.cancel,
     retry: retained,
     name:
