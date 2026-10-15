@@ -412,7 +412,10 @@ it("renders no Tailscale controls in Runner Devices or Connections", async () =>
   expect(screen.queryByRole("button", { name: "Enable access" })).toBeNull();
   expect(document.querySelector(".runner-tailscale")).toBeNull();
   category("Connections");
-  await screen.findByRole("heading", { name: "Current connection" });
+  await screen.findByText("Advanced");
+  expect(
+    screen.queryByRole("heading", { name: "Current connection" }),
+  ).toBeNull();
   expect(screen.queryByRole("heading", { name: "This computer" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Enable access" })).toBeNull();
   expect(calls.discover).not.toHaveBeenCalled();
