@@ -171,7 +171,9 @@ it("preserves Worker updates and Network settings in the original full Runner in
       .getByRole("button", { name: "Network settings" })
       .getAttribute("aria-expanded"),
   ).toBe("false");
-  expect(screen.queryByRole("dialog", { name: "Runner Device network" })).toBeNull();
+  expect(
+    screen.queryByRole("dialog", { name: "Runner Device network" }),
+  ).toBeNull();
   client.clear();
 });
 it("uses one presenter and preserves the original draft after its calling task disappears", async () => {

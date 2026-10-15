@@ -921,7 +921,9 @@ it("moves focus to the disclosure on collapse, disposes the workspace and drafts
   fireEvent.click(disclosure);
   expect(disclosure.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByRole("heading", { name: "Current route" })).toBeNull();
-  expect(screen.queryByRole("combobox", { name: "Profile to select" })).toBeNull();
+  expect(
+    screen.queryByRole("combobox", { name: "Profile to select" }),
+  ).toBeNull();
   expect(document.activeElement).toBe(disclosure);
   fireEvent.click(disclosure);
   expect(disclosure.getAttribute("aria-expanded")).toBe("true");
@@ -939,16 +941,14 @@ it("starts Runner Device network closed and unread until its modal is opened", a
   const trigger = screen.getByRole("button", { name: "Network settings" });
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(
-    screen.queryByRole("heading", { name: "Current route" }),
-  ).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Current route" })).toBeNull();
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
   expect(f.reads).not.toHaveBeenCalled();
   fireEvent.click(trigger);
   await screen.findByRole("dialog", { name: "Runner Device network" });
-  expect(
-    await screen.findAllByText("9007199254740993 · stale"),
-  ).toHaveLength(2);
+  expect(await screen.findAllByText("9007199254740993 · stale")).toHaveLength(
+    2,
+  );
 });
