@@ -154,6 +154,12 @@ func init() {
 			os.Exit(1)
 		}
 		_, _ = os.Stdout.Write(data)
+		var status struct {
+			LoggedIn bool `json:"loggedIn"`
+		}
+		if json.Unmarshal(data, &status) == nil && !status.LoggedIn {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	case "logout":
 		_ = os.Remove(marker)
@@ -171,6 +177,13 @@ func TestNativeClaudeAuthStatusMetadataPreservesAuthenticationChecks(t *testing.
 		wantError   bool
 	}{
 		{"declared metadata", `,"analyticsDisabled":true,"projectsDirectory":"/fixture/projects","configDirectory":"/fixture/config"`, false},
+		{"omitted metadata", ``, false},
+		{"false analytics", `,"analyticsDisabled":false`, false},
+		{"null analytics", `,"analyticsDisabled":null`, true},
+		{"null projects directory", `,"projectsDirectory":null`, true},
+		{"null config directory", `,"configDirectory":null`, true},
+		{"invalid projects directory", `,"projectsDirectory":false`, true},
+		{"invalid config directory", `,"configDirectory":0`, true},
 		{"unknown metadata", `,"unknownAuthAuthority":true`, true},
 		{"invalid metadata type", `,"analyticsDisabled":"true"`, true},
 		{"API credential source", `,"apiKeySource":"apiKeyHelper","analyticsDisabled":true`, true},
@@ -367,5 +380,26 @@ func TestVerifyAuthVersionComparesObservedVersion(t *testing.T) {
 		if err := VerifyAuthVersion(ctx, config); err == nil || domain.SafeError(err).Code != domain.Unsupported {
 			t.Fatalf("version %q admitted: %v", version, err)
 		}
+	}
+}
+
+func TestNativeClaudeLoggedOutStatusRejectsDeclaredNullMetadata(t *testing.T) {
+	first, _ := fixtureConfig(t, "auth-native-logged-out-metadata")
+	config := AuthConfig{Process: first.Process, Version: first.Version, Home: first.Home}
+	for _, field := range []string{"", "analyticsDisabled", "projectsDirectory", "configDirectory"} {
+		t.Run("field="+field, func(t *testing.T) {
+			raw := `{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"`
+			if field != "" {
+				raw += `,"` + field + `": null`
+			}
+			raw += `}`
+			if err := os.WriteFile(filepath.Join(config.Home, "fixture-account-state.json"), []byte(raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			status, err := ReadAuthStatus(context.Background(), config)
+			if (err != nil) != (field != "") || status.LoggedIn {
+				t.Fatal("invalid logged-out metadata confirmed authentication state", err)
+			}
+		})
 	}
 }

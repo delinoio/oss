@@ -1022,7 +1022,9 @@ retired with the credential files, including during account deletion.
 
 Native `auth status --json` may include the optional `analyticsDisabled`,
 `projectsDirectory` and `configDirectory` presentation fields. The adapter accepts
-their declared types, discards them after decoding and preserves all first-party
+only a boolean analytics value and string directories when declared; explicit
+null values fail for both authenticated and disconnected status. Omitted fields
+remain compatible. The adapter discards these fields and preserves all first-party
 subscription and disconnected-profile checks. These fields grant no credential,
 profile or execution authority; unknown fields remain unsupported.
 

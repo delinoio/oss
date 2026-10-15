@@ -211,9 +211,9 @@ func ReadAuthStatus(ctx context.Context, config AuthConfig) (AuthStatus, error) 
 	// authentication evidence; unknown fields still fail strict decoding.
 	var response struct {
 		AuthStatus
-		AnalyticsDisabled *bool  `json:"analyticsDisabled,omitempty"`
-		ProjectsDirectory string `json:"projectsDirectory,omitempty"`
-		ConfigDirectory   string `json:"configDirectory,omitempty"`
+		AnalyticsDisabled json.RawMessage `json:"analyticsDisabled,omitempty"`
+		ProjectsDirectory json.RawMessage `json:"projectsDirectory,omitempty"`
+		ConfigDirectory   json.RawMessage `json:"configDirectory,omitempty"`
 	}
 	raw, err := authCommand(ctx, config, "auth", "status", "--json")
 	defer clear(raw)
@@ -221,6 +221,19 @@ func ReadAuthStatus(ctx context.Context, config AuthConfig) (AuthStatus, error) 
 	status := response.AuthStatus
 	if decodeErr != nil || status.APIProvider != "firstParty" {
 		return status, authProblem()
+	}
+	// Omission remains compatible with older native versions. A declared null
+	// must not become absence and confirm authentication or logout completion.
+	if len(response.AnalyticsDisabled) != 0 && !bytes.Equal(bytes.TrimSpace(response.AnalyticsDisabled), []byte("true")) && !bytes.Equal(bytes.TrimSpace(response.AnalyticsDisabled), []byte("false")) {
+		return status, authProblem()
+	}
+	for _, rawPath := range []json.RawMessage{response.ProjectsDirectory, response.ConfigDirectory} {
+		if len(rawPath) != 0 {
+			var path *string
+			if json.Unmarshal(rawPath, &path) != nil || path == nil {
+				return status, authProblem()
+			}
+		}
 	}
 	if err != nil {
 		var exit interface{ ExitCode() int }
