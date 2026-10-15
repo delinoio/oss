@@ -62,6 +62,7 @@ import {
   type Pending,
   type State,
 } from "./state";
+import { ActionTone, actionTone } from "./action-tone";
 import { Connection, Status } from "./connection";
 import {
   storage,
@@ -525,6 +526,7 @@ function Settings({
             </>
           ) : null}
           <button
+            {...actionTone(ActionTone.Danger)}
             disabled={busy}
             onClick={() => {
               setConfirmText(c.confirmForget);
@@ -693,6 +695,7 @@ function Settings({
       {confirm ? (
         <Modal title={confirmText} close={() => setConfirm(undefined)}>
           <button
+            {...actionTone(ActionTone.Danger)}
             disabled={busy}
             onClick={() =>
               void run(async () => {
@@ -1226,7 +1229,13 @@ function Connected({
                 title={revokeConfirm ? c.confirmRevoke : c.confirmRetry}
                 close={() => setConfirm(undefined)}
               >
-                <button disabled={busy} onClick={() => void confirm()}>
+                <button
+                  {...actionTone(
+                    revokeConfirm ? ActionTone.Danger : ActionTone.Default,
+                  )}
+                  disabled={busy}
+                  onClick={() => void confirm()}
+                >
                   {c.confirm}
                 </button>
               </Modal>
@@ -1238,6 +1247,7 @@ function Connected({
               </p>
               <p>{status}</p>
               <button
+                {...actionTone(ActionTone.Danger)}
                 disabled={!enabled || busy || !!pending}
                 onClick={() => {
                   setRevokeConfirm(true);
