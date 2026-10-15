@@ -74,12 +74,7 @@ func writePrivateExclusive(path string, body []byte) error {
 	if err = os.Link(f.Name(), path); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return syncPrivateDir(filepath.Dir(path))
 }
 func guidedJournalExists(path string) (bool, error) {
 	journal, _, _ := guidedPaths(path)

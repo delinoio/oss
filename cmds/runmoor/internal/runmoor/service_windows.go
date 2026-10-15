@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,7 +44,9 @@ var windowsTaskName = func() string {
 
 func windowsTaskXML(binary, config, sid string) string {
 	args := windows.EscapeArg("run") + " --config " + windows.EscapeArg(config)
-	return `<?xml version="1.0" encoding="UTF-8"?><Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><Triggers><LogonTrigger><Enabled>true</Enabled><UserId>` + xmlText(sid) + `</UserId></LogonTrigger></Triggers><Principals><Principal id="Runmoor"><UserId>` + xmlText(sid) + `</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals><Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><AllowHardTerminate>true</AllowHardTerminate><StartWhenAvailable>true</StartWhenAvailable><Enabled>true</Enabled><ExecutionTimeLimit>PT0S</ExecutionTimeLimit></Settings><Actions Context="Runmoor"><Exec><Command>` + xmlText(binary) + `</Command><Arguments>` + xmlText(args) + `</Arguments></Exec></Actions></Task>`
+	// Task Scheduler consumes a UTF-16 BSTR, not the UTF-8 file bytes. Leave
+	// encoding unspecified so the XML declaration cannot contradict that input.
+	return `<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><Triggers><LogonTrigger><Enabled>true</Enabled><UserId>` + xmlText(sid) + `</UserId></LogonTrigger></Triggers><Principals><Principal id="Runmoor"><UserId>` + xmlText(sid) + `</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals><Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><AllowHardTerminate>true</AllowHardTerminate><StartWhenAvailable>true</StartWhenAvailable><Enabled>true</Enabled><ExecutionTimeLimit>PT0S</ExecutionTimeLimit></Settings><Actions Context="Runmoor"><Exec><Command>` + xmlText(binary) + `</Command><Arguments>` + xmlText(args) + `</Arguments></Exec></Actions></Task>`
 }
 
 type windowsTaskProjection struct {
@@ -68,10 +73,50 @@ type windowsTaskProjection struct {
 func validWindowsTaskXML(data []byte, m windowsTaskManifest) bool {
 	var actual, expected windowsTaskProjection
 	if xml.Unmarshal(data, &actual) != nil || xml.Unmarshal([]byte(m.XML), &expected) != nil {
+		slog.Warn("windows_task_definition_invalid", "reason", "xml")
 		return false
+	}
+	// Task Scheduler may export an equivalent account name instead of its SID.
+	// Resolve identities through Windows rather than accepting textual aliases.
+	canonicalSID := func(value string) string {
+		if sid, err := windows.StringToSid(value); err == nil {
+			return sid.String()
+		}
+		if sid, _, _, err := windows.LookupSID("", value); err == nil {
+			return sid.String()
+		}
+		return value
+	}
+	for i := range actual.Principals.Items {
+		actual.Principals.Items[i].UserId = canonicalSID(actual.Principals.Items[i].UserId)
+	}
+	for i := range actual.Triggers.Items {
+		actual.Triggers.Items[i].UserId = canonicalSID(actual.Triggers.Items[i].UserId)
+	}
+	// Task Scheduler omits schema defaults on export. Normalize only those defaults;
+	// explicit disabling and elevation continue to fail ownership verification.
+	for i := range actual.Triggers.Items {
+		if actual.Triggers.Items[i].Enabled == "" {
+			actual.Triggers.Items[i].Enabled = "true"
+		}
+	}
+	for i := range actual.Principals.Items {
+		if actual.Principals.Items[i].RunLevel == "" {
+			actual.Principals.Items[i].RunLevel = "LeastPrivilege"
+		}
+	}
+	if actual.Settings.Enabled == "" {
+		actual.Settings.Enabled = "true"
 	}
 	a, _ := json.Marshal(actual)
 	b, _ := json.Marshal(expected)
+	if !bytes.Equal(a, b) {
+		for name, pair := range map[string][2]any{"root": {actual.XMLName, expected.XMLName}, "triggers": {actual.Triggers, expected.Triggers}, "principal": {actual.Principals, expected.Principals}, "actions": {actual.Actions, expected.Actions}, "settings": {actual.Settings, expected.Settings}} {
+			if !reflect.DeepEqual(pair[0], pair[1]) {
+				slog.Warn("windows_task_definition_mismatch", "component", name)
+			}
+		}
+	}
 	return bytes.Equal(a, b)
 }
 func readWindowsTask() (windowsTaskManifest, error) {
@@ -87,15 +132,28 @@ func readWindowsTask() (windowsTaskManifest, error) {
 	return m, nil
 }
 func taskPS(ctx context.Context, executor CommandExecutor, script string) ([]byte, error) {
-	args := powershell(`[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); ` + script)
+	args := powershell(`[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); try { ` + script + ` } catch { [Console]::Out.WriteLine('RUNMOOR_TASK_HRESULT=' + [string]$_.Exception.HResult); $native=[regex]::Match(([string]$_+' '+$_.FullyQualifiedErrorId),'0x[0-9a-fA-F]{8}'); if($native.Success){[Console]::Out.WriteLine('RUNMOOR_TASK_NATIVE='+$native.Value)}; [Console]::Out.WriteLine('RUNMOOR_TASK_TYPE='+$_.Exception.GetType().FullName); exit 1 }`)
 	out, e := executor.Run(ctx, args[0], args[1:], minimalEnv(), nil)
 	if e != nil {
+		// Retain a numeric failure class only. Task XML, native output and paths
+		// never cross into operator diagnostics, including PowerShell exceptions.
+		code := regexp.MustCompile(`RUNMOOR_TASK_HRESULT=(-?[0-9]+)`).FindSubmatch(out)
+		if len(code) == 2 {
+			slog.Warn("windows_task_native_failure", "hresult", string(code[1]))
+		}
+		for _, pattern := range []string{`RUNMOOR_TASK_NATIVE=(0x[0-9a-fA-F]{8})`, `RUNMOOR_TASK_TYPE=([A-Za-z.]+)`} {
+			if classification := regexp.MustCompile(pattern).FindSubmatch(out); len(classification) == 2 {
+				slog.Warn("windows_task_failure_class", "class", string(classification[1]))
+			}
+		}
 		return nil, problem(ErrDependency, "Windows scheduled task operation failed.", "Inspect the current user's Runmoor task in Task Scheduler and retry. Existing definitions and state have been preserved.")
 	}
 	return bytes.TrimPrefix(out, []byte{239, 187, 191}), nil
 }
 func inspectWindowsTask(ctx context.Context, executor CommandExecutor, m windowsTaskManifest) error {
-	b, e := taskPS(ctx, executor, `Export-ScheduledTask -TaskName `+psQuote(windowsTaskName())+` -TaskPath '\'`)
+	// Export declares UTF-16 although the process transport is UTF-8. Serialize
+	// the document element to preserve XML content without a false declaration.
+	b, e := taskPS(ctx, executor, `([xml](Export-ScheduledTask -TaskName `+psQuote(windowsTaskName())+` -TaskPath '\')).DocumentElement.OuterXml`)
 	if e != nil {
 		return e
 	}
@@ -117,7 +175,14 @@ func registerWindowsTask(ctx context.Context, executor CommandExecutor, m window
 	_, e := taskPS(ctx, executor, `Register-ScheduledTask -TaskName `+psQuote(windowsTaskName())+` -TaskPath '\' -Xml ([IO.File]::ReadAllText(`+psQuote(tmp)+`))`+force+` | Out-Null`)
 	return e
 }
-func windowsService(ctx context.Context, action, path string, c Config, executor CommandExecutor) error {
+func windowsService(ctx context.Context, action, path string, c Config, executor CommandExecutor) (result error) {
+	defer func() {
+		if result != nil {
+			slog.Warn("windows_service_failed", "action", action, "code", classify(result, ErrDependency, "Service failed.", "Inspect Task Scheduler.").Code)
+		} else {
+			slog.Info("windows_service_completed", "action", action)
+		}
+	}()
 	if e := windowsPlatform(ctx); e != nil {
 		return e
 	}
@@ -163,11 +228,28 @@ func windowsService(ctx context.Context, action, path string, c Config, executor
 	}
 	switch action {
 	case "start":
-		if _, e = readWindowsTaskReload(); e == nil {
-			return problem(ErrControl, "A service replacement is pending.", "Retry reload with the installed candidate CLI and original configuration.")
-		}
-		if !os.IsNotExist(e) {
-			return e
+		if j, err := readWindowsTaskReload(); err == nil {
+			if j.Storage != c.Storage || j.Target.Config != path {
+				return hostOwnership()
+			}
+			if _, err = SendControl(ctx, c, ControlRequest{Action: "status"}); err == nil {
+				return hostPending()
+			}
+			store, err := OpenStore(c)
+			if err != nil {
+				return err
+			}
+			snapshot := store.View()
+			store.Close()
+			_, active, _ := usage(snapshot)
+			if snapshot.Installation != j.Installation || !snapshot.Stopping || active != 0 || pendingCleanup(snapshot) != 0 {
+				return hostPending()
+			}
+			if err = os.Remove(windowsReloadPath()); err != nil {
+				return err
+			}
+		} else if !os.IsNotExist(err) {
+			return err
 		}
 		_, e = taskPS(ctx, executor, `Start-ScheduledTask -TaskName `+psQuote(windowsTaskName())+` -TaskPath '\'`)
 		return e
@@ -187,7 +269,8 @@ func windowsService(ctx context.Context, action, path string, c Config, executor
 			}
 			snapshot := store.View()
 			store.Close()
-			if pendingCleanup(snapshot) > 0 {
+			_, active, _ := usage(snapshot)
+			if pendingCleanup(snapshot) > 0 || active > 0 {
 				return hostPending()
 			}
 		}
@@ -227,7 +310,12 @@ func readWindowsTaskReload() (*windowsTaskReload, error) {
 	}
 	return &j, nil
 }
-func windowsReload(ctx context.Context, path string, c Config) error {
+func windowsReload(ctx context.Context, path string, c Config) (result error) {
+	defer func() {
+		if result != nil {
+			slog.Warn("windows_service_reload_failed", "code", classify(result, ErrControl, "Reload failed.", "Inspect the task and retry.").Code)
+		}
+	}()
 	if _, e := os.Lstat(windowsTaskPath()); os.IsNotExist(e) {
 		_, e = SendControl(ctx, c, ControlRequest{Action: "reload"})
 		return e
@@ -360,9 +448,16 @@ func windowsReload(ctx context.Context, path string, c Config) error {
 		return err
 	}
 	for {
-		out, _, err := sendControlPeer(ctx, c, ControlRequest{Action: "status"}, 0, true)
+		out, peer, err := sendControlPeer(ctx, c, ControlRequest{Action: "status"}, 0, true)
 		if err == nil && out.Status != nil && out.Status.Version == Version {
-			if _, err = SendControl(ctx, c, ControlRequest{Action: "reload"}); err != nil {
+			if err = verifyWindowsManager(ctx, peer, j.Target); err != nil {
+				return err
+			}
+			start, err := tartRunProcessStartIdentity(peer)
+			if err != nil {
+				return err
+			}
+			if _, _, err = sendControlIdentity(ctx, c, ControlRequest{Action: "reload"}, peer, start, true); err != nil {
 				return err
 			}
 			return os.Remove(windowsReloadPath())
@@ -373,6 +468,16 @@ func windowsReload(ctx context.Context, path string, c Config) error {
 	}
 }
 func verifyWindowsManager(ctx context.Context, pid int, m windowsTaskManifest) error {
+	engines, err := taskPS(ctx, OSCommand{}, `$service=New-Object -ComObject 'Schedule.Service'; $service.Connect(); ConvertTo-Json -Compress -InputObject @($service.GetFolder('\').GetTask(`+psQuote(windowsTaskName())+`).GetInstances(0) | ForEach-Object { $_.EnginePID })`)
+	var ids []uint32
+	if err != nil || json.Unmarshal(engines, &ids) != nil || len(ids) != 1 || ids[0] == 0 {
+		return hostOwnership()
+	}
+	parent, err := taskPS(ctx, OSCommand{}, fmt.Sprintf(`(Get-CimInstance Win32_Process -Filter 'ProcessId = %d').ParentProcessId | ConvertTo-Json -Compress`, pid))
+	var parentID uint32
+	if err != nil || json.Unmarshal(parent, &parentID) != nil || ids[0] != uint32(pid) && ids[0] != parentID {
+		return hostOwnership()
+	}
 	b, e := taskPS(ctx, OSCommand{}, fmt.Sprintf(`(Get-CimInstance Win32_Process -Filter 'ProcessId = %d').CommandLine | ConvertTo-Json -Compress`, pid))
 	var line string
 	if e != nil || json.Unmarshal(b, &line) != nil {

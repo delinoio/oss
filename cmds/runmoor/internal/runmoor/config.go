@@ -216,7 +216,7 @@ func normalizeConfig(c Config, hostOS, hostArch string) (Config, error) {
 		c.TartExecutable = "tart"
 	}
 	if c.DockerSocket != "" && !validLocalDockerEndpoint(c.DockerSocket, hostOS) {
-		return fail("Docker must use a local unix:/// socket; remote engines are unsupported.")
+		return fail("Docker must use a local Unix socket on macOS/Linux or named pipe on Windows; remote engines are unsupported.")
 	}
 	if c.Host.MaxRunners <= 0 || c.Host.MaxRunners > 10000 || c.Host.CPU <= 0 || c.Host.CPU > 100000 || c.Host.MemoryMiB <= 0 || c.Host.MemoryMiB > 1<<40 || c.Host.MinFreeDiskMiB <= 0 || c.Host.MinFreeDiskMiB > 1<<40 {
 		return fail("Host concurrency, CPU, memory and minimum free disk budgets must resolve to positive bounded values.")
@@ -292,7 +292,7 @@ func normalizeConfig(c Config, hostOS, hostArch string) (Config, error) {
 			return fail("Tart requires macOS arm64 and plain execution mode.")
 		}
 		if p.Backend == Host && !(hostOS == "darwin" && p.Arch == "arm64" || hostOS == "windows" && p.Arch == "amd64") {
-			return c, problem(ErrPlatform, "Host execution requires macOS 14+ Apple Silicon.", "Select Docker on Ubuntu or use a supported Mac.")
+			return c, problem(ErrPlatform, "Host execution requires macOS 14+ arm64 or Windows 11 x64.", "Use a supported native host or select Docker on Ubuntu.")
 		}
 		if p.Backend == Host && (p.Mode != Plain || p.Image != "" || p.ImageSource != nil || p.RunnerPath != "") {
 			return fail("Host pools require plain mode and Runmoor-owned paths; image, image_source and runner_path are incompatible.")

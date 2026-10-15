@@ -19,6 +19,21 @@ func TestWindowsPoolLabels(t *testing.T) {
 		t.Fatal("ARM64 accepted")
 	}
 }
+
+func TestWindowsRejectsDinDAndGuestPaths(t *testing.T) {
+	c := fixtureConfig(t)
+	c.Pools[0].Arch = "amd64"
+	c.Pools[0].Mode = DinD
+	if _, err := normalizeConfig(c, "windows", "amd64"); err == nil {
+		t.Fatal("Windows DinD accepted")
+	}
+	c.Pools[0].Mode = Plain
+	for _, path := range []string{`C:\Windows`, `C:\runner\..\personal`, `C:\runner:stream`, `/home/runner`, `C:\COM¹`} {
+		if validWindowsRunnerPath(path) {
+			t.Errorf("unsafe Windows runner path accepted: %q", path)
+		}
+	}
+}
 func TestLocalDockerEndpoints(t *testing.T) {
 	for _, tc := range []struct {
 		endpoint, goos string

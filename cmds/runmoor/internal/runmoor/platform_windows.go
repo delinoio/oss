@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -100,6 +101,15 @@ func windowsOpen(path string, access, disposition uint32, sd *windows.SECURITY_D
 	}
 	var info windows.ByHandleFileInformation
 	if err = windows.GetFileInformationByHandle(h, &info); err != nil || info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		windows.CloseHandle(h)
+		return nil, os.ErrPermission
+	}
+	// Check the opened object's resolved path too: an ancestor junction can be
+	// replaced between the initial walk and CreateFile. Never truncate, chmod or
+	// grant ownership authority to a handle redirected through that race.
+	resolved := make([]uint16, 32768)
+	n, err := windows.GetFinalPathNameByHandle(h, &resolved[0], uint32(len(resolved)), 0)
+	if err != nil || n >= uint32(len(resolved)) || !strings.EqualFold(strings.TrimPrefix(windows.UTF16ToString(resolved[:n]), `\\?\`), filepath.Clean(path)) {
 		windows.CloseHandle(h)
 		return nil, os.ErrPermission
 	}

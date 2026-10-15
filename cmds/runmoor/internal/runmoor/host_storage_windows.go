@@ -16,14 +16,10 @@ func hostPrivateInfo(info os.FileInfo, directory bool) bool {
 	return ok && a.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT == 0 && (directory && info.IsDir() || !directory && info.Mode().IsRegular())
 }
 
-// Only used for portable service fixtures on Windows. Host storage uses the
-// handle-derived identity below, rather than granting authority from timestamps.
-func hostFileIdentity(info os.FileInfo) string {
-	if info == nil {
-		return ""
-	}
-	return fmt.Sprintf("windows-info:%d", info.ModTime().UnixNano())
-}
+// FileInfo does not expose Windows volume/file IDs. Path-independent identity
+// is available only through the retained directory handle below; generic Unix
+// service publication must fail closed instead of inventing timestamp identity.
+func hostFileIdentity(os.FileInfo) string { return "" }
 func windowsRootIdentity(root *os.Root) string {
 	f, e := root.Open(".")
 	if e != nil {

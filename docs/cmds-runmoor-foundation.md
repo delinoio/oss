@@ -906,6 +906,8 @@ Completed, closed mutable Tart images (`ImagePreparing` with `CreationComplete`)
 
 ## Windows 11 x64
 
+Run `go test -count=1 ./cmds/runmoor/...` on Windows for native ACL, locks, pipe identity, Job Object termination, manager restart and durable job-deadline fixtures. Set `RUNMOOR_WINDOWS_TASK_TEST=1` to additionally register, inspect, start, stop and remove a uniquely named disposable login task without GitHub credentials. Set `RUNMOOR_WINDOWS_DOCKER_TEST=1` separately for a real Windows-container fixture with an isolated work volume, stdin bootstrap, restart inspection and ownership-checked cleanup. The latter needs Go, Docker in Windows containers mode, Hyper-V and access to Server Core LTSC 2022; it never switches the operator's Docker mode. These fixtures do not establish live GitHub acceptance or an actual logout/login cycle. Preserve existing macOS/Linux validation gates.
+
 Windows support is unreleased. It includes native Windows host runners and local
 Docker Windows container runners, plus login-triggered background operation.
 Windows Server, ARM64, Linux containers on Windows and Windows DinD are excluded.

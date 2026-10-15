@@ -39,7 +39,7 @@ func validPoolRunnerPath(p, goos string) bool {
 // credentials are resolved separately and never forwarded into job processes.
 func windowsEnvironment() []string {
 	var env []string
-	for _, name := range []string{"PATH", "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "LOCALAPPDATA", "APPDATA", "PROGRAMDATA"} {
+	for _, name := range []string{"PATH", "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "LOCALAPPDATA", "APPDATA", "PROGRAMDATA", "USERPROFILE"} {
 		if value, ok := os.LookupEnv(name); ok {
 			env = append(env, name+"="+value)
 		}

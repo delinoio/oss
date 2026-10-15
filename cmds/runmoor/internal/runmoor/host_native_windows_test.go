@@ -10,6 +10,14 @@ import (
 )
 
 func TestWindowsSupervisorSurvivesManagerRestartAndStopsOwnedWorker(t *testing.T) {
+	testWindowsSupervisorLifecycle(t, false)
+}
+
+func TestWindowsSupervisorEnforcesDurableJobDeadline(t *testing.T) {
+	testWindowsSupervisorLifecycle(t, true)
+}
+
+func testWindowsSupervisorLifecycle(t *testing.T, deadline bool) {
 	dir := windowsPrivateFixture(t)
 	helper := filepath.Join(dir, "runmoor.exe")
 	if out, e := exec.Command("go", "build", "-o", helper, "../..").CombinedOutput(); e != nil {
@@ -86,8 +94,18 @@ func main(){if len(os.Args)!=4||os.Args[1]!="run"||os.Args[2]!="--jitconfig"||os
 	if members, e := (nativeHost{}).Group(status.Worker); e != nil || len(members) == 0 {
 		t.Fatalf("worker lost: %v", e)
 	}
-	if e = (nativeHost{}).Stop(supervisor); e != nil {
-		t.Fatal(e)
+	if deadline {
+		if e = store.Update(func(s *Snapshot) error {
+			s.Runners[d.ID].Phase = Busy
+			s.Runners[d.ID].Deadline = time.Now().Add(100 * time.Millisecond)
+			return nil
+		}); e != nil {
+			t.Fatal(e)
+		}
+	} else {
+		if e = (nativeHost{}).Stop(supervisor); e != nil {
+			t.Fatal(e)
+		}
 	}
 	for {
 		members, e := (nativeHost{}).Group(status.Worker)
@@ -98,6 +116,18 @@ func main(){if len(os.Args)!=4||os.Args[1]!="run"||os.Args[2]!="--jitconfig"||os
 			t.Fatalf("owned worker survived supervisor termination: %v", e)
 		}
 		time.Sleep(30 * time.Millisecond)
+	}
+	if deadline {
+		for {
+			status, e = hostReadStatus(root, d)
+			if e == nil && status.Phase == HostFailed {
+				break
+			}
+			if ctx.Err() != nil {
+				t.Fatalf("job timeout was not durably recorded: %v", e)
+			}
+			time.Sleep(30 * time.Millisecond)
+		}
 	}
 	// Kernel image sections can outlive the final job accounting transition.
 	// Production cleanup retains its journal and retries the same sharing failure.

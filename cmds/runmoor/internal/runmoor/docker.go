@@ -32,9 +32,6 @@ func dockerEndpoint(ctx context.Context, c Config) (string, error) {
 		endpoint = os.Getenv("DOCKER_HOST")
 	}
 	if endpoint == "" {
-		if runtime.GOOS == "windows" {
-			return "npipe:////./pipe/docker_engine", nil
-		}
 		args := []string{"context", "inspect", "--format", "{{json .Endpoints.docker.Host}}"}
 		if v := os.Getenv("DOCKER_CONTEXT"); v != "" {
 			args = append(args, v)
@@ -46,6 +43,8 @@ func dockerEndpoint(ctx context.Context, c Config) (string, error) {
 			if json.Unmarshal(b, &endpoint) != nil {
 				return "", dockerProblem()
 			}
+		} else if runtime.GOOS == "windows" {
+			endpoint = "npipe:////./pipe/docker_engine"
 		} else if _, e := os.Stat("/var/run/docker.sock"); e == nil {
 			endpoint = "unix:///var/run/docker.sock"
 		} else {
@@ -53,7 +52,7 @@ func dockerEndpoint(ctx context.Context, c Config) (string, error) {
 		}
 	}
 	if !validLocalDockerEndpoint(endpoint, runtime.GOOS) {
-		return "", problem(ErrDependency, "Remote Docker endpoints are unsupported.", "Select a local Unix-socket Docker engine; TCP, SSH and emulated engines are not supported.")
+		return "", problem(ErrDependency, "Remote Docker endpoints are unsupported.", "Select a local Unix socket on macOS/Linux or named pipe on Windows; TCP, SSH and emulated engines are unsupported.")
 	}
 	return endpoint, nil
 }
@@ -86,7 +85,7 @@ func (d *DockerDriver) Validate(ctx context.Context, c Config, p Pool, s Snapsho
 		arch = "amd64"
 	}
 	if info.Info.OSType != dockerExecutionOS() || arch != runtime.GOARCH || arch != p.Arch {
-		return problem(ErrPlatform, "Docker must run native-architecture Linux containers.", "Select a matching local Linux engine without CPU emulation.")
+		return problem(ErrPlatform, "Docker must run native-architecture "+dockerExecutionOS()+" containers.", "Select a matching local engine without CPU emulation; check its container OS mode.")
 	}
 	if runtime.GOOS == "windows" {
 		if e := validateWindowsDockerHost(ctx); e != nil {
@@ -115,8 +114,8 @@ func (d *DockerDriver) Validate(ctx context.Context, c Config, p Pool, s Snapsho
 		if e != nil {
 			return problem(ErrImage, "A pinned Docker image is not available locally.", "Pull the exact configured digest with Docker, then run doctor and resume.")
 		}
-		if im.Os != dockerExecutionOS() || im.Architecture != p.Arch {
-			return problem(ErrImage, "A pinned image has the wrong platform.", "Select a Linux image digest for the host's native architecture.")
+		if im.Os != dockerExecutionOS() || im.Architecture != p.Arch || runtime.GOOS == "windows" && !windowsImageCompatible(im.Os, im.Architecture, im.OsVersion) {
+			return problem(ErrImage, "A pinned image has the wrong platform.", "Select a "+dockerExecutionOS()+" image digest for the host's native architecture.")
 		}
 	}
 	return nil

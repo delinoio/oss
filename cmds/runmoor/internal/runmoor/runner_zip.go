@@ -25,8 +25,16 @@ func safeWindowsArchiveName(name string) bool {
 	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
 		return false
 	}
-	if len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && strings.ContainsRune("123456789¹²³", rune(base[3])) {
+	if len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && strings.ContainsRune("123456789", rune(base[3])) {
 		return false
+	}
+	for _, prefix := range []string{"COM", "LPT"} {
+		if strings.HasPrefix(base, prefix) {
+			suffix := strings.TrimPrefix(base, prefix)
+			if suffix == "¹" || suffix == "²" || suffix == "³" {
+				return false
+			}
+		}
 	}
 	return true
 }
