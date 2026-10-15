@@ -5,6 +5,7 @@ import {
   type MessageInitShape,
   type MessageShape,
 } from "@bufbuild/protobuf";
+import { type Transport } from "@connectrpc/connect";
 import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
 import {
   QueryClientContext,
@@ -34,13 +35,14 @@ export function usePaginationChain<Row extends PaginationRow, Payload = never>(
   reader: PaginationReader<Row, Payload>,
   initialRead = true,
   retainPayloadOnSuspend = false,
+  residentPages?: number,
 ) {
   // Native/local adapters do not require a business QueryClient provider.
   // Connect adapters still bind the authenticated provider identity here.
   const client = useContext(QueryClientContext);
   const chain = useMemo(
-    () => new PaginationChain<Row, Payload>(),
-    [scopeKey, client],
+    () => new PaginationChain<Row, Payload>(residentPages),
+    [scopeKey, client, residentPages],
   );
   // Inert presentation may pause an owner without destroying its mounted
   // rows. Actual owner/scope disposal always erases retained private payloads.
@@ -86,6 +88,24 @@ export function usePaginationChain<Row extends PaginationRow, Payload = never>(
     [chain, reader],
   );
   return { ...snapshot, ...actions };
+}
+
+const transportOwners = new WeakMap<Transport, number>();
+let nextTransportOwner = 1;
+
+/** Stable identity of the authenticated transport that owns a Connect read.
+ * A replacement transport (for example after a paired reconnect that keeps the
+ * same connection identity and QueryClient) is a new owner: including this in a
+ * chain's scopeKey resets retained rows, empty snapshots and in-flight reads so
+ * evidence from the old owner never stands in for the new one. */
+export function useTransportOwner(): number {
+  const transport = useTransport();
+  let owner = transportOwners.get(transport);
+  if (owner === undefined) {
+    owner = nextTransportOwner++;
+    transportOwners.set(transport, owner);
+  }
+  return owner;
 }
 
 /** A generated Connect Query read uses a disposable cache key so a bounded

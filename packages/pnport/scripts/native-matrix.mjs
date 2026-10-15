@@ -1,20 +1,33 @@
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { targets } = require("../src/platforms.cjs");
+const {
+  targets,
+  allTargets,
+  targetsForVersion,
+} = require("../src/platforms.cjs");
 const runners = Object.freeze({
   "darwin-x64": "macos-15-intel",
   "darwin-arm64": "macos-15",
   "linux-x64-gnu": "ubuntu-22.04",
   "linux-arm64-gnu": "ubuntu-22.04-arm",
+  "win32-x64-msvc": "windows-2022",
+  "win32-arm64-msvc": "windows-11-arm",
 });
 
 // The package registry owns the release set. Adding a platform also requires
 // explicitly choosing a native host; cross-compilation cannot fill that slot.
-export const nativeMatrix = Object.freeze({
-  include: targets.map(({ suffix, rust }) => {
-    const runner = runners[suffix];
-    if (!runner) throw new Error(`Missing pnport native runner: ${suffix}`);
-    return { runner, target: rust, suffix };
-  }),
-});
+function matrix(selected) {
+  return Object.freeze({
+    include: selected.map(({ suffix, rust }) => {
+      const runner = runners[suffix];
+      if (!runner) throw new Error(`Missing pnport native runner: ${suffix}`);
+      return { runner, target: rust, suffix };
+    }),
+  });
+}
+
+export const nativeMatrix = matrix(targets);
+export const developmentMatrix = matrix(allTargets);
+export const nativeMatrixForVersion = (version) =>
+  matrix(targetsForVersion(version));

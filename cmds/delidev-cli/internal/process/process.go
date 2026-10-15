@@ -38,7 +38,17 @@ func (s TerminalSize) Validate() error {
 	return nil
 }
 
+type SessionContext string
+
+const (
+	BackgroundSession SessionContext = ""
+	CurrentUserGUI    SessionContext = "current-user-gui"
+)
+
 type Config struct {
+	// Select only the current user's macOS login context; process ownership and
+	// private provider configuration remain independently enforced.
+	SessionContext SessionContext `json:"-"`
 	// Nonblocking descriptive observer for the original interactive native child.
 	StartupObserver func(domain.ExecutionStartupPhase, domain.StartupProgressState) `json:"-"`
 	// Transient native-output guards, never journal or launch metadata.
@@ -122,6 +132,9 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 	if err := config.OwnerID.Validate(); err != nil {
 		return nil, err
 	}
+	if config.SessionContext != BackgroundSession && config.SessionContext != CurrentUserGUI {
+		return nil, domain.Fail(domain.InvalidArgument, "Invalid native process session context.", "Select a supported execution context.")
+	}
 	if !filepath.IsAbs(config.Executable) || !filepath.IsAbs(config.Cwd) || config.Env == nil {
 		return nil, domain.Fail(domain.InvalidArgument, "A process requires an absolute executable, working directory and explicit environment.", "Resolve the selected Worker's native executable and isolated runtime before launch.")
 	}
@@ -169,7 +182,7 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 	if config.StartupObserver != nil {
 		config.StartupObserver(domain.StartupLaunch, domain.StartupProgressRunning)
 	}
-	p, err := startProcess(command, scope, config.OwnerID, config.Terminal)
+	p, err := startProcess(command, scope, config.OwnerID, config.Terminal, config.SessionContext)
 	if err != nil {
 		_ = controller.Close()
 		return nil, err

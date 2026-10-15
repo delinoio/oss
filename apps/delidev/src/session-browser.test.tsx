@@ -1891,6 +1891,79 @@ it(
 );
 
 it(
+  "drops unavailable profile pages from an inactive retained session without polling it or presenting on revisit",
+  async () => {
+    const f = fixture({ pages: 2 });
+    const other = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SESSION,
+      revision: 9n,
+    });
+    const second = { ...f, session: other } as Fixture;
+    const captured: { store?: SessionTabsStore } = {};
+    function Probe() {
+      captured.store = useSessionTabsStore();
+      return null;
+    }
+    const tree = (inactiveVisible: boolean) => (
+      <TransportProvider transport={f.transport}>
+        <QueryClientProvider client={f.client}>
+          <MutationIntents>
+            <SessionTabsProvider>
+              <Probe />
+              <Workspace f={f} />
+              <Workspace f={second} active={inactiveVisible} />
+            </SessionTabsProvider>
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>
+    );
+    const view = render(tree(false));
+    // Session A discovers its pages while Session B stays inactive.
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("tab", { name: "https://fixture.test/1" }),
+      ).toHaveLength(1),
+    );
+    const store = captured.store!;
+    const [first, secondPage] = f.model.pages;
+    // Session B retains stale descriptors, a foreign profile page with the same
+    // id and an unrelated tab; its selected Page is the one that goes away.
+    store.open(other.id, pageTab(f.profileId, first.id));
+    store.open(other.id, pageTab(f.profileId, secondPage.id));
+    store.open(other.id, pageTab("foreign-profile", first.id));
+    store.open(other.id, { kind: SessionTabKind.Diagnostics });
+    store.select(other.id, sessionTabKey(pageTab(f.profileId, secondPage.id)));
+    const mutations = nativeMutations().length;
+    await act(async () => {
+      f.model.removalPending = true;
+    });
+    await waitFor(
+      () =>
+        expect(store.snapshot(other.id).tabs.map(sessionTabKey)).toEqual([
+          SessionTabKind.Conversation,
+          sessionTabKey(pageTab("foreign-profile", first.id)),
+          SessionTabKind.Diagnostics,
+        ]),
+      { timeout: 6000 },
+    );
+    // The removed selected Page falls back to its left neighbor, here the
+    // Conversation tab, because the earlier Page descriptors are gone too.
+    expect(store.snapshot(other.id).selected).toBe(SessionTabKind.Conversation);
+    // Repeating the authoritative inventory publishes nothing for B.
+    const settled = store.snapshot(other.id);
+    await settle(2200);
+    expect(store.snapshot(other.id)).toBe(settled);
+    // Revisiting B cannot present a removed stale descriptor.
+    view.rerender(tree(true));
+    await settle(300);
+    expect(calls("open_browser")).toHaveLength(0);
+    expect(nativeMutations()).toHaveLength(mutations);
+  },
+  SLOW_TEST,
+);
+
+it(
   "preserves the descriptor of an in-flight Close until its original proof settles under removal",
   async () => {
     const f = fixture({ pages: 2 });

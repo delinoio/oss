@@ -9,10 +9,7 @@
 //! Every note shown for an unavailable state comes from a fixed set: the
 //! constants and `reason_note` below. No adapter or engine text is displayed.
 
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    path::Path,
-};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::Context;
 use crate::{
@@ -24,7 +21,6 @@ use crate::{
         ExportReference, ExportScope, ExportUsage, ExportUsageEdge, ExportUsagePath,
         ExportUsagePathEnd, ExportUsageState, ExportUsageTruncation,
     },
-    sources::sha256_hex,
 };
 
 /// Most chains kept for one diagnostic.
@@ -313,7 +309,7 @@ pub fn build(context: &Context<'_>, module_id: &str) -> ExportUsage {
         .get_or_init(|| ExportUsageIndex::new(usage));
     let (result, stats) = traverse_with_stats(context, index, module_id, Limits::DEFAULT);
     tracing::debug!(
-        module = %log_label(context, module_id),
+        module = %context.module_log_label(module_id),
         state = ?result.state,
         paths = result.paths.len(),
         incomplete_paths = result
@@ -330,23 +326,6 @@ pub fn build(context: &Context<'_>, module_id: &str) -> ExportUsage {
         "export usage paths derived"
     );
     result
-}
-
-/// Label of a module for logs. A bundler module identifier can carry inline
-/// loader options or resource queries, which can hold credentials or values
-/// of the local environment, so the raw identifier is never logged. A
-/// collected module is named by its display path (the resource path without
-/// query or loader options); any other identifier is named by a prefix of its
-/// SHA-256 digest, which identifies it within one log without revealing it.
-fn log_label(context: &Context<'_>, module_id: &str) -> String {
-    match context
-        .modules
-        .get(module_id)
-        .and_then(|module| module.path.as_deref())
-    {
-        Some(path) => context.display_path(Path::new(path)),
-        None => format!("module-{}", &sha256_hex(module_id.as_bytes())[..16]),
-    }
 }
 
 /// Records the first limit that cut the traversal short; later limits do not
@@ -2146,9 +2125,9 @@ mod tests {
             Vec::new(),
             SourceStore::new(false),
         );
-        let first = log_label(&context, secret);
-        assert_eq!(first, log_label(&context, secret));
-        assert_ne!(first, log_label(&context, loader));
+        let first = context.module_log_label(secret);
+        assert_eq!(first, context.module_log_label(secret));
+        assert_ne!(first, context.module_log_label(loader));
         assert_eq!(first.len(), "module-".len() + 16);
     }
 }
