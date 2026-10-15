@@ -131,6 +131,12 @@ func runManagedSidechatProcess(home string) bool {
 					}
 				}
 			}
+			// Project isolation disables plugin loading in the private home, so the
+			// effective configuration reports an explicit false unless a launch
+			// override selected the feature.
+			if _, selected := features["plugins"]; !selected {
+				features["plugins"] = false
+			}
 			write(req.ID, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": map[string]any{}, "features": features, "sandbox_mode": "read-only", "approval_policy": "never", "approvals_reviewer": "user", "allow_login_shell": false, "web_search": "disabled", "notify": []any{}, "mcp_servers": map[string]any{}, "plugins": map[string]any{}, "hooks": map[string]any{}}, "origins": nil, "layers": nil})
 		case "experimentalFeature/list":
 			features := []any{}

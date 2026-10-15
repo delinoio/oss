@@ -299,6 +299,9 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 	if err := c.verifySidechat(ctx, settings.Cwd, ""); err != nil {
 		return result, err
 	}
+	if err := c.isolateProject(ctx, settings, &params); err != nil {
+		return result, err
+	}
 	request := struct {
 		Thread       domain.ID      `json:"threadId"`
 		Last         domain.ID      `json:"lastTurnId"`
@@ -352,6 +355,10 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 		c.problem = threadUncertain()
 		c.problem.Guidance = domain.SafeError(err).Guidance
 		return result, c.problem
+	}
+	if err := c.verifyMCPInventory(ctx, settings.Cwd); err != nil {
+		c.problem = domain.SafeError(err)
+		return result, err
 	}
 	turns, err := c.forkTurnsLocked(ctx, thread.ID)
 	if err != nil || !slices.EqualFunc(turns, source.turns, equivalentForkJSON) {

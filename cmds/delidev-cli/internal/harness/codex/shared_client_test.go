@@ -61,6 +61,10 @@ func testSharedRuntimeBindsIndependentNativeThreads(t *testing.T, count int) {
 		}()
 	}
 	wg.Wait()
+	// Every concurrent member isolated the shared account home before binding.
+	if isolationProjectLevel(t, config.Home, settings.Cwd) != "untrusted" {
+		t.Fatal("shared account home did not record the project as untrusted")
+	}
 	identities := make(map[domain.ID]bool)
 	for i, result := range results {
 		if failures[i] != nil || result.Thread == nil || identities[result.Thread.ID] {

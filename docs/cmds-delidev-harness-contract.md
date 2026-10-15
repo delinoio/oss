@@ -231,7 +231,11 @@ startup-status authority. Malformed or duplicate configuration fails validation;
 a failed fresh read discards any earlier inventory. Each external startup name
 must match that original member's verified workspace inventory exactly. Unknown
 names retain the private unsupported boundary; another member's inventory cannot
-authorize them.
+authorize them. Project isolation (see "Codex project and MCP isolation")
+runs after that read and requires the bound thread's effective inventory to be
+empty, so an ordinary thread that reaches input never has a configured server
+whose startup status could arrive; the retained names only describe the
+pre-isolation workspace read and grant no tool authority.
 The adapter discards server names and diagnostics and logs only the closed status,
 owner identity and error presence. These observations do not publish product
 events, complete a turn, change account health or grant tool authority. API,
@@ -1308,6 +1312,208 @@ Native session flags override user/project provider selections without modifying
 Codex API provider fields `model_catalog_url` and `gateway_oauth` follow the same absent-or-exact-null rule in ordinary, title and owned-proxy profiles. Every populated value, including an empty string or object, fails before input; these fields grant no catalog or gateway OAuth authority. Unknown and duplicate provider fields remain rejected. This compatibility boundary does not replay failed sessions or alter original cleanup/recovery ownership.
 
 Opt-in native tests verify one exact authenticated request to a scripted local proxy despite a competing private user config, and inspect the closed runtime for persisted execution tokens. A separate server composition test registers a digest through authenticated Connect, then runs installed Codex through the actual server relay into a scripted loopback provider with server-only key injection. It verifies exact model/input/output identity and owned closure. The accepted execution-readiness records in that test are simulated; the actual Worker loop now executes accepted first assignments, with the separately validated public first dispatcher now supplying that assignment; complete event normalization remains pending. The server composition additionally verifies the Worker durable core-event outbox and retained server transcript. No user account or external inference service is involved.
+
+### Codex project and MCP isolation
+
+Ordinary Codex execution selects no DeliDev MCP server. A `workspace-write` or
+`danger-full-access` `thread/start` makes the installed Codex record the project
+as `trusted` in the private `CODEX_HOME/config.toml`; that activates the
+repository's own `.codex/config.toml` layer, and MCP tables merge across layers,
+so a repository-defined server would launch and its startup status would fail
+the execution after input acceptance. CLI overrides (`mcp_servers={}`, a
+`projects.<root>.trust_level` override or `project_root_markers`) were verified
+ineffective on Codex 0.159.2, so the adapter isolates the thread in three steps
+inside the shared thread binding (`thread/start`, `thread/resume` and the
+independent Fork `thread/fork`).
+
+1. **Project isolation before the native call.** Under the in-process per-home
+   lock, the adapter reads the private `config.toml` (bounded, owner-only,
+   strict TOML) and applies the state table below. It records
+   `trust_level = "untrusted"` for the thread directory, its nearest Git
+   repository root, the main repository root of a linked worktree and every
+   workspace root, each in its cleaned and symlink-resolved spelling (never the
+   caller's raw spelling), and, for every project root marker the private
+   configuration selects through `project_root_markers` (top level or any
+   profile) other than `.git`, each ancestor of those directories up to the
+   filesystem root that holds the marker. Codex locates the trust boundary
+   through those markers, so a root found only through a configured marker would
+   otherwise keep a retained `trusted` entry active and with it its
+   `.codex/config.toml` layer. The markers are read from the same decoded
+   document under the same lock, and a `project_root_markers` value that is not
+   a list of plain file names (no separator, not `.` or `..`) is an invalid
+   shape. The adapter replaces a retained `trusted` value of those keys
+   and of every existing key that normalizes to the same directory (a trailing
+   separator, dot segments and, on Windows, a different case).
+   It removes the top-level `mcp_servers` table and the `mcp_servers` table of
+   every profile table, selected or not, because the selected profile merges over
+   the top-level configuration (DeliDev never authors an MCP or profile selection
+   there, so an entry is foreign). It also sets `features.plugins = false` and
+   removes a profile's `plugins` feature override: a plugin contributes MCP
+   servers through its own `.mcp.json`, which `config/read` never lists, and a
+   disabled plugin feature loads none.
+   Other settings are preserved semantically; **comments and key order of this
+   private file are not preserved**. An unchanged file is not rewritten; a
+   changed file is replaced atomically (owner-only temporary file attributed to
+   its target, then rename). The profile lease already serializes processes on a
+   registered profile home, including a legacy home registered in place and a
+   shared owner home, and the adapter creates no lock file or registry state of
+   its own; the per-home lock only serializes concurrent shared-owner members in
+   this process. A lock entry exists only while a caller holds or awaits it and
+   the last release removes it, so a long-lived Worker retains no entry for a
+   finished job-scoped home. An unreadable, invalid or unwritable file, or a
+   table of an unexpected shape (see the state table), fails before any thread
+   exists with `unsupported` in the profile phase and a structured warning naming
+   only `stage=project-trust-isolation` and `reason=trust-unwritable`; the file is
+   left unchanged.
+2. **Pinned defaults.** An untrusted project changes two native defaults when the
+   selection is empty: approval becomes `untrusted` and the sandbox becomes
+   `workspace-write` (a never-recorded project yields `on-request` and
+   `read-only`). To keep the effective settings unchanged, the adapter sends
+   `approvalPolicy: on-request` when the selection has no approval policy and
+   `sandbox: read-only` when the permission is `default`. Explicit approval
+   policies and sandboxes are sent exactly as selected, so a `workspace-write`
+   request stays `workspace-write`. Model, effort, service tier, reviewer and
+   subagent options are untouched, and the existing effective-settings
+   comparison still applies.
+3. **Pre-thread inventory probe.** The rewrite cannot remove a definition from a
+   layer outside the private home: a system or managed policy can define an MCP
+   server or re-enable plugins, and the installed Codex may launch such a server
+   while `thread/start`, `thread/resume` or `thread/fork` runs. Immediately
+   after the rewrite and before the native thread operation is sent, the adapter
+   therefore runs the inventory check below (`config/read` with the thread
+   directory, which reflects every layer including policy, and with the project
+   already untrusted so the repository layer is inactive). A surviving server or
+   plugin source fails with `unsupported` in the profile phase before any thread
+   exists, logs `stage=mcp-inventory-preflight` with the same closed reasons, and
+   sends no thread operation. Because no thread exists, the connection is not
+   latched to one; the Worker still closes its owned native process through the
+   normal cleanup path.
+
+After the thread exists and before the connection can send any input or
+`turn/start`, the same check runs again as drift detection
+(`stage=mcp-inventory-verification`). `config/read` with the thread directory
+must report an `mcp_servers` without an enabled entry (absent, null, empty or
+only entries with `enabled = false`, which `config/read` still lists although
+Codex never launches them) and an explicit `features.plugins = false`. An entry
+counts as enabled when its `enabled` key is absent or `true`; the startup
+inventory classifier (`configuredMCPStartupServers`) is the single source of
+that rule, and an `enabled` value of any other type (including `null`) is
+unreadable. An absent, null or enabled plugin feature (for
+example a managed policy that re-enables plugins) fails with
+`reason=plugins-enabled`, because a plugin-backed server would then be missing
+from the reported inventory.
+An inventory with an enabled entry, an unparseable inventory, a malformed `features` table, a native
+error or a failed read fails with `unsupported` in the profile phase, latches
+the connection after a thread exists (no input or second thread), logs
+`codex_native_isolation_rejected` with only `owner_id`,
+`stage` (`mcp-inventory-preflight` or `mcp-inventory-verification`) and a closed
+`reason` (`inventory-nonempty`, `inventory-unreadable` or `plugins-enabled`), and
+never exposes server names, commands or native error text. The Worker closes its
+owned native process through the normal cleanup path, so the failure is reported
+before input acknowledgment and the queued input remains retryable under the
+existing safe-retry rules; an acknowledged input is never replayed. An MCP
+definition outside the private home and repository (system or managed policy)
+cannot be isolated this way and takes the pre-thread failure path, so the
+isolation never lets it start. Selected-MCP support is separate future work. The passive managed `codex_apps` startup status and
+unrelated foreign MCP events keep their existing handling in the observation
+boundary.
+
+The isolation table is a single source (`policyFor`) and every row has a test:
+
+| Profile kind                                                              | Operation                                                     | Requested sandbox / approval                | Effective sandbox / approval | Seeding | Inventory check                                      |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------- | ---------------------------- | ------- | ---------------------------------------------------- |
+| API ordinary                                                              | start, resume (including compaction restore and Revert), Fork | explicit                                    | as requested                 | yes     | yes                                                  |
+| API ordinary                                                              | start, resume, Fork                                           | permission `default` / empty approval       | `read-only` / `on-request`   | yes     | yes                                                  |
+| ChatGPT-managed ordinary, including subscription and shared owner members | start, resume (including compaction restore and Revert), Fork | explicit                                    | as requested                 | yes     | yes                                                  |
+| ChatGPT-managed ordinary, including shared owner home                     | start, resume                                                 | permission `default` / empty approval       | `read-only` / `on-request`   | yes     | yes                                                  |
+| Shared account owner connection                                           | none (members bind threads)                                   | not applicable                              | not applicable               | no      | no                                                   |
+| Sidechat (API or managed)                                                 | start, Fork, resume                                           | read-only, `never`                          | `read-only` / `never`        | no      | existing Sidechat configuration check                |
+| Automatic title (API or managed)                                          | start                                                         | read-only, `never`, private empty workspace | `read-only` / `never`        | no      | managed title: existing title check; API title: none |
+| Native review                                                             | start                                                         | named read-only profile                     | as requested                 | no      | existing review configuration check                  |
+| Probe, discovery, quota, credit, subscription, model observation          | none                                                          | not applicable                              | not applicable               | no      | no                                                   |
+
+Every dimension of the private-home isolation has a state table, and every row
+has a test (`project_isolation_cells_test.go` runs each row through the pure
+document function and through the file). A rejected shape leaves the file
+unchanged and fails with `reason=trust-unwritable`.
+
+| Dimension                | State                                                                  | Result                                                                                                     |
+| ------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Config shape and profile | No file or empty file                                                  | Created with the untrusted keys                                                                            |
+| Config shape and profile | Top-level `mcp_servers` (table or scalar)                              | Removed                                                                                                    |
+| Config shape and profile | Selected profile defines `mcp_servers`                                 | Removed from that profile; its other settings are kept                                                     |
+| Config shape and profile | Unselected profile or several profiles define `mcp_servers`            | Removed from every profile                                                                                 |
+| Config shape and profile | `profile` names a profile that is not defined                          | Every defined profile is still stripped                                                                    |
+| Config shape and profile | `profiles` is not a table, or a profile entry is not a table           | Rejected; file unchanged                                                                                   |
+| Plugin source            | `features.plugins` absent or `true` at the top level                   | Set to `false`; other features are kept                                                                    |
+| Plugin source            | `features.plugins = true` in a profile                                 | Override removed; other profile features are kept                                                          |
+| Plugin source            | Enabled `[plugins.*]` entry in the private home                        | Entry kept and inert while the feature is `false`                                                          |
+| Plugin source            | `features` or a profile's `features` is not a table                    | Rejected; file unchanged                                                                                   |
+| Plugin source            | Effective `features.plugins` is absent, `null` or `true` after binding | Rejected with `plugins-enabled` before any input (a managed policy can re-enable it)                       |
+| Plugin source            | Effective `features` is malformed                                      | Rejected with `inventory-unreadable` before any input                                                      |
+| Path spelling            | Clean absolute directory                                               | Written as is                                                                                              |
+| Path spelling            | Trailing separator, dot segments or repeated separators                | Only the cleaned key is written                                                                            |
+| Path spelling            | Symlinked directory                                                    | The symlink spelling and the resolved spelling are written                                                 |
+| Path spelling            | Existing `trusted` key that normalizes to the same directory           | Set to `untrusted`; unrelated keys and fields are kept                                                     |
+| Path spelling            | Existing key that differs only by case, case-sensitive platform        | A different directory; left unchanged                                                                      |
+| Path spelling            | Existing key that differs only by case, Windows                        | The same directory; set to `untrusted`                                                                     |
+| Path spelling            | Non-Git directory                                                      | The directory key alone isolates it                                                                        |
+| Path spelling            | Existing project entry (equivalent or not) is not a table              | Rejected; file unchanged                                                                                   |
+| Root markers             | `project_root_markers` absent, or only `.git`                          | The directory, its nearest Git root and a linked worktree's main root are untrusted                        |
+| Root markers             | `project_root_markers` is an empty list                                | Codex treats the directory as the root; only the directory and its Git roots are untrusted                 |
+| Root markers             | Custom marker held by an ancestor of the directory                     | The directory and every ancestor holding the marker are untrusted; an existing `trusted` value is replaced |
+| Root markers             | Several markers, or the same marker at several ancestors               | Every ancestor holding any marker is untrusted                                                             |
+| Root markers             | Marker held only by the directory itself or only below it              | No additional key; a directory below the thread directory is not its root                                  |
+| Root markers             | Marker held by no ancestor                                             | No additional key                                                                                          |
+| Root markers             | Markers set in a profile                                               | Merged with the top-level list, because a profile merges over the top level                                |
+| Root markers             | Marker list is not a list of plain file names                          | Rejected; file unchanged                                                                                   |
+| Root markers             | Markers selected by a layer outside the private home                   | Not readable here; a surviving server is rejected by the inventory probe                                   |
+| Lock lifecycle           | First acquisition of a home                                            | Creates one entry                                                                                          |
+| Lock lifecycle           | A second caller awaits the same home (any spelling of its path)        | Shares the entry and waits; the entry outlives the first release                                           |
+| Lock lifecycle           | Last release                                                           | Removes the entry                                                                                          |
+| Lock lifecycle           | Distinct homes                                                         | Distinct entries, never shared                                                                             |
+| Lock lifecycle           | Success, unchanged file, invalid file, rejected request                | The lock is released on every path; no entry is retained                                                   |
+
+The effective inventory is checked at two moments, and a configuration layer can
+contribute a server or re-enable plugins at either. Every row has a test
+(`project_isolation_layers_test.go` for the rejecting and accepting rows, the
+private-home state table above for the removed ones):
+
+| Layer                                                     | Timing                                          | State                                                       | Result                                                                         |
+| --------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| System                                                    | Pre-thread probe                                | Defines an MCP server                                       | Rejected `inventory-nonempty` (`mcp-inventory-preflight`); no thread operation |
+| System                                                    | Pre-thread probe                                | Enables plugins                                             | Rejected `plugins-enabled` (`mcp-inventory-preflight`); no thread operation    |
+| System                                                    | Post-bind check                                 | Defines an MCP server or enables plugins                    | Rejected (`mcp-inventory-verification`); no input                              |
+| Managed policy                                            | Pre-thread probe                                | Defines an MCP server                                       | Rejected `inventory-nonempty` (`mcp-inventory-preflight`); no thread operation |
+| Managed policy                                            | Pre-thread probe                                | Re-enables plugins                                          | Rejected `plugins-enabled` (`mcp-inventory-preflight`); no thread operation    |
+| Managed policy                                            | Post-bind check                                 | Defines an MCP server or re-enables plugins                 | Rejected (`mcp-inventory-verification`); no input                              |
+| User (private home, top level)                            | Rewrite                                         | Defines `mcp_servers` or enables plugins                    | Removed or set to `false` before the probe                                     |
+| User (private home, top level)                            | Pre-thread probe and post-bind check            | A definition is still effective                             | Rejected at that moment                                                        |
+| Profile (selected or not, in the private home)            | Rewrite                                         | Defines `mcp_servers` or a `plugins` feature override       | Removed before the probe                                                       |
+| Profile (selected or not, in the private home)            | Pre-thread probe and post-bind check            | A definition is still effective                             | Rejected at that moment                                                        |
+| Project (repository `.codex/config.toml`)                 | Provider configuration read, before the rewrite | Defines an MCP server while the project is trusted          | Visible only to that read; it authorizes no server                             |
+| Project (repository `.codex/config.toml`)                 | Pre-thread probe and post-bind check            | Layer inactive because the project is untrusted             | Accepted                                                                       |
+| Project (repository `.codex/config.toml`)                 | Pre-thread probe and post-bind check            | A definition is still effective                             | Rejected at that moment                                                        |
+| Any layer above (system, managed, user, profile, project) | Pre-thread probe and post-bind check            | Effective entry has `enabled = false`                       | Accepted; the entry cannot launch                                              |
+| Any layer above                                           | Pre-thread probe and post-bind check            | Effective entry has `enabled = true` or no `enabled` key    | Rejected `inventory-nonempty` at that moment                                   |
+| Any layer above                                           | Pre-thread probe and post-bind check            | Effective entry has a non-boolean or `null` `enabled` value | Rejected `inventory-unreadable` at that moment                                 |
+
+Tests: `project_isolation_test.go` (table, profile derivation, pinned defaults,
+trust keys including linked worktrees, atomic idempotent replacement, invalid
+files, concurrent members, start and resume rows, inventory rejection rows and
+logs), `project_isolation_cells_test.go` (the state table above),
+`project_isolation_path_test.go` (path normalization),
+`project_isolation_layers_test.go` (the layer and timing table above),
+`project_isolation_roots_test.go` (the root-marker rows, through the pure key function, the file and the thread binding),
+`project_isolation_enabled_test.go` (the enabled-state rows for every layer, timing and operation),
+`project_isolation_lock_test.go` (lock lifecycle),
+the shared-owner binding test, and the explicit installed-native
+`TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP` and
+`TestManualNativeForkNeverLaunchesUnselectedMCP` suites, which run the
+repository-layer, private-home-layer, retained-trusted-home, resume,
+selected-profile, enabled-plugin and non-clean-spelling cases
+against Codex 0.159.2 with a scripted loopback provider and no real account.
+Real-account acceptance is not performed.
 
 ### Codex native turns and core events
 

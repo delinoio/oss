@@ -85,6 +85,14 @@ stage and error code without native content or credentials.
 Workers lacking the new capability receive no new execution assignment; clients receive an
 update requirement rather than an instruction to run manual inspection.
 
+For Codex, the thread-binding step first isolates the project, then verifies
+that the effective MCP inventory is empty before any native thread operation,
+and verifies it again after the native thread exists (see the harness contract
+section "Codex project and MCP isolation"). Both verifications finish before
+input is claimed, so a failure leaves the input `NOT_SENT` and reports
+`unsupported` after the normal owned-process cleanup; retry stays governed by
+the existing safe-retry rules. It logs only the closed stage and reason.
+
 Acceptance retains atomic input, configuration, routing and job ownership. The
 Worker resolves only the selected harness, using its explicit path or its own
 PATH when the path is omitted. Failure of an explicit selection never permits

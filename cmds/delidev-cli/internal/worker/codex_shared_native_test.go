@@ -63,7 +63,7 @@ func runSharedCodexNativeFixture(home string) {
 		case "thread/loaded/list":
 			write(request.ID, map[string]any{"data": []string{}, "nextCursor": nil})
 		case "config/read":
-			write(request.ID, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": map[string]any{}}, "origins": nil, "layers": nil})
+			write(request.ID, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": map[string]any{}, "features": map[string]any{"plugins": false}, "mcp_servers": map[string]any{}}, "origins": nil, "layers": nil})
 		case "thread/start":
 			id := domain.NewID()
 			directory := filepath.Join(home, "sessions", "2026", "10", "14")
