@@ -1018,10 +1018,11 @@ table as `GrokDiagnostic.text`; `TestGrokDiagnosticReasonFollowsTheSharedCodeTab
 and `grok-diagnostic.test.tsx` keep identical copies of it. `GrokDiagnosticNotice`
 shows the message, that guidance and a Technical details disclosure with detected
 version, supported version, failed step, error code and a copyable correlation
-ID; it is reused by Settings > AI Subscription onboarding and by the Worker
-installation row (`machine-settings.tsx`), which reads the stored
-`protocol.grok_diagnostic`. The catalog keeps Grok Planned/Coming soon: the
-notice adds no login control.
+ID; it is reused by the Grok browser sign-in controller
+(`grok-subscription-login.tsx`) and by the Worker installation row
+(`machine-settings.tsx`), which reads the stored `protocol.grok_diagnostic`. The
+notice adds no login control; Settings enables Grok Add account only under
+System capability 39.
 
 The desktop validates versions with the same rules as the server. A nonempty
 detected version must satisfy `validInstallationVersion` (mirrors
