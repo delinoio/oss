@@ -273,9 +273,23 @@ retirement checkpoint (`subscription.recovery_retiring`, non-secret) and only th
 protected reference (it refuses while an access-only quota or credit
 reader still holds one), then settles the account disconnected; a retry of the same request after
 a crash or store failure resumes from the checkpoint without re-reading the possibly deleted capture so only the
-existing explicit login applies. A vault failure leaves the fence in place or
+existing explicit login applies. The Worker mirrors that rule: when the offered
+account carries the retirement checkpoint and the journal holds the recovery
+request, it skips the capture read, process-owner join and history scan (already
+proven before the checkpoint) and replays the persisted settlement request
+unchanged, provided the retained capture is bound to the original lease and
+generation. A vault failure leaves the fence in place or
 the committed state with a retry: the same recovery request replays and finishes
 the reference retirement. Insufficient proof never clears the fence.
+
+**Unacknowledged settlement.** A settlement whose response is lost or whose
+outcome is otherwise unknown may already be committed, after which the server no
+longer offers the account as fenced. The Worker therefore keeps the sent request
+in memory (opaque identifiers only, shared across watch reconnections) and
+repeats it on the watch heartbeat with the transient backoff below, independently
+of any offered record. The acknowledged repeat journals `recovered`, settles the
+member journals and clears the local account fence; a definite server refusal
+drops the repeat.
 
 **Blocked diagnostics.** Missing, foreign or insufficient proof is published as the
 closed `subscription.recovery_reason` through the existing account observation

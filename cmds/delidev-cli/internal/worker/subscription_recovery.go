@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -148,6 +149,9 @@ type codexRecoverySchedule struct {
 	mu       sync.Mutex
 	now      func() time.Time
 	accounts map[domain.ID]*codexRecoveryEntry
+	// settlements holds the unacknowledged settlement requests; see
+	// codexSettlementQueue.
+	settlements *codexSettlementQueue
 }
 
 type codexRecoveryEntry struct {
@@ -161,7 +165,86 @@ func newCodexRecoverySchedule(now func() time.Time) *codexRecoverySchedule {
 	if now == nil {
 		now = time.Now
 	}
-	return &codexRecoverySchedule{now: now, accounts: map[domain.ID]*codexRecoveryEntry{}}
+	return &codexRecoverySchedule{now: now, accounts: map[domain.ID]*codexRecoveryEntry{}, settlements: newCodexSettlementQueue(now)}
+}
+
+// codexRecoverySettlement is one recovery settlement request that was sent to
+// the server without a confirmed outcome. It carries only opaque identifiers;
+// the durable request identity is also in the lease journal.
+type codexRecoverySettlement struct {
+	// operation is the original operation of the lease and names the account's
+	// single in-flight reconciliation.
+	operation   domain.ID
+	request     *pb.RecoverSubscriptionRequest
+	journalPath string
+	journal     managedSubscriptionJournal
+	members     []domain.SubscriptionMember
+	failures    int
+	next        time.Time
+}
+
+// codexSettlementQueue repeats an unacknowledged settlement with the schedule's
+// backoff. Once the server commits a settlement it no longer offers the account
+// as fenced, so the watch stream cannot be the only trigger of the retry. The
+// queue outlives a single watch connection when the owner registry supplies it.
+type codexSettlementQueue struct {
+	mu    sync.Mutex
+	now   func() time.Time
+	items map[domain.ID]*codexRecoverySettlement
+}
+
+func newCodexSettlementQueue(now func() time.Time) *codexSettlementQueue {
+	if now == nil {
+		now = time.Now
+	}
+	return &codexSettlementQueue{now: now, items: map[domain.ID]*codexRecoverySettlement{}}
+}
+
+// hold records the unacknowledged settlement of an account, due after the first
+// backoff delay. An already held request of the same identity keeps its pacing.
+func (q *codexSettlementQueue) hold(account domain.ID, settlement *codexRecoverySettlement) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if held := q.items[account]; held != nil && held.request.GetMutation().GetRequestId() == settlement.request.GetMutation().GetRequestId() {
+		return
+	}
+	settlement.next = q.now().Add(codexRecoveryDelays[0])
+	q.items[account] = settlement
+}
+
+// done forgets the settlement of an account.
+func (q *codexSettlementQueue) done(account domain.ID) {
+	q.mu.Lock()
+	delete(q.items, account)
+	q.mu.Unlock()
+}
+
+// due returns the held settlements whose backoff elapsed. The caller serializes
+// each by its operation, so a slow attempt is never repeated while it runs.
+func (q *codexSettlementQueue) due() map[domain.ID]*codexRecoverySettlement {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	out := map[domain.ID]*codexRecoverySettlement{}
+	for account, settlement := range q.items {
+		if !q.now().Before(settlement.next) {
+			out[account] = settlement
+		}
+	}
+	return out
+}
+
+// fail paces the next repetition of a held settlement and returns the delay.
+func (q *codexSettlementQueue) fail(account domain.ID) time.Duration {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	settlement := q.items[account]
+	if settlement == nil {
+		return 0
+	}
+	delay := codexRecoveryDelays[min(settlement.failures+1, len(codexRecoveryDelays)-1)]
+	settlement.failures++
+	settlement.next = q.now().Add(delay)
+	return delay
 }
 
 // ready reports whether a reconciliation attempt may start now.
@@ -235,6 +318,10 @@ type codexRecoveryResult struct {
 	blocked domain.SubscriptionRecoveryReason
 	// err is a transient failure that is retried with backoff.
 	err error
+	// settlement is set when a settlement request was sent but its outcome is
+	// unknown. The server may already have committed it and then stop offering
+	// the account, so the same request is repeated independently of the watch.
+	settlement *codexRecoverySettlement
 }
 
 func transientRecovery(err error) codexRecoveryResult { return codexRecoveryResult{err: err} }
@@ -255,8 +342,12 @@ func runCodexRecoveryAttempt(ctx context.Context, config Config, client delidevv
 	key := codexRecoveryKey(state)
 	logger.InfoContext(ctx, "codex_recovery_attempt", "account_id", accountID, "lease_id", state.Lease.ID, "shared_owner", state.Lease.Shared, "members", len(state.Members))
 	result := reconcileCodexExecution(ctx, config, client, credential, instance, accountID, account)
+	if result.settlement != nil {
+		schedule.settlements.hold(accountID, result.settlement)
+	}
 	switch {
 	case result.settled:
+		schedule.settlements.done(accountID)
 		schedule.settled(accountID, key)
 		logger.InfoContext(ctx, "codex_recovery_result", "account_id", accountID, "lease_id", state.Lease.ID, "result", "settled")
 	case result.blocked != "":
@@ -272,6 +363,33 @@ func runCodexRecoveryAttempt(ctx context.Context, config Config, client delidevv
 		}
 		delay := schedule.fail(accountID, key)
 		logger.WarnContext(ctx, "codex_recovery_result", "account_id", accountID, "lease_id", state.Lease.ID, "result", "retry", "code", domain.SafeError(result.err).Code, "retry_delay_ms", delay.Milliseconds())
+	}
+}
+
+// runCodexSettlementRetry repeats one unacknowledged settlement request. It is
+// triggered by the watch heartbeat, not by an offered fenced record, because the
+// server stops offering the account once it committed the settlement.
+func runCodexSettlementRetry(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, accountID domain.ID, settlement *codexRecoverySettlement, schedule *codexRecoverySchedule) {
+	logger := config.Logger
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	result := settleCodexRecovery(ctx, config, client, credential, accountID, settlement)
+	switch {
+	case result.settled:
+		schedule.settlements.done(accountID)
+		logger.InfoContext(ctx, "codex_recovery_settlement_retry", "account_id", accountID, "recovery_id", settlement.request.GetMutation().GetRequestId(), "result", "settled")
+	case result.blocked != "":
+		// The server definitively refused the repeated request; the fenced
+		// record, when it is still offered, starts a new reconciliation.
+		schedule.settlements.done(accountID)
+		logger.WarnContext(ctx, "codex_recovery_settlement_retry", "account_id", accountID, "recovery_id", settlement.request.GetMutation().GetRequestId(), "result", "refused")
+	default:
+		if ctx.Err() != nil {
+			return
+		}
+		delay := schedule.settlements.fail(accountID)
+		logger.WarnContext(ctx, "codex_recovery_settlement_retry", "account_id", accountID, "recovery_id", settlement.request.GetMutation().GetRequestId(), "result", "retry", "code", domain.SafeError(result.err).Code, "retry_delay_ms", delay.Milliseconds())
 	}
 }
 
@@ -343,6 +461,16 @@ func reconcileCodexExecution(ctx context.Context, config Config, client delidevv
 		}
 		return transientRecovery(domain.SafeError(err))
 	}
+	if state.RecoveryRetiring && journal.RecoveryRequest != "" {
+		// The server already decided to retire the account after the first proof
+		// of this request. Its capture may be deleted, so the proof phase is not
+		// repeated; the persisted settlement request is replayed unchanged.
+		if c := state.RecoveryCapture; c == nil || c.LeaseID != original.ID || c.Generation != original.Generation {
+			return blockedRecovery(domain.RecoveryOwnershipUnproven)
+		}
+		phase("retirement-resume", "recovery_id", journal.RecoveryRequest)
+		return settleCodexRecovery(ctx, config, client, credential, accountID, newCodexSettlement(credential, instance, accountID, original, state.RecoveryCapture.ID, journal, path, state.Members))
+	}
 	if journal.NativeHome == "" {
 		// A journal from before the lane never recorded where the latest
 		// credential lived and the file may already be deleted. No receipt is
@@ -382,13 +510,31 @@ func reconcileCodexExecution(ctx context.Context, config Config, client delidevv
 	}
 	logExecutionAuthenticationCleanup(logger, original.ID, nil)
 	phase("settle", "recovery_id", journal.RecoveryRequest)
+	return settleCodexRecovery(ctx, config, client, credential, accountID, newCodexSettlement(credential, instance, accountID, original, capture, journal, path, state.Members))
+}
+
+// newCodexSettlement builds the one durable settlement request of a recovery.
+func newCodexSettlement(credential Credential, instance, accountID domain.ID, original *domain.SubscriptionLease, capture domain.ID, journal managedSubscriptionJournal, path string, members []domain.SubscriptionMember) *codexRecoverySettlement {
+	return &codexRecoverySettlement{
+		operation: original.OperationID,
+		request: &pb.RecoverSubscriptionRequest{
+			Mutation: &pb.Mutation{RequestId: string(journal.RecoveryRequest), Id: string(accountID), ExpectedRevision: original.Revision},
+			LeaseId:  string(original.ID), MachineId: string(credential.MachineID), InstanceId: string(instance), GenerationId: string(original.Generation),
+			CaptureId: string(capture), Outcome: pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_SETTLED,
+		},
+		journalPath: path, journal: journal, members: slices.Clone(members),
+	}
+}
+
+// settleCodexRecovery sends one settlement request and records its acknowledged
+// outcome. It is the single path for the first attempt, the retirement resume
+// and every repetition of an unacknowledged request. A failure whose outcome is
+// unknown returns the settlement so it is repeated even when the server no longer
+// offers the account.
+func settleCodexRecovery(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, accountID domain.ID, settlement *codexRecoverySettlement) codexRecoveryResult {
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	_, err = client.RecoverSubscription(bounded, authenticated(credential, &pb.RecoverSubscriptionRequest{
-		Mutation: &pb.Mutation{RequestId: string(journal.RecoveryRequest), Id: string(accountID), ExpectedRevision: original.Revision},
-		LeaseId:  string(original.ID), MachineId: string(credential.MachineID), InstanceId: string(instance), GenerationId: string(original.Generation),
-		CaptureId: string(capture), Outcome: pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_SETTLED,
-	}))
+	_, err := client.RecoverSubscription(bounded, authenticated(credential, settlement.request))
 	if err != nil {
 		problem := rpc.ClientError(err)
 		switch domain.SafeError(problem).Code {
@@ -396,13 +542,14 @@ func reconcileCodexExecution(ctx context.Context, config Config, client delidevv
 			// The server refused the evidence; retrying the same proof cannot help.
 			return blockedRecovery(domain.RecoveryOwnershipUnproven)
 		}
-		return transientRecovery(problem)
+		return codexRecoveryResult{err: problem, settlement: settlement}
 	}
+	journal := settlement.journal
 	journal.Recovered = true
-	if err := writeJSON(path, journal); err != nil && logger != nil {
-		logger.WarnContext(ctx, "codex_recovery_journal_unrecorded", "account_id", accountID, "lease_id", original.ID)
+	if err := writeJSON(settlement.journalPath, journal); err != nil && config.Logger != nil {
+		config.Logger.WarnContext(ctx, "codex_recovery_journal_unrecorded", "account_id", accountID, "lease_id", settlement.request.LeaseId)
 	}
-	settleRecoveredMemberJournals(config, state.Members)
+	settleRecoveredMemberJournals(config, settlement.members)
 	if config.codexOwners != nil {
 		config.codexOwners.gate(accountID).clearFence()
 	}

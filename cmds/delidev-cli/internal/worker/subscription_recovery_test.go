@@ -91,8 +91,11 @@ func (s *recoveryServer) WatchSubscription(ctx context.Context, _ *connect.Reque
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if s.account != nil {
-			if err := stream.Send(&pb.WatchSubscriptionResponse{Account: s.account}); err != nil {
+		s.mu.Lock()
+		offered := s.account
+		s.mu.Unlock()
+		if offered != nil {
+			if err := stream.Send(&pb.WatchSubscriptionResponse{Account: offered}); err != nil {
 				return err
 			}
 		}
@@ -874,5 +877,101 @@ func TestCodexRecoveryClearsTheCaptureRequestBuffer(t *testing.T) {
 		if b != 0 {
 			t.Fatal("the capture request retained the credential bundle after the RPC")
 		}
+	}
+}
+
+func TestCodexRecoveryRetirementCheckpointReplaysSettlementWithoutTheCapture(t *testing.T) {
+	f := newRecoveryFixture(t)
+	f.processOwner(f.lease.OperationID)
+	f.journal.RecoveryRequest = domain.NewID()
+	f.writeJournal()
+	f.withCapture()
+	f.state.RecoveryRetiring = true
+	// The first settlement checkpointed the retirement and deleted the capture.
+	f.server.readError = rpc.Error(domain.Fail(domain.NotFound, "The capture is gone.", "None."), "")
+	result := f.reconcile(f.instance)
+	if !result.settled || result.blocked != "" || result.err != nil {
+		t.Fatal("a checkpointed retirement did not replay its settlement", result)
+	}
+	if f.server.reads != 0 {
+		t.Fatal("a checkpointed retirement read the retired capture", f.server.reads)
+	}
+	if len(f.server.recovered) != 1 || f.server.recovered[0].Mutation.RequestId != string(f.journal.RecoveryRequest) || f.server.recovered[0].CaptureId != string(f.state.RecoveryCapture.ID) {
+		t.Fatal("the persisted recovery request was not replayed unchanged", f.server.recovered)
+	}
+	// A checkpoint for foreign evidence never replays.
+	f.state.RecoveryCapture.Generation = domain.NewID()
+	if foreign := f.reconcile(f.instance); foreign.blocked != domain.RecoveryOwnershipUnproven || len(f.server.recovered) != 1 {
+		t.Fatal("a checkpoint bound to foreign evidence was replayed", foreign)
+	}
+}
+
+func TestCodexRecoveryRepeatsLostSettlementAcknowledgementAfterTheServerStopsOfferingTheAccount(t *testing.T) {
+	f := newRecoveryFixture(t)
+	f.processOwner(f.lease.OperationID)
+	f.writeJournal()
+	f.withCapture()
+	recoveryLaneAccount(t, f)
+	f.config.codexRecovery = true
+	f.config.codexOwners = newCodexOwnerRegistry()
+	gate := f.config.codexOwners.gate(f.account)
+	gate.fence()
+	// The server commits the settlement, but its response is lost.
+	f.server.recoverErr = connect.NewError(connect.CodeUnavailable, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- watchSubscriptions(ctx, f.config, f.credential, f.instance) }()
+	waitRecovered := func(count int) {
+		t.Helper()
+		deadline := time.After(10 * time.Second)
+		for {
+			f.server.mu.Lock()
+			calls := len(f.server.recovered)
+			f.server.mu.Unlock()
+			if calls >= count {
+				return
+			}
+			select {
+			case err := <-result:
+				t.Fatal("recovery closed the subscription lane", err)
+			case <-deadline:
+				t.Fatal("the lost settlement acknowledgement was not repeated", count)
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+	}
+	waitRecovered(1)
+	// From now on the committed state is no longer fenced and not offered.
+	f.server.mu.Lock()
+	f.server.account = nil
+	f.server.recoverErr = nil
+	f.server.mu.Unlock()
+	waitRecovered(2)
+	deadline := time.After(5 * time.Second)
+	for {
+		gate.mu.Lock()
+		fenced := gate.uncertain
+		gate.mu.Unlock()
+		if !fenced {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("the local fence outlived the acknowledged settlement")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	cancel()
+	<-result
+	f.server.mu.Lock()
+	defer f.server.mu.Unlock()
+	if f.server.recovered[0].Mutation.RequestId != f.server.recovered[1].Mutation.RequestId {
+		t.Fatal("the repeated settlement minted a second recovery identity")
+	}
+	raw, err := security.ReadPrivate(f.journalPath(), 16<<10)
+	var journal managedSubscriptionJournal
+	if err != nil || domain.Decode(raw, &journal) != nil || !journal.Recovered {
+		t.Fatal("the acknowledged repeat was not journaled", err)
 	}
 }

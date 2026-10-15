@@ -320,6 +320,9 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 	// recovery paces the automatic ChatGPT Execute reconciliation per account. A
 	// reconnection creates a new schedule, which reconsiders blocked accounts.
 	recovery := newCodexRecoverySchedule(nil)
+	if config.codexOwners != nil && config.codexOwners.settlements != nil {
+		recovery.settlements = config.codexOwners.settlements
+	}
 	defer func() {
 		cancel()
 		wg.Wait()
@@ -332,6 +335,26 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 	for stream.Receive() {
 		r := stream.Msg().Account
 		if r == nil {
+			// The heartbeat repeats unacknowledged recovery settlements. The server
+			// stops offering an account it already settled, so a lost acknowledgement
+			// would otherwise keep the local fence until the Worker restarts.
+			if config.codexRecovery {
+				for account, settlement := range recovery.settlements.due() {
+					mu.Lock()
+					if active[settlement.operation] || len(active) >= 4 {
+						mu.Unlock()
+						continue
+					}
+					active[settlement.operation] = true
+					mu.Unlock()
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						defer func() { mu.Lock(); delete(active, settlement.operation); mu.Unlock() }()
+						runCodexSettlementRetry(ctx, config, client, credential, account, settlement, recovery)
+					}()
+				}
+			}
 			continue
 		}
 		var account domain.Account

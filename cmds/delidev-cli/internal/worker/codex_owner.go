@@ -19,10 +19,13 @@ import (
 type codexOwnerRegistry struct {
 	mu       sync.Mutex
 	accounts map[domain.ID]*codexAccountGate
+	// settlements outlives one watch connection: a lost settlement acknowledgement
+	// is repeated after the stream reconnects, while the local fence persists.
+	settlements *codexSettlementQueue
 }
 
 func newCodexOwnerRegistry() *codexOwnerRegistry {
-	return &codexOwnerRegistry{accounts: make(map[domain.ID]*codexAccountGate)}
+	return &codexOwnerRegistry{accounts: make(map[domain.ID]*codexAccountGate), settlements: newCodexSettlementQueue(nil)}
 }
 
 func (r *codexOwnerRegistry) gate(account domain.ID) *codexAccountGate {
