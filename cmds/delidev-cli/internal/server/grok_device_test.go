@@ -797,3 +797,47 @@ func TestGrokVerificationInterruptedAfterTheTokensAreIssuedStaysInRecovery(t *te
 		t.Fatalf("a userinfo failure settled as %v", outcome.state)
 	}
 }
+
+// A cancellation that lands after the claimed exchange succeeded is too late: the
+// tokens are issued, so the login publishes instead of settling as canceled with
+// its credentials discarded and the redeemed grant forgotten.
+func TestGrokCancelRacingTheSettlementOfASuccessfulClaimedLoginIsTooLate(t *testing.T) {
+	g := newGrokDeviceFixture(t)
+	g.service.grokFaultHook = func(p grokFaultPoint) error {
+		if p == grokFaultBeforeLoginFinish {
+			g.cancelLogin(t)
+		}
+		return nil
+	}
+	run := g.startDevice(t)
+	g.awaitDone(t, run)
+	g.service.grokFaultHook = nil
+	_, a := g.record()
+	if a.Connection == nil || a.Subscription.Generation == "" || a.Subscription.RecoveryRequired || a.Subscription.Pending != nil || a.Subscription.ServerOperation.State != domain.SubscriptionSucceeded {
+		t.Fatal("a cancellation after the successful exchange discarded the issued credentials")
+	}
+	if g.idp.DevicePolls() != 1 {
+		t.Fatalf("the device code was polled %d times", g.idp.DevicePolls())
+	}
+}
+
+func TestGrokLateCancelOutcomeTable(t *testing.T) {
+	for name, c := range map[string]struct {
+		claimed, success, canceled, gone bool
+		result, want                     domain.SubscriptionLoginState
+	}{
+		"unclaimed cancel":              {false, false, true, false, domain.SubscriptionFailed, domain.SubscriptionCanceled},
+		"claimed failure cancel":        {true, false, true, false, domain.SubscriptionFailed, domain.SubscriptionCanceled},
+		"claimed success cancel":        {true, true, true, false, domain.SubscriptionSucceeded, domain.SubscriptionSucceeded},
+		"claimed success vanished":      {true, true, false, true, domain.SubscriptionSucceeded, domain.SubscriptionRecovery},
+		"claimed success cancel vanish": {true, true, true, true, domain.SubscriptionSucceeded, domain.SubscriptionRecovery},
+		"uncertain cancel":              {true, false, true, false, domain.SubscriptionRecovery, domain.SubscriptionRecovery},
+		"no cancel":                     {true, true, false, false, domain.SubscriptionSucceeded, domain.SubscriptionSucceeded},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, got, _ := grokLateCancelOutcome(c.claimed, c.success, c.result, domain.Canceled, c.canceled, c.gone); got != c.want {
+				t.Fatalf("settled as %v, want %v", got, c.want)
+			}
+		})
+	}
+}
