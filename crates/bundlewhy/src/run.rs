@@ -10,7 +10,7 @@ use std::{
 use serde_json::json;
 
 use crate::{
-    adapter::{self, AdapterOptions, CancelSignal},
+    adapter::{self, AdapterOptions, CancelSignal, DetectedEngine},
     analysis::{self, AnalysisInput, engine_identity},
     bundle::{self, INCOMPLETE_MARKER, ResultBundle},
     detect::{self, Selection, SelectionRequest},
@@ -375,6 +375,9 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
     let mut current_stage = RunStage::Detecting;
     let progress_state = state.clone();
     let progress_log = log.clone();
+    // The adapter reports the engine before its version check and build, so
+    // keep it for the failed-run result.
+    let mut detected_engine: Option<DetectedEngine> = None;
     let result = adapter::run(
         &run_dir,
         &selection,
@@ -406,6 +409,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                 protected_before.entry(path).or_insert(digest);
             }
         },
+        |engine| detected_engine = Some(engine),
     )
     .await;
     log.event("stage", json!({ "stage": current_stage.as_str(), "durationMs": stage_started.elapsed().as_millis() as u64 }));
@@ -431,6 +435,8 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             &started_at,
             &log,
             options.exclude_sources,
+            detected_engine.as_ref(),
+            options.allow_unsupported_engine,
             BwError::new(
                 ErrorCode::UnsupportedBuild,
                 "The selected configuration is a library, SSR or Node-target build",
@@ -518,6 +524,8 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             &started_at,
             &log,
             options.exclude_sources,
+            detected_engine.as_ref(),
+            options.allow_unsupported_engine,
             error,
         ),
     };
@@ -535,6 +543,8 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             &started_at,
             &log,
             options.exclude_sources,
+            detected_engine.as_ref(),
+            options.allow_unsupported_engine,
             adapter::cancelled_error(),
         );
     }
@@ -650,6 +660,44 @@ fn saved_problem(error: &BwError, exclude_sources: bool) -> crate::model::Proble
     saved
 }
 
+/// Engine identity for a run that did not finish. Without a collection, the
+/// only evidence is the adapter's `engine` frame. With it, the detected
+/// package and version are recorded; support is `Supported` for the frozen
+/// matrix version and `UnsupportedSelected` only when the user explicitly
+/// allowed a different version. A different version that was not allowed was
+/// rejected before explicit selection, so support stays `Unspecified`. With no
+/// frame the engine version is unknown and support is `Unspecified`.
+fn failed_run_engine_identity(
+    bundler: BundlerChoice,
+    detected_engine: Option<&DetectedEngine>,
+    allow_unsupported_engine: bool,
+) -> crate::model::EngineIdentity {
+    use crate::model::EngineSupport;
+    let spec = bundler.spec();
+    let mut identity = engine_identity(bundler, &crate::collect::Collection::default());
+    match detected_engine {
+        Some(engine) => {
+            identity.bundler_package = engine.package.clone();
+            identity.bundler_version = engine.version.clone();
+            identity.support = if engine.version == spec.version {
+                EngineSupport::Supported
+            } else if allow_unsupported_engine {
+                EngineSupport::UnsupportedSelected
+            } else {
+                EngineSupport::Unspecified
+            };
+        }
+        None => {
+            identity.bundler_package = spec.package.to_owned();
+            identity.bundler_version = "unknown".to_owned();
+            identity.support = EngineSupport::Unspecified;
+        }
+    }
+    identity.diagnostic_notice =
+        "No diagnostic build finished; no findings were collected.".to_owned();
+    identity
+}
+
 /// Result bundle for a run that failed or was cancelled before analysis
 /// finished. Coverage is unavailable everywhere and the error is a problem.
 fn incomplete_bundle(
@@ -658,6 +706,8 @@ fn incomplete_bundle(
     started_at: &str,
     log: &RunLog,
     exclude_sources: bool,
+    detected_engine: Option<&DetectedEngine>,
+    allow_unsupported_engine: bool,
     error: BwError,
 ) -> (ResultBundle, Option<BwError>) {
     let status = if error.code == ErrorCode::RunCancelled {
@@ -683,18 +733,11 @@ fn incomplete_bundle(
         tool_version: env!("CARGO_PKG_VERSION").to_owned(),
         ..Analysis::default()
     };
-    // Engine identity is known only from a collection; record the
-    // expected engine so the UI still shows what was attempted.
-    let spec = selection.bundler.spec();
-    let mut identity = engine_identity(selection.bundler, &crate::collect::Collection::default());
-    identity.bundler_package = spec.package.to_owned();
-    identity.bundler_version = "unknown".to_owned();
-    // No engine version was discovered, so support is unknown rather than
-    // "unsupported selected".
-    identity.support = crate::model::EngineSupport::Unspecified;
-    identity.diagnostic_notice =
-        "No diagnostic build finished; no findings were collected.".to_owned();
-    analysis.engine = Some(identity);
+    analysis.engine = Some(failed_run_engine_identity(
+        selection.bundler,
+        detected_engine,
+        allow_unsupported_engine,
+    ));
     analysis.coverage = crate::model::OptimizationCategory::ALL
         .into_iter()
         .map(|category| crate::model::CategoryCoverage {
@@ -1285,6 +1328,136 @@ mod tests {
         assert_eq!(
             project_name_for_collection(&collection, &selected, &selected, "fallback"),
             "web-app"
+        );
+    }
+
+    fn selection_for(bundler: BundlerChoice, root: &Path) -> Selection {
+        Selection {
+            project_root: root.to_path_buf(),
+            project_name: "p".to_owned(),
+            bundler,
+            config_file: None,
+        }
+    }
+
+    fn detected(package: &str, version: &str) -> DetectedEngine {
+        DetectedEngine {
+            package: package.to_owned(),
+            version: version.to_owned(),
+        }
+    }
+
+    fn failed_bundle(
+        bundler: BundlerChoice,
+        engine: Option<&DetectedEngine>,
+        allow_unsupported_engine: bool,
+        error: BwError,
+    ) -> (ResultBundle, Option<BwError>) {
+        let dir = tempfile::tempdir().unwrap();
+        let log = RunLog::create(dir.path(), "run");
+        incomplete_bundle(
+            &selection_for(bundler, dir.path()),
+            "run",
+            "2026-01-01T00:00:00Z",
+            &log,
+            false,
+            engine,
+            allow_unsupported_engine,
+            error,
+        )
+    }
+
+    #[test]
+    fn failed_runs_record_the_detected_engine_matrix_version_as_supported() {
+        for bundler in [BundlerChoice::Vite, BundlerChoice::Rspack] {
+            let spec = bundler.spec();
+            let engine = detected(spec.package, spec.version);
+            for allow in [false, true] {
+                let (bundle, error) = failed_bundle(
+                    bundler,
+                    Some(&engine),
+                    allow,
+                    BwError::new(ErrorCode::BuildFailed, "boom", "Fix it."),
+                );
+                let identity = bundle.analysis.engine.unwrap();
+                assert_eq!(identity.bundler_package, spec.package);
+                assert_eq!(identity.bundler_version, spec.version);
+                assert_eq!(identity.support, crate::model::EngineSupport::Supported);
+                assert_eq!(bundle.analysis.status, RunStatus::Failed);
+                assert_eq!(error.unwrap().code, ErrorCode::BuildFailed);
+            }
+        }
+    }
+
+    #[test]
+    fn failed_runs_select_an_unsupported_engine_only_when_explicitly_allowed() {
+        let engine = detected("vite", "8.0.0");
+        let (allowed, _) = failed_bundle(
+            BundlerChoice::Vite,
+            Some(&engine),
+            true,
+            BwError::new(ErrorCode::BuildFailed, "boom", "Fix it."),
+        );
+        let identity = allowed.analysis.engine.unwrap();
+        assert_eq!(identity.bundler_version, "8.0.0");
+        assert_eq!(
+            identity.support,
+            crate::model::EngineSupport::UnsupportedSelected
+        );
+
+        // The adapter reports the engine and then rejects the version when the
+        // flag is absent; the version is known but nothing was selected.
+        let (rejected, _) = failed_bundle(
+            BundlerChoice::Vite,
+            Some(&engine),
+            false,
+            BwError::new(ErrorCode::EngineVersionUnsupported, "unsupported", "Retry."),
+        );
+        let identity = rejected.analysis.engine.unwrap();
+        assert_eq!(identity.bundler_package, "vite");
+        assert_eq!(identity.bundler_version, "8.0.0");
+        assert_eq!(identity.support, crate::model::EngineSupport::Unspecified);
+    }
+
+    #[test]
+    fn failed_runs_without_an_engine_event_keep_an_unknown_version() {
+        let (bundle, _) = failed_bundle(
+            BundlerChoice::Rspack,
+            None,
+            true,
+            BwError::new(ErrorCode::BundlerNotInstalled, "missing", "Install it."),
+        );
+        let identity = bundle.analysis.engine.unwrap();
+        assert_eq!(identity.bundler_package, "@rspack/core");
+        assert_eq!(identity.bundler_version, "unknown");
+        assert_eq!(identity.support, crate::model::EngineSupport::Unspecified);
+    }
+
+    #[test]
+    fn cancelled_runs_keep_the_detected_engine_and_invent_nothing() {
+        let engine = detected("@rspack/core", "2.2.9");
+        let (bundle, error) = failed_bundle(
+            BundlerChoice::Rspack,
+            Some(&engine),
+            false,
+            adapter::cancelled_error(),
+        );
+        assert_eq!(bundle.analysis.status, RunStatus::Cancelled);
+        assert_eq!(error.unwrap().code, ErrorCode::RunCancelled);
+        let identity = bundle.analysis.engine.unwrap();
+        assert_eq!(identity.bundler_version, "2.2.9");
+        assert_eq!(identity.support, crate::model::EngineSupport::Supported);
+        assert!(identity.minifier.is_empty());
+        assert!(identity.adapter_id.is_empty());
+        assert!(bundle.analysis.diagnostics.is_empty());
+        assert_eq!(bundle.analysis.problems.len(), 1);
+        assert!(!bundle.analysis.coverage.is_empty());
+        assert!(
+            bundle
+                .analysis
+                .coverage
+                .iter()
+                .all(|coverage| coverage.state == crate::model::CoverageState::Unavailable)
         );
     }
 }
