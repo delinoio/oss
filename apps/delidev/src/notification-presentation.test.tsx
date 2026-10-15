@@ -510,8 +510,7 @@ it.each([
     expect(view.container.textContent).toBe("");
     if (failure === "readiness-read") expect(list).not.toHaveBeenCalled();
     if (failure === "scope-begin") expect(claim).not.toHaveBeenCalled();
-    if (failure === "native-present")
-      expect(claim).toHaveBeenCalledTimes(1);
+    if (failure === "native-present") expect(claim).toHaveBeenCalledTimes(1);
     view.unmount();
   },
 );

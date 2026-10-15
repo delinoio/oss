@@ -573,6 +573,8 @@ test.each(Object.values(LanguageProblem))(
       </LanguageProvider>,
     );
     await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(1));
-    expect(screen.getByRole("button", { name: "Reload language" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Reload language" }),
+    ).toBeTruthy();
   },
 );
