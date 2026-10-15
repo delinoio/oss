@@ -8,6 +8,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -132,39 +133,56 @@ function fixture(supported = true) {
       4,
     ),
   }));
-  const transport = createRouterTransport((router) => {
-    router.service(SystemService, {
-      getStatus: () => ({
-        protocolVersion: 2,
-        capabilities: supported
-          ? [
-              SystemCapability.INLINE_WORKER_MODELS_V1,
-              SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1,
-            ]
-          : [],
-      }),
-    });
-    router.service(ProviderService, {
-      listProviderInventory: () => ({
-        entries: [
-          {
-            provider,
-            providerId: provider.id,
-            displayName: "Original API",
-            enabled: true,
+  // Every RPC the wizard starts, by method name, in start order.
+  const rpc: string[] = [];
+  const transport = createRouterTransport(
+    (router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          protocolVersion: 2,
+          capabilities: supported
+            ? [
+                SystemCapability.INLINE_WORKER_MODELS_V1,
+                SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1,
+              ]
+            : [],
+        }),
+      });
+      router.service(ProviderService, {
+        listProviderInventory: () => ({
+          entries: [
+            {
+              provider,
+              providerId: provider.id,
+              displayName: "Original API",
+              enabled: true,
+            },
+          ],
+          capabilities: [
+            ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER,
+            ProviderInventoryCapability.ACCOUNT_TYPE_FILTER,
+          ],
+        }),
+        listEndpointModels: endpoint,
+        listKnownSubscriptionModels: known,
+      });
+      router.service(ResourceService, {
+        listResources: list,
+        getResource: get,
+      });
+      router.service(ConfigurationService, { saveAgentWorker: save });
+    },
+    {
+      transport: {
+        interceptors: [
+          (next) => (request) => {
+            rpc.push(request.method.name);
+            return next(request);
           },
         ],
-        capabilities: [
-          ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER,
-          ProviderInventoryCapability.ACCOUNT_TYPE_FILTER,
-        ],
-      }),
-      listEndpointModels: endpoint,
-      listKnownSubscriptionModels: known,
-    });
-    router.service(ResourceService, { listResources: list, getResource: get });
-    router.service(ConfigurationService, { saveAgentWorker: save });
-  });
+      },
+    },
+  );
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
@@ -196,6 +214,7 @@ function fixture(supported = true) {
     list,
     endpoint,
     known,
+    rpc,
     save,
     saved,
     cancel,
@@ -1080,10 +1099,14 @@ it("ignores stepper selection while a save is pending", async () => {
   await configure(input);
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  await act(async () => {});
+  const started = f.rpc.length;
   for (const name of ["Harness", "Accounts", "Model", "Configure"]) {
     expect(stepButton(name).disabled).toBe(true);
     fireEvent.click(stepButton(name));
   }
+  await act(async () => {});
+  expect(f.rpc).toHaveLength(started);
   expect(stepHeading("Configure")).toBeTruthy();
   expect(f.save).toHaveBeenCalledTimes(1);
 });
@@ -1098,10 +1121,14 @@ it("ignores stepper selection while a save is uncertain", async () => {
   await configure(input);
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await screen.findByRole("button", { name: "Retry the same Worker save" });
+  await act(async () => {});
+  const started = f.rpc.length;
   for (const name of ["Harness", "Accounts", "Model", "Configure"]) {
     expect(stepButton(name).disabled).toBe(true);
     fireEvent.click(stepButton(name));
   }
+  await act(async () => {});
+  expect(f.rpc).toHaveLength(started);
   expect(stepHeading("Configure")).toBeTruthy();
   expect(f.save).toHaveBeenCalledTimes(1);
 });
@@ -1111,10 +1138,14 @@ it("disables stepper buttons while the wizard is inactive", async () => {
   const view = render(f.view());
   await accounts(f);
   view.rerender(f.view(false));
+  await act(async () => {});
+  const started = f.rpc.length;
   for (const name of ["Harness", "Accounts", "Model"]) {
     expect(stepButton(name).disabled).toBe(true);
     fireEvent.click(stepButton(name));
   }
+  await act(async () => {});
+  expect(f.rpc).toHaveLength(started);
   expect(stepHeading("Model")).toBeTruthy();
   view.rerender(f.view());
   expect(stepButton("Harness").disabled).toBe(false);
@@ -1159,4 +1190,205 @@ it("keeps four localized labels as buttons and plain items in Korean", async () 
   } finally {
     await act(() => i18n.changeLanguage("en"));
   }
+});
+
+// Stepper read table. Selecting a step starts exactly the reads that arriving
+// at that step with Back or Next starts. It starts no write, login, endpoint
+// model discovery or save, and nothing for a step it jumps over.
+const sideEffectFreeExceptKnown = (f: ReturnType<typeof fixture>) => {
+  expect(f.save).not.toHaveBeenCalled();
+  expect(f.endpoint).not.toHaveBeenCalled();
+};
+const ACCOUNT_READS = ["ListProviderInventory", "ListResources"];
+const CONFIGURE_READS = ["ListResources"];
+async function reads(f: ReturnType<typeof fixture>, action: () => void) {
+  await act(async () => {});
+  f.rpc.length = 0;
+  action();
+  await act(async () => {});
+  await act(async () => {});
+  return f.rpc.splice(0).sort();
+}
+const footer = (name: "Back" | "Next") => () =>
+  fireEvent.click(screen.getByRole("button", { name }));
+const select = (name: string) => () => fireEvent.click(stepButton(name));
+
+it("starts no read when selecting Harness, the current step or an unvisited item", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f);
+  expect(await reads(f, select("Model"))).toEqual([]);
+  expect(await reads(f, select("Harness"))).toEqual([]);
+  expect(
+    await reads(f, () =>
+      fireEvent.click(
+        stepper()
+          .getAllByRole("listitem")
+          .find((node) => node.textContent?.endsWith("Configure"))!,
+      ),
+    ),
+  ).toEqual([]);
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("starts the same Accounts reads as Back, from Model or from Configure", async () => {
+  const f = fixture();
+  render(f.view());
+  fireEvent.change(await accounts(f), { target: { value: "typed-exact" } });
+  // Model -> Accounts by the stepper, then the same arrival by Back.
+  const selected = await reads(f, select("Accounts"));
+  expect(selected).toEqual(ACCOUNT_READS);
+  expect(await reads(f, footer("Next"))).toEqual([]);
+  expect(await reads(f, footer("Back"))).toEqual(selected);
+  // Configure -> Accounts jumps over Model and starts no Model read.
+  expect(await reads(f, footer("Next"))).toEqual([]);
+  expect(await reads(f, footer("Next"))).toEqual(CONFIGURE_READS);
+  expect(await reads(f, select("Accounts"))).toEqual(selected);
+  sideEffectFree(f);
+});
+
+it("starts one Accounts read pair per source group, as Back does", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f);
+  fireEvent.click(stepButton("Accounts"));
+  fireEvent.click(screen.getByRole("button", { name: /Add account source/ }));
+  await chooseScrollOption(
+    screen.getByRole("combobox", { name: "Account source 2" }),
+    "subscription:chatgpt",
+  );
+  fireEvent.click(
+    await screen.findByRole("checkbox", { name: /Original subscription/ }),
+  );
+  await waitFor(() =>
+    expect(
+      f.client
+        .getQueryCache()
+        .getAll()
+        .some(
+          (q) =>
+            (q.state.data as { resource?: Resource } | undefined)?.resource
+              ?.id === f.subscription.id &&
+            q.state.status === "success" &&
+            q.state.fetchStatus === "idle",
+        ),
+    ).toBe(true),
+  );
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("heading", { name: "Model", level: 3 });
+  for (const model of screen.getAllByRole("combobox", {
+    name: /^Model for /,
+  }))
+    fireEvent.change(model, { target: { value: "typed-exact" } });
+  await act(async () => {});
+  const selected = await reads(f, select("Accounts"));
+  expect(selected).toEqual([...ACCOUNT_READS, ...ACCOUNT_READS].sort());
+  expect(await reads(f, footer("Next"))).toEqual([]);
+  expect(await reads(f, footer("Back"))).toEqual(selected);
+  // The subscription group reads its catalog once, on its first Model arrival.
+  expect(f.known).toHaveBeenCalledTimes(1);
+  expect(f.endpoint).not.toHaveBeenCalled();
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it.each(["stepper", "Back"])(
+  "starts the Accounts reads once when the previous read failed, selected by %s",
+  async (route) => {
+    const f = fixture();
+    render(f.view());
+    fireEvent.change(await accounts(f), { target: { value: "typed-exact" } });
+    f.list.mockImplementation(() => {
+      throw new ConnectError("Fixture read unavailable", Code.Unavailable);
+    });
+    expect(
+      await reads(f, route === "Back" ? footer("Back") : select("Accounts")),
+    ).toEqual(ACCOUNT_READS);
+    expect(f.save).not.toHaveBeenCalled();
+  },
+);
+
+it("starts no Model read for an API source and no endpoint discovery for any source", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f);
+  expect(await reads(f, select("Accounts"))).toEqual(ACCOUNT_READS);
+  expect(await reads(f, select("Model"))).toEqual([]);
+  expect(await reads(f, select("Harness"))).toEqual([]);
+  expect(await reads(f, select("Model"))).toEqual([]);
+  expect(f.rpc).not.toContain("ListEndpointModels");
+  sideEffectFree(f);
+});
+
+it("reuses a fresh loaded known catalog when selecting Model", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f, true);
+  expect(f.known).toHaveBeenCalledTimes(1);
+  expect(await reads(f, select("Accounts"))).toEqual(ACCOUNT_READS);
+  expect(await reads(f, select("Model"))).toEqual([]);
+  expect(await reads(f, select("Harness"))).toEqual([]);
+  expect(await reads(f, select("Model"))).toEqual([]);
+  expect(f.known).toHaveBeenCalledTimes(1);
+  sideEffectFreeExceptKnown(f);
+});
+
+it.each(
+  ["failed", "stale"].flatMap((state) =>
+    ["stepper", "Back and Next"].map((route) => [state, route]),
+  ),
+)(
+  "reads the known catalog again when it is %s, selected by %s",
+  async (state, route) => {
+    const f = fixture();
+    if (state === "failed")
+      f.known.mockImplementationOnce(() => {
+        throw new ConnectError("Catalog unavailable", Code.Unavailable);
+      });
+    render(f.view());
+    await accounts(f, true);
+    await act(async () => {});
+    expect(f.known).toHaveBeenCalledTimes(1);
+    await reads(f, route === "stepper" ? select("Accounts") : footer("Back"));
+    // The shared client keeps a loaded result fresh for a short window only.
+    if (state === "stale")
+      await act(async () => {
+        await f.client.invalidateQueries();
+      });
+    expect(
+      await reads(f, route === "stepper" ? select("Model") : footer("Next")),
+    ).toEqual(["ListKnownSubscriptionModels"]);
+    sideEffectFreeExceptKnown(f);
+  },
+);
+
+it("starts the same Configure reads as Next and no save", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  await configure(input);
+  expect(await reads(f, select("Accounts"))).toEqual(ACCOUNT_READS);
+  // Accounts -> Configure jumps over Model and starts only Configure reads.
+  const selected = await reads(f, select("Configure"));
+  expect(selected).toEqual(CONFIGURE_READS);
+  expect(await reads(f, footer("Back"))).toEqual([]);
+  expect(await reads(f, footer("Next"))).toEqual(selected);
+  expect(await reads(f, select("Configure"))).toEqual([]);
+  sideEffectFree(f);
+});
+
+it("starts the reads of the first invalid stage when a forward selection is blocked", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  await configure(input);
+  fireEvent.click(stepButton("Model"));
+  fireEvent.change(screen.getByRole("combobox", { name: /^Model for / }), {
+    target: { value: "x".repeat(257) },
+  });
+  await reads(f, select("Accounts"));
+  // The blocked jump shows Model, which starts no read for an API source.
+  expect(await reads(f, select("Configure"))).toEqual([]);
+  expect(stepHeading("Model")).toBeTruthy();
+  sideEffectFree(f);
 });

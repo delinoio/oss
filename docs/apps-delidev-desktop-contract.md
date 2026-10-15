@@ -3681,9 +3681,12 @@ Next), only grows when a step is selected, and is never persisted or saved.
   a visible `focus-visible` ring. The current item's button carries
   `aria-current="step"`. Items after the visited limit are plain non-focusable
   content with no hover or focus affordance.
-- Selection never saves, submits the form or starts login, connection, provider
-  validation, discovery or inference work. Back/Next, harness confirmation, the
-  final Save and Settings dismissal are unchanged.
+- Selection never saves, submits the form or starts login, connection
+  verification, endpoint model discovery or inference work. It starts only the
+  read-only reads that reaching the target step with footer Back or Next starts
+  (see the read table below), and nothing for a step it jumps over.
+  Back/Next, harness confirmation, the final Save and Settings dismissal are
+  unchanged.
 - English and Korean labels, the four-item layout and wrapping on narrow widths
   are unchanged. The styles are scoped to `.worker-steps`; other wizards keep
   the shared `wizard-progress` presentation.
@@ -3696,6 +3699,28 @@ Next), only grows when a step is selected, and is never persisted or saved.
 | Before the current step                         | idle                                                                      | Enabled. Selects it with the entrance motion, focuses the heading, clears the error and retains compatible drafts.                                    |
 | After the current step, up to the visited limit | idle, preceding stages valid                                              | Enabled. Selects it with the entrance motion and focuses the heading.                                                                                 |
 | After the current step, up to the visited limit | idle, a preceding stage invalid                                           | Enabled. Does not select the target: it shows the first invalid stage without entrance motion, shows its error and focuses the first invalid control. |
+
+Read table. A step's reads belong to arriving at that step, whichever control
+caused the arrival, so selecting an item and pressing footer Back or Next start
+the same requests. Leaving Accounts discards its pages and inventory can change
+while another step is shown, so Accounts is read again on every arrival instead
+of reusing retained rows. A step the selection jumps over starts no read.
+
+| Target item                             | Earlier state of the target's data                                                              | Requests started by the selection                                                                                          |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Harness                                 | any                                                                                             | None.                                                                                                                      |
+| Current step or an item after the limit | any                                                                                             | None.                                                                                                                      |
+| Accounts, from Model or Configure       | pages loaded, or the last read failed                                                           | One provider inventory read per source group and one account read per source group that has a source, as Back starts them. |
+| Model, API source                       | any                                                                                             | None. Endpoint models are read only by the explicit Refresh models from endpoint action.                                   |
+| Model, subscription source              | known catalog loaded and fresh in the shared query cache                                        | None.                                                                                                                      |
+| Model, subscription source              | known catalog not loaded, stale (older than the cache freshness window) or its last read failed | One known catalog read for that source, as Next starts it.                                                                 |
+| Configure                               | any                                                                                             | The one Configure field read that Next starts. No Accounts or Model read and no save.                                      |
+| Any item blocked by forward validation  | any                                                                                             | Those of the first invalid stage it routes to, from the rows above.                                                        |
+| Any item while disabled                 | pending save, uncertain save, pending evidence, inactive wizard                                 | None.                                                                                                                      |
+
+`agent-worker-wizard.test.tsx` records every request through the transport and
+covers each row, including a multi-source draft, a failed earlier read and equality
+with the Back/Next arrival.
 
 Clamping: choosing a different harness clamps the limit to Harness (confirming
 then reopens Accounts). Committing a different source for a group, or adding a
