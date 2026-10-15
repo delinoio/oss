@@ -321,6 +321,7 @@ func (g *claudeAccountGate) found(ctx context.Context, config Config, input doma
 	if err == nil {
 		if err = security.PrivateDir(filepath.Join(config.Root, "processes", lease.response.LeaseId)); err == nil {
 			lease.journal.NativeStarted = true
+			lease.journal.Installation = &input.Installation
 			err = writeJSON(lease.journalPath, lease.journal)
 		}
 	}

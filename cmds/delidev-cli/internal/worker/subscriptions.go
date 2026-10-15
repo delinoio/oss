@@ -83,6 +83,11 @@ type managedSubscriptionJournal struct {
 	// logged out the canonical profile. A shared owner never infers this from any
 	// member's per-session Cleanup or NativeIdentity flags.
 	OwnerProfileCleaned bool `json:"owner_profile_cleaned,omitempty"`
+	// Installation is the exact original Claude executable evidence the native
+	// profile was opened with. Historical device-owned cleanup reuses it instead
+	// of re-resolving an installation from a later inventory. Journals written
+	// before this field existed omit it.
+	Installation *domain.Installation `json:"installation,omitempty"`
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {

@@ -256,7 +256,6 @@ func TestNativeClaudeWorkerLoginCancelAndOriginalRecovery(t *testing.T) {
 					t.Fatal("lost response erased original identity uncertainty")
 				}
 				state := &domain.SubscriptionState{RecoveryRequired: true, NativeProfileID: f.profile, OwnerMachineID: f.credential.MachineID, Lease: &domain.SubscriptionLease{ID: f.lease, OperationID: op.ID, InstanceID: instance, Generation: f.generation, Revision: 3, Action: domain.SubscriptionLogin}}
-				f.config.nativeClaudeInstallation = &f.installation
 				f.mu.Unlock()
 				locked = false
 				if err = runClaudeRecovery(ctx, f.config, client, f.credential, f.account, domain.Account{Subscription: state}); err != nil {

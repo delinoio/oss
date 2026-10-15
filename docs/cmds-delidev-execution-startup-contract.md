@@ -82,6 +82,16 @@ including its original installation representation. Locally resolved executable
 and observed version metadata stay in the original startup evidence; they never
 rewrite the assignment or its digest. Checkpoint retention failures log a closed
 stage and error code without native content or credentials.
+The Worker advertises `native-claude-subscriptions-v1` and
+`managed-claude-execution-v1` from the peer's independent support alone: attach
+never inspects installation inventory, never launches a Claude child and never
+runs a version or auth-status probe, and each capability change rotates the
+attach request identity. Executable and protocol validation happen in the
+original execution process before input delivery. Historical device-owned
+Claude cleanup reuses the original installation retained in the operation's
+private journal; only journals written before that field existed fall back to
+the single fully verified entry of the current attach inventory, and ambiguous
+or missing evidence fails closed as invalid.
 Workers lacking the new capability receive no new execution assignment; clients receive an
 update requirement rather than an instruction to run manual inspection.
 

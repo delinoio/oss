@@ -35,7 +35,7 @@ type Config struct {
 	imageClient               delidevv1connect.AttachmentServiceClient
 	branchReportClient        delidevv1connect.WorkerServiceClient
 	startup                   *executionStartupAttempt
-	nativeClaudeInstallation  *domain.Installation
+	attachedMachine           *pb.Resource
 	network                   *workerNetworkRuntime
 	observations              *managedObservationRegistry
 	quotaBlockSupported       bool
@@ -401,38 +401,16 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if config.paidCredits {
 				profile += "\x00subscription-paid-credits-v1"
 			}
-			config.nativeClaudeInstallation = nil
-			supportsDeviceClaude := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
-			supportsManagedClaude := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1)
-			if supportsDeviceClaude || supportsManagedClaude {
-				// One empty-profile probe backs both independently negotiated
-				// capabilities. It reads no personal login and creates no authority.
-				probeCtx, stop := context.WithTimeout(ctx, 30*time.Second)
-				var claudeProbe bool
-				claudeProbe, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, credential.MachineID, attached.Msg.Machine)
-				stop()
-				claudeCapabilityExpected = claudeProbe && supportsDeviceClaude
-				managedClaudeExpected = claudeProbe && supportsManagedClaude
-				if claudeCapabilityExpected {
-					var machine domain.Machine
-					if domain.Decode(attached.Msg.Machine.DocumentJson, &machine) == nil {
-						for index := range machine.Installations {
-							candidate := machine.Installations[index]
-							if candidate.Harness == domain.ClaudeCode && domain.HarnessVersionAllowed(domain.ClaudeCode, candidate.Version) && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
-								config.nativeClaudeInstallation = &candidate
-								break
-							}
-						}
-					}
-				}
-				if err != nil {
-					if domain.SafeError(err).Code == domain.RecoveryRequired {
-						return err
-					}
-					config.Logger.InfoContext(ctx, "native_claude_subscription_profile_unavailable", "code", domain.SafeError(err).Code)
-					err = nil
-				}
-			}
+			// Claude adapter capabilities describe implemented code and follow the
+			// peer's independent support. They never wait on installation inventory,
+			// protocol evidence or an auth-status probe: v4 direct startup verifies the
+			// executable and protocol in the original execution process, before input.
+			claudeCapabilityExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
+			managedClaudeExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1)
+			// Legacy device-owned cleanup resolves its original installation from the
+			// current inventory only when the retained journal lacks it. Keep the
+			// attached resource, without inspecting or launching anything here.
+			config.attachedMachine = attached.Msg.Machine
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
 			}

@@ -358,6 +358,7 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 		}
 	}()
 	lease.journal.NativeProfileID = domain.ID(lease.response.NativeProfileId)
+	lease.journal.Installation = &installation
 	if err := writeJSON(lease.journalPath, lease.journal); err != nil {
 		return subscription.Invalid()
 	}
@@ -479,54 +480,32 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	}
 }
 
-// Admission verifies the installed original CLI against a disposable empty
-// profile. It never probes a personal login or creates subscription authority.
-func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, machineID domain.ID, resource *pb.Resource) (bool, error) {
-	var machine domain.Machine
-	if resource == nil || domain.Decode(resource.DocumentJson, &machine) != nil {
-		return false, subscription.Invalid()
+// claudeCleanupInstallation resolves the original installation for historical
+// device-owned cleanup. The retained journal evidence wins; only journals
+// written before it was retained fall back to the single passively decoded,
+// fully verified inventory entry of the current attach. Nothing is launched.
+func claudeCleanupInstallation(config Config, journal managedSubscriptionJournal) (domain.Installation, error) {
+	if journal.Installation != nil {
+		return *journal.Installation, nil
 	}
-	var installation *domain.Installation
+	var machine domain.Machine
+	if config.attachedMachine == nil || domain.Decode(config.attachedMachine.DocumentJson, &machine) != nil {
+		return domain.Installation{}, subscription.Invalid()
+	}
+	var found *domain.Installation
 	for i := range machine.Installations {
 		candidate := &machine.Installations[i]
 		if candidate.Harness == domain.ClaudeCode && domain.HarnessVersionAllowed(domain.ClaudeCode, candidate.Version) && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
-			if installation != nil {
-				return false, subscription.Invalid()
+			if found != nil {
+				return domain.Installation{}, subscription.Invalid()
 			}
-			installation = candidate
+			found = candidate
 		}
 	}
-	if installation == nil {
-		return false, nil
+	if found == nil {
+		return domain.Installation{}, subscription.Invalid()
 	}
-	profiles, err := nativeProfiles(config, machineID)
-	if err != nil {
-		return false, err
-	}
-	lease, err := profiles.AcquireWait(ctx, nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeDiscovery}, 30*time.Second)
-	if err != nil {
-		return false, err
-	}
-	// The accountless probe profile is persistent and never holds credentials.
-	defer lease.Close()
-	root := lease.Root
-	env, err := harness.PrivateRuntimeEnvironment(root)
-	if err != nil {
-		return false, err
-	}
-	auth := claude.AuthConfig{Version: installation.Version, Home: filepath.Join(root, "claude"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.NewID(), Executable: installation.ResolvedPath, Cwd: root, Env: env, Logger: config.Logger}}
-	err = claude.VerifyAuthVersion(ctx, auth)
-	if err == nil {
-		var status claude.AuthStatus
-		status, err = claude.ReadAuthStatus(ctx, auth)
-		if err == nil && (status.LoggedIn || status.AuthMethod != "none" || status.APIKeySource != nil) {
-			err = subscription.Invalid()
-		}
-	}
-	if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
-		return false, err
-	}
-	return err == nil, err
+	return *found, nil
 }
 
 // managedClaudeToken is one server-owned setup token delivered by the protected
@@ -596,6 +575,7 @@ func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner 
 	if err == nil {
 		if err = security.PrivateDir(filepath.Join(config.Root, "processes", lease.response.LeaseId)); err == nil {
 			lease.journal.NativeStarted = true
+			lease.journal.Installation = &input.Installation
 			err = writeJSON(lease.journalPath, lease.journal)
 		}
 	}
@@ -672,10 +652,10 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 				return err
 			}
 		} else if !noNative {
-			if config.nativeClaudeInstallation == nil {
-				return subscription.Invalid()
+			installation, err := claudeCleanupInstallation(config, journal)
+			if err != nil {
+				return err
 			}
-			installation := *config.nativeClaudeInstallation
 			profile, err := openClaudeProfile(config, credential, accountID, state.NativeProfileID, installation, original.ID, false)
 			if err != nil {
 				return err
