@@ -24,6 +24,7 @@ import {
   ShortcutScope,
 } from "./shortcuts";
 import { Surface } from "./surface";
+import chordFixtures from "./shortcut-chord-fixtures.json";
 const chord = {
   state: ShortcutOverrideState.Binding,
   chord: { key: "j", shift: true },
@@ -76,12 +77,15 @@ it("validates inactive catalog scopes without rejecting exclusive screen reuse",
   ).toEqual([]);
   expect(() =>
     parseShortcutOverrides({
-      [ShortcutId.Help]: { state: "binding", chord: { key: "n", shift: true } },
+      [ShortcutId.Help]: {
+        state: "binding",
+        chord: { key: "n", shift: false },
+      },
     }),
   ).toThrow("Conflicting");
 });
 it("rejects fixed product and editing reservations and closed-schema violations", () => {
-  for (const key of ["k", "n", "w", "1", "9", "c", "v", "Escape", "é", "Tab"])
+  for (const key of ["k", "w", "1", "9", "c", "v", "Escape", "é", "Tab"])
     expect(validShortcutChord({ key, shift: false })).toBe(false);
   expect(() =>
     parseShortcutOverrides({ unknown: { state: "disabled" } }),
@@ -118,7 +122,7 @@ it("capture requires the renderer primary and rejects unsafe input without match
 
 it("rejects fixed native menu chords throughout the complete editable map", () => {
   for (const action of editableShortcutCatalog)
-    for (const key of ["q", "h", "m", "n", "w"]) {
+    for (const key of ["q", "h", "m", "w"]) {
       expect(() =>
         parseShortcutOverrides({
           [action.id]: {
@@ -134,7 +138,6 @@ it("rejects fixed native menu chords throughout the complete editable map", () =
 it("keeps native menu bindings in a typed read-only catalog separate from seven editable IDs", () => {
   expect(editableShortcutCatalog).toHaveLength(7);
   expect(fixedNativeShortcutCatalog.map((action) => action.key)).toEqual([
-    "n",
     "w",
     "q",
     "h",
@@ -177,12 +180,78 @@ it("permits the retired New Window T chord for all seven overrides and capture p
         platform,
       ),
     ).toEqual({ key: "t", shift: false });
+  }
+});
+
+it("owns unshifted N as the New session default and not as a native reservation", () => {
+  expect(globalShortcutBindings[ShortcutId.NewSession]).toEqual([
+    { key: "n", primary: true },
+  ]);
+  expect(
+    editableShortcutCatalog.find(
+      (action) => action.id === ShortcutId.NewSession,
+    )?.defaults,
+  ).toEqual([{ key: "n", primary: true }]);
+  expect(
+    fixedNativeShortcutCatalog.map((action) => String(action.id)),
+  ).not.toContain("native-new-window");
+  expect(customizationBindings(ShortcutId.NewSession, {})).toEqual([
+    { key: "n", primary: true },
+  ]);
+  for (const platform of [ShortcutPlatform.Mac, ShortcutPlatform.Other]) {
+    const modifier =
+      platform === ShortcutPlatform.Mac ? { metaKey: true } : { ctrlKey: true };
     expect(
       captureShortcut(
         new KeyboardEvent("keydown", { key: "n", ...modifier }),
         platform,
       ),
-    ).toBeUndefined();
+    ).toEqual({ key: "n", shift: false });
+  }
+});
+
+it("keeps saved New session overrides meaningful around the unshifted N default", () => {
+  const shifted = {
+    [ShortcutId.NewSession]: {
+      state: ShortcutOverrideState.Binding,
+      chord: { key: "n", shift: true },
+    },
+  } as const;
+  expect(parseShortcutOverrides(shifted)).toEqual(shifted);
+  expect(customizationBindings(ShortcutId.NewSession, shifted)).toEqual([
+    { key: "n", shift: true, primary: true },
+  ]);
+  const disabled = {
+    [ShortcutId.NewSession]: { state: ShortcutOverrideState.Disabled },
+  } as const;
+  expect(parseShortcutOverrides(disabled)).toEqual(disabled);
+  expect(customizationBindings(ShortcutId.NewSession, disabled)).toEqual([]);
+});
+
+// The same fixture table drives the Rust validator, so both runtimes accept
+// and reject identical chords and override maps.
+it("matches the shared chord and override fixture table", () => {
+  for (const { key, shift, valid } of chordFixtures.chords) {
+    expect(validShortcutChord({ key, shift }), `${key}/${shift}`).toBe(valid);
+    for (const action of editableShortcutCatalog) {
+      if (action.id === ShortcutId.Help) continue;
+      const overrides = {
+        [action.id]: {
+          state: ShortcutOverrideState.Binding,
+          chord: { key, shift },
+        },
+      };
+      if (valid)
+        expect(parseShortcutOverrides(overrides), `${action.id}`).toEqual(
+          overrides,
+        );
+      else expect(() => parseShortcutOverrides(overrides)).toThrow();
+    }
+  }
+  for (const { name, overrides, valid } of chordFixtures.overrides) {
+    if (valid)
+      expect(parseShortcutOverrides(overrides), name).toEqual(overrides);
+    else expect(() => parseShortcutOverrides(overrides), name).toThrow();
   }
 });
 

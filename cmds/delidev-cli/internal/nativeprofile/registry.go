@@ -66,6 +66,16 @@ type entry struct {
 	Refs      []Reference `json:"refs,omitempty"`
 }
 
+// violatesRegisteredOnly reports whether the entry breaks the invariant of a
+// registered-only purpose: such an entry exists only as a legacy directory
+// registered in place and never holds a conversation history. Registration
+// enforces it when the entry is created and every registry load enforces it
+// again, so a restored registry cannot smuggle in an entry that Acquire would
+// then lock as an ordinary profile.
+func (e entry) violatesRegisteredOnly() bool {
+	return e.Key.Purpose.RegisteredOnly() && (e.Origin != OriginLegacy || len(e.Histories) > 0)
+}
+
 type registryFile struct {
 	Version  int     `json:"version"`
 	Profiles []entry `json:"profiles"`
@@ -219,7 +229,7 @@ func (r *Registry) load() (registryFile, error) {
 	for _, e := range file.Profiles {
 		// Every stored key must belong to this owner root: a restored or reused
 		// root under another server or Worker identity is invalid as a whole.
-		if e.ID.Validate() != nil || e.Key.Validate() != nil || e.Key.Owner != r.config.Owner || e.Key.Server != r.config.Server || e.Key.Machine != r.config.Machine || (e.Origin == OriginLegacy && !validLegacyPath(e.Path)) || seenID[e.ID] || seenKey[e.Key.String()] || len(e.Histories) > maxHistories || (e.Origin != OriginManaged && e.Origin != OriginLegacy) || (e.Origin == OriginLegacy) == (e.Path == "") {
+		if e.ID.Validate() != nil || e.Key.Validate() != nil || e.Key.Owner != r.config.Owner || e.Key.Server != r.config.Server || e.Key.Machine != r.config.Machine || (e.Origin == OriginLegacy && !validLegacyPath(e.Path)) || seenID[e.ID] || seenKey[e.Key.String()] || len(e.Histories) > maxHistories || (e.Origin != OriginManaged && e.Origin != OriginLegacy) || (e.Origin == OriginLegacy) == (e.Path == "") || e.violatesRegisteredOnly() {
 			return registryFile{}, Failure(domain.RecoveryRequired, ReasonRegistryInvalid, "The native profile registry is invalid.", "Restore the registry from a trusted backup without deleting profile directories.")
 		}
 		seenID[e.ID], seenKey[e.Key.String()] = true, true
@@ -327,13 +337,26 @@ type Lease struct {
 	Info
 	lock   *security.Lock
 	logger *slog.Logger
-	once   sync.Once
+	mu     sync.Mutex
+	closed bool
 }
 
-// Close releases the profile lock.
+// Close releases the profile lock. A close that succeeded is final and every
+// later call returns nil without touching the lock. A close that failed is not
+// final: the lease stays open, so a later call closes the lock handle again and
+// reports that result instead of a success the lock never confirmed. A caller
+// that needs proof of release must therefore not read a later nil as a clean
+// release of an earlier failed close.
 func (l *Lease) Close() error {
-	var err error
-	l.once.Do(func() { err = l.lock.Close() })
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return nil
+	}
+	err := l.lock.Close()
+	if err == nil {
+		l.closed = true
+	}
 	return err
 }
 
@@ -372,6 +395,12 @@ func (r *Registry) Acquire(ctx context.Context, key Key) (*Lease, error) {
 				Log(r.config.Logger, "native_profile_acquired", key, e.ID, ReasonReused, "origin", e.Origin)
 				return false, nil
 			}
+		}
+		if key.Purpose.RegisteredOnly() {
+			// A registered-only purpose names a pre-registry directory that is
+			// registered in place; creating a managed profile would fork its
+			// history, so nothing is created and the key stays unregistered.
+			return false, Failure(domain.NotFound, ReasonLegacyUnverified, "The native profile is not registered.", "Register the existing native history before acquiring it.")
 		}
 		if len(file.Profiles) >= maxProfiles {
 			return false, Failure(domain.ResourceExhausted, ReasonRegistryInvalid, "The native profile registry is full.", "Delete unused sessions or accounts before creating more profiles.")
@@ -500,6 +529,39 @@ func (r *Registry) Lookup(ctx context.Context, key Key) (Info, bool, error) {
 	return found, ok, err
 }
 
+// Peek is Lookup for readers that must not change anything. It takes no lock
+// and creates no directory or file, so it also works on a read-only root: a
+// registry that does not exist yet reports the key as unregistered. Registry
+// publication replaces the file atomically, so a lock-free read sees either the
+// old or the new registry, never a partial one. A registry directory that is
+// not a real private directory, or an unreadable or invalid registry, fails
+// with the same closed cause the locked paths use.
+func (r *Registry) Peek(key Key) (Info, bool, error) {
+	key, err := r.normalize(key)
+	if err != nil {
+		return Info{}, false, err
+	}
+	if _, err := os.Lstat(r.base); errors.Is(err, os.ErrNotExist) {
+		return Info{}, false, nil
+	}
+	if err := security.CheckPrivateDir(r.base); err != nil {
+		return Info{}, false, Failure(domain.RecoveryRequired, ReasonRegistryInvalid, "The native profile directory is not private.", "Inspect the owner storage root before retrying.")
+	}
+	if _, err := os.Lstat(r.registryPath()); errors.Is(err, os.ErrNotExist) {
+		return Info{}, false, nil
+	}
+	file, err := r.load()
+	if err != nil {
+		return Info{}, false, err
+	}
+	for _, e := range file.Profiles {
+		if e.Key == key {
+			return r.info(e, false), true, nil
+		}
+	}
+	return Info{}, false, nil
+}
+
 // RegisterLegacy registers an existing pre-registry history directory in
 // place. The directory must be a real private directory below the owner root.
 // Nothing is moved, merged or rewritten. Registering the same directory for the
@@ -517,6 +579,9 @@ func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string,
 		if h.Validate() != nil {
 			return Info{}, invalidKey()
 		}
+	}
+	if key.Purpose.RegisteredOnly() && len(histories) > 0 {
+		return Info{}, invalidKey()
 	}
 	var result Info
 	err = r.withRegistry(ctx, func(file *registryFile) (bool, error) {
@@ -613,7 +678,7 @@ func (r *Registry) RecordHistory(ctx context.Context, key Key, history domain.ID
 	if err != nil {
 		return err
 	}
-	if history.Validate() != nil {
+	if history.Validate() != nil || key.Purpose.RegisteredOnly() {
 		return invalidKey()
 	}
 	return r.withRegistry(ctx, func(file *registryFile) (bool, error) {

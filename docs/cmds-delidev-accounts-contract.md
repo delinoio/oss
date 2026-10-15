@@ -289,7 +289,7 @@ The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) ow
 
 - An acknowledged protected Finish may retain a fenced account. Keep execution uncertain unless final bundle capture and independent cleanup both succeeded, or the separately verified pre-native cleanup returned the unused original bundle. RPC acknowledgment alone cannot authorize ordinary job reporting or overwrite the started claim journal.
 
-- Managed Codex built-in connector startup metadata is consumed only after the harness validates the exact original root and closed private profile. Discard it without public events, account-health changes, tool authority or input/completion claims. Other MCP families remain unsupported until their independent typed adapters exist.
+- Managed Codex startup metadata is consumed only after the harness validates the exact original root and closed private profile. Ordinary managed project execution additionally requires external server names to match its enabled native workspace configuration inventory, under the [harness contract](cmds-delidev-harness-contract.md). Discard status without public events, account-health changes, tool authority or input/completion claims. Unknown names and other MCP families remain unsupported until their independent typed adapters exist.
 
 ## Server-owned Claude accounts
 

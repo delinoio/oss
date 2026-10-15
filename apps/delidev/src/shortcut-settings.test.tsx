@@ -34,12 +34,14 @@ import {
   globalShortcutBindings,
 } from "./shortcuts";
 import { i18n, SupportedLanguage } from "./localization";
-function fixture() {
-  let snapshot: ShortcutPreferenceSnapshot = {
+function fixture(
+  initial: ShortcutPreferenceSnapshot = {
     revision: 1,
     overrides: {},
     problem: null,
-  };
+  },
+) {
+  let snapshot: ShortcutPreferenceSnapshot = initial;
   const listeners = new Set<(raw: unknown) => void>();
   const publish = (next: ShortcutPreferenceSnapshot) => {
     snapshot = next;
@@ -179,8 +181,8 @@ it("uses New Chat in the English creation heading while preserving Korean and sh
     screen.getByRole("button", { name: "Capture shortcut for New session" }),
   ).toBeTruthy();
   const action = screen.getByRole("button", { name: "Ordinary action" });
-  expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");
-  fireEvent.keyDown(action, { key: "n", ctrlKey: true, shiftKey: true });
+  expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+N");
+  fireEvent.keyDown(action, { key: "n", ctrlKey: true });
   expect(run).toHaveBeenCalledOnce();
   await act(async () => {
     await i18n.changeLanguage(SupportedLanguage.Korean);
@@ -189,8 +191,8 @@ it("uses New Chat in the English creation heading while preserving Korean and sh
     screen.getByRole("heading", { level: 2, name: "새 세션 / 새 일반 대화" }),
   ).toBe(heading);
   expect(screen.getByRole("button", { name: "Ordinary action" })).toBe(action);
-  expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");
-  fireEvent.keyDown(action, { key: "n", ctrlKey: true, shiftKey: true });
+  expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+N");
+  fireEvent.keyDown(action, { key: "n", ctrlKey: true });
   expect(run).toHaveBeenCalledTimes(2);
   expect(f.state().overrides).toEqual({});
   expect(f.bridge.update).not.toHaveBeenCalled();
@@ -216,7 +218,7 @@ it("keeps draft bindings inactive until Save and updates dispatch and ARIA witho
   ).toBe("icon");
   const action = screen.getByRole("button", { name: "Ordinary action" });
   await capture();
-  expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");
+  expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+N");
   fireEvent.keyDown(action, { key: "j", ctrlKey: true, shiftKey: true });
   expect(run).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -226,7 +228,7 @@ it("keeps draft bindings inactive until Save and updates dispatch and ARIA witho
   expect(f.bridge.update).toHaveBeenCalledOnce();
   fireEvent.keyDown(action, { key: "j", ctrlKey: true, shiftKey: true });
   expect(run).toHaveBeenCalledOnce();
-  fireEvent.keyDown(action, { key: "n", ctrlKey: true, shiftKey: true });
+  fireEvent.keyDown(action, { key: "n", ctrlKey: true });
   expect(run).toHaveBeenCalledOnce();
   expect(screen.getByRole("button", { name: "Ordinary action" })).toBe(action);
 });
@@ -242,7 +244,7 @@ it("consumes captures, local resets, disable and category departure without a na
   await screen.findByText(
     "Press Command on macOS or Control on Windows/Linux, optionally Shift, with an ASCII letter, digit or Enter. Escape cancels capture.",
   );
-  fireEvent.keyDown(opener, { key: "n", ctrlKey: true });
+  fireEvent.keyDown(opener, { key: "w", ctrlKey: true });
   expect(run).not.toHaveBeenCalled();
   await screen.findByRole("alert");
   fireEvent.keyDown(opener, { key: "Escape" });
@@ -297,7 +299,7 @@ it("does not replay an uncertain native save, preserving effective bindings unti
     screen
       .getByRole("button", { name: "Ordinary action" })
       .getAttribute("aria-keyshortcuts"),
-  ).toBe("Control+Shift+N");
+  ).toBe("Control+N");
   await act(async () =>
     f.publish({
       revision: 2,
@@ -314,7 +316,7 @@ it("does not replay an uncertain native save, preserving effective bindings unti
     screen
       .getByRole("button", { name: "Ordinary action" })
       .getAttribute("aria-keyshortcuts"),
-  ).toBe("Control+Shift+N");
+  ).toBe("Control+N");
   fireEvent.click(
     screen.getByRole("button", { name: "Reinspect saved shortcuts" }),
   );
@@ -490,23 +492,33 @@ it("late duplicate retirement cannot clear or mark a newer capture uncertain", a
   }
 });
 
-it("shows fixed New Window N and permits saving former T without changing native N or New session defaults", async () => {
+it("shows New session as Ctrl + N without a Shift keycap or a fixed New Window row and permits saving former T", async () => {
   const f = fixture(),
     run = vi.fn();
   render(<Owner bridge={f.bridge} run={run} />);
   await screen.findByText("Current saved shortcuts");
+  const row = screen
+    .getByRole("heading", { name: "New session" })
+    .closest(".shortcut-settings-row") as HTMLElement;
   expect(
-    screen
-      .getByText("New Window")
-      .closest("div")
-      ?.querySelector("dd .shortcut-binding-text")?.textContent,
-  ).toBe("Ctrl + N");
+    Array.from(row.querySelectorAll("kbd"), (node) => node.textContent),
+  ).toEqual(["Ctrl", "N"]);
+  expect(row.querySelector(".shortcut-binding-text")?.textContent).toBe(
+    "Ctrl + N",
+  );
+  expect(screen.queryByText("New Window")).toBeNull();
+  expect(screen.queryByText("Close tab")).not.toBeNull();
+  expect(
+    screen.getByText(
+      /Command or Control \+ K, W, Q, H, M and 1–9 remain reserved/,
+    ),
+  ).toBeTruthy();
   const opener = screen.getByRole("button", {
     name: "Capture shortcut for New session",
   });
   fireEvent.click(opener);
   await screen.findByText(/Press Command on macOS/);
-  fireEvent.keyDown(opener, { key: "n", ctrlKey: true });
+  fireEvent.keyDown(opener, { key: "w", ctrlKey: true });
   await screen.findByRole("alert");
   expect(screen.queryByText("Unsaved changes")).toBeNull();
   expect(run).not.toHaveBeenCalled();
@@ -537,12 +549,29 @@ it("shows fixed New Window N and permits saving former T without changing native
     ctrlKey: true,
   });
   expect(run).toHaveBeenCalledOnce();
-  expect(
-    screen
-      .getByText("New Window")
-      .closest("div")
-      ?.querySelector("dd .shortcut-binding-text")?.textContent,
-  ).toBe("Ctrl + N");
+});
+
+it("keeps a saved Shift+N New session override authoritative over the unshifted default", async () => {
+  const f = fixture({
+    revision: 2,
+    overrides: {
+      "new-session": {
+        state: ShortcutOverrideState.Binding,
+        chord: { key: "n", shift: true },
+      },
+    },
+    problem: null,
+  });
+  const run = vi.fn();
+  render(<Owner bridge={f.bridge} run={run} />);
+  await screen.findByText("Current saved shortcuts");
+  const action = screen.getByRole("button", { name: "Ordinary action" });
+  expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");
+  fireEvent.keyDown(action, { key: "n", ctrlKey: true });
+  expect(run).not.toHaveBeenCalled();
+  fireEvent.keyDown(action, { key: "n", ctrlKey: true, shiftKey: true });
+  expect(run).toHaveBeenCalledOnce();
+  expect(f.bridge.update).not.toHaveBeenCalled();
 });
 
 it.each([

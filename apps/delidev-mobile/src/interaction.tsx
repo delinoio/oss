@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Resource } from "@delinoio/delidev-api-client";
 import { documentOf, documentBytes } from "./state";
 import type { Labels } from "./localization";
@@ -10,6 +10,15 @@ const object = (v: unknown): Record<string, unknown> =>
 const array = (v: unknown): Record<string, unknown>[] =>
   Array.isArray(v) ? v.map(object) : [];
 const text = (v: unknown) => (typeof v === "string" ? v : "");
+export interface ResponseDraft {
+  answers?: Record<string, string[]>;
+  extra?: Record<string, string>;
+  unanswered?: Record<string, boolean>;
+  decision?: string;
+  network?: boolean;
+  access?: Record<number, string>;
+  scope?: string;
+}
 export enum QuestionFamily {
   Ordinary = "ordinary",
   Claude = "claude",
@@ -44,7 +53,9 @@ export function RequestResponse({
   enabled,
   copy: c,
   send,
+  draft,
 }: {
+  draft?: ResponseDraft;
   resource: Resource;
   enabled: boolean;
   copy: Labels;
@@ -52,15 +63,31 @@ export function RequestResponse({
 }) {
   const d = documentOf(resource.documentJson),
     question = d.type === "user-question",
-    [answers, setAnswers] = useState<Record<string, string[]>>({}),
-    [extra, setExtra] = useState<Record<string, string>>({}),
-    [unanswered, setUnanswered] = useState<Record<string, boolean>>({}),
-    [decision, setDecision] = useState(""),
+    [answers, setAnswers] = useState<Record<string, string[]>>(
+      draft?.answers ?? {},
+    ),
+    [extra, setExtra] = useState<Record<string, string>>(draft?.extra ?? {}),
+    [unanswered, setUnanswered] = useState<Record<string, boolean>>(
+      draft?.unanswered ?? {},
+    ),
+    [decision, setDecision] = useState(draft?.decision ?? ""),
     [busy, setBusy] = useState(false),
     [failed, setFailed] = useState(false),
-    [network, setNetwork] = useState(false),
-    [access, setAccess] = useState<Record<number, string>>({}),
-    [scope, setScope] = useState("turn");
+    [network, setNetwork] = useState(draft?.network ?? false),
+    [access, setAccess] = useState<Record<number, string>>(draft?.access ?? {}),
+    [scope, setScope] = useState(draft?.scope ?? "turn");
+  useEffect(() => {
+    if (draft)
+      Object.assign(draft, {
+        answers,
+        extra,
+        unanswered,
+        decision,
+        network,
+        access,
+        scope,
+      });
+  }, [draft, answers, extra, unanswered, decision, network, access, scope]);
   const claude = object(d.claude),
     opencode = object(d.opencode),
     grok = object(d.grok),

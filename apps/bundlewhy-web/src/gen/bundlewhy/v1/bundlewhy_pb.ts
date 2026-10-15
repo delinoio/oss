@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file bundlewhy/v1/bundlewhy.proto.
  */
 export const file_bundlewhy_v1_bundlewhy: GenFile = /*@__PURE__*/
-  fileDesc("ChxidW5kbGV3aHkvdjEvYnVuZGxld2h5LnByb3RvEgxidW5kbGV3aHkudjEi8AIKDkVuZ2luZUlkZW50aXR5EiYKB2J1bmRsZXIYASABKA4yFS5idW5kbGV3aHkudjEuQnVuZGxlchIXCg9idW5kbGVyX3BhY2thZ2UYAiABKAkSFwoPYnVuZGxlcl92ZXJzaW9uGAMgASgJEhAKCG1pbmlmaWVyGAQgASgJEhgKEG1pbmlmaWVyX3ZlcnNpb24YBSABKAkSGAoQZGVmYXVsdF9taW5pZmllchgGIAEoCBISCgphZGFwdGVyX2lkGAcgASgJEhcKD2FkYXB0ZXJfdmVyc2lvbhgIIAEoCRIsCgdzdXBwb3J0GAkgASgOMhsuYnVuZGxld2h5LnYxLkVuZ2luZVN1cHBvcnQSGgoSc3VwcG9ydGVkX3ZlcnNpb25zGAogASgJEhkKEWRpYWdub3N0aWNfZW5naW5lGAsgASgIEhkKEWRpYWdub3N0aWNfbm90aWNlGAwgASgJEhEKCW92ZXJyaWRlcxgNIAMoCSJ5Cg5Tb3VyY2VMb2NhdGlvbhIoCgRraW5kGAEgASgOMhouYnVuZGxld2h5LnYxLkxvY2F0aW9uS2luZBIRCglzb3VyY2VfaWQYAiABKAkSDAoEcGF0aBgDIAEoCRIMCgRsaW5lGAQgASgNEg4KBmNvbHVtbhgFIAEoDSJ/CgtDb2RlU25pcHBldBIoCgRraW5kGAEgASgOMhouYnVuZGxld2h5LnYxLkxvY2F0aW9uS2luZBIMCgRwYXRoGAIgASgJEhIKCnN0YXJ0X2xpbmUYAyABKA0SFgoOaGlnaGxpZ2h0X2xpbmUYBCABKA0SDAoEdGV4dBgFIAEoCSJhCglDb25kaXRpb24SEwoLZGVzY3JpcHRpb24YASABKAkSLwoHb3V0Y29tZRgCIAEoDjIeLmJ1bmRsZXdoeS52MS5Db25kaXRpb25PdXRjb21lEg4KBmRldGFpbBgDIAEoCSJcCghFdmlkZW5jZRISCgpwcm92ZW5hbmNlGAEgASgJEg4KBmRldGFpbBgCIAEoCRIsCgZzdGF0dXMYAyABKA4yHC5idW5kbGV3aHkudjEuRXZpZGVuY2VTdGF0dXMiIQoORGVwZW5kZW5jeVBhdGgSDwoHbW9kdWxlcxgBIAMoCSI1ChBDb3JyZWN0aXZlQWN0aW9uEhEKCWRpcmVjdGlvbhgBIAEoCRIOCgZzYWZldHkYAiABKAkivgQKCkRpYWdub3N0aWMSCgoCaWQYASABKAkSNAoIY2F0ZWdvcnkYAiABKA4yIi5idW5kbGV3aHkudjEuT3B0aW1pemF0aW9uQ2F0ZWdvcnkSDAoEcnVsZRgDIAEoCRIsCgZzdGF0dXMYBCABKA4yHC5idW5kbGV3aHkudjEuRXZpZGVuY2VTdGF0dXMSDQoFdGl0bGUYBSABKAkSDwoHc3VtbWFyeRgGIAEoCRIrCgpjb25kaXRpb25zGAcgAygLMhcuYnVuZGxld2h5LnYxLkNvbmRpdGlvbhIuCghsb2NhdGlvbhgIIAEoCzIcLmJ1bmRsZXdoeS52MS5Tb3VyY2VMb2NhdGlvbhI4ChJnZW5lcmF0ZWRfbG9jYXRpb24YCSABKAsyHC5idW5kbGV3aHkudjEuU291cmNlTG9jYXRpb24SKgoHc25pcHBldBgKIAEoCzIZLmJ1bmRsZXdoeS52MS5Db2RlU25pcHBldBIOCgZtb2R1bGUYCyABKAkSNgoQZGVwZW5kZW5jeV9wYXRocxgMIAMoCzIcLmJ1bmRsZXdoeS52MS5EZXBlbmRlbmN5UGF0aBIoCghldmlkZW5jZRgNIAMoCzIWLmJ1bmRsZXdoeS52MS5FdmlkZW5jZRI5ChFjb3JyZWN0aXZlX2FjdGlvbhgOIAEoCzIeLmJ1bmRsZXdoeS52MS5Db3JyZWN0aXZlQWN0aW9uEg4KBmVuZ2luZRgPIAEoCRISCgpkZXBlbmRlbmN5GBAgASgIIpEBChBDYXRlZ29yeUNvdmVyYWdlEjQKCGNhdGVnb3J5GAEgASgOMiIuYnVuZGxld2h5LnYxLk9wdGltaXphdGlvbkNhdGVnb3J5EioKBXN0YXRlGAIgASgOMhsuYnVuZGxld2h5LnYxLkNvdmVyYWdlU3RhdGUSDAoEbm90ZRgDIAEoCRINCgVydWxlcxgEIAMoCSI6ChFTb3VyY2VBdHRyaWJ1dGlvbhIMCgRwYXRoGAEgASgJEhcKD2dlbmVyYXRlZF9ieXRlcxgCIAEoDSLkAQoJQ2h1bmtTaXplEgwKBGZpbGUYASABKAkSEQoJcmF3X2J5dGVzGAIgASgNEhIKCmd6aXBfYnl0ZXMYAyABKA0SFAoMYnJvdGxpX2J5dGVzGAQgASgNEjMKC2F0dHJpYnV0aW9uGAUgASgOMh4uYnVuZGxld2h5LnYxLkF0dHJpYnV0aW9uU3RhdGUSMAoHc291cmNlcxgGIAMoCzIfLmJ1bmRsZXdoeS52MS5Tb3VyY2VBdHRyaWJ1dGlvbhIWCg51bm1hcHBlZF9ieXRlcxgHIAEoDRINCgVlbnRyeRgIIAEoCCJrCgdQcm9ibGVtEgwKBGNvZGUYASABKAkSLwoIc2V2ZXJpdHkYAiABKA4yHS5idW5kbGV3aHkudjEuUHJvYmxlbVNldmVyaXR5Eg8KB21lc3NhZ2UYAyABKAkSEAoIcmVjb3ZlcnkYBCABKAkiKQoLQ29uZmlnRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJIt0BCgpTb3VyY2VGaWxlEgoKAmlkGAEgASgJEgwKBHBhdGgYAiABKAkSKgoGb3JpZ2luGAMgASgOMhouYnVuZGxld2h5LnYxLlNvdXJjZU9yaWdpbhIOCgZzaGEyNTYYBCABKAkSDwoHY29udGVudBgFIAEoCRIYChBjb250ZW50X2luY2x1ZGVkGAYgASgIEg0KBXN0YWxlGAcgASgIEj8KEXJldmlzaW9uX2V2aWRlbmNlGAggASgOMiQuYnVuZGxld2h5LnYxLlNvdXJjZVJldmlzaW9uRXZpZGVuY2Ui0wEKEVNvdXJjZUZpbGVTdW1tYXJ5EgoKAmlkGAEgASgJEgwKBHBhdGgYAiABKAkSKgoGb3JpZ2luGAMgASgOMhouYnVuZGxld2h5LnYxLlNvdXJjZU9yaWdpbhIOCgZzaGEyNTYYBCABKAkSGAoQY29udGVudF9pbmNsdWRlZBgFIAEoCBINCgVzdGFsZRgGIAEoCBI/ChFyZXZpc2lvbl9ldmlkZW5jZRgHIAEoDjIkLmJ1bmRsZXdoeS52MS5Tb3VyY2VSZXZpc2lvbkV2aWRlbmNlIsgECghBbmFseXNpcxIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRIOCgZydW5faWQYAiABKAkSFAoMcHJvamVjdF9uYW1lGAMgASgJEhMKC2NvbmZpZ19maWxlGAQgASgJEicKBnN0YXR1cxgFIAEoDjIXLmJ1bmRsZXdoeS52MS5SdW5TdGF0dXMSLAoGZW5naW5lGAYgASgLMhwuYnVuZGxld2h5LnYxLkVuZ2luZUlkZW50aXR5Ei0KC2RpYWdub3N0aWNzGAcgAygLMhguYnVuZGxld2h5LnYxLkRpYWdub3N0aWMSMAoIY292ZXJhZ2UYCCADKAsyHi5idW5kbGV3aHkudjEuQ2F0ZWdvcnlDb3ZlcmFnZRInCgZjaHVua3MYCSADKAsyFy5idW5kbGV3aHkudjEuQ2h1bmtTaXplEicKCHByb2JsZW1zGAogAygLMhUuYnVuZGxld2h5LnYxLlByb2JsZW0SMQoOY29uZmlnX3N1bW1hcnkYCyADKAsyGS5idW5kbGV3aHkudjEuQ29uZmlnRW50cnkSMAoHc291cmNlcxgMIAMoCzIfLmJ1bmRsZXdoeS52MS5Tb3VyY2VGaWxlU3VtbWFyeRISCgpzdGFydGVkX2F0GA0gASgJEhMKC2ZpbmlzaGVkX2F0GA4gASgJEhMKC2R1cmF0aW9uX21zGA8gASgNEiYKBG1vZGUYECABKA4yGC5idW5kbGV3aHkudjEuUmVwb3J0TW9kZRIUCgx0b29sX3ZlcnNpb24YESABKAkizwEKC1J1blByb2dyZXNzEg4KBnJ1bl9pZBgBIAEoCRInCgZzdGF0dXMYAiABKA4yFy5idW5kbGV3aHkudjEuUnVuU3RhdHVzEiUKBXN0YWdlGAMgASgOMhYuYnVuZGxld2h5LnYxLlJ1blN0YWdlEg8KB21lc3NhZ2UYBCABKAkSEgoKZWxhcHNlZF9tcxgFIAEoDRImCgRtb2RlGAYgASgOMhguYnVuZGxld2h5LnYxLlJlcG9ydE1vZGUSEwoLY2FuY2VsbGFibGUYByABKAgiFwoVR2V0UnVuUHJvZ3Jlc3NSZXF1ZXN0IkUKFkdldFJ1blByb2dyZXNzUmVzcG9uc2USKwoIcHJvZ3Jlc3MYASABKAsyGS5idW5kbGV3aHkudjEuUnVuUHJvZ3Jlc3MiFAoSR2V0QW5hbHlzaXNSZXF1ZXN0Ij8KE0dldEFuYWx5c2lzUmVzcG9uc2USKAoIYW5hbHlzaXMYASABKAsyFi5idW5kbGV3aHkudjEuQW5hbHlzaXMiKQoUR2V0U291cmNlRmlsZVJlcXVlc3QSEQoJc291cmNlX2lkGAEgASgJIkEKFUdldFNvdXJjZUZpbGVSZXNwb25zZRIoCgZzb3VyY2UYASABKAsyGC5idW5kbGV3aHkudjEuU291cmNlRmlsZSISChBDYW5jZWxSdW5SZXF1ZXN0IkAKEUNhbmNlbFJ1blJlc3BvbnNlEisKCHByb2dyZXNzGAEgASgLMhkuYnVuZGxld2h5LnYxLlJ1blByb2dyZXNzIqcBCgpSdW5TdW1tYXJ5Eg4KBnJ1bl9pZBgBIAEoCRInCgZzdGF0dXMYAiABKA4yFy5idW5kbGV3aHkudjEuUnVuU3RhdHVzEhQKDHByb2plY3RfbmFtZRgDIAEoCRImCgdidW5kbGVyGAQgASgOMhUuYnVuZGxld2h5LnYxLkJ1bmRsZXISEgoKc3RhcnRlZF9hdBgFIAEoCRIOCgZhY3RpdmUYBiABKAgiEQoPTGlzdFJ1bnNSZXF1ZXN0IjoKEExpc3RSdW5zUmVzcG9uc2USJgoEcnVucxgBIAMoCzIYLmJ1bmRsZXdoeS52MS5SdW5TdW1tYXJ5IiIKEFNlbGVjdFJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJIkAKEVNlbGVjdFJ1blJlc3BvbnNlEisKCHByb2dyZXNzGAEgASgLMhkuYnVuZGxld2h5LnYxLlJ1blByb2dyZXNzIi4KE0V4cG9ydFJlcG9ydFJlcXVlc3QSFwoPaW5jbHVkZV9zb3VyY2VzGAEgASgIIlcKFEV4cG9ydFJlcG9ydFJlc3BvbnNlEhEKCWZpbGVfbmFtZRgBIAEoCRIYChBzb3VyY2VzX2luY2x1ZGVkGAIgASgIEhIKCnNpemVfYnl0ZXMYAyABKA0qlwMKFE9wdGltaXphdGlvbkNhdGVnb3J5EiUKIU9QVElNSVpBVElPTl9DQVRFR09SWV9VTlNQRUNJRklFRBAAEiYKIk9QVElNSVpBVElPTl9DQVRFR09SWV9UUkVFX1NIQUtJTkcQARIvCitPUFRJTUlaQVRJT05fQ0FURUdPUllfREVBRF9DT0RFX0VMSU1JTkFUSU9OEAISIgoeT1BUSU1JWkFUSU9OX0NBVEVHT1JZX0lOTElOSU5HEAMSKgomT1BUSU1JWkFUSU9OX0NBVEVHT1JZX0NPTlNUQU5UX0ZPTERJTkcQBBInCiNPUFRJTUlaQVRJT05fQ0FURUdPUllfTkFNRV9NQU5HTElORxAFEi4KKk9QVElNSVpBVElPTl9DQVRFR09SWV9NT0RVTEVfQ09OQ0FURU5BVElPThAGEikKJU9QVElNSVpBVElPTl9DQVRFR09SWV9DSFVOS19TUExJVFRJTkcQBxIrCidPUFRJTUlaQVRJT05fQ0FURUdPUllfRFVQTElDQVRFX01PRFVMRVMQCCqPAQoORXZpZGVuY2VTdGF0dXMSHwobRVZJREVOQ0VfU1RBVFVTX1VOU1BFQ0lGSUVEEAASHQoZRVZJREVOQ0VfU1RBVFVTX0NPTkZJUk1FRBABEhwKGEVWSURFTkNFX1NUQVRVU19JTkZFUlJFRBACEh8KG0VWSURFTkNFX1NUQVRVU19VTkFWQUlMQUJMRRADKowBChBDb25kaXRpb25PdXRjb21lEiEKHUNPTkRJVElPTl9PVVRDT01FX1VOU1BFQ0lGSUVEEAASGQoVQ09ORElUSU9OX09VVENPTUVfTUVUEAESGwoXQ09ORElUSU9OX09VVENPTUVfVU5NRVQQAhIdChlDT05ESVRJT05fT1VUQ09NRV9VTktOT1dOEAMqoQEKCVJ1blN0YXR1cxIaChZSVU5fU1RBVFVTX1VOU1BFQ0lGSUVEEAASFgoSUlVOX1NUQVRVU19SVU5OSU5HEAESFwoTUlVOX1NUQVRVU19DT01QTEVURRACEhYKElJVTl9TVEFUVVNfUEFSVElBTBADEhgKFFJVTl9TVEFUVVNfQ0FOQ0VMTEVEEAQSFQoRUlVOX1NUQVRVU19GQUlMRUQQBSrQAQoIUnVuU3RhZ2USGQoVUlVOX1NUQUdFX1VOU1BFQ0lGSUVEEAASFwoTUlVOX1NUQUdFX0RFVEVDVElORxABEhYKElJVTl9TVEFHRV9CVUlMRElORxACEhgKFFJVTl9TVEFHRV9DT0xMRUNUSU5HEAMSFwoTUlVOX1NUQUdFX0FOQUxZWklORxAEEhcKE1JVTl9TVEFHRV9NRUFTVVJJTkcQBRIUChBSVU5fU1RBR0VfU0FWSU5HEAYSFgoSUlVOX1NUQUdFX0ZJTklTSEVEEAcqSAoHQnVuZGxlchIXChNCVU5ETEVSX1VOU1BFQ0lGSUVEEAASEAoMQlVORExFUl9WSVRFEAESEgoOQlVORExFUl9SU1BBQ0sQAip2Cg1FbmdpbmVTdXBwb3J0Eh4KGkVOR0lORV9TVVBQT1JUX1VOU1BFQ0lGSUVEEAASHAoYRU5HSU5FX1NVUFBPUlRfU1VQUE9SVEVEEAESJwojRU5HSU5FX1NVUFBPUlRfVU5TVVBQT1JURURfU0VMRUNURUQQAiqqAQoNQ292ZXJhZ2VTdGF0ZRIeChpDT1ZFUkFHRV9TVEFURV9VTlNQRUNJRklFRBAAEhoKFkNPVkVSQUdFX1NUQVRFX0NPVkVSRUQQARIhCh1DT1ZFUkFHRV9TVEFURV9OT1RfQVBQTElDQUJMRRACEh4KGkNPVkVSQUdFX1NUQVRFX1VOQVZBSUxBQkxFEAMSGgoWQ09WRVJBR0VfU1RBVEVfUEFSVElBTBAEKmYKDExvY2F0aW9uS2luZBIdChlMT0NBVElPTl9LSU5EX1VOU1BFQ0lGSUVEEAASGgoWTE9DQVRJT05fS0lORF9PUklHSU5BTBABEhsKF0xPQ0FUSU9OX0tJTkRfR0VORVJBVEVEEAIqngEKDFNvdXJjZU9yaWdpbhIdChlTT1VSQ0VfT1JJR0lOX1VOU1BFQ0lGSUVEEAASGQoVU09VUkNFX09SSUdJTl9QUk9KRUNUEAESHAoYU09VUkNFX09SSUdJTl9ERVBFTkRFTkNZEAISGQoVU09VUkNFX09SSUdJTl9WSVJUVUFMEAMSGwoXU09VUkNFX09SSUdJTl9HRU5FUkFURUQQBCqZAQoWU291cmNlUmV2aXNpb25FdmlkZW5jZRIoCiRTT1VSQ0VfUkVWSVNJT05fRVZJREVOQ0VfVU5TUEVDSUZJRUQQABIrCidTT1VSQ0VfUkVWSVNJT05fRVZJREVOQ0VfQlVJTERfU05BUFNIT1QQARIoCiRTT1VSQ0VfUkVWSVNJT05fRVZJREVOQ0VfVU5BVkFJTEFCTEUQAip5ChBBdHRyaWJ1dGlvblN0YXRlEiEKHUFUVFJJQlVUSU9OX1NUQVRFX1VOU1BFQ0lGSUVEEAASHwobQVRUUklCVVRJT05fU1RBVEVfU1VQUE9SVEVEEAESIQodQVRUUklCVVRJT05fU1RBVEVfVU5BVkFJTEFCTEUQAiptCg9Qcm9ibGVtU2V2ZXJpdHkSIAocUFJPQkxFTV9TRVZFUklUWV9VTlNQRUNJRklFRBAAEhwKGFBST0JMRU1fU0VWRVJJVFlfV0FSTklORxABEhoKFlBST0JMRU1fU0VWRVJJVFlfRVJST1IQAipwCgpSZXBvcnRNb2RlEhsKF1JFUE9SVF9NT0RFX1VOU1BFQ0lGSUVEEAASFAoQUkVQT1JUX01PREVfTElWRRABEhUKEVJFUE9SVF9NT0RFX1NBVkVEEAISGAoUUkVQT1JUX01PREVfRVhQT1JURUQQAzLaBAoPQW5hbHlzaXNTZXJ2aWNlElsKDkdldFJ1blByb2dyZXNzEiMuYnVuZGxld2h5LnYxLkdldFJ1blByb2dyZXNzUmVxdWVzdBokLmJ1bmRsZXdoeS52MS5HZXRSdW5Qcm9ncmVzc1Jlc3BvbnNlElIKC0dldEFuYWx5c2lzEiAuYnVuZGxld2h5LnYxLkdldEFuYWx5c2lzUmVxdWVzdBohLmJ1bmRsZXdoeS52MS5HZXRBbmFseXNpc1Jlc3BvbnNlElgKDUdldFNvdXJjZUZpbGUSIi5idW5kbGV3aHkudjEuR2V0U291cmNlRmlsZVJlcXVlc3QaIy5idW5kbGV3aHkudjEuR2V0U291cmNlRmlsZVJlc3BvbnNlEkwKCUNhbmNlbFJ1bhIeLmJ1bmRsZXdoeS52MS5DYW5jZWxSdW5SZXF1ZXN0Gh8uYnVuZGxld2h5LnYxLkNhbmNlbFJ1blJlc3BvbnNlEkkKCExpc3RSdW5zEh0uYnVuZGxld2h5LnYxLkxpc3RSdW5zUmVxdWVzdBoeLmJ1bmRsZXdoeS52MS5MaXN0UnVuc1Jlc3BvbnNlEkwKCVNlbGVjdFJ1bhIeLmJ1bmRsZXdoeS52MS5TZWxlY3RSdW5SZXF1ZXN0Gh8uYnVuZGxld2h5LnYxLlNlbGVjdFJ1blJlc3BvbnNlElUKDEV4cG9ydFJlcG9ydBIhLmJ1bmRsZXdoeS52MS5FeHBvcnRSZXBvcnRSZXF1ZXN0GiIuYnVuZGxld2h5LnYxLkV4cG9ydFJlcG9ydFJlc3BvbnNlQkBaPmdpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9nZW4vZ28vYnVuZGxld2h5L3YxO2J1bmRsZXdoeXYxYgZwcm90bzM");
+  fileDesc("ChxidW5kbGV3aHkvdjEvYnVuZGxld2h5LnByb3RvEgxidW5kbGV3aHkudjEi8AIKDkVuZ2luZUlkZW50aXR5EiYKB2J1bmRsZXIYASABKA4yFS5idW5kbGV3aHkudjEuQnVuZGxlchIXCg9idW5kbGVyX3BhY2thZ2UYAiABKAkSFwoPYnVuZGxlcl92ZXJzaW9uGAMgASgJEhAKCG1pbmlmaWVyGAQgASgJEhgKEG1pbmlmaWVyX3ZlcnNpb24YBSABKAkSGAoQZGVmYXVsdF9taW5pZmllchgGIAEoCBISCgphZGFwdGVyX2lkGAcgASgJEhcKD2FkYXB0ZXJfdmVyc2lvbhgIIAEoCRIsCgdzdXBwb3J0GAkgASgOMhsuYnVuZGxld2h5LnYxLkVuZ2luZVN1cHBvcnQSGgoSc3VwcG9ydGVkX3ZlcnNpb25zGAogASgJEhkKEWRpYWdub3N0aWNfZW5naW5lGAsgASgIEhkKEWRpYWdub3N0aWNfbm90aWNlGAwgASgJEhEKCW92ZXJyaWRlcxgNIAMoCSJ5Cg5Tb3VyY2VMb2NhdGlvbhIoCgRraW5kGAEgASgOMhouYnVuZGxld2h5LnYxLkxvY2F0aW9uS2luZBIRCglzb3VyY2VfaWQYAiABKAkSDAoEcGF0aBgDIAEoCRIMCgRsaW5lGAQgASgNEg4KBmNvbHVtbhgFIAEoDSJ/CgtDb2RlU25pcHBldBIoCgRraW5kGAEgASgOMhouYnVuZGxld2h5LnYxLkxvY2F0aW9uS2luZBIMCgRwYXRoGAIgASgJEhIKCnN0YXJ0X2xpbmUYAyABKA0SFgoOaGlnaGxpZ2h0X2xpbmUYBCABKA0SDAoEdGV4dBgFIAEoCSJhCglDb25kaXRpb24SEwoLZGVzY3JpcHRpb24YASABKAkSLwoHb3V0Y29tZRgCIAEoDjIeLmJ1bmRsZXdoeS52MS5Db25kaXRpb25PdXRjb21lEg4KBmRldGFpbBgDIAEoCSJcCghFdmlkZW5jZRISCgpwcm92ZW5hbmNlGAEgASgJEg4KBmRldGFpbBgCIAEoCRIsCgZzdGF0dXMYAyABKA4yHC5idW5kbGV3aHkudjEuRXZpZGVuY2VTdGF0dXMiIQoORGVwZW5kZW5jeVBhdGgSDwoHbW9kdWxlcxgBIAMoCSJgCg9FeHBvcnRSZWZlcmVuY2USDgoGbW9kdWxlGAEgASgJEhMKC2V4cG9ydF9wYXRoGAIgAygJEigKBXNjb3BlGAMgASgOMhkuYnVuZGxld2h5LnYxLkV4cG9ydFNjb3BlIpwBCg9FeHBvcnRVc2FnZUVkZ2USLwoIY29uc3VtZXIYASABKAsyHS5idW5kbGV3aHkudjEuRXhwb3J0UmVmZXJlbmNlEi8KCHByb3ZpZGVyGAIgASgLMh0uYnVuZGxld2h5LnYxLkV4cG9ydFJlZmVyZW5jZRIVCg1kZXBlbmRlbmN5X2lkGAMgASgJEhAKCGxvY2F0aW9uGAQgASgJIm4KD0V4cG9ydFVzYWdlUGF0aBIsCgVlZGdlcxgBIAMoCzIdLmJ1bmRsZXdoeS52MS5FeHBvcnRVc2FnZUVkZ2USLQoDZW5kGAIgASgOMiAuYnVuZGxld2h5LnYxLkV4cG9ydFVzYWdlUGF0aEVuZCKxAQoLRXhwb3J0VXNhZ2USLQoFc3RhdGUYASABKA4yHi5idW5kbGV3aHkudjEuRXhwb3J0VXNhZ2VTdGF0ZRIMCgRub3RlGAIgASgJEiwKBXBhdGhzGAMgAygLMh0uYnVuZGxld2h5LnYxLkV4cG9ydFVzYWdlUGF0aBI3Cgp0cnVuY2F0aW9uGAQgASgOMiMuYnVuZGxld2h5LnYxLkV4cG9ydFVzYWdlVHJ1bmNhdGlvbiI1ChBDb3JyZWN0aXZlQWN0aW9uEhEKCWRpcmVjdGlvbhgBIAEoCRIOCgZzYWZldHkYAiABKAki7wQKCkRpYWdub3N0aWMSCgoCaWQYASABKAkSNAoIY2F0ZWdvcnkYAiABKA4yIi5idW5kbGV3aHkudjEuT3B0aW1pemF0aW9uQ2F0ZWdvcnkSDAoEcnVsZRgDIAEoCRIsCgZzdGF0dXMYBCABKA4yHC5idW5kbGV3aHkudjEuRXZpZGVuY2VTdGF0dXMSDQoFdGl0bGUYBSABKAkSDwoHc3VtbWFyeRgGIAEoCRIrCgpjb25kaXRpb25zGAcgAygLMhcuYnVuZGxld2h5LnYxLkNvbmRpdGlvbhIuCghsb2NhdGlvbhgIIAEoCzIcLmJ1bmRsZXdoeS52MS5Tb3VyY2VMb2NhdGlvbhI4ChJnZW5lcmF0ZWRfbG9jYXRpb24YCSABKAsyHC5idW5kbGV3aHkudjEuU291cmNlTG9jYXRpb24SKgoHc25pcHBldBgKIAEoCzIZLmJ1bmRsZXdoeS52MS5Db2RlU25pcHBldBIOCgZtb2R1bGUYCyABKAkSNgoQZGVwZW5kZW5jeV9wYXRocxgMIAMoCzIcLmJ1bmRsZXdoeS52MS5EZXBlbmRlbmN5UGF0aBIoCghldmlkZW5jZRgNIAMoCzIWLmJ1bmRsZXdoeS52MS5FdmlkZW5jZRI5ChFjb3JyZWN0aXZlX2FjdGlvbhgOIAEoCzIeLmJ1bmRsZXdoeS52MS5Db3JyZWN0aXZlQWN0aW9uEg4KBmVuZ2luZRgPIAEoCRISCgpkZXBlbmRlbmN5GBAgASgIEi8KDGV4cG9ydF91c2FnZRgRIAEoCzIZLmJ1bmRsZXdoeS52MS5FeHBvcnRVc2FnZSKRAQoQQ2F0ZWdvcnlDb3ZlcmFnZRI0CghjYXRlZ29yeRgBIAEoDjIiLmJ1bmRsZXdoeS52MS5PcHRpbWl6YXRpb25DYXRlZ29yeRIqCgVzdGF0ZRgCIAEoDjIbLmJ1bmRsZXdoeS52MS5Db3ZlcmFnZVN0YXRlEgwKBG5vdGUYAyABKAkSDQoFcnVsZXMYBCADKAkiOgoRU291cmNlQXR0cmlidXRpb24SDAoEcGF0aBgBIAEoCRIXCg9nZW5lcmF0ZWRfYnl0ZXMYAiABKA0i5AEKCUNodW5rU2l6ZRIMCgRmaWxlGAEgASgJEhEKCXJhd19ieXRlcxgCIAEoDRISCgpnemlwX2J5dGVzGAMgASgNEhQKDGJyb3RsaV9ieXRlcxgEIAEoDRIzCgthdHRyaWJ1dGlvbhgFIAEoDjIeLmJ1bmRsZXdoeS52MS5BdHRyaWJ1dGlvblN0YXRlEjAKB3NvdXJjZXMYBiADKAsyHy5idW5kbGV3aHkudjEuU291cmNlQXR0cmlidXRpb24SFgoOdW5tYXBwZWRfYnl0ZXMYByABKA0SDQoFZW50cnkYCCABKAgiawoHUHJvYmxlbRIMCgRjb2RlGAEgASgJEi8KCHNldmVyaXR5GAIgASgOMh0uYnVuZGxld2h5LnYxLlByb2JsZW1TZXZlcml0eRIPCgdtZXNzYWdlGAMgASgJEhAKCHJlY292ZXJ5GAQgASgJIikKC0NvbmZpZ0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCSLdAQoKU291cmNlRmlsZRIKCgJpZBgBIAEoCRIMCgRwYXRoGAIgASgJEioKBm9yaWdpbhgDIAEoDjIaLmJ1bmRsZXdoeS52MS5Tb3VyY2VPcmlnaW4SDgoGc2hhMjU2GAQgASgJEg8KB2NvbnRlbnQYBSABKAkSGAoQY29udGVudF9pbmNsdWRlZBgGIAEoCBINCgVzdGFsZRgHIAEoCBI/ChFyZXZpc2lvbl9ldmlkZW5jZRgIIAEoDjIkLmJ1bmRsZXdoeS52MS5Tb3VyY2VSZXZpc2lvbkV2aWRlbmNlItMBChFTb3VyY2VGaWxlU3VtbWFyeRIKCgJpZBgBIAEoCRIMCgRwYXRoGAIgASgJEioKBm9yaWdpbhgDIAEoDjIaLmJ1bmRsZXdoeS52MS5Tb3VyY2VPcmlnaW4SDgoGc2hhMjU2GAQgASgJEhgKEGNvbnRlbnRfaW5jbHVkZWQYBSABKAgSDQoFc3RhbGUYBiABKAgSPwoRcmV2aXNpb25fZXZpZGVuY2UYByABKA4yJC5idW5kbGV3aHkudjEuU291cmNlUmV2aXNpb25FdmlkZW5jZSLIBAoIQW5hbHlzaXMSFgoOc2NoZW1hX3ZlcnNpb24YASABKA0SDgoGcnVuX2lkGAIgASgJEhQKDHByb2plY3RfbmFtZRgDIAEoCRITCgtjb25maWdfZmlsZRgEIAEoCRInCgZzdGF0dXMYBSABKA4yFy5idW5kbGV3aHkudjEuUnVuU3RhdHVzEiwKBmVuZ2luZRgGIAEoCzIcLmJ1bmRsZXdoeS52MS5FbmdpbmVJZGVudGl0eRItCgtkaWFnbm9zdGljcxgHIAMoCzIYLmJ1bmRsZXdoeS52MS5EaWFnbm9zdGljEjAKCGNvdmVyYWdlGAggAygLMh4uYnVuZGxld2h5LnYxLkNhdGVnb3J5Q292ZXJhZ2USJwoGY2h1bmtzGAkgAygLMhcuYnVuZGxld2h5LnYxLkNodW5rU2l6ZRInCghwcm9ibGVtcxgKIAMoCzIVLmJ1bmRsZXdoeS52MS5Qcm9ibGVtEjEKDmNvbmZpZ19zdW1tYXJ5GAsgAygLMhkuYnVuZGxld2h5LnYxLkNvbmZpZ0VudHJ5EjAKB3NvdXJjZXMYDCADKAsyHy5idW5kbGV3aHkudjEuU291cmNlRmlsZVN1bW1hcnkSEgoKc3RhcnRlZF9hdBgNIAEoCRITCgtmaW5pc2hlZF9hdBgOIAEoCRITCgtkdXJhdGlvbl9tcxgPIAEoDRImCgRtb2RlGBAgASgOMhguYnVuZGxld2h5LnYxLlJlcG9ydE1vZGUSFAoMdG9vbF92ZXJzaW9uGBEgASgJIs8BCgtSdW5Qcm9ncmVzcxIOCgZydW5faWQYASABKAkSJwoGc3RhdHVzGAIgASgOMhcuYnVuZGxld2h5LnYxLlJ1blN0YXR1cxIlCgVzdGFnZRgDIAEoDjIWLmJ1bmRsZXdoeS52MS5SdW5TdGFnZRIPCgdtZXNzYWdlGAQgASgJEhIKCmVsYXBzZWRfbXMYBSABKA0SJgoEbW9kZRgGIAEoDjIYLmJ1bmRsZXdoeS52MS5SZXBvcnRNb2RlEhMKC2NhbmNlbGxhYmxlGAcgASgIIhcKFUdldFJ1blByb2dyZXNzUmVxdWVzdCJFChZHZXRSdW5Qcm9ncmVzc1Jlc3BvbnNlEisKCHByb2dyZXNzGAEgASgLMhkuYnVuZGxld2h5LnYxLlJ1blByb2dyZXNzIhQKEkdldEFuYWx5c2lzUmVxdWVzdCI/ChNHZXRBbmFseXNpc1Jlc3BvbnNlEigKCGFuYWx5c2lzGAEgASgLMhYuYnVuZGxld2h5LnYxLkFuYWx5c2lzIikKFEdldFNvdXJjZUZpbGVSZXF1ZXN0EhEKCXNvdXJjZV9pZBgBIAEoCSJBChVHZXRTb3VyY2VGaWxlUmVzcG9uc2USKAoGc291cmNlGAEgASgLMhguYnVuZGxld2h5LnYxLlNvdXJjZUZpbGUiEgoQQ2FuY2VsUnVuUmVxdWVzdCJAChFDYW5jZWxSdW5SZXNwb25zZRIrCghwcm9ncmVzcxgBIAEoCzIZLmJ1bmRsZXdoeS52MS5SdW5Qcm9ncmVzcyKnAQoKUnVuU3VtbWFyeRIOCgZydW5faWQYASABKAkSJwoGc3RhdHVzGAIgASgOMhcuYnVuZGxld2h5LnYxLlJ1blN0YXR1cxIUCgxwcm9qZWN0X25hbWUYAyABKAkSJgoHYnVuZGxlchgEIAEoDjIVLmJ1bmRsZXdoeS52MS5CdW5kbGVyEhIKCnN0YXJ0ZWRfYXQYBSABKAkSDgoGYWN0aXZlGAYgASgIIhEKD0xpc3RSdW5zUmVxdWVzdCI6ChBMaXN0UnVuc1Jlc3BvbnNlEiYKBHJ1bnMYASADKAsyGC5idW5kbGV3aHkudjEuUnVuU3VtbWFyeSIiChBTZWxlY3RSdW5SZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCSJAChFTZWxlY3RSdW5SZXNwb25zZRIrCghwcm9ncmVzcxgBIAEoCzIZLmJ1bmRsZXdoeS52MS5SdW5Qcm9ncmVzcyIuChNFeHBvcnRSZXBvcnRSZXF1ZXN0EhcKD2luY2x1ZGVfc291cmNlcxgBIAEoCCJXChRFeHBvcnRSZXBvcnRSZXNwb25zZRIRCglmaWxlX25hbWUYASABKAkSGAoQc291cmNlc19pbmNsdWRlZBgCIAEoCBISCgpzaXplX2J5dGVzGAMgASgNKpcDChRPcHRpbWl6YXRpb25DYXRlZ29yeRIlCiFPUFRJTUlaQVRJT05fQ0FURUdPUllfVU5TUEVDSUZJRUQQABImCiJPUFRJTUlaQVRJT05fQ0FURUdPUllfVFJFRV9TSEFLSU5HEAESLworT1BUSU1JWkFUSU9OX0NBVEVHT1JZX0RFQURfQ09ERV9FTElNSU5BVElPThACEiIKHk9QVElNSVpBVElPTl9DQVRFR09SWV9JTkxJTklORxADEioKJk9QVElNSVpBVElPTl9DQVRFR09SWV9DT05TVEFOVF9GT0xESU5HEAQSJwojT1BUSU1JWkFUSU9OX0NBVEVHT1JZX05BTUVfTUFOR0xJTkcQBRIuCipPUFRJTUlaQVRJT05fQ0FURUdPUllfTU9EVUxFX0NPTkNBVEVOQVRJT04QBhIpCiVPUFRJTUlaQVRJT05fQ0FURUdPUllfQ0hVTktfU1BMSVRUSU5HEAcSKwonT1BUSU1JWkFUSU9OX0NBVEVHT1JZX0RVUExJQ0FURV9NT0RVTEVTEAgqjwEKDkV2aWRlbmNlU3RhdHVzEh8KG0VWSURFTkNFX1NUQVRVU19VTlNQRUNJRklFRBAAEh0KGUVWSURFTkNFX1NUQVRVU19DT05GSVJNRUQQARIcChhFVklERU5DRV9TVEFUVVNfSU5GRVJSRUQQAhIfChtFVklERU5DRV9TVEFUVVNfVU5BVkFJTEFCTEUQAyqMAQoQQ29uZGl0aW9uT3V0Y29tZRIhCh1DT05ESVRJT05fT1VUQ09NRV9VTlNQRUNJRklFRBAAEhkKFUNPTkRJVElPTl9PVVRDT01FX01FVBABEhsKF0NPTkRJVElPTl9PVVRDT01FX1VOTUVUEAISHQoZQ09ORElUSU9OX09VVENPTUVfVU5LTk9XThADKqEBCglSdW5TdGF0dXMSGgoWUlVOX1NUQVRVU19VTlNQRUNJRklFRBAAEhYKElJVTl9TVEFUVVNfUlVOTklORxABEhcKE1JVTl9TVEFUVVNfQ09NUExFVEUQAhIWChJSVU5fU1RBVFVTX1BBUlRJQUwQAxIYChRSVU5fU1RBVFVTX0NBTkNFTExFRBAEEhUKEVJVTl9TVEFUVVNfRkFJTEVEEAUq0AEKCFJ1blN0YWdlEhkKFVJVTl9TVEFHRV9VTlNQRUNJRklFRBAAEhcKE1JVTl9TVEFHRV9ERVRFQ1RJTkcQARIWChJSVU5fU1RBR0VfQlVJTERJTkcQAhIYChRSVU5fU1RBR0VfQ09MTEVDVElORxADEhcKE1JVTl9TVEFHRV9BTkFMWVpJTkcQBBIXChNSVU5fU1RBR0VfTUVBU1VSSU5HEAUSFAoQUlVOX1NUQUdFX1NBVklORxAGEhYKElJVTl9TVEFHRV9GSU5JU0hFRBAHKkgKB0J1bmRsZXISFwoTQlVORExFUl9VTlNQRUNJRklFRBAAEhAKDEJVTkRMRVJfVklURRABEhIKDkJVTkRMRVJfUlNQQUNLEAIqdgoNRW5naW5lU3VwcG9ydBIeChpFTkdJTkVfU1VQUE9SVF9VTlNQRUNJRklFRBAAEhwKGEVOR0lORV9TVVBQT1JUX1NVUFBPUlRFRBABEicKI0VOR0lORV9TVVBQT1JUX1VOU1VQUE9SVEVEX1NFTEVDVEVEEAIqqgEKDUNvdmVyYWdlU3RhdGUSHgoaQ09WRVJBR0VfU1RBVEVfVU5TUEVDSUZJRUQQABIaChZDT1ZFUkFHRV9TVEFURV9DT1ZFUkVEEAESIQodQ09WRVJBR0VfU1RBVEVfTk9UX0FQUExJQ0FCTEUQAhIeChpDT1ZFUkFHRV9TVEFURV9VTkFWQUlMQUJMRRADEhoKFkNPVkVSQUdFX1NUQVRFX1BBUlRJQUwQBCpmCgxMb2NhdGlvbktpbmQSHQoZTE9DQVRJT05fS0lORF9VTlNQRUNJRklFRBAAEhoKFkxPQ0FUSU9OX0tJTkRfT1JJR0lOQUwQARIbChdMT0NBVElPTl9LSU5EX0dFTkVSQVRFRBACKp4BCgxTb3VyY2VPcmlnaW4SHQoZU09VUkNFX09SSUdJTl9VTlNQRUNJRklFRBAAEhkKFVNPVVJDRV9PUklHSU5fUFJPSkVDVBABEhwKGFNPVVJDRV9PUklHSU5fREVQRU5ERU5DWRACEhkKFVNPVVJDRV9PUklHSU5fVklSVFVBTBADEhsKF1NPVVJDRV9PUklHSU5fR0VORVJBVEVEEAQqmQEKFlNvdXJjZVJldmlzaW9uRXZpZGVuY2USKAokU09VUkNFX1JFVklTSU9OX0VWSURFTkNFX1VOU1BFQ0lGSUVEEAASKwonU09VUkNFX1JFVklTSU9OX0VWSURFTkNFX0JVSUxEX1NOQVBTSE9UEAESKAokU09VUkNFX1JFVklTSU9OX0VWSURFTkNFX1VOQVZBSUxBQkxFEAIqfAoQRXhwb3J0VXNhZ2VTdGF0ZRIiCh5FWFBPUlRfVVNBR0VfU1RBVEVfVU5TUEVDSUZJRUQQABIgChxFWFBPUlRfVVNBR0VfU1RBVEVfQVZBSUxBQkxFEAESIgoeRVhQT1JUX1VTQUdFX1NUQVRFX1VOQVZBSUxBQkxFEAIqXAoLRXhwb3J0U2NvcGUSHAoYRVhQT1JUX1NDT1BFX1VOU1BFQ0lGSUVEEAASFgoSRVhQT1JUX1NDT1BFX05BTUVEEAESFwoTRVhQT1JUX1NDT1BFX01PRFVMRRACKscBChJFeHBvcnRVc2FnZVBhdGhFbmQSJQohRVhQT1JUX1VTQUdFX1BBVEhfRU5EX1VOU1BFQ0lGSUVEEAASHgoaRVhQT1JUX1VTQUdFX1BBVEhfRU5EX1JPT1QQARIfChtFWFBPUlRfVVNBR0VfUEFUSF9FTkRfQ1lDTEUQAhIjCh9FWFBPUlRfVVNBR0VfUEFUSF9FTkRfVFJVTkNBVEVEEAMSJAogRVhQT1JUX1VTQUdFX1BBVEhfRU5EX0lOQ09NUExFVEUQBCrbAQoVRXhwb3J0VXNhZ2VUcnVuY2F0aW9uEicKI0VYUE9SVF9VU0FHRV9UUlVOQ0FUSU9OX1VOU1BFQ0lGSUVEEAASIAocRVhQT1JUX1VTQUdFX1RSVU5DQVRJT05fTk9ORRABEiYKIkVYUE9SVF9VU0FHRV9UUlVOQ0FUSU9OX1BBVEhfQ09VTlQQAhIhCh1FWFBPUlRfVVNBR0VfVFJVTkNBVElPTl9ERVBUSBADEiwKKEVYUE9SVF9VU0FHRV9UUlVOQ0FUSU9OX0VYUEFOU0lPTl9CVURHRVQQBCp5ChBBdHRyaWJ1dGlvblN0YXRlEiEKHUFUVFJJQlVUSU9OX1NUQVRFX1VOU1BFQ0lGSUVEEAASHwobQVRUUklCVVRJT05fU1RBVEVfU1VQUE9SVEVEEAESIQodQVRUUklCVVRJT05fU1RBVEVfVU5BVkFJTEFCTEUQAiptCg9Qcm9ibGVtU2V2ZXJpdHkSIAocUFJPQkxFTV9TRVZFUklUWV9VTlNQRUNJRklFRBAAEhwKGFBST0JMRU1fU0VWRVJJVFlfV0FSTklORxABEhoKFlBST0JMRU1fU0VWRVJJVFlfRVJST1IQAipwCgpSZXBvcnRNb2RlEhsKF1JFUE9SVF9NT0RFX1VOU1BFQ0lGSUVEEAASFAoQUkVQT1JUX01PREVfTElWRRABEhUKEVJFUE9SVF9NT0RFX1NBVkVEEAISGAoUUkVQT1JUX01PREVfRVhQT1JURUQQAzLaBAoPQW5hbHlzaXNTZXJ2aWNlElsKDkdldFJ1blByb2dyZXNzEiMuYnVuZGxld2h5LnYxLkdldFJ1blByb2dyZXNzUmVxdWVzdBokLmJ1bmRsZXdoeS52MS5HZXRSdW5Qcm9ncmVzc1Jlc3BvbnNlElIKC0dldEFuYWx5c2lzEiAuYnVuZGxld2h5LnYxLkdldEFuYWx5c2lzUmVxdWVzdBohLmJ1bmRsZXdoeS52MS5HZXRBbmFseXNpc1Jlc3BvbnNlElgKDUdldFNvdXJjZUZpbGUSIi5idW5kbGV3aHkudjEuR2V0U291cmNlRmlsZVJlcXVlc3QaIy5idW5kbGV3aHkudjEuR2V0U291cmNlRmlsZVJlc3BvbnNlEkwKCUNhbmNlbFJ1bhIeLmJ1bmRsZXdoeS52MS5DYW5jZWxSdW5SZXF1ZXN0Gh8uYnVuZGxld2h5LnYxLkNhbmNlbFJ1blJlc3BvbnNlEkkKCExpc3RSdW5zEh0uYnVuZGxld2h5LnYxLkxpc3RSdW5zUmVxdWVzdBoeLmJ1bmRsZXdoeS52MS5MaXN0UnVuc1Jlc3BvbnNlEkwKCVNlbGVjdFJ1bhIeLmJ1bmRsZXdoeS52MS5TZWxlY3RSdW5SZXF1ZXN0Gh8uYnVuZGxld2h5LnYxLlNlbGVjdFJ1blJlc3BvbnNlElUKDEV4cG9ydFJlcG9ydBIhLmJ1bmRsZXdoeS52MS5FeHBvcnRSZXBvcnRSZXF1ZXN0GiIuYnVuZGxld2h5LnYxLkV4cG9ydFJlcG9ydFJlc3BvbnNlQkBaPmdpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9nZW4vZ28vYnVuZGxld2h5L3YxO2J1bmRsZXdoeXYxYgZwcm90bzM");
 
 /**
  * @generated from message bundlewhy.v1.EngineIdentity
@@ -254,6 +254,140 @@ export const DependencyPathSchema: GenMessage<DependencyPath> = /*@__PURE__*/
   messageDesc(file_bundlewhy_v1_bundlewhy, 5);
 
 /**
+ * A module plus an export inside it, as reported by the engine.
+ *
+ * @generated from message bundlewhy.v1.ExportReference
+ */
+export type ExportReference = Message<"bundlewhy.v1.ExportReference"> & {
+  /**
+   * Display path of the module.
+   *
+   * @generated from field: string module = 1;
+   */
+  module: string;
+
+  /**
+   * Export path segments; empty when scope is module scope.
+   *
+   * @generated from field: repeated string export_path = 2;
+   */
+  exportPath: string[];
+
+  /**
+   * @generated from field: bundlewhy.v1.ExportScope scope = 3;
+   */
+  scope: ExportScope;
+};
+
+/**
+ * Describes the message bundlewhy.v1.ExportReference.
+ * Use `create(ExportReferenceSchema)` to create a new message.
+ */
+export const ExportReferenceSchema: GenMessage<ExportReference> = /*@__PURE__*/
+  messageDesc(file_bundlewhy_v1_bundlewhy, 6);
+
+/**
+ * One export dependency the engine reported: consumer uses provider. This is
+ * an engine observation, not a runtime call.
+ *
+ * @generated from message bundlewhy.v1.ExportUsageEdge
+ */
+export type ExportUsageEdge = Message<"bundlewhy.v1.ExportUsageEdge"> & {
+  /**
+   * @generated from field: bundlewhy.v1.ExportReference consumer = 1;
+   */
+  consumer?: ExportReference | undefined;
+
+  /**
+   * @generated from field: bundlewhy.v1.ExportReference provider = 2;
+   */
+  provider?: ExportReference | undefined;
+
+  /**
+   * Engine dependency ID; empty when the engine did not provide one.
+   *
+   * @generated from field: string dependency_id = 3;
+   */
+  dependencyId: string;
+
+  /**
+   * Location of the dependency in the consumer module, such as "6:13-16";
+   * empty when unknown.
+   *
+   * @generated from field: string location = 4;
+   */
+  location: string;
+};
+
+/**
+ * Describes the message bundlewhy.v1.ExportUsageEdge.
+ * Use `create(ExportUsageEdgeSchema)` to create a new message.
+ */
+export const ExportUsageEdgeSchema: GenMessage<ExportUsageEdge> = /*@__PURE__*/
+  messageDesc(file_bundlewhy_v1_bundlewhy, 7);
+
+/**
+ * A chain of engine edges ordered from the outermost consumer to the
+ * diagnostic module. bundlewhy derives the chain and its order by following
+ * engine edges; the chain does not show execution, removable code or savings.
+ *
+ * @generated from message bundlewhy.v1.ExportUsagePath
+ */
+export type ExportUsagePath = Message<"bundlewhy.v1.ExportUsagePath"> & {
+  /**
+   * @generated from field: repeated bundlewhy.v1.ExportUsageEdge edges = 1;
+   */
+  edges: ExportUsageEdge[];
+
+  /**
+   * @generated from field: bundlewhy.v1.ExportUsagePathEnd end = 2;
+   */
+  end: ExportUsagePathEnd;
+};
+
+/**
+ * Describes the message bundlewhy.v1.ExportUsagePath.
+ * Use `create(ExportUsagePathSchema)` to create a new message.
+ */
+export const ExportUsagePathSchema: GenMessage<ExportUsagePath> = /*@__PURE__*/
+  messageDesc(file_bundlewhy_v1_bundlewhy, 8);
+
+/**
+ * @generated from message bundlewhy.v1.ExportUsage
+ */
+export type ExportUsage = Message<"bundlewhy.v1.ExportUsage"> & {
+  /**
+   * @generated from field: bundlewhy.v1.ExportUsageState state = 1;
+   */
+  state: ExportUsageState;
+
+  /**
+   * Why the evidence is unavailable, or a disclosure such as engine edges
+   * that could not be mapped to modules.
+   *
+   * @generated from field: string note = 2;
+   */
+  note: string;
+
+  /**
+   * @generated from field: repeated bundlewhy.v1.ExportUsagePath paths = 3;
+   */
+  paths: ExportUsagePath[];
+
+  /**
+   * @generated from field: bundlewhy.v1.ExportUsageTruncation truncation = 4;
+   */
+  truncation: ExportUsageTruncation;
+};
+
+/**
+ * Describes the message bundlewhy.v1.ExportUsage.
+ * Use `create(ExportUsageSchema)` to create a new message.
+ */
+export const ExportUsageSchema: GenMessage<ExportUsage> = /*@__PURE__*/
+  messageDesc(file_bundlewhy_v1_bundlewhy, 9);
+
+/**
  * @generated from message bundlewhy.v1.CorrectiveAction
  */
 export type CorrectiveAction = Message<"bundlewhy.v1.CorrectiveAction"> & {
@@ -275,7 +409,7 @@ export type CorrectiveAction = Message<"bundlewhy.v1.CorrectiveAction"> & {
  * Use `create(CorrectiveActionSchema)` to create a new message.
  */
 export const CorrectiveActionSchema: GenMessage<CorrectiveAction> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 6);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 10);
 
 /**
  * @generated from message bundlewhy.v1.Diagnostic
@@ -366,6 +500,14 @@ export type Diagnostic = Message<"bundlewhy.v1.Diagnostic"> & {
    * @generated from field: bool dependency = 16;
    */
   dependency: boolean;
+
+  /**
+   * Optional export-level usage evidence. Absent for Vite diagnostics, rules
+   * without module scope and results saved before it existed.
+   *
+   * @generated from field: bundlewhy.v1.ExportUsage export_usage = 17;
+   */
+  exportUsage?: ExportUsage | undefined;
 };
 
 /**
@@ -373,7 +515,7 @@ export type Diagnostic = Message<"bundlewhy.v1.Diagnostic"> & {
  * Use `create(DiagnosticSchema)` to create a new message.
  */
 export const DiagnosticSchema: GenMessage<Diagnostic> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 7);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 11);
 
 /**
  * @generated from message bundlewhy.v1.CategoryCoverage
@@ -405,7 +547,7 @@ export type CategoryCoverage = Message<"bundlewhy.v1.CategoryCoverage"> & {
  * Use `create(CategoryCoverageSchema)` to create a new message.
  */
 export const CategoryCoverageSchema: GenMessage<CategoryCoverage> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 8);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 12);
 
 /**
  * @generated from message bundlewhy.v1.SourceAttribution
@@ -427,7 +569,7 @@ export type SourceAttribution = Message<"bundlewhy.v1.SourceAttribution"> & {
  * Use `create(SourceAttributionSchema)` to create a new message.
  */
 export const SourceAttributionSchema: GenMessage<SourceAttribution> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 9);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 13);
 
 /**
  * @generated from message bundlewhy.v1.ChunkSize
@@ -482,7 +624,7 @@ export type ChunkSize = Message<"bundlewhy.v1.ChunkSize"> & {
  * Use `create(ChunkSizeSchema)` to create a new message.
  */
 export const ChunkSizeSchema: GenMessage<ChunkSize> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 10);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 14);
 
 /**
  * @generated from message bundlewhy.v1.Problem
@@ -516,7 +658,7 @@ export type Problem = Message<"bundlewhy.v1.Problem"> & {
  * Use `create(ProblemSchema)` to create a new message.
  */
 export const ProblemSchema: GenMessage<Problem> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 11);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 15);
 
 /**
  * @generated from message bundlewhy.v1.ConfigEntry
@@ -538,7 +680,7 @@ export type ConfigEntry = Message<"bundlewhy.v1.ConfigEntry"> & {
  * Use `create(ConfigEntrySchema)` to create a new message.
  */
 export const ConfigEntrySchema: GenMessage<ConfigEntry> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 12);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 16);
 
 /**
  * @generated from message bundlewhy.v1.SourceFile
@@ -594,7 +736,7 @@ export type SourceFile = Message<"bundlewhy.v1.SourceFile"> & {
  * Use `create(SourceFileSchema)` to create a new message.
  */
 export const SourceFileSchema: GenMessage<SourceFile> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 13);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 17);
 
 /**
  * @generated from message bundlewhy.v1.SourceFileSummary
@@ -641,7 +783,7 @@ export type SourceFileSummary = Message<"bundlewhy.v1.SourceFileSummary"> & {
  * Use `create(SourceFileSummarySchema)` to create a new message.
  */
 export const SourceFileSummarySchema: GenMessage<SourceFileSummary> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 14);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 18);
 
 /**
  * @generated from message bundlewhy.v1.Analysis
@@ -738,7 +880,7 @@ export type Analysis = Message<"bundlewhy.v1.Analysis"> & {
  * Use `create(AnalysisSchema)` to create a new message.
  */
 export const AnalysisSchema: GenMessage<Analysis> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 15);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 19);
 
 /**
  * @generated from message bundlewhy.v1.RunProgress
@@ -785,7 +927,7 @@ export type RunProgress = Message<"bundlewhy.v1.RunProgress"> & {
  * Use `create(RunProgressSchema)` to create a new message.
  */
 export const RunProgressSchema: GenMessage<RunProgress> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 16);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 20);
 
 /**
  * @generated from message bundlewhy.v1.GetRunProgressRequest
@@ -798,7 +940,7 @@ export type GetRunProgressRequest = Message<"bundlewhy.v1.GetRunProgressRequest"
  * Use `create(GetRunProgressRequestSchema)` to create a new message.
  */
 export const GetRunProgressRequestSchema: GenMessage<GetRunProgressRequest> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 17);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 21);
 
 /**
  * @generated from message bundlewhy.v1.GetRunProgressResponse
@@ -815,7 +957,7 @@ export type GetRunProgressResponse = Message<"bundlewhy.v1.GetRunProgressRespons
  * Use `create(GetRunProgressResponseSchema)` to create a new message.
  */
 export const GetRunProgressResponseSchema: GenMessage<GetRunProgressResponse> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 18);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 22);
 
 /**
  * @generated from message bundlewhy.v1.GetAnalysisRequest
@@ -828,7 +970,7 @@ export type GetAnalysisRequest = Message<"bundlewhy.v1.GetAnalysisRequest"> & {
  * Use `create(GetAnalysisRequestSchema)` to create a new message.
  */
 export const GetAnalysisRequestSchema: GenMessage<GetAnalysisRequest> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 19);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 23);
 
 /**
  * @generated from message bundlewhy.v1.GetAnalysisResponse
@@ -845,7 +987,7 @@ export type GetAnalysisResponse = Message<"bundlewhy.v1.GetAnalysisResponse"> & 
  * Use `create(GetAnalysisResponseSchema)` to create a new message.
  */
 export const GetAnalysisResponseSchema: GenMessage<GetAnalysisResponse> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 20);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 24);
 
 /**
  * @generated from message bundlewhy.v1.GetSourceFileRequest
@@ -862,7 +1004,7 @@ export type GetSourceFileRequest = Message<"bundlewhy.v1.GetSourceFileRequest"> 
  * Use `create(GetSourceFileRequestSchema)` to create a new message.
  */
 export const GetSourceFileRequestSchema: GenMessage<GetSourceFileRequest> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 21);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 25);
 
 /**
  * @generated from message bundlewhy.v1.GetSourceFileResponse
@@ -879,7 +1021,7 @@ export type GetSourceFileResponse = Message<"bundlewhy.v1.GetSourceFileResponse"
  * Use `create(GetSourceFileResponseSchema)` to create a new message.
  */
 export const GetSourceFileResponseSchema: GenMessage<GetSourceFileResponse> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 22);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 26);
 
 /**
  * @generated from message bundlewhy.v1.CancelRunRequest
@@ -892,7 +1034,7 @@ export type CancelRunRequest = Message<"bundlewhy.v1.CancelRunRequest"> & {
  * Use `create(CancelRunRequestSchema)` to create a new message.
  */
 export const CancelRunRequestSchema: GenMessage<CancelRunRequest> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 23);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 27);
 
 /**
  * @generated from message bundlewhy.v1.CancelRunResponse
@@ -909,7 +1051,7 @@ export type CancelRunResponse = Message<"bundlewhy.v1.CancelRunResponse"> & {
  * Use `create(CancelRunResponseSchema)` to create a new message.
  */
 export const CancelRunResponseSchema: GenMessage<CancelRunResponse> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 24);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 28);
 
 /**
  * @generated from message bundlewhy.v1.RunSummary
@@ -951,7 +1093,7 @@ export type RunSummary = Message<"bundlewhy.v1.RunSummary"> & {
  * Use `create(RunSummarySchema)` to create a new message.
  */
 export const RunSummarySchema: GenMessage<RunSummary> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 25);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 29);
 
 /**
  * @generated from message bundlewhy.v1.ListRunsRequest
@@ -964,7 +1106,7 @@ export type ListRunsRequest = Message<"bundlewhy.v1.ListRunsRequest"> & {
  * Use `create(ListRunsRequestSchema)` to create a new message.
  */
 export const ListRunsRequestSchema: GenMessage<ListRunsRequest> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 26);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 30);
 
 /**
  * @generated from message bundlewhy.v1.ListRunsResponse
@@ -981,7 +1123,7 @@ export type ListRunsResponse = Message<"bundlewhy.v1.ListRunsResponse"> & {
  * Use `create(ListRunsResponseSchema)` to create a new message.
  */
 export const ListRunsResponseSchema: GenMessage<ListRunsResponse> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 27);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 31);
 
 /**
  * @generated from message bundlewhy.v1.SelectRunRequest
@@ -998,7 +1140,7 @@ export type SelectRunRequest = Message<"bundlewhy.v1.SelectRunRequest"> & {
  * Use `create(SelectRunRequestSchema)` to create a new message.
  */
 export const SelectRunRequestSchema: GenMessage<SelectRunRequest> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 28);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 32);
 
 /**
  * @generated from message bundlewhy.v1.SelectRunResponse
@@ -1015,7 +1157,7 @@ export type SelectRunResponse = Message<"bundlewhy.v1.SelectRunResponse"> & {
  * Use `create(SelectRunResponseSchema)` to create a new message.
  */
 export const SelectRunResponseSchema: GenMessage<SelectRunResponse> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 29);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 33);
 
 /**
  * @generated from message bundlewhy.v1.ExportReportRequest
@@ -1032,7 +1174,7 @@ export type ExportReportRequest = Message<"bundlewhy.v1.ExportReportRequest"> & 
  * Use `create(ExportReportRequestSchema)` to create a new message.
  */
 export const ExportReportRequestSchema: GenMessage<ExportReportRequest> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 30);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 34);
 
 /**
  * @generated from message bundlewhy.v1.ExportReportResponse
@@ -1061,7 +1203,7 @@ export type ExportReportResponse = Message<"bundlewhy.v1.ExportReportResponse"> 
  * Use `create(ExportReportResponseSchema)` to create a new message.
  */
 export const ExportReportResponseSchema: GenMessage<ExportReportResponse> = /*@__PURE__*/
-  messageDesc(file_bundlewhy_v1_bundlewhy, 31);
+  messageDesc(file_bundlewhy_v1_bundlewhy, 35);
 
 /**
  * @generated from enum bundlewhy.v1.OptimizationCategory
@@ -1469,6 +1611,164 @@ export const SourceRevisionEvidenceSchema: GenEnum<SourceRevisionEvidence> = /*@
   enumDesc(file_bundlewhy_v1_bundlewhy, 10);
 
 /**
+ * Whether export usage evidence exists for a diagnostic.
+ *
+ * @generated from enum bundlewhy.v1.ExportUsageState
+ */
+export enum ExportUsageState {
+  /**
+   * @generated from enum value: EXPORT_USAGE_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: EXPORT_USAGE_STATE_AVAILABLE = 1;
+   */
+  AVAILABLE = 1,
+
+  /**
+   * The engine API, hook or graph was unavailable, or it reported no edge for
+   * the diagnostic's module. Never read as "no consumer exists".
+   *
+   * @generated from enum value: EXPORT_USAGE_STATE_UNAVAILABLE = 2;
+   */
+  UNAVAILABLE = 2,
+}
+
+/**
+ * Describes the enum bundlewhy.v1.ExportUsageState.
+ */
+export const ExportUsageStateSchema: GenEnum<ExportUsageState> = /*@__PURE__*/
+  enumDesc(file_bundlewhy_v1_bundlewhy, 11);
+
+/**
+ * Whether an export reference names an export.
+ *
+ * @generated from enum bundlewhy.v1.ExportScope
+ */
+export enum ExportScope {
+  /**
+   * @generated from enum value: EXPORT_SCOPE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * A named export (or a nested export path).
+   *
+   * @generated from enum value: EXPORT_SCOPE_NAMED = 1;
+   */
+  NAMED = 1,
+
+  /**
+   * Module or namespace scope: the engine did not name one export. This is not
+   * evidence of a function call.
+   *
+   * @generated from enum value: EXPORT_SCOPE_MODULE = 2;
+   */
+  MODULE = 2,
+}
+
+/**
+ * Describes the enum bundlewhy.v1.ExportScope.
+ */
+export const ExportScopeSchema: GenEnum<ExportScope> = /*@__PURE__*/
+  enumDesc(file_bundlewhy_v1_bundlewhy, 12);
+
+/**
+ * Why a derived export usage chain stops.
+ *
+ * @generated from enum bundlewhy.v1.ExportUsagePathEnd
+ */
+export enum ExportUsagePathEnd {
+  /**
+   * @generated from enum value: EXPORT_USAGE_PATH_END_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The engine reported no edge into the first export in the chain, and no
+   * edge that could be one was dropped.
+   *
+   * @generated from enum value: EXPORT_USAGE_PATH_END_ROOT = 1;
+   */
+  ROOT = 1,
+
+  /**
+   * The first edge returns to an export already in the chain.
+   *
+   * @generated from enum value: EXPORT_USAGE_PATH_END_CYCLE = 2;
+   */
+  CYCLE = 2,
+
+  /**
+   * A display or work limit stopped the chain before a root was reached.
+   *
+   * @generated from enum value: EXPORT_USAGE_PATH_END_TRUNCATED = 3;
+   */
+  TRUNCATED = 3,
+
+  /**
+   * The engine reported edges that bundlewhy could not use (an endpoint is not
+   * an identifiable module or an export reference is unreadable), and one of
+   * them may be an earlier edge into the first export. The chain may continue
+   * beyond this point, so it is not a confirmed start.
+   *
+   * @generated from enum value: EXPORT_USAGE_PATH_END_INCOMPLETE = 4;
+   */
+  INCOMPLETE = 4,
+}
+
+/**
+ * Describes the enum bundlewhy.v1.ExportUsagePathEnd.
+ */
+export const ExportUsagePathEndSchema: GenEnum<ExportUsagePathEnd> = /*@__PURE__*/
+  enumDesc(file_bundlewhy_v1_bundlewhy, 13);
+
+/**
+ * The first display or work limit that shortened the shown chains.
+ *
+ * @generated from enum bundlewhy.v1.ExportUsageTruncation
+ */
+export enum ExportUsageTruncation {
+  /**
+   * @generated from enum value: EXPORT_USAGE_TRUNCATION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: EXPORT_USAGE_TRUNCATION_NONE = 1;
+   */
+  NONE = 1,
+
+  /**
+   * More chains exist than the display cap.
+   *
+   * @generated from enum value: EXPORT_USAGE_TRUNCATION_PATH_COUNT = 2;
+   */
+  PATH_COUNT = 2,
+
+  /**
+   * A chain is longer than the display cap.
+   *
+   * @generated from enum value: EXPORT_USAGE_TRUNCATION_DEPTH = 3;
+   */
+  DEPTH = 3,
+
+  /**
+   * The traversal work budget was exhausted.
+   *
+   * @generated from enum value: EXPORT_USAGE_TRUNCATION_EXPANSION_BUDGET = 4;
+   */
+  EXPANSION_BUDGET = 4,
+}
+
+/**
+ * Describes the enum bundlewhy.v1.ExportUsageTruncation.
+ */
+export const ExportUsageTruncationSchema: GenEnum<ExportUsageTruncation> = /*@__PURE__*/
+  enumDesc(file_bundlewhy_v1_bundlewhy, 14);
+
+/**
  * @generated from enum bundlewhy.v1.AttributionState
  */
 export enum AttributionState {
@@ -1492,7 +1792,7 @@ export enum AttributionState {
  * Describes the enum bundlewhy.v1.AttributionState.
  */
 export const AttributionStateSchema: GenEnum<AttributionState> = /*@__PURE__*/
-  enumDesc(file_bundlewhy_v1_bundlewhy, 11);
+  enumDesc(file_bundlewhy_v1_bundlewhy, 15);
 
 /**
  * @generated from enum bundlewhy.v1.ProblemSeverity
@@ -1518,7 +1818,7 @@ export enum ProblemSeverity {
  * Describes the enum bundlewhy.v1.ProblemSeverity.
  */
 export const ProblemSeveritySchema: GenEnum<ProblemSeverity> = /*@__PURE__*/
-  enumDesc(file_bundlewhy_v1_bundlewhy, 12);
+  enumDesc(file_bundlewhy_v1_bundlewhy, 16);
 
 /**
  * @generated from enum bundlewhy.v1.ReportMode
@@ -1555,7 +1855,7 @@ export enum ReportMode {
  * Describes the enum bundlewhy.v1.ReportMode.
  */
 export const ReportModeSchema: GenEnum<ReportMode> = /*@__PURE__*/
-  enumDesc(file_bundlewhy_v1_bundlewhy, 13);
+  enumDesc(file_bundlewhy_v1_bundlewhy, 17);
 
 /**
  * AnalysisService is served by the bundlewhy local server on 127.0.0.1 only.

@@ -631,6 +631,234 @@ func (SourceRevisionEvidence) EnumDescriptor() ([]byte, []int) {
 	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{10}
 }
 
+// Whether export usage evidence exists for a diagnostic.
+type ExportUsageState int32
+
+const (
+	ExportUsageState_EXPORT_USAGE_STATE_UNSPECIFIED ExportUsageState = 0
+	ExportUsageState_EXPORT_USAGE_STATE_AVAILABLE   ExportUsageState = 1
+	// The engine API, hook or graph was unavailable, or it reported no edge for
+	// the diagnostic's module. Never read as "no consumer exists".
+	ExportUsageState_EXPORT_USAGE_STATE_UNAVAILABLE ExportUsageState = 2
+)
+
+// Enum value maps for ExportUsageState.
+var (
+	ExportUsageState_name = map[int32]string{
+		0: "EXPORT_USAGE_STATE_UNSPECIFIED",
+		1: "EXPORT_USAGE_STATE_AVAILABLE",
+		2: "EXPORT_USAGE_STATE_UNAVAILABLE",
+	}
+	ExportUsageState_value = map[string]int32{
+		"EXPORT_USAGE_STATE_UNSPECIFIED": 0,
+		"EXPORT_USAGE_STATE_AVAILABLE":   1,
+		"EXPORT_USAGE_STATE_UNAVAILABLE": 2,
+	}
+)
+
+func (x ExportUsageState) Enum() *ExportUsageState {
+	p := new(ExportUsageState)
+	*p = x
+	return p
+}
+
+func (x ExportUsageState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ExportUsageState) Descriptor() protoreflect.EnumDescriptor {
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[11].Descriptor()
+}
+
+func (ExportUsageState) Type() protoreflect.EnumType {
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[11]
+}
+
+func (x ExportUsageState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ExportUsageState.Descriptor instead.
+func (ExportUsageState) EnumDescriptor() ([]byte, []int) {
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{11}
+}
+
+// Whether an export reference names an export.
+type ExportScope int32
+
+const (
+	ExportScope_EXPORT_SCOPE_UNSPECIFIED ExportScope = 0
+	// A named export (or a nested export path).
+	ExportScope_EXPORT_SCOPE_NAMED ExportScope = 1
+	// Module or namespace scope: the engine did not name one export. This is not
+	// evidence of a function call.
+	ExportScope_EXPORT_SCOPE_MODULE ExportScope = 2
+)
+
+// Enum value maps for ExportScope.
+var (
+	ExportScope_name = map[int32]string{
+		0: "EXPORT_SCOPE_UNSPECIFIED",
+		1: "EXPORT_SCOPE_NAMED",
+		2: "EXPORT_SCOPE_MODULE",
+	}
+	ExportScope_value = map[string]int32{
+		"EXPORT_SCOPE_UNSPECIFIED": 0,
+		"EXPORT_SCOPE_NAMED":       1,
+		"EXPORT_SCOPE_MODULE":      2,
+	}
+)
+
+func (x ExportScope) Enum() *ExportScope {
+	p := new(ExportScope)
+	*p = x
+	return p
+}
+
+func (x ExportScope) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ExportScope) Descriptor() protoreflect.EnumDescriptor {
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[12].Descriptor()
+}
+
+func (ExportScope) Type() protoreflect.EnumType {
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[12]
+}
+
+func (x ExportScope) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ExportScope.Descriptor instead.
+func (ExportScope) EnumDescriptor() ([]byte, []int) {
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{12}
+}
+
+// Why a derived export usage chain stops.
+type ExportUsagePathEnd int32
+
+const (
+	ExportUsagePathEnd_EXPORT_USAGE_PATH_END_UNSPECIFIED ExportUsagePathEnd = 0
+	// The engine reported no edge into the first export in the chain, and no
+	// edge that could be one was dropped.
+	ExportUsagePathEnd_EXPORT_USAGE_PATH_END_ROOT ExportUsagePathEnd = 1
+	// The first edge returns to an export already in the chain.
+	ExportUsagePathEnd_EXPORT_USAGE_PATH_END_CYCLE ExportUsagePathEnd = 2
+	// A display or work limit stopped the chain before a root was reached.
+	ExportUsagePathEnd_EXPORT_USAGE_PATH_END_TRUNCATED ExportUsagePathEnd = 3
+	// The engine reported edges that bundlewhy could not use (an endpoint is not
+	// an identifiable module or an export reference is unreadable), and one of
+	// them may be an earlier edge into the first export. The chain may continue
+	// beyond this point, so it is not a confirmed start.
+	ExportUsagePathEnd_EXPORT_USAGE_PATH_END_INCOMPLETE ExportUsagePathEnd = 4
+)
+
+// Enum value maps for ExportUsagePathEnd.
+var (
+	ExportUsagePathEnd_name = map[int32]string{
+		0: "EXPORT_USAGE_PATH_END_UNSPECIFIED",
+		1: "EXPORT_USAGE_PATH_END_ROOT",
+		2: "EXPORT_USAGE_PATH_END_CYCLE",
+		3: "EXPORT_USAGE_PATH_END_TRUNCATED",
+		4: "EXPORT_USAGE_PATH_END_INCOMPLETE",
+	}
+	ExportUsagePathEnd_value = map[string]int32{
+		"EXPORT_USAGE_PATH_END_UNSPECIFIED": 0,
+		"EXPORT_USAGE_PATH_END_ROOT":        1,
+		"EXPORT_USAGE_PATH_END_CYCLE":       2,
+		"EXPORT_USAGE_PATH_END_TRUNCATED":   3,
+		"EXPORT_USAGE_PATH_END_INCOMPLETE":  4,
+	}
+)
+
+func (x ExportUsagePathEnd) Enum() *ExportUsagePathEnd {
+	p := new(ExportUsagePathEnd)
+	*p = x
+	return p
+}
+
+func (x ExportUsagePathEnd) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ExportUsagePathEnd) Descriptor() protoreflect.EnumDescriptor {
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[13].Descriptor()
+}
+
+func (ExportUsagePathEnd) Type() protoreflect.EnumType {
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[13]
+}
+
+func (x ExportUsagePathEnd) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ExportUsagePathEnd.Descriptor instead.
+func (ExportUsagePathEnd) EnumDescriptor() ([]byte, []int) {
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{13}
+}
+
+// The first display or work limit that shortened the shown chains.
+type ExportUsageTruncation int32
+
+const (
+	ExportUsageTruncation_EXPORT_USAGE_TRUNCATION_UNSPECIFIED ExportUsageTruncation = 0
+	ExportUsageTruncation_EXPORT_USAGE_TRUNCATION_NONE        ExportUsageTruncation = 1
+	// More chains exist than the display cap.
+	ExportUsageTruncation_EXPORT_USAGE_TRUNCATION_PATH_COUNT ExportUsageTruncation = 2
+	// A chain is longer than the display cap.
+	ExportUsageTruncation_EXPORT_USAGE_TRUNCATION_DEPTH ExportUsageTruncation = 3
+	// The traversal work budget was exhausted.
+	ExportUsageTruncation_EXPORT_USAGE_TRUNCATION_EXPANSION_BUDGET ExportUsageTruncation = 4
+)
+
+// Enum value maps for ExportUsageTruncation.
+var (
+	ExportUsageTruncation_name = map[int32]string{
+		0: "EXPORT_USAGE_TRUNCATION_UNSPECIFIED",
+		1: "EXPORT_USAGE_TRUNCATION_NONE",
+		2: "EXPORT_USAGE_TRUNCATION_PATH_COUNT",
+		3: "EXPORT_USAGE_TRUNCATION_DEPTH",
+		4: "EXPORT_USAGE_TRUNCATION_EXPANSION_BUDGET",
+	}
+	ExportUsageTruncation_value = map[string]int32{
+		"EXPORT_USAGE_TRUNCATION_UNSPECIFIED":      0,
+		"EXPORT_USAGE_TRUNCATION_NONE":             1,
+		"EXPORT_USAGE_TRUNCATION_PATH_COUNT":       2,
+		"EXPORT_USAGE_TRUNCATION_DEPTH":            3,
+		"EXPORT_USAGE_TRUNCATION_EXPANSION_BUDGET": 4,
+	}
+)
+
+func (x ExportUsageTruncation) Enum() *ExportUsageTruncation {
+	p := new(ExportUsageTruncation)
+	*p = x
+	return p
+}
+
+func (x ExportUsageTruncation) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ExportUsageTruncation) Descriptor() protoreflect.EnumDescriptor {
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[14].Descriptor()
+}
+
+func (ExportUsageTruncation) Type() protoreflect.EnumType {
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[14]
+}
+
+func (x ExportUsageTruncation) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ExportUsageTruncation.Descriptor instead.
+func (ExportUsageTruncation) EnumDescriptor() ([]byte, []int) {
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{14}
+}
+
 type AttributionState int32
 
 const (
@@ -664,11 +892,11 @@ func (x AttributionState) String() string {
 }
 
 func (AttributionState) Descriptor() protoreflect.EnumDescriptor {
-	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[11].Descriptor()
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[15].Descriptor()
 }
 
 func (AttributionState) Type() protoreflect.EnumType {
-	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[11]
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[15]
 }
 
 func (x AttributionState) Number() protoreflect.EnumNumber {
@@ -677,7 +905,7 @@ func (x AttributionState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AttributionState.Descriptor instead.
 func (AttributionState) EnumDescriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{11}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{15}
 }
 
 type ProblemSeverity int32
@@ -713,11 +941,11 @@ func (x ProblemSeverity) String() string {
 }
 
 func (ProblemSeverity) Descriptor() protoreflect.EnumDescriptor {
-	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[12].Descriptor()
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[16].Descriptor()
 }
 
 func (ProblemSeverity) Type() protoreflect.EnumType {
-	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[12]
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[16]
 }
 
 func (x ProblemSeverity) Number() protoreflect.EnumNumber {
@@ -726,7 +954,7 @@ func (x ProblemSeverity) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProblemSeverity.Descriptor instead.
 func (ProblemSeverity) EnumDescriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{12}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{16}
 }
 
 type ReportMode int32
@@ -768,11 +996,11 @@ func (x ReportMode) String() string {
 }
 
 func (ReportMode) Descriptor() protoreflect.EnumDescriptor {
-	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[13].Descriptor()
+	return file_bundlewhy_v1_bundlewhy_proto_enumTypes[17].Descriptor()
 }
 
 func (ReportMode) Type() protoreflect.EnumType {
-	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[13]
+	return &file_bundlewhy_v1_bundlewhy_proto_enumTypes[17]
 }
 
 func (x ReportMode) Number() protoreflect.EnumNumber {
@@ -781,7 +1009,7 @@ func (x ReportMode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ReportMode.Descriptor instead.
 func (ReportMode) EnumDescriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{13}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{17}
 }
 
 type EngineIdentity struct {
@@ -1250,6 +1478,267 @@ func (x *DependencyPath) GetModules() []string {
 	return nil
 }
 
+// A module plus an export inside it, as reported by the engine.
+type ExportReference struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Display path of the module.
+	Module string `protobuf:"bytes,1,opt,name=module,proto3" json:"module,omitempty"`
+	// Export path segments; empty when scope is module scope.
+	ExportPath    []string    `protobuf:"bytes,2,rep,name=export_path,json=exportPath,proto3" json:"export_path,omitempty"`
+	Scope         ExportScope `protobuf:"varint,3,opt,name=scope,proto3,enum=bundlewhy.v1.ExportScope" json:"scope,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportReference) Reset() {
+	*x = ExportReference{}
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportReference) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportReference) ProtoMessage() {}
+
+func (x *ExportReference) ProtoReflect() protoreflect.Message {
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportReference.ProtoReflect.Descriptor instead.
+func (*ExportReference) Descriptor() ([]byte, []int) {
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ExportReference) GetModule() string {
+	if x != nil {
+		return x.Module
+	}
+	return ""
+}
+
+func (x *ExportReference) GetExportPath() []string {
+	if x != nil {
+		return x.ExportPath
+	}
+	return nil
+}
+
+func (x *ExportReference) GetScope() ExportScope {
+	if x != nil {
+		return x.Scope
+	}
+	return ExportScope_EXPORT_SCOPE_UNSPECIFIED
+}
+
+// One export dependency the engine reported: consumer uses provider. This is
+// an engine observation, not a runtime call.
+type ExportUsageEdge struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Consumer *ExportReference       `protobuf:"bytes,1,opt,name=consumer,proto3" json:"consumer,omitempty"`
+	Provider *ExportReference       `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
+	// Engine dependency ID; empty when the engine did not provide one.
+	DependencyId string `protobuf:"bytes,3,opt,name=dependency_id,json=dependencyId,proto3" json:"dependency_id,omitempty"`
+	// Location of the dependency in the consumer module, such as "6:13-16";
+	// empty when unknown.
+	Location      string `protobuf:"bytes,4,opt,name=location,proto3" json:"location,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportUsageEdge) Reset() {
+	*x = ExportUsageEdge{}
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportUsageEdge) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportUsageEdge) ProtoMessage() {}
+
+func (x *ExportUsageEdge) ProtoReflect() protoreflect.Message {
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportUsageEdge.ProtoReflect.Descriptor instead.
+func (*ExportUsageEdge) Descriptor() ([]byte, []int) {
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ExportUsageEdge) GetConsumer() *ExportReference {
+	if x != nil {
+		return x.Consumer
+	}
+	return nil
+}
+
+func (x *ExportUsageEdge) GetProvider() *ExportReference {
+	if x != nil {
+		return x.Provider
+	}
+	return nil
+}
+
+func (x *ExportUsageEdge) GetDependencyId() string {
+	if x != nil {
+		return x.DependencyId
+	}
+	return ""
+}
+
+func (x *ExportUsageEdge) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+// A chain of engine edges ordered from the outermost consumer to the
+// diagnostic module. bundlewhy derives the chain and its order by following
+// engine edges; the chain does not show execution, removable code or savings.
+type ExportUsagePath struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Edges         []*ExportUsageEdge     `protobuf:"bytes,1,rep,name=edges,proto3" json:"edges,omitempty"`
+	End           ExportUsagePathEnd     `protobuf:"varint,2,opt,name=end,proto3,enum=bundlewhy.v1.ExportUsagePathEnd" json:"end,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportUsagePath) Reset() {
+	*x = ExportUsagePath{}
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportUsagePath) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportUsagePath) ProtoMessage() {}
+
+func (x *ExportUsagePath) ProtoReflect() protoreflect.Message {
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportUsagePath.ProtoReflect.Descriptor instead.
+func (*ExportUsagePath) Descriptor() ([]byte, []int) {
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ExportUsagePath) GetEdges() []*ExportUsageEdge {
+	if x != nil {
+		return x.Edges
+	}
+	return nil
+}
+
+func (x *ExportUsagePath) GetEnd() ExportUsagePathEnd {
+	if x != nil {
+		return x.End
+	}
+	return ExportUsagePathEnd_EXPORT_USAGE_PATH_END_UNSPECIFIED
+}
+
+type ExportUsage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	State ExportUsageState       `protobuf:"varint,1,opt,name=state,proto3,enum=bundlewhy.v1.ExportUsageState" json:"state,omitempty"`
+	// Why the evidence is unavailable, or a disclosure such as engine edges
+	// that could not be mapped to modules.
+	Note          string                `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
+	Paths         []*ExportUsagePath    `protobuf:"bytes,3,rep,name=paths,proto3" json:"paths,omitempty"`
+	Truncation    ExportUsageTruncation `protobuf:"varint,4,opt,name=truncation,proto3,enum=bundlewhy.v1.ExportUsageTruncation" json:"truncation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportUsage) Reset() {
+	*x = ExportUsage{}
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportUsage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportUsage) ProtoMessage() {}
+
+func (x *ExportUsage) ProtoReflect() protoreflect.Message {
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportUsage.ProtoReflect.Descriptor instead.
+func (*ExportUsage) Descriptor() ([]byte, []int) {
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ExportUsage) GetState() ExportUsageState {
+	if x != nil {
+		return x.State
+	}
+	return ExportUsageState_EXPORT_USAGE_STATE_UNSPECIFIED
+}
+
+func (x *ExportUsage) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *ExportUsage) GetPaths() []*ExportUsagePath {
+	if x != nil {
+		return x.Paths
+	}
+	return nil
+}
+
+func (x *ExportUsage) GetTruncation() ExportUsageTruncation {
+	if x != nil {
+		return x.Truncation
+	}
+	return ExportUsageTruncation_EXPORT_USAGE_TRUNCATION_UNSPECIFIED
+}
+
 type CorrectiveAction struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Direction string                 `protobuf:"bytes,1,opt,name=direction,proto3" json:"direction,omitempty"`
@@ -1261,7 +1750,7 @@ type CorrectiveAction struct {
 
 func (x *CorrectiveAction) Reset() {
 	*x = CorrectiveAction{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[6]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1273,7 +1762,7 @@ func (x *CorrectiveAction) String() string {
 func (*CorrectiveAction) ProtoMessage() {}
 
 func (x *CorrectiveAction) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[6]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1286,7 +1775,7 @@ func (x *CorrectiveAction) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CorrectiveAction.ProtoReflect.Descriptor instead.
 func (*CorrectiveAction) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{6}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CorrectiveAction) GetDirection() string {
@@ -1322,15 +1811,18 @@ type Diagnostic struct {
 	Evidence          []*Evidence       `protobuf:"bytes,13,rep,name=evidence,proto3" json:"evidence,omitempty"`
 	CorrectiveAction  *CorrectiveAction `protobuf:"bytes,14,opt,name=corrective_action,json=correctiveAction,proto3" json:"corrective_action,omitempty"`
 	// Engine identity summary, for example "rspack 2.2.9 + SwcJsMinimizerRspackPlugin".
-	Engine        string `protobuf:"bytes,15,opt,name=engine,proto3" json:"engine,omitempty"`
-	Dependency    bool   `protobuf:"varint,16,opt,name=dependency,proto3" json:"dependency,omitempty"`
+	Engine     string `protobuf:"bytes,15,opt,name=engine,proto3" json:"engine,omitempty"`
+	Dependency bool   `protobuf:"varint,16,opt,name=dependency,proto3" json:"dependency,omitempty"`
+	// Optional export-level usage evidence. Absent for Vite diagnostics, rules
+	// without module scope and results saved before it existed.
+	ExportUsage   *ExportUsage `protobuf:"bytes,17,opt,name=export_usage,json=exportUsage,proto3" json:"export_usage,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Diagnostic) Reset() {
 	*x = Diagnostic{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[7]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1342,7 +1834,7 @@ func (x *Diagnostic) String() string {
 func (*Diagnostic) ProtoMessage() {}
 
 func (x *Diagnostic) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[7]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1355,7 +1847,7 @@ func (x *Diagnostic) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Diagnostic.ProtoReflect.Descriptor instead.
 func (*Diagnostic) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{7}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Diagnostic) GetId() string {
@@ -1470,6 +1962,13 @@ func (x *Diagnostic) GetDependency() bool {
 	return false
 }
 
+func (x *Diagnostic) GetExportUsage() *ExportUsage {
+	if x != nil {
+		return x.ExportUsage
+	}
+	return nil
+}
+
 type CategoryCoverage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Category      OptimizationCategory   `protobuf:"varint,1,opt,name=category,proto3,enum=bundlewhy.v1.OptimizationCategory" json:"category,omitempty"`
@@ -1482,7 +1981,7 @@ type CategoryCoverage struct {
 
 func (x *CategoryCoverage) Reset() {
 	*x = CategoryCoverage{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[8]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1494,7 +1993,7 @@ func (x *CategoryCoverage) String() string {
 func (*CategoryCoverage) ProtoMessage() {}
 
 func (x *CategoryCoverage) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[8]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1507,7 +2006,7 @@ func (x *CategoryCoverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CategoryCoverage.ProtoReflect.Descriptor instead.
 func (*CategoryCoverage) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{8}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CategoryCoverage) GetCategory() OptimizationCategory {
@@ -1548,7 +2047,7 @@ type SourceAttribution struct {
 
 func (x *SourceAttribution) Reset() {
 	*x = SourceAttribution{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[9]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1560,7 +2059,7 @@ func (x *SourceAttribution) String() string {
 func (*SourceAttribution) ProtoMessage() {}
 
 func (x *SourceAttribution) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[9]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1573,7 +2072,7 @@ func (x *SourceAttribution) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceAttribution.ProtoReflect.Descriptor instead.
 func (*SourceAttribution) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{9}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SourceAttribution) GetPath() string {
@@ -1608,7 +2107,7 @@ type ChunkSize struct {
 
 func (x *ChunkSize) Reset() {
 	*x = ChunkSize{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[10]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1620,7 +2119,7 @@ func (x *ChunkSize) String() string {
 func (*ChunkSize) ProtoMessage() {}
 
 func (x *ChunkSize) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[10]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1633,7 +2132,7 @@ func (x *ChunkSize) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChunkSize.ProtoReflect.Descriptor instead.
 func (*ChunkSize) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{10}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ChunkSize) GetFile() string {
@@ -1705,7 +2204,7 @@ type Problem struct {
 
 func (x *Problem) Reset() {
 	*x = Problem{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[11]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1717,7 +2216,7 @@ func (x *Problem) String() string {
 func (*Problem) ProtoMessage() {}
 
 func (x *Problem) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[11]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1730,7 +2229,7 @@ func (x *Problem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Problem.ProtoReflect.Descriptor instead.
 func (*Problem) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{11}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Problem) GetCode() string {
@@ -1771,7 +2270,7 @@ type ConfigEntry struct {
 
 func (x *ConfigEntry) Reset() {
 	*x = ConfigEntry{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[12]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1783,7 +2282,7 @@ func (x *ConfigEntry) String() string {
 func (*ConfigEntry) ProtoMessage() {}
 
 func (x *ConfigEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[12]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1796,7 +2295,7 @@ func (x *ConfigEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigEntry.ProtoReflect.Descriptor instead.
 func (*ConfigEntry) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{12}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ConfigEntry) GetKey() string {
@@ -1831,7 +2330,7 @@ type SourceFile struct {
 
 func (x *SourceFile) Reset() {
 	*x = SourceFile{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[13]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1843,7 +2342,7 @@ func (x *SourceFile) String() string {
 func (*SourceFile) ProtoMessage() {}
 
 func (x *SourceFile) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[13]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1856,7 +2355,7 @@ func (x *SourceFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceFile.ProtoReflect.Descriptor instead.
 func (*SourceFile) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{13}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *SourceFile) GetId() string {
@@ -1930,7 +2429,7 @@ type SourceFileSummary struct {
 
 func (x *SourceFileSummary) Reset() {
 	*x = SourceFileSummary{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[14]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1942,7 +2441,7 @@ func (x *SourceFileSummary) String() string {
 func (*SourceFileSummary) ProtoMessage() {}
 
 func (x *SourceFileSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[14]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1955,7 +2454,7 @@ func (x *SourceFileSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceFileSummary.ProtoReflect.Descriptor instead.
 func (*SourceFileSummary) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{14}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SourceFileSummary) GetId() string {
@@ -2032,7 +2531,7 @@ type Analysis struct {
 
 func (x *Analysis) Reset() {
 	*x = Analysis{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[15]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2044,7 +2543,7 @@ func (x *Analysis) String() string {
 func (*Analysis) ProtoMessage() {}
 
 func (x *Analysis) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[15]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2057,7 +2556,7 @@ func (x *Analysis) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Analysis.ProtoReflect.Descriptor instead.
 func (*Analysis) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{15}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *Analysis) GetSchemaVersion() uint32 {
@@ -2194,7 +2693,7 @@ type RunProgress struct {
 
 func (x *RunProgress) Reset() {
 	*x = RunProgress{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[16]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2206,7 +2705,7 @@ func (x *RunProgress) String() string {
 func (*RunProgress) ProtoMessage() {}
 
 func (x *RunProgress) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[16]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2219,7 +2718,7 @@ func (x *RunProgress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunProgress.ProtoReflect.Descriptor instead.
 func (*RunProgress) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{16}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RunProgress) GetRunId() string {
@@ -2279,7 +2778,7 @@ type GetRunProgressRequest struct {
 
 func (x *GetRunProgressRequest) Reset() {
 	*x = GetRunProgressRequest{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[17]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2291,7 +2790,7 @@ func (x *GetRunProgressRequest) String() string {
 func (*GetRunProgressRequest) ProtoMessage() {}
 
 func (x *GetRunProgressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[17]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2304,7 +2803,7 @@ func (x *GetRunProgressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRunProgressRequest.ProtoReflect.Descriptor instead.
 func (*GetRunProgressRequest) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{17}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{21}
 }
 
 type GetRunProgressResponse struct {
@@ -2316,7 +2815,7 @@ type GetRunProgressResponse struct {
 
 func (x *GetRunProgressResponse) Reset() {
 	*x = GetRunProgressResponse{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[18]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2328,7 +2827,7 @@ func (x *GetRunProgressResponse) String() string {
 func (*GetRunProgressResponse) ProtoMessage() {}
 
 func (x *GetRunProgressResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[18]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2341,7 +2840,7 @@ func (x *GetRunProgressResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRunProgressResponse.ProtoReflect.Descriptor instead.
 func (*GetRunProgressResponse) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{18}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GetRunProgressResponse) GetProgress() *RunProgress {
@@ -2359,7 +2858,7 @@ type GetAnalysisRequest struct {
 
 func (x *GetAnalysisRequest) Reset() {
 	*x = GetAnalysisRequest{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[19]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2371,7 +2870,7 @@ func (x *GetAnalysisRequest) String() string {
 func (*GetAnalysisRequest) ProtoMessage() {}
 
 func (x *GetAnalysisRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[19]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2384,7 +2883,7 @@ func (x *GetAnalysisRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAnalysisRequest.ProtoReflect.Descriptor instead.
 func (*GetAnalysisRequest) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{19}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{23}
 }
 
 type GetAnalysisResponse struct {
@@ -2396,7 +2895,7 @@ type GetAnalysisResponse struct {
 
 func (x *GetAnalysisResponse) Reset() {
 	*x = GetAnalysisResponse{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[20]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2408,7 +2907,7 @@ func (x *GetAnalysisResponse) String() string {
 func (*GetAnalysisResponse) ProtoMessage() {}
 
 func (x *GetAnalysisResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[20]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2421,7 +2920,7 @@ func (x *GetAnalysisResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAnalysisResponse.ProtoReflect.Descriptor instead.
 func (*GetAnalysisResponse) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{20}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetAnalysisResponse) GetAnalysis() *Analysis {
@@ -2440,7 +2939,7 @@ type GetSourceFileRequest struct {
 
 func (x *GetSourceFileRequest) Reset() {
 	*x = GetSourceFileRequest{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[21]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2452,7 +2951,7 @@ func (x *GetSourceFileRequest) String() string {
 func (*GetSourceFileRequest) ProtoMessage() {}
 
 func (x *GetSourceFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[21]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2465,7 +2964,7 @@ func (x *GetSourceFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSourceFileRequest.ProtoReflect.Descriptor instead.
 func (*GetSourceFileRequest) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{21}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetSourceFileRequest) GetSourceId() string {
@@ -2484,7 +2983,7 @@ type GetSourceFileResponse struct {
 
 func (x *GetSourceFileResponse) Reset() {
 	*x = GetSourceFileResponse{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[22]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2496,7 +2995,7 @@ func (x *GetSourceFileResponse) String() string {
 func (*GetSourceFileResponse) ProtoMessage() {}
 
 func (x *GetSourceFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[22]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2509,7 +3008,7 @@ func (x *GetSourceFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSourceFileResponse.ProtoReflect.Descriptor instead.
 func (*GetSourceFileResponse) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{22}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetSourceFileResponse) GetSource() *SourceFile {
@@ -2527,7 +3026,7 @@ type CancelRunRequest struct {
 
 func (x *CancelRunRequest) Reset() {
 	*x = CancelRunRequest{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[23]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2539,7 +3038,7 @@ func (x *CancelRunRequest) String() string {
 func (*CancelRunRequest) ProtoMessage() {}
 
 func (x *CancelRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[23]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2552,7 +3051,7 @@ func (x *CancelRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelRunRequest.ProtoReflect.Descriptor instead.
 func (*CancelRunRequest) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{23}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{27}
 }
 
 type CancelRunResponse struct {
@@ -2564,7 +3063,7 @@ type CancelRunResponse struct {
 
 func (x *CancelRunResponse) Reset() {
 	*x = CancelRunResponse{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[24]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2576,7 +3075,7 @@ func (x *CancelRunResponse) String() string {
 func (*CancelRunResponse) ProtoMessage() {}
 
 func (x *CancelRunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[24]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2589,7 +3088,7 @@ func (x *CancelRunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelRunResponse.ProtoReflect.Descriptor instead.
 func (*CancelRunResponse) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{24}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CancelRunResponse) GetProgress() *RunProgress {
@@ -2613,7 +3112,7 @@ type RunSummary struct {
 
 func (x *RunSummary) Reset() {
 	*x = RunSummary{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[25]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2625,7 +3124,7 @@ func (x *RunSummary) String() string {
 func (*RunSummary) ProtoMessage() {}
 
 func (x *RunSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[25]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2638,7 +3137,7 @@ func (x *RunSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunSummary.ProtoReflect.Descriptor instead.
 func (*RunSummary) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{25}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *RunSummary) GetRunId() string {
@@ -2691,7 +3190,7 @@ type ListRunsRequest struct {
 
 func (x *ListRunsRequest) Reset() {
 	*x = ListRunsRequest{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[26]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2703,7 +3202,7 @@ func (x *ListRunsRequest) String() string {
 func (*ListRunsRequest) ProtoMessage() {}
 
 func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[26]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2716,7 +3215,7 @@ func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRunsRequest.ProtoReflect.Descriptor instead.
 func (*ListRunsRequest) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{26}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{30}
 }
 
 type ListRunsResponse struct {
@@ -2728,7 +3227,7 @@ type ListRunsResponse struct {
 
 func (x *ListRunsResponse) Reset() {
 	*x = ListRunsResponse{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[27]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2740,7 +3239,7 @@ func (x *ListRunsResponse) String() string {
 func (*ListRunsResponse) ProtoMessage() {}
 
 func (x *ListRunsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[27]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2753,7 +3252,7 @@ func (x *ListRunsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRunsResponse.ProtoReflect.Descriptor instead.
 func (*ListRunsResponse) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{27}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ListRunsResponse) GetRuns() []*RunSummary {
@@ -2772,7 +3271,7 @@ type SelectRunRequest struct {
 
 func (x *SelectRunRequest) Reset() {
 	*x = SelectRunRequest{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[28]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2784,7 +3283,7 @@ func (x *SelectRunRequest) String() string {
 func (*SelectRunRequest) ProtoMessage() {}
 
 func (x *SelectRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[28]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2797,7 +3296,7 @@ func (x *SelectRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SelectRunRequest.ProtoReflect.Descriptor instead.
 func (*SelectRunRequest) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{28}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *SelectRunRequest) GetRunId() string {
@@ -2816,7 +3315,7 @@ type SelectRunResponse struct {
 
 func (x *SelectRunResponse) Reset() {
 	*x = SelectRunResponse{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[29]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2828,7 +3327,7 @@ func (x *SelectRunResponse) String() string {
 func (*SelectRunResponse) ProtoMessage() {}
 
 func (x *SelectRunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[29]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2841,7 +3340,7 @@ func (x *SelectRunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SelectRunResponse.ProtoReflect.Descriptor instead.
 func (*SelectRunResponse) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{29}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *SelectRunResponse) GetProgress() *RunProgress {
@@ -2860,7 +3359,7 @@ type ExportReportRequest struct {
 
 func (x *ExportReportRequest) Reset() {
 	*x = ExportReportRequest{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[30]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2872,7 +3371,7 @@ func (x *ExportReportRequest) String() string {
 func (*ExportReportRequest) ProtoMessage() {}
 
 func (x *ExportReportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[30]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2885,7 +3384,7 @@ func (x *ExportReportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportReportRequest.ProtoReflect.Descriptor instead.
 func (*ExportReportRequest) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{30}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ExportReportRequest) GetIncludeSources() bool {
@@ -2907,7 +3406,7 @@ type ExportReportResponse struct {
 
 func (x *ExportReportResponse) Reset() {
 	*x = ExportReportResponse{}
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[31]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2919,7 +3418,7 @@ func (x *ExportReportResponse) String() string {
 func (*ExportReportResponse) ProtoMessage() {}
 
 func (x *ExportReportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[31]
+	mi := &file_bundlewhy_v1_bundlewhy_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2932,7 +3431,7 @@ func (x *ExportReportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportReportResponse.ProtoReflect.Descriptor instead.
 func (*ExportReportResponse) Descriptor() ([]byte, []int) {
-	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{31}
+	return file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ExportReportResponse) GetFileName() string {
@@ -3001,10 +3500,30 @@ const file_bundlewhy_v1_bundlewhy_proto_rawDesc = "" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail\x124\n" +
 	"\x06status\x18\x03 \x01(\x0e2\x1c.bundlewhy.v1.EvidenceStatusR\x06status\"*\n" +
 	"\x0eDependencyPath\x12\x18\n" +
-	"\amodules\x18\x01 \x03(\tR\amodules\"H\n" +
+	"\amodules\x18\x01 \x03(\tR\amodules\"{\n" +
+	"\x0fExportReference\x12\x16\n" +
+	"\x06module\x18\x01 \x01(\tR\x06module\x12\x1f\n" +
+	"\vexport_path\x18\x02 \x03(\tR\n" +
+	"exportPath\x12/\n" +
+	"\x05scope\x18\x03 \x01(\x0e2\x19.bundlewhy.v1.ExportScopeR\x05scope\"\xc8\x01\n" +
+	"\x0fExportUsageEdge\x129\n" +
+	"\bconsumer\x18\x01 \x01(\v2\x1d.bundlewhy.v1.ExportReferenceR\bconsumer\x129\n" +
+	"\bprovider\x18\x02 \x01(\v2\x1d.bundlewhy.v1.ExportReferenceR\bprovider\x12#\n" +
+	"\rdependency_id\x18\x03 \x01(\tR\fdependencyId\x12\x1a\n" +
+	"\blocation\x18\x04 \x01(\tR\blocation\"z\n" +
+	"\x0fExportUsagePath\x123\n" +
+	"\x05edges\x18\x01 \x03(\v2\x1d.bundlewhy.v1.ExportUsageEdgeR\x05edges\x122\n" +
+	"\x03end\x18\x02 \x01(\x0e2 .bundlewhy.v1.ExportUsagePathEndR\x03end\"\xd1\x01\n" +
+	"\vExportUsage\x124\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x1e.bundlewhy.v1.ExportUsageStateR\x05state\x12\x12\n" +
+	"\x04note\x18\x02 \x01(\tR\x04note\x123\n" +
+	"\x05paths\x18\x03 \x03(\v2\x1d.bundlewhy.v1.ExportUsagePathR\x05paths\x12C\n" +
+	"\n" +
+	"truncation\x18\x04 \x01(\x0e2#.bundlewhy.v1.ExportUsageTruncationR\n" +
+	"truncation\"H\n" +
 	"\x10CorrectiveAction\x12\x1c\n" +
 	"\tdirection\x18\x01 \x01(\tR\tdirection\x12\x16\n" +
-	"\x06safety\x18\x02 \x01(\tR\x06safety\"\xe5\x05\n" +
+	"\x06safety\x18\x02 \x01(\tR\x06safety\"\xa3\x06\n" +
 	"\n" +
 	"Diagnostic\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12>\n" +
@@ -3027,7 +3546,8 @@ const file_bundlewhy_v1_bundlewhy_proto_rawDesc = "" +
 	"\x06engine\x18\x0f \x01(\tR\x06engine\x12\x1e\n" +
 	"\n" +
 	"dependency\x18\x10 \x01(\bR\n" +
-	"dependency\"\xaf\x01\n" +
+	"dependency\x12<\n" +
+	"\fexport_usage\x18\x11 \x01(\v2\x19.bundlewhy.v1.ExportUsageR\vexportUsage\"\xaf\x01\n" +
 	"\x10CategoryCoverage\x12>\n" +
 	"\bcategory\x18\x01 \x01(\x0e2\".bundlewhy.v1.OptimizationCategoryR\bcategory\x121\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x1b.bundlewhy.v1.CoverageStateR\x05state\x12\x12\n" +
@@ -3203,7 +3723,27 @@ const file_bundlewhy_v1_bundlewhy_proto_rawDesc = "" +
 	"\x16SourceRevisionEvidence\x12(\n" +
 	"$SOURCE_REVISION_EVIDENCE_UNSPECIFIED\x10\x00\x12+\n" +
 	"'SOURCE_REVISION_EVIDENCE_BUILD_SNAPSHOT\x10\x01\x12(\n" +
-	"$SOURCE_REVISION_EVIDENCE_UNAVAILABLE\x10\x02*y\n" +
+	"$SOURCE_REVISION_EVIDENCE_UNAVAILABLE\x10\x02*|\n" +
+	"\x10ExportUsageState\x12\"\n" +
+	"\x1eEXPORT_USAGE_STATE_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cEXPORT_USAGE_STATE_AVAILABLE\x10\x01\x12\"\n" +
+	"\x1eEXPORT_USAGE_STATE_UNAVAILABLE\x10\x02*\\\n" +
+	"\vExportScope\x12\x1c\n" +
+	"\x18EXPORT_SCOPE_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12EXPORT_SCOPE_NAMED\x10\x01\x12\x17\n" +
+	"\x13EXPORT_SCOPE_MODULE\x10\x02*\xc7\x01\n" +
+	"\x12ExportUsagePathEnd\x12%\n" +
+	"!EXPORT_USAGE_PATH_END_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aEXPORT_USAGE_PATH_END_ROOT\x10\x01\x12\x1f\n" +
+	"\x1bEXPORT_USAGE_PATH_END_CYCLE\x10\x02\x12#\n" +
+	"\x1fEXPORT_USAGE_PATH_END_TRUNCATED\x10\x03\x12$\n" +
+	" EXPORT_USAGE_PATH_END_INCOMPLETE\x10\x04*\xdb\x01\n" +
+	"\x15ExportUsageTruncation\x12'\n" +
+	"#EXPORT_USAGE_TRUNCATION_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cEXPORT_USAGE_TRUNCATION_NONE\x10\x01\x12&\n" +
+	"\"EXPORT_USAGE_TRUNCATION_PATH_COUNT\x10\x02\x12!\n" +
+	"\x1dEXPORT_USAGE_TRUNCATION_DEPTH\x10\x03\x12,\n" +
+	"(EXPORT_USAGE_TRUNCATION_EXPANSION_BUDGET\x10\x04*y\n" +
 	"\x10AttributionState\x12!\n" +
 	"\x1dATTRIBUTION_STATE_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bATTRIBUTION_STATE_SUPPORTED\x10\x01\x12!\n" +
@@ -3239,8 +3779,8 @@ func file_bundlewhy_v1_bundlewhy_proto_rawDescGZIP() []byte {
 	return file_bundlewhy_v1_bundlewhy_proto_rawDescData
 }
 
-var file_bundlewhy_v1_bundlewhy_proto_enumTypes = make([]protoimpl.EnumInfo, 14)
-var file_bundlewhy_v1_bundlewhy_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_bundlewhy_v1_bundlewhy_proto_enumTypes = make([]protoimpl.EnumInfo, 18)
+var file_bundlewhy_v1_bundlewhy_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_bundlewhy_v1_bundlewhy_proto_goTypes = []any{
 	(OptimizationCategory)(0),      // 0: bundlewhy.v1.OptimizationCategory
 	(EvidenceStatus)(0),            // 1: bundlewhy.v1.EvidenceStatus
@@ -3253,41 +3793,49 @@ var file_bundlewhy_v1_bundlewhy_proto_goTypes = []any{
 	(LocationKind)(0),              // 8: bundlewhy.v1.LocationKind
 	(SourceOrigin)(0),              // 9: bundlewhy.v1.SourceOrigin
 	(SourceRevisionEvidence)(0),    // 10: bundlewhy.v1.SourceRevisionEvidence
-	(AttributionState)(0),          // 11: bundlewhy.v1.AttributionState
-	(ProblemSeverity)(0),           // 12: bundlewhy.v1.ProblemSeverity
-	(ReportMode)(0),                // 13: bundlewhy.v1.ReportMode
-	(*EngineIdentity)(nil),         // 14: bundlewhy.v1.EngineIdentity
-	(*SourceLocation)(nil),         // 15: bundlewhy.v1.SourceLocation
-	(*CodeSnippet)(nil),            // 16: bundlewhy.v1.CodeSnippet
-	(*Condition)(nil),              // 17: bundlewhy.v1.Condition
-	(*Evidence)(nil),               // 18: bundlewhy.v1.Evidence
-	(*DependencyPath)(nil),         // 19: bundlewhy.v1.DependencyPath
-	(*CorrectiveAction)(nil),       // 20: bundlewhy.v1.CorrectiveAction
-	(*Diagnostic)(nil),             // 21: bundlewhy.v1.Diagnostic
-	(*CategoryCoverage)(nil),       // 22: bundlewhy.v1.CategoryCoverage
-	(*SourceAttribution)(nil),      // 23: bundlewhy.v1.SourceAttribution
-	(*ChunkSize)(nil),              // 24: bundlewhy.v1.ChunkSize
-	(*Problem)(nil),                // 25: bundlewhy.v1.Problem
-	(*ConfigEntry)(nil),            // 26: bundlewhy.v1.ConfigEntry
-	(*SourceFile)(nil),             // 27: bundlewhy.v1.SourceFile
-	(*SourceFileSummary)(nil),      // 28: bundlewhy.v1.SourceFileSummary
-	(*Analysis)(nil),               // 29: bundlewhy.v1.Analysis
-	(*RunProgress)(nil),            // 30: bundlewhy.v1.RunProgress
-	(*GetRunProgressRequest)(nil),  // 31: bundlewhy.v1.GetRunProgressRequest
-	(*GetRunProgressResponse)(nil), // 32: bundlewhy.v1.GetRunProgressResponse
-	(*GetAnalysisRequest)(nil),     // 33: bundlewhy.v1.GetAnalysisRequest
-	(*GetAnalysisResponse)(nil),    // 34: bundlewhy.v1.GetAnalysisResponse
-	(*GetSourceFileRequest)(nil),   // 35: bundlewhy.v1.GetSourceFileRequest
-	(*GetSourceFileResponse)(nil),  // 36: bundlewhy.v1.GetSourceFileResponse
-	(*CancelRunRequest)(nil),       // 37: bundlewhy.v1.CancelRunRequest
-	(*CancelRunResponse)(nil),      // 38: bundlewhy.v1.CancelRunResponse
-	(*RunSummary)(nil),             // 39: bundlewhy.v1.RunSummary
-	(*ListRunsRequest)(nil),        // 40: bundlewhy.v1.ListRunsRequest
-	(*ListRunsResponse)(nil),       // 41: bundlewhy.v1.ListRunsResponse
-	(*SelectRunRequest)(nil),       // 42: bundlewhy.v1.SelectRunRequest
-	(*SelectRunResponse)(nil),      // 43: bundlewhy.v1.SelectRunResponse
-	(*ExportReportRequest)(nil),    // 44: bundlewhy.v1.ExportReportRequest
-	(*ExportReportResponse)(nil),   // 45: bundlewhy.v1.ExportReportResponse
+	(ExportUsageState)(0),          // 11: bundlewhy.v1.ExportUsageState
+	(ExportScope)(0),               // 12: bundlewhy.v1.ExportScope
+	(ExportUsagePathEnd)(0),        // 13: bundlewhy.v1.ExportUsagePathEnd
+	(ExportUsageTruncation)(0),     // 14: bundlewhy.v1.ExportUsageTruncation
+	(AttributionState)(0),          // 15: bundlewhy.v1.AttributionState
+	(ProblemSeverity)(0),           // 16: bundlewhy.v1.ProblemSeverity
+	(ReportMode)(0),                // 17: bundlewhy.v1.ReportMode
+	(*EngineIdentity)(nil),         // 18: bundlewhy.v1.EngineIdentity
+	(*SourceLocation)(nil),         // 19: bundlewhy.v1.SourceLocation
+	(*CodeSnippet)(nil),            // 20: bundlewhy.v1.CodeSnippet
+	(*Condition)(nil),              // 21: bundlewhy.v1.Condition
+	(*Evidence)(nil),               // 22: bundlewhy.v1.Evidence
+	(*DependencyPath)(nil),         // 23: bundlewhy.v1.DependencyPath
+	(*ExportReference)(nil),        // 24: bundlewhy.v1.ExportReference
+	(*ExportUsageEdge)(nil),        // 25: bundlewhy.v1.ExportUsageEdge
+	(*ExportUsagePath)(nil),        // 26: bundlewhy.v1.ExportUsagePath
+	(*ExportUsage)(nil),            // 27: bundlewhy.v1.ExportUsage
+	(*CorrectiveAction)(nil),       // 28: bundlewhy.v1.CorrectiveAction
+	(*Diagnostic)(nil),             // 29: bundlewhy.v1.Diagnostic
+	(*CategoryCoverage)(nil),       // 30: bundlewhy.v1.CategoryCoverage
+	(*SourceAttribution)(nil),      // 31: bundlewhy.v1.SourceAttribution
+	(*ChunkSize)(nil),              // 32: bundlewhy.v1.ChunkSize
+	(*Problem)(nil),                // 33: bundlewhy.v1.Problem
+	(*ConfigEntry)(nil),            // 34: bundlewhy.v1.ConfigEntry
+	(*SourceFile)(nil),             // 35: bundlewhy.v1.SourceFile
+	(*SourceFileSummary)(nil),      // 36: bundlewhy.v1.SourceFileSummary
+	(*Analysis)(nil),               // 37: bundlewhy.v1.Analysis
+	(*RunProgress)(nil),            // 38: bundlewhy.v1.RunProgress
+	(*GetRunProgressRequest)(nil),  // 39: bundlewhy.v1.GetRunProgressRequest
+	(*GetRunProgressResponse)(nil), // 40: bundlewhy.v1.GetRunProgressResponse
+	(*GetAnalysisRequest)(nil),     // 41: bundlewhy.v1.GetAnalysisRequest
+	(*GetAnalysisResponse)(nil),    // 42: bundlewhy.v1.GetAnalysisResponse
+	(*GetSourceFileRequest)(nil),   // 43: bundlewhy.v1.GetSourceFileRequest
+	(*GetSourceFileResponse)(nil),  // 44: bundlewhy.v1.GetSourceFileResponse
+	(*CancelRunRequest)(nil),       // 45: bundlewhy.v1.CancelRunRequest
+	(*CancelRunResponse)(nil),      // 46: bundlewhy.v1.CancelRunResponse
+	(*RunSummary)(nil),             // 47: bundlewhy.v1.RunSummary
+	(*ListRunsRequest)(nil),        // 48: bundlewhy.v1.ListRunsRequest
+	(*ListRunsResponse)(nil),       // 49: bundlewhy.v1.ListRunsResponse
+	(*SelectRunRequest)(nil),       // 50: bundlewhy.v1.SelectRunRequest
+	(*SelectRunResponse)(nil),      // 51: bundlewhy.v1.SelectRunResponse
+	(*ExportReportRequest)(nil),    // 52: bundlewhy.v1.ExportReportRequest
+	(*ExportReportResponse)(nil),   // 53: bundlewhy.v1.ExportReportResponse
 }
 var file_bundlewhy_v1_bundlewhy_proto_depIdxs = []int32{
 	5,  // 0: bundlewhy.v1.EngineIdentity.bundler:type_name -> bundlewhy.v1.Bundler
@@ -3296,63 +3844,72 @@ var file_bundlewhy_v1_bundlewhy_proto_depIdxs = []int32{
 	8,  // 3: bundlewhy.v1.CodeSnippet.kind:type_name -> bundlewhy.v1.LocationKind
 	2,  // 4: bundlewhy.v1.Condition.outcome:type_name -> bundlewhy.v1.ConditionOutcome
 	1,  // 5: bundlewhy.v1.Evidence.status:type_name -> bundlewhy.v1.EvidenceStatus
-	0,  // 6: bundlewhy.v1.Diagnostic.category:type_name -> bundlewhy.v1.OptimizationCategory
-	1,  // 7: bundlewhy.v1.Diagnostic.status:type_name -> bundlewhy.v1.EvidenceStatus
-	17, // 8: bundlewhy.v1.Diagnostic.conditions:type_name -> bundlewhy.v1.Condition
-	15, // 9: bundlewhy.v1.Diagnostic.location:type_name -> bundlewhy.v1.SourceLocation
-	15, // 10: bundlewhy.v1.Diagnostic.generated_location:type_name -> bundlewhy.v1.SourceLocation
-	16, // 11: bundlewhy.v1.Diagnostic.snippet:type_name -> bundlewhy.v1.CodeSnippet
-	19, // 12: bundlewhy.v1.Diagnostic.dependency_paths:type_name -> bundlewhy.v1.DependencyPath
-	18, // 13: bundlewhy.v1.Diagnostic.evidence:type_name -> bundlewhy.v1.Evidence
-	20, // 14: bundlewhy.v1.Diagnostic.corrective_action:type_name -> bundlewhy.v1.CorrectiveAction
-	0,  // 15: bundlewhy.v1.CategoryCoverage.category:type_name -> bundlewhy.v1.OptimizationCategory
-	7,  // 16: bundlewhy.v1.CategoryCoverage.state:type_name -> bundlewhy.v1.CoverageState
-	11, // 17: bundlewhy.v1.ChunkSize.attribution:type_name -> bundlewhy.v1.AttributionState
-	23, // 18: bundlewhy.v1.ChunkSize.sources:type_name -> bundlewhy.v1.SourceAttribution
-	12, // 19: bundlewhy.v1.Problem.severity:type_name -> bundlewhy.v1.ProblemSeverity
-	9,  // 20: bundlewhy.v1.SourceFile.origin:type_name -> bundlewhy.v1.SourceOrigin
-	10, // 21: bundlewhy.v1.SourceFile.revision_evidence:type_name -> bundlewhy.v1.SourceRevisionEvidence
-	9,  // 22: bundlewhy.v1.SourceFileSummary.origin:type_name -> bundlewhy.v1.SourceOrigin
-	10, // 23: bundlewhy.v1.SourceFileSummary.revision_evidence:type_name -> bundlewhy.v1.SourceRevisionEvidence
-	3,  // 24: bundlewhy.v1.Analysis.status:type_name -> bundlewhy.v1.RunStatus
-	14, // 25: bundlewhy.v1.Analysis.engine:type_name -> bundlewhy.v1.EngineIdentity
-	21, // 26: bundlewhy.v1.Analysis.diagnostics:type_name -> bundlewhy.v1.Diagnostic
-	22, // 27: bundlewhy.v1.Analysis.coverage:type_name -> bundlewhy.v1.CategoryCoverage
-	24, // 28: bundlewhy.v1.Analysis.chunks:type_name -> bundlewhy.v1.ChunkSize
-	25, // 29: bundlewhy.v1.Analysis.problems:type_name -> bundlewhy.v1.Problem
-	26, // 30: bundlewhy.v1.Analysis.config_summary:type_name -> bundlewhy.v1.ConfigEntry
-	28, // 31: bundlewhy.v1.Analysis.sources:type_name -> bundlewhy.v1.SourceFileSummary
-	13, // 32: bundlewhy.v1.Analysis.mode:type_name -> bundlewhy.v1.ReportMode
-	3,  // 33: bundlewhy.v1.RunProgress.status:type_name -> bundlewhy.v1.RunStatus
-	4,  // 34: bundlewhy.v1.RunProgress.stage:type_name -> bundlewhy.v1.RunStage
-	13, // 35: bundlewhy.v1.RunProgress.mode:type_name -> bundlewhy.v1.ReportMode
-	30, // 36: bundlewhy.v1.GetRunProgressResponse.progress:type_name -> bundlewhy.v1.RunProgress
-	29, // 37: bundlewhy.v1.GetAnalysisResponse.analysis:type_name -> bundlewhy.v1.Analysis
-	27, // 38: bundlewhy.v1.GetSourceFileResponse.source:type_name -> bundlewhy.v1.SourceFile
-	30, // 39: bundlewhy.v1.CancelRunResponse.progress:type_name -> bundlewhy.v1.RunProgress
-	3,  // 40: bundlewhy.v1.RunSummary.status:type_name -> bundlewhy.v1.RunStatus
-	5,  // 41: bundlewhy.v1.RunSummary.bundler:type_name -> bundlewhy.v1.Bundler
-	39, // 42: bundlewhy.v1.ListRunsResponse.runs:type_name -> bundlewhy.v1.RunSummary
-	30, // 43: bundlewhy.v1.SelectRunResponse.progress:type_name -> bundlewhy.v1.RunProgress
-	31, // 44: bundlewhy.v1.AnalysisService.GetRunProgress:input_type -> bundlewhy.v1.GetRunProgressRequest
-	33, // 45: bundlewhy.v1.AnalysisService.GetAnalysis:input_type -> bundlewhy.v1.GetAnalysisRequest
-	35, // 46: bundlewhy.v1.AnalysisService.GetSourceFile:input_type -> bundlewhy.v1.GetSourceFileRequest
-	37, // 47: bundlewhy.v1.AnalysisService.CancelRun:input_type -> bundlewhy.v1.CancelRunRequest
-	40, // 48: bundlewhy.v1.AnalysisService.ListRuns:input_type -> bundlewhy.v1.ListRunsRequest
-	42, // 49: bundlewhy.v1.AnalysisService.SelectRun:input_type -> bundlewhy.v1.SelectRunRequest
-	44, // 50: bundlewhy.v1.AnalysisService.ExportReport:input_type -> bundlewhy.v1.ExportReportRequest
-	32, // 51: bundlewhy.v1.AnalysisService.GetRunProgress:output_type -> bundlewhy.v1.GetRunProgressResponse
-	34, // 52: bundlewhy.v1.AnalysisService.GetAnalysis:output_type -> bundlewhy.v1.GetAnalysisResponse
-	36, // 53: bundlewhy.v1.AnalysisService.GetSourceFile:output_type -> bundlewhy.v1.GetSourceFileResponse
-	38, // 54: bundlewhy.v1.AnalysisService.CancelRun:output_type -> bundlewhy.v1.CancelRunResponse
-	41, // 55: bundlewhy.v1.AnalysisService.ListRuns:output_type -> bundlewhy.v1.ListRunsResponse
-	43, // 56: bundlewhy.v1.AnalysisService.SelectRun:output_type -> bundlewhy.v1.SelectRunResponse
-	45, // 57: bundlewhy.v1.AnalysisService.ExportReport:output_type -> bundlewhy.v1.ExportReportResponse
-	51, // [51:58] is the sub-list for method output_type
-	44, // [44:51] is the sub-list for method input_type
-	44, // [44:44] is the sub-list for extension type_name
-	44, // [44:44] is the sub-list for extension extendee
-	0,  // [0:44] is the sub-list for field type_name
+	12, // 6: bundlewhy.v1.ExportReference.scope:type_name -> bundlewhy.v1.ExportScope
+	24, // 7: bundlewhy.v1.ExportUsageEdge.consumer:type_name -> bundlewhy.v1.ExportReference
+	24, // 8: bundlewhy.v1.ExportUsageEdge.provider:type_name -> bundlewhy.v1.ExportReference
+	25, // 9: bundlewhy.v1.ExportUsagePath.edges:type_name -> bundlewhy.v1.ExportUsageEdge
+	13, // 10: bundlewhy.v1.ExportUsagePath.end:type_name -> bundlewhy.v1.ExportUsagePathEnd
+	11, // 11: bundlewhy.v1.ExportUsage.state:type_name -> bundlewhy.v1.ExportUsageState
+	26, // 12: bundlewhy.v1.ExportUsage.paths:type_name -> bundlewhy.v1.ExportUsagePath
+	14, // 13: bundlewhy.v1.ExportUsage.truncation:type_name -> bundlewhy.v1.ExportUsageTruncation
+	0,  // 14: bundlewhy.v1.Diagnostic.category:type_name -> bundlewhy.v1.OptimizationCategory
+	1,  // 15: bundlewhy.v1.Diagnostic.status:type_name -> bundlewhy.v1.EvidenceStatus
+	21, // 16: bundlewhy.v1.Diagnostic.conditions:type_name -> bundlewhy.v1.Condition
+	19, // 17: bundlewhy.v1.Diagnostic.location:type_name -> bundlewhy.v1.SourceLocation
+	19, // 18: bundlewhy.v1.Diagnostic.generated_location:type_name -> bundlewhy.v1.SourceLocation
+	20, // 19: bundlewhy.v1.Diagnostic.snippet:type_name -> bundlewhy.v1.CodeSnippet
+	23, // 20: bundlewhy.v1.Diagnostic.dependency_paths:type_name -> bundlewhy.v1.DependencyPath
+	22, // 21: bundlewhy.v1.Diagnostic.evidence:type_name -> bundlewhy.v1.Evidence
+	28, // 22: bundlewhy.v1.Diagnostic.corrective_action:type_name -> bundlewhy.v1.CorrectiveAction
+	27, // 23: bundlewhy.v1.Diagnostic.export_usage:type_name -> bundlewhy.v1.ExportUsage
+	0,  // 24: bundlewhy.v1.CategoryCoverage.category:type_name -> bundlewhy.v1.OptimizationCategory
+	7,  // 25: bundlewhy.v1.CategoryCoverage.state:type_name -> bundlewhy.v1.CoverageState
+	15, // 26: bundlewhy.v1.ChunkSize.attribution:type_name -> bundlewhy.v1.AttributionState
+	31, // 27: bundlewhy.v1.ChunkSize.sources:type_name -> bundlewhy.v1.SourceAttribution
+	16, // 28: bundlewhy.v1.Problem.severity:type_name -> bundlewhy.v1.ProblemSeverity
+	9,  // 29: bundlewhy.v1.SourceFile.origin:type_name -> bundlewhy.v1.SourceOrigin
+	10, // 30: bundlewhy.v1.SourceFile.revision_evidence:type_name -> bundlewhy.v1.SourceRevisionEvidence
+	9,  // 31: bundlewhy.v1.SourceFileSummary.origin:type_name -> bundlewhy.v1.SourceOrigin
+	10, // 32: bundlewhy.v1.SourceFileSummary.revision_evidence:type_name -> bundlewhy.v1.SourceRevisionEvidence
+	3,  // 33: bundlewhy.v1.Analysis.status:type_name -> bundlewhy.v1.RunStatus
+	18, // 34: bundlewhy.v1.Analysis.engine:type_name -> bundlewhy.v1.EngineIdentity
+	29, // 35: bundlewhy.v1.Analysis.diagnostics:type_name -> bundlewhy.v1.Diagnostic
+	30, // 36: bundlewhy.v1.Analysis.coverage:type_name -> bundlewhy.v1.CategoryCoverage
+	32, // 37: bundlewhy.v1.Analysis.chunks:type_name -> bundlewhy.v1.ChunkSize
+	33, // 38: bundlewhy.v1.Analysis.problems:type_name -> bundlewhy.v1.Problem
+	34, // 39: bundlewhy.v1.Analysis.config_summary:type_name -> bundlewhy.v1.ConfigEntry
+	36, // 40: bundlewhy.v1.Analysis.sources:type_name -> bundlewhy.v1.SourceFileSummary
+	17, // 41: bundlewhy.v1.Analysis.mode:type_name -> bundlewhy.v1.ReportMode
+	3,  // 42: bundlewhy.v1.RunProgress.status:type_name -> bundlewhy.v1.RunStatus
+	4,  // 43: bundlewhy.v1.RunProgress.stage:type_name -> bundlewhy.v1.RunStage
+	17, // 44: bundlewhy.v1.RunProgress.mode:type_name -> bundlewhy.v1.ReportMode
+	38, // 45: bundlewhy.v1.GetRunProgressResponse.progress:type_name -> bundlewhy.v1.RunProgress
+	37, // 46: bundlewhy.v1.GetAnalysisResponse.analysis:type_name -> bundlewhy.v1.Analysis
+	35, // 47: bundlewhy.v1.GetSourceFileResponse.source:type_name -> bundlewhy.v1.SourceFile
+	38, // 48: bundlewhy.v1.CancelRunResponse.progress:type_name -> bundlewhy.v1.RunProgress
+	3,  // 49: bundlewhy.v1.RunSummary.status:type_name -> bundlewhy.v1.RunStatus
+	5,  // 50: bundlewhy.v1.RunSummary.bundler:type_name -> bundlewhy.v1.Bundler
+	47, // 51: bundlewhy.v1.ListRunsResponse.runs:type_name -> bundlewhy.v1.RunSummary
+	38, // 52: bundlewhy.v1.SelectRunResponse.progress:type_name -> bundlewhy.v1.RunProgress
+	39, // 53: bundlewhy.v1.AnalysisService.GetRunProgress:input_type -> bundlewhy.v1.GetRunProgressRequest
+	41, // 54: bundlewhy.v1.AnalysisService.GetAnalysis:input_type -> bundlewhy.v1.GetAnalysisRequest
+	43, // 55: bundlewhy.v1.AnalysisService.GetSourceFile:input_type -> bundlewhy.v1.GetSourceFileRequest
+	45, // 56: bundlewhy.v1.AnalysisService.CancelRun:input_type -> bundlewhy.v1.CancelRunRequest
+	48, // 57: bundlewhy.v1.AnalysisService.ListRuns:input_type -> bundlewhy.v1.ListRunsRequest
+	50, // 58: bundlewhy.v1.AnalysisService.SelectRun:input_type -> bundlewhy.v1.SelectRunRequest
+	52, // 59: bundlewhy.v1.AnalysisService.ExportReport:input_type -> bundlewhy.v1.ExportReportRequest
+	40, // 60: bundlewhy.v1.AnalysisService.GetRunProgress:output_type -> bundlewhy.v1.GetRunProgressResponse
+	42, // 61: bundlewhy.v1.AnalysisService.GetAnalysis:output_type -> bundlewhy.v1.GetAnalysisResponse
+	44, // 62: bundlewhy.v1.AnalysisService.GetSourceFile:output_type -> bundlewhy.v1.GetSourceFileResponse
+	46, // 63: bundlewhy.v1.AnalysisService.CancelRun:output_type -> bundlewhy.v1.CancelRunResponse
+	49, // 64: bundlewhy.v1.AnalysisService.ListRuns:output_type -> bundlewhy.v1.ListRunsResponse
+	51, // 65: bundlewhy.v1.AnalysisService.SelectRun:output_type -> bundlewhy.v1.SelectRunResponse
+	53, // 66: bundlewhy.v1.AnalysisService.ExportReport:output_type -> bundlewhy.v1.ExportReportResponse
+	60, // [60:67] is the sub-list for method output_type
+	53, // [53:60] is the sub-list for method input_type
+	53, // [53:53] is the sub-list for extension type_name
+	53, // [53:53] is the sub-list for extension extendee
+	0,  // [0:53] is the sub-list for field type_name
 }
 
 func init() { file_bundlewhy_v1_bundlewhy_proto_init() }
@@ -3365,8 +3922,8 @@ func file_bundlewhy_v1_bundlewhy_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bundlewhy_v1_bundlewhy_proto_rawDesc), len(file_bundlewhy_v1_bundlewhy_proto_rawDesc)),
-			NumEnums:      14,
-			NumMessages:   32,
+			NumEnums:      18,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

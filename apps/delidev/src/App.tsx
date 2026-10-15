@@ -11,7 +11,6 @@ import { SessionNameEditorProvider } from "./session-name-editor";
 import {
   SidebarPreference,
   SidebarPreferenceBoundary,
-  SidebarPreferenceNotice,
   useSidebarPreference,
   useWideSidebar,
 } from "./sidebar-preference";
@@ -174,6 +173,7 @@ function Shell({
   appInformationSettings,
   runnerTailscale,
   connectionTarget,
+  connectionPageOpen = false,
   onConnectionHelp,
   readLocalWorker,
   controlLocalWorker,
@@ -193,6 +193,8 @@ function Shell({
   appInformationSettings?: ReactNode;
   runnerTailscale?: PublishRunnerTailscaleSlots;
   connectionTarget?: HTMLElement;
+  /** True while the local window's Connections page is mounted. */
+  connectionPageOpen?: boolean;
   onConnectionHelp?: (target: HTMLElement | undefined) => void;
   readLocalWorker?: ReadLocalWorkerProof;
 }) {
@@ -269,6 +271,17 @@ function Shell({
       focusAllowed: false,
     });
   const toggleSidebar = () => {
+    // The product window renders no sidebar notice, so the toggle shortcut is
+    // the recovery action. While a problem fences saves, one press inspects the
+    // stored preference without saving or queueing the requested change; the
+    // next press after a healthy inspection saves it.
+    if (sidebarPreference.snapshot.problem) {
+      console.info("delidev.sidebar_preference.recovery_requested", {
+        problem: sidebarPreference.snapshot.problem,
+      });
+      sidebarPreference.reload();
+      return;
+    }
     sidebarPreference.select(
       sidebarCollapsed
         ? SidebarPreference.Expanded
@@ -949,8 +962,7 @@ function Shell({
     navigate(destination);
     pendingFocusDestination.current = destination;
   };
-  const sidebarShortcutEnabled =
-    !sidebarPreference.operation && !sidebarPreference.snapshot.problem;
+  const sidebarShortcutEnabled = !sidebarPreference.operation;
   const shortcutDeclarations = useShortcuts([
     {
       id: ShortcutId.ToggleSidebar,
@@ -1029,6 +1041,7 @@ function Shell({
       <LocalConnectionPresentationProvider
         target={connectionTarget}
         inline={!connectionReady}
+        pageOpen={connectionPageOpen}
         onRequest={onConnectionHelp}
       >
         <RunnerRemediationProvider
@@ -1134,7 +1147,6 @@ function Shell({
                             : undefined
                         }
                       >
-                        <SidebarPreferenceNotice />
                         <button
                           ref={contextOpener}
                           type="button"
@@ -1400,6 +1412,7 @@ export function App({
   appInformationSettings,
   runnerTailscale,
   connectionTarget,
+  connectionPageOpen = false,
   onConnectionHelp,
   connectionReady = true,
   connectionEpoch = 0,
@@ -1420,6 +1433,8 @@ export function App({
   appInformationSettings?: ReactNode;
   runnerTailscale?: PublishRunnerTailscaleSlots;
   connectionTarget?: HTMLElement;
+  /** True while the local window's Connections page is mounted. */
+  connectionPageOpen?: boolean;
   onConnectionHelp?: (target: HTMLElement | undefined) => void;
   connectionReady?: boolean;
   connectionEpoch?: number;
@@ -1474,6 +1489,7 @@ export function App({
                                   }
                                   runnerTailscale={runnerTailscale}
                                   connectionTarget={connectionTarget}
+                                  connectionPageOpen={connectionPageOpen}
                                   onConnectionHelp={onConnectionHelp}
                                   localServer={localServer}
                                   readLocalWorker={readLocalWorker}

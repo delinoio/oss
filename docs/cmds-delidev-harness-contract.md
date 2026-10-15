@@ -219,9 +219,25 @@ private error and `reauthenticationRequired` failure reason; discard descriptors
 and diagnostics without changing account health, configuration or input/tool
 authority. [Official native connector registration](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/core/src/mcp.rs)
 and [event mapping](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server/src/bespoke_event_handling.rs)
-keep this status separate from tool execution and authentication. Other server
-names, API profiles, unscoped/foreign observations, OAuth completions, MCP event
+keep this status separate from tool execution and authentication. API profiles,
+unscoped/foreign observations, OAuth completions, MCP event
 streams and tool calls retain their existing private adapter boundaries.
+Ordinary managed ChatGPT project executions also consume root-bound passive
+startup status for project-configured MCP servers using the same closed schema.
+Before binding Start or Resume, the workspace's successful native `config/read`
+retains only enabled names from `mcp_servers` (at most 1,024 entries, bounded
+nonempty names and object descriptors). Disabled and absent entries grant no
+startup-status authority. Malformed or duplicate configuration fails validation;
+a failed fresh read discards any earlier inventory. Each external startup name
+must match that original member's verified workspace inventory exactly. Unknown
+names retain the private unsupported boundary; another member's inventory cannot
+authorize them.
+The adapter discards server names and diagnostics and logs only the closed status,
+owner identity and error presence. These observations do not publish product
+events, complete a turn, change account health or grant tool authority. API,
+isolated title, Sidechat and model-observation profiles retain their separate
+boundaries, as do unscoped and foreign-thread observations. External MCP tool
+calls, OAuth completion and event streams still require their own typed adapters.
 The original execution process's notification-only `skills/changed` accepts
 exactly a required empty object as discarded process metadata. Its native cache
 invalidation signal never causes `skills/list`, package enumeration, catalog
@@ -2917,7 +2933,7 @@ not change a key or path. The closed purposes are:
 | Scope                | Purposes                                                                      | Required key fields            |
 | -------------------- | ----------------------------------------------------------------------------- | ------------------------------ |
 | system (accountless) | `discovery`, `model_observation`, `title_probe`                               | harness                        |
-| account              | `auth`, `quota`, `credit`, `subscription_probe`                               | harness, account               |
+| account              | `auth`, `quota`, `credit`, `subscription_probe`, `shared_owner`               | harness, account               |
 | conversation         | `conversation`, `fork`, `compaction`, `revert`, `sidechat`, `title`, `review` | harness, account, conversation |
 
 Layout below `<root>/native-profiles/`: `registry.json` (versioned registry,
@@ -2942,6 +2958,213 @@ unchanged. Adapters verify and reuse owned state: probe and execution
 environments no longer require empty directories, only canonical private paths.
 Every launch revalidates its model, instructions, account generation and route;
 a previous run's settings are never inherited.
+
+### Shared Codex owner account home
+
+The managed shared Codex owner (see the
+[shared account owner model](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members))
+keeps one account-wide history home at `runtimes/accounts/<account-id>/codex`.
+That directory predates the registry and is a checkpoint-bound history path
+(version 2 `AccountHome`), so it is registered in place under the typed
+account-scoped `shared_owner` key (harness `codex`, account) as a legacy
+profile: nothing is moved, merged or rewritten, the first resolution of a new
+account only creates the fixed private directory, and registration is
+idempotent across owner restarts. The Worker resolves it through the registry
+for every shared execution and for a version 1 history import, and
+checkpoint readers reject a registered path that differs from the derived
+account home. The Worker validates an existing registration before it creates
+anything: a key registered for another path blocks with the closed
+`key_conflict` cause, and a registered home that is no longer a real private
+directory blocks with a recovery-required failure; both create no directory,
+change no registry entry and are never repaired or recreated. An unregistered
+account creates its fixed private directory exactly as the home was created
+before the registry existed, then registers it where it is. A directory that is
+not a real private directory, or whose parent is not a directory, blocks with a
+recovery-required failure.
+
+`shared_owner` is a registered-only purpose that is defined for the `codex`
+harness alone: a key for any other harness is invalid, including in a restored
+registry. Only in-place registration creates its entry. Acquiring an unregistered
+`shared_owner` key is rejected with the closed `legacy_unverified` cause and
+creates no managed profile directory or registry entry, while acquiring an entry
+that was already registered in place locks it normally.
+
+A registered-only entry exists only as a legacy directory registered in place and
+never holds a conversation history. Registration and every registry load enforce
+both facts, so a restored registry cannot hold a managed `shared_owner` entry,
+even with an intact managed directory and owner record, or one with histories.
+Such a registry is invalid as a whole (`registry_invalid`), is never rewritten,
+and fails every entry point before any lock is taken:
+
+| Entry shape in the registry                  | `Lookup`, `Peek`, `Acquire`, `RegisterLegacy` |
+| -------------------------------------------- | --------------------------------------------- |
+| legacy origin, no histories                  | valid                                         |
+| managed origin (directory and owner intact)  | `registry_invalid`                            |
+| legacy origin holding a conversation history | `registry_invalid`                            |
+
+`RegisterLegacy` or `RecordHistory` of a registered-only key with a history is
+rejected as an invalid key before anything is written, so no write can produce a
+registry that the next load rejects.
+
+Checkpoint readers verify the home through a read-only registry lookup that
+takes no lock and creates no file or directory, so it also works on a
+read-only Worker root:
+
+| Registry state                           | Registered path | Verification                           |
+| ---------------------------------------- | --------------- | -------------------------------------- |
+| `native-profiles/` or the file is absent | none            | passes; nothing is created             |
+| registry present, key unregistered       | none            | passes; the legacy home is allowed     |
+| registry present, key registered         | the derived one | passes                                 |
+| registry present, key registered         | another path    | recovery required                      |
+| registry directory not private or a link | n/a             | recovery required (`registry_invalid`) |
+| registry file unreadable or invalid      | n/a             | recovery required (`registry_invalid`) |
+
+The registry never creates or removes the account home. Registration is the
+only registry write, so a failed publication leaves the directory exactly as it
+was before the attempt, and the next attempt registers it in place. Nothing is
+removed, so history is never deleted by a failed registration.
+
+| Starting state                                   | Registry publication | Directory afterwards | Entry afterwards | Result                                          |
+| ------------------------------------------------ | -------------------- | -------------------- | ---------------- | ----------------------------------------------- |
+| home absent, key unregistered                    | succeeds             | created              | registered       | success                                         |
+| home absent, key unregistered                    | fails                | kept (empty)         | absent           | error; retry registers the same empty directory |
+| home present, key unregistered                   | succeeds             | untouched            | registered       | success                                         |
+| home present, key unregistered                   | fails                | untouched            | absent           | error; history is never removed                 |
+| home absent, key already registered at that path | none attempted       | not created          | registered       | recovery required; never recreated              |
+| home absent, key registered elsewhere            | none attempted       | not created          | unchanged        | `key_conflict`                                  |
+| home absent, derived path registered for a key   | rejected             | kept (empty)         | unchanged        | `key_conflict` (corrupt registry only)          |
+| home absent, a parent is not a directory         | none attempted       | not created          | absent           | recovery required                               |
+| home is a link or not private                    | none attempted       | untouched            | absent           | recovery required                               |
+
+The founding owner takes the profile lock when it is founded and releases only
+the lock when the owner retires; joined members rely on that lock and take none.
+An exclusive continuation of a version 2 account history takes the same lock, so
+a shared owner and an exclusive run can never write the home at once; a held lock
+blocks with `profile_busy`. The server frees the account lease when it commits
+the owner Finish (or the exclusive run's Finish), which admits a continuation
+that is already retrying its Take. The Worker therefore releases the lock and
+verifies that it can be taken again before it publishes that Finish, including
+every retry of an uncertain Finish, so the admitted continuation never meets
+`profile_busy`. Member Finishes that are not the last leave the lock with the
+owner. A release that cannot be verified never skips the Finish, because the
+account lease must not stay held for a lock that is already closed.
+
+A release is verified when the lock was closed and a probe could take it and
+close it again, or when another holder took the lock after a clean close. The
+second case is a handoff: an exclusive continuation that was already retrying
+acquired the lock between the close and the probe. The probe meets `profile_busy`
+then, which after a clean close proves that the lock was released and passed on,
+so it is not a failure and nothing is parked. A holder met after a failed close
+is not proven to be a handoff, because it cannot be told apart from a lock that
+was never released, so that release stays unverified.
+
+The hold keeps the lease whose close is not confirmed. A lease whose close failed
+is never dropped while the lock may still be held through it: the next call
+closes that same lease again before it probes, so a failed close cannot leave a
+lock that nothing can release and that every later probe meets as `profile_busy`.
+A probe that took the lock proves the held lease released it, so a probe lease
+whose own close failed replaces the held lease as the kept one. A holder met by
+the call that follows is a handoff only when that retried close succeeded.
+
+A retried close is real: a profile lease is final only after its lock close
+succeeded. A failed close leaves the lease open, and every later close runs the
+lock close again and reports its result, so a later `nil` is never inferred from
+an earlier failure. A lock handle that already failed or was closed reports an
+error again, which leaves the release unverified until a probe takes the lock.
+
+| Lease state       | Close call                      | Result  | Lease afterwards |
+| ----------------- | ------------------------------- | ------- | ---------------- |
+| open              | lock close succeeds             | success | closed           |
+| open              | lock close fails                | failure | open             |
+| open after a fail | lock close runs again, fails    | failure | open             |
+| open after a fail | lock close runs again, succeeds | success | closed           |
+| closed            | any                             | success | closed           |
+
+| Close of the held or kept lease | Probe                   | Probe close | Release                                    | Kept lease for the next call |
+| ------------------------------- | ----------------------- | ----------- | ------------------------------------------ | ---------------------------- |
+| clean                           | takes the lock          | clean       | verified                                   | none                         |
+| clean                           | meets another holder    | n/a         | verified (handoff)                         | none                         |
+| clean                           | takes the lock          | fails       | not verified                               | the probe lease              |
+| clean                           | fails for another cause | n/a         | not verified                               | none                         |
+| fails                           | takes the lock          | clean       | verified; the close error is reported once | none                         |
+| fails                           | takes the lock          | fails       | not verified                               | the probe lease              |
+| fails                           | meets another holder    | n/a         | not verified (not a handoff)               | the lease whose close failed |
+| fails                           | fails for another cause | n/a         | not verified                               | the lease whose close failed |
+
+The release and the Finish settle as follows. The owner path is the founding
+owner retiring through its last member; the exclusive path is a version 2
+continuation that holds the lock itself. A verified handoff behaves like any
+other verified release in every row.
+
+| Release      | Finish    | Returned through the member outcome                 | Local owner or hold                                                           | Lock                                      |
+| ------------ | --------- | --------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------- |
+| verified     | succeeds  | success                                             | owner cleared                                                                 | free                                      |
+| verified     | fails     | the Finish error                                    | owner retained; the same Finish is retried                                    | free                                      |
+| verified     | ambiguous | the Finish error                                    | owner retained with the pending request, retried unchanged                    | free                                      |
+| not verified | succeeds  | owner path: the release failure (recovery required) | owner cleared; the unverified hold moves to the account gate                  | closed, verified again by the next holder |
+| not verified | succeeds  | exclusive path: the cleanup failure                 | hold moves to the account gate                                                | closed, verified again by the next holder |
+| not verified | fails     | the Finish error                                    | owner or hold retained; the retry verifies the release again                  | closed, unverified                        |
+| not verified | ambiguous | the Finish error                                    | owner retained with the pending request; the retry verifies the release again | closed, unverified                        |
+
+The exclusive path retries the release once more in its deferred cleanup, after
+the managed Finish settled, and the owner and joined-member paths run later
+cleanup (the workspace lease, the profile and the pull-request tool) in the
+same position. A later cleanup failure is recorded but never replaces an
+unconfirmed Finish: only that outcome keeps the job journal unfinished until the
+Finish is reconciled, so the server-side Finish and the account lease are not
+reported as settled. A cleanup failure that follows an ordinary outcome is the
+recovery-required cleanup failure.
+
+| First release | Finish    | Deferred release retry | Returned outcome                        | Parked hold |
+| ------------- | --------- | ---------------------- | --------------------------------------- | ----------- |
+| verified      | succeeds  | nothing to retry       | success                                 | none        |
+| verified      | fails     | nothing to retry       | the unconfirmed Finish                  | none        |
+| verified      | ambiguous | nothing to retry       | the unconfirmed Finish                  | none        |
+| not verified  | succeeds  | fails                  | the cleanup failure (recovery required) | kept        |
+| not verified  | succeeds  | verifies               | the cleanup failure (recovery required) | kept        |
+| not verified  | fails     | fails                  | the unconfirmed Finish                  | kept        |
+| not verified  | fails     | verifies               | the unconfirmed Finish                  | kept        |
+| not verified  | ambiguous | fails                  | the unconfirmed Finish                  | kept        |
+| not verified  | ambiguous | verifies               | the unconfirmed Finish                  | kept        |
+
+Rows with a successful Finish assume a conclusive execution result; a successful
+Finish without one is reported as an unconfirmed Finish in every row. The owner and joined-member paths have no deferred release retry,
+because the owner's unverified release moves to the account gate when its Finish
+settles.
+
+The release failure of a published owner Finish is returned like the exclusive
+path's cleanup failure: the member outcome is an unconfirmed cleanup that
+requires recovery, never a silent success, while the local owner is still
+cleared because nothing remains to publish. Because no local owner is left to
+retry the release, the unverified hold stays on the account gate. Before any
+founder or exclusive continuation of that account locks the home, it verifies
+that release again: a repaired home clears the retained release, and a home that
+still cannot be verified blocks the holder with the same recovery-required
+failure instead of letting it meet `profile_busy` with nothing left to retry.
+Retained rollouts, caches and helper links never
+block a later owner. An unremoved `auth.json` still blocks the next founder
+through the credential check. The profile has no conversation or history
+identifier, so session deletion never removes it; no automatic age-based pruning
+applies.
+
+A shared continuation of a version 1 checkpoint copies the retained rollout of
+that one thread into the account home. That copy writes the account-wide home, so
+it happens only after the request is admitted and is protected by the lock: the
+founding owner copies after it took the lock, and a joined member copies under
+the running owner's lock. The copy itself refuses to write unless the caller
+passes a hold that currently locks that home; nothing is written, not even a
+directory, otherwise. A request that is not admitted, or whose founder meets
+`profile_busy`, never copies.
+
+| Request                                    | Home lock when the copy would run     | Copy                                                 |
+| ------------------------------------------ | ------------------------------------- | ---------------------------------------------------- |
+| before the account lease is taken          | none                                  | never; only the retained checkpoint is read          |
+| founding owner, lock taken                 | held by this owner                    | copies, then verifies the thread in the account home |
+| founding owner, lock held by another run   | held by an exclusive continuation     | `profile_busy`; nothing is written                   |
+| founding owner, unverified earlier release | blocked until the release is verified | recovery required; nothing is written                |
+| joined member                              | held by the running owner             | copies under the owner's hold                        |
+| exclusive version 2 continuation           | held by this run                      | no copy; the account home already holds the history  |
+| exclusive version 1 continuation           | not used                              | no copy; the history stays in its original runtime   |
 
 ### Operation journals stay per operation
 

@@ -426,7 +426,10 @@ it("creates Worktree and General Chat and exactly replays Create/Send after ackn
       architecture: "arm64",
       version: "0.1.0",
       installations: [],
-      worker_capabilities: ["remote-workspace-clone-v1"],
+      worker_capabilities: [
+        "remote-workspace-clone-v1",
+        "named-workspace-directories-v1",
+      ],
       last_seen: new Date().toISOString(),
       disabled: false,
     }),

@@ -171,6 +171,7 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
             direction: declaration.direction().to_owned(),
             safety: declaration.safety().to_owned(),
             dependency: context.is_dependency(module),
+            export_usage: None,
         });
     }
 }
@@ -583,6 +584,7 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
             direction: direction.to_owned(),
             safety: safety.to_owned(),
             dependency: context.is_dependency(module),
+            export_usage: None,
         });
     }
 }
@@ -671,6 +673,7 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
                      asynchronously; callers must await it and handle loading failures."
                 .to_owned(),
             dependency: context.is_dependency(module),
+            export_usage: None,
         });
     }
 }
@@ -718,6 +721,7 @@ fn tree_shaking_disabled_finding(context: &mut Context<'_>, drafts: &mut Vec<Dia
                  those imports or declare the side effects."
             .to_owned(),
         dependency: false,
+        export_usage: None,
     });
 }
 

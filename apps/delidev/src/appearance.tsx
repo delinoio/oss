@@ -336,14 +336,6 @@ export function AppearanceProvider({
       }}
     >
       {children}
-      {!operation && snapshot.problem ? (
-        <p className="appearance-notice" role="alert">
-          <LocalizedText
-            id="appearance.appearance_463630"
-            components={{ s0: <>{problemMessages[snapshot.problem]}</> }}
-          />
-        </p>
-      ) : null}
     </AppearanceContext.Provider>
   );
 }

@@ -177,6 +177,34 @@ proto_enum!(ReportMode {
     Exported = "REPORT_MODE_EXPORTED",
 });
 
+proto_enum!(ExportUsageState {
+    Unspecified = "EXPORT_USAGE_STATE_UNSPECIFIED",
+    Available = "EXPORT_USAGE_STATE_AVAILABLE",
+    Unavailable = "EXPORT_USAGE_STATE_UNAVAILABLE",
+});
+
+proto_enum!(ExportScope {
+    Unspecified = "EXPORT_SCOPE_UNSPECIFIED",
+    Named = "EXPORT_SCOPE_NAMED",
+    Module = "EXPORT_SCOPE_MODULE",
+});
+
+proto_enum!(ExportUsagePathEnd {
+    Unspecified = "EXPORT_USAGE_PATH_END_UNSPECIFIED",
+    Root = "EXPORT_USAGE_PATH_END_ROOT",
+    Cycle = "EXPORT_USAGE_PATH_END_CYCLE",
+    Truncated = "EXPORT_USAGE_PATH_END_TRUNCATED",
+    Incomplete = "EXPORT_USAGE_PATH_END_INCOMPLETE",
+});
+
+proto_enum!(ExportUsageTruncation {
+    Unspecified = "EXPORT_USAGE_TRUNCATION_UNSPECIFIED",
+    None = "EXPORT_USAGE_TRUNCATION_NONE",
+    PathCount = "EXPORT_USAGE_TRUNCATION_PATH_COUNT",
+    Depth = "EXPORT_USAGE_TRUNCATION_DEPTH",
+    ExpansionBudget = "EXPORT_USAGE_TRUNCATION_EXPANSION_BUDGET",
+});
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct EngineIdentity {
@@ -266,6 +294,46 @@ pub struct DependencyPath {
     pub modules: Vec<String>,
 }
 
+/// A module (display path) plus an export path inside it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExportReference {
+    pub module: String,
+    /// Export path segments; empty when `scope` is module scope.
+    pub export_path: Vec<String>,
+    pub scope: ExportScope,
+}
+
+/// One export dependency that the engine reported: `consumer` uses `provider`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExportUsageEdge {
+    pub consumer: ExportReference,
+    pub provider: ExportReference,
+    pub dependency_id: String,
+    pub location: String,
+}
+
+/// An ordered chain of engine edges from the outermost consumer to the
+/// diagnostic module. The ordering is derived by bundlewhy.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExportUsagePath {
+    pub edges: Vec<ExportUsageEdge>,
+    pub end: ExportUsagePathEnd,
+}
+
+/// Export-level usage evidence for one diagnostic.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExportUsage {
+    pub state: ExportUsageState,
+    /// Why the evidence is unavailable.
+    pub note: String,
+    pub paths: Vec<ExportUsagePath>,
+    pub truncation: ExportUsageTruncation,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CorrectiveAction {
@@ -296,6 +364,8 @@ pub struct Diagnostic {
     pub corrective_action: Option<CorrectiveAction>,
     pub engine: String,
     pub dependency: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub export_usage: Option<ExportUsage>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

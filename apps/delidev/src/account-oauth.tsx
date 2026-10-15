@@ -66,6 +66,7 @@ export enum OAuthNativeAction {
   ClaudeSubscriptionReopen = "claude-subscription-reopen",
   GrokSubscriptionOpen = "grok-subscription-open",
   GrokSubscriptionReopen = "grok-subscription-reopen",
+  GrokDeviceAuthorizationOpen = "grok-device-authorization-open",
   SubscriptionOpen = "subscription-open",
   SubscriptionReopen = "subscription-reopen",
   BindOpen = "bind-open",

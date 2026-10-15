@@ -3,8 +3,10 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -161,5 +163,33 @@ func TestWorkspaceMalformedSuccessRequiresRecoveryAndCannotArchive(t *testing.T)
 	}
 	if v := sessionBody(t, archived.Msg.Change.Session); v.Archive != domain.ArchivePending || v.Recovery != domain.NeedsRecovery || v.Dispatch != domain.DispatchPaused {
 		t.Fatal("uncertain native work hidden as archived")
+	}
+}
+
+func TestWorkspaceRetryPropagatesUnreadableQueuedInput(t *testing.T) {
+	f := newAccountFixture(t)
+	selection, _ := sessionSelection(t, f)
+	_, initial := createSessionFixture(t, f, selection)
+	stopped, err := sessionClient(f).ControlSession(context.Background(), ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(initial.Session, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_STOP}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(f.root, "state.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if res, err := db.Exec("UPDATE entities SET body=CAST(json_set(body,'$.unexpected_field',1) AS BLOB) WHERE kind=? AND session_id=?", string(domain.QueueKind), initial.Session.Id); err != nil {
+		t.Fatal(err)
+	} else if n, _ := res.RowsAffected(); n != 1 {
+		t.Fatal("expected one queued input fixture", n)
+	}
+	retry := &pb.PrepareSessionWorkspaceRequest{Mutation: acctMutation(stopped.Msg.Change.Session, domain.NewID())}
+	if _, err := sessionClient(f).PrepareSessionWorkspace(context.Background(), ownerRequest(f.identity, retry)); err == nil {
+		t.Fatal("workspace preparation proceeded past an unreadable queued input")
+	}
+	current := currentCatalogResource(t, f, stopped.Msg.Change.Session)
+	if v := sessionBody(t, current); v.Preparation == nil || v.Preparation.JobID != sessionBody(t, stopped.Msg.Change.Session).Preparation.JobID {
+		t.Fatal("rejected retry queued a new workspace job")
 	}
 }

@@ -1206,10 +1206,19 @@ export function AgentWorkerSourceWizard({
     String(stepRequests),
     stepRequests > 0,
   );
+  // Highest step the user has reached in this wizard session. It starts at the
+  // opening step, only grows through selectStep, and is clamped whenever a
+  // change clears or invalidates the choices that later steps depend on.
+  const [visited, setVisited] = useState(Step.Harness);
   const selectStep = (target: Step) => {
     setStep(target);
+    setVisited((value) => (target > value ? target : value));
     setStepRequests((value) => value + 1);
   };
+  const clampVisited = useCallback(
+    (limit: Step) => setVisited((value) => (value > limit ? limit : value)),
+    [],
+  );
   useLocale();
   const [problem, setProblem] = useProductMessage("");
   const [focusKey, setFocusKey] = useState("");
@@ -1244,13 +1253,17 @@ export function AgentWorkerSourceWizard({
     },
   );
   const update = useCallback(
-    (key: string, patch: Partial<Draft>) =>
+    (key: string, patch: Partial<Draft>) => {
+      // A committed source change clears that group's accounts and model, so
+      // Model and Configure are no longer reachable until Accounts is revisited.
+      if ("source" in patch) clampVisited(Step.Accounts);
       setRoutes((previous) =>
         previous.map((route) =>
           route.key === key ? { ...route, ...patch } : route,
         ),
-      ),
-    [],
+      );
+    },
+    [clampVisited],
   );
   const report = useCallback(
     (key: string, value: Evidence) =>
@@ -1417,6 +1430,7 @@ export function AgentWorkerSourceWizard({
       return;
     setData((previous) => ({ ...previous, harness }));
     setRoutes([draft({ routing: Routing.Priority })]);
+    clampVisited(Step.Harness);
     setProblem("");
   };
   const advance = () => {
@@ -1425,6 +1439,21 @@ export function AgentWorkerSourceWizard({
       setProblem("");
       focus();
     }
+  };
+  // Stepper selection. It only moves between the current and visited steps and
+  // never saves or starts account, model or discovery work.
+  const goToStep = (target: Step) => {
+    if (blocked || !active || target > visited) return;
+    if (target === step) {
+      focus();
+      return;
+    }
+    // Moving forward re-runs the existing validation for every preceding
+    // stage; a failure routes to the first invalid stage and control.
+    if (target > step && !validate(target - 1)) return;
+    selectStep(target);
+    setProblem("");
+    focus();
   };
 
   return (
@@ -1515,13 +1544,30 @@ export function AgentWorkerSourceWizard({
           (value) => (
             <li
               key={value}
-              aria-current={step === value ? "step" : undefined}
+              data-current={step === value}
               data-completed={value < step}
             >
-              <span className="wizard-step-number" aria-hidden="true">
-                {value}
-              </span>
-              <span>{stepName(value)}</span>
+              {value <= visited || value === step ? (
+                <button
+                  type="button"
+                  className="worker-step-target"
+                  aria-current={step === value ? "step" : undefined}
+                  disabled={blocked || !active}
+                  onClick={() => goToStep(value)}
+                >
+                  <span className="wizard-step-number" aria-hidden="true">
+                    {value}
+                  </span>
+                  <span>{stepName(value)}</span>
+                </button>
+              ) : (
+                <span className="worker-step-target">
+                  <span className="wizard-step-number" aria-hidden="true">
+                    {value}
+                  </span>
+                  <span>{stepName(value)}</span>
+                </span>
+              )}
             </li>
           ),
         )}
@@ -1548,20 +1594,7 @@ export function AgentWorkerSourceWizard({
           />
         </section>
         <div hidden={step !== Step.Accounts}>
-          <p>
-            {harnessNames[data.harness as Harness]}{" "}
-            <SettingsActionButton
-              icon={SettingsActionIcon.Inspect}
-              type="button"
-              disabled={blocked}
-              onClick={() => {
-                selectStep(Step.Harness);
-                focus();
-              }}
-            >
-              {copy("agent-worker-wizard.changeHarness")}
-            </SettingsActionButton>
-          </p>
+          <p>{harnessNames[data.harness as Harness]}</p>
         </div>
         <div
           className={
@@ -1611,6 +1644,8 @@ export function AgentWorkerSourceWizard({
               disabled={blocked || routes.length >= 1000}
               onClick={() => {
                 const next = draft({ routing: Routing.Priority });
+                // The new group has no source or accounts yet.
+                clampVisited(Step.Accounts);
                 setRoutes((previous) => [...previous, next]);
                 focus(next.key, "source");
               }}

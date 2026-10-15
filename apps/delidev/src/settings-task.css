@@ -233,12 +233,7 @@ dialog.settings-task-dialog {
   border-color: var(--accent);
 }
 @container settings-body (width < 640px) {
-  .settings-task-body
-    :is(
-      .account-provider-choices,
-      .agent-core-columns,
-      .integration-form-grid
-    ) {
+  .settings-task-body :is(.agent-core-columns, .integration-form-grid) {
     grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -6,6 +6,7 @@
 //! `Inferred` and says which evidence supports it.
 
 pub mod common;
+pub mod export_usage;
 pub mod rspack;
 pub mod vite;
 
@@ -19,7 +20,7 @@ use crate::{
     collect::{CollectedModule, Collection},
     model::{
         CodeSnippet, Condition, CorrectiveAction, DependencyPath, Diagnostic, Evidence,
-        EvidenceStatus, LocationKind, OptimizationCategory, SourceLocation,
+        EvidenceStatus, ExportUsage, LocationKind, OptimizationCategory, SourceLocation,
     },
     sources::{SourceStore, classify, sha256_hex},
 };
@@ -102,6 +103,8 @@ pub struct Context<'a> {
     pub vite_env_source_gaps: HashSet<String>,
     /// Polled cooperatively by long-running detectors; true stops them.
     pub cancelled: Option<&'a (dyn Fn() -> bool + Sync)>,
+    /// Export usage edges grouped for traversal; built on first use.
+    pub export_usage_index: std::cell::OnceCell<export_usage::ExportUsageIndex<'a>>,
 }
 
 /// Original or generated location plus a snippet for one diagnostic.
@@ -146,6 +149,7 @@ impl<'a> Context<'a> {
             sources,
             vite_env_source_gaps: HashSet::new(),
             cancelled: None,
+            export_usage_index: std::cell::OnceCell::new(),
         }
     }
 
@@ -384,6 +388,8 @@ pub struct DiagnosticDraft {
     pub direction: String,
     pub safety: String,
     pub dependency: bool,
+    /// Export-level usage evidence; set only by rules that support it.
+    pub export_usage: Option<ExportUsage>,
 }
 
 impl DiagnosticDraft {
@@ -422,6 +428,7 @@ impl DiagnosticDraft {
             }),
             engine: engine.to_owned(),
             dependency: self.dependency,
+            export_usage: self.export_usage,
         }
     }
 }
@@ -527,6 +534,7 @@ mod tests {
             direction: String::new(),
             safety: String::new(),
             dependency: false,
+            export_usage: None,
         };
         let first = draft("A", 5).build("engine");
         let second = draft("B", 5).build("engine");

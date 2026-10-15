@@ -71,6 +71,18 @@ Locations use your original source positions when a source map maps them to veri
 
 Dependency paths show up to three of the shortest static importer chains from an entry point to the module. Use them to find which import brings a module into the build.
 
+## Export usage paths
+
+Rspack diagnostics for a module can include export usage paths. They answer a narrower question than a dependency path: which export of another module depends on an export of this module, and which export depends on that one, going back toward your entry code.
+
+- Each edge in a chain is an export dependency that Rspack reported during the diagnostic build, tagged **Observed by Rspack**. It shows the consuming module and export, the providing module and export, the Rspack dependency ID and the location in the consuming module when Rspack provided them.
+- The order and the choice of chains are **derived by bundlewhy**: it follows Rspack's edges from the diagnostic module toward its consumers, shortest chains first, and lists at most five chains of at most 24 edges.
+- A named export appears as `export <name>`. "Module or namespace scope (no named export)" means Rspack did not name one export, for example for a namespace import or top-level module code. It is not evidence of a function call.
+- A chain ends with one of four notes: no earlier edge was reported (this does not prove that no other consumer exists), a cycle (the first edge returns to an export already in the chain), a limit, or **Chain start not confirmed**. The last note appears when Rspack reported edges that bundlewhy could not use, and one of them may be an earlier edge into the first export, because an endpoint is not a module bundlewhy can identify (for example a concatenated module container) or an export reference bundlewhy can read. The chain may continue beyond that point, and the section states how many edges were left out. A **Truncated** marker names the first limit reached when chains were left out.
+- A chain does not show that code ran, that code can be removed or how many bytes a change would save. Missing edges are never filled in.
+
+When Rspack does not provide the data, the section says export usage is unavailable for that diagnostic and gives one of a fixed set of reasons: the Rspack version has no `RsdoctorPlugin`, the project already configures one, the project sets `plugins` to something other than a list (bundlewhy then passes it to Rspack unchanged), the plugin's internal API changed or failed (in which case bundlewhy repeats the diagnostic build without the plugin, in a new process that loads your configuration and its imports from scratch), Rspack did not deliver the graph, Rspack reported no edge for this module (for example a module loaded only through `import()`), or edges that involve modules bundlewhy could not identify (for example concatenated module containers) or export references it could not read were not used. Reasons never quote error messages or your source code. Other diagnostics and the module dependency paths are not affected. bundlewhy adds an observation-only `RsdoctorPlugin` to the diagnostic build and lists it among the collection overrides when the final build used it. Reports saved by earlier versions have no export usage section. Vite diagnostics never have one.
+
 ## Corrective direction
 
 Each diagnostic suggests a direction for a fix, together with the safety conditions that must hold before you apply it, for example that a module really has no side effects. bundlewhy does not apply fixes and does not verify that a change keeps your application correct.

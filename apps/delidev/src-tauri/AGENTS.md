@@ -8,7 +8,7 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
-- Browser destination dispatch (`browser_opener.rs`, `browser_discovery.rs`, `browser_preferences.rs`, `external_url.rs`) must stay argv-only, credential-free and revalidated from a fresh native inventory; `browser_opener::dispatch` (system default) is the only path OAuth authorization may use. Update the `device-browser-links` permission, build manifest and `permission_tests.rs` together with any command change.
+- Browser destination dispatch (`browser_opener.rs`, `browser_discovery.rs`, `browser_preferences.rs`, `external_url.rs`) must stay argv-only, credential-free and revalidated from a fresh native inventory; `browser_opener::dispatch` (system default) is the only path OAuth authorization may use; any flag a dispatch observes must be retired through `browser_opener::retire` so retirement stays mutually exclusive with the commit-to-spawn transition. Every retirement of an OAuth device-opening flag (Dispose, window close, `stop`, revocation exhaustion) must run before the host clears, removes or joins callback listeners. Update the `device-browser-links` permission, build manifest and `permission_tests.rs` together with any command change.
 
 ## Owning contracts
 

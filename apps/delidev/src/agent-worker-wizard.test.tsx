@@ -8,10 +8,12 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
@@ -131,39 +133,56 @@ function fixture(supported = true) {
       4,
     ),
   }));
-  const transport = createRouterTransport((router) => {
-    router.service(SystemService, {
-      getStatus: () => ({
-        protocolVersion: 2,
-        capabilities: supported
-          ? [
-              SystemCapability.INLINE_WORKER_MODELS_V1,
-              SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1,
-            ]
-          : [],
-      }),
-    });
-    router.service(ProviderService, {
-      listProviderInventory: () => ({
-        entries: [
-          {
-            provider,
-            providerId: provider.id,
-            displayName: "Original API",
-            enabled: true,
+  // Every RPC the wizard starts, by method name, in start order.
+  const rpc: string[] = [];
+  const transport = createRouterTransport(
+    (router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          protocolVersion: 2,
+          capabilities: supported
+            ? [
+                SystemCapability.INLINE_WORKER_MODELS_V1,
+                SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1,
+              ]
+            : [],
+        }),
+      });
+      router.service(ProviderService, {
+        listProviderInventory: () => ({
+          entries: [
+            {
+              provider,
+              providerId: provider.id,
+              displayName: "Original API",
+              enabled: true,
+            },
+          ],
+          capabilities: [
+            ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER,
+            ProviderInventoryCapability.ACCOUNT_TYPE_FILTER,
+          ],
+        }),
+        listEndpointModels: endpoint,
+        listKnownSubscriptionModels: known,
+      });
+      router.service(ResourceService, {
+        listResources: list,
+        getResource: get,
+      });
+      router.service(ConfigurationService, { saveAgentWorker: save });
+    },
+    {
+      transport: {
+        interceptors: [
+          (next) => (request) => {
+            rpc.push(request.method.name);
+            return next(request);
           },
         ],
-        capabilities: [
-          ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER,
-          ProviderInventoryCapability.ACCOUNT_TYPE_FILTER,
-        ],
-      }),
-      listEndpointModels: endpoint,
-      listKnownSubscriptionModels: known,
-    });
-    router.service(ResourceService, { listResources: list, getResource: get });
-    router.service(ConfigurationService, { saveAgentWorker: save });
-  });
+      },
+    },
+  );
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
@@ -195,6 +214,7 @@ function fixture(supported = true) {
     list,
     endpoint,
     known,
+    rpc,
     save,
     saved,
     cancel,
@@ -730,8 +750,8 @@ it("plays one step heading entrance for each user-selected step change and none 
   expect(heading.getAttribute("data-entrance")).toBe("y4");
   settleEntrance(heading);
   expect(heading.getAttribute("data-entrance")).toBeNull();
-  // Change harness.
-  fireEvent.click(screen.getByRole("button", { name: "Change harness" }));
+  // Back from Accounts to Harness.
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
   expect(stepHeading("Harness")).toBe(heading);
   expect(heading.getAttribute("data-entrance")).toBe("y4");
   settleEntrance(heading);
@@ -752,13 +772,36 @@ it("plays one step heading entrance for each user-selected step change and none 
   expect(f.save).not.toHaveBeenCalled();
 });
 
+it("shows the selected harness as plain text on Accounts and returns to Harness only through Back", async () => {
+  const f = fixture();
+  render(f.view());
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  const heading = stepHeading("Accounts");
+  expect(screen.queryByRole("button", { name: /Change harness/ })).toBeNull();
+  expect(screen.queryByText("Change harness")).toBeNull();
+  const label = screen
+    .getAllByText("Codex")
+    .find((node) => node.tagName === "P");
+  expect(label).toBeTruthy();
+  expect(label!.querySelector("button, svg, a")).toBeNull();
+  // The only route back is the footer Back button, which focuses the heading.
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  expect(stepHeading("Harness")).toBe(heading);
+  expect(globalThis.document.activeElement).toBe(heading);
+  // Confirming the same harness returns to Accounts.
+  fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+  expect(stepHeading("Accounts")).toBe(heading);
+  expect(screen.queryByRole("button", { name: /Change harness/ })).toBeNull();
+  expect(f.save).not.toHaveBeenCalled();
+});
+
 it("restarts the step entrance for a quick second step change without waiting for the first", async () => {
   const f = fixture();
   render(f.view());
   fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
   const heading = stepHeading("Accounts");
   expect(heading.getAttribute("data-entrance")).toBe("y4");
-  fireEvent.click(screen.getByRole("button", { name: "Change harness" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
   expect(stepHeading("Harness")).toBe(heading);
   expect(heading.getAttribute("data-entrance")).toBe("y4");
   // Focus moved to the heading without waiting for the motion.
@@ -823,7 +866,7 @@ it("suppresses the step entrance when Animation is Off and settles it mid-flight
   await act(async () => {
     await Promise.resolve();
   });
-  fireEvent.click(screen.getByRole("button", { name: "Change harness" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
   expect(heading.getAttribute("data-entrance")).toBe("y4");
   await act(async () => {
     globalThis.document.documentElement.dataset.animation = "false";
@@ -835,4 +878,517 @@ it("suppresses the step entrance when Animation is Off and settles it mid-flight
     await Promise.resolve();
   });
   expect(heading.getAttribute("data-entrance")).toBeNull();
+});
+
+// Stepper selection. Rows of the contract state table are named in each test:
+// target unvisited, target is the current step, target before the current
+// step, target after the current step with passing or failing validation,
+// blocked save, inactive wizard, and visited-limit clamping.
+const stepper = () =>
+  within(screen.getByRole("list", { name: "Worker configuration steps" }));
+const stepButton = (name: string) =>
+  stepper().getByRole("button", { name }) as HTMLButtonElement;
+const stepButtons = () =>
+  stepper()
+    .queryAllByRole("button")
+    .map((button) => button.textContent!.replace(/^\d/, ""));
+const currentStepName = () =>
+  stepper()
+    .getAllByRole("button")
+    .find((button) => button.getAttribute("aria-current") === "step")
+    ?.textContent?.replace(/^\d/, "");
+const sideEffectFree = (f: ReturnType<typeof fixture>) => {
+  expect(f.save).not.toHaveBeenCalled();
+  expect(f.endpoint).not.toHaveBeenCalled();
+  expect(f.known).not.toHaveBeenCalled();
+};
+
+it("renders only the opening step as a button and keeps later steps inactive", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findByRole("radio", { name: "Codex" });
+  expect(stepButtons()).toEqual(["Harness"]);
+  expect(stepButton("Harness").getAttribute("aria-current")).toBe("step");
+  expect(stepButton("Harness").type).toBe("button");
+  const items = stepper().getAllByRole("listitem");
+  expect(items).toHaveLength(4);
+  for (const label of ["Accounts", "Model", "Configure"]) {
+    const item = items.find((node) => node.textContent?.endsWith(label))!;
+    // Unvisited steps expose no button, tab stop or press handler target.
+    expect(item.querySelector("button, a, [tabindex]")).toBeNull();
+    fireEvent.click(item);
+  }
+  expect(stepHeading("Harness")).toBeTruthy();
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  expect(stepButtons()).toEqual(["Harness", "Accounts"]);
+  expect(currentStepName()).toBe("Accounts");
+  // Clicking an unvisited item does not change the step.
+  fireEvent.click(
+    stepper()
+      .getAllByRole("listitem")
+      .find((node) => node.textContent?.endsWith("Model"))!,
+  );
+  expect(stepHeading("Accounts")).toBeTruthy();
+  sideEffectFree(f);
+});
+
+it("moves among current and visited steps, focuses the heading and keeps drafts", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  fireEvent.change(input, { target: { value: "typed-exact" } });
+  const heading = stepHeading("Model");
+  settleEntrance(heading);
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
+  expect(currentStepName()).toBe("Model");
+  // Target before the current step, by keyboard focus then activation.
+  const accountsButton = stepButton("Accounts");
+  accountsButton.focus();
+  expect(globalThis.document.activeElement).toBe(accountsButton);
+  expect(accountsButton.tabIndex).toBe(0);
+  fireEvent.click(accountsButton);
+  expect(stepHeading("Accounts")).toBe(heading);
+  expect(globalThis.document.activeElement).toBe(heading);
+  expect(heading.getAttribute("data-entrance")).toBe("y4");
+  settleEntrance(heading);
+  expect(selectedAccountNames()).toHaveLength(1);
+  expect(currentStepName()).toBe("Accounts");
+  // Back to Harness keeps the confirmed harness and later visits.
+  fireEvent.click(stepButton("Harness"));
+  expect(stepHeading("Harness")).toBe(heading);
+  expect(globalThis.document.activeElement).toBe(heading);
+  expect(
+    (
+      screen.getByRole("radio", { name: "Codex" }) as HTMLInputElement
+    ).getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
+  settleEntrance(heading);
+  // Forward over a visited step re-runs validation, passes and keeps the draft.
+  fireEvent.click(stepButton("Model"));
+  expect(stepHeading("Model")).toBe(heading);
+  expect(globalThis.document.activeElement).toBe(heading);
+  expect(
+    (screen.getByRole("combobox", { name: /^Model for / }) as HTMLInputElement)
+      .value,
+  ).toBe("typed-exact");
+  settleEntrance(heading);
+  // The current step refocuses the heading without replaying the entrance.
+  screen.getByRole("combobox", { name: /^Model for / }).focus();
+  fireEvent.click(stepButton("Model"));
+  expect(globalThis.document.activeElement).toBe(heading);
+  expect(heading.getAttribute("data-entrance")).toBeNull();
+  expect(currentStepName()).toBe("Model");
+  sideEffectFree(f);
+});
+
+it("routes a blocked forward step to the first invalid earlier stage and control", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  await configure(input);
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model", "Configure"]);
+  // Invalid Model draft: Configure is blocked and Model is shown with focus.
+  fireEvent.click(stepButton("Model"));
+  fireEvent.change(screen.getByRole("combobox", { name: /^Model for / }), {
+    target: { value: "x".repeat(257) },
+  });
+  fireEvent.click(stepButton("Accounts"));
+  expect(stepHeading("Accounts")).toBeTruthy();
+  const heading = stepHeading("Accounts");
+  settleEntrance(heading);
+  fireEvent.click(stepButton("Configure"));
+  expect(stepHeading("Model")).toBe(heading);
+  expect(heading.getAttribute("data-entrance")).toBeNull();
+  expect(screen.getByRole("alert").textContent).not.toBe("");
+  expect(globalThis.document.activeElement).toBe(
+    screen.getByRole("combobox", { name: /^Model for / }),
+  );
+  expect(currentStepName()).toBe("Model");
+  // Invalid Accounts draft: the first invalid stage is Accounts.
+  fireEvent.click(stepButton("Accounts"));
+  fireEvent.click(
+    screen.getAllByRole("checkbox", { checked: true })[0] as HTMLElement,
+  );
+  await screen.findAllByRole("checkbox", { checked: false });
+  await act(async () => {});
+  fireEvent.click(stepButton("Model"));
+  expect(stepHeading("Accounts")).toBe(heading);
+  const control = globalThis.document.activeElement as HTMLElement;
+  expect(control.getAttribute("data-wizard-field")).toBeTruthy();
+  expect(screen.getByRole("alert")).toBeTruthy();
+  expect(currentStepName()).toBe("Accounts");
+  sideEffectFree(f);
+});
+
+it("clamps the visited limit when the harness changes", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f);
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
+  fireEvent.click(stepButton("Harness"));
+  // Keyboard selection of a different harness clears dependent choices.
+  const codex = screen.getByRole("radio", { name: "Codex" });
+  codex.focus();
+  fireEvent.keyDown(codex, { key: "ArrowRight" });
+  expect(stepButtons()).toEqual(["Harness"]);
+  expect(screen.queryByRole("checkbox", { checked: true })).toBeNull();
+  // Confirming reopens only Accounts.
+  fireEvent.click(screen.getByRole("radio", { name: "Claude Code" }));
+  expect(stepButtons()).toEqual(["Harness", "Accounts"]);
+  expect(currentStepName()).toBe("Accounts");
+  sideEffectFree(f);
+});
+
+it("keeps the visited limit when the same harness is confirmed again", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f);
+  fireEvent.click(stepButton("Harness"));
+  fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
+  expect(currentStepName()).toBe("Accounts");
+  sideEffectFree(f);
+});
+
+it("clamps the visited limit when an account source changes or a source is added", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f);
+  fireEvent.click(stepButton("Accounts"));
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
+  await chooseScrollOption(
+    screen.getByRole("combobox", { name: "Account source 1" }),
+    "subscription:chatgpt",
+  );
+  expect(stepButtons()).toEqual(["Harness", "Accounts"]);
+  // Reach Model again, then add a source.
+  fireEvent.click(
+    await screen.findByRole("checkbox", { name: /Original subscription/ }),
+  );
+  await waitFor(() =>
+    expect(
+      f.client
+        .getQueryCache()
+        .getAll()
+        .some(
+          (q) =>
+            (q.state.data as { resource?: Resource } | undefined)?.resource
+              ?.id === f.subscription.id &&
+            q.state.status === "success" &&
+            q.state.fetchStatus === "idle",
+        ),
+    ).toBe(true),
+  );
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("heading", { name: "Model", level: 3 });
+  expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
+  fireEvent.click(stepButton("Accounts"));
+  fireEvent.click(screen.getByRole("button", { name: /Add account source/ }));
+  expect(stepButtons()).toEqual(["Harness", "Accounts"]);
+  // Model entry on a subscription source reads the known catalog itself.
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("ignores stepper selection while a save is pending", async () => {
+  const f = fixture();
+  f.save.mockImplementationOnce(() => new Promise(() => {}));
+  render(f.view());
+  const input = await accounts(f);
+  await configure(input);
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  await act(async () => {});
+  const started = f.rpc.length;
+  for (const name of ["Harness", "Accounts", "Model", "Configure"]) {
+    expect(stepButton(name).disabled).toBe(true);
+    fireEvent.click(stepButton(name));
+  }
+  await act(async () => {});
+  expect(f.rpc).toHaveLength(started);
+  expect(stepHeading("Configure")).toBeTruthy();
+  expect(f.save).toHaveBeenCalledTimes(1);
+});
+
+it("ignores stepper selection while a save is uncertain", async () => {
+  const f = fixture();
+  f.save.mockRejectedValueOnce(
+    new ConnectError("Lost receipt", Code.Unavailable),
+  );
+  render(f.view());
+  const input = await accounts(f);
+  await configure(input);
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await screen.findByRole("button", { name: "Retry the same Worker save" });
+  await act(async () => {});
+  const started = f.rpc.length;
+  for (const name of ["Harness", "Accounts", "Model", "Configure"]) {
+    expect(stepButton(name).disabled).toBe(true);
+    fireEvent.click(stepButton(name));
+  }
+  await act(async () => {});
+  expect(f.rpc).toHaveLength(started);
+  expect(stepHeading("Configure")).toBeTruthy();
+  expect(f.save).toHaveBeenCalledTimes(1);
+});
+
+it("disables stepper buttons while the wizard is inactive", async () => {
+  const f = fixture();
+  const view = render(f.view());
+  await accounts(f);
+  view.rerender(f.view(false));
+  await act(async () => {});
+  const started = f.rpc.length;
+  for (const name of ["Harness", "Accounts", "Model"]) {
+    expect(stepButton(name).disabled).toBe(true);
+    fireEvent.click(stepButton(name));
+  }
+  await act(async () => {});
+  expect(f.rpc).toHaveLength(started);
+  expect(stepHeading("Model")).toBeTruthy();
+  view.rerender(f.view());
+  expect(stepButton("Harness").disabled).toBe(false);
+  sideEffectFree(f);
+});
+
+it("starts an edit with only the Harness step visited", async () => {
+  const f = fixture();
+  const first = render(f.view());
+  const model = await accounts(f);
+  await configure(model);
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  const { resource } = await f.save.mock.results[0]!.value;
+  first.unmount();
+  render(f.view(true, resource));
+  await screen.findByRole("radio", { name: "Codex" });
+  expect(stepButtons()).toEqual(["Harness"]);
+  expect(currentStepName()).toBe("Harness");
+});
+
+it("keeps four localized labels as buttons and plain items in Korean", async () => {
+  const { i18n } = await import("./localization");
+  const f = fixture();
+  render(f.view());
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  try {
+    await act(() => i18n.changeLanguage("ko"));
+    const list = within(screen.getByRole("list", { name: "워커 구성 단계" }));
+    expect(list.getAllByRole("listitem")).toHaveLength(4);
+    expect(
+      list.getAllByRole("button").map((b) => b.textContent!.replace(/^\d/, "")),
+    ).toEqual(["하네스", "계정"]);
+    expect(
+      list
+        .getAllByRole("listitem")
+        .map((n) => n.textContent!.replace(/^\d/, "")),
+    ).toEqual(["하네스", "계정", "모델", "구성"]);
+    expect(
+      list.getByRole("button", { name: "계정" }).getAttribute("aria-current"),
+    ).toBe("step");
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+  }
+});
+
+// Stepper read table. Selecting a step starts exactly the reads that arriving
+// at that step with Back or Next starts. It starts no write, login, endpoint
+// model discovery or save, and nothing for a step it jumps over.
+const sideEffectFreeExceptKnown = (f: ReturnType<typeof fixture>) => {
+  expect(f.save).not.toHaveBeenCalled();
+  expect(f.endpoint).not.toHaveBeenCalled();
+};
+const ACCOUNT_READS = ["ListProviderInventory", "ListResources"];
+const CONFIGURE_READS = ["ListResources"];
+async function reads(f: ReturnType<typeof fixture>, action: () => void) {
+  await act(async () => {});
+  f.rpc.length = 0;
+  action();
+  await act(async () => {});
+  await act(async () => {});
+  return f.rpc.splice(0).sort();
+}
+const footer = (name: "Back" | "Next") => () =>
+  fireEvent.click(screen.getByRole("button", { name }));
+const select = (name: string) => () => fireEvent.click(stepButton(name));
+
+it("starts no read when selecting Harness, the current step or an unvisited item", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f);
+  expect(await reads(f, select("Model"))).toEqual([]);
+  expect(await reads(f, select("Harness"))).toEqual([]);
+  expect(
+    await reads(f, () =>
+      fireEvent.click(
+        stepper()
+          .getAllByRole("listitem")
+          .find((node) => node.textContent?.endsWith("Configure"))!,
+      ),
+    ),
+  ).toEqual([]);
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("starts the same Accounts reads as Back, from Model or from Configure", async () => {
+  const f = fixture();
+  render(f.view());
+  fireEvent.change(await accounts(f), { target: { value: "typed-exact" } });
+  // Model -> Accounts by the stepper, then the same arrival by Back.
+  const selected = await reads(f, select("Accounts"));
+  expect(selected).toEqual(ACCOUNT_READS);
+  expect(await reads(f, footer("Next"))).toEqual([]);
+  expect(await reads(f, footer("Back"))).toEqual(selected);
+  // Configure -> Accounts jumps over Model and starts no Model read.
+  expect(await reads(f, footer("Next"))).toEqual([]);
+  expect(await reads(f, footer("Next"))).toEqual(CONFIGURE_READS);
+  expect(await reads(f, select("Accounts"))).toEqual(selected);
+  sideEffectFree(f);
+});
+
+it("starts one Accounts read pair per source group, as Back does", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f);
+  fireEvent.click(stepButton("Accounts"));
+  fireEvent.click(screen.getByRole("button", { name: /Add account source/ }));
+  await chooseScrollOption(
+    screen.getByRole("combobox", { name: "Account source 2" }),
+    "subscription:chatgpt",
+  );
+  fireEvent.click(
+    await screen.findByRole("checkbox", { name: /Original subscription/ }),
+  );
+  await waitFor(() =>
+    expect(
+      f.client
+        .getQueryCache()
+        .getAll()
+        .some(
+          (q) =>
+            (q.state.data as { resource?: Resource } | undefined)?.resource
+              ?.id === f.subscription.id &&
+            q.state.status === "success" &&
+            q.state.fetchStatus === "idle",
+        ),
+    ).toBe(true),
+  );
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("heading", { name: "Model", level: 3 });
+  for (const model of screen.getAllByRole("combobox", {
+    name: /^Model for /,
+  }))
+    fireEvent.change(model, { target: { value: "typed-exact" } });
+  await act(async () => {});
+  const selected = await reads(f, select("Accounts"));
+  expect(selected).toEqual([...ACCOUNT_READS, ...ACCOUNT_READS].sort());
+  expect(await reads(f, footer("Next"))).toEqual([]);
+  expect(await reads(f, footer("Back"))).toEqual(selected);
+  // The subscription group reads its catalog once, on its first Model arrival.
+  expect(f.known).toHaveBeenCalledTimes(1);
+  expect(f.endpoint).not.toHaveBeenCalled();
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it.each(["stepper", "Back"])(
+  "starts the Accounts reads once when the previous read failed, selected by %s",
+  async (route) => {
+    const f = fixture();
+    render(f.view());
+    fireEvent.change(await accounts(f), { target: { value: "typed-exact" } });
+    f.list.mockImplementation(() => {
+      throw new ConnectError("Fixture read unavailable", Code.Unavailable);
+    });
+    expect(
+      await reads(f, route === "Back" ? footer("Back") : select("Accounts")),
+    ).toEqual(ACCOUNT_READS);
+    expect(f.save).not.toHaveBeenCalled();
+  },
+);
+
+it("starts no Model read for an API source and no endpoint discovery for any source", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f);
+  expect(await reads(f, select("Accounts"))).toEqual(ACCOUNT_READS);
+  expect(await reads(f, select("Model"))).toEqual([]);
+  expect(await reads(f, select("Harness"))).toEqual([]);
+  expect(await reads(f, select("Model"))).toEqual([]);
+  expect(f.rpc).not.toContain("ListEndpointModels");
+  sideEffectFree(f);
+});
+
+it("reuses a fresh loaded known catalog when selecting Model", async () => {
+  const f = fixture();
+  render(f.view());
+  await accounts(f, true);
+  expect(f.known).toHaveBeenCalledTimes(1);
+  expect(await reads(f, select("Accounts"))).toEqual(ACCOUNT_READS);
+  expect(await reads(f, select("Model"))).toEqual([]);
+  expect(await reads(f, select("Harness"))).toEqual([]);
+  expect(await reads(f, select("Model"))).toEqual([]);
+  expect(f.known).toHaveBeenCalledTimes(1);
+  sideEffectFreeExceptKnown(f);
+});
+
+it.each(
+  ["failed", "stale"].flatMap((state) =>
+    ["stepper", "Back and Next"].map((route) => [state, route]),
+  ),
+)(
+  "reads the known catalog again when it is %s, selected by %s",
+  async (state, route) => {
+    const f = fixture();
+    if (state === "failed")
+      f.known.mockImplementationOnce(() => {
+        throw new ConnectError("Catalog unavailable", Code.Unavailable);
+      });
+    render(f.view());
+    await accounts(f, true);
+    await act(async () => {});
+    expect(f.known).toHaveBeenCalledTimes(1);
+    await reads(f, route === "stepper" ? select("Accounts") : footer("Back"));
+    // The shared client keeps a loaded result fresh for a short window only.
+    if (state === "stale")
+      await act(async () => {
+        await f.client.invalidateQueries();
+      });
+    expect(
+      await reads(f, route === "stepper" ? select("Model") : footer("Next")),
+    ).toEqual(["ListKnownSubscriptionModels"]);
+    sideEffectFreeExceptKnown(f);
+  },
+);
+
+it("starts the same Configure reads as Next and no save", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  await configure(input);
+  expect(await reads(f, select("Accounts"))).toEqual(ACCOUNT_READS);
+  // Accounts -> Configure jumps over Model and starts only Configure reads.
+  const selected = await reads(f, select("Configure"));
+  expect(selected).toEqual(CONFIGURE_READS);
+  expect(await reads(f, footer("Back"))).toEqual([]);
+  expect(await reads(f, footer("Next"))).toEqual(selected);
+  expect(await reads(f, select("Configure"))).toEqual([]);
+  sideEffectFree(f);
+});
+
+it("starts the reads of the first invalid stage when a forward selection is blocked", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  await configure(input);
+  fireEvent.click(stepButton("Model"));
+  fireEvent.change(screen.getByRole("combobox", { name: /^Model for / }), {
+    target: { value: "x".repeat(257) },
+  });
+  await reads(f, select("Accounts"));
+  // The blocked jump shows Model, which starts no read for an API source.
+  expect(await reads(f, select("Configure"))).toEqual([]);
+  expect(stepHeading("Model")).toBeTruthy();
+  sideEffectFree(f);
 });

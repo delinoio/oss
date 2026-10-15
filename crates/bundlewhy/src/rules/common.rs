@@ -112,6 +112,7 @@ fn duplicate_packages(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraf
                      tests after deduplicating."
                 .to_owned(),
             dependency: true,
+            export_usage: None,
         });
     }
 }
@@ -845,6 +846,7 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                          values are inlined into the client bundle, so never define secrets."
                     .to_owned(),
                 dependency,
+                export_usage: None,
             });
         }
     }
@@ -905,6 +907,7 @@ pub fn configuration_disabled(
         direction: finding.direction.to_owned(),
         safety: finding.safety.to_owned(),
         dependency: false,
+        export_usage: None,
     });
 }
 
@@ -962,6 +965,7 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
                  Function.prototype.name needs keep-names options."
             .to_owned(),
         dependency: false,
+        export_usage: None,
     });
 }
 
@@ -1781,6 +1785,7 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                      values explicitly. Evaluating untrusted strings remains unsafe either way."
                 .to_owned(),
             dependency: context.is_dependency(module),
+            export_usage: None,
         });
     }
 }
