@@ -693,17 +693,57 @@ test("source status treats bracket destinations literally", async () => {
   });
 });
 
-test("source status treats star destinations literally", async () => {
-  await withTemporaryRepository(async (repository) => {
-    await commitFiles(repository, { "reports/seed.txt": "seed\n" });
-    const destination = join(repository, "reports", "*.json");
-    await writeFile(destination, "literal star destination\n");
-    assert.equal(await sourceStatus(destination, repository), "");
-    await writeFile(join(repository, "reports", "other.json"), "other\n");
-    const status = await sourceStatus(destination, repository);
-    assert.equal(status, "?? reports/other.json\n");
-    assert.equal(Boolean(status.trim()), true);
-  });
+// Characters that Windows rejects in file names; a destination containing one
+// cannot be materialized there, but the pathspec must still stay literal.
+const WINDOWS_RESERVED_NAME = /[<>:"|?*]/;
+
+function canMaterialize(name, platform = process.platform) {
+  return platform !== "win32" || !WINDOWS_RESERVED_NAME.test(name);
+}
+
+test("destination names that Windows cannot create are not materialized there", () => {
+  for (const [name, platform, expected] of [
+    ["*.json", "win32", false],
+    ["?.json", "win32", false],
+    ["[ab].json", "win32", true],
+    ["plain.json", "win32", true],
+    ["*.json", "linux", true],
+    ["?.json", "darwin", true],
+  ]) {
+    assert.equal(
+      canMaterialize(name, platform),
+      expected,
+      `${platform} ${name}`,
+    );
+  }
+});
+
+test("source status treats glob-like destinations literally", async () => {
+  // The destination is excluded as one exact path, so a tracked sibling that
+  // the glob would match still reports its own changes. A destination name the
+  // current platform cannot create is checked as an absent path.
+  for (const { name, sibling } of [
+    { name: "*.json", sibling: "other.json" },
+    { name: "?.json", sibling: "a.json" },
+    { name: "[ab].json", sibling: "a.json" },
+  ]) {
+    await withTemporaryRepository(async (repository) => {
+      await commitFiles(repository, {
+        [`reports/${sibling}`]: "sibling\n",
+        "reports/seed.txt": "seed\n",
+      });
+      const destination = join(repository, "reports", name);
+      assert.equal(await sourceStatus(destination, repository), "", name);
+      if (canMaterialize(name)) {
+        await writeFile(destination, "literal destination\n");
+        assert.equal(await sourceStatus(destination, repository), "", name);
+      }
+      await writeFile(join(repository, "reports", sibling), "changed\n");
+      const status = await sourceStatus(destination, repository);
+      assert.equal(status, ` M reports/${sibling}\n`, name);
+      assert.equal(Boolean(status.trim()), true, name);
+    });
+  }
 });
 
 test("source status is clean when only the exact destination differs", async () => {
