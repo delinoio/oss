@@ -1,7 +1,7 @@
 //! Source path classification, display paths and the bundle source store.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     path::{Component, Path, PathBuf},
 };
 
@@ -141,6 +141,11 @@ pub struct SourceStore {
     /// Readable text with no build-time snapshot. Live bytes cannot prove
     /// which revision the bundler analyzed.
     pub unverified: Vec<String>,
+    /// Cached source paths that were confirmed readable text without a
+    /// build-time snapshot. Other unavailable sources, such as binary assets
+    /// and generated asset stubs, must not become coverage gaps on a later
+    /// detector visit.
+    readable_without_snapshot: HashSet<String>,
     /// Source text the bundler used, from source-map `sourcesContent`, keyed by
     /// resolved path. Preferred over the live file, which may have changed
     /// after the build read it.
@@ -364,9 +369,8 @@ impl SourceStore {
             let id = existing.id.clone();
             let content = existing.content_included.then(|| existing.content.clone());
             let existing_path = existing.path.clone();
-            let unavailable = existing.revision_evidence == SourceRevisionEvidence::Unavailable;
             if track_coverage_gap
-                && unavailable
+                && self.readable_without_snapshot.contains(&existing_path)
                 && !self.unverified.iter().any(|path| path == &existing_path)
             {
                 tracing::debug!(path = %existing_path, "promoting cached unavailable source to coverage gap");
@@ -436,6 +440,8 @@ impl SourceStore {
             (None, LiveRead::Bytes(bytes)) => match as_text(&bytes) {
                 Some(_) => {
                     tracing::debug!(path = %classified.display, "live source has no build snapshot");
+                    self.readable_without_snapshot
+                        .insert(classified.display.clone());
                     if track_coverage_gap {
                         self.unverified.push(classified.display.clone());
                     }
@@ -740,6 +746,28 @@ mod tests {
         // Repeated detector visits keep the coverage-gap list deduplicated.
         store.add_file(dir.path(), &file).unwrap();
         assert_eq!(store.unverified, vec!["a.js".to_owned()]);
+    }
+
+    #[test]
+    fn cached_asset_source_is_not_promoted_to_a_coverage_gap() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("asset.png");
+        std::fs::write(&file, [0_u8, 159, 146, 150]).unwrap();
+        let mut store = SourceStore::new(true);
+        store.snapshots.insert(
+            normalize(&file),
+            r#"export default "__VITE_ASSET__abc__";"#.to_owned(),
+        );
+
+        let first = store
+            .add_file_without_coverage_gap(dir.path(), &file)
+            .unwrap();
+        assert!(first.1.is_none());
+        assert!(store.unverified.is_empty());
+
+        let second = store.add_file(dir.path(), &file).unwrap();
+        assert_eq!(second.0, first.0);
+        assert!(store.unverified.is_empty());
     }
 
     #[cfg(unix)]
