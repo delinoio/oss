@@ -13,6 +13,8 @@ use crate::{
     model::{Condition, ConditionOutcome, Evidence, EvidenceStatus},
 };
 
+mod eval_sites;
+
 pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     duplicate_packages(context, drafts);
     if context.is_cancelled() {
@@ -1254,25 +1256,6 @@ fn mask_ignored(source: &str, ignored: &[(usize, usize)]) -> String {
     String::from_utf8_lossy(&masked).into_owned()
 }
 
-/// Masks comments with spaces and string, template and regular expression
-/// literals with identifier characters. A literal still ends an expression, so
-/// member-position checks must see a value there instead of blank space.
-fn mask_with_literal_values(source: &str, ignored: &[(usize, usize)]) -> String {
-    let mut masked = source.as_bytes().to_vec();
-    for (start, end) in ignored {
-        let end = (*end).min(source.len());
-        let comment = source.as_bytes()[*start..end].starts_with(b"//")
-            || source.as_bytes()[*start..end].starts_with(b"/*");
-        let fill = if comment { b' ' } else { b'a' };
-        for byte in &mut masked[*start..end] {
-            if *byte != b'\n' {
-                *byte = fill;
-            }
-        }
-    }
-    String::from_utf8_lossy(&masked).into_owned()
-}
-
 fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, usize)> {
     let code = mask_ignored(source, ignored);
     let bytes = code.as_bytes();
@@ -1667,303 +1650,25 @@ fn is_case_label(prefix: &str) -> bool {
             .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
 }
 
-/// Syntactic role of a delimiter that is still open at a given token.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum OpenDelimiter {
-    Parenthesis,
-    Bracket,
-    /// The body of a `class` declaration or expression.
-    ClassBody,
-    /// An object literal in expression position.
-    ObjectLiteral,
-    /// A function body, statement block, static block or any other brace that
-    /// is neither of the member-declaring forms above.
-    Block,
-}
-
-fn contains_line_terminator(text: &str) -> bool {
-    text.contains(['\n', '\r', '\u{2028}', '\u{2029}'])
-}
-
-fn is_identifier_character(character: char) -> bool {
-    character.is_alphanumeric() || character == '_' || character == '$'
-}
-
-/// Reports whether `header`, the text since the last statement boundary,
-/// contains the `class` keyword that introduces a class declaration or
-/// expression.
-fn header_declares_class(header: &str) -> bool {
-    header.match_indices("class").any(|(index, _)| {
-        let before = header[..index].chars().next_back();
-        let after = &header[index + "class".len()..];
-        before.is_none_or(|character| {
-            !is_identifier_character(character) && !".@".contains(character)
-        }) && after.chars().next().is_none_or(char::is_whitespace)
-            && !after.trim_start().starts_with(':')
-    })
-}
-
-/// Classifies the `{` at `open` from the tokens that precede it.
-fn classify_open_brace(code: &str, open: usize, parent: Option<OpenDelimiter>) -> OpenDelimiter {
-    let prefix = code[..open].trim_end();
-    let boundary = prefix.rfind([';', '{', '}']).map_or(0, |index| index + 1);
-    let statement = &prefix[boundary..];
-    if header_declares_class(statement) {
-        return OpenDelimiter::ClassBody;
-    }
-    let Some(last) = prefix.bytes().last() else {
-        return OpenDelimiter::Block;
-    };
-    match last {
-        // `)` ends a parameter list or condition, `>` ends `=>` or a type
-        // argument list, and the rest are statement boundaries.
-        b')' | b'>' | b';' | b'{' | b'}' => OpenDelimiter::Block,
-        b'=' | b'(' | b'[' | b',' | b'?' | b'+' | b'-' | b'*' | b'/' | b'%' | b'&' | b'|'
-        | b'^' | b'!' | b'~' | b'<' => OpenDelimiter::ObjectLiteral,
-        // A property value or a ternary branch is an object literal; a case
-        // label, a statement label or a type annotation is not.
-        b':' if parent == Some(OpenDelimiter::ObjectLiteral) || statement.contains('?') => {
-            OpenDelimiter::ObjectLiteral
-        }
-        b':' => OpenDelimiter::Block,
-        _ => {
-            let word_start = prefix
-                .char_indices()
-                .rev()
-                .find(|(_, character)| !is_identifier_character(*character))
-                .map_or(0, |(index, character)| index + character.len_utf8());
-            if matches!(
-                &prefix[word_start..],
-                "return"
-                    | "yield"
-                    | "await"
-                    | "throw"
-                    | "typeof"
-                    | "void"
-                    | "delete"
-                    | "in"
-                    | "of"
-                    | "default"
-            ) {
-                OpenDelimiter::ObjectLiteral
-            } else {
-                OpenDelimiter::Block
-            }
-        }
-    }
-}
-
-/// Returns the innermost delimiter that is still open before `end`, or `None`
-/// at the top level. `code` is the source with non-code text masked.
-fn innermost_open_delimiter(code: &str, end: usize) -> Option<OpenDelimiter> {
-    let mut stack: Vec<OpenDelimiter> = Vec::new();
-    for (index, byte) in code.bytes().enumerate().take(end) {
-        match byte {
-            b'(' => stack.push(OpenDelimiter::Parenthesis),
-            b'[' => stack.push(OpenDelimiter::Bracket),
-            b'{' => {
-                let kind = classify_open_brace(code, index, stack.last().copied());
-                stack.push(kind);
-            }
-            b')' | b']' | b'}' => {
-                stack.pop();
-            }
-            _ => {}
-        }
-    }
-    stack.last().copied()
-}
-
-/// Reports whether `prefix` ends with a decorator such as `@dec`, `@a.b` or
-/// `@dec(options)`.
-fn ends_with_decorator(prefix: &str) -> bool {
-    let mut text = prefix;
-    if text.ends_with(')') {
-        let mut depth = 0usize;
-        let mut open = None;
-        for (index, byte) in text.bytes().enumerate().rev() {
-            match byte {
-                b')' => depth += 1,
-                b'(' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        open = Some(index);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let Some(open) = open else {
-            return false;
-        };
-        text = &text[..open];
-    }
-    let name_start = text
-        .char_indices()
-        .rev()
-        .find(|(_, character)| !(is_identifier_character(*character) || *character == '.'))
-        .map_or(0, |(index, character)| index + character.len_utf8());
-    name_start < text.len() && text[..name_start].ends_with('@')
-}
-
-/// Reports whether `prefix` ends at a boundary or modifier after which a class
-/// or object member name can start.
-fn has_member_prefix(prefix: &str) -> bool {
-    let prefix = prefix.trim_end();
-    let Some(last) = prefix.bytes().last() else {
-        return true;
-    };
-    match last {
-        b'{' | b'}' | b';' | b',' => return true,
-        // A generator marker; `2 * eval(x)` is a multiplication instead.
-        b'*' => return has_member_prefix(&prefix[..prefix.len() - 1]),
-        _ => {}
-    }
-    if ends_with_decorator(prefix) {
-        return true;
-    }
-    let word_start = prefix
-        .char_indices()
-        .rev()
-        .find(|(_, character)| !is_identifier_character(*character))
-        .map_or(0, |(index, character)| index + character.len_utf8());
-    let is_member_keyword = matches!(
-        &prefix[word_start..],
-        "async"
-            | "static"
-            | "get"
-            | "set"
-            | "public"
-            | "private"
-            | "protected"
-            | "override"
-            | "readonly"
-            | "abstract"
-            | "declare"
-            | "accessor"
-    );
-    // `obj.get eval(` is not valid, so a preceding `.` means a member access.
-    is_member_keyword && !prefix[..word_start].ends_with('.')
-}
-
-/// Reports whether the previous token continues an expression across a line
-/// break, so the next token is not the start of a new class member.
-fn continues_expression(prefix: &str) -> bool {
-    let prefix = prefix.trim_end();
-    prefix.ends_with("=>")
-        || prefix.bytes().last().is_some_and(|byte| {
-            matches!(
-                byte,
-                b'=' | b'+'
-                    | b'-'
-                    | b'*'
-                    | b'/'
-                    | b'%'
-                    | b'&'
-                    | b'|'
-                    | b'^'
-                    | b'!'
-                    | b'~'
-                    | b'<'
-                    | b'?'
-                    | b':'
-                    | b','
-                    | b'.'
-                    | b'('
-                    | b'['
-                    | b'@'
-            )
-        })
-}
-
-/// Reports whether the `eval(` token at `start` declares a member such as
-/// `class C { eval(value) { ... } }` instead of calling the global function.
-/// `code` is the source with non-code text masked.
-///
-/// Rule: the token declares a member only when it sits where a member name can
-/// start and one of the following holds.
-///
-/// 1. The innermost open delimiter is a class body. Class bodies contain only
-///    members, so a member-position `eval(` there is a method, an overload
-///    signature or an abstract method whatever follows its parameter list. A
-///    new line after the previous member also starts a member, because
-///    automatic semicolon insertion ends a field that has no `;`.
-/// 2. The parameter list is followed by a function body on the same line, or by
-///    a TypeScript return annotation. A call followed by `{` on the same line,
-///    or by `: Type`, is not valid, so the form must be a declaration.
-/// 3. The parameter list is followed by a function body on a later line inside
-///    an object literal, which is a method with its body on the next line.
-///
-/// Anywhere else a `{` on a later line starts a separate block after an
-/// automatic semicolon (`eval(code)\n{ cleanup(); }`), so the token is a call.
-/// Statement position, labels, arrow bodies, static blocks, computed keys,
-/// decorator arguments and field initializers are never member positions.
-fn is_eval_method_declaration(code: &str, start: usize) -> bool {
-    let bytes = code.as_bytes();
-    let prefix = code[..start].trim_end();
-    let line_break_before = contains_line_terminator(&code[prefix.len()..start]);
-    let member_prefix = has_member_prefix(prefix);
-    if !member_prefix && !line_break_before {
-        return false;
-    }
-    let mut open = start + "eval".len();
-    while bytes.get(open).is_some_and(u8::is_ascii_whitespace) {
-        open += 1;
-    }
-    if bytes.get(open) != Some(&b'(') {
-        return false;
-    }
-    let Some(close) = matching_delimiter(bytes, open, b'(', b')') else {
-        return false;
-    };
-    let context = innermost_open_delimiter(code, start);
-    let in_class_body = context == Some(OpenDelimiter::ClassBody);
-    if !member_prefix && !(in_class_body && !continues_expression(prefix)) {
-        return false;
-    }
-    if in_class_body {
-        return true;
-    }
-    // `arrow_or_function_body` also accepts arrows, which a method does not
-    // have, and skips TypeScript return annotations before the body brace.
-    let Some((body, false)) = arrow_or_function_body(bytes, close) else {
-        return false;
-    };
-    let gap = &code[close + 1..body];
-    gap.trim_start().starts_with(':')
-        || !contains_line_terminator(gap)
-        || context == Some(OpenDelimiter::ObjectLiteral)
-}
-
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
-    // A leading `.` makes a member access, but the `...` of a spread or rest
-    // element does not.
-    let pattern = Regex::new(r"(^|[^.\w$]|\.\.\.)eval\s*\(").expect("static regex");
     // `eval(` inside strings, templates, comments or regular expressions is
     // not a call.
     let ignored = non_code_ranges(source);
     // A binding named `eval` makes calls inside its scope ordinary calls that
     // cannot observe the surrounding scope; shadowing is decided per call.
     let shadows = eval_shadow_scopes(source, &ignored);
-    let code = mask_with_literal_values(source, &ignored);
-    let start = pattern.find_iter(source).find_map(|found| {
-        let start = found.start() + found.as_str().find("eval")?;
-        let shadowed = shadows
-            .iter()
-            .any(|(begin, end)| (*begin..*end).contains(&start));
-        // A method declaration named `eval` is lexically a call prefix, but it
-        // defines a member instead of invoking the global function.
-        // `object.\n  eval(value)` is a member call whose dot ends the previous
-        // line.
-        let preceding = code[..start].trim_end();
-        let member_access = preceding.ends_with('.') && !preceding.ends_with("...");
-        (!in_ranges(&ignored, start)
-            && !shadowed
-            && !member_access
-            && !is_eval_method_declaration(&code, start))
-        .then_some(start)
-    })?;
+    // One forward pass over the tokens decides which `eval(` tokens call the
+    // global function. Member accesses, private names, declarations and
+    // bodyless signatures named `eval` are not calls.
+    let start = eval_sites::classify_eval_sites(source, &ignored)
+        .into_iter()
+        .filter(|site| site.kind == eval_sites::EvalSiteKind::DirectCall)
+        .map(|site| site.start)
+        .find(|start| {
+            !shadows
+                .iter()
+                .any(|(begin, end)| (*begin..*end).contains(start))
+        })?;
     let line = source[..start].matches('\n').count();
     let column = start - source[..start].rfind('\n').map_or(0, |index| index + 1);
     Some((u32::try_from(line).ok()?, u32::try_from(column).ok()?))
@@ -2836,6 +2541,31 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(drafts.len(), 1);
         assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 4);
         assert_eq!(drafts[0].located.location.as_ref().unwrap().column, 10);
+    }
+
+    #[test]
+    fn eval_context_shapes_are_decided_by_the_token_stream() {
+        // Declarations, private names and bodyless signatures are not calls.
+        for source in [
+            "class C extends mixin({}) { eval(x)\n {} }",
+            "const o = { eval(value) {} };",
+            "class C { #eval(value) {} run() { return this.#eval(value); } }",
+            "interface X { eval(value: string): void; }",
+            "type X = { eval(value: string): void }",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source}");
+        }
+        // A method named `class` is not a class header, so its body is code.
+        assert_eq!(
+            direct_eval_line("const o = { class () { eval(code); } }"),
+            Some((0, 23))
+        );
+        // A keyword operator keeps the operand on the next line in the field
+        // initializer, so the call is found.
+        assert_eq!(
+            direct_eval_line("class C { value = typeof\n eval(code) }"),
+            Some((1, 1))
+        );
     }
 
     #[test]
