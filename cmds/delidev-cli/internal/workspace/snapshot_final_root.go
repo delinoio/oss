@@ -113,13 +113,17 @@ func (m *Manager) publishFinalRemovalClaim(ctx context.Context, claim storageFin
 	}
 	temporary := f.Name()
 	defer os.Remove(temporary)
-	if err := f.Chmod(0600); err == nil {
-		_, err = f.Write(raw)
+	var file claimTempFile = f
+	if m.storageClaimTempFile != nil {
+		file = m.storageClaimTempFile(f)
 	}
+	// Assign to the function-level err so a failed Chmod or Write can never be
+	// masked before the no-replace publication below.
+	err = writeClaimTemp(file, raw)
 	if err == nil {
-		err = f.Sync()
+		err = file.Sync()
 	}
-	closeErr := f.Close()
+	closeErr := file.Close()
 	if err != nil {
 		return err
 	}
@@ -130,6 +134,31 @@ func (m *Manager) publishFinalRemovalClaim(ctx context.Context, claim storageFin
 		return err
 	}
 	return security.SyncParent(path)
+}
+
+// claimTempFile is the file surface used while preparing a claim temp file.
+// It exists so tests can inject Chmod, Write and Sync failures.
+type claimTempFile interface {
+	Chmod(mode os.FileMode) error
+	Write(p []byte) (int, error)
+	Sync() error
+	Close() error
+}
+
+// writeClaimTemp restricts the temp file to the owner and writes the whole
+// payload. A short write is reported as io.ErrShortWrite.
+func writeClaimTemp(f claimTempFile, raw []byte) error {
+	if err := f.Chmod(0600); err != nil {
+		return err
+	}
+	n, err := f.Write(raw)
+	if err != nil {
+		return err
+	}
+	if n != len(raw) {
+		return io.ErrShortWrite
+	}
+	return nil
 }
 
 func (m *Manager) finalRootFault(stage storageFinalRootStage) error {
