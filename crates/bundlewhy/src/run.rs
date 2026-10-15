@@ -144,6 +144,20 @@ fn project_name_at(root: &Path, fallback: &str) -> String {
     fallback.to_owned()
 }
 
+fn project_name_for_collection(
+    collection: &crate::collect::Collection,
+    effective_root: &Path,
+    selected_root: &Path,
+    fallback: &str,
+) -> String {
+    let identity_root = if collection.bundler == "vite" {
+        analysis::context_root(collection, selected_root)
+    } else {
+        effective_root.to_owned()
+    };
+    project_name_at(&identity_root, fallback)
+}
+
 fn prepare_out_dir(out_dir: &Path) -> BwResult<PathBuf> {
     std::fs::create_dir_all(out_dir)
         .and_then(|()| std::fs::canonicalize(out_dir))
@@ -393,7 +407,12 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             let output = analysis::analyze(&AnalysisInput {
                 run_id: run_id.clone(),
                 project_root: effective_root.clone(),
-                project_name: project_name_at(&effective_root, &selection.project_name),
+                project_name: project_name_for_collection(
+                    &collection,
+                    &effective_root,
+                    &selection.project_root,
+                    &selection.project_name,
+                ),
                 bundler: selection.bundler,
                 collection: &collection,
                 build_dir: run_dir.join("build"),
@@ -1025,5 +1044,62 @@ mod tests {
         let after = protected_files_with_root(&selection, Some(&external));
 
         assert_ne!(before, after);
+    }
+
+    #[test]
+    fn discovered_root_does_not_replace_pre_adapter_protected_digests() {
+        let dir = tempfile::tempdir().unwrap();
+        let repository = dir.path().join("repo");
+        let project = repository.join("packages/app");
+        let external = repository.join("apps/web");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        let project_manifest = project.join("package.json");
+        std::fs::write(&project_manifest, r#"{"name":"app"}"#).unwrap();
+        let external_manifest = external.join("package.json");
+        std::fs::write(&external_manifest, r#"{"name":"web"}"#).unwrap();
+        let selection = Selection {
+            project_root: project,
+            project_name: "app".to_owned(),
+            bundler: BundlerChoice::Vite,
+            config_file: None,
+        };
+
+        let mut before = protected_files(&selection);
+        let original_project_digest = before.get(&project_manifest).cloned().unwrap();
+        std::fs::write(&project_manifest, r#"{"name":"changed"}"#).unwrap();
+        for (path, digest) in protected_files_with_root(&selection, Some(&external)) {
+            before.entry(path).or_insert(digest);
+        }
+
+        assert_eq!(
+            before.get(&project_manifest),
+            Some(&original_project_digest)
+        );
+        assert_ne!(
+            refresh_protected_files(&before).get(&project_manifest),
+            Some(&original_project_digest)
+        );
+        assert!(before.contains_key(&external_manifest));
+    }
+
+    #[test]
+    fn vite_project_name_uses_collection_context_for_nested_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let selected = dir.path().join("project");
+        let nested = selected.join("web");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(selected.join("package.json"), r#"{"name":"workspace"}"#).unwrap();
+        std::fs::write(nested.join("package.json"), r#"{"name":"web-app"}"#).unwrap();
+        let collection = crate::collect::Collection {
+            bundler: "vite".to_owned(),
+            context: Some(nested.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            project_name_for_collection(&collection, &selected, &selected, "fallback"),
+            "web-app"
+        );
     }
 }
