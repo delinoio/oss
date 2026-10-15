@@ -84,9 +84,9 @@ original evidence. Grok records at `domain.GrokProtocolVersion` (`1.0.41`) and v
 and acquire no new resume authority. API execution keeps its independent support
 boundary when revalidated against `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) or newer.
 
-The approved desktop flow preserves service order, existing marks, navigation
+The desktop browser flow is implemented in `apps/delidev/src/grok-subscription-login.tsx` and enabled only when the server advertises System capability 39; the device-code method remains planned. The approved desktop flow preserves service order, existing marks, navigation
 and theme. Add account starts browser login; Use a device code is explicit.
-Waiting offers reopen/copy/open-page/cancel as appropriate. Confirmed success
+Waiting offers reopen/copy/open-page/cancel as appropriate: reopen is hidden after the `Incompatible` refusal, and nothing is offered once cancellation was acknowledged or observed (see the [state machine](#desktop-browser-sign-in-state-machine)). Confirmed success
 advances to account naming. Preparing, waiting, canceled, expired, failed and
 recovery remain distinct. Exact original-request retry does not create a new
 login. Polling, reconnection and Strict Mode grant no mutation authority.
@@ -95,9 +95,386 @@ The form retains a 1040px settings column, 720px login width, 40px controls,
 status announcements and name focus. Leaving clears display/timer/callback
 authority without canceling an accepted server operation.
 
+A connected Grok account in AI Subscription management (`subscription-accounts.tsx`)
+follows System capability 39 alone for Refresh login and Log out (there is no
+separate Grok refresh or logout capability, and capabilities 30 and 38 never
+enable Grok). Without capability 39 both controls stay disabled behind the
+Grok-specific `grok-subscription.lifecycle.unavailable` guidance; the generic
+unsupported-service remediation is not used for Grok. An existing disconnected
+Grok account offers no sign-in action.
+
 Quota/reset credit/pricing, enterprise SSO, external identity providers, imported
 user login, account switching, cross-Worker resume, Fork, Sidechat and manual
 compaction are excluded.
+
+### Desktop and server activation order
+
+The desktop controller is a client of the server-owned Grok browser flow and
+owns no OAuth authority itself. It creates a Grok service account, then calls
+`RequestSubscription` with an omitted machine ID (the server-owned path),
+polls `GetSubscriptionProgress` for the original authorization link and cancels
+through `CancelSubscription`. It never sends a machine ID and never selects the
+Worker-owned path for Grok. The server layers own the flow itself (the Grok
+branch of the server-owned request, progress and cancellation) and the single
+switch that advertises System capability 39; the desktop layers add no server
+code and grant no capability.
+
+The desktop layers therefore merge after the server layers. Merged alone, a
+desktop revision sees a server without capability 39 and keeps every Grok
+control in its disabled state, so no request that the server cannot serve is
+ever sent.
+
+| Server revision                         | Desktop revision            | Grok row                                                    |
+| --------------------------------------- | --------------------------- | ----------------------------------------------------------- |
+| Without the server-owned Grok flow      | with the Grok controller    | Coming soon (capability 39 not advertised)                  |
+| With the flow, capability 39 switch off | with the Grok controller    | Coming soon (capability 39 not advertised)                  |
+| With the flow, capability 39 switch on  | with the Grok controller    | Add account, Refresh login and Log out follow capability 39 |
+| With the flow, capability 39 switch on  | without the Grok controller | Coming soon (the desktop never offers the row)              |
+
+Turning the capability 39 switch on is a server-layer decision made after the
+desktop controller exists; the desktop never infers it and never retries
+against a server that does not advertise it.
+
+### Desktop browser sign-in state machine
+
+`apps/delidev/src/grok-login-machine.ts` is the single source of truth for the browser sign-in controller in `grok-subscription-login.tsx`. The controller never decides on its own what to show: every status read, native step and mutation outcome is one event applied to a transition table, and the resulting phase fixes the stage, the visible actions, the problem notice, the retained original request and the native binding. The tables below are generated from that table by `src/grok-login-machine.test.ts`, which also tests every phase and event pair and fails when this section is stale (regenerate with `UPDATE_GROK_LOGIN_DOCS=1 pnpm exec vitest run src/grok-login-machine.test.ts` from `apps/delidev`).
+
+Rules the table enforces:
+
+- A cancellation observed by a status read (the canceled flag while the server still reports preparing or waiting) is handled exactly like the acknowledged local cancellation: the native binding is disposed, the original link is released and no Cancel, Open browser again, Copy link or Retry action remains. Late native results, callbacks and cancel outcomes are ignored.
+- A retained original request (`start`, `cancel` or `name`) is explained only by its own notice (`requestUnconfirmed`, `cancelUnconfirmed`, `nameUnconfirmed`) and keeps it across every uncertain replay. A definite refusal drops the request and names the refusal (`requestFailed`, `cancelFailed`, or `nameUnconfirmed` with an editable name); `requestUnconfirmed` and `cancelUnconfirmed` therefore exist only together with a Retry original request button.
+- Side observations never replace the notice of a retained request: an unreadable status sets `statusUnconfirmed` only when no other problem shows, a readable status clears only that notice, and native open, reopen and callback failures are advisory while a request is retained. Open browser again and Cancel stay disabled while a request is retained, and a replay is the only way to settle it.
+- A refused Take the server keeps queued (`unsupported` together with a Grok diagnostic, classified by `progressDisposition`) is provisional: `poll-refusal-provisional` leaves the phase, the retained request and the native binding unchanged and only recovers the polling notice, so Cancel stays available and the next response is adopted. A later `preparing` or `waiting` response clears the diagnostic notice, `succeeded` names the account and every other response settles. `unsupported` without a Grok diagnostic is final (`poll-unsupported`).
+- A success, terminal state or observed cancellation drops any retained request. Success, every terminal state and cancellation dispose the native binding and clear the original link.
+- Stage, help text and action visibility are derived from the phase alone; the controller keeps only the exact retained closure, the original link and the one-shot native flags.
+- The controller's lifetime ends only through the triggers of the [controller lifetime table](#controller-lifetime): each one disposes the pending login and clears the view, so a screen never outlives the native control (and therefore the selected server) it was created under.
+
+<!-- grok-login-machine:begin -->
+
+#### Phases
+
+| Phase                 | Stage         | Native binding | Cancel | Open browser again | Copy link | Name field | Waiting guidance |
+| --------------------- | ------------- | -------------- | ------ | ------------------ | --------- | ---------- | ---------------- |
+| `desktop-required`    | `unsupported` | `none`         | -      | -                  | -         | `hidden`   | `stage`          |
+| `starting`            | `preparing`   | `none`         | -      | -                  | -         | `hidden`   | `none`           |
+| `preparing`           | `preparing`   | `none`         | yes    | -                  | -         | `hidden`   | `none`           |
+| `awaiting-link`       | `waiting`     | `none`         | yes    | -                  | -         | `hidden`   | `none`           |
+| `opening`             | `preparing`   | `requested`    | yes    | -                  | yes       | `hidden`   | `none`           |
+| `waiting`             | `waiting`     | `requested`    | yes    | yes                | yes       | `hidden`   | `waiting`        |
+| `waiting-no-browser`  | `waiting`     | `requested`    | yes    | yes                | yes       | `hidden`   | `waitingLink`    |
+| `waiting-link-only`   | `waiting`     | `requested`    | yes    | -                  | yes       | `hidden`   | `waitingLink`    |
+| `preparing-canceling` | `preparing`   | `disposed`     | -      | -                  | -         | `hidden`   | `none`           |
+| `waiting-canceling`   | `waiting`     | `disposed`     | -      | -                  | -         | `hidden`   | `none`           |
+| `naming`              | `naming`      | `disposed`     | -      | -                  | -         | `editable` | `none`           |
+| `canceled`            | `canceled`    | `disposed`     | -      | -                  | -         | `hidden`   | `stage`          |
+| `expired`             | `expired`     | `disposed`     | -      | -                  | -         | `hidden`   | `stage`          |
+| `unsupported`         | `unsupported` | `disposed`     | -      | -                  | -         | `hidden`   | `stage`          |
+| `recovery`            | `recovery`    | `disposed`     | -      | -                  | -         | `hidden`   | `stage`          |
+| `failed`              | `failed`      | `disposed`     | -      | -                  | -         | `hidden`   | `stage`          |
+| `start-refused`       | `failed`      | `none`         | -      | -                  | -         | `hidden`   | `stage`          |
+| `disposed`            | -             | `disposed`     | -      | -                  | -         | `hidden`   | `none`           |
+
+Retry original request is shown exactly while a retry kind other than `none` is retained. While it is retained, Cancel and Open browser again are disabled and the naming field is locked (`locked` replaces `editable`).
+
+#### Events
+
+| Event                      | Trigger                                                                                                                            |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `poll-preparing`           | A status read reports preparing                                                                                                    |
+| `poll-preparing-canceled`  | A status read reports preparing with the canceled flag                                                                             |
+| `poll-waiting`             | A status read reports waiting                                                                                                      |
+| `poll-waiting-canceled`    | A status read reports waiting with the canceled flag (another client or a lost cancel response)                                    |
+| `poll-canceled`            | A status read reports the canceled state                                                                                           |
+| `poll-expired`             | A status read reports the expired state                                                                                            |
+| `poll-unsupported`         | A status read reports the unsupported state without a Grok diagnostic                                                              |
+| `poll-refusal-provisional` | A status read reports the unsupported state together with a Grok diagnostic: a refused Take the server keeps queued                |
+| `poll-recovery`            | A status read reports recovery required                                                                                            |
+| `poll-failed`              | A status read reports the failed state                                                                                             |
+| `poll-succeeded`           | A status read reports success and the fresh account verifies generation and operation                                              |
+| `poll-error`               | A status read fails or its result cannot be verified                                                                               |
+| `link-ready`               | The original authorization link passes validation for the first time                                                               |
+| `open-succeeded`           | The native receiver confirms the first open                                                                                        |
+| `open-incompatible`        | The first open meets the Incompatible refusal                                                                                      |
+| `open-failed`              | The first open fails for any other reason                                                                                          |
+| `reopen-succeeded`         | Open browser again succeeds                                                                                                        |
+| `reopen-incompatible`      | Open browser again meets the Incompatible refusal                                                                                  |
+| `reopen-failed`            | Open browser again fails                                                                                                           |
+| `callback-take-failed`     | Taking the native callback fails (never retried)                                                                                   |
+| `callback-forward-failed`  | Forwarding the taken callback fails (never retried)                                                                                |
+| `replay-started`           | A start, cancel or name save request (first run or Retry original request) begins                                                  |
+| `auxiliary-started`        | Open browser again begins                                                                                                          |
+| `start-accepted`           | Account creation and RequestSubscription succeed                                                                                   |
+| `start-refused`            | Account creation or RequestSubscription is refused definitively, or its receipt fails the local account, alias or operation checks |
+| `start-uncertain`          | Account creation or RequestSubscription has an uncertain outcome                                                                   |
+| `cancel-accepted`          | CancelSubscription is acknowledged                                                                                                 |
+| `cancel-refused`           | CancelSubscription is refused definitively, or its receipt fails the local account checks                                          |
+| `cancel-uncertain`         | CancelSubscription has an uncertain outcome                                                                                        |
+| `name-saved`               | The account alias save is verified                                                                                                 |
+| `name-refused`             | The account alias save is refused definitively, or its receipt fails the local alias or account checks                             |
+| `name-uncertain`           | The account alias save has an uncertain outcome                                                                                    |
+| `dispose`                  | The task is left, Settings closes or the controller unmounts                                                                       |
+
+#### Transitions
+
+Each table lists the events that change something in that phase. Every other event is ignored in that phase: the state, the retained request and the native binding stay unchanged (this covers late native results after a cancellation and any outcome that arrives after the login settled). The `opening` phase exists only inside one status-read tick, so a status read never meets it. `Native` shows the next phase's native binding; `disposed (issued)` marks the transition that sends the native Dispose.
+
+##### `desktop-required`
+
+| Event     | Next phase | Problem | Retained request          | Native              |
+| --------- | ---------- | ------- | ------------------------- | ------------------- |
+| `dispose` | `disposed` | clear   | drop the retained request | `disposed` (issued) |
+
+##### `starting`
+
+| Event             | Next phase      | Problem                  | Retained request                | Native              |
+| ----------------- | --------------- | ------------------------ | ------------------------------- | ------------------- |
+| `replay-started`  | `starting`      | clear                    | drop the retained request       | `none`              |
+| `start-accepted`  | `preparing`     | clear                    | drop the retained request       | `none`              |
+| `start-refused`   | `start-refused` | set `requestFailed`      | drop the retained request       | `none`              |
+| `start-uncertain` | `starting`      | set `requestUnconfirmed` | hold the original start request | `none`              |
+| `dispose`         | `disposed`      | clear                    | drop the retained request       | `disposed` (issued) |
+
+##### `preparing`
+
+| Event                      | Next phase            | Problem                                              | Retained request                 | Native              |
+| -------------------------- | --------------------- | ---------------------------------------------------- | -------------------------------- | ------------------- |
+| `poll-preparing`           | `preparing`           | clear only `statusUnconfirmed`                       | keep                             | `none`              |
+| `poll-preparing-canceled`  | `preparing-canceling` | set `canceling`                                      | drop the retained request        | `disposed` (issued) |
+| `poll-waiting`             | `awaiting-link`       | clear only `statusUnconfirmed`                       | keep                             | `none`              |
+| `poll-waiting-canceled`    | `waiting-canceling`   | set `canceling`                                      | drop the retained request        | `disposed` (issued) |
+| `poll-canceled`            | `canceled`            | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-expired`             | `expired`             | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-unsupported`         | `unsupported`         | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-refusal-provisional` | `preparing`           | clear only `statusUnconfirmed`                       | keep                             | `none`              |
+| `poll-recovery`            | `recovery`            | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-failed`              | `failed`              | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-succeeded`           | `naming`              | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-error`               | `preparing`           | set `statusUnconfirmed` unless another problem shows | keep                             | `none`              |
+| `replay-started`           | `preparing`           | clear                                                | drop the retained request        | `none`              |
+| `cancel-accepted`          | `preparing-canceling` | set `canceling`                                      | drop the retained request        | `disposed` (issued) |
+| `cancel-refused`           | `preparing`           | set `cancelFailed`                                   | drop the retained request        | `none`              |
+| `cancel-uncertain`         | `preparing`           | set `cancelUnconfirmed`                              | hold the original cancel request | `none`              |
+| `dispose`                  | `disposed`            | clear                                                | drop the retained request        | `disposed` (issued) |
+
+##### `awaiting-link`
+
+| Event                      | Next phase          | Problem                                              | Retained request                 | Native              |
+| -------------------------- | ------------------- | ---------------------------------------------------- | -------------------------------- | ------------------- |
+| `poll-waiting`             | `awaiting-link`     | clear only `statusUnconfirmed`                       | keep                             | `none`              |
+| `poll-waiting-canceled`    | `waiting-canceling` | set `canceling`                                      | drop the retained request        | `disposed` (issued) |
+| `poll-canceled`            | `canceled`          | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-expired`             | `expired`           | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-unsupported`         | `unsupported`       | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-refusal-provisional` | `awaiting-link`     | clear only `statusUnconfirmed`                       | keep                             | `none`              |
+| `poll-recovery`            | `recovery`          | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-failed`              | `failed`            | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-succeeded`           | `naming`            | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-error`               | `awaiting-link`     | set `statusUnconfirmed` unless another problem shows | keep                             | `none`              |
+| `link-ready`               | `opening`           | keep                                                 | keep                             | `requested`         |
+| `replay-started`           | `awaiting-link`     | clear                                                | drop the retained request        | `none`              |
+| `cancel-accepted`          | `waiting-canceling` | set `canceling`                                      | drop the retained request        | `disposed` (issued) |
+| `cancel-refused`           | `awaiting-link`     | set `cancelFailed`                                   | drop the retained request        | `none`              |
+| `cancel-uncertain`         | `awaiting-link`     | set `cancelUnconfirmed`                              | hold the original cancel request | `none`              |
+| `dispose`                  | `disposed`          | clear                                                | drop the retained request        | `disposed` (issued) |
+
+##### `opening`
+
+| Event               | Next phase            | Problem                                              | Retained request                 | Native              |
+| ------------------- | --------------------- | ---------------------------------------------------- | -------------------------------- | ------------------- |
+| `open-succeeded`    | `waiting`             | clear unless a request is retained                   | keep                             | `requested`         |
+| `open-incompatible` | `waiting-link-only`   | set `remoteUnsupported` unless a request is retained | keep                             | `requested`         |
+| `open-failed`       | `waiting-no-browser`  | set `browserFailed` unless a request is retained     | keep                             | `requested`         |
+| `replay-started`    | `opening`             | clear                                                | drop the retained request        | `requested`         |
+| `cancel-accepted`   | `preparing-canceling` | set `canceling`                                      | drop the retained request        | `disposed` (issued) |
+| `cancel-refused`    | `opening`             | set `cancelFailed`                                   | drop the retained request        | `requested`         |
+| `cancel-uncertain`  | `opening`             | set `cancelUnconfirmed`                              | hold the original cancel request | `requested`         |
+| `dispose`           | `disposed`            | clear                                                | drop the retained request        | `disposed` (issued) |
+
+##### `waiting`
+
+| Event                      | Next phase          | Problem                                              | Retained request                 | Native              |
+| -------------------------- | ------------------- | ---------------------------------------------------- | -------------------------------- | ------------------- |
+| `poll-waiting`             | `waiting`           | clear only `statusUnconfirmed`                       | keep                             | `requested`         |
+| `poll-waiting-canceled`    | `waiting-canceling` | set `canceling`                                      | drop the retained request        | `disposed` (issued) |
+| `poll-canceled`            | `canceled`          | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-expired`             | `expired`           | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-unsupported`         | `unsupported`       | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-refusal-provisional` | `waiting`           | clear only `statusUnconfirmed`                       | keep                             | `requested`         |
+| `poll-recovery`            | `recovery`          | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-failed`              | `failed`            | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-succeeded`           | `naming`            | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-error`               | `waiting`           | set `statusUnconfirmed` unless another problem shows | keep                             | `requested`         |
+| `reopen-succeeded`         | `waiting`           | clear unless a request is retained                   | keep                             | `requested`         |
+| `reopen-incompatible`      | `waiting-link-only` | set `remoteUnsupported` unless a request is retained | keep                             | `requested`         |
+| `reopen-failed`            | `waiting`           | set `browserFailed` unless a request is retained     | keep                             | `requested`         |
+| `callback-take-failed`     | `waiting`           | set `callbackUncertain` unless a request is retained | keep                             | `requested`         |
+| `callback-forward-failed`  | `waiting`           | set `forwardUncertain` unless a request is retained  | keep                             | `requested`         |
+| `replay-started`           | `waiting`           | clear                                                | drop the retained request        | `requested`         |
+| `auxiliary-started`        | `waiting`           | clear unless a request is retained                   | keep                             | `requested`         |
+| `cancel-accepted`          | `waiting-canceling` | set `canceling`                                      | drop the retained request        | `disposed` (issued) |
+| `cancel-refused`           | `waiting`           | set `cancelFailed`                                   | drop the retained request        | `requested`         |
+| `cancel-uncertain`         | `waiting`           | set `cancelUnconfirmed`                              | hold the original cancel request | `requested`         |
+| `dispose`                  | `disposed`          | clear                                                | drop the retained request        | `disposed` (issued) |
+
+##### `waiting-no-browser`
+
+| Event                      | Next phase           | Problem                                              | Retained request                 | Native              |
+| -------------------------- | -------------------- | ---------------------------------------------------- | -------------------------------- | ------------------- |
+| `poll-waiting`             | `waiting-no-browser` | clear only `statusUnconfirmed`                       | keep                             | `requested`         |
+| `poll-waiting-canceled`    | `waiting-canceling`  | set `canceling`                                      | drop the retained request        | `disposed` (issued) |
+| `poll-canceled`            | `canceled`           | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-expired`             | `expired`            | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-unsupported`         | `unsupported`        | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-refusal-provisional` | `waiting-no-browser` | clear only `statusUnconfirmed`                       | keep                             | `requested`         |
+| `poll-recovery`            | `recovery`           | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-failed`              | `failed`             | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-succeeded`           | `naming`             | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-error`               | `waiting-no-browser` | set `statusUnconfirmed` unless another problem shows | keep                             | `requested`         |
+| `reopen-succeeded`         | `waiting`            | clear unless a request is retained                   | keep                             | `requested`         |
+| `reopen-incompatible`      | `waiting-link-only`  | set `remoteUnsupported` unless a request is retained | keep                             | `requested`         |
+| `reopen-failed`            | `waiting-no-browser` | set `browserFailed` unless a request is retained     | keep                             | `requested`         |
+| `replay-started`           | `waiting-no-browser` | clear                                                | drop the retained request        | `requested`         |
+| `auxiliary-started`        | `waiting-no-browser` | clear unless a request is retained                   | keep                             | `requested`         |
+| `cancel-accepted`          | `waiting-canceling`  | set `canceling`                                      | drop the retained request        | `disposed` (issued) |
+| `cancel-refused`           | `waiting-no-browser` | set `cancelFailed`                                   | drop the retained request        | `requested`         |
+| `cancel-uncertain`         | `waiting-no-browser` | set `cancelUnconfirmed`                              | hold the original cancel request | `requested`         |
+| `dispose`                  | `disposed`           | clear                                                | drop the retained request        | `disposed` (issued) |
+
+##### `waiting-link-only`
+
+| Event                      | Next phase          | Problem                                              | Retained request                 | Native              |
+| -------------------------- | ------------------- | ---------------------------------------------------- | -------------------------------- | ------------------- |
+| `poll-waiting`             | `waiting-link-only` | clear only `statusUnconfirmed`                       | keep                             | `requested`         |
+| `poll-waiting-canceled`    | `waiting-canceling` | set `canceling`                                      | drop the retained request        | `disposed` (issued) |
+| `poll-canceled`            | `canceled`          | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-expired`             | `expired`           | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-unsupported`         | `unsupported`       | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-refusal-provisional` | `waiting-link-only` | clear only `statusUnconfirmed`                       | keep                             | `requested`         |
+| `poll-recovery`            | `recovery`          | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-failed`              | `failed`            | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-succeeded`           | `naming`            | clear                                                | drop the retained request        | `disposed` (issued) |
+| `poll-error`               | `waiting-link-only` | set `statusUnconfirmed` unless another problem shows | keep                             | `requested`         |
+| `replay-started`           | `waiting-link-only` | clear                                                | drop the retained request        | `requested`         |
+| `cancel-accepted`          | `waiting-canceling` | set `canceling`                                      | drop the retained request        | `disposed` (issued) |
+| `cancel-refused`           | `waiting-link-only` | set `cancelFailed`                                   | drop the retained request        | `requested`         |
+| `cancel-uncertain`         | `waiting-link-only` | set `cancelUnconfirmed`                              | hold the original cancel request | `requested`         |
+| `dispose`                  | `disposed`          | clear                                                | drop the retained request        | `disposed` (issued) |
+
+##### `preparing-canceling`
+
+| Event                      | Next phase            | Problem                                              | Retained request          | Native     |
+| -------------------------- | --------------------- | ---------------------------------------------------- | ------------------------- | ---------- |
+| `poll-preparing`           | `preparing-canceling` | clear only `statusUnconfirmed`                       | keep                      | `disposed` |
+| `poll-preparing-canceled`  | `preparing-canceling` | set `canceling`                                      | drop the retained request | `disposed` |
+| `poll-waiting`             | `waiting-canceling`   | clear only `statusUnconfirmed`                       | keep                      | `disposed` |
+| `poll-waiting-canceled`    | `waiting-canceling`   | set `canceling`                                      | drop the retained request | `disposed` |
+| `poll-canceled`            | `canceled`            | clear                                                | drop the retained request | `disposed` |
+| `poll-expired`             | `expired`             | clear                                                | drop the retained request | `disposed` |
+| `poll-unsupported`         | `unsupported`         | clear                                                | drop the retained request | `disposed` |
+| `poll-refusal-provisional` | `preparing-canceling` | clear only `statusUnconfirmed`                       | keep                      | `disposed` |
+| `poll-recovery`            | `recovery`            | clear                                                | drop the retained request | `disposed` |
+| `poll-failed`              | `failed`              | clear                                                | drop the retained request | `disposed` |
+| `poll-succeeded`           | `naming`              | clear                                                | drop the retained request | `disposed` |
+| `poll-error`               | `preparing-canceling` | set `statusUnconfirmed` unless another problem shows | keep                      | `disposed` |
+| `cancel-accepted`          | `preparing-canceling` | set `canceling`                                      | drop the retained request | `disposed` |
+| `dispose`                  | `disposed`            | clear                                                | drop the retained request | `disposed` |
+
+##### `waiting-canceling`
+
+| Event                      | Next phase          | Problem                                              | Retained request          | Native     |
+| -------------------------- | ------------------- | ---------------------------------------------------- | ------------------------- | ---------- |
+| `poll-waiting`             | `waiting-canceling` | clear only `statusUnconfirmed`                       | keep                      | `disposed` |
+| `poll-waiting-canceled`    | `waiting-canceling` | set `canceling`                                      | drop the retained request | `disposed` |
+| `poll-canceled`            | `canceled`          | clear                                                | drop the retained request | `disposed` |
+| `poll-expired`             | `expired`           | clear                                                | drop the retained request | `disposed` |
+| `poll-unsupported`         | `unsupported`       | clear                                                | drop the retained request | `disposed` |
+| `poll-refusal-provisional` | `waiting-canceling` | clear only `statusUnconfirmed`                       | keep                      | `disposed` |
+| `poll-recovery`            | `recovery`          | clear                                                | drop the retained request | `disposed` |
+| `poll-failed`              | `failed`            | clear                                                | drop the retained request | `disposed` |
+| `poll-succeeded`           | `naming`            | clear                                                | drop the retained request | `disposed` |
+| `poll-error`               | `waiting-canceling` | set `statusUnconfirmed` unless another problem shows | keep                      | `disposed` |
+| `cancel-accepted`          | `waiting-canceling` | set `canceling`                                      | drop the retained request | `disposed` |
+| `dispose`                  | `disposed`          | clear                                                | drop the retained request | `disposed` |
+
+##### `naming`
+
+| Event            | Next phase | Problem               | Retained request               | Native     |
+| ---------------- | ---------- | --------------------- | ------------------------------ | ---------- |
+| `replay-started` | `naming`   | clear                 | drop the retained request      | `disposed` |
+| `name-saved`     | `disposed` | clear                 | drop the retained request      | `disposed` |
+| `name-refused`   | `naming`   | set `nameUnconfirmed` | drop the retained request      | `disposed` |
+| `name-uncertain` | `naming`   | set `nameUnconfirmed` | hold the original name request | `disposed` |
+| `dispose`        | `disposed` | clear                 | drop the retained request      | `disposed` |
+
+##### `canceled`
+
+| Event     | Next phase | Problem | Retained request          | Native     |
+| --------- | ---------- | ------- | ------------------------- | ---------- |
+| `dispose` | `disposed` | clear   | drop the retained request | `disposed` |
+
+##### `expired`
+
+| Event     | Next phase | Problem | Retained request          | Native     |
+| --------- | ---------- | ------- | ------------------------- | ---------- |
+| `dispose` | `disposed` | clear   | drop the retained request | `disposed` |
+
+##### `unsupported`
+
+| Event     | Next phase | Problem | Retained request          | Native     |
+| --------- | ---------- | ------- | ------------------------- | ---------- |
+| `dispose` | `disposed` | clear   | drop the retained request | `disposed` |
+
+##### `recovery`
+
+| Event     | Next phase | Problem | Retained request          | Native     |
+| --------- | ---------- | ------- | ------------------------- | ---------- |
+| `dispose` | `disposed` | clear   | drop the retained request | `disposed` |
+
+##### `failed`
+
+| Event     | Next phase | Problem | Retained request          | Native     |
+| --------- | ---------- | ------- | ------------------------- | ---------- |
+| `dispose` | `disposed` | clear   | drop the retained request | `disposed` |
+
+##### `start-refused`
+
+| Event     | Next phase | Problem | Retained request          | Native              |
+| --------- | ---------- | ------- | ------------------------- | ------------------- |
+| `dispose` | `disposed` | clear   | drop the retained request | `disposed` (issued) |
+
+##### `disposed`
+
+No event changes this phase.
+
+#### Problem notices
+
+| Notice               | Set by                                                                | Retry button                  |
+| -------------------- | --------------------------------------------------------------------- | ----------------------------- |
+| `browserFailed`      | `open-failed`, `reopen-failed`                                        | never                         |
+| `callbackUncertain`  | `callback-take-failed`                                                | never                         |
+| `cancelFailed`       | `cancel-refused`                                                      | never                         |
+| `cancelUnconfirmed`  | `cancel-uncertain`                                                    | only after `cancel-uncertain` |
+| `canceling`          | `poll-preparing-canceled`, `poll-waiting-canceled`, `cancel-accepted` | never                         |
+| `desktopRequired`    | `start without the native control`                                    | never                         |
+| `forwardUncertain`   | `callback-forward-failed`                                             | never                         |
+| `nameUnconfirmed`    | `name-refused`, `name-uncertain`                                      | only after `name-uncertain`   |
+| `remoteUnsupported`  | `open-incompatible`, `reopen-incompatible`                            | never                         |
+| `requestFailed`      | `start-refused`                                                       | never                         |
+| `requestUnconfirmed` | `start-uncertain`                                                     | only after `start-uncertain`  |
+| `statusUnconfirmed`  | `poll-error`                                                          | never                         |
+
+#### Controller lifetime
+
+Every trigger disposes the pending login (display, timer and callback authority only, never an accepted server operation), releases it and clears the view, so no screen, paused inventory polling or inert action outlives the authority it was created under. A login is never carried to another server: the next Add account starts a new one under the new native control.
+
+| Trigger             | When                                                                                                                | Pending login         | View    | Parent notified |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------- | ------- | --------------- |
+| `leave`             | The user leaves the task (Back or a saved name)                                                                     | disposed and released | cleared | yes             |
+| `inactive`          | The Settings category stops being active                                                                            | disposed and released | cleared | -               |
+| `settings-closed`   | The Settings opening that owns the controller is aborted                                                            | disposed and released | cleared | -               |
+| `authority-changed` | The native control the login was created under is replaced (another server is selected), or the controller unmounts | disposed and released | cleared | -               |
+
+<!-- grok-login-machine:end -->
 
 ### Project requirements
 
@@ -608,26 +985,28 @@ operation left) never carries it. The desktop classifies by that wire signal
 provisional response keeps polling and keeps the original sign-in alive, adopts
 whatever the server reports next (state, diagnostics and committed generation),
 and clears its stale diagnostic and message; a final response stops polling and
-disposes. Inspect refreshes only the diagnostics of the state on screen, and a
+disposes. Both desktop readers apply this classification: the generic onboarding in
+`subscription-login.tsx` and the Grok browser sign-in controller
+(`grok-subscription-login.tsx`, through `grokPollEvent`). Inspect refreshes only the diagnostics of the state on screen, and a
 different state is adopted by the next poll. Grok progress carries no URL or
 user code, so observing a claimed Grok operation never enters the browser path
 (`drivesBrowserLogin`). Every Codex, Claude and Grok row is listed, with the Go
 test that asserts the server half and the vitest case that asserts the client
 half:
 
-| Account record (server)                                   | Progress state                      | Provisional | Client disposition and polling                                                  | Go test (`internal/server`)                                                         | TypeScript test                                                                                                      |
-| --------------------------------------------------------- | ----------------------------------- | ----------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| queued Pending, no record                                 | `preparing`                         | no          | active: keep polling                                                            | `TestGrokProgressViewClassifiesEveryOperationState` (queued)                        | `subscription-progress.test.ts` (preparing)                                                                          |
-| claimed Pending, no record                                | `waiting`                           | no          | active: keep polling; no browser path for Grok                                  | same (claimed)                                                                      | `subscription-progress.test.ts` (waiting, service drives the browser)                                                |
-| refused Take, original queued and uncanceled              | `unsupported` + `grok_diagnostic`   | yes         | provisional: keep polling, adopt the next response                              | same (take refused, past the record window)                                         | `subscription-progress.test.ts`; `subscription-login.test.tsx` (provisional refusal then success, then failure)      |
-| refused Take, original claimed, canceled or gone          | `unsupported`, no diagnostic        | no          | terminal: stop polling, dispose                                                 | same (claimed, canceled flag, no pending)                                           | `subscription-progress.test.ts` (unsupported); `subscription-login.test.tsx` (unsupported without a Grok diagnostic) |
-| settled `succeeded`                                       | `succeeded` + generation            | no          | success: verify, name the account, stop polling                                 | same (finished succeeded)                                                           | `subscription-progress.test.ts` (succeeded); `subscription-login.test.tsx` (provisional refusal then success)        |
-| settled `failed` (diagnostic)                             | `failed` + `grok_diagnostic`        | no          | terminal, even though it carries a Grok diagnostic                              | same (finished failed)                                                              | `subscription-progress.test.ts` and `subscription-login.test.tsx` (failed with a Grok diagnostic)                    |
-| settled `canceled`                                        | `canceled`, never a diagnostic      | no          | terminal                                                                        | same (finished canceled, stale diagnostic)                                          | `subscription-login.test.tsx` (canceled)                                                                             |
-| active record past its window                             | `expired`                           | no          | terminal                                                                        | same (active record after expiry)                                                   | `subscription-login.test.tsx` (expired)                                                                              |
-| account recovery fence (any record, including a refusal)  | `recovery-required`                 | no          | terminal                                                                        | same (queued during recovery, settled under recovery, take refused during recovery) | `subscription-login.test.tsx` (recovery required)                                                                    |
-| any other operation ID, actor or no operation             | access denied                       | n/a         | not a response: the poll reports the original sign-in as unverified and retries | same (another operation, no operation, no subscription)                             | `subscription-login.test.tsx` (unverified status checks)                                                             |
-| Codex or Claude `unsupported` (native diagnostic or none) | `unsupported`, no `grok_diagnostic` | no          | terminal                                                                        | n/a (not a Grok record)                                                             | `subscription-progress.test.ts`; `claude-server-login.test.tsx` (unsupported)                                        |
+| Account record (server)                                   | Progress state                      | Provisional | Client disposition and polling                                                  | Go test (`internal/server`)                                                         | TypeScript test                                                                                                                                                           |
+| --------------------------------------------------------- | ----------------------------------- | ----------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| queued Pending, no record                                 | `preparing`                         | no          | active: keep polling                                                            | `TestGrokProgressViewClassifiesEveryOperationState` (queued)                        | `subscription-progress.test.ts` (preparing)                                                                                                                               |
+| claimed Pending, no record                                | `waiting`                           | no          | active: keep polling; no browser path for Grok                                  | same (claimed)                                                                      | `subscription-progress.test.ts` (waiting, service drives the browser)                                                                                                     |
+| refused Take, original queued and uncanceled              | `unsupported` + `grok_diagnostic`   | yes         | provisional: keep polling, adopt the next response                              | same (take refused, past the record window)                                         | `subscription-progress.test.ts`; `subscription-login.test.tsx` and `grok-subscription-login.test.tsx` (provisional refusal then success, then failure, then cancellation) |
+| refused Take, original claimed, canceled or gone          | `unsupported`, no diagnostic        | no          | terminal: stop polling, dispose                                                 | same (claimed, canceled flag, no pending)                                           | `subscription-progress.test.ts` (unsupported); `subscription-login.test.tsx` and `grok-subscription-login.test.tsx` (unsupported without a Grok diagnostic)               |
+| settled `succeeded`                                       | `succeeded` + generation            | no          | success: verify, name the account, stop polling                                 | same (finished succeeded)                                                           | `subscription-progress.test.ts` (succeeded); `subscription-login.test.tsx` (provisional refusal then success)                                                             |
+| settled `failed` (diagnostic)                             | `failed` + `grok_diagnostic`        | no          | terminal, even though it carries a Grok diagnostic                              | same (finished failed)                                                              | `subscription-progress.test.ts`, `subscription-login.test.tsx` and `grok-subscription-login.test.tsx` (failed with a Grok diagnostic)                                     |
+| settled `canceled`                                        | `canceled`, never a diagnostic      | no          | terminal                                                                        | same (finished canceled, stale diagnostic)                                          | `subscription-login.test.tsx` (canceled)                                                                                                                                  |
+| active record past its window                             | `expired`                           | no          | terminal                                                                        | same (active record after expiry)                                                   | `subscription-login.test.tsx` (expired)                                                                                                                                   |
+| account recovery fence (any record, including a refusal)  | `recovery-required`                 | no          | terminal                                                                        | same (queued during recovery, settled under recovery, take refused during recovery) | `subscription-login.test.tsx` (recovery required)                                                                                                                         |
+| any other operation ID, actor or no operation             | access denied                       | n/a         | not a response: the poll reports the original sign-in as unverified and retries | same (another operation, no operation, no subscription)                             | `subscription-login.test.tsx` (unverified status checks)                                                                                                                  |
+| Codex or Claude `unsupported` (native diagnostic or none) | `unsupported`, no `grok_diagnostic` | no          | terminal                                                                        | n/a (not a Grok record)                                                             | `subscription-progress.test.ts`; `claude-server-login.test.tsx` (unsupported)                                                                                             |
 
 Other readers of progress never poll a Grok operation: account deletion
 (`account-deletion.tsx`) serves ChatGPT and Claude accounts only and routes a
@@ -679,10 +1058,11 @@ table as `GrokDiagnostic.text`; `TestGrokDiagnosticReasonFollowsTheSharedCodeTab
 and `grok-diagnostic.test.tsx` keep identical copies of it. `GrokDiagnosticNotice`
 shows the message, that guidance and a Technical details disclosure with detected
 version, supported version, failed step, error code and a copyable correlation
-ID; it is reused by Settings > AI Subscription onboarding and by the Worker
-installation row (`machine-settings.tsx`), which reads the stored
-`protocol.grok_diagnostic`. The catalog keeps Grok Planned/Coming soon: the
-notice adds no login control.
+ID; it is reused by the Grok browser sign-in controller
+(`grok-subscription-login.tsx`) and by the Worker installation row
+(`machine-settings.tsx`), which reads the stored `protocol.grok_diagnostic`. The
+notice adds no login control; Settings enables Grok Add account only under
+System capability 39.
 
 The desktop validates versions with the same rules as the server. A nonempty
 detected version must satisfy `validInstallationVersion` (mirrors

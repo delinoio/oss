@@ -1,5 +1,6 @@
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useClaudeSubscriptionLogin } from "./claude-subscription-login";
+import { useGrokSubscriptionLogin } from "./grok-subscription-login";
 import {
   useLocale,
   ownedMessage,
@@ -115,6 +116,7 @@ export function useSubscriptionLogin(
 ) {
   useLocale();
   const claude = useClaudeSubscriptionLogin(active, changed);
+  const grok = useGrokSubscriptionLogin(active, changed);
   const transport = useTransport(),
     opening = useSettingsOpening(),
     native = useOAuthNativeControl();
@@ -223,10 +225,15 @@ export function useSubscriptionLogin(
     // Claude sign-in is always the server-owned setup-token flow; callers gate
     // it on System capability 67 and no Runner Device ever participates.
     if (service === SubscriptionServiceId.Claude) {
-      if (!pending.current) claude.begin(initial);
+      if (!pending.current && !grok.workflow) claude.begin(initial);
       return;
     }
-    if (claude.workflow) return;
+    if (service === SubscriptionServiceId.Grok) {
+      // Grok keeps its own controller; it never reuses the ChatGPT view.
+      if (!pending.current && !claude.workflow) grok.begin();
+      return;
+    }
+    if (claude.workflow || grok.workflow) return;
     if (!active || pending.current || opening?.disposed) return;
     const p: Pending = {
       service,
@@ -730,17 +737,22 @@ export function useSubscriptionLogin(
     </>
   ) : null;
   return {
-    service: claude.workflow ? SubscriptionServiceId.Claude : view?.service,
+    service: claude.workflow
+      ? SubscriptionServiceId.Claude
+      : grok.workflow
+        ? SubscriptionServiceId.Grok
+        : view?.service,
     begin,
-    body: claude.body ?? body,
-    workflow: Boolean(view) || claude.workflow,
+    body: claude.body ?? grok.body ?? body,
+    workflow: Boolean(view) || claude.workflow || grok.workflow,
     retained:
       claude.retained ||
+      grok.retained ||
       Boolean(p?.busy || p?.retry || p?.operation || p?.account),
     hidden: claude.workflow && claude.hidden,
     available: Boolean(native),
-    hide: claude.workflow ? claude.hide : leave,
+    hide: claude.workflow ? claude.hide : grok.workflow ? grok.leave : leave,
     show: claude.show,
-    leave: claude.workflow ? claude.leave : leave,
+    leave: claude.workflow ? claude.leave : grok.workflow ? grok.leave : leave,
   };
 }
