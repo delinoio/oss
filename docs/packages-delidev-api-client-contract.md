@@ -561,3 +561,7 @@ The generated System enum includes `SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101`.
 ## Server-owned Claude token client
 
 The generated Go and TypeScript bindings expose `SystemCapability.CLAUDE_SERVER_LOGIN_V1`, `SystemCapability.CLAUDE_MANAGED_EXECUTION_V1` and `WorkerCapability.MANAGED_CLAUDE_EXECUTION_V1`. The desktop starts a Runner-free Claude sign-in only when the server status advertises the first; it omits `machineId` from the request, treats the account document field `subscription.claude_credential = "server-token"` as the managed mode and never receives the token in any response.
+
+## Subagent display names
+
+Generated `Resource.displayName` exposes the optional private native agent name of a SUBAGENT resource, and generated `PublishExecutionRequest.childDisplayNames` carries the Worker publication entries. SUBAGENT `documentJson` retains its closed shape. Consumers treat a missing, blank, malformed or over-256-character name as unavailable and fall back to the stable localized ordinal. Follow the [subagent contract](cmds-delidev-subagents-contract.md#native-agent-display-names).

@@ -95,6 +95,18 @@ message PublishExecutionRequest {
   string instance_id = 3;
   // Closed normalized event, never a raw native extension or credential.
   bytes event_json = 4;
+  // Additive private display metadata for subagent-observed events. Entries
+  // join the batch by original product child ID; the closed event_json shape is
+  // unchanged, so servers that predate this field ignore it.
+  repeated ExecutionChildDisplayName child_display_names = 5;
+}
+
+// Native display name of one child observed in the same publication batch.
+message ExecutionChildDisplayName {
+  // Original UUID-v7 product child ID from the batch, never a native ID.
+  string child_id = 1;
+  // Nonempty UTF-8 text of at most 256 Unicode characters.
+  string name = 2;
 }
 
 message PublishExecutionResponse {

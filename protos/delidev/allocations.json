@@ -14927,6 +14927,36 @@
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1",
       "number": 106
+    },
+    {
+      "issue": 4001,
+      "kind": "message",
+      "declaration": "PublishExecutionRequest",
+      "member": "child_display_names",
+      "number": 5
+    },
+    {
+      "issue": 4001,
+      "kind": "message",
+      "declaration": "ExecutionChildDisplayName",
+      "member": "child_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4001,
+      "kind": "message",
+      "declaration": "ExecutionChildDisplayName",
+      "member": "name",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4001,
+      "kind": "message",
+      "declaration": "Resource",
+      "member": "display_name",
+      "number": 11
     }
   ],
   "rpcReservations": [

@@ -503,6 +503,9 @@ type Resource struct {
 	CreatedAt     string                 `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     string                 `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	StartupTiming *SessionStartupTiming  `protobuf:"bytes,10,opt,name=startup_timing,json=startupTiming,proto3" json:"startup_timing,omitempty"`
+	// Server-owned private display metadata for SUBAGENT resources only: the
+	// last valid native agent name. It is never part of the closed document_json.
+	DisplayName   string `protobuf:"bytes,11,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -605,6 +608,13 @@ func (x *Resource) GetStartupTiming() *SessionStartupTiming {
 		return x.StartupTiming
 	}
 	return nil
+}
+
+func (x *Resource) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
 }
 
 // Server-owned display observations; never part of the closed Session document.
@@ -1027,7 +1037,7 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x11ProviderApiFormat\x123\n" +
 	"\bprotocol\x18\x01 \x01(\x0e2\x17.delidev.v1.ApiProtocolR\bprotocol\x12\x1a\n" +
 	"\bendpoint\x18\x02 \x01(\tR\bendpoint\x12E\n" +
-	"\x0eauthentication\x18\x03 \x01(\x0e2\x1d.delidev.v1.ApiAuthenticationR\x0eauthentication\"\xf3\x02\n" +
+	"\x0eauthentication\x18\x03 \x01(\x0e2\x1d.delidev.v1.ApiAuthenticationR\x0eauthentication\"\x96\x03\n" +
 	"\bResource\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12*\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x16.delidev.v1.EntityKindR\x04kind\x12\x1a\n" +
@@ -1043,7 +1053,8 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\t \x01(\tR\tupdatedAt\x12G\n" +
 	"\x0estartup_timing\x18\n" +
-	" \x01(\v2 .delidev.v1.SessionStartupTimingR\rstartupTiming\"\x8a\x01\n" +
+	" \x01(\v2 .delidev.v1.SessionStartupTimingR\rstartupTiming\x12!\n" +
+	"\fdisplay_name\x18\v \x01(\tR\vdisplayName\"\x8a\x01\n" +
 	"\x14SessionStartupTiming\x12<\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x1e.delidev.v1.StartupGroupTimingR\tworkspace\x124\n" +
 	"\x05agent\x18\x02 \x01(\v2\x1e.delidev.v1.StartupGroupTimingR\x05agent\"\x8e\x01\n" +

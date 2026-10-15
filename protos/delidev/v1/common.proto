@@ -76,6 +76,9 @@ message Resource {
   string created_at = 8;
   string updated_at = 9;
   SessionStartupTiming startup_timing = 10;
+  // Server-owned private display metadata for SUBAGENT resources only: the
+  // last valid native agent name. It is never part of the closed document_json.
+  string display_name = 11;
 }
 
 // Server-owned display observations; never part of the closed Session document.

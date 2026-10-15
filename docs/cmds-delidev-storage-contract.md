@@ -1674,3 +1674,7 @@ shared Codex history home (`runtimes/accounts/<account-id>/codex`) is registered
 in place under the `shared_owner` purpose and is not removed by session
 deletion. See the
 [harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).
+
+## Private subagent display name retention
+
+A SUBAGENT record body may retain the last valid native agent name under the private `display_name` key. Public Resource `document_json` always excludes it and projects it as `Resource.display_name`. Later observations that omit a name preserve the retained value; a later valid observation of the same child replaces it. Backups retain it under original session ownership. Native assignments, source coverage and the schema-1 observation shape do not include it. No migration or backfill is required, and historical records without a name keep fallback labels.
