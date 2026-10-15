@@ -2010,6 +2010,40 @@ fn chunk_owner_counts<'c>(context: &'c Context<'_>) -> &'c HashMap<&'c str, usiz
     })
 }
 
+/// How many included modules with a file path share each backing file in each
+/// chunk file. Derived modules such as `Comp.vue?vue&type=script` and
+/// `Comp.vue?vue&type=template` have the same backing file, so a source map
+/// that names only that file cannot tell them apart.
+fn chunk_file_owner_counts<'c>(context: &'c Context<'_>) -> &'c HashMap<(&'c str, PathBuf), usize> {
+    context.chunk_file_owner_counts.get_or_init(|| {
+        let mut counts: HashMap<(&str, PathBuf), usize> = HashMap::new();
+        for module in context.collection.modules.iter().filter(|m| m.included) {
+            let Some(path) = module.path.as_deref() else {
+                continue;
+            };
+            let key = crate::sources::module_file_key(Path::new(path));
+            let files: HashSet<&str> = module.chunks.iter().map(String::as_str).collect();
+            for file in files {
+                *counts.entry((file, key.clone())).or_default() += 1;
+            }
+        }
+        counts
+    })
+}
+
+/// Reports whether the source `mapped` that a source map names for an emitted
+/// call belongs to the module with `module_literal` and `module_key`. The exact
+/// path wins. A match by backing file alone is ambiguous when several modules
+/// of the chunk share that file, and then it attributes the call to none.
+fn mapped_source_is_module(
+    mapped: &MappedFile,
+    module_literal: &Path,
+    module_key: &Path,
+    backing_file_owners: usize,
+) -> bool {
+    mapped.literal == module_literal || (mapped.key == module_key && backing_file_owners <= 1)
+}
+
 /// Finds the emitted direct `eval` calls that are attributable to `module` in
 /// the chunks at `chunk_indices`. A call is attributable when the chunk's
 /// source map resolves its generated position to the module's source file, or,
@@ -2017,8 +2051,10 @@ fn chunk_owner_counts<'c>(context: &'c Context<'_>) -> &'c HashMap<&'c str, usiz
 /// module the chunk comes from, whether or not the other modules have a file
 /// path. A chunk shared with other modules and lacking a map proves nothing
 /// about which module owns an `eval`, so it is not counted. The module path and
-/// the mapped source are compared by their backing file, so an import query or
-/// fragment on either does not hide the match.
+/// the mapped source are compared exactly first and then by their backing file,
+/// so an import query or fragment on either does not hide the match; several
+/// modules of one chunk with the same backing file make a backing-file-only
+/// match ambiguous, and it attributes the call to none of them.
 fn emitted_evals(
     context: &Context<'_>,
     module: &CollectedModule,
@@ -2039,10 +2075,19 @@ fn emitted_evals(
             .copied()
             .unwrap_or_default();
         let has_map = chunk.map.is_some();
+        let backing_file_owners = chunk_file_owner_counts(context)
+            .get(&(chunk.file.as_str(), module_key.clone()))
+            .copied()
+            .unwrap_or_default();
         for call in &shared.calls {
             let attributable = if has_map {
                 call.source.as_ref().is_some_and(|mapped| {
-                    mapped.literal == module_literal || mapped.key == module_key
+                    mapped_source_is_module(
+                        mapped,
+                        &module_literal,
+                        &module_key,
+                        backing_file_owners,
+                    )
                 })
             } else {
                 owners <= 1
@@ -2054,6 +2099,7 @@ fn emitted_evals(
                 offset = call.offset,
                 has_map,
                 owners,
+                backing_file_owners,
                 attributable,
                 "emitted direct eval candidate"
             );
@@ -2299,6 +2345,9 @@ mod tests {
         map: Option<String>,
         other_modules: usize,
         virtual_modules: usize,
+        /// Import query or fragment suffixes of further modules that share the
+        /// analyzed module's backing file.
+        derived_modules: Vec<String>,
     }
 
     impl EmittedChunk {
@@ -2308,6 +2357,7 @@ mod tests {
                 map: None,
                 other_modules: 0,
                 virtual_modules: 0,
+                derived_modules: Vec::new(),
             }
         }
     }
@@ -2357,6 +2407,15 @@ mod tests {
             modules.push(CollectedModule {
                 id: other.to_string_lossy().into_owned(),
                 path: Some(other.to_string_lossy().into_owned()),
+                included: true,
+                chunks: vec!["main.js".to_owned()],
+                ..CollectedModule::default()
+            });
+        }
+        for suffix in &emitted.derived_modules {
+            modules.push(CollectedModule {
+                id: format!("{}{suffix}", source_path.to_string_lossy()),
+                path: Some(format!("{}{suffix}", source_path.to_string_lossy())),
                 included: true,
                 chunks: vec!["main.js".to_owned()],
                 ..CollectedModule::default()
@@ -3040,6 +3099,7 @@ y=/process.env.F/.test(z),process.env.G"#;
             map: None,
             other_modules: 1,
             virtual_modules: 0,
+            derived_modules: Vec::new(),
         };
         let drafts =
             eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, true, ManglingSetting::Enabled, &emitted);
@@ -3114,6 +3174,7 @@ y=/process.env.F/.test(z),process.env.G"#;
                     map: None,
                     other_modules: 1,
                     virtual_modules: 1,
+                    derived_modules: Vec::new(),
                 },
             ),
         ];
@@ -3157,6 +3218,7 @@ y=/process.env.F/.test(z),process.env.G"#;
             map: None,
             other_modules: 0,
             virtual_modules: 1,
+            derived_modules: Vec::new(),
         };
         for engine_reports_eval in [true, false] {
             let drafts = eval_rule_drafts_for_chunk(
@@ -3171,6 +3233,7 @@ y=/process.env.F/.test(z),process.env.G"#;
         let crowded = EmittedChunk {
             other_modules: 1,
             virtual_modules: 2,
+            derived_modules: Vec::new(),
             ..emitted
         };
         assert!(
@@ -3199,6 +3262,7 @@ y=/process.env.F/.test(z),process.env.G"#;
             map: Some(map.to_owned()),
             other_modules: 1,
             virtual_modules: 0,
+            derived_modules: Vec::new(),
         }
     }
 
@@ -3375,6 +3439,69 @@ y=/process.env.F/.test(z),process.env.G"#;
                 suffix,
             );
             assert!(drafts.is_empty(), "suffix {suffix}");
+        }
+    }
+
+    #[test]
+    fn derived_modules_sharing_a_backing_file_are_ambiguous_for_a_file_only_map() {
+        // The map names only `main.js`, while two included modules are
+        // derived from it, so the emitted call cannot be attributed to either.
+        let mut emitted = shared_chunk_with_map();
+        emitted.derived_modules = vec!["?vue&type=template".to_owned()];
+        let drafts = eval_rule_drafts_for_module_path(
+            DEAD_EVAL_SOURCE,
+            true,
+            ManglingSetting::Enabled,
+            &emitted,
+            "?vue&type=script",
+        );
+        assert!(drafts.is_empty());
+        // The module whose path is the mapped file itself keeps the call.
+        let drafts =
+            eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, true, ManglingSetting::Enabled, &emitted);
+        assert_eq!(drafts.len(), 1);
+        // A map that names the exact derived module identifies it.
+        emitted.map = emitted
+            .map
+            .map(|map| map.replace("../src/main.js", "../src/main.js?vue&type=script"));
+        let drafts = eval_rule_drafts_for_module_path(
+            DEAD_EVAL_SOURCE,
+            true,
+            ManglingSetting::Enabled,
+            &emitted,
+            "?vue&type=script",
+        );
+        assert_eq!(drafts.len(), 1);
+    }
+
+    #[test]
+    fn mapped_source_identity_prefers_the_exact_path() {
+        let mapped = |literal: &str, key: &str| MappedFile {
+            literal: PathBuf::from(literal),
+            key: PathBuf::from(key),
+        };
+        // (mapped literal, mapped key, module literal, module key, modules
+        // that share the backing file, expected)
+        let rows = [
+            ("/a/m.vue", "/a/m.vue", "/a/m.vue", "/a/m.vue", 1, true),
+            ("/a/m.vue", "/a/m.vue", "/a/m.vue", "/a/m.vue", 2, true),
+            ("/a/m.vue?x", "/a/m.vue", "/a/m.vue", "/a/m.vue", 1, true),
+            ("/a/m.vue?x", "/a/m.vue", "/a/m.vue?y", "/a/m.vue", 2, false),
+            ("/a/m.vue?x", "/a/m.vue", "/a/m.vue?x", "/a/m.vue", 2, true),
+            ("/a/m.vue", "/a/m.vue", "/a/m.vue?x", "/a/m.vue", 2, false),
+            ("/a/o.vue", "/a/o.vue", "/a/m.vue", "/a/m.vue", 1, false),
+        ];
+        for (mapped_literal, mapped_key, literal, key, owners, expected) in rows {
+            assert_eq!(
+                mapped_source_is_module(
+                    &mapped(mapped_literal, mapped_key),
+                    Path::new(literal),
+                    Path::new(key),
+                    owners
+                ),
+                expected,
+                "{mapped_literal} vs {literal} ({owners} owners)"
+            );
         }
     }
 

@@ -110,6 +110,9 @@ pub struct Context<'a> {
     pub chunk_eval_index: std::cell::RefCell<HashMap<usize, std::rc::Rc<common::ChunkEvalIndex>>>,
     /// Number of included modules per chunk file; built on first use.
     pub chunk_owner_counts: std::cell::OnceCell<HashMap<&'a str, usize>>,
+    /// Number of included modules with a file path per chunk file and backing
+    /// file; built on first use.
+    pub chunk_file_owner_counts: std::cell::OnceCell<HashMap<(&'a str, PathBuf), usize>>,
 }
 
 /// Original or generated location plus a snippet for one diagnostic.
@@ -175,6 +178,7 @@ impl<'a> Context<'a> {
             export_usage_index: std::cell::OnceCell::new(),
             chunk_eval_index: std::cell::RefCell::new(HashMap::new()),
             chunk_owner_counts: std::cell::OnceCell::new(),
+            chunk_file_owner_counts: std::cell::OnceCell::new(),
         }
     }
 
