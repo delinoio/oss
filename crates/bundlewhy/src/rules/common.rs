@@ -144,6 +144,12 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
     let regex_allowed = |previous: Option<u8>, start: usize| -> bool {
         match previous {
             None => true,
+            // `</tag>` is a JSX closing tag, and `<a b={c} />` or
+            // `<A<B> />` a self-closing one. A regular expression never starts
+            // right after a `<`, and none starts with `>` right after a `}`
+            // or a `>`.
+            Some(b'<') => false,
+            Some(b'}' | b'>') if bytes.get(start + 1) == Some(&b'>') => false,
             Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
             Some(byte) if byte.is_ascii_alphabetic() => {
                 let head = &code[..start];
@@ -2018,6 +2024,39 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn jsx_closing_and_self_closing_tags_are_not_regular_expressions() {
+        for code in [
+            "x=<b>t</b>;process.env.H</p>",
+            "x=<b>t</b>{process.env.H}</p>",
+            "x=<></>;process.env.H</p>",
+            "x=<b a={1} />;process.env.H</p>",
+            "x=<b {...p} />{process.env.H}</p>",
+            "x=<b a=\"1\" />{process.env.H}</p>",
+            "x=<br />{process.env.H}</p>",
+            "x=<A<B> />{process.env.H}</p>",
+        ] {
+            assert!(
+                !in_ranges(&non_code_ranges(code), code.find("process").unwrap()),
+                "{code}"
+            );
+        }
+        // Regular expressions after other tokens, including `}` and `>`,
+        // are still literals.
+        for code in [
+            "x=a>/process.env.H/.test(b)",
+            "x=a+/process.env.H/.test(b)",
+            "if(a){}/process.env.H/.test(b)",
+            "x=(/process.env.H/g)",
+            "x=a.replace(/>/g,\"&gt;\");y=/process.env.H/",
+        ] {
+            assert!(
+                in_ranges(&non_code_ranges(code), code.find("process").unwrap()),
+                "{code}"
+            );
+        }
+    }
+
+    #[test]
     fn arrow_parameters_are_found_behind_return_type_annotations() {
         let names = declared_names("const run = (descriptiveName: string): void => eval(code);");
         assert!(names.contains(&"descriptiveName".to_owned()));
@@ -2566,6 +2605,19 @@ y=/process.env.F/.test(z),process.env.G"#;
             direct_eval_line("class C { value = typeof\n eval(code) }"),
             Some((1, 1))
         );
+    }
+
+    #[test]
+    fn closing_tags_do_not_hide_a_direct_eval_after_them() {
+        // `</b>` is not the start of a regular expression, so the call after
+        // a closing or self-closing tag on the same line is found.
+        for (source, expected) in [
+            ("const view = <b>x</b>{eval(code)}</p>;", Some((0, 22))),
+            ("const view = <b a={1} />{eval(code)}</p>;", Some((0, 25))),
+            ("const view = <A<B> />{eval(code)}</p>;", Some((0, 22))),
+        ] {
+            assert_eq!(direct_eval_line(source), expected, "{source}");
+        }
     }
 
     #[test]
