@@ -52,6 +52,45 @@ describe("bare URL conversion", () => {
     ])
       expect(convert(text)).toBe(text);
   });
+  it("treats a URL glued to a letter, digit or mark of any script as not standalone", () => {
+    for (const glue of [
+      "한", // Hangul syllable
+      "あ", // Hiragana
+      "漢", // CJK ideograph
+      "é", // precomposed Latin
+      "ب", // Arabic
+      "Ж", // Cyrillic
+      "३", // Devanagari digit
+      "１", // fullwidth digit
+      "7",
+      "\u0301", // combining acute accent
+      "\u{20bb7}", // astral CJK ideograph (surrogate pair)
+      "\u{1d7d8}", // astral mathematical digit
+    ]) {
+      const text = `${glue}https://example.test/x `;
+      expect(convert(text)).toBe(text);
+      expect(convert(`a ${glue}https://example.test/x b`)).toBe(
+        `a ${glue}https://example.test/x b`,
+      );
+    }
+  });
+  it("still converts after whitespace, punctuation, symbols and emoji of any script", () => {
+    for (const lead of [
+      " ",
+      "\n",
+      "。",
+      "、",
+      "「",
+      "(",
+      ":",
+      "😀",
+      "\u00a0",
+      "→",
+    ]) {
+      const text = `한${lead}https://example.test/x`;
+      expect(convert(text)).toContain("[https://example.test/x](");
+    }
+  });
   it("never converts inside links, images, code spans or fences", () => {
     for (const text of [
       "[Docs](https://example.com/docs)",
@@ -390,6 +429,14 @@ const FUZZ_PIECES = [
   "```\n",
   "![i](https://e.com/i.png)",
   "$skill",
+  "한https://a.test/g ",
+  "7https://a.test/d ",
+  "\\![i](https://e.com/e)",
+  "\\\\![i](https://e.com/e)",
+  "![a [b](https://b.test) https://c.test](i.png)",
+  "<https://a.test/auto>",
+  "\u0301",
+  "\u{20bb7}",
 ];
 
 describe("round-trip invariants", () => {
@@ -444,6 +491,24 @@ describe("round-trip invariants", () => {
       expect(converted.length).toBeGreaterThanOrEqual(text.length);
       for (const link of scanMarkdown(converted).links)
         expect(link.url.startsWith("http")).toBe(true);
+      // Every link that conversion created follows a standalone boundary: not a
+      // letter, digit or mark of any script, backslash, bang or open bracket.
+      const original = new Map<string, number>();
+      for (const link of scan.links) {
+        const source = text.slice(link.start, link.end);
+        original.set(source, (original.get(source) ?? 0) + 1);
+      }
+      for (const link of scanMarkdown(converted).links) {
+        const source = converted.slice(link.start, link.end),
+          known = original.get(source) ?? 0;
+        if (known > 0) {
+          original.set(source, known - 1);
+          continue;
+        }
+        const before = [...converted.slice(0, link.start)].at(-1);
+        if (before !== undefined)
+          expect(before).not.toMatch(/[\p{L}\p{N}\p{M}\\![]/u);
+      }
     });
   }
   it("round-trips converted URLs of generated shapes to the same URL", () => {

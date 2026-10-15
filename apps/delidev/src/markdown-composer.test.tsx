@@ -467,6 +467,28 @@ it("R23 escaped image marker: the bang is literal text and the link collapses an
   );
 });
 
+it("R24 localized boundary: a URL glued to a letter or digit of any script is never converted", () => {
+  const { input } = mount("");
+  // Pasted text: only the standalone URL converts.
+  paste(input, "한https://a.test/x 3https://a.test/y 안녕 https://a.test/z ");
+  expect(probe.canonical).toBe(
+    "한https://a.test/x 3https://a.test/y 안녕 [https://a.test/z](https://a.test/z) ",
+  );
+  // A typed delimiter after a glued URL keeps it plain text.
+  const base = input.value,
+    end = base.length;
+  select(input, end);
+  nativeEdit(input, `${base}あhttps://a.test/w`, end + 17);
+  nativeEdit(input, `${base}あhttps://a.test/w `, end + 18);
+  expect(probe.canonical.endsWith("あhttps://a.test/w ")).toBe(true);
+  expect(probe.canonical).not.toContain("[https://a.test/w]");
+  // No conversion entry exists: one undo removes the typed run and delimiter.
+  undo(input);
+  expect(
+    probe.canonical.endsWith("[https://a.test/z](https://a.test/z) "),
+  ).toBe(true);
+});
+
 it("R05 paste with files: image ownership stays with the form handler", () => {
   const attach = vi.fn();
   render(fixture()("", { attach }));

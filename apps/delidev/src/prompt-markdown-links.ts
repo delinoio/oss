@@ -445,12 +445,19 @@ function overlapsProtected(
   return hit !== undefined && hit.start < end;
 }
 
-// A URL glued to word characters, an escape or an image marker, or placed where
-// link text or a link destination begins, is not a standalone bare URL.
+// A URL glued to a preceding letter, digit (in any script), combining mark,
+// escape or image marker, or placed where link text or a link destination
+// begins, is not a standalone bare URL. The preceding code point is read as a
+// whole so an astral letter (a surrogate pair) is classified as one character.
+const WORD_CHARACTER = /[\p{L}\p{N}\p{M}]/u;
 function urlStartsStandalone(text: string, start: number): boolean {
   if (start === 0) return true;
   const previous = text[start - 1]!;
-  if (/[A-Za-z0-9\\![]/u.test(previous)) return false;
+  if (previous === "\\" || previous === "!" || previous === "[") return false;
+  const pair = start >= 2 ? text.codePointAt(start - 2) : undefined;
+  const glued =
+    pair !== undefined && pair > 0xffff ? String.fromCodePoint(pair) : previous;
+  if (WORD_CHARACTER.test(glued)) return false;
   return !(previous === "(" && text[start - 2] === "]");
 }
 
