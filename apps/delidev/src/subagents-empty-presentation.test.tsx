@@ -309,3 +309,37 @@ test("keeps Subagents visible after a continuation chain ends in an empty termin
   expect(t.published.includes(true)).toBe(false);
   t.client.clear();
 });
+
+test("resets presentation when a replacement transport keeps the same QueryClient and session", async () => {
+  const session = newRequestId();
+  const old = harness();
+  const replacement = harness();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const published: boolean[] = [];
+  const view = (transport: typeof old.transport, revision: string) => (
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <Probe sessionId={session} revision={revision} published={published} />
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+  const hidden = () =>
+    (screen.getAllByTestId("subagents-section").at(-1) as HTMLElement).hidden;
+  const mounted = render(view(old.transport, "1"));
+  await settled(hidden);
+  // The replacement owner's first read stays pending: the old owner's empty
+  // snapshot is no evidence for it, so the section must be visible.
+  replacement.state.hold = true;
+  mounted.rerender(view(replacement.transport, "1"));
+  await waitFor(() => expect(replacement.state.held).toHaveLength(1));
+  expect(hidden()).toBe(false);
+  expect(published.at(-1)).toBe(false);
+  // Only the replacement owner's accepted empty result hides it again.
+  await act(async () =>
+    replacement.state.held.splice(0).forEach((h) => h.settle({})),
+  );
+  await settled(hidden);
+  client.clear();
+});

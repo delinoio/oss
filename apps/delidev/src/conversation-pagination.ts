@@ -14,6 +14,7 @@ import {
   useConnectPaginationReader,
   usePaginationChain,
   usePaginationRefresh,
+  useTransportOwner,
 } from "./scroll-pagination-query";
 
 export function validateConversationPage(
@@ -110,8 +111,9 @@ export function useConversationPages(
     queueRequest,
     inputs,
   );
+  const transportOwner = useTransportOwner();
   const query = usePaginationChain(
-    `${kind}:${sessionId}`,
+    `${kind}:${sessionId}:${transportOwner}`,
     active,
     kind === EntityKind.QUEUE ? queueReader : resourceReader,
   );
