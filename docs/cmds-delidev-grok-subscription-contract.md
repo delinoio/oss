@@ -95,7 +95,6 @@ run the shared case table `apps/delidev/src/grok-url-validation-fixtures.json`
 in both TypeScript and Rust tests, so the two layers cannot disagree; the
 renderer additionally requires the URL's `user_code` to equal the displayed code.
 
-
 ### Capability advertisement table
 
 Each capability has one switch and one default. A switch is set only by a product
