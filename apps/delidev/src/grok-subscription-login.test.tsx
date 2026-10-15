@@ -142,9 +142,9 @@ function fixture(url = loginURL) {
     return { account: current, operationId: operation };
   });
   const progress = vi.fn(
-    (
-      _request: { operationId: string },
-    ): {
+    (_request: {
+      operationId: string;
+    }): {
       state: State;
       url: string;
       userCode: string;
@@ -153,14 +153,14 @@ function fixture(url = loginURL) {
       canceled: boolean;
       grokDiagnostic?: ReturnType<typeof refusal>;
     } => ({
-    state,
-    url: state === State.WAITING ? url : "",
-    userCode: state === State.WAITING ? userCode : "",
-    suggestedName: suggested,
-    generation,
-    canceled,
-    grokDiagnostic: diagnostic,
-  }),
+      state,
+      url: state === State.WAITING ? url : "",
+      userCode: state === State.WAITING ? userCode : "",
+      suggestedName: suggested,
+      generation,
+      canceled,
+      grokDiagnostic: diagnostic,
+    }),
   );
   const cancel = vi.fn((_request: { mutation?: { requestId: string } }) => ({
     account: current,
