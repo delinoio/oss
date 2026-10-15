@@ -7,7 +7,9 @@ import {
   useRef,
   useState,
   useCallback,
+  type ClipboardEvent,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -20,11 +22,70 @@ import {
   type SkillSelection,
 } from "@delinoio/delidev-api-client";
 import { useAppearancePreferences } from "./appearance";
+import {
+  ExternalLinkFailure,
+  externalLinkFailure,
+  externalLinkFailureMessages,
+  externalLinksAvailable,
+  openExternalUrl,
+} from "./external-links";
+import "./external-links.css";
+import {
+  PromptEditHistory,
+  PromptEditKind,
+  type PromptSelection,
+  type PromptSnapshot,
+} from "./prompt-edit-history";
+import {
+  buildLayout,
+  canonicalRangeForDisplay,
+  convertBareUrls,
+  convertTypedUrl,
+  diffDisplay,
+  linkAtCaret,
+  revealedStarts,
+  sameStarts,
+  scanMarkdown,
+  shiftStarts,
+  type PromptLayout,
+  type TextRange,
+} from "./prompt-markdown-links";
+import { ShortcutPlatform, shortcutPlatform } from "./shortcuts";
 import { copy, useLocale } from "./localization";
 import {
   skillCompletionAnchorUsable,
   useSkillCompletionOverlay,
 } from "./skill-completion-overlay";
+
+/** Canonical prompt limit in UTF-8 bytes; owners enforce the same value. */
+export const MAX_PROMPT_BYTES = 256 << 10;
+const promptBytes = (text: string) => new TextEncoder().encode(text).byteLength;
+enum HistoryAction {
+  Undo = "undo",
+  Redo = "redo",
+}
+function historyAction(event: {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+}): HistoryAction | undefined {
+  const mac = shortcutPlatform() === ShortcutPlatform.Mac;
+  const primary = mac
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey;
+  if (!primary || event.altKey) return;
+  const key = event.key.toLowerCase();
+  if (key === "z")
+    return event.shiftKey ? HistoryAction.Redo : HistoryAction.Undo;
+  if (key === "y" && !mac && !event.shiftKey) return HistoryAction.Redo;
+}
+const selectionDirection = (input: HTMLTextAreaElement) =>
+  input.selectionDirection === "backward" ||
+  input.selectionDirection === "forward"
+    ? input.selectionDirection
+    : "none";
 
 export interface SkillToken {
   start: number;
@@ -311,6 +372,30 @@ export function useSkillCompletion({
   const composing = useRef(false),
     editable = useRef(false);
   const [composition, setComposition] = useState(false);
+  // Canonical Markdown stays the draft. The textarea shows a collapsed display
+  // text derived from it, so selection, bindings and history map through here.
+  const [revealed, setRevealed] = useState<number[]>([]);
+  const [linkFailure, setLinkFailure] = useState<ExternalLinkFailure>();
+  const layout = useMemo(() => buildLayout(value, revealed), [value, revealed]);
+  const layoutRef = useRef<PromptLayout>(layout);
+  layoutRef.current = layout;
+  const revealedRef = useRef(revealed);
+  revealedRef.current = revealed;
+  const selectionRef = useRef<PromptSelection>({
+    start: 0,
+    end: 0,
+    direction: "none",
+  });
+  const pendingSelection = useRef(false);
+  const history = useRef(new PromptEditHistory<SkillTokenBinding>());
+  const linkOpening = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const completion = useRef<HTMLDivElement>(null),
     keyboardNavigation = useRef(false);
   const dismissCompletion = useCallback(() => setDismissed(true), []);
@@ -326,6 +411,11 @@ export function useSkillCompletion({
     (!retainTransportContext && previousScope.current.transport !== transport);
   useEffect(() => {
     if (contextChanged && machineId && agentId) {
+      // Opaque selections belong to one transport. History compares only text
+      // and scope, so an equal-text snapshot from the previous transport could
+      // otherwise restore a binding that looks current.
+      if (previousScope.current.transport !== transport)
+        history.current.reset();
       previousScope.current = { scope, transport };
       setBindings((prior) =>
         prior.map((binding) => ({ ...binding, stale: true })),
@@ -333,6 +423,19 @@ export function useSkillCompletion({
       setSelected(0);
     }
   }, [scope, transport, contextChanged, machineId, agentId]);
+  // Reveal, collapse, undo and conversion move the display text under the
+  // caret, so the canonical selection is re-applied after that render.
+  useLayoutEffect(() => {
+    if (!pendingSelection.current) return;
+    pendingSelection.current = false;
+    const input = textarea.current;
+    if (!input || composing.current) return;
+    const selection = selectionRef.current,
+      start = layout.toDisplay(Math.min(selection.start, value.length)),
+      end = layout.toDisplay(Math.min(selection.end, value.length));
+    if (input.selectionStart !== start || input.selectionEnd !== end)
+      input.setSelectionRange(start, end, selection.direction);
+  });
   const hasRanges = hasSkillRange(value);
   const query = useQuery(
     SkillQuery.listSkills,
@@ -545,6 +648,44 @@ export function useSkillCompletion({
     announcement.locale === locale
       ? announcement.count
       : undefined;
+  const snapshot = (): PromptSnapshot<SkillTokenBinding> => ({
+    value,
+    bindings,
+    selection: selectionRef.current,
+  });
+  // One canonical transaction: owner draft, bindings, history, selection and
+  // revealed links change together so undo restores them as a single step.
+  const commit = (
+    next: string,
+    nextBindings: SkillTokenBinding[],
+    selection: PromptSelection,
+    kind: PromptEditKind,
+    coalesce: boolean,
+    replaced?: TextRange,
+    insertedLength = 0,
+  ): boolean => {
+    if (!canEdit() || change(next, nextBindings) === false) return false;
+    history.current.record(
+      snapshot(),
+      { value: next, bindings: nextBindings, selection },
+      kind,
+      coalesce,
+    );
+    setBindings(nextBindings);
+    selectionRef.current = selection;
+    setCaret(selection.start);
+    setRevealed(
+      composing.current && replaced
+        ? shiftStarts(revealedRef.current, replaced, insertedLength)
+        : revealedStarts(
+            scanMarkdown(next).links,
+            selection.start,
+            selection.end,
+          ),
+    );
+    pendingSelection.current = true;
+    return true;
+  };
   const accept = (entry: SkillEntry) => {
     if (
       !canEdit() ||
@@ -576,24 +717,268 @@ export function useSkillCompletion({
         context: scope,
       },
     ];
-    if (change(next, nextBindings) === false) return;
-    setBindings(nextBindings);
-    setCaret(nextCaret);
+    if (
+      !commit(
+        next,
+        nextBindings,
+        { start: nextCaret, end: nextCaret, direction: "none" },
+        PromptEditKind.Discrete,
+        false,
+      )
+    )
+      return;
     setDismissed(true);
     queueMicrotask(() => {
       if (!canEdit()) return;
+      const current = layoutRef.current;
       textarea.current?.focus({ preventScroll: true });
-      textarea.current?.setSelectionRange(nextCaret, nextCaret);
+      textarea.current?.setSelectionRange(
+        current.toDisplay(nextCaret),
+        current.toDisplay(nextCaret),
+      );
     });
   };
-  const onChange = (next: string, position: number) => {
+  const onChange = (nextDisplay: string, position: number) => {
     if (!canEdit()) return;
+    const edit = diffDisplay(layout.display, nextDisplay, position);
+    const range = canonicalRangeForDisplay(layout, edit.start, edit.end);
+    let next =
+      value.slice(0, range.start) + edit.inserted + value.slice(range.end);
+    // The reported caret decides where inside the inserted text it lands.
+    let caretAt =
+      range.start +
+      (position >= edit.start && position <= edit.start + edit.inserted.length
+        ? position - edit.start
+        : edit.inserted.length);
+    let converted = false;
+    const typedDelimiter =
+      !composing.current &&
+      edit.start === edit.end &&
+      edit.inserted.length === 1 &&
+      /\s/u.test(edit.inserted);
+    if (typedDelimiter) {
+      const conversion = convertTypedUrl(next, range.start);
+      // A conversion past the limit is dropped; the typed delimiter stays.
+      if (conversion && promptBytes(conversion.text) <= MAX_PROMPT_BYTES) {
+        next = conversion.text;
+        caretAt = conversion.map(caretAt);
+        converted = true;
+        console.debug("prompt link conversion", { trigger: "delimiter" });
+      }
+    }
+    const before = selectionRef.current,
+      contiguous =
+        before.start === before.end &&
+        (before.start === range.end || before.start === range.start);
+    const kind = converted
+      ? PromptEditKind.Discrete
+      : composing.current
+        ? PromptEditKind.Composition
+        : edit.start === edit.end &&
+            edit.inserted.length === 1 &&
+            !typedDelimiter &&
+            contiguous
+          ? PromptEditKind.Typing
+          : edit.inserted === "" && range.end - range.start === 1 && contiguous
+            ? PromptEditKind.Deleting
+            : PromptEditKind.Discrete;
     const nextBindings = editedBindings(value, next, bindings);
-    if (change(next, nextBindings) === false) return;
-    setBindings(nextBindings);
-    setCaret(position);
+    if (
+      !commit(
+        next,
+        nextBindings,
+        { start: caretAt, end: caretAt, direction: "none" },
+        kind,
+        kind !== PromptEditKind.Discrete,
+        range,
+        edit.inserted.length,
+      )
+    )
+      return;
     setDismissed(false);
     setSelected(0);
+  };
+  const syncSelection = () => {
+    const input = textarea.current;
+    if (!input) return;
+    const current = layoutRef.current,
+      start = current.toCanonical(input.selectionStart),
+      end = current.toCanonical(input.selectionEnd);
+    selectionRef.current = { start, end, direction: selectionDirection(input) };
+    setCaret(start);
+    if (composing.current) return;
+    const wanted = revealedStarts(current.links, start, end);
+    if (!sameStarts(wanted, revealedRef.current)) {
+      pendingSelection.current = true;
+      setRevealed(wanted);
+    }
+  };
+  const runHistory = (action: HistoryAction) => {
+    if (!canEdit() || composing.current) return;
+    const current = snapshot();
+    const target =
+      action === HistoryAction.Undo
+        ? history.current.undo(current)
+        : history.current.redo(current);
+    if (!target) return;
+    if (change(target.value, target.bindings) === false) {
+      history.current.revert(action);
+      return;
+    }
+    const restored = target.bindings.map((binding) =>
+      binding.context && binding.context !== scope
+        ? { ...binding, stale: true }
+        : binding,
+    );
+    setBindings(restored);
+    selectionRef.current = target.selection;
+    setCaret(target.selection.start);
+    setRevealed(
+      revealedStarts(
+        scanMarkdown(target.value).links,
+        target.selection.start,
+        target.selection.end,
+      ),
+    );
+    pendingSelection.current = true;
+    setDismissed(true);
+  };
+  const historyRunner = useRef(runHistory);
+  historyRunner.current = runHistory;
+  useEffect(() => {
+    const input = textarea.current;
+    if (!input) return;
+    // Programmatic link conversion clears the native undo stack, so native
+    // history commands are routed to the adapter-owned history instead.
+    const listener = (event: Event) => {
+      const type = (event as InputEvent).inputType;
+      if (type !== "historyUndo" && type !== "historyRedo") return;
+      event.preventDefault();
+      historyRunner.current(
+        type === "historyUndo" ? HistoryAction.Undo : HistoryAction.Redo,
+      );
+    };
+    input.addEventListener("beforeinput", listener);
+    return () => input.removeEventListener("beforeinput", listener);
+  }, [textarea, disabled, active]);
+  const selectedCanonical = (): TextRange | undefined => {
+    const input = textarea.current;
+    if (!input || input.selectionStart === input.selectionEnd) return;
+    return canonicalRangeForDisplay(
+      layoutRef.current,
+      input.selectionStart,
+      input.selectionEnd,
+    );
+  };
+  const onCopy = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const range = selectedCanonical();
+    if (!range || composing.current) return;
+    event.clipboardData.setData(
+      "text/plain",
+      value.slice(range.start, range.end),
+    );
+    event.preventDefault();
+  };
+  const onCut = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const range = selectedCanonical();
+    if (!range || composing.current || !canEdit()) return;
+    event.clipboardData.setData(
+      "text/plain",
+      value.slice(range.start, range.end),
+    );
+    event.preventDefault();
+    const next = value.slice(0, range.start) + value.slice(range.end);
+    commit(
+      next,
+      editedBindings(value, next, bindings),
+      { start: range.start, end: range.start, direction: "none" },
+      PromptEditKind.Discrete,
+      false,
+      range,
+      0,
+    );
+  };
+  const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const input = textarea.current;
+    // Image paste ownership stays with the attachment input.
+    if (
+      !input ||
+      !canEdit() ||
+      composing.current ||
+      event.clipboardData.files.length
+    )
+      return;
+    const pasted = event.clipboardData
+      .getData("text/plain")
+      .replace(/\r\n?/gu, "\n");
+    if (!/https?:\/\//iu.test(pasted)) return;
+    const range = canonicalRangeForDisplay(
+      layout,
+      input.selectionStart,
+      input.selectionEnd,
+    );
+    const inserted =
+      value.slice(0, range.start) + pasted + value.slice(range.end);
+    const conversion = convertBareUrls(
+      inserted,
+      range.start,
+      range.start + pasted.length,
+    );
+    // Over the limit or nothing to convert: the native paste proceeds untouched.
+    if (!conversion || promptBytes(conversion.text) > MAX_PROMPT_BYTES) return;
+    event.preventDefault();
+    const caretAt = conversion.map(range.start + pasted.length);
+    console.debug("prompt link conversion", {
+      trigger: "paste",
+      count: conversion.count,
+    });
+    if (
+      commit(
+        conversion.text,
+        editedBindings(value, conversion.text, bindings),
+        { start: caretAt, end: caretAt, direction: "none" },
+        PromptEditKind.Discrete,
+        false,
+        range,
+        pasted.length,
+      )
+    ) {
+      setDismissed(false);
+      setSelected(0);
+    }
+  };
+  const openLink = async (url: string) => {
+    // One activation is one launch: no retry and no second browser.
+    if (linkOpening.current) return;
+    linkOpening.current = true;
+    setLinkFailure(undefined);
+    try {
+      await openExternalUrl(url);
+    } catch (error) {
+      console.warn("prompt link open failed", externalLinkFailure(error));
+      if (mounted.current) setLinkFailure(externalLinkFailure(error));
+    } finally {
+      linkOpening.current = false;
+    }
+  };
+  const onClick = (event: MouseEvent<HTMLTextAreaElement>) => {
+    const input = textarea.current;
+    if (!input || composing.current || event.button !== 0) return;
+    const mac = shortcutPlatform() === ShortcutPlatform.Mac;
+    const exact =
+      !event.altKey &&
+      !event.shiftKey &&
+      (mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey);
+    if (!exact || input.selectionStart !== input.selectionEnd) return;
+    // Without a native opener the link stays ordinary editable text.
+    if (!externalLinksAvailable()) return;
+    const link = linkAtCaret(
+      layoutRef.current.links,
+      layoutRef.current.toCanonical(input.selectionStart),
+    );
+    if (!link) return;
+    event.preventDefault();
+    void openLink(link.url);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (
@@ -605,6 +990,13 @@ export function useSkillCompletion({
       event.getModifierState("AltGraph")
     )
       return false;
+    const action = historyAction(event);
+    if (action) {
+      event.preventDefault();
+      event.stopPropagation();
+      runHistory(action);
+      return true;
+    }
     if (!token) return false;
     if (event.key === "Escape") {
       event.preventDefault();
@@ -767,12 +1159,19 @@ export function useSkillCompletion({
     clear: () => {
       if (canEdit()) setBindings([]);
     }, // Original receipt acceptance settles ownership before the pending render unlocks.
-    replaceUnbound: (next: string, position: number) => {
+    replaceUnbound: (next: string, position: number, end = position) => {
       if (!canEdit()) return;
-      if (change(next, []) === false) return;
-      setBindings([]);
+      if (
+        !commit(
+          next,
+          [],
+          { start: position, end, direction: "none" },
+          PromptEditKind.Discrete,
+          false,
+        )
+      )
+        return;
       bindingsChanged?.([]);
-      setCaret(position);
       setDismissed(true);
       setSelected(0);
     },
@@ -782,9 +1181,16 @@ export function useSkillCompletion({
     },
     onChange,
     onKeyDown,
+    // The textarea shows this collapsed display text; the draft stays canonical.
+    displayValue: layout.display,
+    draftSnapshot: (field: HTMLTextAreaElement) => ({
+      text: value,
+      start: layout.toCanonical(field.selectionStart),
+      end: layout.toCanonical(field.selectionEnd),
+    }),
     onSelect: () => {
       if (!canEdit()) return;
-      setCaret(textarea.current?.selectionStart ?? 0);
+      syncSelection();
     },
     onCompositionStart: () => {
       if (!canEdit()) return;
@@ -796,13 +1202,17 @@ export function useSkillCompletion({
       composing.current = false;
       setComposition(false);
       if (!canEdit()) return;
-      setCaret(textarea.current?.selectionStart ?? 0);
+      syncSelection();
       setDismissed(false);
     },
     attributes: {
       "aria-describedby": unavailableCount ? `${id}-unavailable` : undefined,
       "aria-controls": visible && candidates.length ? id : undefined,
       "aria-autocomplete": "list" as const,
+      onPaste,
+      onCopy,
+      onCut,
+      onClick,
       "aria-expanded": visible,
       "aria-activedescendant":
         visible && validIndex >= 0 ? `${id}-${validIndex}` : undefined,
@@ -815,24 +1225,68 @@ export function useSkillCompletion({
     wrap: (child: ReactNode) => (
       <SkillText
         textarea={textarea}
-        value={value}
-        ranges={unavailable}
+        value={layout.display}
+        links={layout.collapsed.map((link) => ({
+          start: link.displayStart,
+          end: link.displayEnd,
+        }))}
+        ranges={displayRanges(layout, unavailable)}
         unavailableCount={unavailableCount}
-        selected={selectedRanges}
+        selected={displayRanges(layout, selectedRanges)}
         descriptionId={`${id}-unavailable`}
         announcedCount={announcedCount}
       >
         {child}
       </SkillText>
     ),
-    warning: blocked ? <p role="status">{copy("skills.reselect")}</p> : null,
+    warning: (
+      <>
+        {blocked ? <p role="status">{copy("skills.reselect")}</p> : null}
+        {linkFailure ? (
+          <p className="external-link-error" role="alert">
+            <span>{copy(externalLinkFailureMessages[linkFailure])}</span>
+            <button
+              type="button"
+              aria-label={copy("external-link.dismiss")}
+              onClick={() => setLinkFailure(undefined)}
+            >
+              <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </p>
+        ) : null}
+      </>
+    ),
   };
 }
 
-// The textarea retains editing, selection and undo ownership; this sibling only paints text.
+// Skill ranges inside or touching a collapsed link are not painted; the link
+// label owns that text. Other ranges move into display coordinates.
+function displayRanges(
+  layout: PromptLayout,
+  ranges: SkillToken[],
+): SkillToken[] {
+  return ranges.flatMap((range) =>
+    layout.collapsed.some(
+      (link) => range.start < link.end && range.end > link.start,
+    )
+      ? []
+      : [
+          {
+            ...range,
+            start: layout.toDisplay(range.start),
+            end: layout.toDisplay(range.end),
+          },
+        ],
+  );
+}
+
+// The textarea retains editing and selection ownership; this sibling only paints text.
 function SkillText({
   textarea,
   value,
+  links,
   ranges,
   unavailableCount,
   selected,
@@ -842,6 +1296,7 @@ function SkillText({
 }: {
   textarea: RefObject<HTMLTextAreaElement | null>;
   value: string;
+  links: TextRange[];
   ranges: SkillToken[];
   unavailableCount: number;
   selected: SkillToken[];
@@ -854,8 +1309,9 @@ function SkillText({
   // Reuse the one mirror. The analysis keeps absent and selected ranges disjoint
   // (confirmed absence wins) and bounded to 256 painted ranges (512 spans).
   const painted = [
-    ...ranges.map((range) => ({ ...range, selected: false })),
-    ...selected.map((range) => ({ ...range, selected: true })),
+    ...links.map((range) => ({ ...range, kind: "link" as const })),
+    ...ranges.map((range) => ({ ...range, kind: "unavailable" as const })),
+    ...selected.map((range) => ({ ...range, kind: "selected" as const })),
   ].sort((a, b) => a.start - b.start);
   // The appearance provider writes the composer typography data attributes in
   // its own layout effect, which runs after this child's layout effects.
@@ -932,9 +1388,14 @@ function SkillText({
         {preceding}
         <span
           className={
-            range.selected ? "skill-token-selected" : "skill-token-unavailable"
+            range.kind === "link"
+              ? "prompt-markdown-link"
+              : range.kind === "selected"
+                ? "skill-token-selected"
+                : "skill-token-unavailable"
           }
-          data-skill-start={range.start}
+          data-skill-start={range.kind === "link" ? undefined : range.start}
+          data-link-start={range.kind === "link" ? range.start : undefined}
         >
           {value.slice(range.start, range.end)}
         </span>

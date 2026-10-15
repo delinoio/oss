@@ -886,3 +886,25 @@ it.each([false, true])(
     expect(value.remove).not.toHaveBeenCalled();
   },
 );
+
+it("shows a stored Markdown link collapsed and saves the canonical Markdown", async () => {
+  const url = "https://example.com/docs";
+  const canonical = `Read [${url}](${url}) first`;
+  const value = fixture(canonical);
+  render(value.view());
+  fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  const editor = screen.getByRole("textbox", {
+    name: "Edited input",
+  }) as HTMLTextAreaElement;
+  expect(editor.value).toBe(`Read ${url} first`);
+  editor.setSelectionRange(editor.value.length, editor.value.length);
+  fireEvent.paste(editor, {
+    clipboardData: { getData: () => " https://example.org/x", files: [] },
+  });
+  expect(editor.value).toBe(`Read ${url} first https://example.org/x`);
+  fireEvent.click(screen.getByRole("button", { name: "Save input" }));
+  await waitFor(() => expect(value.edit).toHaveBeenCalledOnce());
+  expect(value.edit.mock.calls[0]![0]).toMatchObject({
+    prompt: `${canonical} [https://example.org/x](https://example.org/x)`,
+  });
+});
