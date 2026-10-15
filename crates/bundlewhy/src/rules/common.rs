@@ -859,7 +859,7 @@ pub fn configuration_disabled(
 ) {
     let config_file = context.collection.config_file.clone();
     let located = match &config_file {
-        Some(file) => context.original_location(Path::new(file), 0, 0),
+        Some(file) => context.original_location_without_coverage_gap(Path::new(file), 0, 0),
         None => super::Located {
             location: None,
             generated: None,
@@ -912,7 +912,7 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
         .unwrap_or_else(|| "false".to_owned());
     let config_file = context.collection.config_file.clone();
     let located = match &config_file {
-        Some(file) => context.original_location(Path::new(file), 0, 0),
+        Some(file) => context.original_location_without_coverage_gap(Path::new(file), 0, 0),
         None => super::Located {
             location: None,
             generated: None,
@@ -1881,5 +1881,45 @@ y=/process.env.F/.test(z),process.env.G"#;
             .map(str::to_owned)
             .to_vec()
         );
+    }
+
+    #[test]
+    fn configuration_only_locations_do_not_reduce_coverage() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("rspack.config.js");
+        std::fs::write(&config, "module.exports = {};").unwrap();
+        let collection = crate::collect::Collection {
+            bundler: "rspack".to_owned(),
+            config_file: Some(config.to_string_lossy().into_owned()),
+            minify_enabled: false,
+            config_summary: BTreeMap::from([(
+                "optimization.minimize".to_owned(),
+                "false".to_owned(),
+            )]),
+            ..crate::collect::Collection::default()
+        };
+        let mut context = Context::new(
+            &collection,
+            dir.path().to_path_buf(),
+            "app".to_owned(),
+            Vec::new(),
+            crate::sources::SourceStore::new(true),
+        );
+        let mut drafts = Vec::new();
+        configuration_disabled(
+            &mut context,
+            &mut drafts,
+            &DisabledOptimization {
+                rule: RuleId::RspackSideEffectsDisabled,
+                title: "Side effects are disabled",
+                option: "optimization.sideEffects",
+                summary: "The option is disabled.",
+                direction: "Enable the option.",
+                safety: "Verify side effects before changing it.",
+            },
+        );
+        minification_disabled(&mut context, &mut drafts);
+        assert_eq!(drafts.len(), 2);
+        assert!(context.sources.unverified.is_empty());
     }
 }
