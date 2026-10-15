@@ -113,7 +113,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 		// The lease authorizes only the installation its Take returned, which discovery
 		// may have replaced since the job was dispatched. That observation, not the
 		// job's frozen one, is validated, launched and credited with the credential.
-		if executable, installationVersion, err = subscriptionRun.executable(); err != nil {
+		if executable, installationVersion, input.Installation, err = subscriptionRun.launchTarget(ctx, config, owner, input); err != nil {
 			defer func() {
 				if err := subscriptionRun.release(true); err != nil {
 					output, returned = nil, err

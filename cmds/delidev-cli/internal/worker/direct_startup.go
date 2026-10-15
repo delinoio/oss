@@ -84,6 +84,43 @@ func resolveExecutionStartup(ctx context.Context, config Config, job domain.ID, 
 	return installation, nil
 }
 
+// rebindExecutable moves the startup evidence to the executable a subscription
+// lease authorized. Discovery can replace the Runner Device's installation
+// between the local startup resolution and the Take, and the lease launches the
+// installation its Take returned. The evidence the ready report inspects (the
+// executable path and its digest) and the journal a continuation resolves are
+// therefore re-observed for that executable. A pinned original digest (a
+// selection that already carried one) is never replaced: an executable that does
+// not match it fails closed. An unchanged path keeps its evidence, which the
+// ready report verifies against the bytes again. A nil attempt (a job that has
+// no direct startup) has no evidence to move.
+func (a *executionStartupAttempt) rebindExecutable(ctx context.Context, config Config, job domain.ID, input domain.ExecutionJobInput, executable, version string) (domain.Installation, error) {
+	installation := input.Installation
+	if a == nil || executable == a.executable {
+		return installation, nil
+	}
+	digest, err := harness.InspectExecutable(ctx, executable)
+	if err != nil {
+		return installation, domain.Fail(domain.RecoveryRequired, "The authorized native executable cannot be verified.", "Refresh Worker discovery; no PATH fallback is used.")
+	}
+	if input.Startup != nil && input.Startup.ExecutableSHA256 != "" && input.Startup.ExecutableSHA256 != digest {
+		return installation, domain.Fail(domain.RecoveryRequired, "The original native executable changed.", "Restore the original executable before continuing its native history.")
+	}
+	installation.ResolvedPath, installation.ExecutableSHA256 = executable, digest
+	if version != "" {
+		installation.Version = version
+	}
+	if err := writeStartupExecutable(config.Root, job, installation); err != nil {
+		return input.Installation, publicationUncertain()
+	}
+	a.executable = executable
+	a.observation.ExecutableSHA256 = digest
+	if a.config.Logger != nil {
+		a.config.Logger.Info("execution_startup_executable_rebound", "job_id", job, "phase", domain.StartupResolve)
+	}
+	return installation, nil
+}
+
 func (a *executionStartupAttempt) setPhase(phase domain.ExecutionStartupPhase) {
 	if a == nil {
 		return

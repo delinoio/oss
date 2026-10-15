@@ -63,6 +63,23 @@ func (r *grokSubscriptionRun) executable() (string, string, error) {
 	return resolved, r.installation.Version, nil
 }
 
+// launchTarget returns the executable and version the lease authorized and
+// moves the startup evidence to it. The evidence (the executable the ready
+// report inspects, its digest and the journal a continuation resolves) must
+// describe the executable that is launched, not the one resolved before the
+// Take; when the identity cannot be proven the execution fails closed.
+func (r *grokSubscriptionRun) launchTarget(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput) (string, string, domain.Installation, error) {
+	executable, version, err := r.executable()
+	if err != nil {
+		return "", "", input.Installation, err
+	}
+	installation, err := config.startup.rebindExecutable(ctx, config, owner, input, executable, version)
+	if err != nil {
+		return "", "", input.Installation, err
+	}
+	return executable, version, installation, nil
+}
+
 // beginGrokSubscriptionExecution Takes the execute lease for the claimed job and
 // binds the private native home. Nothing is written to the home yet. A failure
 // after the Take releases the lease; if that Finish is not acknowledged the
