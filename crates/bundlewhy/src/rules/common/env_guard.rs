@@ -70,7 +70,15 @@ pub(super) fn env_guards(
         return Vec::new();
     }
     let tokens = tokenize(code, ignored);
-    let mut parser = Parser::new(tokens, reads);
+    let numbers: Vec<Option<String>> = tokens
+        .iter()
+        .map(|token| {
+            (token.kind == TokenKind::Number)
+                .then(|| canonical_number(token.text))
+                .flatten()
+        })
+        .collect();
+    let mut parser = Parser::new(tokens, &numbers, reads);
     parser.parse_program();
     parser.resolve(reads.len())
 }
@@ -481,6 +489,9 @@ const NON_OPERAND_WORDS: [&str; 8] = [
 struct Parser<'a> {
     tokens: Vec<Token<'a>>,
     close: Vec<usize>,
+    /// The property key of every numeric literal token (see
+    /// `canonical_number`); `None` when it is not known.
+    numbers: &'a [Option<String>],
     /// Token index of a read's first token: (read index, end token index).
     reads_at: HashMap<usize, (usize, usize)>,
     pos: usize,
@@ -505,7 +516,11 @@ struct Returns {
 }
 
 impl<'a> Parser<'a> {
-    fn new(tokens: Vec<Token<'a>>, reads: &[(usize, usize)]) -> Self {
+    fn new(
+        tokens: Vec<Token<'a>>,
+        numbers: &'a [Option<String>],
+        reads: &[(usize, usize)],
+    ) -> Self {
         let close = match_brackets(&tokens);
         let mut reads_at = HashMap::new();
         for (index, &(start, end)) in reads.iter().enumerate() {
@@ -523,6 +538,7 @@ impl<'a> Parser<'a> {
         Self {
             tokens,
             close,
+            numbers,
             reads_at,
             pos: 0,
             depth: 0,
@@ -542,6 +558,12 @@ impl<'a> Parser<'a> {
 
     fn at(&self, offset: usize) -> Option<Token<'a>> {
         self.tokens.get(self.pos + offset).copied()
+    }
+
+    /// The property key of the numeric literal at `offset` tokens ahead.
+    fn number_key(&self, offset: usize) -> Option<&'a str> {
+        let numbers: &'a [Option<String>] = self.numbers;
+        numbers.get(self.pos + offset)?.as_deref()
     }
 
     fn bump(&mut self) {
@@ -1367,10 +1389,14 @@ impl<'a> Parser<'a> {
         if let (Some(key), true) = (self.at(1), is_punct(self.at(2), "]")) {
             match key.kind {
                 TokenKind::Number => {
+                    let canonical = self.number_key(1);
                     self.pos += 3;
-                    return Selector::Literal {
-                        text: key.text,
-                        index: decimal_index(key.text),
+                    return match canonical {
+                        Some(text) => Selector::Literal {
+                            text,
+                            index: decimal_index(text),
+                        },
+                        None => Selector::Computed(None),
                     };
                 }
                 TokenKind::Str => {
@@ -1395,9 +1421,11 @@ impl<'a> Parser<'a> {
     fn parse_call_arguments(&mut self) -> Option<usize> {
         let sole = match (self.at(1), self.at(2)) {
             (Some(argument), Some(close))
-                if argument.kind == TokenKind::Number && is_punct(Some(close), ")") =>
+                if argument.kind == TokenKind::Number
+                    && !argument.text.ends_with('n')
+                    && is_punct(Some(close), ")") =>
             {
-                decimal_index(argument.text)
+                self.number_key(1).and_then(decimal_index)
             }
             _ => None,
         };
@@ -1682,9 +1710,14 @@ impl<'a> Parser<'a> {
             return property;
         };
         match token.kind {
-            TokenKind::Word | TokenKind::Number => {
+            TokenKind::Word => {
                 self.bump();
                 property.key = Some(token.text);
+            }
+            TokenKind::Number => {
+                property.key = self.number_key(0);
+                property.wildcard = property.key.is_none();
+                self.bump();
             }
             TokenKind::Str => {
                 self.bump();
@@ -1878,6 +1911,52 @@ fn is_punct(token: Option<Token<'_>>, text: &str) -> bool {
 
 fn is_word(token: Option<Token<'_>>, text: &str) -> bool {
     token.is_some_and(|token| token.kind == TokenKind::Word && token.text == text)
+}
+
+/// The property name that a numeric literal converts to (`1e0`, `0x1`, `1_0`,
+/// `1.0` and `1n` are all `"1"`), or `None` when it is not known: a legacy
+/// octal form, an integer beyond 2^53 or a value that JavaScript prints in
+/// exponent form.
+fn canonical_number(text: &str) -> Option<String> {
+    const MAX_EXACT: f64 = 9_007_199_254_740_992.0;
+    let digits: String = text
+        .chars()
+        .filter(|ch| *ch != '_')
+        .collect::<String>()
+        .to_ascii_lowercase();
+    let (digits, bigint) = match digits.strip_suffix('n') {
+        Some(digits) => (digits, true),
+        None => (digits.as_str(), false),
+    };
+    let radix = ["0x", "0o", "0b"]
+        .into_iter()
+        .zip([16, 8, 2])
+        .find_map(|(prefix, radix)| digits.strip_prefix(prefix).map(|rest| (rest, radix)));
+    if let Some((rest, radix)) = radix {
+        let value = u128::from_str_radix(rest, radix).ok()?;
+        return (bigint || (value as f64) < MAX_EXACT).then(|| value.to_string());
+    }
+    if bigint {
+        return digits
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+            .then(|| digits.parse::<u128>().ok())
+            .flatten()
+            .map(|value| value.to_string());
+    }
+    // `010` is an octal and `089` a decimal literal; both are legacy forms.
+    if digits.len() > 1 && digits.starts_with('0') && digits.as_bytes()[1].is_ascii_digit() {
+        return None;
+    }
+    let value: f64 = digits.parse().ok()?;
+    if !value.is_finite() {
+        return None;
+    }
+    if value.fract() == 0.0 {
+        (value < MAX_EXACT).then(|| format!("{value}"))
+    } else {
+        (1e-6..1e21).contains(&value).then(|| format!("{value}"))
+    }
 }
 
 /// Decimal index of an array element: digits only, no leading zero.
@@ -4596,6 +4675,85 @@ mod tests {
                 "((function(){return typeof process.env.FLAG})(), 1) === 1 && run()",
                 None,
             ),
+        ];
+        for &(code, expected) in rows {
+            assert_eq!(flag_guard(code), expected, "{code}");
+        }
+    }
+
+    /// Every spelling of a number is the one property name JavaScript converts
+    /// it to.
+    #[test]
+    fn numeric_literals_canonicalize_to_property_names() {
+        let rows: &[(&str, Option<&str>)] = &[
+            ("0", Some("0")),
+            ("1", Some("1")),
+            ("1e0", Some("1")),
+            ("1E0", Some("1")),
+            ("1e+1", Some("10")),
+            ("10e-1", Some("1")),
+            ("1.0", Some("1")),
+            ("1.", Some("1")),
+            ("0x1", Some("1")),
+            ("0X1F", Some("31")),
+            ("0o7", Some("7")),
+            ("0b11", Some("3")),
+            ("1_000", Some("1000")),
+            ("0x1_0", Some("16")),
+            ("1n", Some("1")),
+            ("0x10n", Some("16")),
+            (".5", Some("0.5")),
+            ("0.50", Some("0.5")),
+            ("1.5", Some("1.5")),
+            ("5e-1", Some("0.5")),
+            ("9007199254740991", Some("9007199254740991")),
+            // Not known: legacy octal, large and exponent-form values.
+            ("010", None),
+            ("089", None),
+            ("9007199254740992", None),
+            ("0x20000000000000", None),
+            ("1e21", None),
+            ("1e-7", None),
+            ("1e999", None),
+        ];
+        for &(text, expected) in rows {
+            assert_eq!(canonical_number(text).as_deref(), expected, "{text}");
+        }
+    }
+
+    /// Numeric property keys and numeric selectors meet on the canonical name,
+    /// whatever their spelling.
+    #[test]
+    fn numeric_keys_match_selectors_by_property_name() {
+        let rows: &[(&str, Option<&str>)] = &[
+            ("({1e0: process.env.FLAG})[1] && run()", Some("and")),
+            ("({0x1: process.env.FLAG})[1] && run()", Some("and")),
+            ("({1: process.env.FLAG})[0x1] && run()", Some("and")),
+            ("({1: process.env.FLAG})[1.0] && run()", Some("and")),
+            ("({1: process.env.FLAG})[1e0] && run()", Some("and")),
+            ("({1_0: process.env.FLAG})[10] && run()", Some("and")),
+            ("({1n: process.env.FLAG})[1] && run()", Some("and")),
+            ("({1: process.env.FLAG})['1'] && run()", Some("and")),
+            ("({'1': process.env.FLAG})[1e0] && run()", Some("and")),
+            ("({0.5: process.env.FLAG})[.5] && run()", Some("and")),
+            ("({0x1: process.env.FLAG}).x1 && run()", None),
+            // The selector names another property.
+            ("({1e0: process.env.FLAG})[2] && run()", None),
+            ("({1e0: process.env.FLAG})['1e0'] && run()", None),
+            ("({1: process.env.FLAG})[1.5] && run()", None),
+            // A later numeric spelling replaces an earlier key.
+            ("({1: process.env.FLAG, 0x1: 0})[1] && run()", None),
+            ("({1: 0, 0x1: process.env.FLAG})[1] && run()", Some("and")),
+            // An unknown numeric key may replace any earlier property.
+            ("({1: process.env.FLAG, 010: 0})[1] && run()", None),
+            // Array elements are selected by the canonical index.
+            ("[process.env.FLAG][0x0] && run()", Some("and")),
+            ("[0, process.env.FLAG][1e0] && run()", Some("and")),
+            ("[0, process.env.FLAG][1.0] && run()", Some("and")),
+            ("[0, process.env.FLAG][1_0 - 9] && run()", None),
+            ("[process.env.FLAG].at(0x0) && run()", Some("and")),
+            ("[0, process.env.FLAG].at(1e0) && run()", Some("and")),
+            ("[0, process.env.FLAG].at(1.0) && run()", Some("and")),
         ];
         for &(code, expected) in rows {
             assert_eq!(flag_guard(code), expected, "{code}");
