@@ -3811,6 +3811,67 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn keyword_unary_names_with_unicode_identifier_parts_are_not_operators() {
+        let guard = |code: &str, read: &str| {
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        let read = "process.env.FLAG";
+        // Every ECMAScript IdentifierPart class that can sit directly before
+        // the keyword letters: ASCII and Unicode letters, decimal digits,
+        // combining marks, connector punctuation, `Other_ID_Continue`, `$`,
+        // `_` and the zero-width joiners.
+        let identifier_parts = [
+            "a", "Z", "5", "_", "$", "\u{3bb}", "\u{e9}", "\u{4e2d}", "\u{663}", "\u{301}",
+            "\u{93e}", "\u{203f}", "\u{b7}", "\u{200c}", "\u{200d}",
+        ];
+        // Text that ends before the keyword without continuing an identifier,
+        // so the keyword stands alone as an operator.
+        let separators = [
+            "if (",
+            "if ( ",
+            "if (!",
+            "if ((",
+            "if (a ||\n",
+            "if (a ||\u{a0}",
+            "if (a ||\u{2028}",
+            "if (a ||/* c */",
+        ];
+        for operator in UNARY_KEYWORDS {
+            // The enclosing `async` function makes `await` a keyword, so the
+            // only difference between the cases is the preceding text.
+            let wrap = |statement: String| format!("async function f() {{ {statement} }}");
+            for part in identifier_parts {
+                for statement in [
+                    format!("if ({part}{operator}({read})) run()"),
+                    format!("if (obj.{part}{operator}({read})) run()"),
+                    format!("while ({part}{operator} ({read})) run()"),
+                    format!("switch (a{part}{operator}({read})) {{default: run()}}"),
+                ] {
+                    let code = wrap(statement);
+                    assert_eq!(guard(&code, read), None, "{code:?}");
+                }
+            }
+            for separator in separators {
+                let code = wrap(format!("{separator}{operator}({read})) run()"));
+                assert_eq!(
+                    guard(&code, read),
+                    Some("the retained read is in an if condition"),
+                    "{code:?}"
+                );
+            }
+        }
+        // The same identifier-part sweep applies to the control keywords.
+        for keyword in ["if", "while", "switch", "for"] {
+            for part in identifier_parts {
+                let code = format!("{part}{keyword}({read}) run()");
+                assert_eq!(guard(&code, read), None, "{code:?}");
+            }
+        }
+    }
+
+    #[test]
     fn env_guard_scans_many_reads_in_one_pass() {
         let mut code = String::new();
         let mut reads = Vec::new();

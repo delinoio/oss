@@ -2847,6 +2847,10 @@ mod tests {
             "if (check(typeof(process.env.BUNDLEWHY_FIXTURE_FLAG))) { use(); }",
             "if (obj.typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
             "if (mytypeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "if (obj.\u{3bb}typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "if (\u{3bb}typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "if (obj.\u{301}typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "if (\u{203f}typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
         ] {
             let fixture = run_fixture_patched(
                 BundlerChoice::Rspack,
