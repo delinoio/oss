@@ -2,10 +2,13 @@
 package server
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -206,5 +209,67 @@ func TestGrokFinishLogoutRemovalFailureKeepsTheLeaseForTheSameWorkerRetry(t *tes
 	}
 	if p := f.progressFor(op.OperationId); p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED || p.GrokDiagnostic != nil {
 		t.Fatalf("the retried logout progress = %v", p)
+	}
+}
+
+// The initiating client of a Worker-lease logout can be revoked after Take
+// (device revocation is not serialized by the account gate). The provider
+// already revoked the token and the vault removal precedes the settlement, so
+// the settlement must not depend on that client: no retry could ever succeed.
+func TestGrokWorkerLogoutFinishSurvivesTheRevocationOfItsInitiator(t *testing.T) {
+	for name, revokeBeforeFinish := range map[string]bool{"revoked after Take": true, "not revoked": false} {
+		t.Run(name, func(t *testing.T) {
+			f := newGrokFixture(t)
+			f.login("synthetic-principal-1")
+			f.markRevoked(t)
+			client := domain.Principal{Type: domain.ClientDevice, DeviceID: domain.NewID()}
+			_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.client", nil, func(tx *store.Tx) (any, error) {
+				if _, err := tx.Put(domain.DeviceKind, client.DeviceID, 0, "", "", domain.Device{Name: "Client", Type: domain.ClientDevice, PairedAt: time.Now().UTC()}); err != nil {
+					return nil, err
+				}
+				r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+				if err != nil {
+					return nil, err
+				}
+				a.Subscription.Pending = &domain.SubscriptionOperation{ID: domain.NewID(), Action: domain.SubscriptionLogout, MachineID: f.input.MachineID, Actor: client, Phase: domain.SubscriptionQueued}
+				return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, a := f.record()
+			op := &pb.RequestSubscriptionResponse{OperationId: string(a.Subscription.Pending.ID)}
+			lease, err := f.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if revokeBeforeFinish {
+				_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.revoke-client", nil, func(tx *store.Tx) (any, error) {
+					r, err := tx.Get(domain.DeviceKind, client.DeviceID)
+					if err != nil {
+						return nil, err
+					}
+					d, err := store.Decode[domain.Device](r)
+					if err != nil {
+						return nil, err
+					}
+					d.Revoked = true
+					return tx.Put(domain.DeviceKind, r.ID, r.Revision, "", "", d)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := f.finishWith(lease, domain.NewID(), nil, true, false, true); err != nil {
+				t.Fatalf("the logout settlement depended on its initiator: %v", err)
+			}
+			a = f.assertGrokOperationValid(t)
+			if a.Connection != nil || a.Subscription.Generation != "" || a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Subscription.Pending != nil || a.Subscription.ServerOperation.State != domain.SubscriptionSucceeded {
+				t.Fatal("the logout did not disconnect the account")
+			}
+			if refs, err := f.secrets.UnremovedReferences(context.Background(), f.input.AccountID); err != nil || len(refs) != 0 {
+				t.Fatal("the revoked bundle was not removed")
+			}
+		})
 	}
 }

@@ -746,8 +746,13 @@ revoked` and `revoked_generation` equal to the current generation) before any
   keeps the generation). A logout whose Worker could not remove `auth.json` or
   `auth.json.lock` is fenced on its original lease; only that lease's exact Worker
   Device, Runner Device, instance and server epoch can report Finish again, and a
-  confirmed retry releases the lease and removes every generation. A different
-  Worker or instance is refused and the fence stays. Fenced leases of other
+  confirmed retry releases the lease and removes every generation. The Finish
+  completes a decision that is already irreversible (the provider revoked the
+  token and the Worker home is clean), and the vault removal runs before its
+  settlement transaction, so that transaction never rechecks the initiating
+  client: a client revoked after Take cannot make the settlement fail after the
+  bundle was removed. Only the lease's own Worker, instance and epoch bind it. A
+  different Worker or instance is refused and the fence stays. Fenced leases of other
   actions are never released by a retry.
 - **Deletion.** Deletion reuses logout-before-delete: a connected Grok account
   (generation, connection, pending operation, lease or recovery fence) cannot be

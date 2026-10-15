@@ -659,8 +659,16 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			var settling *domain.SubscriptionOperation
 			canceled := false
 			if state.Pending != nil && state.Pending.ID == lease.OperationID {
-				if err := subscriptionActorValid(tx, state.Pending.Actor); err != nil {
-					return nil, err
+				// A logout lease completes a decision that is already irreversible: the
+				// provider revoked the token and the Worker home is clean, and the
+				// vault removal above ran before this transaction. The initiating
+				// device being revoked meanwhile must not reject the settlement, or
+				// the account would keep a referenced generation that no longer
+				// exists and no retry could ever succeed.
+				if lease.Action != domain.SubscriptionLogout {
+					if err := subscriptionActorValid(tx, state.Pending.Actor); err != nil {
+						return nil, err
+					}
 				}
 				if state.Pending.Canceled {
 					usable, canceled = false, true
