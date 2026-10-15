@@ -134,7 +134,7 @@ func TestNativeModelHiddenSelection(t *testing.T) {
 func TestManualNativeModelObservation(t *testing.T) {
 	binary := os.Getenv("DELIDEV_NATIVE_MODEL_EXECUTABLE")
 	if binary == "" {
-		t.Skip("opt-in installed Codex 0.151.0 with a fresh credential-free runtime")
+		t.Skip("opt-in installed Codex with a fresh credential-free runtime")
 	}
 	config := nativeFixtureConfig(t, binary, "http://127.0.0.1:1")
 	config.API = nil
