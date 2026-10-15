@@ -26,6 +26,56 @@ import {
 export const ADAPTER_ID = "bundlewhy-collector-vite";
 export const ADAPTER_VERSION = "1";
 
+/** Vite API functions that the adapter calls on the project's installation. */
+export const REQUIRED_VITE_API = Object.freeze([
+  "loadConfigFromFile",
+  "build",
+  "mergeConfig",
+  "createLogger",
+]);
+
+/**
+ * Normalizes an imported Vite module namespace into the API the adapter uses.
+ *
+ * The adapter imports the file that the project's `require.resolve` selects.
+ * For packages whose export map sends `require` to a CommonJS entry (Vite 5),
+ * Node exposes the API only on the namespace's `default` export. Named exports
+ * win when present; otherwise the `default` export (or its own `default`) is
+ * used. Returns the normalized API and the names of required functions that are
+ * still missing.
+ */
+export function normalizeViteModule(namespace) {
+  const sources = [];
+  const addSource = (candidate) => {
+    if (
+      candidate !== null &&
+      (typeof candidate === "object" || typeof candidate === "function") &&
+      !sources.includes(candidate)
+    ) {
+      sources.push(candidate);
+    }
+  };
+  addSource(namespace);
+  addSource(namespace?.default);
+  addSource(namespace?.default?.default);
+  const pick = (name, type) => {
+    for (const source of sources) {
+      if (typeof source[name] === type) return source[name];
+    }
+    return undefined;
+  };
+  const api = {
+    version: pick("version", "string"),
+    rolldownVersion: pick("rolldownVersion", "string"),
+  };
+  const missing = [];
+  for (const name of REQUIRED_VITE_API) {
+    api[name] = pick(name, "function");
+    if (api[name] === undefined) missing.push(name);
+  }
+  return { api, missing };
+}
+
 /**
  * Match Vite's resolver identity for the root recorded in a collection.
  * Vite resolves module IDs through symlinks unless preserveSymlinks is set;
@@ -245,7 +295,23 @@ await runAdapter(async (request) => {
   progress("detecting", "Loading the project's Vite installation");
   const vitePackage = resolveProjectPackage(request.projectRoot, "vite");
   checkEngineVersion(request, "vite", vitePackage.version);
-  const vite = await importFile(vitePackage.require.resolve("vite"));
+  const viteModule = await importFile(vitePackage.require.resolve("vite"));
+
+  // Validate the adapter's own API needs before any project configuration is
+  // evaluated, so an engine API mismatch is never reported as a project
+  // configuration or build failure.
+  const { api: vite, missing: missingViteApi } =
+    normalizeViteModule(viteModule);
+  if (missingViteApi.length > 0) {
+    throw new AdapterError(
+      AdapterErrorCode.CollectionFailed,
+      `Vite ${vitePackage.version} does not provide the API the bundlewhy Vite adapter requires (missing: ${missingViteApi.join(", ")})`,
+      request.supportedVersion
+        ? `Install vite@${request.supportedVersion}, or use a bundlewhy adapter that is compatible with Vite ${vitePackage.version}.`
+        : `Install a Vite version in the bundlewhy compatibility matrix, or use a bundlewhy adapter that is compatible with Vite ${vitePackage.version}.`,
+    );
+  }
+  if (typeof vite.version !== "string") vite.version = vitePackage.version;
 
   const state = {
     root: null,
