@@ -2168,7 +2168,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Skill availability presentation follows the desktop explicit skill completion contract. Only complete successful current authenticated scope inventory confirms absence; retain unknown on loading/error/unsupported scope. Keep native textarea overlays aligned and noninteractive; the mirror recopies textarea typography when the acknowledged appearance preferences `composer_size`, `composer_layout` or `density` change (including notifications from another window through the existing appearance provider) in a passive effect after the provider's layout effect applies the data attributes, with no document observer or polling and no textarea remount, skip disabled retained rows, bound panel retention to 256 and discard on dismissal/scope change. Prompt history remains text-only and supplies no completion candidates or binding authority.
 
-- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only primary+B shortcut with no shell toggle or spacer, compact drawer independence and failure fencing without a window notice. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
+- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only primary+B shortcut with no shell toggle or spacer, compact drawer independence and failure fencing with shortcut-driven recovery and no window notice. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
 
 - Reset-credit row names follow the subscription Settings contract: localized one-based ordinals include unavailable returned details, full original IDs remain secondary, and confirmation captures the selected ordinal with the original identity and revision bindings. Reorder and locale changes cannot transfer selection or grant consumption authority. Preserve count-only native-next, once-only confirmation, exact uncertain requests, cleanup gates and native title privacy; add no durable identity or protocol field.
 
@@ -3280,7 +3280,7 @@ The Schedules list and Occurrence history page adapters (`schedulePage`, `occurr
 
 - The feature image startup guidance requires validated closed settled provenance. Present the exact original rejected input and images. English/Korean guidance directs users to start a new session with an explicitly image-capable Agent Worker and Runner Device, or start a new text-only session; retrying the rejected session retains its original input and selection. Queuing text in that session does not repair its startup retry admission. Keep generic/unverified failures under existing generic guidance; preserve current drafts, attachment identities and explicit retry/recovery guards. Missing or mixed metadata cannot offer image-specific retry. Follow the image-input and direct startup contracts.
 
-- Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The fixed primary+B shortcut shares dispatch/help/ARIA, ordinary-input admission and existing exclusions; the shell has no expand/collapse toggle or replacement spacer. Preserve focus/caret, compact drawer independence, visible navigation handoffs and explicit reload after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
+- Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The fixed primary+B shortcut shares dispatch/help/ARIA, ordinary-input admission and existing exclusions; the shell has no expand/collapse toggle or replacement spacer. Preserve focus/caret, compact drawer independence, visible navigation handoffs and shortcut-driven recovery (no window notice) after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
 
 - The feature per-turn timing uses bounded original owner/input/timestamp metadata and one mounted active timer isolated from transcript payload rendering. Anchor a pre-user line before the first bounded original matching native record, then relocate it before the primary input; reject foreign/earlier/inherited scope. Freeze retained terminal timing and unconfirmed disconnect estimates, preserve zero/unavailable, inherited source attribution, Steer identity, three-page anchors/tokens/scroll/focus and drafts. READY/pre-send states cannot create timing. Keep localized semantic wrapping and aria-live off; display timing grants no control/native authority.
 
@@ -6445,7 +6445,7 @@ page navigation and connection changes settle the latest valid endpoint directly
 Initial preference hydration and breakpoint restoration never animate. Reduced
 motion reaches endpoints immediately. Motion has no preference-write or execution
 authority; pending, failed and uncertain saves retain committed presentation and
-their original recovery controls. Rejected toggles are never queued.
+the recovery path in the sidebar preference table. Rejected toggles are never queued.
 
 Below 760px retain the purpose-named compact opener and modal drawer. Deactivate
 primary+B. Drawer opening/closing never saves the wide preference. On return to
@@ -6581,8 +6581,29 @@ and product-window events remain process-local. Publish ordered
 external, tray and child views have no storage/event authority. Invalid, linked,
 oversized and newer documents remain unchanged. Failure retains committed layout;
 uncertain writes are never automatically replayed. The product window renders no
-sidebar notice, alert or Reload action for any sidebar problem; the controller
-keeps its fences, so no further save is sent while a problem exists.
+sidebar notice, alert or Reload button for any sidebar problem. In this
+contract Reload is the controller's recovery inspection: a read of the stored
+preference that never saves, queues or replays a change. The only product caller
+is the Toggle sidebar shortcut (primary+B, wide layout), which stays enabled
+while a problem fences saves. Every problem and event has one result:
+
+| State (idle unless stated)     | Event                               | Result                                                                                      |
+| ------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------- |
+| No problem                     | toggle shortcut                     | save the opposite committed value                                                           |
+| Reading or Saving              | toggle shortcut                     | ignored and never queued; no second read or save starts                                     |
+| Any problem                    | toggle shortcut                     | one Reload; the requested change is not saved or queued                                     |
+| Any problem                    | Reload returns a healthy snapshot   | clear the fence without replaying the original save; the next press saves                   |
+| Any problem                    | Reload returns a problem or rejects | keep the fence (ReadFailed when the revision did not advance); the next press reloads again |
+| Any problem, compact layout    | toggle shortcut                     | inactive; no read or save, and the fence waits for the wide layout                          |
+| Any problem                    | focus or visibility                 | no inspection                                                                               |
+| Any problem except Unavailable | event from another window           | ignored; a later delivery never proves an uncertain write                                   |
+| Unavailable                    | event from another window           | accepted                                                                                    |
+
+Unavailable, ReadFailed, InvalidDocument, UnsupportedVersion, WriteFailed,
+OutcomeUnknown and Changed all follow the Any problem rows. Each press is
+bounded to one read and no timer retries. The controller logs only the stable
+problem classification when a problem begins, when Reload is requested and when
+it clears.
 Renderer response/events are monotonic, contradictory snapshots are rejected and
 pending/failed/uncertain writes remain fenced. A structured problem reply
 (Changed, WriteFailed or OutcomeUnknown) to the original save fences the latest
@@ -6590,12 +6611,12 @@ committed presentation even when its revision is older than an already accepted
 newer event; the committed revision and selection never regress to the older
 reply, ordinary older healthy replies and older inspection classifications
 (InvalidDocument, UnsupportedVersion, ReadFailed or Unavailable) stay ignored,
-and only a successful explicit Reload clears the fence without replaying the
+and only a successful Reload clears the fence without replaying the
 save. Logs contain only stable operations,
 revision and outcome classifications. No business RPC, protocol allocation,
 migration, feature flag, dependency or OS-global keyboard bridge is added.
 
-Primary+B works in ordinary editable inputs and consumes an accepted press once.
+Primary+B works in ordinary editable inputs and consumes an accepted press once, including a press that only performs the recovery Reload.
 Preserve handled/repeated/composing/AltGraph/extra-modifier, hidden/inert,
 terminal-passthrough (except fixed `SessionCloseTab`) and modal exclusions, including compact navigation. The owned
 help dialog retains existing eligible action dismissal. B is a fixed product

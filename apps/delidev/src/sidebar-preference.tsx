@@ -115,6 +115,19 @@ export function SidebarProvider({
   const running = useRef(false);
   const generation = useRef(0);
   const subscription = useRef<(() => void) | undefined>(undefined);
+  // The product window shows no sidebar problem, so record each transition.
+  const record = (next: SidebarSnapshot) => {
+    if (next.problem === current.current.problem) return;
+    if (next.problem)
+      console.warn("delidev.sidebar_preference.problem", {
+        problem: next.problem,
+      });
+    // The initial Unavailable value is only the loading placeholder.
+    else if (current.current.problem !== SidebarProblem.Unavailable)
+      console.info("delidev.sidebar_preference.recovered", {
+        problem: current.current.problem,
+      });
+  };
   const accept = (value: unknown) => {
     const next = parseSidebar(value);
     if (next.revision < current.current.revision) return;
@@ -123,11 +136,13 @@ export function SidebarProvider({
       next.sidebar_preference !== current.current.sidebar_preference
     )
       throw new Error("Contradictory sidebar-preference revision");
+    record(next);
     current.current = next;
     setSnapshot(next);
   };
   const failed = (problem: SidebarProblem) => {
     const next = { ...current.current, problem };
+    record(next);
     current.current = next;
     setSnapshot(next);
   };
