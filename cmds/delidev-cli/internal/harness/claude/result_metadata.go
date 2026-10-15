@@ -48,3 +48,28 @@ func validNativeSubagentStats(raw json.RawMessage) bool {
 	}
 	return true
 }
+
+// The native classifier owns these extensible descriptors. They are discarded
+// after bounded shape validation and never authorize tools or permission replies.
+func validNativeSafeguardMetadata(raw json.RawMessage) bool {
+	if len(raw) == 0 || string(raw) == "null" {
+		return true
+	}
+	if len(raw) > 128<<10 {
+		return false
+	}
+	var records []map[string]json.RawMessage
+	if domain.Decode(raw, &records) != nil || records == nil || len(records) > 128 {
+		return false
+	}
+	for _, record := range records {
+		if record == nil || len(record) > 64 {
+			return false
+		}
+		var kind string
+		if json.Unmarshal(record["type"], &kind) != nil || domain.Text(kind, "native safeguard descriptor", 128, true) != nil {
+			return false
+		}
+	}
+	return true
+}

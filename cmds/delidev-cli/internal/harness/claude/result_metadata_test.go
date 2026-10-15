@@ -52,3 +52,24 @@ func TestNativeModelUsagePreservesThinkingAndCostBasis(t *testing.T) {
 		t.Fatal("negative native thinking count accepted")
 	}
 }
+
+func TestNativeSafeguardMetadataNeverGrantsToolAuthority(t *testing.T) {
+	for _, raw := range []string{`null`, `[]`, `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{}}}]`} {
+		if !validNativeSafeguardMetadata(json.RawMessage(raw)) {
+			t.Fatal("native classifier metadata rejected")
+		}
+	}
+	for _, raw := range []string{`{}`, `[null]`, `[{"status":{}}]`, `[{"type":null}]`, `[{"type":"x","type":"y"}]`} {
+		if validNativeSafeguardMetadata(json.RawMessage(raw)) {
+			t.Fatal("invalid native classifier metadata accepted")
+		}
+	}
+	records := make([]map[string]string, 129)
+	for i := range records {
+		records[i] = map[string]string{"type": "fixture"}
+	}
+	raw, _ := json.Marshal(records)
+	if validNativeSafeguardMetadata(raw) {
+		t.Fatal("unbounded native classifier inventory accepted")
+	}
+}

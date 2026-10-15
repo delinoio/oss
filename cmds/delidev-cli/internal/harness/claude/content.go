@@ -590,14 +590,21 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 			Usage                *ProviderUsage  `json:"usage"`
 			Context              json.RawMessage `json:"context_management,omitempty"`
 			InputTransformations json.RawMessage `json:"input_transformations,omitempty"`
+			Diagnostics          json.RawMessage `json:"diagnostics,omitempty"`
 		}
 		var delta struct {
 			Stop        *NativeStopReason `json:"stop_reason"`
 			Sequence    *string           `json:"stop_sequence"`
 			Container   json.RawMessage   `json:"container"`
 			StopDetails json.RawMessage   `json:"stop_details"`
+			Safeguards  json.RawMessage   `json:"safeguard_results,omitempty"`
 		}
-		if decodeNativeObject(envelope.Event, &update) != nil || update.Usage == nil || !emptyNativeInputTransformations(update.InputTransformations) || decodeNativeObject(update.Delta, &delta) != nil || (delta.Sequence != nil && domain.Text(*delta.Sequence, "native stop sequence", domain.MaxMessageText, false) != nil) {
+		updateErr := decodeNativeObject(envelope.Event, &update)
+		deltaErr := decodeNativeObject(update.Delta, &delta)
+		if updateErr != nil || update.Usage == nil || !emptyNativeInputTransformations(update.InputTransformations) || deltaErr != nil || !validNativeSafeguardMetadata(delta.Safeguards) || (delta.Sequence != nil && domain.Text(*delta.Sequence, "native stop sequence", domain.MaxMessageText, false) != nil) {
+			if b.logger != nil {
+				b.logger.Warn("claude_message_delta_rejected", "owner_id", b.owner, "schema_valid", updateErr == nil, "delta_valid", deltaErr == nil, "usage_present", update.Usage != nil, "transformations_empty", emptyNativeInputTransformations(update.InputTransformations))
+			}
 			return nil, lifecycleUncertain()
 		}
 		// Preserve this native usage update as reported. It is not an additive

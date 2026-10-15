@@ -415,6 +415,13 @@ Ordinary tests use a private executable fixture only. Opt-in installed macOS tes
 
 ### Claude Code applied settings evidence
 
+Message deltas may carry native classifier `safeguard_results` metadata. Its
+extensible record inventory is limited to 128 KiB, 128 objects, 64 fields per
+object and a required bounded native type name. Null or absent inventories are
+accepted. The adapter discards this metadata; it cannot approve a tool, answer a
+permission callback, change native permissions or prove successful execution.
+Original control, message and terminal ownership checks remain independent.
+
 Provider message snapshots and message deltas may declare
 `input_transformations` as null or an empty array. These shapes transform no
 input and grant no history authority. Nonempty transformation inventories remain

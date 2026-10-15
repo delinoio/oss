@@ -341,7 +341,7 @@ func nativeFixtureTextResponse(w http.ResponseWriter, n int64) {
 		{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": ""}},
 		{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": fmt.Sprintf("Fixture response %d.", n)}},
 		{"type": "content_block_stop", "index": 0},
-		{"type": "message_delta", "input_transformations": []any{}, "delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil}, "usage": map[string]any{"output_tokens": 2}},
+		{"type": "message_delta", "input_transformations": []any{}, "delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil, "safeguard_results": []any{map[string]any{"type": "dangerous_tool_use", "status": map[string]any{"type": "available", "tool_uses": map[string]any{}}}}}, "usage": map[string]any{"output_tokens": 2}},
 		{"type": "message_stop"},
 	} {
 		raw, _ := json.Marshal(event)
