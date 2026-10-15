@@ -1511,18 +1511,11 @@ fn namespace_bodies(
     let mut namespaces: Vec<NamespaceBody> = Vec::new();
     for found in keyword.find_iter(code) {
         let kind = found.as_str();
-        // Literals are masked in `code`, so measure the same-line gap in the
-        // original source.
-        let gap = source[found.end()..]
-            .find(|character: char| {
-                !character.is_whitespace()
-                    || matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
-            })
-            .unwrap_or(0);
-        if gap == 0 {
+        // Literals are masked in `code`, so measure the same-line trivia gap in
+        // the original source.
+        let Some(cursor) = same_line_trivia_end(source, ignored, found.end()) else {
             continue;
-        }
-        let cursor = found.end() + gap;
+        };
         // Member accesses such as `module.exports` or `a.namespace` are not
         // declarations.
         let preceding = code[..found.start()]
@@ -1584,8 +1577,42 @@ fn namespace_bodies(
     namespaces
 }
 
+/// Skips whitespace and comments that stay on one line, starting at `from`.
+/// Returns the position of the next token, or `None` when no trivia separates
+/// it from `from` or a line terminator intervenes. A multi-line comment that
+/// contains a line terminator counts as a line break, as in TypeScript.
+fn same_line_trivia_end(source: &str, ignored: &[(usize, usize)], from: usize) -> Option<usize> {
+    let is_line_terminator =
+        |character: char| matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}');
+    let mut cursor = from;
+    loop {
+        let rest = &source[cursor..];
+        if let Some(character) = rest.chars().next()
+            && character.is_whitespace()
+            && !is_line_terminator(character)
+        {
+            cursor += character.len_utf8();
+            continue;
+        }
+        if rest.starts_with("/*")
+            && let Some(&(_, end)) = ignored.iter().find(|(start, _)| *start == cursor)
+            && !source[cursor..end.min(source.len())].contains(is_line_terminator)
+        {
+            cursor = end.min(source.len());
+            continue;
+        }
+        break;
+    }
+    (cursor > from).then_some(cursor)
+}
+
+/// Modifiers that can sit between `export` and a declaration keyword, for
+/// example `export declare var` or `export async function`.
+const DECLARATION_MODIFIERS: [&str; 2] = ["declare", "async"];
+
 /// Whether the declaration starting at `start` is directly preceded by
-/// `export` (optionally followed by `declare`).
+/// `export`, optionally followed by any of `DECLARATION_MODIFIERS` in any
+/// order. Comments are masked in `code`, so they count as whitespace.
 fn exported_declaration(code: &str, start: usize) -> bool {
     let word_boundary = |before: &str| {
         before.chars().next_back().is_none_or(|character| {
@@ -1593,10 +1620,16 @@ fn exported_declaration(code: &str, start: usize) -> bool {
         })
     };
     let mut prefix = code[..start].trim_end();
-    if let Some(before) = prefix.strip_suffix("declare")
-        && word_boundary(before)
-    {
-        prefix = before.trim_end();
+    'modifiers: loop {
+        for modifier in DECLARATION_MODIFIERS {
+            if let Some(before) = prefix.strip_suffix(modifier)
+                && word_boundary(before)
+            {
+                prefix = before.trim_end();
+                continue 'modifiers;
+            }
+        }
+        break;
     }
     prefix.strip_suffix("export").is_some_and(word_boundary)
 }
@@ -2563,10 +2596,55 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "namespace N.\nM\n{ var eval = helper; }\neval(code);",
                 Some((3, 0)),
             ),
+            // Same-line comments are trivia between the keyword and the name.
+            (
+                "namespace/* note */N { var eval = helper; } eval(code);",
+                Some((0, 44)),
+            ),
+            (
+                "namespace /* note */ N { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "module/* a */N/* b */.M { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "module/* note */\"pkg\" { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            // A comment that contains a line terminator is a line break.
+            (
+                "namespace /*\n*/ N { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace // note\nN { var eval = helper; }\neval(code);",
+                None,
+            ),
             // Words that follow the keywords in expressions are not names.
             (
                 "module in { a: 1 }; { var eval = helper; } eval(code);",
                 None,
+            ),
+            // Modifiers between `export` and the declaration keyword.
+            (
+                "namespace N { export async function eval() {} }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export declare async function eval(): void; }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export async /* c */ function eval() {} }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { async function eval() {} }\nnamespace N { eval(code); }",
+                Some((1, 14)),
             ),
             // Exported members are shared by merged declarations.
             (
