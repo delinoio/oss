@@ -563,3 +563,75 @@ it("retains up to twenty message pages across inactivity only for the opted-in t
   await waitFor(() => expect(read).toHaveBeenCalledTimes(4));
   await screen.findByText("4:4");
 });
+
+it.each([0, 1, 1.5, Number.NaN])(
+  "rejects the %s resident-page retention bound and keeps the three-page default",
+  async (residentPages) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sessionId = newRequestId();
+    const records = Array.from({ length: 5 }, (_, index) =>
+      create(ResourceSchema, {
+        id: newRequestId(),
+        sessionId,
+        kind: EntityKind.MESSAGE,
+        revision: 1n,
+        documentJson: encode({ text: `Page ${index}` }),
+      }),
+    );
+    const read = vi.fn(async (request: { filter?: { pageToken: string } }) => {
+      const index = Number(request.filter?.pageToken || 0);
+      return {
+        resources: [records[index]],
+        nextPageToken: index < 4 ? String(index + 1) : "",
+      };
+    });
+    const transport = createRouterTransport((router) =>
+      router.service(ResourceService, { listResources: read }),
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    function View() {
+      const query = useConversationPages(
+        EntityKind.MESSAGE,
+        sessionId,
+        true,
+        50,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { residentPages, retainPayloadOnSuspend: true },
+      );
+      return (
+        <>
+          <output>
+            {query.rows.length}:{query.payloadPages.length}
+          </output>
+          <button disabled={Boolean(query.loading)} onClick={query.append}>
+            Append
+          </button>
+        </>
+      );
+    }
+    render(
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <SessionActivityProvider active>
+            <View />
+          </SessionActivityProvider>
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    await screen.findByText("1:1");
+    for (let index = 2; index <= 5; index++) {
+      fireEvent.click(screen.getByRole("button", { name: "Append" }));
+      await screen.findByText(`${index}:${Math.min(index, 3)}`);
+    }
+    expect(warn).toHaveBeenCalledWith(
+      "delidev.pagination.resident_pages_rejected",
+      expect.objectContaining({ minimum: 2, applied: 3 }),
+    );
+    warn.mockRestore();
+  },
+);

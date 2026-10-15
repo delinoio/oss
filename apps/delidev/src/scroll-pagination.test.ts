@@ -3,9 +3,13 @@ import { expect, it, vi } from "vitest";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { FailureCode } from "@delinoio/delidev-api-client";
 import {
+  DEFAULT_RESIDENT_PAGES,
+  MIN_RESIDENT_PAGES,
   PaginationChain,
   pagesResident,
   ReadStage,
+  ResidentPageRejection,
+  resolveResidentPages,
   type PaginationReader,
 } from "./scroll-pagination";
 
@@ -876,14 +880,85 @@ const wideReader = vi.fn<PaginationReader<Row, Payload>>(async (token) => {
 const residentTokens = (chain: PaginationChain<Row, Payload>) =>
   chain.getSnapshot().payloadPages.map((page) => page.token);
 
+it("resolves resident-page bounds with a typed rejection per invalid cell", () => {
+  expect(MIN_RESIDENT_PAGES).toBe(2);
+  const rejected: [number | undefined, ResidentPageRejection][] = [
+    [undefined, ResidentPageRejection.Unset],
+    [Number.NaN, ResidentPageRejection.NotFinite],
+    [Number.POSITIVE_INFINITY, ResidentPageRejection.NotFinite],
+    [Number.NEGATIVE_INFINITY, ResidentPageRejection.NotFinite],
+    [-1, ResidentPageRejection.BelowMinimum],
+    [0, ResidentPageRejection.BelowMinimum],
+    [0.5, ResidentPageRejection.BelowMinimum],
+    [1, ResidentPageRejection.BelowMinimum],
+    [1.9, ResidentPageRejection.BelowMinimum],
+  ];
+  for (const [bound, rejection] of rejected)
+    expect(resolveResidentPages(bound)).toEqual({
+      pages: DEFAULT_RESIDENT_PAGES,
+      rejection,
+    });
+  for (const [bound, pages] of [
+    [2, 2],
+    [2.9, 2],
+    [3, 3],
+    [20, 20],
+  ])
+    expect(resolveResidentPages(bound)).toEqual({ pages });
+});
+
+it("never keeps more payload pages than a one-page bound can honor under focus protection", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  for (const bound of [1, 1.9]) {
+    const chain = new PaginationChain<Row, Payload>(bound);
+    chain.activate();
+    await chain.refresh(wideReader);
+    chain.protect("");
+    for (let index = 0; index < 4; index++) await chain.append(wideReader);
+    // The rejected bound falls back to the default, which the protected page
+    // and the newest pages fit inside.
+    expect(chain.getSnapshot().payloadPages.length).toBeLessThanOrEqual(
+      DEFAULT_RESIDENT_PAGES,
+    );
+    expect(residentTokens(chain)).toContain("");
+  }
+  expect(warn).toHaveBeenCalledWith(
+    "delidev.pagination.resident_pages_rejected",
+    expect.objectContaining({ reason: ResidentPageRejection.BelowMinimum }),
+  );
+  warn.mockRestore();
+});
+
+it("honors the minimum two-page bound while a different resident page is protected", async () => {
+  for (const bound of [2, 2.9]) {
+    const chain = new PaginationChain<Row, Payload>(bound);
+    chain.activate();
+    await chain.refresh(wideReader);
+    chain.protect("");
+    for (let index = 0; index < 5; index++) {
+      await chain.append(wideReader);
+      expect(chain.getSnapshot().payloadPages).toHaveLength(2);
+    }
+    expect(residentTokens(chain)).toEqual(["", "5"]);
+    // A restore of another page while protection is active stays inside the bound.
+    chain.protect("5");
+    await chain.restore("2", wideReader);
+    expect(chain.getSnapshot().payloadPages).toHaveLength(2);
+    expect(residentTokens(chain)).toContain("5");
+    expect(residentTokens(chain)).toContain("2");
+  }
+});
+
 it("keeps the default three-page bound and ignores invalid configured bounds", async () => {
-  for (const bound of [undefined, 0, -1, Number.NaN]) {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  for (const bound of [undefined, 0, -1, Number.NaN, 1, 1.5]) {
     const chain = new PaginationChain<Row, Payload>(bound);
     chain.activate();
     await chain.refresh(wideReader);
     for (let index = 0; index < 6; index++) await chain.append(wideReader);
     expect(residentTokens(chain)).toEqual(["4", "5", "6"]);
   }
+  warn.mockRestore();
 });
 
 it("keeps twenty payload pages and evicts only enough pages at the twenty-first", async () => {

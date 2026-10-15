@@ -84,14 +84,63 @@ export type PaginationReader<Row extends PaginationRow, Payload = never> = (
 
 /** Default number of full payload pages a chain keeps resident. */
 export const DEFAULT_RESIDENT_PAGES = 3;
+/** Smallest accepted resident-page bound. Focus protection can keep one
+ * protected payload page next to the page being read, so a smaller bound could
+ * never be honored while a different resident page is protected. */
+export const MIN_RESIDENT_PAGES = 2;
 
-/** Normalizes a configured resident-page bound; invalid input uses the default. */
+/** Why a configured resident-page bound was not accepted as given. */
+export enum ResidentPageRejection {
+  /** No bound was configured, so the default applies silently. */
+  Unset = "unset",
+  NotFinite = "not-finite",
+  BelowMinimum = "below-minimum",
+}
+
+export interface ResidentPageResolution {
+  pages: number;
+  /** Present when the configured value was rejected and the default applies. */
+  rejection?: ResidentPageRejection;
+}
+
+/**
+ * Resolves a configured resident-page bound. Every chain constructor entry
+ * point (direct construction, `usePaginationChain` and conversation retention)
+ * resolves its bound here, so a value is accepted only when its floor is at
+ * least `MIN_RESIDENT_PAGES`. Anything else is rejected and uses the default.
+ */
+export function resolveResidentPages(
+  residentPages?: number,
+): ResidentPageResolution {
+  if (residentPages === undefined)
+    return {
+      pages: DEFAULT_RESIDENT_PAGES,
+      rejection: ResidentPageRejection.Unset,
+    };
+  if (!Number.isFinite(residentPages))
+    return {
+      pages: DEFAULT_RESIDENT_PAGES,
+      rejection: ResidentPageRejection.NotFinite,
+    };
+  const pages = Math.floor(residentPages);
+  if (pages < MIN_RESIDENT_PAGES)
+    return {
+      pages: DEFAULT_RESIDENT_PAGES,
+      rejection: ResidentPageRejection.BelowMinimum,
+    };
+  return { pages };
+}
+
+/** Normalizes a configured resident-page bound; rejected input uses the default. */
 export function residentPageBound(residentPages?: number): number {
-  return residentPages !== undefined &&
-    Number.isFinite(residentPages) &&
-    residentPages >= 1
-    ? Math.floor(residentPages)
-    : DEFAULT_RESIDENT_PAGES;
+  const { pages, rejection } = resolveResidentPages(residentPages);
+  if (rejection && rejection !== ResidentPageRejection.Unset)
+    console.warn("delidev.pagination.resident_pages_rejected", {
+      reason: rejection,
+      minimum: MIN_RESIDENT_PAGES,
+      applied: pages,
+    });
+  return pages;
 }
 
 /**
