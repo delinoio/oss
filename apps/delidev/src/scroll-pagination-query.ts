@@ -35,13 +35,14 @@ export function usePaginationChain<Row extends PaginationRow, Payload = never>(
   reader: PaginationReader<Row, Payload>,
   initialRead = true,
   retainPayloadOnSuspend = false,
+  residentPages?: number,
 ) {
   // Native/local adapters do not require a business QueryClient provider.
   // Connect adapters still bind the authenticated provider identity here.
   const client = useContext(QueryClientContext);
   const chain = useMemo(
-    () => new PaginationChain<Row, Payload>(),
-    [scopeKey, client],
+    () => new PaginationChain<Row, Payload>(residentPages),
+    [scopeKey, client, residentPages],
   );
   // Inert presentation may pause an owner without destroying its mounted
   // rows. Actual owner/scope disposal always erases retained private payloads.
