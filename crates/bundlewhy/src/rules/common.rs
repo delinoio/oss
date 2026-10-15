@@ -867,6 +867,8 @@ struct ScanScope {
     /// A `{` block (statement block, function body or class body): its
     /// closing `}` ends a statement, so its reads never reach the parent.
     statement_block: bool,
+    /// The parenthesized head of an `if`, `while` or `switch`.
+    control_head: bool,
 }
 
 /// Marks the unguarded reads that are still pending in `scope` as blocked: a
@@ -879,6 +881,29 @@ fn block_pending_reads(scope: &mut ScanScope, guards: &[Option<EnvGuard>], block
     {
         if guards[read].is_none() {
             blocked[read] = true;
+        }
+    }
+}
+
+/// Materializes the guard of every unblocked read that is still pending when
+/// the `)` of a control-flow head closes `scope`. The read keeps the guard of
+/// the head that encloses its start; reads inside a nested call or array have
+/// an invalid context and are left alone.
+fn settle_control_flow_reads(
+    scope: &ScanScope,
+    contexts: &[ScopeContext],
+    blocked: &[bool],
+    guards: &mut [Option<EnvGuard>],
+) {
+    if !scope.control_head {
+        return;
+    }
+    for &read in scope.pending_reads.iter().chain(&scope.conditional_pending) {
+        if let ScopeContext::Guard(guard) = contexts[read]
+            && !blocked[read]
+            && guards[read].is_none()
+        {
+            guards[read] = Some(guard);
         }
     }
 }
@@ -903,6 +928,7 @@ fn env_guards(
         conditional_pending: Vec::new(),
         arrow_expression: false,
         statement_block: false,
+        control_head: false,
     }];
     let mut current_scope = 0;
     let mut next_start = 0;
@@ -979,6 +1005,9 @@ fn env_guards(
                     arrow_expression: false,
                     statement_block: bytes[index] == b'{'
                         && opens_statement_block(bytes, index, ignored),
+                    control_head: bytes[index] == b'('
+                        && matches!(context, ScopeContext::Guard(_))
+                        && !matches!(scopes[current_scope].context, ScopeContext::Guard(_)),
                 });
                 current_scope = scopes.len() - 1;
             }
@@ -989,6 +1018,18 @@ fn env_guards(
             }
             b')' | b']' | b'}' if current_scope != 0 => {
                 let parent = scopes[current_scope].parent;
+                if bytes[index] == b')' {
+                    // A control-flow head (`if`, `while`, `switch`) consumes
+                    // the reads of its condition. Record that guard now, so
+                    // closing the surrounding statement block later cannot
+                    // block a read that the head already controls.
+                    settle_control_flow_reads(
+                        &scopes[current_scope],
+                        &contexts,
+                        &blocked,
+                        &mut guards,
+                    );
+                }
                 let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
                 let conditional_pending =
                     std::mem::take(&mut scopes[current_scope].conditional_pending);
@@ -1073,6 +1114,7 @@ fn env_guards(
                         conditional_pending: Vec::new(),
                         arrow_expression: true,
                         statement_block: false,
+                        control_head: false,
                     });
                     current_scope = scopes.len() - 1;
                 }
@@ -2765,6 +2807,40 @@ y=/process.env.F/.test(z),process.env.G"#;
                 let code = format!("function f(){{{keyword}{trivia}{{}}/process.env.FLAG/2}}");
                 assert!(in_code(&code), "{code:?}");
             }
+        }
+    }
+
+    #[test]
+    fn control_flow_heads_inside_blocks_keep_their_guard() {
+        let flag = Some;
+        for (head, evidence) in [
+            ("if", "the retained read is in an if condition"),
+            ("while", "the retained read is in a while condition"),
+            ("switch", "the retained read is in a switch condition"),
+        ] {
+            for (before, after) in [
+                ("", ""),
+                ("function f(){", "}"),
+                ("const f=()=>{", "}"),
+                ("{", "}"),
+                ("if(a){", "}"),
+                ("try{", "}catch(e){}"),
+                ("function f(){x;", "}"),
+            ] {
+                for body in ["{run()}", "run()", "{}"] {
+                    for condition in ["process.env.FLAG", "(process.env.FLAG)"] {
+                        let code = format!("{before}{head}({condition}){body}{after}");
+                        assert_eq!(flag_guard(&code), flag(evidence), "{code:?}");
+                    }
+                }
+            }
+        }
+        // A read inside a nested call is not the condition itself.
+        for code in [
+            "function f(){if(g(process.env.FLAG)){run()}}",
+            "function f(){if(x){}process.env.FLAG}",
+        ] {
+            assert_eq!(flag_guard(code), None, "{code:?}");
         }
     }
 
