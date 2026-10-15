@@ -265,15 +265,24 @@ func resolveOriginalStartup(ctx context.Context, config Config, source domain.ID
 	return harness.ResolveExecution(ctx, domain.ExecutionStartupSelection{Harness: original.Harness, ExplicitPath: original.ResolvedPath, ExecutableSHA256: original.ExecutableSHA256})
 }
 
+// An unconfirmed managed Finish stays the reported outcome when a later cleanup
+// fails: only that wrapper keeps the job journal unfinished until the Finish is
+// reconciled, so the cleanup failure is recorded but never replaces it.
 func (a *executionStartupAttempt) cleanupFailure(original, cleanup error) error {
+	var uncertain *managedExecutionUncertain
+	keepOriginal := errors.As(original, &uncertain)
 	if a == nil {
+		if keepOriginal {
+			return original
+		}
 		return errors.Join(cleanup, original)
 	}
-	if a != nil {
-		if a.firstFailure == nil && original != nil {
-			a.firstFailure = original
-		}
-		a.cleanupUncertain = true
+	if a.firstFailure == nil && original != nil {
+		a.firstFailure = original
+	}
+	a.cleanupUncertain = true
+	if keepOriginal {
+		return original
 	}
 	return domain.Fail(domain.RecoveryRequired, "Original execution cleanup could not be confirmed.", "Recover the original attempt before another send.")
 }

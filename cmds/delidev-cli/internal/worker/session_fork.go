@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"os"
@@ -157,7 +156,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	}
 	// The child's native history lives in its own persistent profile; the fork
 	// runtime directory above is only the operation journal.
-	childProfile, err := conversationProfile(ctx, config, job.MachineID, nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeFork, Account: assignment.AccountID, Conversation: input.RuntimeID}, input.RuntimeID)
+	childProfile, err := forkChildProfile(ctx, config, job.MachineID, domain.Codex, assignment.AccountID, input.RuntimeID)
 	if err != nil {
 		return nil, executionCheckpointUncertain()
 	}

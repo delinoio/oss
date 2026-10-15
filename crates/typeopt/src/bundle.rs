@@ -1740,6 +1740,17 @@ pub fn stage(
     let mut original_maps = BTreeMap::new();
     let (mut maps, mut dropped) = (0usize, 0usize);
     let mut minified_bytes = 0usize;
+    // A read in any chunk may stringify a callable imported from an edited
+    // chunk. Keep the edited text when the bundle has no closed target proof.
+    let source_reflection = crate::app::minify()
+        && (crate::app::bundle_html_reflection()
+            || outcome
+                .texts
+                .values()
+                .any(|text| crate::minify::may_observe_function_source(text)));
+    if source_reflection {
+        tracing::info!("callable source reflection may be reachable; bundle minification skipped");
+    }
     for (name, text) in &outcome.texts {
         crate::app::check_cancelled()?;
         let original = &snapshot.sources[name];
@@ -1750,7 +1761,7 @@ pub fn stage(
             .strip_prefix(source)
             .context("edited chunk is outside the bundle directory")?;
         let target = root.join(relative);
-        let (published, minified) = if crate::app::minify() {
+        let (published, minified) = if crate::app::minify() && !source_reflection {
             minify_chunk(name, text)
         } else {
             (text.clone(), None)
