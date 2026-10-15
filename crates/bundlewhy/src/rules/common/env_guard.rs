@@ -15,6 +15,8 @@
 
 use std::collections::HashMap;
 
+use crate::rules::await_context::await_operator_offsets;
+
 /// The branch construct a retained read controls.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum EnvGuard {
@@ -83,7 +85,15 @@ pub(super) fn env_guards(
                 .flatten()
         })
         .collect();
-    let mut parser = Parser::new(tokens, &numbers, reads);
+    // `await(` is the unary operator only in a module and inside an async
+    // body; elsewhere it calls a function named `await`. One token pass per
+    // chunk answers every `await(` the parser meets.
+    let await_operators = if code.contains("await") {
+        await_operator_offsets(code, ignored)
+    } else {
+        Vec::new()
+    };
+    let mut parser = Parser::new(tokens, &numbers, reads, await_operators);
     parser.parse_program();
     parser.resolve(reads.len())
 }
@@ -140,6 +150,18 @@ fn is_line_terminator(ch: char) -> bool {
 /// Whether the UTF-8 encoding of U+2028 or U+2029 starts at `index`.
 fn separator_at(bytes: &[u8], index: usize) -> bool {
     matches!(bytes.get(index..index + 3), Some([0xe2, 0x80, 0xa8 | 0xa9]))
+}
+
+/// The byte width of the non-ASCII white space character that starts at
+/// `index`: U+00A0, U+FEFF and the Unicode space separators. U+2028 and U+2029
+/// are line terminators, handled by [`separator_at`].
+fn unicode_space_at(code: &str, index: usize) -> Option<usize> {
+    if !code.is_char_boundary(index) {
+        return None;
+    }
+    let ch = code[index..].chars().next()?;
+    (!ch.is_ascii() && (ch.is_whitespace() || ch == '\u{feff}') && !is_line_terminator(ch))
+        .then(|| ch.len_utf8())
 }
 
 fn is_word_byte(byte: u8) -> bool {
@@ -223,6 +245,12 @@ fn tokenize<'a>(code: &'a str, ignored: &[(usize, usize)]) -> Vec<Token<'a>> {
             index += 1;
             continue;
         }
+        // Non-ASCII white space (U+00A0, U+FEFF and the Unicode space
+        // separators) separates tokens like an ASCII space.
+        if let Some(width) = unicode_space_at(code, index) {
+            index += width;
+            continue;
+        }
         let start = index;
         let kind = if byte.is_ascii_digit()
             || (byte == b'.' && bytes.get(index + 1).is_some_and(u8::is_ascii_digit))
@@ -231,7 +259,11 @@ fn tokenize<'a>(code: &'a str, ignored: &[(usize, usize)]) -> Vec<Token<'a>> {
             TokenKind::Number
         } else if is_word_byte(byte) || byte == b'#' {
             index += 1;
-            while index < bytes.len() && is_word_byte(bytes[index]) && !separator_at(bytes, index) {
+            while index < bytes.len()
+                && is_word_byte(bytes[index])
+                && !separator_at(bytes, index)
+                && unicode_space_at(code, index).is_none()
+            {
                 index += 1;
             }
             TokenKind::Word
@@ -508,6 +540,8 @@ struct Parser<'a> {
     chain: usize,
     /// `in` is not an operator (the initializer of a `for` head).
     no_in: bool,
+    /// Offsets of the `await` operators that are followed by `(`, ascending.
+    await_operators: Vec<usize>,
     nodes: Vec<Node<'a>>,
     /// Branch sites in source order of their operator.
     sites: Vec<(EnvGuard, Id)>,
@@ -538,6 +572,7 @@ impl<'a> Parser<'a> {
         tokens: Vec<Token<'a>>,
         numbers: &'a [Option<String>],
         reads: &[(usize, usize)],
+        await_operators: Vec<usize>,
     ) -> Self {
         let close = match_brackets(&tokens);
         let mut reads_at = HashMap::new();
@@ -562,6 +597,7 @@ impl<'a> Parser<'a> {
             depth: 0,
             chain: 0,
             no_in: false,
+            await_operators,
             nodes: Vec::new(),
             sites: Vec::new(),
             returns: vec![Returns::default()],
@@ -1342,6 +1378,13 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Whether the `await` token is the unary operator. Only `await(` is
+    /// ambiguous: in a classic script or a plain function it calls a function
+    /// named `await`.
+    fn await_is_operator(&self, token: Token<'a>) -> bool {
+        !is_punct(self.at(1), "(") || self.await_operators.binary_search(&token.start).is_ok()
+    }
+
     fn parse_unary(&mut self) -> Expr {
         if self.chain >= MAX_CHAIN {
             return self.skip_nested();
@@ -1370,7 +1413,9 @@ impl<'a> Parser<'a> {
                 self.parse_unary();
                 None
             }
-            (TokenKind::Word, "await") if self.operand_follows(false) => {
+            (TokenKind::Word, "await")
+                if self.operand_follows(false) && self.await_is_operator(token) =>
+            {
                 self.bump();
                 let operand = self.parse_unary();
                 self.derived(operand)
@@ -2473,7 +2518,7 @@ mod tests {
         for code in [
             "return(process.env.FLAG)&&run()",
             "return (process.env.FLAG) && run()",
-            "await(process.env.FLAG)&&run()",
+            "async function f(){await(process.env.FLAG)&&run()}",
             "yield(process.env.FLAG)&&run()",
             "x=a in(process.env.FLAG)&&run()",
             "if(a)(process.env.FLAG)&&run()",

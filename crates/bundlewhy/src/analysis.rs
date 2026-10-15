@@ -3680,6 +3680,84 @@ mod tests {
     }
 
     #[test]
+    fn rspack_parenthesized_keyword_operands_keep_the_env_diagnostic() {
+        for tail in [
+            "if (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG) === \"undefined\") { use(); }",
+            "if (typeof (process.env.BUNDLEWHY_FIXTURE_FLAG) === \"undefined\") { use(); }",
+            "async function gate() { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } }",
+            "const gate = async () => { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } \
+             }",
+            "export {}; if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "export /* c */ {}; if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "const o = { async \"load\"() { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { \
+             use(); } } }",
+            "class C { async #load() { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } \
+             } }",
+        ] {
+            let fixture = run_fixture_patched(
+                BundlerChoice::Rspack,
+                true,
+                |_| {},
+                |build, _| {
+                    replace_flag_guard_with_tail(build, "main.js", RSPACK_FLAG_GUARD, tail);
+                },
+            );
+            let diagnostics = env_diagnostics(&fixture.output);
+            assert_eq!(diagnostics.len(), 1, "{tail}");
+            let env = diagnostics[0];
+            assert_eq!(env.status, EvidenceStatus::Inferred);
+            assert!(env.title.contains("BUNDLEWHY_FIXTURE_FLAG"), "{tail}");
+            assert!(
+                env.conditions
+                    .iter()
+                    .any(|condition| condition.outcome == ConditionOutcome::Met),
+                "{tail}"
+            );
+        }
+    }
+
+    #[test]
+    fn rspack_keyword_lookalike_calls_are_not_branch_guards() {
+        for tail in [
+            "const value = typeof(process.env.BUNDLEWHY_FIXTURE_FLAG);",
+            "while (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "switch (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { default: use(); }",
+            "const value = typeof (process.env.BUNDLEWHY_FIXTURE_FLAG);",
+            "check(process.env.BUNDLEWHY_FIXTURE_FLAG);",
+            "obj.typeof(process.env.BUNDLEWHY_FIXTURE_FLAG);",
+            "mytypeof(process.env.BUNDLEWHY_FIXTURE_FLAG);",
+            "if (check(typeof(process.env.BUNDLEWHY_FIXTURE_FLAG))) { use(); }",
+            "if (obj.typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "if (mytypeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "const m = obj?.import.meta; if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "var async; async\nfunction gate(await) { if \
+             (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } }",
+            "const g = async () => 1\nif (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "function gate(await) { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } }",
+            "async function outer() { function gate() { if \
+             (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } } }",
+            "if (obj.\u{3bb}typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "if (\u{3bb}typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "if (obj.\u{301}typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "if (\u{203f}typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+        ] {
+            let fixture = run_fixture_patched(
+                BundlerChoice::Rspack,
+                true,
+                |_| {},
+                |build, _| {
+                    replace_flag_guard_with_tail(build, "main.js", RSPACK_FLAG_GUARD, tail);
+                },
+            );
+            assert!(
+                env_diagnostics(&fixture.output).is_empty(),
+                "reported a branch for {tail:?}"
+            );
+        }
+    }
+
+    #[test]
     fn rspack_comment_separated_calls_are_not_branch_guards() {
         for tail in [
             "run // preserved\n(process.env.BUNDLEWHY_FIXTURE_FLAG)",
