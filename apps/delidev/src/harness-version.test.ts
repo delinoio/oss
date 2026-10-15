@@ -6,6 +6,7 @@ import {
   claudeVersionAllowed,
   harnessVersionAllowed,
   validInstallationVersion,
+  validSemVer,
   versionAtLeast,
 } from "./harness-version";
 
@@ -52,6 +53,24 @@ it("accepts the same bounded detected-version shape as the Go side", () => {
   expect(validInstallationVersion("2.1.237-rc.1+build.7")).toBe(true);
   expect(validInstallationVersion("2.1")).toBe(false);
   expect(validInstallationVersion(`1.0.0-${"a".repeat(65)}`)).toBe(false);
+});
+
+it("validates full SemVer the way golang.org/x/mod/semver does", () => {
+  for (const version of ["0.0.0", "1.0.46", "1.0.0-0", "1.0.0-rc.1+build.01"])
+    expect(validSemVer(version), version).toBe(true);
+  for (const version of [
+    "01.0.0",
+    "1.0.0-01",
+    "1.0.0-",
+    "1.0.0-a..b",
+    "1.0.0+",
+    "1.0.0+a..b",
+    "1.0",
+    "v1.0.0",
+    "",
+    undefined,
+  ])
+    expect(validSemVer(version), String(version)).toBe(false);
 });
 
 it("applies one minimum-version rule per harness to retained native records", () => {

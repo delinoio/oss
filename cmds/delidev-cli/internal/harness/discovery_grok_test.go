@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,6 +151,19 @@ func TestDiscoveryGrokInspectionExperiments(t *testing.T) {
 			}
 			if i.Protocol.State != want {
 				t.Fatalf("unexpected protocol state: %+v", i.Protocol)
+			}
+			// A rejected inventory persists a Grok diagnostic on the installation
+			// observation; Codex and Claude fields stay unset.
+			d := i.Protocol.GrokDiagnostic
+			if test.verified {
+				if d != nil {
+					t.Fatalf("verified profile carried a diagnostic: %+v", d)
+				}
+			} else if d == nil || d.Phase != domain.GrokProfile || d.Code != domain.Unsupported || d.DetectedVersion != i.Version || d.SupportedVersion != domain.GrokSubscriptionBaselineVersion || d.Validate() != nil || strings.Contains(d.Message+d.Guidance, "foreign") {
+				t.Fatalf("rejected inventory lost its safe diagnostic: %+v", d)
+			}
+			if i.Protocol.Diagnostic != nil {
+				t.Fatal("Grok discovery populated the Codex diagnostic")
 			}
 		})
 	}

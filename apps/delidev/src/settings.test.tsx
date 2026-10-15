@@ -4312,7 +4312,7 @@ it("keeps the routing dialog and its read when the Settings language changes", a
   expect(value.preview).toHaveBeenCalledTimes(1);
 });
 
-it("does not read policy inventory while inline Network settings is open", async () => {
+it("does not read policy inventory while inline Network settings starts expanded", async () => {
   const preferences = resource(EntityKind.SETTINGS, {
     default_routing: "priority",
     automatic_fetch: true,
@@ -4332,14 +4332,11 @@ it("does not read policy inventory while inline Network settings is open", async
   render(value.view(<Settings />));
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
   expect(screen.queryByRole("form")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
-  await waitFor(() =>
-    expect(
-      screen
-        .getByRole("button", { name: "Network settings" })
-        .getAttribute("aria-expanded"),
-    ).toBe("true"),
-  );
+  expect(
+    screen
+      .getByRole("button", { name: "Network settings" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
   expect(screen.queryByRole("dialog", { name: "Server network" })).toBeNull();
   const reads = value.list.mock.calls.filter(
     ([request]) => request.filter?.kind === EntityKind.SETTINGS,

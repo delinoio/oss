@@ -19,6 +19,9 @@ type historyFixture struct {
 	api   *OwnedAPI
 	reads []string
 	mode  string
+	// original replaces the stored original input row when set, for inputs
+	// whose native expansion has more than one part.
+	original json.RawMessage
 }
 
 func newHistoryFixture(t *testing.T) *historyFixture {
@@ -66,6 +69,9 @@ func (f *historyFixture) RoundTrip(request *http.Request) (*http.Response, error
 		value = fixtureSession(f.o.cwd, f.o.creation.request, fixtureSettings())
 	case "/session/" + fixtureSessionID + "/message/" + fixtureMessageID:
 		value = fixtureInput(f.o.input.receipt, fixtureSettings(), "private input")
+		if f.original != nil {
+			value = f.original
+		}
 	case "/permission", "/question":
 		value = []any{}
 		if f.mode == "pending" {

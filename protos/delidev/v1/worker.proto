@@ -175,6 +175,10 @@ enum WorkerCapability {
   // Independently negotiated OpenCode General Chat Fork profile v2: the Worker
   // clones completed plain timed reasoning parts. Requires capability 15.
   WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1 = 69;
+  // Independently negotiated OpenCode image attachments: the Worker resolves
+  // validated private image files into native file parts and verifies the closed
+  // native expansion. Requires capability 25.
+  WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1 = 70;
   WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1 = 26;
   WORKER_CAPABILITY_NATIVE_SKILLS_V1 = 24;
   WORKER_CAPABILITY_IMAGE_INPUTS_V1 = 25;
