@@ -1406,7 +1406,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
     // and every lookup below reads these tables instead of rescanning the
     // suffix, so the cost does not grow with the nesting depth.
     let (blocks, block_close) = pair_delimiters(bytes, b'{', b'}');
-    let (_, paren_close) = pair_delimiters(bytes, b'(', b')');
+    let (parens, paren_close) = pair_delimiters(bytes, b'(', b')');
     let enclosing = |position: usize| {
         blocks
             .iter()
@@ -1590,7 +1590,10 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
                     || enclosing(found.start()),
                     |(_, body)| (found.start(), body.1),
                 ),
-            _ => enclosing(found.start()),
+            // A `let` or `const` in a `for` header is visible in the header and
+            // the loop statement only, not in the rest of the enclosing block.
+            _ => for_header_scope(&code, bytes, found.start(), &parens, &block_close)
+                .unwrap_or_else(|| enclosing(found.start())),
         };
         scopes.push(scope);
     }
@@ -1619,6 +1622,48 @@ fn pair_delimiters(
         }
     }
     (pairs, table)
+}
+
+/// The range in which a `let` or `const` binding at `position` is visible when
+/// it sits in the parenthesized head of a `for` statement: from the head to the
+/// end of the loop statement, which is its body block or, for a body without
+/// braces, the end of its line or its `;`. `None` when `position` is not in a
+/// `for` head.
+fn for_header_scope(
+    code: &str,
+    bytes: &[u8],
+    position: usize,
+    parens: &[(usize, usize)],
+    block_close: &HashMap<usize, usize>,
+) -> Option<(usize, usize)> {
+    let (open, close) = parens
+        .iter()
+        .filter(|(open, close)| *open < position && position < *close)
+        .min_by_key(|(open, close)| close - open)
+        .copied()?;
+    let keyword = code[..open]
+        .trim_end()
+        .rsplit(|character: char| {
+            !(character.is_alphanumeric() || character == '_' || character == '$')
+        })
+        .next()
+        .unwrap_or("");
+    let is_for = keyword == "for"
+        || (keyword == "await" && is_control_flow_parentheses(code, open, keyword));
+    if !is_for {
+        return None;
+    }
+    let mut cursor = close + 1;
+    while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+        cursor += 1;
+    }
+    let end = match block_close.get(&cursor) {
+        Some(body_close) if bytes.get(cursor) == Some(&b'{') => *body_close,
+        _ => code[cursor.min(bytes.len())..]
+            .find([';', '\n'])
+            .map_or(bytes.len(), |offset| cursor + offset),
+    };
+    Some((open, end))
 }
 
 /// Finds a block-bodied function or arrow body after a parameter list.
@@ -3524,6 +3569,56 @@ y=/process.env.F/.test(z),process.env.G"#;
         let offsets = direct_eval_offsets(source);
         assert_eq!(offsets, vec![0, source.rfind("eval(d)").unwrap()]);
         assert_eq!(direct_eval_line(source), Some((0, 0)));
+    }
+
+    #[test]
+    fn loop_header_bindings_end_with_the_loop_statement() {
+        // (source, text of the one call that stays reported, if any)
+        let cases = [
+            (
+                "for (let eval = helper; ready; step()) { eval(x); } eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (const eval of list) { eval(x); } eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (const eval of list) eval(x); eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for await (const eval of list) { eval(x); } eval(code);",
+                Some("eval(code)"),
+            ),
+            ("for (let eval = 1; ; ) { eval(x); eval(y); }", None),
+            (
+                "for (const eval of list)\n  eval(x);\neval(code);",
+                Some("eval(code)"),
+            ),
+            // `var` in a head belongs to the function, so the later call is ordinary.
+            (
+                "for (var eval = helper; ready; ) { eval(x); } eval(code);",
+                None,
+            ),
+            // A head that is not a `for` head keeps the block scope.
+            (
+                "{ if (ready) { let eval = 1; eval(x); } eval(code); }",
+                Some("eval(code)"),
+            ),
+            (
+                "{ let eval = helper; eval(x); } eval(code);",
+                Some("eval(code)"),
+            ),
+        ];
+        for (source, expected) in cases {
+            let offsets = direct_eval_offsets(source);
+            let expected: Vec<usize> = expected
+                .map(|needle| source.rfind(needle).unwrap())
+                .into_iter()
+                .collect();
+            assert_eq!(offsets, expected, "{source}");
+        }
     }
 
     #[test]
