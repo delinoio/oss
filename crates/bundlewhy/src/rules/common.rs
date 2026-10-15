@@ -2049,6 +2049,17 @@ fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
 struct EmittedEval {
     chunk_index: usize,
     offset: usize,
+    attribution: EmittedAttribution,
+}
+
+/// How an emitted call was attributed to a module.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EmittedAttribution {
+    /// The chunk's source map resolves the call to the module's source file.
+    SourceMap,
+    /// The chunk has no usable source map and the module is the only included
+    /// module it comes from.
+    SoleOwner,
 }
 
 /// The file that a source map resolves an emitted position to, as the two
@@ -2272,6 +2283,11 @@ fn emitted_evals(
                 found.push(EmittedEval {
                     chunk_index: index,
                     offset: call.offset,
+                    attribution: if has_map {
+                        EmittedAttribution::SourceMap
+                    } else {
+                        EmittedAttribution::SoleOwner
+                    },
                 });
             }
         }
@@ -2418,11 +2434,28 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                 format!("{}:{}:{}", chunk.file, line + 1, column + 1)
             })
             .collect();
+        let mapped = emitted
+            .iter()
+            .filter(|call| call.attribution == EmittedAttribution::SourceMap)
+            .count();
+        // A call in a chunk without a usable source map belongs to this module
+        // because the module is the only one the chunk comes from; no mapping
+        // exists then, so the evidence must not claim one.
+        let attribution = match (mapped, emitted.len() - mapped) {
+            (_, 0) => "maps to this module through the source map".to_owned(),
+            (0, _) => "is in a chunk without a usable source map that only this module \
+                       contributes to"
+                .to_owned(),
+            (mapped, sole) => format!(
+                "maps to this module through the source map ({mapped} call(s)) or is in a chunk \
+                 without a usable source map that only this module contributes to ({sole} call(s))"
+            ),
+        };
         evidence.push(Evidence::new(
             "emitted chunk text",
             EvidenceStatus::Confirmed,
             format!(
-                "Direct eval call survives in the generated output and maps to this module ({} \
+                "Direct eval call survives in the generated output and {attribution} ({} \
                  call(s)): {}",
                 emitted.len(),
                 emitted_sites.join(", ")
@@ -3449,6 +3482,44 @@ y=/process.env.F/.test(z),process.env.G"#;
             .as_ref()
             .expect("generated location");
         assert_eq!(generated.line, 2);
+    }
+
+    fn emitted_chunk_evidence(draft: &DiagnosticDraft) -> String {
+        draft
+            .evidence
+            .iter()
+            .find(|entry| entry.provenance == "emitted chunk text")
+            .map(|entry| entry.detail.clone())
+            .expect("emitted chunk evidence")
+    }
+
+    #[test]
+    fn attribution_evidence_names_how_the_call_was_attributed() {
+        // A source map resolves the call to the module.
+        let mapped = eval_rule_drafts_for_chunk(
+            DEAD_EVAL_SOURCE,
+            true,
+            ManglingSetting::Enabled,
+            &shared_chunk_with_map(),
+        );
+        let detail = emitted_chunk_evidence(&mapped[0]);
+        assert!(detail.contains("through the source map"), "{detail}");
+        assert!(!detail.contains("without a usable source map"), "{detail}");
+        // No map exists for a chunk that only this module contributes to, so
+        // the evidence names the sole owner instead of a mapping.
+        let sole = eval_rule_drafts_for_chunk(
+            DEAD_EVAL_SOURCE,
+            true,
+            ManglingSetting::Enabled,
+            &EmittedChunk::plain("const longLocalName = 1;\neval(code);"),
+        );
+        let detail = emitted_chunk_evidence(&sole[0]);
+        assert!(
+            detail.contains("without a usable source map that only this module contributes to"),
+            "{detail}"
+        );
+        assert!(!detail.contains("through the source map"), "{detail}");
+        assert!(!detail.contains("maps to this module"), "{detail}");
     }
 
     /// Analyzes one chunk that holds a direct `eval` call for each of `count`
