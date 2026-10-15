@@ -5,7 +5,20 @@ import {
   ResourceSchema,
   newRequestId,
 } from "@delinoio/delidev-api-client";
+import { act, screen } from "@testing-library/react";
 import { encode } from "./documents";
+
+/**
+ * Opens one child's noninteractive detail card by keyboard focus, as a user
+ * tabbing to the name would. Returns the card element.
+ */
+export async function openSubagentCard(name: string | RegExp) {
+  const trigger = await screen.findByText(name);
+  act(() => {
+    (trigger as HTMLElement).focus();
+  });
+  return screen.findByRole("tooltip");
+}
 
 export function subagentFixture(sessionId: string) {
   const id = newRequestId(),

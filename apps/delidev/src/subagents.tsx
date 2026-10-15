@@ -10,7 +10,13 @@ import { useConversationPages } from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef } from "react";
+import {
+  SessionHoverCard,
+  SessionHoverPlacement,
+  SessionHoverProvider,
+  useSessionHover,
+} from "./session-hover-card";
 
 import {
   EntityKind,
@@ -18,7 +24,7 @@ import {
   SystemQuery,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { items, object, text } from "./documents";
+import { items, object, text, type Document } from "./documents";
 import { Failure, Problem } from "./ui";
 import {
   SubagentHarness,
@@ -35,21 +41,29 @@ export function SubagentRows({
   sessionId,
   technical = true,
   labels,
+  hoverEnabled = true,
 }: {
   rows: readonly Resource[];
   sessionId: string;
   technical?: boolean;
   labels?: Map<string, number>;
+  hoverEnabled?: boolean;
 }) {
   useLocale();
   const accepted = useMemo(
     () => validateSubagentPage(rows, sessionId),
     [rows, sessionId],
   );
-  return accepted ? (
-    <ChildRows rows={accepted} technical={technical} labels={labels} />
+  if (!accepted) return unavailable();
+  return technical ? (
+    <ChildRows rows={accepted} />
   ) : (
-    unavailable()
+    <ChildNameList
+      rows={accepted}
+      labels={labels}
+      hoverEnabled={hoverEnabled}
+      scope={sessionId}
+    />
   );
 }
 
@@ -163,13 +177,213 @@ export function SubagentSourceRows({
   );
 }
 
+type ChildView = {
+  row: SubagentRow;
+  labels?: Map<string, number>;
+};
+
+// The stable localized ordinal identifies a child without a native name.
+function ordinalLabel({ row, labels }: ChildView) {
+  return copy("session-name.subagent", {
+    number:
+      labels?.get(`${row.record.execution_id}:${row.child.native_id}`) ?? "—",
+  });
+}
+
+function parentLabel({ row, labels }: ChildView) {
+  const { record, child } = row;
+  if (child.parent_id === record.root_id) return copy("subagents.rootSession_6cdfaa");
+  const key = `${record.execution_id}:${child.parent_id}`;
+  return labels?.has(key)
+    ? copy("session-name.subagent", { number: labels.get(key)! })
+    : copy("subagents.unavailable_ca1844");
+}
+
+function ModelDetails({ child }: { child: Document }) {
+  return (
+    <>
+      <LocalizedText
+        id="subagents.observed_ae32e4"
+        components={{
+          s0: (
+            <>
+              {text(child.observed_model) ||
+                copy("subagents.extra.ca1844969742")}
+            </>
+          ),
+        }}
+      />
+      <p>
+        <LocalizedText
+          id="subagents.requested_a7d830"
+          components={{
+            s0: (
+              <>
+                {text(child.requested_model) ||
+                  copy("subagents.extra.ca1844969742")}
+              </>
+            ),
+          }}
+        />
+      </p>
+    </>
+  );
+}
+
+function OutputDetails({
+  child,
+  technical,
+}: {
+  child: Document;
+  technical: boolean;
+}) {
+  const output = object(child.output);
+  const blocks = items(output.blocks).map(object);
+  if (child.output == null) return <>{copy("subagents.unavailable_ca1844")}</>;
+  return (
+    <>
+      <p>
+        {output.partial === true
+          ? copy("subagents.partialNativeOutput_731a58")
+          : copy("subagents.observedNativeOutput_37d11c")}
+      </p>
+      {technical ? <code>{text(output.native_message_id)}</code> : null}
+      {text(output.text) ? <pre>{text(output.text)}</pre> : null}
+      {blocks.map((block, index) => (
+        <div key={index}>
+          <small>{text(block.kind)}</small>
+          {block.text == null ? (
+            <p>{copy("subagents.contentUnavailable_e9f250")}</p>
+          ) : (
+            <pre>{text(block.text)}</pre>
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function UsageDetails({ child }: { child: Document }) {
+  const usage = object(child.usage);
+  if (child.usage == null) return <>{copy("subagents.unavailable_ca1844")}</>;
+  return (
+    <>
+      <p>{text(usage.scope)}</p>
+      {(
+        [
+          ["subagents.total_dc9841", usage.total],
+          ["subagents.input_f51d4a", usage.input],
+          ["subagents.output_296ead", usage.output],
+        ] as const
+      ).map(([id, value]) => (
+        <p key={id}>
+          <LocalizedText
+            id={id}
+            components={{
+              s0: <>{text(value) || copy("subagents.extra.ca1844969742")}</>,
+            }}
+          />
+        </p>
+      ))}
+      <p>
+        {copy("subagents.observationOnlyExcludedFromAdditiveBilling_23cc58")}
+      </p>
+    </>
+  );
+}
+
+// Noninteractive detail card for one child. It renders the already validated,
+// resident payload only: opening it never reads, fetches or mutates anything.
+function ChildCard({ row, labels }: ChildView) {
+  const { child } = row;
+  return (
+    <>
+      <h4 className="subagent-card-title">
+        {row.name ?? ordinalLabel({ row, labels })}
+      </h4>
+      <dl className="subagent-card-details">
+        <dt>{copy("subagents.parent_5f7953")}</dt>
+        <dd>{parentLabel({ row, labels })}</dd>
+        <dt>{copy("subagents.status_920e41")}</dt>
+        <dd>{text(child.status) || copy("subagents.extra.ca1844969742")}</dd>
+        <dt>{copy("subagents.model_5e2c61")}</dt>
+        <dd>
+          <ModelDetails child={child} />
+        </dd>
+        <dt>{copy("subagents.recentOutput_4bafa7")}</dt>
+        <dd>
+          <OutputDetails child={child} technical={false} />
+        </dd>
+        <dt>{copy("subagents.usageObservation_9c75b9")}</dt>
+        <dd>
+          <UsageDetails child={child} />
+        </dd>
+      </dl>
+    </>
+  );
+}
+
+// One focusable name per row. The trigger carries no status, avatar, badge or
+// control; details appear only in the hover/focus card.
+function ChildName({ row, labels }: ChildView) {
+  const element = useRef<HTMLSpanElement>(null);
+  const hover = useSessionHover(element);
+  const cardId = useId();
+  return (
+    <li className="subagent-name-row">
+      <span
+        ref={element}
+        className="subagent-name"
+        tabIndex={0}
+        aria-describedby={hover.visible ? cardId : undefined}
+        onPointerEnter={hover.onPointerEnter}
+        onPointerLeave={hover.onPointerLeave}
+        onFocus={hover.onFocus}
+        onBlur={hover.onBlur}
+      >
+        {row.name ?? ordinalLabel({ row, labels })}
+      </span>
+      {hover.visible ? (
+        <SessionHoverCard
+          hover={hover}
+          id={cardId}
+          className="subagent-detail-card"
+          placement={SessionHoverPlacement.Start}
+        >
+          <ChildCard row={row} labels={labels} />
+        </SessionHoverCard>
+      ) : null}
+    </li>
+  );
+}
+
+function ChildNameList({
+  rows,
+  labels,
+  hoverEnabled,
+  scope,
+}: {
+  rows: readonly SubagentRow[];
+  labels?: Map<string, number>;
+  hoverEnabled: boolean;
+  scope: string;
+}) {
+  return (
+    <SessionHoverProvider enabled={hoverEnabled} scope={scope}>
+      <ul className="subagent-name-list">
+        {rows.map((row) => (
+          <ChildName key={row.resource.id} row={row} labels={labels} />
+        ))}
+      </ul>
+    </SessionHoverProvider>
+  );
+}
+
 function ChildRows({
   rows,
-  technical = true,
   labels,
 }: {
   rows: readonly SubagentRow[];
-  technical?: boolean;
   labels?: Map<string, number>;
 }) {
   const productLabel = useProductLabels();
@@ -187,219 +401,93 @@ function ChildRows({
         </tr>
       </thead>
       <tbody>
-        {rows.map(({ resource: row, record, child }) => {
-          const output = object(child.output),
-            usage = object(child.usage);
-          const blocks = items(output.blocks).map(object);
+        {rows.map((row) => {
+          const { resource, record, child } = row;
           return (
-            <tr key={row.id}>
-              {technical ? (
-                <td>
-                  <code>{text(child.native_id)}</code>
-                  <section>
-                    <h4>{copy("subagents.sourceCoverage_0b8649")}</h4>
-                    <p>
-                      {text(record.harness)} {text(record.native_version)}
-                    </p>
-                    <p>
-                      <LocalizedText
-                        id="subagents.execution_2ce365"
-                        components={{
-                          s0: (
-                            <>
-                              {productLabel(
-                                PresentationKind.Execution,
-                                text(record.execution_id),
-                              )}
-                            </>
-                          ),
-                        }}
-                      />
-                    </p>
-                    <p>
-                      <LocalizedText
-                        id="subagents.parentTool_5586e7"
-                        components={{
-                          s0: (
-                            <>
-                              {text(child.parent_tool_id) ||
-                                copy("subagents.extra.ca1844969742")}
-                            </>
-                          ),
-                        }}
-                      />
-                    </p>
-                    <ul>
-                      {items(record.sources)
-                        .map(object)
-                        .map((source, index) => (
-                          <li key={index}>
-                            <LocalizedText
-                              id="subagents.sequence_440e77"
-                              components={{
-                                s0: <>{text(source.source)}</>,
-                                s1: <>{text(source.source_id)}</>,
-                                s2: (
-                                  <>
-                                    {String(
-                                      source.sequence ??
-                                        copy("subagents.extra.ca1844969742"),
-                                    )}
-                                  </>
-                                ),
-                                s3: (
-                                  <>
-                                    {text(
-                                      object(source.usage).native_report,
-                                    ) ? (
-                                      <pre>
-                                        {text(
-                                          object(source.usage).native_report,
-                                        )}
-                                      </pre>
-                                    ) : null}
-                                  </>
-                                ),
-                              }}
-                            />
-                          </li>
-                        ))}
-                    </ul>
-                  </section>
-                </td>
-              ) : (
-                <td>
-                  {copy("session-name.subagent", {
-                    number:
-                      labels?.get(
-                        `${record.execution_id}:${child.native_id}`,
-                      ) ?? "—",
-                  })}
-                </td>
-              )}
+            <tr key={resource.id}>
               <td>
-                {technical ? (
-                  <code>{text(child.parent_id)}</code>
-                ) : child.parent_id === record.root_id ? (
-                  copy("subagents.rootSession_6cdfaa")
-                ) : labels?.has(`${record.execution_id}:${child.parent_id}`) ? (
-                  copy("session-name.subagent", {
-                    number: labels.get(
-                      `${record.execution_id}:${child.parent_id}`,
-                    )!,
-                  })
-                ) : (
-                  copy("subagents.unavailable_ca1844")
-                )}
+                <code>{text(child.native_id)}</code>
+                <section>
+                  <h4>{copy("subagents.sourceCoverage_0b8649")}</h4>
+                  <p>
+                    {text(record.harness)} {text(record.native_version)}
+                  </p>
+                  <p>
+                    <LocalizedText
+                      id="subagents.execution_2ce365"
+                      components={{
+                        s0: (
+                          <>
+                            {productLabel(
+                              PresentationKind.Execution,
+                              text(record.execution_id),
+                            )}
+                          </>
+                        ),
+                      }}
+                    />
+                  </p>
+                  <p>
+                    <LocalizedText
+                      id="subagents.parentTool_5586e7"
+                      components={{
+                        s0: (
+                          <>
+                            {text(child.parent_tool_id) ||
+                              copy("subagents.extra.ca1844969742")}
+                          </>
+                        ),
+                      }}
+                    />
+                  </p>
+                  <ul>
+                    {items(record.sources)
+                      .map(object)
+                      .map((source, index) => (
+                        <li key={index}>
+                          <LocalizedText
+                            id="subagents.sequence_440e77"
+                            components={{
+                              s0: <>{text(source.source)}</>,
+                              s1: <>{text(source.source_id)}</>,
+                              s2: (
+                                <>
+                                  {String(
+                                    source.sequence ??
+                                      copy("subagents.extra.ca1844969742"),
+                                  )}
+                                </>
+                              ),
+                              s3: (
+                                <>
+                                  {text(object(source.usage).native_report) ? (
+                                    <pre>
+                                      {text(object(source.usage).native_report)}
+                                    </pre>
+                                  ) : null}
+                                </>
+                              ),
+                            }}
+                          />
+                        </li>
+                      ))}
+                  </ul>
+                </section>
+              </td>
+              <td>
+                <code>{text(child.parent_id)}</code>
               </td>
               <td>
                 {text(child.status) || copy("subagents.extra.ca1844969742")}
               </td>
               <td>
-                <LocalizedText
-                  id="subagents.observed_ae32e4"
-                  components={{
-                    s0: (
-                      <>
-                        {text(child.observed_model) ||
-                          copy("subagents.extra.ca1844969742")}
-                      </>
-                    ),
-                  }}
-                />
-                <p>
-                  <LocalizedText
-                    id="subagents.requested_a7d830"
-                    components={{
-                      s0: (
-                        <>
-                          {text(child.requested_model) ||
-                            copy("subagents.extra.ca1844969742")}
-                        </>
-                      ),
-                    }}
-                  />
-                </p>
+                <ModelDetails child={child} />
               </td>
               <td>
-                {child.output == null ? (
-                  copy("subagents.unavailable_ca1844")
-                ) : (
-                  <>
-                    <p>
-                      {output.partial === true
-                        ? copy("subagents.partialNativeOutput_731a58")
-                        : copy("subagents.observedNativeOutput_37d11c")}
-                    </p>
-                    {technical ? (
-                      <code>{text(output.native_message_id)}</code>
-                    ) : null}
-                    {text(output.text) ? <pre>{text(output.text)}</pre> : null}
-                    {blocks.map((block, index) => (
-                      <div key={index}>
-                        <small>{text(block.kind)}</small>
-                        {block.text == null ? (
-                          <p>{copy("subagents.contentUnavailable_e9f250")}</p>
-                        ) : (
-                          <pre>{text(block.text)}</pre>
-                        )}
-                      </div>
-                    ))}
-                  </>
-                )}
+                <OutputDetails child={child} technical />
               </td>
               <td>
-                {child.usage == null ? (
-                  copy("subagents.unavailable_ca1844")
-                ) : (
-                  <>
-                    <p>{text(usage.scope)}</p>
-                    <p>
-                      <LocalizedText
-                        id="subagents.total_dc9841"
-                        components={{
-                          s0: (
-                            <>
-                              {text(usage.total) ||
-                                copy("subagents.extra.ca1844969742")}
-                            </>
-                          ),
-                        }}
-                      />
-                    </p>
-                    <p>
-                      <LocalizedText
-                        id="subagents.input_f51d4a"
-                        components={{
-                          s0: (
-                            <>
-                              {text(usage.input) ||
-                                copy("subagents.extra.ca1844969742")}
-                            </>
-                          ),
-                        }}
-                      />
-                    </p>
-                    <p>
-                      <LocalizedText
-                        id="subagents.output_296ead"
-                        components={{
-                          s0: (
-                            <>
-                              {text(usage.output) ||
-                                copy("subagents.extra.ca1844969742")}
-                            </>
-                          ),
-                        }}
-                      />
-                    </p>
-                    <p>
-                      {copy(
-                        "subagents.observationOnlyExcludedFromAdditiveBilling_23cc58",
-                      )}
-                    </p>
-                  </>
-                )}
+                <UsageDetails child={child} />
               </td>
             </tr>
           );
@@ -514,7 +602,6 @@ export function Subagents({
     !openCodeSupported;
   return (
     <div ref={root} className="conversation-page-scroll">
-      <p>{copy("subagents.readOnlyNativeHierarchyParentCompletion_036e57")}</p>
       {status.isPending ? (
         <p role="status">{copy("subagents.checkingCapability")}</p>
       ) : null}
@@ -550,6 +637,7 @@ export function Subagents({
                   sessionId={sessionId}
                   technical={false}
                   labels={labels.current}
+                  hoverEnabled={active && visible}
                 />
                 {diagnosticsTarget
                   ? createPortal(

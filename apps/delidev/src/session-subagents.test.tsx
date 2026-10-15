@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   EntityKind,
@@ -17,7 +17,7 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { document, encode, object } from "./documents";
-import { subagentFixture } from "./subagent-test-fixture";
+import { openSubagentCard, subagentFixture } from "./subagent-test-fixture";
 import { MutationIntents } from "./mutation";
 import { SessionView } from "./session";
 
@@ -148,7 +148,11 @@ test("large child publications preserve root streaming and refresh only the pagi
     expect(
       await screen.findByText("Root transcript still streams"),
     ).toBeTruthy();
-    expect(await screen.findByText("paged-child")).toBeTruthy();
+    // The rail shows the name only; the retained output is a hover-card detail.
+    await screen.findByText("Subagent 1");
+    expect(screen.queryByText("paged-child")).toBeNull();
+    const card = await openSubagentCard("Subagent 1");
+    expect(within(card).getByText("paged-child")).toBeTruthy();
     expect(childFetches).toBe(0);
     expect(screen.queryByText("Connection requires attention")).toBeNull();
     expect(

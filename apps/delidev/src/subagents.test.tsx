@@ -21,6 +21,7 @@ import { validateSubagentPage } from "./subagent-record";
 import { document, encode, object } from "./documents";
 import {
   openCodeSubagentFixture,
+  openSubagentCard,
   subagentFixture,
 } from "./subagent-test-fixture";
 
@@ -183,9 +184,7 @@ test.each(["codex", "opencode", "oversized", "malformed"])(
       </QueryClientProvider>,
     );
     expect(screen.queryByText("Subagents")).toBeNull();
-    const childCount = () =>
-      screen.queryAllByRole("row").filter((row) => row.querySelector("td"))
-        .length;
+    const childCount = () => screen.queryAllByRole("listitem").length;
     await waitFor(() => expect(childCount()).toBe(50));
     const more = screen.getByRole("button", { name: "Load more Subagents" });
     await waitFor(() => expect(more.matches(":disabled")).toBe(false));
@@ -246,9 +245,7 @@ test("keeps the OpenCode update warning after its only child payload page is evi
       </TransportProvider>
     </QueryClientProvider>,
   );
-  const rowCount = () =>
-    screen.queryAllByRole("row").filter((row) => row.querySelector("td"))
-      .length;
+  const rowCount = () => screen.queryAllByRole("listitem").length;
   await waitFor(() => expect(rowCount()).toBe(1));
   for (let loaded = 2; loaded <= pages.length; loaded++) {
     const more = screen.getByRole("button", { name: "Load more Subagents" });
@@ -318,7 +315,7 @@ test("keeps a failed child read halted across native revisions until explicit re
   client.clear();
 });
 
-test("retains friendly identity and parent labels through the full native bound and later executions", () => {
+test("retains friendly identity and parent labels through the full native bound and later executions", async () => {
   const session = newRequestId(),
     children = Array.from({ length: 1024 }, () => subagentFixture(session));
   const first = document(children[0]),
@@ -363,7 +360,10 @@ test("retains friendly identity and parent labels through the full native bound 
   );
   expect(screen.getByText("Subagent 1024")).toBeTruthy();
   expect(screen.getByText("Subagent 1025")).toBeTruthy();
-  expect(screen.getByText("Subagent 1")).toBeTruthy();
+  // The parent ordinal is a detail, shown only in the opened card.
+  expect(screen.queryByText("Subagent 1")).toBeNull();
+  const card = await openSubagentCard("Subagent 1024");
+  expect(within(card).getByText("Subagent 1")).toBeTruthy();
   expect(screen.queryByText("Subagent —")).toBeNull();
   retainSubagentLabels(
     labels,
@@ -408,13 +408,17 @@ test("keeps child conversation presentation in Info and portals only source meta
       </TransportProvider>
     </QueryClientProvider>,
   );
-  await screen.findByText("Original child conversation content");
+  // Info idles as names only; conversation content appears in the opened card.
+  await screen.findByText("Subagent 1");
   expect(
-    within(mounted.container).getByText("Original child output block"),
-  ).toBeTruthy();
+    screen.queryByText("Original child conversation content"),
+  ).toBeNull();
+  const card = await openSubagentCard("Subagent 1");
   expect(
-    within(mounted.container).getByText("Observed: observed-model"),
+    within(card).getByText("Original child conversation content"),
   ).toBeTruthy();
+  expect(within(card).getByText("Original child output block")).toBeTruthy();
+  expect(within(card).getByText("Observed: observed-model")).toBeTruthy();
   const diagnostics = within(target);
   expect(diagnostics.queryByText(String(record.execution_id))).toBeNull();
   expect(

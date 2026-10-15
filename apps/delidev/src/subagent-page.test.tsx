@@ -15,7 +15,7 @@ import { expect, test } from "vitest";
 import { document, encode, items, object, type Document } from "./documents";
 import { Subagents } from "./subagents";
 import { validateSubagentPage } from "./subagent-record";
-import { subagentFixture } from "./subagent-test-fixture";
+import { openSubagentCard, subagentFixture } from "./subagent-test-fixture";
 
 function edit(row: Resource, change: (value: Document) => void) {
   const value = document(row);
@@ -251,6 +251,7 @@ test("renders exact signed native counters and a parent outside the current boun
   });
   const dispose = mountPage(session, [row]);
   try {
+    await openSubagentCard("Subagent 1");
     expect(await screen.findByText("Total: 9223372036854775807")).toBeTruthy();
     expect(
       screen.queryByText(
@@ -301,6 +302,7 @@ test("keeps prior verified Claude output/model and exact uint64 task usage after
   });
   const dispose = mountPage(session, [row]);
   try {
+    await openSubagentCard("Subagent 1");
     expect(await screen.findByText("Total: 18446744073709551615")).toBeTruthy();
     expect(screen.getByText("Original child output")).toBeTruthy();
     expect(screen.getByText("Observed: observed-model")).toBeTruthy();
@@ -344,6 +346,7 @@ test("preserves exact nested Claude response usage when the latest task has no u
   });
   const dispose = mountPage(session, [row]);
   try {
+    await openSubagentCard("Subagent 1");
     expect(await screen.findByText("Input: 9223372036854775807")).toBeTruthy();
     expect(screen.getByText("Original child output")).toBeTruthy();
     expect(screen.getByText("Total: Unavailable")).toBeTruthy();

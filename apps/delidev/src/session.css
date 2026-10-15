@@ -1392,6 +1392,66 @@
   display: none;
 }
 
+/* Subagent names: one plain, wrapping text row per child. Details live only in
+   the noninteractive hover/focus card, so rows carry no status or controls. */
+.subagent-name-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.subagent-name-row {
+  margin: 0;
+  padding: 0;
+}
+.subagent-name {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.subagent-name:hover,
+.subagent-name:focus-visible {
+  background: var(--surface-hover);
+}
+.subagent-name:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.subagent-detail-card .subagent-card-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+.subagent-detail-card .subagent-card-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+}
+.subagent-detail-card .subagent-card-details dt {
+  color: var(--muted);
+}
+.subagent-detail-card .subagent-card-details dd {
+  min-width: 0;
+  margin: 0;
+}
+.subagent-detail-card .subagent-card-details p {
+  margin: 0;
+}
+.subagent-detail-card .subagent-card-details pre {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Keep the existing panel as scroll owner. Available panel width determines
    Diagnostics reflow beside Session information, independent of window width. */
 .session-diagnostics-panel {

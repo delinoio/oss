@@ -38,7 +38,29 @@ export type SubagentRow = {
   resource: Resource;
   record: Document;
   child: Document;
+  /** Last valid native agent name, or undefined to use the localized ordinal. */
+  name?: string;
 };
+/** Maximum native agent name length, in Unicode characters. */
+export const subagentNameLimit = 256;
+/**
+ * Accepts only the server-projected private name: nonblank, well-formed text of
+ * at most 256 Unicode characters without control characters. An invalid or
+ * missing name never invalidates the otherwise valid child record.
+ */
+export function subagentDisplayName(value: unknown): string | undefined {
+  if (
+    typeof value !== "string" ||
+    value.trim().length === 0 ||
+    value.length > subagentNameLimit * 2 ||
+    [...value].length > subagentNameLimit ||
+    // eslint-disable-next-line no-control-regex
+    /[\u0000-\u001f\u007f-\u009f]/u.test(value) ||
+    /[\uD800-\uDFFF]/u.test(value)
+  )
+    return undefined;
+  return value;
+}
 const uintMax = 18446744073709551615n,
   intMax = 9223372036854775807n;
 const uuid: Guard = (v) =>
@@ -603,7 +625,12 @@ function validate(
       !sources.some((s) => s.source === Source.Collaboration))
   )
     return undefined;
-  return { resource, record: value, child };
+  return {
+    resource,
+    record: value,
+    child,
+    name: subagentDisplayName(resource.displayName),
+  };
 }
 
 export function validateSubagentPage(
