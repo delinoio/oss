@@ -57,8 +57,34 @@ pub fn effective_root(collection: &Collection, selected_root: &Path) -> PathBuf 
     if configured_root.starts_with(selected_root) {
         selected_root.to_path_buf()
     } else {
-        configured_root
+        nearest_package_root(&configured_root).unwrap_or(configured_root)
     }
+}
+
+/// Expands an external Vite subroot to the nearest package boundary so files
+/// imported from the rest of that package remain project sources and keep
+/// their freshness paths when a saved run is reopened.
+fn nearest_package_root(root: &Path) -> Option<PathBuf> {
+    let mut directory = Some(root);
+    while let Some(current) = directory {
+        let manifest = current.join("package.json");
+        let named = std::fs::read(&manifest)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|manifest| {
+                manifest
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .map(|name| !name.is_empty())
+            })
+            .unwrap_or(false);
+        if named {
+            return Some(current.to_path_buf());
+        }
+        let parent = current.parent();
+        directory = parent.filter(|parent| *parent != current);
+    }
+    None
 }
 
 /// Returns the bundler context used to resolve source-map paths. This remains
@@ -813,6 +839,28 @@ mod tests {
             effective_root(&collection, &selected_root),
             PathBuf::from("/workspace/web")
         );
+    }
+
+    #[test]
+    fn external_vite_subroot_expands_to_nearest_package_boundary() {
+        let fixture = tempfile::tempdir().unwrap();
+        let selected_root = fixture.path().join("wrapper");
+        let package_root = fixture.path().join("app");
+        let subroot = package_root.join("src");
+        std::fs::create_dir_all(&selected_root).unwrap();
+        std::fs::create_dir_all(&subroot).unwrap();
+        std::fs::write(
+            package_root.join("package.json"),
+            r#"{"name":"external-app"}"#,
+        )
+        .unwrap();
+        let collection = Collection {
+            bundler: "vite".to_owned(),
+            context: Some(subroot.to_string_lossy().into_owned()),
+            ..Collection::default()
+        };
+
+        assert_eq!(effective_root(&collection, &selected_root), package_root);
     }
 
     #[test]
