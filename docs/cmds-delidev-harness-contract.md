@@ -415,6 +415,14 @@ Ordinary tests use a private executable fixture only. Opt-in installed macOS tes
 
 ### Claude Code applied settings evidence
 
+The lifecycle's required boolean `product_feedback_disabled` reports the
+organization's `allow_product_feedback` policy, not the local feedback setting.
+Both policy values are valid. The private environment explicitly pins
+`DISABLE_FEEDBACK_COMMAND=1` and `CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1`, alongside
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`; the control initializer still requires
+disabled feedback mode and lifecycle analytics must be disabled. Safe rejection
+logs record only closed validation booleans and original owner identity.
+
 Claude full-session initialization binds `apiKeySource` to the original auth
 profile: `ANTHROPIC_API_KEY` for API execution and `none` for native subscription
 or managed-token execution, after the separate account initialization proof.

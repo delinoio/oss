@@ -36,6 +36,7 @@ func TestNativeSubscriptionInitializationBindsAuthAndBuiltinMetadata(t *testing.
 				t.Fatal(err)
 			}
 			event := lifecycleInit(t, b)
+			event = lifecycleChange(t, event, "product_feedback_disabled", false)
 			source := "none"
 			if name == "api" || name == "foreign-source" {
 				source = "ANTHROPIC_API_KEY"

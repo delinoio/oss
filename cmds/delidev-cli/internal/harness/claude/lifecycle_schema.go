@@ -65,9 +65,14 @@ func (b *ExecutionBinding) validateSystemInit(raw []byte) error {
 	if b.subscriptionAuth {
 		source = "none"
 	}
-	if decodeNativeObject(raw, &init) != nil || init.Cwd != b.workspace || init.Model != b.model || init.Permission != b.permission || init.Source != source || !domain.ValidNativeVersionMetadata(init.Version) || init.OutputStyle != "default" ||
-		init.MCPServers == nil || len(init.MCPServers) != 0 || !validNativeBuiltinPlugins(init.Plugins) || init.AnalyticsOff == nil || !*init.AnalyticsOff || init.FeedbackOff == nil || !*init.FeedbackOff || init.FastMode != "off" || init.FastModeReason != "sdk_opt_in_required" ||
+	decoded := decodeNativeObject(raw, &init)
+	if decoded != nil || init.Cwd != b.workspace || init.Model != b.model || init.Permission != b.permission || init.Source != source || !domain.ValidNativeVersionMetadata(init.Version) || init.OutputStyle != "default" ||
+		init.MCPServers == nil || len(init.MCPServers) != 0 || !validNativeBuiltinPlugins(init.Plugins) || init.AnalyticsOff == nil || !*init.AnalyticsOff || init.FeedbackOff == nil || init.FastMode != "off" || init.FastModeReason != "sdk_opt_in_required" ||
 		!uniqueText(init.Tools, 256, 256) || !uniqueText(init.Commands, 256, 256) || !uniqueText(init.Terminal, 256, 256) || !uniqueText(init.Agents, 256, 256) || !uniqueText(init.Skills, 256, 256) || !uniqueText(init.Capabilities, 256, 256) {
+		if b.logger != nil {
+			b.logger.Warn("claude_initialization_settings_rejected", "owner_id", b.owner, "version_valid", domain.ValidNativeVersionMetadata(init.Version), "style_default", init.OutputStyle == "default", "analytics_disabled", init.AnalyticsOff != nil && *init.AnalyticsOff, "feedback_policy_present", init.FeedbackOff != nil, "fast_mode_disabled", init.FastMode == "off" && init.FastModeReason == "sdk_opt_in_required")
+			b.logger.Warn("claude_initialization_profile_rejected", "owner_id", b.owner, "schema_valid", decoded == nil, "workspace_matches", init.Cwd == b.workspace, "model_matches", init.Model == b.model, "permission_matches", init.Permission == b.permission, "auth_source_matches", init.Source == source, "plugins_valid", validNativeBuiltinPlugins(init.Plugins), "mcp_empty", init.MCPServers != nil && len(init.MCPServers) == 0, "descriptors_valid", uniqueText(init.Tools, 256, 256) && uniqueText(init.Commands, 256, 256) && uniqueText(init.Terminal, 256, 256) && uniqueText(init.Agents, 256, 256) && uniqueText(init.Skills, 256, 256) && uniqueText(init.Capabilities, 256, 256))
+		}
 		return lifecycleUncertain()
 	}
 	if len(init.MessagingSocket) != 0 {
@@ -94,6 +99,9 @@ func (b *ExecutionBinding) validateSystemInit(raw []byte) error {
 		}
 	}
 	if !slices.Contains(init.Commands, "compact") || !slices.Contains(init.Capabilities, "msg_lifecycle_v1") || len(init.Memory) != 1 || filepath.Clean(init.Memory["auto"]) != filepath.Join(b.home, "projects", "delidev", "memory") {
+		if b.logger != nil {
+			b.logger.Warn("claude_initialization_inventory_rejected", "owner_id", b.owner, "compact_present", slices.Contains(init.Commands, "compact"), "lifecycle_present", slices.Contains(init.Capabilities, "msg_lifecycle_v1"), "memory_matches", len(init.Memory) == 1 && filepath.Clean(init.Memory["auto"]) == filepath.Join(b.home, "projects", "delidev", "memory"))
+		}
 		return lifecycleUncertain()
 	}
 	b.nativeVersion = init.Version

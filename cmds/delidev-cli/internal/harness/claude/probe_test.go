@@ -853,3 +853,23 @@ func TestManagedTokenInitializeSharesClaude287Validation(t *testing.T) {
 		}
 	}
 }
+
+func TestPrivateClaudeEnvironmentPinsFeedbackOptOut(t *testing.T) {
+	config, _ := fixtureConfig(t, "feedback-opt-out")
+	config.Process.Env = append(config.Process.Env, "DISABLE_FEEDBACK_COMMAND=0", "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=0")
+	env, err := probeEnvironment(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"DISABLE_FEEDBACK_COMMAND=1", "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"} {
+		found := false
+		for _, value := range env {
+			if value == expected {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing private feedback setting: %s", expected)
+		}
+	}
+}
