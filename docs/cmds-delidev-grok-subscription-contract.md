@@ -167,6 +167,34 @@ Quota/reset credit/pricing, enterprise SSO, external identity providers, importe
 user login, account switching, cross-Worker resume, Fork, Sidechat and manual
 compaction are excluded.
 
+### Desktop and server activation order
+
+The desktop controller is a client of the server-owned Grok browser flow and
+owns no OAuth authority itself. It creates a Grok service account, then calls
+`RequestSubscription` with an omitted machine ID (the server-owned path),
+polls `GetSubscriptionProgress` for the original authorization link and cancels
+through `CancelSubscription`. It never sends a machine ID and never selects the
+Worker-owned path for Grok. The server layers own the flow itself (the Grok
+branch of the server-owned request, progress and cancellation) and the single
+switch that advertises System capability 39; the desktop layers add no server
+code and grant no capability.
+
+The desktop layers therefore merge after the server layers. Merged alone, a
+desktop revision sees a server without capability 39 and keeps every Grok
+control in its disabled state, so no request that the server cannot serve is
+ever sent.
+
+| Server revision                         | Desktop revision            | Grok row                                                    |
+| --------------------------------------- | --------------------------- | ----------------------------------------------------------- |
+| Without the server-owned Grok flow      | with the Grok controller    | Coming soon (capability 39 not advertised)                  |
+| With the flow, capability 39 switch off | with the Grok controller    | Coming soon (capability 39 not advertised)                  |
+| With the flow, capability 39 switch on  | with the Grok controller    | Add account, Refresh login and Log out follow capability 39 |
+| With the flow, capability 39 switch on  | without the Grok controller | Coming soon (the desktop never offers the row)              |
+
+Turning the capability 39 switch on is a server-layer decision made after the
+desktop controller exists; the desktop never infers it and never retries
+against a server that does not advertise it.
+
 ### Desktop browser sign-in state machine
 
 The state machine covers both sign-in methods (`browser` and `device code`); a method never switches mid-login and an event of the other method is ignored.
@@ -181,6 +209,7 @@ Rules the table enforces:
 - A refused Take the server keeps queued (`unsupported` together with a Grok diagnostic, classified by `progressDisposition`) is provisional: `poll-refusal-provisional` leaves the phase, the retained request and the native binding unchanged and only recovers the polling notice, so Cancel stays available and the next response is adopted. A later `preparing` or `waiting` response clears the diagnostic notice, `succeeded` names the account and every other response settles. `unsupported` without a Grok diagnostic is final (`poll-unsupported`).
 - A success, terminal state or observed cancellation drops any retained request. Success, every terminal state and cancellation dispose the native binding and clear the original link.
 - Stage, help text and action visibility are derived from the phase alone; the controller keeps only the exact retained closure, the original link and the one-shot native flags.
+- The controller's lifetime ends only through the triggers of the [controller lifetime table](#controller-lifetime): each one disposes the pending login and clears the view, so a screen never outlives the native control (and therefore the selected server) it was created under.
 
 <!-- grok-login-machine:begin -->
 
@@ -624,6 +653,17 @@ Copy link, Copy code and Copy address start an attempt with a new identity, and 
 | `failed`   | `retired`        | unnamed       | `idle`          |
 | `failed`   | `notice-expired` | latest        | `idle`          |
 | `failed`   | `notice-expired` | superseded    | `failed`        |
+
+#### Controller lifetime
+
+Every trigger disposes the pending login (display, timer and callback authority only, never an accepted server operation), releases it and clears the view, so no screen, paused inventory polling or inert action outlives the authority it was created under. A login is never carried to another server: the next Add account starts a new one under the new native control.
+
+| Trigger             | When                                                                                                                | Pending login         | View    | Parent notified |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------- | ------- | --------------- |
+| `leave`             | The user leaves the task (Back or a saved name)                                                                     | disposed and released | cleared | yes             |
+| `inactive`          | The Settings category stops being active                                                                            | disposed and released | cleared | -               |
+| `settings-closed`   | The Settings opening that owns the controller is aborted                                                            | disposed and released | cleared | -               |
+| `authority-changed` | The native control the login was created under is replaced (another server is selected), or the controller unmounts | disposed and released | cleared | -               |
 
 <!-- grok-login-machine:end -->
 
