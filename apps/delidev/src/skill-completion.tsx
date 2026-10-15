@@ -1158,13 +1158,13 @@ export function useSkillCompletion({
     clear: () => {
       if (canEdit()) setBindings([]);
     }, // Original receipt acceptance settles ownership before the pending render unlocks.
-    replaceUnbound: (next: string, position: number) => {
+    replaceUnbound: (next: string, position: number, end = position) => {
       if (!canEdit()) return;
       if (
         !commit(
           next,
           [],
-          { start: position, end: position, direction: "none" },
+          { start: position, end, direction: "none" },
           PromptEditKind.Discrete,
           false,
         )

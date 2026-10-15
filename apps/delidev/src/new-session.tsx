@@ -691,10 +691,10 @@ export function NewSession({
     blocked,
     textarea: firstMessage,
     draft: skills.draftSnapshot,
-    replace: (value, caret) => {
+    replace: (value, start, end) => {
       historyEditing.current = true;
       try {
-        skills.replaceUnbound(value, caret);
+        skills.replaceUnbound(value, start, end);
       } finally {
         historyEditing.current = false;
       }

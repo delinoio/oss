@@ -23,7 +23,18 @@ beforeEach(() => {
   native.isTauri.mockReturnValue(true);
 });
 
-function Composer({ initial = "" }: { initial?: string }) {
+interface Replacement {
+  text: string;
+  start: number;
+  end: number;
+}
+function Composer({
+  initial = "",
+  replacement,
+}: {
+  initial?: string;
+  replacement?: Replacement;
+}) {
   const [value, setValue] = useState(initial);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const skills = useSkillCompletion({
@@ -55,16 +66,29 @@ function Composer({ initial = "" }: { initial?: string }) {
         />,
       )}
       {skills.warning}
+      {replacement ? (
+        <button
+          onClick={() =>
+            skills.replaceUnbound(
+              replacement.text,
+              replacement.start,
+              replacement.end,
+            )
+          }
+        >
+          Replace
+        </button>
+      ) : null}
       <output data-testid="canonical">{value}</output>
     </>
   );
 }
-function view(initial?: string) {
+function view(initial?: string, replacement?: Replacement) {
   const transport = createRouterTransport(() => {});
   render(
     <TransportProvider transport={transport}>
       <QueryClientProvider client={new QueryClient()}>
-        <Composer initial={initial} />
+        <Composer initial={initial} replacement={replacement} />
       </QueryClientProvider>
     </TransportProvider>,
   );
@@ -235,4 +259,19 @@ it("does not convert during IME composition", () => {
   expect(canonical()).toBe(`${URL} `);
   fireEvent.compositionEnd(input);
   expect(canonical()).toBe(`${URL} `);
+});
+
+it("maps a canonical replacement selection to display offsets", () => {
+  const text = `a ${LINK} tail`;
+  // Canonical offsets: select "tail" after the collapsed link.
+  const start = text.indexOf("tail");
+  const input = view("", { text, start, end: text.length });
+  fireEvent.click(screen.getByText("Replace"));
+  expect(canonical()).toBe(text);
+  expect(input.value).toBe(`a ${URL} tail`);
+  const display = input.value.indexOf("tail");
+  expect([input.selectionStart, input.selectionEnd]).toEqual([
+    display,
+    input.value.length,
+  ]);
 });
