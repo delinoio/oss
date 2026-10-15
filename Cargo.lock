@@ -1357,7 +1357,7 @@ checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
 name = "clibox"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -7494,7 +7494,7 @@ dependencies = [
 
 [[package]]
 name = "pnport"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "clap",
  "core-foundation 0.10.1",
@@ -7519,7 +7519,7 @@ dependencies = [
 
 [[package]]
 name = "pnport-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "core-foundation 0.10.1",
  "dirs",
@@ -7541,7 +7541,7 @@ dependencies = [
 
 [[package]]
 name = "pnport-preload"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "libc",
  "pnport-core",

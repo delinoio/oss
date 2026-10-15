@@ -112,7 +112,7 @@ func init() {
 	}
 }
 
-func startProcess(c *exec.Cmd, dir string, owner domain.ID, terminal *TerminalSize) (_ *managedProcess, err error) {
+func startProcess(c *exec.Cmd, dir string, owner domain.ID, terminal *TerminalSize, session SessionContext) (_ *managedProcess, err error) {
 	if err = security.PrivateDir(dir); err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func startProcess(c *exec.Cmd, dir string, owner domain.ID, terminal *TerminalSi
 		return nil, err
 	}
 	scope := processScope{Version: 1, Boot: boot, OwnerID: owner}
-	if err = prepareScope(&scope, dir); err != nil {
+	if err = prepareScope(&scope, dir, session); err != nil {
 		return nil, err
 	}
 	if err = saveScope(dir, scope); err != nil {

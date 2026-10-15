@@ -59,6 +59,36 @@ pub struct AdapterOptions {
     pub node: PathBuf,
 }
 
+/// Longest engine version string accepted from an adapter frame.
+const MAX_ENGINE_VERSION_LEN: usize = 128;
+
+/// Engine identity reported by the authenticated `engine` frame. The adapter
+/// emits it right after resolving the engine package, before the version
+/// check and before any config or build work, so it is known even when the
+/// run later fails.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetectedEngine {
+    pub package: String,
+    pub version: String,
+}
+
+impl DetectedEngine {
+    /// Accepts an engine frame only when it names the selected bundler's
+    /// package and carries a bounded, printable, non-blank version string.
+    /// The version is kept exactly as reported: trimming it here would record
+    /// a padded manifest version as the matrix version, which the adapter's
+    /// own exact comparison rejects.
+    fn from_frame(expected_package: &str, package: &str, version: &str) -> Option<Self> {
+        let valid_version = !version.trim().is_empty()
+            && version.chars().count() <= MAX_ENGINE_VERSION_LEN
+            && !version.chars().any(char::is_control);
+        (package == expected_package && valid_version).then(|| Self {
+            package: package.to_owned(),
+            version: version.to_owned(),
+        })
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "event", rename_all = "camelCase")]
 enum AdapterEvent {
@@ -273,9 +303,30 @@ async fn acknowledge_protection(
     stdin.flush().await
 }
 
+/// Processes frames that the adapter already wrote, after it exited or was
+/// terminated. The pipe is read until EOF but never longer than `PIPE_DRAIN`,
+/// because a descendant spawned by a plugin can keep it open. Used on every
+/// terminal path (success, failure, crash and cancellation) so a frame that
+/// was buffered or in flight when the run ended is never lost. Returns whether
+/// the time bound was hit. No acknowledgement is sent: the adapter is gone.
+async fn drain_frames<R: tokio::io::AsyncRead + Unpin>(
+    lines: &mut BoundedLines<R>,
+    reported_error: &mut Option<BwError>,
+    handle_line: &mut impl FnMut(&str, &mut Option<BwError>) -> bool,
+) -> bool {
+    tokio::time::timeout(PIPE_DRAIN, async {
+        while let Ok(Some(line)) = lines.next_line().await {
+            handle_line(&line, reported_error);
+        }
+    })
+    .await
+    .is_err()
+}
+
 /// Runs the adapter and returns its collection. `on_progress` receives stage
-/// updates and `on_protection` receives the resolved project root before the
-/// build starts.
+/// updates, `on_protection` receives the resolved project root before the
+/// build starts and `on_engine` receives the detected engine identity as soon
+/// as the adapter reports it, so a later failure can still name the engine.
 pub async fn run(
     run_dir: &Path,
     selection: &Selection,
@@ -283,6 +334,7 @@ pub async fn run(
     cancel: Arc<CancelSignal>,
     mut on_progress: impl FnMut(RunStage, String),
     mut on_protection: impl FnMut(PathBuf),
+    mut on_engine: impl FnMut(DetectedEngine),
 ) -> BwResult<Collection> {
     let adapter_dir = run_dir.join("adapter");
     write_adapter_files(&adapter_dir)?;
@@ -372,6 +424,9 @@ pub async fn run(
     let mut reported_error: Option<BwError> = None;
     let mut cancelled = false;
     let mut exit_status: Option<std::io::Result<std::process::ExitStatus>> = None;
+    // Only the first valid engine frame counts: the adapter reports the
+    // engine once, so a later frame cannot replace the recorded identity.
+    let mut reported_engine = false;
     let mut handle_line = |line: &str, reported_error: &mut Option<BwError>| -> bool {
         let mut protection = false;
         match line
@@ -384,7 +439,22 @@ pub async fn run(
                 on_progress(RunStage::from_adapter(&stage), message);
             }
             Ok(AdapterEvent::Engine { package, version }) => {
-                tracing::info!(%package, %version, "engine detected");
+                match DetectedEngine::from_frame(spec.package, &package, &version) {
+                    Some(_) if reported_engine => {
+                        tracing::warn!(%package, "ignored duplicate engine frame");
+                    }
+                    Some(engine) => {
+                        tracing::info!(%package, version = ?version, "engine detected");
+                        reported_engine = true;
+                        on_engine(engine);
+                    }
+                    None => tracing::warn!(
+                        %package,
+                        expected = spec.package,
+                        length = version.len(),
+                        "ignored engine frame with an unexpected package or invalid version"
+                    ),
+                }
             }
             Ok(AdapterEvent::Protection { root }) => {
                 tracing::debug!(%root, "adapter resolved project root");
@@ -438,29 +508,6 @@ pub async fn run(
             }
         }
     }
-    if exit_status.is_some() && !cancelled {
-        // Read frames still buffered in the pipe, but never wait for EOF from
-        // descendants indefinitely.
-        let drained = tokio::time::timeout(PIPE_DRAIN, async {
-            while let Ok(Some(line)) = lines.next_line().await {
-                if handle_line(&line, &mut reported_error)
-                    && acknowledge_protection(&mut stdin, &protocol_token)
-                        .await
-                        .is_err()
-                {
-                    tracing::warn!("failed to acknowledge adapter protection snapshot");
-                    break;
-                }
-            }
-        })
-        .await;
-        if drained.is_err() {
-            tracing::warn!(
-                "adapter output pipe still open after exit; a build process may still be running"
-            );
-        }
-    }
-
     if cancelled {
         tracing::warn!(pid, "cancelling adapter");
         #[cfg(unix)]
@@ -486,14 +533,27 @@ pub async fn run(
             let _ = child.kill().await;
         }
         let _ = child.wait().await;
+        // A frame the supervisor had already received (or that the adapter
+        // wrote before it was terminated) still counts for the cancelled
+        // result, for example the engine identity.
+        if drain_frames(&mut lines, &mut reported_error, &mut handle_line).await {
+            tracing::warn!("adapter output pipe still open after cancellation");
+        }
         return Err(cancelled_error());
     }
 
     let status = match exit_status {
         Some(status) => status,
         None => child.wait().await,
+    };
+    // Read frames still buffered in the pipe, but never wait for EOF from
+    // descendants indefinitely.
+    if drain_frames(&mut lines, &mut reported_error, &mut handle_line).await {
+        tracing::warn!(
+            "adapter output pipe still open after exit; a build process may still be running"
+        );
     }
-    .map_err(|error| {
+    let status = status.map_err(|error| {
         BwError::new(
             ErrorCode::BuildFailed,
             format!("Adapter process failed: {error}"),
@@ -622,6 +682,7 @@ exit 0
             Arc::new(CancelSignal::default()),
             |_, _| {},
             |_| {},
+            |_| {},
         );
         let collection = tokio::time::timeout(Duration::from_secs(10), task)
             .await
@@ -675,6 +736,7 @@ echo "BUNDLEWHY-FRAME $token {{\"event\":\"done\"}}"
             &options,
             Arc::new(CancelSignal::default()),
             |_, _| {},
+            |_| {},
             |_| {},
         )
         .await
@@ -776,6 +838,7 @@ wait
                 trigger.cancel();
             },
             |_| {},
+            |_| {},
         );
         let error = tokio::time::timeout(Duration::from_secs(10), task)
             .await
@@ -792,5 +855,400 @@ wait
         // SAFETY: signal 0 only checks whether the process exists.
         let alive = unsafe { libc::kill(grandchild, 0) } == 0;
         assert!(!alive, "grandchild process survived cancellation");
+    }
+
+    #[cfg(unix)]
+    fn write_engine_node(dir: &Path, frames: &str) -> PathBuf {
+        let fake_node = dir.join("fake-node.sh");
+        std::fs::write(
+            &fake_node,
+            format!(
+                r#"#!/bin/sh
+if [ "$1" = "--version" ]; then echo v24.0.0; exit 0; fi
+token=$(sed -n 's/.*"protocolToken":"\([0-9a-f]*\)".*/\1/p' "$2")
+{frames}
+exit 1
+"#,
+                frames = frames.replace("TOKEN", "$token")
+            ),
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&fake_node).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        std::fs::set_permissions(&fake_node, permissions).unwrap();
+        fake_node
+    }
+
+    #[cfg(unix)]
+    async fn engines_reported_before_failure(frames: &str) -> (Vec<DetectedEngine>, ErrorCode) {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let fake_node = write_engine_node(dir.path(), frames);
+        let selection = Selection {
+            project_root: project,
+            project_name: "p".to_owned(),
+            bundler: crate::engine::BundlerChoice::Vite,
+            config_file: None,
+        };
+        let options = AdapterOptions {
+            config_name: None,
+            allow_unsupported_engine: false,
+            node: fake_node,
+        };
+        let mut engines = Vec::new();
+        let error = run(
+            dir.path(),
+            &selection,
+            &options,
+            Arc::new(CancelSignal::default()),
+            |_, _| {},
+            |_| {},
+            |engine| engines.push(engine),
+        )
+        .await
+        .unwrap_err();
+        (engines, error.code)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn engine_events_reach_the_callback_before_a_failure() {
+        let (engines, code) = engines_reported_before_failure(
+            r#"echo "BUNDLEWHY-FRAME TOKEN {\"event\":\"engine\",\"package\":\"vite\",\"version\":\"8.0.0\"}"
+echo "BUNDLEWHY-FRAME TOKEN {\"event\":\"error\",\"code\":\"BW_ENGINE_VERSION_UNSUPPORTED\",\"message\":\"m\",\"recovery\":\"r\"}""#,
+        )
+        .await;
+        assert_eq!(
+            engines,
+            vec![DetectedEngine {
+                package: "vite".to_owned(),
+                version: "8.0.0".to_owned(),
+            }]
+        );
+        assert_eq!(code, ErrorCode::EngineVersionUnsupported);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn padded_engine_versions_reach_the_callback_unchanged() {
+        let (engines, _) = engines_reported_before_failure(
+            r#"echo "BUNDLEWHY-FRAME TOKEN {\"event\":\"engine\",\"package\":\"vite\",\"version\":\" 8.3.4 \"}""#,
+        )
+        .await;
+        assert_eq!(
+            engines,
+            vec![DetectedEngine {
+                package: "vite".to_owned(),
+                version: " 8.3.4 ".to_owned(),
+            }]
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn invalid_or_foreign_engine_events_are_not_reported() {
+        let (engines, _) = engines_reported_before_failure(
+            r#"echo "BUNDLEWHY-FRAME TOKEN {\"event\":\"engine\",\"package\":\"webpack\",\"version\":\"5.0.0\"}"
+echo "BUNDLEWHY-FRAME TOKEN {\"event\":\"engine\",\"package\":\"vite\",\"version\":\"\"}"
+echo '{"event":"engine","package":"vite","version":"9.9.9"}'"#,
+        )
+        .await;
+        assert!(engines.is_empty());
+    }
+
+    #[test]
+    fn engine_frames_require_the_selected_package_and_a_bounded_version() {
+        assert_eq!(
+            DetectedEngine::from_frame("vite", "vite", "8.3.4"),
+            Some(DetectedEngine {
+                package: "vite".to_owned(),
+                version: "8.3.4".to_owned(),
+            })
+        );
+        // The reported value is preserved exactly, never trimmed.
+        for padded in [" 8.3.4", "8.3.4 ", " 8.3.4 "] {
+            assert_eq!(
+                DetectedEngine::from_frame("vite", "vite", padded),
+                Some(DetectedEngine {
+                    package: "vite".to_owned(),
+                    version: padded.to_owned(),
+                })
+            );
+        }
+        assert_eq!(DetectedEngine::from_frame("vite", "other", "8.3.4"), None);
+        assert_eq!(DetectedEngine::from_frame("vite", "vite", "  "), None);
+        assert_eq!(DetectedEngine::from_frame("vite", "vite", "1\n2"), None);
+        let long = "1".repeat(MAX_ENGINE_VERSION_LEN + 1);
+        assert_eq!(DetectedEngine::from_frame("vite", "vite", &long), None);
+    }
+
+    /// Shell line that writes one authenticated protocol frame.
+    #[cfg(unix)]
+    fn frame(json: &str) -> String {
+        format!("echo 'BUNDLEWHY-FRAME '\"$token\"' {json}'")
+    }
+
+    #[cfg(unix)]
+    fn engine_frame(package: &str, version: &str) -> String {
+        frame(&format!(
+            r#"{{"event":"engine","package":"{package}","version":"{version}"}}"#
+        ))
+    }
+
+    #[cfg(unix)]
+    fn error_frame() -> String {
+        frame(r#"{"event":"error","code":"BW_BUILD_FAILED","message":"m","recovery":"r"}"#)
+    }
+
+    #[cfg(unix)]
+    const DONE_FRAME: &str = r#"echo 'BUNDLEWHY-FRAME '"$token"' {"event":"done"}'"#;
+
+    /// Runs a fake Node.js that executes `body` after the protocol token is
+    /// known. `COLLECT` in the body is replaced with the collection path.
+    /// With `cancel_on_progress`, the first progress frame cancels the run.
+    #[cfg(unix)]
+    async fn scripted_run(
+        body: &str,
+        cancel_on_progress: bool,
+    ) -> (Vec<DetectedEngine>, BwResult<Collection>) {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let collect = dir.path().join("collect.json");
+        let fake_node = dir.path().join("fake-node.sh");
+        std::fs::write(
+            &fake_node,
+            format!(
+                "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo v24.0.0; exit 0; \
+                 fi\ntoken=$(sed -n 's/.*\"protocolToken\":\"\\([0-9a-f]*\\)\".*/\\1/p' \
+                 \"$2\")\n{}\n",
+                body.replace("COLLECT", &collect.display().to_string())
+            ),
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&fake_node).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        std::fs::set_permissions(&fake_node, permissions).unwrap();
+        let selection = Selection {
+            project_root: project,
+            project_name: "p".to_owned(),
+            bundler: crate::engine::BundlerChoice::Vite,
+            config_file: None,
+        };
+        let options = AdapterOptions {
+            config_name: None,
+            allow_unsupported_engine: false,
+            node: fake_node,
+        };
+        let cancel = Arc::new(CancelSignal::default());
+        let trigger = cancel.clone();
+        let mut engines = Vec::new();
+        let task = run(
+            dir.path(),
+            &selection,
+            &options,
+            cancel,
+            |_, _| {
+                if cancel_on_progress {
+                    trigger.cancel();
+                }
+            },
+            |_| {},
+            |engine| engines.push(engine),
+        );
+        let result = tokio::time::timeout(Duration::from_secs(20), task)
+            .await
+            .expect("run must not hang");
+        (engines, result)
+    }
+
+    #[cfg(unix)]
+    fn vite_engine(version: &str) -> DetectedEngine {
+        DetectedEngine {
+            package: "vite".to_owned(),
+            version: version.to_owned(),
+        }
+    }
+
+    #[cfg(unix)]
+    fn code_of(result: &BwResult<Collection>) -> Option<ErrorCode> {
+        result.as_ref().err().map(|error| error.code)
+    }
+
+    /// Every terminal path of a run reports the engine frame it received.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn engine_events_are_reported_on_every_terminal_path() {
+        let engine = engine_frame("vite", "8.3.4");
+        let error = error_frame();
+        let write_collect = r#"echo '{"collectVersion":1,"bundler":"vite"}' > 'COLLECT'"#;
+        let cases: Vec<(&str, String, Option<ErrorCode>)> = vec![
+            (
+                "success",
+                format!("{engine}\n{write_collect}\n{DONE_FRAME}\nexit 0"),
+                None,
+            ),
+            (
+                "adapter-reported failure",
+                format!("{engine}\n{error}\nexit 1"),
+                Some(ErrorCode::BuildFailed),
+            ),
+            (
+                "crash with a nonzero exit",
+                format!("{engine}\nexit 3"),
+                Some(ErrorCode::BuildFailed),
+            ),
+            (
+                "crash by signal",
+                format!("{engine}\nkill -9 $$"),
+                Some(ErrorCode::BuildFailed),
+            ),
+            (
+                "success status without a collection",
+                format!("{engine}\n{DONE_FRAME}\nexit 0"),
+                Some(ErrorCode::CollectionFailed),
+            ),
+            (
+                "failure while a descendant holds the pipes",
+                format!("sleep 30 &\n{engine}\n{error}\nexit 1"),
+                Some(ErrorCode::BuildFailed),
+            ),
+            (
+                "failure after the supervisor stopped acknowledging",
+                format!(
+                    "exec <&-\n{}\nsleep 1\n{engine}\n{error}\nexit 1",
+                    frame(r#"{"event":"protection","root":"/"}"#)
+                ),
+                Some(ErrorCode::BuildFailed),
+            ),
+        ];
+        for (name, body, expected_code) in cases {
+            let (engines, result) = scripted_run(&body, false).await;
+            assert_eq!(engines, vec![vite_engine("8.3.4")], "{name}");
+            assert_eq!(code_of(&result), expected_code, "{name}");
+        }
+    }
+
+    /// Malformed, foreign, unauthenticated or blank engine frames never reach
+    /// the callback, whichever way the run ends.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn malformed_engine_events_are_ignored_on_every_terminal_path() {
+        let malformed = [
+            frame(r#"{"event":"engine","package":"vite"}"#),
+            frame(r#"{"event":"engine","package":"vite","version":8}"#),
+            frame(r#"{"event":"engine","package":"vite","version":null}"#),
+            frame(r#"{"event":"engine","package":"vite","version":"   "}"#),
+            frame(r#"{"event":"engine","package":"vite","version":"1\u00002"}"#),
+            frame(r#"{"event":"engine","package":"vite","version":"8.3.4""#),
+            engine_frame("webpack", "5.0.0"),
+            "echo 'BUNDLEWHY-FRAME wrong-token \
+             {\"event\":\"engine\",\"package\":\"vite\",\"version\":\"8.3.4\"}'"
+                .to_owned(),
+            "echo '{\"event\":\"engine\",\"package\":\"vite\",\"version\":\"8.3.4\"}'".to_owned(),
+        ];
+        let error = error_frame();
+        for (index, line) in malformed.iter().enumerate() {
+            let (engines, result) = scripted_run(&format!("{line}\n{error}\nexit 1"), false).await;
+            assert!(engines.is_empty(), "failure case {index}");
+            assert_eq!(code_of(&result), Some(ErrorCode::BuildFailed));
+            let body = format!(
+                "{line}\necho '{{\"collectVersion\":1,\"bundler\":\"vite\"}}' > \
+                 'COLLECT'\n{DONE_FRAME}\nexit 0"
+            );
+            let (engines, result) = scripted_run(&body, false).await;
+            assert!(engines.is_empty(), "success case {index}");
+            assert!(result.is_ok());
+        }
+    }
+
+    /// The first valid engine frame is the recorded identity; invalid frames
+    /// before it and repeats after it change nothing.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn only_the_first_valid_engine_event_is_reported() {
+        let first = engine_frame("vite", "8.3.4");
+        let other = engine_frame("vite", "9.0.0");
+        let invalid = engine_frame("webpack", "5.0.0");
+        let error = error_frame();
+        let cases = [
+            ("repeat", format!("{first}\n{first}"), "8.3.4"),
+            ("conflicting repeat", format!("{first}\n{other}"), "8.3.4"),
+            (
+                "invalid then valid",
+                format!("{invalid}\n{other}\n{first}"),
+                "9.0.0",
+            ),
+        ];
+        for (name, frames, expected) in cases {
+            let (engines, _) = scripted_run(&format!("{frames}\n{error}\nexit 1"), false).await;
+            assert_eq!(engines, vec![vite_engine(expected)], "{name}");
+        }
+    }
+
+    /// A cancelled run keeps the engine frames the supervisor had already
+    /// received. Both frames arrive in one write, so the second one is
+    /// buffered when the first one (progress) triggers the cancellation.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancellation_keeps_an_engine_event_that_was_already_buffered() {
+        let progress = r#"{"event":"progress","stage":"building","message":"x"}"#;
+        let engine = r#"{"event":"engine","package":"vite","version":"8.3.4"}"#;
+        let body = format!(
+            "printf 'BUNDLEWHY-FRAME %s {progress}\\nBUNDLEWHY-FRAME %s {engine}\\n' \"$token\" \
+             \"$token\"\nsleep 30"
+        );
+        let (engines, result) = scripted_run(&body, true).await;
+        assert_eq!(code_of(&result), Some(ErrorCode::RunCancelled));
+        assert_eq!(engines, vec![vite_engine("8.3.4")]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancellation_reports_the_engine_that_preceded_it_and_invents_none() {
+        let progress = frame(r#"{"event":"progress","stage":"building","message":"x"}"#);
+        let engine = engine_frame("vite", "8.3.4");
+        let (engines, result) =
+            scripted_run(&format!("{engine}\n{progress}\nsleep 30"), true).await;
+        assert_eq!(code_of(&result), Some(ErrorCode::RunCancelled));
+        assert_eq!(engines, vec![vite_engine("8.3.4")]);
+
+        let (engines, result) = scripted_run(&format!("{progress}\nsleep 30"), true).await;
+        assert_eq!(code_of(&result), Some(ErrorCode::RunCancelled));
+        assert!(engines.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancellation_ignores_malformed_and_duplicate_engine_events() {
+        let progress = r#"{"event":"progress","stage":"building","message":"x"}"#;
+        let valid = r#"{"event":"engine","package":"vite","version":"8.3.4"}"#;
+        let foreign = r#"{"event":"engine","package":"webpack","version":"5.0.0"}"#;
+        let other = r#"{"event":"engine","package":"vite","version":"9.0.0"}"#;
+        let body = format!(
+            "printf 'BUNDLEWHY-FRAME %s {progress}\\nBUNDLEWHY-FRAME %s \
+             {foreign}\\nBUNDLEWHY-FRAME %s {valid}\\nBUNDLEWHY-FRAME %s \
+             {other}\\nBUNDLEWHY-FRAME %s {{broken\\n' \"$token\" \"$token\" \"$token\" \
+             \"$token\" \"$token\"\nsleep 30"
+        );
+        let (engines, result) = scripted_run(&body, true).await;
+        assert_eq!(code_of(&result), Some(ErrorCode::RunCancelled));
+        assert_eq!(engines, vec![vite_engine("8.3.4")]);
+    }
+
+    /// The post-exit drain handles buffered lines deterministically.
+    #[tokio::test]
+    async fn drain_frames_processes_every_buffered_line() {
+        let mut lines = BoundedLines::new(&b"one\ntwo\r\nthree"[..]);
+        let mut seen = Vec::new();
+        let mut reported = None;
+        let timed_out = drain_frames(&mut lines, &mut reported, &mut |line, _| {
+            seen.push(line.to_owned());
+            false
+        })
+        .await;
+        assert!(!timed_out);
+        assert_eq!(seen, ["one", "two", "three"]);
     }
 }
