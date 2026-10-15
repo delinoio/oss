@@ -478,7 +478,10 @@ describe("pending Close ownership across product windows", () => {
       const neverSettles = () => new Promise<never>(() => undefined);
 
       /** Registers a silent peer "b" that introduced itself and never answers. */
-      const silentPeer = (locks: PendingCloseLocks, local?: PendingCloseLocks) => {
+      const silentPeer = (
+        locks: PendingCloseLocks,
+        local?: PendingCloseLocks,
+      ) => {
         const bus = new QueuedBus();
         const sent: { kind?: string; ack?: boolean }[] = [];
         const endpoint = bus.endpoint();
