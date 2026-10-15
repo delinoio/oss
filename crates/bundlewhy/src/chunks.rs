@@ -181,6 +181,20 @@ impl Chunk {
         Some((path, token.get_src_line(), token.get_src_col()))
     }
 
+    /// True when the chunk has a usable source map but the segment covering
+    /// the generated position carries no source: either no segment starts at
+    /// or before it, or the closest one is a generated-only segment. A segment
+    /// whose source is present but not a resolvable file (a bundler virtual
+    /// module or URL) is not a gap, and a chunk without a usable map is
+    /// reported through the missing-map path instead.
+    pub fn lacks_source_mapping(&self, line: u32, column: u32) -> bool {
+        let Some(map) = self.map.as_ref() else {
+            return false;
+        };
+        map.lookup_token(line, column)
+            .is_none_or(|token| !token.has_source())
+    }
+
     /// Splits the generated text at mapping boundaries. Each byte belongs to at
     /// most one segment, so per-source totals never overlap or exceed the size.
     pub fn attribution(&self) -> Option<(BTreeMap<PathBuf, u32>, u32)> {
@@ -396,6 +410,40 @@ mod tests {
             r#"{"version":3,"sources":["file:///work/src/a.js"],"names":[],"mappings":"AAAA"}"#,
         );
         assert!(chunk.map.is_some());
+    }
+
+    #[test]
+    fn source_mapping_gaps_need_a_usable_map_and_a_sourceless_segment() {
+        // Columns 0 (a.js), 6 (generated-only) and 12 (a.js again).
+        let (_dir, chunk) = chunk_with_map(
+            "const a=1;const b=2;const c=3;",
+            r#"{"version":3,"sources":["a.js"],"names":[],"mappings":"AAAA,M,MAAA"}"#,
+        );
+        assert!(chunk.map.is_some());
+        assert!(!chunk.lacks_source_mapping(0, 0));
+        assert!(!chunk.lacks_source_mapping(0, 5));
+        assert!(chunk.lacks_source_mapping(0, 6));
+        assert!(chunk.lacks_source_mapping(0, 11));
+        assert!(!chunk.lacks_source_mapping(0, 12));
+        assert!(chunk.original(0, 6).is_none());
+
+        // A segment whose source is a bundler virtual module has a source but
+        // no file path; that is not a mapping gap.
+        let (_dir, chunk) = chunk_with_map(
+            "const a=1;const b=2;",
+            r#"{"version":3,"sources":["a.js","\u0000vite/helper.js"],"names":[],"mappings":"AAAA,MCAA"}"#,
+        );
+        assert!(chunk.map.is_some());
+        assert!(chunk.original(0, 6).is_none());
+        assert!(!chunk.lacks_source_mapping(0, 6));
+
+        // Without a usable map the chunk is handled by the missing-map path.
+        let (_dir, chunk) = chunk_with_map(
+            "const a=1;",
+            r#"{"version":3,"sources":["https://cdn.example/a.js"],"names":[],"mappings":"AAAA"}"#,
+        );
+        assert!(chunk.map.is_none());
+        assert!(!chunk.lacks_source_mapping(0, 0));
     }
 
     #[test]

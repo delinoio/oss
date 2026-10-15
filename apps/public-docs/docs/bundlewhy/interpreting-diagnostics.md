@@ -29,7 +29,7 @@ Each optimization category has a coverage state for the run.
 
 "No findings" in a covered category means the detectors ran and found nothing. That is different from "no coverage": an unavailable or not-applicable category says nothing about your build. bundlewhy never presents missing coverage as a clean result.
 
-Vite dead-code elimination coverage is partial when a mapped source cannot be read or its build-time text is unavailable. An unresolved environment-variable finding may be missing because bundlewhy cannot confirm the generated expression against the original build source. Disabled minification remains not applicable, and a non-default minifier remains unavailable. Rspack's environment-variable detector does not require that Vite-specific source confirmation.
+Vite dead-code elimination coverage is partial when a mapped source cannot be read or its build-time text is unavailable, or when a guarded environment candidate sits in a part of the generated code that the source map does not map to any source file. An unresolved environment-variable finding may be missing because bundlewhy cannot confirm the generated expression against the original build source. Disabled minification remains not applicable, and a non-default minifier remains unavailable. Rspack's environment-variable detector does not require that Vite-specific source confirmation.
 
 ## Rules
 

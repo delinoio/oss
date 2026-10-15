@@ -733,14 +733,17 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
             let Some(guard) = guard else {
                 continue;
             };
-            let mapped_source = if vite {
+            let (mapped_source, unmapped_segment) = if vite {
                 let chunk = &context.chunks[index];
                 let (line, column) = chunk.position(offset);
-                chunk
-                    .original(line, column)
-                    .map(|(path, _, _)| context.display_path(&path))
+                (
+                    chunk
+                        .original(line, column)
+                        .map(|(path, _, _)| context.display_path(&path)),
+                    chunk.lacks_source_mapping(line, column),
+                )
             } else {
-                None
+                (None, false)
             };
             let located = context.chunk_location(index, offset);
             let mapped = located.generated.is_some();
@@ -749,6 +752,19 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                 && let Some(source) = mapped_source
             {
                 context.vite_env_source_gaps.insert(source);
+            } else if vite && unmapped_segment {
+                // The candidate has no original path to record, so it is
+                // tracked by its generated position instead.
+                let chunk_file = context.chunks[index].file.clone();
+                tracing::debug!(
+                    chunk = %chunk_file,
+                    offset,
+                    name = %name,
+                    "guarded Vite environment candidate has no source mapping"
+                );
+                context
+                    .vite_env_unmapped_candidates
+                    .insert((chunk_file, offset));
             }
             tracing::debug!(
                 chunk = %context.chunks[index].file,
