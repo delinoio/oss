@@ -153,7 +153,11 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
     // Whether the last `)` closed a statement head.
     let mut closed_head = false;
     let mut index = 0usize;
-    let regex_allowed = |previous: Option<u8>, start: usize, closed_head: bool| -> bool {
+    let regex_allowed = |previous: Option<u8>,
+                         start: usize,
+                         closed_head: bool,
+                         ranges: &[(usize, usize)]|
+     -> bool {
         match previous {
             None => true,
             // `</tag>` is a JSX closing tag, and `<a b={c} />` or
@@ -166,8 +170,8 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
             Some(b')') => closed_head,
             Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
             Some(byte) if byte.is_ascii_alphabetic() => {
-                let head = &code[..start];
-                let trimmed = head.trim_end();
+                // Comments between the keyword and the slash do not count.
+                let trimmed = &code[..code_end_before(code, ranges, start)];
                 [
                     "return", "typeof", "case", "do", "else", "in", "of", "void", "yield",
                     "delete", "throw", "new",
@@ -240,7 +244,7 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 ranges.push((index, end));
                 index = end;
             }
-            b'/' if regex_allowed(previous_significant, index, closed_head) => {
+            b'/' if regex_allowed(previous_significant, index, closed_head, &ranges) => {
                 let mut position = index + 1;
                 let mut in_class = false;
                 while position < bytes.len() {
@@ -268,7 +272,7 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                     }
                 }
                 if byte == b'(' {
-                    head_parens.push(opens_statement_head(&code[..index]));
+                    head_parens.push(opens_statement_head(code, &ranges, index));
                 } else if byte == b')' {
                     closed_head = head_parens.pop().unwrap_or(false);
                 }
@@ -298,11 +302,37 @@ fn closes_jsx_tag(bytes: &[u8], slash: usize) -> bool {
     bytes.get(cursor) == Some(&b'>')
 }
 
-/// True when the `(` that follows `before` opens the head of an `if`,
-/// `while`, `for` (or `for await`) or `with` statement. A property of that name
-/// (`object.if (x)`) is not a statement.
-fn opens_statement_head(before: &str) -> bool {
-    let trimmed = before.trim_end();
+/// The offset where the code before `end` stops: trailing whitespace and the
+/// comments in `ranges` that end there are not code. A keyword before a
+/// comment is still the preceding token (`if /* note */ (ready)`).
+fn code_end_before(code: &str, ranges: &[(usize, usize)], end: usize) -> usize {
+    let mut end = end;
+    let mut cursor = ranges.len();
+    loop {
+        end = code[..end].trim_end().len();
+        let Some(&(start, range_end)) = cursor.checked_sub(1).and_then(|last| ranges.get(last))
+        else {
+            return end;
+        };
+        let is_comment = code[start..].starts_with("//") || code[start..].starts_with("/*");
+        if is_comment && start < end && code[range_end.min(end)..end].trim().is_empty() {
+            end = start;
+            cursor -= 1;
+        } else if range_end > end || start >= end {
+            // A range that lies at or after `end` cannot precede it.
+            cursor -= 1;
+        } else {
+            return end;
+        }
+    }
+}
+
+/// True when the `(` at `index` opens the head of an `if`, `while`, `for` (or
+/// `for await`) or `with` statement. A property of that name (`object.if (x)`)
+/// is not a statement. Comments between the keyword and the `(`, or before the
+/// keyword, are skipped: `ranges` holds the comments found so far.
+fn opens_statement_head(code: &str, ranges: &[(usize, usize)], index: usize) -> bool {
+    let trimmed = &code[..code_end_before(code, ranges, index)];
     let word_start = trimmed
         .rfind(|character: char| {
             !(character.is_alphanumeric() || character == '_' || character == '$')
@@ -310,22 +340,21 @@ fn opens_statement_head(before: &str) -> bool {
         .map_or(0, |position| {
             position + trimmed[position..].chars().next().map_or(1, char::len_utf8)
         });
-    let (head, word) = trimmed.split_at(word_start);
-    if head.trim_end().ends_with('.') {
+    let word = &trimmed[word_start..];
+    let head = &code[..code_end_before(code, ranges, word_start)];
+    if head.ends_with('.') {
         return false;
     }
     match word {
         "if" | "while" | "for" | "with" => true,
         "await" => {
-            head.trim_end().ends_with("for") && {
-                let before_for = head.trim_end().trim_end_matches("for");
-                !before_for.ends_with(|character: char| {
+            head.ends_with("for")
+                && !head[..head.len() - "for".len()].ends_with(|character: char| {
                     character.is_alphanumeric()
                         || character == '_'
                         || character == '$'
                         || character == '.'
                 })
-            }
         }
         _ => false,
     }
@@ -3800,6 +3829,42 @@ y=/process.env.F/.test(z),process.env.G"#;
             &non_code_ranges(literal),
             literal.find("process").unwrap()
         ));
+    }
+
+    #[test]
+    fn comments_before_a_regular_expression_do_not_change_what_precedes_it() {
+        // (source, offsets of the real direct calls)
+        let cases: Vec<(&str, Vec<usize>)> = vec![
+            // Comments between the statement keyword and its head.
+            ("if /* note */ (ready) /eval(code)/.test(input);", vec![]),
+            ("if // note\n(ready) /eval(code)/.test(input);", vec![]),
+            (
+                "if /* a */ /* b */ (ready) /eval(code)/.test(input);",
+                vec![],
+            ),
+            ("while /* n */ (more()) /eval(code)/.exec(input);", vec![]),
+            ("for /* n */ (;;) /eval(code)/.test(input);", vec![]),
+            ("with /* n */ (scope) /eval(code)/.test(input);", vec![]),
+            (
+                "for /* a */ await /* b */ (const k of keys) /eval(code)/.test(k);",
+                vec![],
+            ),
+            ("/* n */ if (ready) /eval(code)/.test(input);", vec![]),
+            // Comments between the head and the regular expression.
+            ("if (ready) /* note */ /eval(code)/.test(input);", vec![]),
+            ("if (ready) // note\n/eval(code)/.test(input);", vec![]),
+            // Comments between a keyword and the regular expression.
+            ("return /* note */ /eval(code)/.test(input);", vec![]),
+            ("typeof /* note */ /eval(code)/;", vec![]),
+            // A comment does not turn a property or another `)` into a head.
+            ("object. /* n */ if (a) / eval(code) / 2;", vec![25]),
+            ("object./* n */if (a) / eval(code) / 2;", vec![23]),
+            ("run(a) /* n */ / eval(code) / 2;", vec![17]),
+            ("ifReady /* n */ (a) / eval(code) / 2;", vec![22]),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(direct_eval_offsets(source), expected, "{source}");
+        }
     }
 
     #[test]
