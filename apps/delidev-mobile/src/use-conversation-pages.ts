@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
+import { ObservationEpoch } from "./observation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
@@ -24,10 +25,18 @@ export function useConversationPages(
 ) {
   const transport = useTransport(),
     cache = useQueryClient();
-  const key = ["mobile-conversation-pages", lane, sessionId];
+  const epoch = useContext(ObservationEpoch);
+  const key = ["mobile-conversation-pages", lane, sessionId, epoch];
   const reached = useRef(1),
     generation = useRef(0),
     scope = useRef(new AbortController());
+  const observedEpoch = useRef(epoch);
+  if (observedEpoch.current !== epoch) {
+    observedEpoch.current = epoch;
+    generation.current++;
+    scope.current.abort();
+    reached.current = 1;
+  }
   const current = useRef(enabled);
   current.current = enabled;
   const [continuing, setContinuing] = useState(false),
@@ -99,7 +108,7 @@ export function useConversationPages(
       generation.current++;
       scope.current.abort();
     };
-  }, [enabled, sessionId, lane]);
+  }, [enabled, sessionId, lane, epoch]);
   const latest = useRef({
     data: query.data,
     fetching: query.isFetching,
@@ -116,6 +125,7 @@ export function useConversationPages(
   };
   const ready = () =>
     current.current &&
+    observedEpoch.current === epoch &&
     !scope.current.signal.aborted &&
     !!latest.current.data &&
     !latest.current.fetching &&
@@ -127,6 +137,7 @@ export function useConversationPages(
     const previous = latest.current.data;
     if (
       !current.current ||
+      observedEpoch.current !== epoch ||
       !previous?.nextPageToken ||
       latest.current.fetching ||
       latest.current.continuing
@@ -187,6 +198,7 @@ export function useConversationPages(
   const refresh = () => {
     if (
       !current.current ||
+      observedEpoch.current !== epoch ||
       scope.current.signal.aborted ||
       latest.current.continuing
     )
