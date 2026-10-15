@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 )
 
 type interactionFixtureMode string
@@ -24,27 +25,21 @@ const (
 )
 
 func TestManualNativeOpenCodeInteractionProposals(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode interaction proposals")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	for _, kind := range []InteractionKind{PermissionInteraction, QuestionInteraction} {
 		t.Run(string(kind), func(t *testing.T) { nativeInteractionProposalFixture(t, kind, interactionProposalFixture) })
 	}
 }
 
 func TestManualNativeOpenCodeInteractionReplies(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode interaction replies")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	for _, kind := range []InteractionKind{PermissionInteraction, QuestionInteraction} {
 		t.Run(string(kind), func(t *testing.T) { nativeInteractionProposalFixture(t, kind, interactionReplyFixture) })
 	}
 }
 
 func TestManualNativeOpenCodeInteractionRejections(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode interaction rejection")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	for _, kind := range []InteractionKind{PermissionInteraction, QuestionInteraction} {
 		t.Run(string(kind), func(t *testing.T) { nativeInteractionProposalFixture(t, kind, interactionRejectionFixture) })
 	}
@@ -56,9 +51,7 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, mode i
 }
 
 func TestManualNativeOpenCodeInteractionContinuation(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode rejection/feedback continuation")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	feedback, empty := "Private correction: leave this file unread and explain.", ""
 	for _, test := range []struct {
 		name     string

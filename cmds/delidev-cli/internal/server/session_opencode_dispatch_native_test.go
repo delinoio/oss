@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -208,13 +209,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 	if externalAllowance && cascade {
 		tool = "read"
 	}
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit installed OpenCode with public APIs and generated loopback provider only")
-	}
-	if !filepath.IsAbs(binary) {
-		t.Fatal("native executable must be absolute")
-	}
+	binary, version := nativetest.NativeOpenCodeExecutable(t)
 	binary, err := filepath.EvalSymlinks(binary)
 	if err != nil {
 		t.Fatal(err)
@@ -395,7 +390,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			// preparation report and explicit first Resume use their public APIs. Only
 			// protocol discovery is a pinned reported fixture; actual initialization is
 			// independently revalidated by the original installed native process.
-			f := newFirstDispatchFixtureWorkspaceProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel, workspaceType, projectProfile)
+			f := newFirstDispatchFixtureObserved(t, domain.OpenCode, mode, binary, version, upstream.URL, fixtureModel, workspaceType, projectProfile)
 			if missingRead {
 				toolPath.Store(prepareOpenCodeMissingRead(t, f, permission))
 			} else if externalRejection || externalAllowance {

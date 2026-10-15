@@ -1318,6 +1318,21 @@ explicit original provenance without input/accounting authority; absent native
 agent/model remains private until the first real input independently proves
 selection. No migration is allocated.
 
+System capability 104 and Worker capability 69
+(`OPENCODE_GENERAL_CHAT_FORK_REASONING_V1`) are an
+independent pair that adds Fork profile `opencode-general-chat-v2`: completed plain
+timed reasoning history is cloned with its messages. They refine capability
+26/15, which every v2 peer must also hold, and never change what 26/15 mean. The
+server selects v2 only when both capabilities are present and the source contains
+reasoning; a Worker without capability 69 is rejected before any job or native
+session exists. A Worker attachment that reports 69 without 15 is invalid peer
+state: AttachWorker rejects it as `InvalidArgument` before persistence and Worker
+machine validation never accepts it. The Worker advertises 69 only on a
+non-Windows host after the original server echoed it. The profile is an omitted-when-v1 JSON enum on the
+Fork job requests, the child Fork origin and the first execution Fork boundary, so
+v1 bytes are unchanged. No protobuf message field or migration is added; the generated
+Go and TypeScript enums are regenerated together.
+
 Worker-only permanent-deletion ownership JSON retains its closed version-1 shape
 with an optional original unpublished Sidechat child ID on Fork copies. Keep the
 4,096-copy bound, strict 4 MiB envelope/page limit and 20-envelope pagination bound;
