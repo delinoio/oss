@@ -380,6 +380,17 @@ func holdSharedCodexHome(ctx context.Context, config Config, machine, account do
 	return &sharedHomeHold{config: config, machine: machine, account: account, lease: lease}, nil
 }
 
+// holds reports whether the hold currently locks the registered shared home at
+// root. A released or unverified hold, and a nil hold, lock nothing.
+func (h *sharedHomeHold) holds(root string) bool {
+	if h == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.lease != nil && !h.unverified && h.lease.Root == root
+}
+
 // root is the registered home path the hold locks.
 func (h *sharedHomeHold) root() string { return h.lease.Root }
 

@@ -3064,6 +3064,25 @@ through the credential check. The profile has no conversation or history
 identifier, so session deletion never removes it; no automatic age-based pruning
 applies.
 
+A shared continuation of a version 1 checkpoint copies the retained rollout of
+that one thread into the account home. That copy writes the account-wide home, so
+it happens only after the request is admitted and is protected by the lock: the
+founding owner copies after it took the lock, and a joined member copies under
+the running owner's lock. The copy itself refuses to write unless the caller
+passes a hold that currently locks that home; nothing is written, not even a
+directory, otherwise. A request that is not admitted, or whose founder meets
+`profile_busy`, never copies.
+
+| Request                                    | Home lock when the copy would run     | Copy                                                 |
+| ------------------------------------------ | ------------------------------------- | ---------------------------------------------------- |
+| before the account lease is taken          | none                                  | never; only the retained checkpoint is read          |
+| founding owner, lock taken                 | held by this owner                    | copies, then verifies the thread in the account home |
+| founding owner, lock held by another run   | held by an exclusive continuation     | `profile_busy`; nothing is written                   |
+| founding owner, unverified earlier release | blocked until the release is verified | recovery required; nothing is written                |
+| joined member                              | held by the running owner             | copies under the owner's hold                        |
+| exclusive version 2 continuation           | held by this run                      | no copy; the account home already holds the history  |
+| exclusive version 1 continuation           | not used                              | no copy; the history stays in its original runtime   |
+
 ### Operation journals stay per operation
 
 A fresh `runtimes/<operation-id>/` (or `title-runtimes/<job-id>/`) directory

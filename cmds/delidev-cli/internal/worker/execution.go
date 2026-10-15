@@ -227,6 +227,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	// accountHold is the shared account home lock of an exclusive version 2
 	// continuation. It is released, verified, before the managed Finish.
 	var accountHold *sharedHomeHold
+	// pendingV1Import is the version 1 checkpoint of a shared continuation whose
+	// retained rollout is copied into the shared account home only after the
+	// request is admitted under that home's lock; see the import below.
+	var pendingV1Import *ExecutionCheckpointRef
 	if c := input.Continuation; c != nil {
 		rawDigest, err := hex.DecodeString(c.PromptDigest)
 		if err != nil || len(rawDigest) != sha256.Size {
@@ -248,10 +252,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		if sharedCodex {
 			if checkpoint.Version == 1 {
-				checkpoint, nativeHome, err = importCodexV1History(ctx, manager.Root, checkpointRef)
-				if err != nil {
-					return nil, err
-				}
+				// The copy writes the account-wide home, which an exclusive
+				// continuation or a running owner may hold, so it waits until
+				// this request holds or joins that home's lock.
+				pendingV1Import = &checkpointRef
 			}
 		} else if checkpoint.Version == 2 {
 			if checkpoint.AccountID != input.AccountID || checkpoint.ConnectionID != input.ConnectionID {
@@ -286,7 +290,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if security.CheckPrivateDir(nativeHome) != nil {
 			return nil, executionCheckpointUncertain()
 		}
-		if c.Compaction == nil {
+		if c.Compaction == nil && pendingV1Import == nil {
 			if err := codex.VerifyContinuationContextRollout(ctx, nativeHome, checkpoint.Native); err != nil {
 				return nil, err
 			}
@@ -488,6 +492,23 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			if err != nil {
 				return nil, err
 			}
+		}
+		if pendingV1Import != nil {
+			// The founder holds the account home lock and a joined member runs
+			// under the founder's hold, so the copy never races an exclusive
+			// continuation of the account history.
+			importedHome := ""
+			checkpoint, importedHome, err = importCodexV1History(ctx, manager.Root, *pendingV1Import, sharedOwner.profile)
+			if err != nil {
+				return nil, err
+			}
+			if importedHome != nativeHome || security.CheckPrivateDir(nativeHome) != nil {
+				return nil, executionCheckpointUncertain()
+			}
+			if err := codex.VerifyContinuationContextRollout(ctx, nativeHome, checkpoint.Native); err != nil {
+				return nil, err
+			}
+			logger.InfoContext(ctx, "native_execution_v1_history_imported", "history_execution_id", pendingV1Import.HistoryExecutionID)
 		}
 		if !sharedCodex || sharedFounder {
 			if sharedCodex || checkpoint.Version == 2 {
