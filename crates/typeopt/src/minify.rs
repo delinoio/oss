@@ -4,8 +4,7 @@
 //! Bundle-mode transformations leave code that a minifier can shorten
 //! further (folded branches such as `true?a:b`, single-use bindings, parameter
 //! names exposed by inlining). After the pipeline, every edited ES module
-//! chunk can be minified with SWC's compressor and mangler when no bundle
-//! chunk can observe callable source text. The result is
+//! chunk can be minified with SWC's compressor and mangler. The result is
 //! kept only when it compresses smaller: Brotli (quality 11) must shrink and
 //! gzip (level 9) must not grow, because minifying already-minified bundler
 //! output sometimes compresses worse. Legal comments (`/*!`, `@license`,
@@ -389,6 +388,45 @@ fn legal(text: &str) -> bool {
     text.starts_with('!') || text.contains("@license") || text.contains("@preserve")
 }
 
+/// Read emitted legal comments as comments, so matching text in a string or
+/// another comment cannot stand in for a missing notice.
+fn emitted_legal_comments(cm: &Lrc<SourceMap>, code: &str) -> Option<Vec<Comment>> {
+    let file = cm.new_source_file(Lrc::new(FileName::Anon), code.to_owned());
+    let comments = SingleThreadedComments::default();
+    let mut errors = Vec::new();
+    parse_file_as_module(
+        &file,
+        Syntax::Es(EsSyntax::default()),
+        EsVersion::latest(),
+        Some(&comments),
+        &mut errors,
+    )
+    .ok()?;
+    if !errors.is_empty() {
+        return None;
+    }
+    let (leading, trailing) = comments.borrow_all();
+    let mut notices: Vec<Comment> = leading
+        .values()
+        .chain(trailing.values())
+        .flatten()
+        .filter(|comment| legal(&comment.text))
+        .cloned()
+        .collect();
+    notices.sort_by_key(|comment| comment.span.lo);
+    Some(notices)
+}
+
+/// Compare emitted comment identities in source order. Emission changes
+/// spans, but it must preserve each comment's kind and exact text.
+fn same_legal_comments(expected: &[Comment], emitted: &[Comment]) -> bool {
+    expected.len() == emitted.len()
+        && expected
+            .iter()
+            .zip(emitted)
+            .all(|(left, right)| left.kind == right.kind && left.text == right.text)
+}
+
 fn definitely_not_callable(expression: &Expr) -> bool {
     match expression {
         Expr::Lit(
@@ -639,40 +677,26 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
             }
             Some((String::from_utf8(output).ok()?, mappings))
         };
-        // The emitter takes the comments it writes out of the store; a second
-        // emission starts again from this snapshot.
-        let snapshot = {
-            let (leading, trailing) = comments.borrow_all();
-            (leading.clone(), trailing.clone())
+        // Emit every legal notice from a single normalized location. This
+        // preserves notices attached to removed declarations and avoids
+        // substring matches in code or unrelated comments.
+        let start = match &program {
+            Program::Module(module) => module.body.first().map_or(BytePos(0), |item| item.span().lo),
+            Program::Script(script) => script.body.first().map_or(BytePos(0), |item| item.span().lo),
         };
-        let (mut code, mut mappings) = emit(&comments)?;
-        let mut missing: Vec<Comment> = Vec::new();
-        for notice in notices {
-            if !code.contains(notice.text.as_ref())
-                && !missing.iter().any(|kept| kept.text == notice.text)
-            {
-                missing.push(notice);
-            }
+        {
+            let (mut leading, mut trailing) = comments.borrow_all_mut();
+            leading.clear();
+            trailing.clear();
         }
-        if !missing.is_empty() {
-            // Before the first statement, in source order.
-            let start = match &program {
-                Program::Module(module) => module.body.first().map_or(BytePos(0), |item| item.span().lo),
-                Program::Script(script) => script.body.first().map_or(BytePos(0), |item| item.span().lo),
-            };
-            {
-                let (mut leading, mut trailing) = comments.borrow_all_mut();
-                *leading = snapshot.0;
-                *trailing = snapshot.1;
-            }
-            for notice in &missing {
-                comments.add_leading(start, notice.clone());
-            }
-            (code, mappings) = emit(&comments)?;
-            if missing.iter().any(|notice| !code.contains(notice.text.as_ref())) {
-                tracing::debug!("minify skipped: legal notices would be lost");
-                return None;
-            }
+        for notice in &notices {
+            comments.add_leading(start, notice.clone());
+        }
+        let (code, mappings) = emit(&comments)?;
+        let emitted = emitted_legal_comments(&cm, &code)?;
+        if !same_legal_comments(&notices, &emitted) {
+            tracing::debug!("minify skipped: legal notices could not be verified");
+            return None;
         }
         let mut json = Vec::new();
         cm.build_source_map(
