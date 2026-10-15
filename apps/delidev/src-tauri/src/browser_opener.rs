@@ -41,7 +41,9 @@ fn commit_lock() -> MutexGuard<'static, ()> {
 
 /// Retires a dispatch flag. Every writer of a flag that `dispatch` observes
 /// must use this instead of storing directly, or the commit-to-spawn race
-/// remains open.
+/// remains open. The flags are the per-opening and per-attempt OAuth flags and
+/// `Connector::exiting`, whose production writers
+/// (`Connector::retire_exiting`) all route here.
 pub(crate) fn retire(flag: &AtomicBool) {
     let _commit = commit_lock();
     flag.store(true, Ordering::Release);
@@ -354,6 +356,62 @@ fn spawn_retrying_text_file_busy(
     command
         .spawn()
         .map_err(|_| NativeFailure::BrowserLaunchFailed)
+}
+
+/// Interleaving fixture shared by every writer of a dispatch flag. A writer is
+/// ordered with the commit-to-spawn transition when, started while a dispatch
+/// holds the commit lock, it cannot change the flag until the process exists;
+/// the dispatch then reports `Stopped` and its launcher does not survive.
+#[cfg(all(test, unix))]
+pub(crate) mod retirement_fixture {
+    use std::fs;
+
+    use super::*;
+
+    pub(crate) fn assert_writer_waits_for_commit(flag: &AtomicBool, writer: impl FnOnce() + Send) {
+        let dir = tempfile::tempdir().unwrap();
+        let pid = dir.path().join("pid");
+        let mut command = Command::new("/bin/sh");
+        command
+            .args([
+                "-c",
+                &format!("echo $$ > '{}'; exec sleep 30", pid.display()),
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let started = Instant::now();
+        let mut writer = Some(writer);
+        let result = thread::scope(|scope| {
+            let mut retirer = None;
+            let result = dispatch_command(command, flag, &mut |phase| {
+                if phase != DispatchPhase::Committing {
+                    return;
+                }
+                let writer = writer.take().expect("one commit phase");
+                retirer = Some(scope.spawn(writer));
+                thread::sleep(Duration::from_millis(150));
+                assert!(
+                    !flag.load(Ordering::Acquire),
+                    "the writer changed the flag inside the commit-to-spawn transition"
+                );
+            });
+            retirer.expect("commit phase observed").join().unwrap();
+            result
+        });
+        assert!(flag.load(Ordering::Acquire), "the writer never retired");
+        assert_eq!(result, Err(NativeFailure::Stopped));
+        assert!(started.elapsed() < Duration::from_secs(10));
+        // A launcher killed before its shell ran recorded no pid.
+        if let Ok(pid) = fs::read_to_string(pid) {
+            let alive = Command::new("/bin/sh")
+                .args(["-c", &format!("kill -0 {} 2>/dev/null", pid.trim())])
+                .status()
+                .unwrap()
+                .success();
+            assert!(!alive, "launcher {pid} survived retirement");
+        }
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -765,5 +823,45 @@ mod tests {
         );
         assert_eq!(attempts, 1);
         assert!(matches!(result, Err(NativeFailure::BrowserLaunchFailed)));
+    }
+    #[test]
+    fn the_shared_fixture_orders_the_plain_retire_writer_with_the_commit() {
+        let stopped = AtomicBool::new(false);
+        retirement_fixture::assert_writer_waits_for_commit(&stopped, || retire(&stopped));
+    }
+
+    // Every production writer of `Connector::exiting` goes through
+    // `retire_exiting`; the owning modules run the shared fixture against their
+    // writers. This scan keeps a new bare store from reintroducing the race.
+    #[test]
+    fn no_production_code_stores_to_a_flag_dispatch_observes() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        for entry in fs::read_dir(&root).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|extension| extension != "rs") {
+                continue;
+            }
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            if name == "tests.rs" || name.ends_with("_tests.rs") {
+                continue;
+            }
+            let source = fs::read_to_string(&path).unwrap();
+            let production = source
+                .split("\n#[cfg(test)]\nmod ")
+                .next()
+                .unwrap_or(&source);
+            let mut rest = production;
+            while let Some(index) = rest.find("exiting") {
+                let after = rest[index + "exiting".len()..].trim_start();
+                let after = after.strip_prefix('.').map(str::trim_start);
+                assert!(
+                    !after.is_some_and(|call| ["store(", "swap(", "fetch_", "compare_exchange"]
+                        .iter()
+                        .any(|write| call.starts_with(write))),
+                    "{name}: write the exiting flag through Connector::retire_exiting"
+                );
+                rest = &rest[index + "exiting".len()..];
+            }
+        }
     }
 }

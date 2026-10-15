@@ -137,6 +137,21 @@ pending dispatch with a blocked listener join, and `stop` racing an admission.
 | after a successful exit, before the final check | exited        | `Stopped`, not success |
 | after the dispatch returned                     | exited        | unchanged (`Ok`)       |
 
+Every flag that reaches a browser spawn is written only through
+`browser_opener::retire`, whichever caller owns it. The writers and the test
+that orders each with the commit-to-spawn transition (a writer started while a
+dispatch holds the commit lock cannot change its flag until the process exists):
+
+| Flag                                  | Production writers                                                         | Ordered by                                                    |
+| ------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| per-opening device cancel flag        | Dispose, window close, `stop`, revocation exhaustion                       | the device-opening retirement tests                           |
+| per-attempt callback stop flag        | dropping the attempt                                                       | the attempt retirement tests                                  |
+| `Connector::exiting` (external links) | `Connector::retire_exiting`: supervision stop request, owned-child shutdown | the shared fixture run against each writer; a source scan forbids a bare store |
+
+An installed browser launch (ordinary links only, never OAuth authorization)
+observes `Connector::exiting` before each spawn attempt and during its grace
+period; a browser it already started is detached and never terminated.
+
 The renderer side of this lifecycle (which phase offers Open verification page, when the opening owes a native Dispose, what a late result may change) is the `device-waiting`, `device-opened` and `device-address` rows of the [state machine](#desktop-browser-sign-in-state-machine) below, which is generated from the same table the controller runs: a device login owes no native Dispose until Open verification page is requested, a pending open is retired by Dispose on Back, unmount, abort, cancellation and every terminal state, and the verification page, the pinned code and the address are offered nowhere once a cancellation was acknowledged or observed. A healthy status read recovers only the polling notice; notices from explicit actions and one-shot native steps stay until the user acts again. An auxiliary open or reopen never consumes the retry closure of a replayable mutation (account creation, login request, cancellation, naming).
 
 A connected Grok account in AI Subscription management (`subscription-accounts.tsx`)
