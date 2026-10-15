@@ -77,8 +77,11 @@ observation time, completion or sanitized failure, and the last successful
 observation for the selected scope. Preserve native picker `id` separately from
 executable `model`. Codex `0.159.2` model entries may include nullable
 `availableAccessPrograms` metadata. The adapter accepts this known advisory
-field without using it to select an access program or grant model/account
-authority; other unknown entry fields still fail the closed response check.
+field only as null or an object with a required `cyber` array containing
+`standard`, `daybreakBlue` or `daybreakRed`. Missing/null arrays, unknown members,
+wrong types and unknown program values reject the complete observation. This
+metadata cannot select an access program or grant model/account authority; other
+unknown entry fields still fail the closed response check.
 Reasoning, modality and service-tier metadata are advisory;
 listing cached, fallback or static native data cannot prove current account
 support, fresh entitlement, readiness or execution capability.

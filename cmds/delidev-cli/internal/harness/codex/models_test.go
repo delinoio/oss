@@ -46,7 +46,29 @@ func modelFixture(id json.RawMessage, method string, raw json.RawMessage, mode s
 	case "models-access-programs":
 		entry["availableAccessPrograms"] = nil
 	case "models-access-programs-object":
-		entry["availableAccessPrograms"] = map[string]any{"cyber": []string{"standard", "daybreakBlue"}}
+		entry["availableAccessPrograms"] = map[string]any{"cyber": []string{"standard", "daybreakBlue", "daybreakRed"}}
+	case "models-access-programs-empty":
+		entry["availableAccessPrograms"] = map[string]any{"cyber": []string{}}
+	case "models-access-programs-type", "models-access-programs-unknown", "models-access-programs-missing", "models-access-programs-null", "models-access-programs-value", "models-access-programs-item", "models-access-programs-array-type":
+		// Reject malformed metadata on page two without publishing page one.
+		if params.Cursor != nil {
+			switch mode {
+			case "models-access-programs-type":
+				entry["availableAccessPrograms"] = "invalid"
+			case "models-access-programs-unknown":
+				entry["availableAccessPrograms"] = map[string]any{"cyber": []string{}, "unknown": true}
+			case "models-access-programs-missing":
+				entry["availableAccessPrograms"] = map[string]any{}
+			case "models-access-programs-null":
+				entry["availableAccessPrograms"] = map[string]any{"cyber": nil}
+			case "models-access-programs-value":
+				entry["availableAccessPrograms"] = map[string]any{"cyber": []string{"unknown"}}
+			case "models-access-programs-item":
+				entry["availableAccessPrograms"] = map[string]any{"cyber": []any{nil}}
+			case "models-access-programs-array-type":
+				entry["availableAccessPrograms"] = map[string]any{"cyber": "standard"}
+			}
+		}
 	case "models-cursor":
 		value := "page-two"
 		next = &value
@@ -66,7 +88,7 @@ func modelFixture(id json.RawMessage, method string, raw json.RawMessage, mode s
 }
 
 func TestNativeModelPagesAreAtomicBoundedAndAdvisory(t *testing.T) {
-	for _, mode := range []string{"models-valid", "models-access-programs", "models-access-programs-object", "models-cursor", "models-duplicate", "models-secret", "models-hidden", "models-oversized", "models-unknown"} {
+	for _, mode := range []string{"models-valid", "models-access-programs", "models-access-programs-object", "models-access-programs-empty", "models-access-programs-type", "models-access-programs-unknown", "models-access-programs-missing", "models-access-programs-null", "models-access-programs-value", "models-access-programs-item", "models-access-programs-array-type", "models-cursor", "models-duplicate", "models-secret", "models-hidden", "models-oversized", "models-unknown"} {
 		t.Run(mode, func(t *testing.T) {
 			config := fixtureConfig(t, mode)
 			config.ModelObservation = true
@@ -80,7 +102,7 @@ func TestNativeModelPagesAreAtomicBoundedAndAdvisory(t *testing.T) {
 			if closeErr := client.Close(); closeErr != nil {
 				t.Fatal(closeErr)
 			}
-			if mode == "models-valid" || mode == "models-access-programs" || mode == "models-access-programs-object" {
+			if mode == "models-valid" || mode == "models-access-programs" || mode == "models-access-programs-object" || mode == "models-access-programs-empty" {
 				if err != nil || len(models) != 2 || models[0].ID == models[0].Model || models[1].Model != "executable-two" {
 					t.Fatalf("lost complete native identity: count=%d error=%v", len(models), err)
 				}
