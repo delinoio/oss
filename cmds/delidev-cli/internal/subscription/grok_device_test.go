@@ -402,6 +402,25 @@ func TestGrokDeviceResponsesRejectRepeatedMembers(t *testing.T) {
 			grant.Clear()
 		}
 	})
+	t.Run("success answer with an error member", func(t *testing.T) {
+		for _, body := range []string{
+			`{"access_token":"a","refresh_token":"r","id_token":"i","token_type":"Bearer","expires_in":3600,"error":"authorization_pending"}`,
+			`{"access_token":"a","refresh_token":"r","id_token":"i","token_type":"Bearer","expires_in":3600,"error":""}`,
+		} {
+			idp := grokidp.New(t)
+			client, endpoints := deviceFixture(t, idp)
+			grant, err := client.RequestDeviceAuthorization(context.Background(), endpoints)
+			if err != nil {
+				t.Fatal(err)
+			}
+			idp.TokenStatus, idp.TokenBody = http.StatusOK, body
+			_, _, err = client.PollDeviceToken(context.Background(), endpoints, grant.DeviceCode)
+			if reason, ok := subscription.GrokOAuthFailure(err); !ok || reason != subscription.GrokReasonTokenUncertain {
+				t.Fatalf("a contradictory success answer %s was not uncertain: %v", body, err)
+			}
+			grant.Clear()
+		}
+	})
 	t.Run("authorization", func(t *testing.T) {
 		idp := grokidp.New(t)
 		idp.DeviceBody = `{"device_code":"abc","user_code":"ABCD-1234","user_code":"WXYZ-9999","verification_uri":"https://accounts.x.ai/d","expires_in":60}`
