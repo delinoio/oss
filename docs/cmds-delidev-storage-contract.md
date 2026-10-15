@@ -982,6 +982,8 @@ Backup publication and first-start recovery preserve the original state and sync
 
 ## Worker-local workspace storage
 
+The Worker-private repository source cache lives at `repository-cache/<source-identity>/` under the Worker root, outside `workspaces/<session>`. It is not session storage: workspace snapshots, restore, cleanup, preparation rollback, recovery and permanent session or repository-configuration deletion never include, inventory, repair or remove it, and its bytes are not counted in a session's retained or removed byte totals. Its lifetime follows the Worker root and the ownership rules in the [workspace contract](cmds-delidev-workspace-contract.md#repository-source-cache).
+
 Every storage RPC checks owner/paired-client role authority at the service boundary
 before processing its request, including direct internal calls without HTTP
 middleware. Reads, mutations and receipt replay recheck current paired-device

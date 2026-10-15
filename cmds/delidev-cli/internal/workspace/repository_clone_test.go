@@ -19,6 +19,17 @@ import (
 )
 
 func cloneFixture(t *testing.T) (Git, string, CloneRequest, string) {
+	git, private, request, marker, _ := cloneFixtureWithSource(t)
+	return git, private, request, marker
+}
+
+// cloneFixtureWithSource also returns the controlled upstream repository, so a
+// test can advance the remote. The injected executable answers every clone and
+// fetch of the validated HTTPS address from that repository and counts only
+// those remote clones in the marker file. A clone whose source is a local path,
+// such as a copy from the repository source cache, runs the real Git unchanged.
+// A mode file next to the marker can switch remote clones to fail or hang.
+func cloneFixtureWithSource(t *testing.T) (Git, string, CloneRequest, string, string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix executable fixture; native Windows clone acceptance is separate")
@@ -34,15 +45,23 @@ func cloneFixture(t *testing.T) (Git, string, CloneRequest, string) {
 	executable := filepath.Join(t.TempDir(), "git-fixture")
 	marker := filepath.Join(t.TempDir(), "clone-invoked")
 	body := "#!/bin/sh\ncase \" $* \" in\n*' clone '*)\n"
+	body += "source=\ntarget=\nfor operand do source=$target; target=$operand; done\n"
+	body += "case \"$source\" in https://*)\n"
+	body += "mode=$(cat " + quote(marker+".mode") + " 2>/dev/null)\n"
+	body += "case \"$mode\" in\nfail) printf 'fatal: Authentication failed for private-native-content\\n' >&2; exit 128 ;;\n"
+	body += "hang) printf started > " + quote(marker+".started") + "; exec sleep 30 ;;\nesac\n"
 	body += "printf invoked >> " + quote(marker) + "\n"
-	body += "origin=\nfor operand do case \"$operand\" in --origin=*) origin=$operand ;; esac; target=$operand; done\n"
-	body += quote(git) + " -c core.hooksPath=/dev/null clone --no-local \"$origin\" -- " + quote(source) + " \"$target\" || exit 1\n"
-	body += quote(git) + " -C \"$target\" remote set-url origin https://github.com/fixture/repo.git\n;;\n*) exec " + quote(git) + " \"$@\" ;;\nesac\n"
+	body += "origin=\nbare=\nfor operand do case \"$operand\" in --origin=*) origin=$operand ;; --bare) bare=--bare ;; esac; done\n"
+	body += quote(git) + " -c core.hooksPath=/dev/null clone --no-local $bare $origin -- " + quote(source) + " \"$target\" || exit 1\n"
+	body += quote(git) + " -C \"$target\" remote set-url origin https://github.com/fixture/repo.git\n;;\n"
+	body += "*) exec " + quote(git) + " \"$@\" ;;\nesac\n;;\n"
+	body += "*' fetch '*|*' ls-remote --symref '*) exec " + quote(git) + " -c url." + source + ".insteadOf=https://github.com/fixture/repo.git -c protocol.file.allow=always \"$@\" ;;\n"
+	body += "*) exec " + quote(git) + " \"$@\" ;;\nesac\n"
 	if err := os.WriteFile(executable, []byte(body), 0700); err != nil {
 		t.Fatal(err)
 	}
 	job := domain.NewID()
-	return Git{Executable: executable, ProcessRoot: filepath.Join(private, "processes"), OwnerID: job}, private, CloneRequest{JobID: job, ParentPath: parent, URL: "https://github.com/fixture/repo.git", DirectoryName: "repo"}, marker
+	return Git{Executable: executable, ProcessRoot: filepath.Join(private, "processes"), OwnerID: job}, private, CloneRequest{JobID: job, ParentPath: parent, URL: "https://github.com/fixture/repo.git", DirectoryName: "repo"}, marker, source
 }
 
 func TestRepositoryClonePublishesFullCheckoutOnce(t *testing.T) {
