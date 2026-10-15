@@ -160,7 +160,12 @@ func grokSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Insta
 // any time, and the Worker may already have joined the original native process
 // and removed its local credential, so a claimed lease is never re-gated on
 // mutable installation metadata and the original owner can always report Finish.
-func (s *Service) grokSubscriptionLeaseView(ctx context.Context, tx *store.Tx, id, lease, machine, instance domain.ID) (store.Record, domain.Account, domain.SubscriptionLease, error) {
+//
+// A lease granted by an earlier server epoch is stale: the restart fenced the
+// account for it. Only a Finish may resolve a stale lease (allowStale), and only
+// while that fence stands; every other caller (Take readback, progress) keeps
+// the epoch binding. See grokStaleLease for the table.
+func (s *Service) grokSubscriptionLeaseView(ctx context.Context, tx *store.Tx, id, lease, machine, instance domain.ID, allowStale bool) (store.Record, domain.Account, domain.SubscriptionLease, error) {
 	r, a, err := grokSubscriptionAccount(tx, id, 0)
 	if err != nil {
 		return r, a, domain.SubscriptionLease{}, err
@@ -171,7 +176,10 @@ func (s *Service) grokSubscriptionLeaseView(ctx context.Context, tx *store.Tx, i
 		return r, a, domain.SubscriptionLease{}, subscriptionDenied()
 	}
 	l := st.Lease
-	if actor.Type != domain.WorkerDevice || actor.DeviceID != l.DeviceID || l.MachineID != machine || l.InstanceID != instance || l.Epoch != s.subscriptionServerEpoch() {
+	if actor.Type != domain.WorkerDevice || actor.DeviceID != l.DeviceID || l.MachineID != machine || l.InstanceID != instance {
+		return r, a, domain.SubscriptionLease{}, subscriptionDenied()
+	}
+	if l.Epoch != s.subscriptionServerEpoch() && !(allowStale && st.RecoveryRequired) {
 		return r, a, domain.SubscriptionLease{}, subscriptionDenied()
 	}
 	if err := currentInstance(tx, machine, instance); err != nil {
@@ -265,6 +273,38 @@ func (s *Service) grokExecuteRecoveryView(ctx context.Context, tx *store.Tx, id,
 		return r, a, err
 	}
 	return r, a, nil
+}
+
+// grokStaleLease is the one table of a lease that predates the server's current
+// epoch. A restart fences every account for the leases it cannot vouch for, and
+// the fence stands until the lease is gone. The original Worker is the only
+// party that can prove its private home was cleaned, so only its Finish may
+// resolve the lease; the server never retires a lease on its own, because a
+// credential the Worker still holds must not be redistributed.
+//
+//	Finish by                                      | cleanup confirmed | result
+//	exact owner (device, machine, instance, lease) | yes               | lease released, fence cleared, health restored
+//	exact owner                                    | no                | lease and fence kept; the owner may report again
+//	any other Worker, Runner Device or instance    | any               | denied before any write
+//	exact owner, account not fenced                | any               | denied (a stale lease is always fenced by the restart)
+//
+// A rotated credential reported by the stale execution is published exactly like
+// a current one: the same identity, generation and rotation checks apply. The
+// health after the release is restored from the operation the restart settled
+// (an accepted logout keeps readiness revoked, a refresh returns to the health
+// it was admitted under) and is ready otherwise.
+func (s *Service) grokStaleLease(l *domain.SubscriptionLease) bool {
+	return l != nil && l.Epoch != s.subscriptionServerEpoch()
+}
+
+// grokHealthAfterStaleRelease is the health an account returns to once its stale
+// lease is released and the fence is cleared.
+func grokHealthAfterStaleRelease(st *domain.SubscriptionState, lease domain.SubscriptionLease) domain.AccountHealth {
+	o := st.ServerOperation
+	if o != nil && o.Epoch == lease.Epoch && o.State == domain.SubscriptionFailed && (o.Action == domain.SubscriptionLogout || o.Action == domain.SubscriptionRefresh) {
+		return grokHealthAfterQueuedFence(*o)
+	}
+	return domain.AccountReady
 }
 
 // grokOriginalTake reports whether a Take addresses exactly the account's
@@ -473,7 +513,7 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 	var generation domain.ID
 	var leaseRevision uint64
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
-		_, _, view, err := s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+		_, _, view, err := s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, false)
 		if err == nil {
 			generation, leaseRevision = view.Generation, view.Revision
 		}
@@ -507,7 +547,7 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		if err := tx.Authorize(); err != nil {
 			return err
 		}
-		_, a, _, err := s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+		_, a, _, err := s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, false)
 		if err != nil || a.Subscription.RecoveryRequired {
 			return subscriptionDenied()
 		}
@@ -658,7 +698,7 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 				return err
 			}
 			var err error
-			_, original, _, err = s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+			_, original, _, err = s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, true)
 			if recoveryShape && (err != nil || original.Subscription.RecoveryRequired) {
 				if _, fenced, recoveryErr := s.grokExecuteRecoveryView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance); recoveryErr == nil {
 					original, err, recovery = fenced, nil, true
@@ -675,9 +715,13 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		// original lease; only that lease's exact Worker, instance and epoch (checked
 		// by the lease view above) may report Finish again. Every other fence blocks.
 		retry := lease.Action == domain.SubscriptionLogout && state.RecoveryRequired
+		// A lease of an earlier server epoch is fenced by the restart, whatever its
+		// action: its exact owner's Finish is the only way to release it
+		// (grokStaleLease).
+		stale := s.grokStaleLease(lease)
 		if recovery {
 			s.logger.WarnContext(ctx, "grok_subscription_execute_recovery_cleanup", "account_id", input.Account, "lease_id", input.Lease)
-		} else if state.RecoveryRequired && !retry || state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
+		} else if state.RecoveryRequired && !retry && !stale || state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
 			return nil, rpc.Error(subscriptionDenied(), c)
 		}
 		owned = !recovery
@@ -800,13 +844,13 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			if recovery {
 				r, a, err = s.grokExecuteRecoveryView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
 			} else {
-				r, a, _, err = s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+				r, a, _, err = s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, true)
 			}
 			if err != nil {
 				return nil, err
 			}
 			state := a.Subscription
-			if !recovery && (state.RecoveryRequired && lease.Action != domain.SubscriptionLogout || state.Generation != input.Generation) {
+			if !recovery && (state.RecoveryRequired && lease.Action != domain.SubscriptionLogout && !stale || state.Generation != input.Generation) {
 				return nil, subscriptionDenied()
 			}
 			if lease.Action == domain.SubscriptionLogout && (state.RevokedGeneration == "" || state.RevokedGeneration != lease.Generation) {
@@ -872,6 +916,15 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 					// Confirmed cleanup settles a fence left by an earlier unconfirmed one.
 					state.RecoveryRequired = false
 					state.RevokedGeneration = ""
+				}
+				if stale && !recovery {
+					// The restart's fence stood for this lease. The exact owner proved
+					// the process exit and the private-home removal, so the lease is
+					// gone and the fence with it; health returns to what the operation
+					// the restart settled implies. (An execute lease's cleanup-only
+					// recovery restores its own health above.)
+					state.RecoveryRequired = false
+					a.Health = grokHealthAfterStaleRelease(state, *lease)
 				}
 				if usable && lease.Action == domain.SubscriptionExecute {
 					if !unchanged {

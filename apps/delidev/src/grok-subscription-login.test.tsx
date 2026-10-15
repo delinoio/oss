@@ -1693,21 +1693,27 @@ async function startDevice(f: ReturnType<typeof fixture>) {
 const nativeActions = (f: ReturnType<typeof fixture>) =>
   f.native.mock.calls.map((call) => call[1]);
 
-it("accepts only the fixed accounts.x.ai device verification page and matching code", () => {
+it("accepts only accounts.x.ai verification addresses by the shared string rule and a matching code", () => {
   expect(grokDeviceVerification(DEVICE_URL, DEVICE_CODE)).toBe(true);
   expect(
     grokDeviceVerification("https://accounts.x.ai/oauth2/device", DEVICE_CODE),
+  ).toBe(true);
+  // The provider may choose another absolute path and safe routing parameters.
+  expect(
+    grokDeviceVerification(
+      `https://accounts.x.ai/activate?source=cli&user_code=${DEVICE_CODE}`,
+      DEVICE_CODE,
+    ),
   ).toBe(true);
   const rejected: Array<[string, string, string]> = [
     ["host", "https://auth.x.ai/oauth2/device", DEVICE_CODE],
     ["lookalike", "https://accounts.x.ai.evil.test/oauth2/device", DEVICE_CODE],
     ["scheme", "http://accounts.x.ai/oauth2/device", DEVICE_CODE],
-    ["path", "https://accounts.x.ai/oauth2/token", DEVICE_CODE],
     ["port", "https://accounts.x.ai:8443/oauth2/device", DEVICE_CODE],
     ["credentials", "https://u@accounts.x.ai/oauth2/device", DEVICE_CODE],
     ["fragment", `${DEVICE_URL}#x`, DEVICE_CODE],
-    ["extra query", `${DEVICE_URL}&next=1`, DEVICE_CODE],
-    ["foreign query", "https://accounts.x.ai/oauth2/device?x=1", DEVICE_CODE],
+    ["unsafe query value", `${DEVICE_URL}&next=https://evil.test`, DEVICE_CODE],
+    ["repeated query key", `${DEVICE_URL}&a=1&a=2`, DEVICE_CODE],
     ["mismatched code", DEVICE_URL, "WXYZ-9876"],
     ["lowercase code", DEVICE_URL, "abcd-1234"],
     ["short code", "https://accounts.x.ai/oauth2/device", "AB"],
@@ -1723,6 +1729,7 @@ interface DeviceVerificationCase {
   name: string;
   url: string;
   userCode: string;
+  server: boolean;
   native: boolean;
   renderer: boolean;
 }
@@ -1744,9 +1751,13 @@ it("matches the shared device verification URL table", () => {
     expect(grokDeviceVerification(row.url, row.userCode), row.name).toBe(
       row.renderer,
     );
-  // Every row the native host rejects is also rejected by the renderer.
-  for (const row of urlFixtures.deviceVerification)
+  // Every row the native host rejects is also rejected by the renderer, and the
+  // server (which receives the displayed code too) agrees with the renderer on
+  // every row: the server never publishes an address the desktop cannot open.
+  for (const row of urlFixtures.deviceVerification) {
     if (!row.native) expect(row.renderer, row.name).toBe(false);
+    expect(row.server, row.name).toBe(row.renderer);
+  }
 });
 
 it("matches the shared Grok authorization URL table", () => {

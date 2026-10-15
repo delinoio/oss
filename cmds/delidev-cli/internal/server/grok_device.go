@@ -65,23 +65,18 @@ func (s *Service) grokDeviceClock() grokClock {
 
 // grokDeviceLoginSteps runs discovery, the device authorization, the poll loop
 // and the identity checks of one device login.
-func (s *Service) grokDeviceLoginSteps(ctx, parent context.Context, id domain.ID, original domain.ServerSubscriptionOperation) (outcome grokOutcome) {
+func (s *Service) grokDeviceLoginSteps(ctx, parent context.Context, guard *grokLoginGuard, id domain.ID, original domain.ServerSubscriptionOperation) (outcome grokOutcome) {
 	fail := func(state domain.SubscriptionLoginState, code domain.Code, step grokLoginStep) grokOutcome {
 		return grokOutcome{state: state, code: code, step: step, claimed: outcome.claimed}
 	}
-	// interrupted classifies the end of a wait: explicit cancellation is
-	// canceled and the operation window is expired. Server shutdown after the
-	// exchange claim is recovery: the device code lives only in memory, so a
-	// shutdown between polls cannot resume the login any more than a crash can,
-	// and the claim must not be forgotten.
+	// interrupted classifies the end of a wait or a refused send: explicit
+	// cancellation is canceled and the operation window is expired. Server
+	// shutdown after the exchange claim is recovery: the device code lives only in
+	// memory, so a shutdown between polls cannot resume the login any more than a
+	// crash can, and the claim must not be forgotten. An unreadable durable state
+	// after the claim is recovery as well (see grokInterruptedOutcome).
 	interrupted := func(step grokLoginStep) grokOutcome {
-		if parent.Err() != nil && outcome.claimed {
-			return grokOutcome{state: domain.SubscriptionRecovery, code: domain.RecoveryRequired, step: step, claimed: true}
-		}
-		if parent.Err() == nil && !time.Now().Before(original.ExpiresAt) {
-			return fail(domain.SubscriptionExpired, domain.Canceled, step)
-		}
-		return fail(domain.SubscriptionCanceled, domain.Canceled, step)
+		return grokInterruptedOutcome(parent, guard, original, outcome.claimed, true, step)
 	}
 	transport, closeTransport := s.grokOAuthRoundTripper()
 	defer closeTransport()
@@ -140,8 +135,15 @@ func (s *Service) grokDeviceLoginSteps(ctx, parent context.Context, id domain.ID
 			// the device code: re-read the durable operation immediately before
 			// sending, so a cancellation that precedes a poll never lets it go out.
 			// (The first poll is gated by the claim transaction itself.)
-			if s.grokLoginStopped(ctx, id, original) {
+			switch s.grokLoginDurable(ctx, id, original) {
+			case grokDurableStopped:
 				s.logGrok(ctx, slog.LevelInfo, "grok_device_poll_skipped", original, grokStepPoll, "reason", "operation_stopped", "polls", polls)
+				return interrupted(grokStepPoll)
+			case grokDurableUnreadable:
+				// The claim is durable but its state cannot be confirmed: no further
+				// poll is sent and the claimed login stays in recovery.
+				guard.unconfirmed.Store(true)
+				s.logGrok(ctx, slog.LevelWarn, "grok_device_poll_skipped", original, grokStepPoll, "reason", "state_unreadable", "polls", polls)
 				return interrupted(grokStepPoll)
 			}
 		} else {

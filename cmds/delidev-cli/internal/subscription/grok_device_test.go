@@ -3,8 +3,11 @@ package subscription_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -431,6 +434,64 @@ func TestGrokDeviceResponsesRejectRepeatedMembers(t *testing.T) {
 	})
 }
 
+// Member names are case-sensitive in every device answer: a differently cased
+// spelling of a member the client reads is an alias, never the member, so it can
+// neither stand in for a pending/denied answer nor sit beside a valid
+// authorization member.
+func TestGrokDeviceResponsesRequireExactMemberNames(t *testing.T) {
+	t.Run("poll answer", func(t *testing.T) {
+		for _, body := range []string{
+			`{"ERROR":"authorization_pending"}`,
+			`{"Error":"slow_down"}`,
+			`{"ERROR":"access_denied"}`,
+			`{"error":"authorization_pending","Error_Description":"wait"}`,
+			`{"error":"expired_token","Access_Token":"x"}`,
+		} {
+			idp := grokidp.New(t)
+			client, endpoints := deviceFixture(t, idp)
+			grant, err := client.RequestDeviceAuthorization(context.Background(), endpoints)
+			if err != nil {
+				t.Fatal(err)
+			}
+			idp.TokenStatus, idp.TokenBody = http.StatusBadRequest, body
+			_, _, err = client.PollDeviceToken(context.Background(), endpoints, grant.DeviceCode)
+			if reason, ok := subscription.GrokOAuthFailure(err); !ok || reason != subscription.GrokReasonTokenUncertain {
+				t.Fatalf("a poll answer %s was not uncertain: %v", body, err)
+			}
+			grant.Clear()
+		}
+	})
+	t.Run("authorization", func(t *testing.T) {
+		const control = `"device_code":"abc","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","verification_uri_complete":"https://accounts.x.ai/d?user_code=ABCD-1234","expires_in":60,"interval":5`
+		for name, body := range map[string]string{
+			"only an upper-case device_code":         `{"DEVICE_CODE":"abc","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","expires_in":60}`,
+			"an upper-case alias beside device_code": `{` + control + `,"DEVICE_CODE":"other"}`,
+			"a capitalized user_code alias":          `{` + control + `,"User_Code":"WXYZ-9999"}`,
+			"a verification_uri alias":               `{` + control + `,"Verification_URI":"https://accounts.x.ai/other"}`,
+			"a verification_uri_complete alias":      `{` + control + `,"VERIFICATION_URI_COMPLETE":"https://accounts.x.ai/other"}`,
+			"an expires_in alias":                    `{` + control + `,"Expires_In":1}`,
+			"an interval alias":                      `{` + control + `,"INTERVAL":1}`,
+		} {
+			t.Run(name, func(t *testing.T) {
+				idp := grokidp.New(t)
+				idp.DeviceBody = body
+				client, endpoints := deviceFixture(t, idp)
+				if _, err := client.RequestDeviceAuthorization(context.Background(), endpoints); err == nil {
+					t.Fatalf("a device authorization with %s was accepted", name)
+				}
+			})
+		}
+		idp := grokidp.New(t)
+		idp.DeviceBody = `{` + control + `,"unrelated":1}`
+		client, endpoints := deviceFixture(t, idp)
+		grant, err := client.RequestDeviceAuthorization(context.Background(), endpoints)
+		if err != nil {
+			t.Fatalf("the control authorization was refused: %v", err)
+		}
+		grant.Clear()
+	})
+}
+
 // The device code is validated on its decoded value, not on one particular JSON
 // encoding: a legal escape of a printable character is accepted, anything that
 // decodes to a forbidden byte is not.
@@ -481,6 +542,48 @@ func TestGrokDeviceCodeIsValidatedAfterDecoding(t *testing.T) {
 			client, endpoints := deviceFixture(t, idp)
 			if _, err := client.RequestDeviceAuthorization(context.Background(), endpoints); err == nil {
 				t.Fatal("a device code that decodes to a forbidden byte was accepted")
+			}
+		})
+	}
+}
+
+// The server, the desktop renderer and the native host share one verification
+// address rule. This test runs the table that the renderer (vitest) and the
+// native host (cargo) also run, so no layer can accept an address another layer
+// refuses: every row states the expected result of each layer, and the server
+// (which also receives the displayed user code) must match the renderer.
+func TestGrokVerificationURLMatchesTheSharedDesktopTable(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "apps", "delidev", "src", "grok-url-validation-fixtures.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures struct {
+		DeviceVerification []struct {
+			Name     string `json:"name"`
+			URL      string `json:"url"`
+			UserCode string `json:"userCode"`
+			Server   bool   `json:"server"`
+			Native   bool   `json:"native"`
+			Renderer bool   `json:"renderer"`
+		} `json:"deviceVerification"`
+	}
+	if err := json.Unmarshal(raw, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	if len(fixtures.DeviceVerification) < 60 {
+		t.Fatalf("the shared table has only %d rows", len(fixtures.DeviceVerification))
+	}
+	for _, row := range fixtures.DeviceVerification {
+		t.Run(row.Name, func(t *testing.T) {
+			_, valid := subscription.GrokVerificationURL(row.URL, row.UserCode)
+			if got := valid && subscription.GrokUserCodeValid(row.UserCode); got != row.Server {
+				t.Fatalf("server verdict %v, table says %v for %q", got, row.Server, row.URL)
+			}
+			if row.Server != row.Renderer {
+				t.Fatalf("the table lets the server (%v) and the renderer (%v) disagree", row.Server, row.Renderer)
+			}
+			if row.Server && !row.Native {
+				t.Fatalf("the server accepts %q but the native host refuses it", row.URL)
 			}
 		})
 	}

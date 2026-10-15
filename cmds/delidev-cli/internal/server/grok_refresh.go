@@ -73,10 +73,15 @@ const (
 	// grokFaultFenceWrite runs before the recovery-fence write of an unsettled
 	// operation; its error stands for a failed fence write.
 	grokFaultFenceWrite grokFaultPoint = "fence_write"
+
+	// grokFaultDurableRead runs before every read of the durable login operation
+	// by the watcher and the pre-poll check; an error stands for an unreadable
+	// durable state.
+	grokFaultDurableRead grokFaultPoint = "durable_read"
 )
 
 // grokFault runs the test seam at point. Only the lease and settlement points
-// (after_lease, after_stage, after_persist) act on the returned error: it stands
+// (after_lease, after_stage, after_persist) and durable_read act on the returned error: it stands
 // for a write whose outcome is reported as failed, and after_lease and
 // after_persist stand for a commit whose acknowledgement was lost although the
 // transaction committed.
