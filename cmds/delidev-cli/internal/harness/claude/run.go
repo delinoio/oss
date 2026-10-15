@@ -43,7 +43,13 @@ func (b *ExecutionBinding) observeRunState(raw []byte) (*NativeRunObservation, e
 			"command_completed", b.command == CommandCompleted, "command_cancelled", b.command == CommandCancelled,
 			"active_content", len(b.content.active), "open_tools", b.content.openTools)
 	}
-	if !shapeValid || value.Subtype != "session_state_changed" || value.State == b.runState {
+	// Parallel native tool callbacks can independently report the same active
+	// loop state. Their distinct envelope UUIDs are checked by Observe; these
+	// level observations neither settle callbacks nor establish an idle boundary.
+	// Keep terminal/replayed evidence strict even when active states repeat.
+	repeatedActive := value.State == b.runState && b.initialized && !b.finished &&
+		(value.State == RunRunning || value.State == RunRequiresAction)
+	if !shapeValid || value.Subtype != "session_state_changed" || (value.State == b.runState && !repeatedActive) {
 		return nil, lifecycleUncertain()
 	}
 	switch value.State {
@@ -54,7 +60,7 @@ func (b *ExecutionBinding) observeRunState(raw []byte) (*NativeRunObservation, e
 			return nil, lifecycleUncertain()
 		}
 	case RunRequiresAction:
-		if b.runState != RunRunning || !b.initialized {
+		if (b.runState != RunRunning && !repeatedActive) || !b.initialized {
 			return nil, lifecycleUncertain()
 		}
 	case RunIdle:
