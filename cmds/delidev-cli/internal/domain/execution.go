@@ -94,7 +94,7 @@ func ResolveExecutionConfiguration(agentID ID, agentRevision uint64, agent Agent
 		}
 		parts[i] = template.Contents
 	}
-	result = ExecutionConfiguration{ImageInputDeclared: agent.Harness == Codex && slices.Contains(model.InputModalities, "image"), AgentID: agentID, AgentRevision: agentRevision, Harness: agent.Harness, ModelID: agent.ModelID, ModelRevision: modelRevision, ProviderID: model.ProviderID, SubscriptionService: model.SubscriptionService, Subscription: model.SourceKind == SubscriptionModel, NativeModel: model.NativeID, Effort: agent.Effort, Options: agent.Options, Accounts: slices.Clone(agent.Accounts), Routing: policy, Templates: slices.Clone(templates), Instructions: strings.Join(parts, "\n\n")}
+	result = ExecutionConfiguration{ImageInputDeclared: agent.Harness.ImageInputs() && slices.Contains(model.InputModalities, "image"), AgentID: agentID, AgentRevision: agentRevision, Harness: agent.Harness, ModelID: agent.ModelID, ModelRevision: modelRevision, ProviderID: model.ProviderID, SubscriptionService: model.SubscriptionService, Subscription: model.SourceKind == SubscriptionModel, NativeModel: model.NativeID, Effort: agent.Effort, Options: agent.Options, Accounts: slices.Clone(agent.Accounts), Routing: policy, Templates: slices.Clone(templates), Instructions: strings.Join(parts, "\n\n")}
 	if agent.Options.ApprovalsReviewer == CodexReviewerAuto && !result.Subscription {
 		result.ReviewerNativeModel = CodexReviewerNativeModel
 	}
@@ -162,7 +162,7 @@ func (c ExecutionConfiguration) Validate() error {
 	agent := Agent{Name: "Retained configuration", Harness: c.Harness, ModelID: c.ModelID, Model: &InlineModel{ModelIdentity: ModelIdentity{ProviderID: c.ProviderID, SubscriptionService: c.SubscriptionService, NativeID: c.NativeModel}, MetadataSource: Unknown}, Effort: c.Effort, Options: c.Options, Accounts: c.Accounts, Routing: &c.Routing, Templates: ids}
 	model := Model{Name: "Retained model", NativeID: c.NativeModel, ProviderID: c.ProviderID, Harnesses: []Harness{c.Harness}, MetadataSource: Unknown}
 	if c.ImageInputDeclared {
-		if c.Harness != Codex {
+		if !c.Harness.ImageInputs() {
 			return UnsupportedImageInput()
 		}
 		model.InputModalities = []string{"image"}

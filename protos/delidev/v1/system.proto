@@ -65,6 +65,10 @@ enum SystemCapability {
   // Independently negotiated OpenCode General Chat Fork profile v2: completed plain
   // timed reasoning parts are cloned with their messages. Requires capability 26.
   SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1 = 104;
+  // Independently negotiated OpenCode image attachments: the server freezes and
+  // dispatches them only to a Worker that holds the paired Worker capability.
+  // Requires capability 45.
+  SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1 = 105;
   SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1 = 90;
   SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1 = 93;
   SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1 = 89;

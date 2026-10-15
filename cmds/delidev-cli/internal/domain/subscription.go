@@ -238,12 +238,13 @@ type ServerSubscriptionOperation struct {
 	ClaudeDiagnostic *NativeSubscriptionDiagnostic `json:"claude_diagnostic,omitempty"`
 	// Optional server-owned Grok login fields. A Grok browser login reuses
 	// LoginMethod (callback), CallbackForwarded, CodeSubmissionID and
-	// CodeConsumed; GrokDiagnostic reports a failed login. They hold no URL,
-	// code, verifier, state, nonce or token.
-	GrokDiagnostic *GrokDiagnostic          `json:"grok_diagnostic,omitempty"`
+	// CodeConsumed. GrokDiagnostic is the Grok Build counterpart of Diagnostic:
+	// at most one of the two is set, selected by the account's subscription
+	// service. It holds no URL, code, verifier, state, nonce or token.
 	StartedAt      time.Time                `json:"started_at"`
 	ExpiresAt      time.Time                `json:"expires_at"`
 	Diagnostic     *CodexDiagnostic         `json:"diagnostic,omitempty"`
+	GrokDiagnostic *GrokDiagnostic          `json:"grok_diagnostic,omitempty"`
 	CleanupPhase   SubscriptionCleanupPhase `json:"cleanup_phase,omitempty"`
 }
 

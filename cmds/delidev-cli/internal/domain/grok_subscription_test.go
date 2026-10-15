@@ -17,6 +17,14 @@ func grokServerLoginFixture() Account {
 	}}
 }
 
+// grokLoginDiagnosticFixture builds the locally reconstructed diagnostic of a
+// failed Go-owned login step, correlated with its operation.
+func grokLoginDiagnosticFixture(code Code, operation ID) *GrokDiagnostic {
+	d := GrokErrorDiagnostic(WithGrokDiagnostic("", GrokLogin, Fail(code, "The native operation did not complete.", "Check the Grok Build installation.")))
+	d.CorrelationID = string(operation)
+	return d
+}
+
 func TestGrokServerLoginStateValidation(t *testing.T) {
 	valid := grokServerLoginFixture()
 	if err := valid.Subscription.Validate(valid); err != nil {
@@ -36,7 +44,7 @@ func TestGrokServerLoginStateValidation(t *testing.T) {
 	diagnostic := func(a *Account) {
 		a.Subscription.ServerOperation.State = SubscriptionFailed
 		a.Subscription.Pending = nil
-		a.Subscription.ServerOperation.GrokDiagnostic = &GrokDiagnostic{Phase: GrokDiagnosticLogin, Code: Unauthenticated, CorrelationID: a.Subscription.ServerOperation.ID}
+		a.Subscription.ServerOperation.GrokDiagnostic = grokLoginDiagnosticFixture(Unauthenticated, a.Subscription.ServerOperation.ID)
 	}
 	failed := grokServerLoginFixture()
 	diagnostic(&failed)
@@ -48,19 +56,27 @@ func TestGrokServerLoginStateValidation(t *testing.T) {
 		"bad submission id":         func(a *Account) { a.Subscription.ServerOperation.CodeSubmissionID = "not-an-id" },
 		"code method":               func(a *Account) { a.Subscription.ServerOperation.LoginMethod = SubscriptionBrowserCode },
 		"diagnostic while preparing": func(a *Account) {
-			a.Subscription.ServerOperation.GrokDiagnostic = &GrokDiagnostic{Phase: GrokDiagnosticLogin, Code: Internal, CorrelationID: a.Subscription.ServerOperation.ID}
+			a.Subscription.ServerOperation.GrokDiagnostic = grokLoginDiagnosticFixture(Internal, a.Subscription.ServerOperation.ID)
 		},
 		"foreign correlation": func(a *Account) {
 			diagnostic(a)
-			a.Subscription.ServerOperation.GrokDiagnostic.CorrelationID = NewID()
+			a.Subscription.ServerOperation.GrokDiagnostic.CorrelationID = string(NewID())
 		},
 		"unknown phase": func(a *Account) {
 			diagnostic(a)
-			a.Subscription.ServerOperation.GrokDiagnostic.Phase = 99
+			a.Subscription.ServerOperation.GrokDiagnostic.Phase = GrokPhase("invented")
 		},
 		"unknown code": func(a *Account) {
 			diagnostic(a)
 			a.Subscription.ServerOperation.GrokDiagnostic.Code = "invented"
+		},
+		"canceled carries diagnostic": func(a *Account) {
+			diagnostic(a)
+			a.Subscription.ServerOperation.State = SubscriptionCanceled
+		},
+		"codex and grok diagnostics together": func(a *Account) {
+			diagnostic(a)
+			a.Subscription.ServerOperation.Diagnostic = &CodexDiagnostic{CorrelationID: string(a.Subscription.ServerOperation.ID)}
 		},
 		"chatgpt carries grok diagnostic": func(a *Account) {
 			diagnostic(a)

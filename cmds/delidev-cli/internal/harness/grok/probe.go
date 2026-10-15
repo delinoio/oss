@@ -29,6 +29,7 @@ type ProbeConfig struct {
 type probePhase string
 
 const (
+	versionPhase          probePhase = "version"
 	profilePhase          probePhase = "profile"
 	runtimePhase          probePhase = "runtime"
 	inspectPhase          probePhase = "inspect"
@@ -40,20 +41,54 @@ const (
 	cleanupPhase          probePhase = "cleanup"
 )
 
+// diagnosticPhase maps an internal probe phase to the closed wire-visible
+// diagnostic phase. Unknown phases fall back to profile validation.
+func (p probePhase) diagnosticPhase() domain.GrokPhase {
+	switch p {
+	case versionPhase:
+		return domain.GrokVersion
+	case runtimePhase, launchPhase, initializePhase:
+		return domain.GrokRuntime
+	case authenticatePhase:
+		return domain.GrokLogin
+	case cleanupPhase:
+		return domain.GrokCleanup
+	default:
+		// profile, inspect, runtime-inspect and workspace-inspect validate the
+		// native configuration profile.
+		return domain.GrokProfile
+	}
+}
+
 func incompatible() *domain.Error {
 	return domain.Fail(domain.Unsupported, "The installed Grok Build does not match its native protocol profile.", "Select a validated Grok Build version and refresh protocol discovery; no account execution was authorized.")
+}
+
+// inspectFailurePhase classifies a failed configuration inspection. Its owned
+// process runs to completion inside inspect, so a recovery-required result
+// means that process was not confirmed stopped: that is a cleanup failure, not
+// a profile validation failure.
+func inspectFailurePhase(err error) probePhase {
+	if domain.SafeError(err).Code == domain.RecoveryRequired {
+		return cleanupPhase
+	}
+	return inspectPhase
 }
 
 func probeUnavailable() *domain.Error {
 	return domain.Fail(domain.Unavailable, "Grok Build did not complete native initialization.", "Inspect the selected Worker installation and refresh protocol discovery.")
 }
 
+// closeProbeHandle closes the owned native process scope. Tests replace it to
+// inject an unconfirmed cleanup after the real scope is closed.
+var closeProbeHandle = func(h *process.Handle) error { return h.Close() }
+
 func probeCleanupRequired() *domain.Error {
 	return domain.Fail(domain.RecoveryRequired, "Grok Build probe cleanup could not be confirmed.", "Retain the private runtime and reconcile its owned process before retrying.")
 }
 
 func nativeLaunchError(err error) error {
-	problem := domain.SafeError(err)
+	problem := domain.SafeTimeoutError(err)
 	if problem.Code == domain.Internal {
 		// Cancellation can close the private controller socket during Resume.
 		// Its raw OS error includes a local path and is not protocol evidence.
@@ -67,11 +102,19 @@ func nativeLaunchError(err error) error {
 // session creation, permission response or model request. Its success proves
 // only this installed protocol profile, not any account or execution feature.
 func Probe(ctx context.Context, config ProbeConfig) (returned error) {
-	phase := profilePhase
+	phase := versionPhase
+	// cleanupFailure records unconfirmed owned-process cleanup. It never replaces
+	// an earlier probe failure; see domain.WithGrokCleanupFailure.
+	var cleanupFailure *domain.Error
 	defer func() {
+		// The first native failure keeps its original phase and the installed
+		// version; no native text enters the diagnostic. An unconfirmed cleanup
+		// alone is reported as the cleanup phase, and after an earlier failure it
+		// only upgrades the transport error to recovery_required.
+		returned = domain.WithGrokCleanupFailure(config.Version, phase.diagnosticPhase(), returned, cleanupFailure)
 		if config.Process.Logger != nil {
 			if returned != nil {
-				config.Process.Logger.WarnContext(ctx, "Grok Build native handshake failed", "owner_id", config.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code)
+				config.Process.Logger.WarnContext(ctx, "Grok Build native handshake failed", "owner_id", config.Process.OwnerID, "phase", phase, "diagnostic_phase", domain.GrokErrorDiagnostic(returned).Phase, "diagnostic_code", domain.GrokErrorDiagnostic(returned).Code, "code", domain.SafeError(returned).Code, "cleanup_unconfirmed", cleanupFailure != nil, "installed_version", config.Version, "supported_version", domain.GrokSubscriptionBaselineVersion)
 			} else {
 				config.Process.Logger.InfoContext(ctx, "Grok Build native handshake completed", "owner_id", config.Process.OwnerID)
 			}
@@ -90,6 +133,7 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 	defer cancel()
 	phase = inspectPhase
 	if err := inspect(bounded, config.Process); err != nil {
+		phase = inspectFailurePhase(err)
 		return err
 	}
 	config.Process.Args = []string{"--no-auto-update", "agent", "stdio"}
@@ -108,17 +152,21 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 	var writeDone chan struct{}
 	defer func() {
 		cancel()
-		cleanup := h.Close()
+		cleanup := closeProbeHandle(h)
 		_ = h.Wait()
 		if writeDone != nil {
 			<-writeDone
 		}
 		if cleanup != nil {
-			phase, returned = cleanupPhase, probeCleanupRequired()
-			return
+			cleanupFailure = probeCleanupRequired()
 		}
 		// The stdout drain can detect another/partial frame after the first
 		// response woke us. Cleanup joins that drain before accepting success.
+		// A late protocol failure precedes the cleanup outcome, so it is the first
+		// failure; the frame buffer is only read once the drain is joined. Wait
+		// joins it whether or not the owned scope was confirmed stopped, so an
+		// unconfirmed cleanup never hides a partial trailing frame: that frame is
+		// the first failure and the cleanup only upgrades the transport error.
 		if returned == nil {
 			if problem := wire.status(); problem != nil {
 				returned = problem
@@ -164,7 +212,7 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 		if problem := wire.status(); problem != nil {
 			return problem
 		}
-		return domain.SafeError(bounded.Err())
+		return domain.SafeTimeoutError(bounded.Err())
 	case <-h.Done():
 		if problem := wire.status(); problem != nil {
 			return problem
@@ -180,7 +228,7 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 		return problem
 	}
 	if err := bounded.Err(); err != nil {
-		return domain.SafeError(err)
+		return domain.SafeTimeoutError(err)
 	}
 	if !wire.initialized() {
 		return probeUnavailable()

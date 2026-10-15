@@ -1486,6 +1486,12 @@ export function SessionView({
   }, [live.generation, conversationActive]);
   const images = useImageDraft(`session:${id}`);
   const [imageTextLimit, setImageTextLimit] = useState(false);
+  const initialConfiguration = object(
+    object(data.initial_execution).configuration,
+  );
+  const imageConfiguration = text(initialConfiguration.harness)
+    ? initialConfiguration
+    : object(object(object(data.fork).snapshot).configuration);
   const imageRoute = useImageRoute(
     text(data.machine_id),
     text(data.agent_id),
@@ -1493,10 +1499,8 @@ export function SessionView({
     images.images.length > 0,
     object(data.fork).sidechat_parent_snapshot
       ? "sidechat"
-      : text(object(object(data.initial_execution).configuration).harness) ||
-          text(
-            object(object(object(data.fork).snapshot).configuration).harness,
-          ),
+      : text(imageConfiguration.harness),
+    imageConfiguration.image_input_declared === true,
   );
   const send = useRetainedMutation(
     `enqueue:${id}`,

@@ -166,7 +166,14 @@ it("preserves Worker updates and Network settings in the original full Runner in
   );
   fireEvent.click(screen.getByText("Inspect saved Runner"));
   expect(await screen.findByText("Worker updates")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Network settings" })).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: "Network settings" })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(
+    screen.queryByRole("dialog", { name: "Runner Device network" }),
+  ).toBeNull();
   client.clear();
 });
 it("uses one presenter and preserves the original draft after its calling task disappears", async () => {

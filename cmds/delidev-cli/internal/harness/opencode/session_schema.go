@@ -218,8 +218,11 @@ func validateStoredInput(raw []byte, settings SessionSettings, input sessionInpu
 		return false, sessionProblem()
 	}
 	var parts []json.RawMessage
-	if json.Unmarshal(root["parts"], &parts) != nil || parts == nil || len(parts) > 1 {
+	if json.Unmarshal(root["parts"], &parts) != nil || parts == nil || len(parts) > input.partTotal() {
 		return false, sessionProblem()
+	}
+	if len(input.images) > 0 {
+		return validateStoredImageInput(parts, input)
 	}
 	// The pinned native implementation synchronizes the user-message row before
 	// each part. A valid original row with an empty array is a real intermediate

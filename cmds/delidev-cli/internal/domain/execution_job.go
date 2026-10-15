@@ -99,6 +99,31 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 	return nil
 }
 
+// ValidateImages checks the image profile of an assignment: attachments need a
+// harness with a verified native adapter, the frozen image declaration, no
+// Sidechat policy, references owned by the assignment Runner and the harness
+// specific text and size bounds. A text-only assignment is always valid.
+func (i ExecutionJobInput) ValidateImages() error {
+	if len(i.Input.Attachments) == 0 {
+		return nil
+	}
+	if !i.Configuration.Harness.ImageInputs() || !i.Configuration.ImageInputDeclared || i.Configuration.SidechatPolicy != "" {
+		return UnsupportedImageInput()
+	}
+	for _, ref := range i.Input.Attachments {
+		if ref.MachineID != i.MachineID {
+			return InvalidImageInput()
+		}
+	}
+	if err := ValidateImageAttachmentsForHarness(i.Configuration.Harness, i.Input.Attachments); err != nil {
+		return err
+	}
+	if !ImagePromptAllowed(i.Configuration.Harness, i.Input.Prompt) {
+		return UnsupportedImageInput()
+	}
+	return nil
+}
+
 func (i ExecutionJobInput) Validate() error {
 	if i.SidechatRetry != nil && i.SidechatRetry.Validate(i) != nil {
 		return SidechatUnavailable()
@@ -109,15 +134,8 @@ func (i ExecutionJobInput) Validate() error {
 	if i.NativeImageGeneration && (i.Configuration.Harness != Codex || !i.Configuration.Subscription || i.Configuration.SidechatPolicy != "") {
 		return Fail(Unsupported, "This assignment cannot generate native images.", "Preserve the original managed OpenAI execution profile.")
 	}
-	if len(i.Input.Attachments) > 0 {
-		if i.Configuration.Harness != Codex || !i.Configuration.ImageInputDeclared || i.Configuration.SidechatPolicy != "" {
-			return UnsupportedImageInput()
-		}
-		for _, ref := range i.Input.Attachments {
-			if ref.MachineID != i.MachineID {
-				return InvalidImageInput()
-			}
-		}
+	if err := i.ValidateImages(); err != nil {
+		return err
 	}
 	if i.Remediation != nil && (i.Remediation.Validate() != nil || i.Input.Mode != ExecuteMode || i.Configuration.Harness != Codex || (i.Configuration.Options.Permission != PermissionWorkspaceWrite && i.Configuration.Options.Permission != PermissionFullAccess)) {
 		return Fail(Unsupported, "This assignment lacks the verified manual Git profile.", "Select the Codex execution profile with explicit write permission for manual PR fixes.")
