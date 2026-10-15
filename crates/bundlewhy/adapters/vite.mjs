@@ -24,7 +24,7 @@ import {
 } from "./common.mjs";
 
 export const ADAPTER_ID = "bundlewhy-collector-vite";
-export const ADAPTER_VERSION = "1";
+export const ADAPTER_VERSION = "2";
 
 /** Plugins that the adapter adds; they are not part of the project's config. */
 const BUNDLEWHY_PLUGIN_NAMES = new Set([
@@ -173,6 +173,86 @@ export function configFileIdentityPlugin(configFile, dependencies = []) {
   };
 }
 
+/**
+ * Names under which an emitted chunk can list an external module in its
+ * `imports`: the module id and, when `output.paths` is configured, the string
+ * that replaces the id in the generated code. `paths` is a record or a
+ * function in Rolldown. Both names are returned so that a rewritten external
+ * is recognised whichever form the chunk list carries; a name shared with an
+ * emitted chunk is then treated as ambiguous by the Rust side.
+ */
+export function externalImportNames(externalIds, paths) {
+  const names = new Set(externalIds);
+  for (const id of externalIds) {
+    let rendered;
+    try {
+      rendered =
+        typeof paths === "function"
+          ? paths(id)
+          : paths !== null && typeof paths === "object"
+            ? paths[id]
+            : undefined;
+    } catch {
+      // A throwing user function cannot be evaluated again here; the id alone
+      // is still recorded.
+      rendered = undefined;
+    }
+    if (typeof rendered === "string") names.add(rendered);
+  }
+  return names;
+}
+
+/**
+ * The chunk-graph fields of one emitted chunk: static imports, the imports
+ * that refer to an external module, and dynamic imports.
+ */
+export function chunkGraphFields(chunk, externalNames) {
+  const imports = [...(chunk.imports ?? [])];
+  return {
+    imports,
+    externalImports: imports.filter((name) => externalNames.has(name)),
+    dynamicImports: [...(chunk.dynamicImports ?? [])],
+  };
+}
+
+/**
+ * Replaces the chunk graph of the snapshot with the one of the finished build.
+ *
+ * A `generateBundle` hook of an output-only plugin (`output.plugins`) can run
+ * after the collector whatever its own ordering is, so the snapshot taken in
+ * the hook may predate a rewrite of chunk imports. The value `build()` returns
+ * is the bundle after every hook. Chunk modules and sizes stay as snapshotted;
+ * only the import lists come from the final bundle. When the final output
+ * cannot be read or its chunk files differ from the snapshot, the import lists
+ * are dropped, which the analysis reads as "no chunk import data" and never as
+ * proof.
+ */
+export function applyFinalChunkGraph(collection, buildResult, externalNames) {
+  const results = Array.isArray(buildResult) ? buildResult : [buildResult];
+  const output = results.length === 1 ? results[0]?.output : null;
+  const finalChunks = new Map();
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      if (item?.type === "chunk") finalChunks.set(item.fileName, item);
+    }
+  }
+  const matches =
+    finalChunks.size === collection.chunks.length &&
+    collection.chunks.every((chunk) => finalChunks.has(chunk.file));
+  for (const chunk of collection.chunks) {
+    delete chunk.imports;
+    delete chunk.externalImports;
+    delete chunk.dynamicImports;
+    if (matches) {
+      Object.assign(
+        chunk,
+        chunkGraphFields(finalChunks.get(chunk.file), externalNames),
+      );
+    }
+  }
+  return matches;
+}
+
 function collectorPlugin(state) {
   return {
     name: "bundlewhy:collector",
@@ -230,95 +310,114 @@ function collectorPlugin(state) {
         column: log.loc?.column ?? null,
       });
     },
-    generateBundle(_options, bundle) {
-      // generateBundle runs once per output. bundlewhy analyzes one output;
-      // several outputs are rejected after the build instead of silently
-      // keeping only the last one.
-      state.outputs += 1;
-      if (state.outputs > 1) return;
-      const modules = new Map();
-      const recordModule = (id) => {
-        if (modules.has(id)) return modules.get(id);
-        const info = this.getModuleInfo(id);
-        const file = moduleFilePath(id);
-        const pkg = file ? nearestPackage(file) : null;
-        const record = {
-          id,
-          path: file,
-          virtual: !file,
-          isEntry: Boolean(info?.isEntry),
-          importers: info?.importers ?? [],
-          dynamicImporters: info?.dynamicImporters ?? [],
-          importedIds: info?.importedIds ?? [],
-          dynamicImportedIds: info?.dynamicallyImportedIds ?? [],
-          exports: info?.exports ?? null,
-          usedExports: null,
-          moduleSideEffects: info
-            ? summarizeValue(info.moduleSideEffects)
-            : null,
-          // Hook-level values (getModuleInfo) list only what JavaScript hooks
-          // set. They never reflect the configured
-          // treeshake.moduleSideEffects option, which Rolldown consults next,
-          // or a value that a native plugin (such as Vite's resolver) set.
-          treeshakeSideEffects: configuredModuleSideEffects(
-            state.moduleSideEffectsOption,
+    // `enforce: "post"` orders the plugin, while hook ordering is separate: a
+    // project plugin with `generateBundle: { order: "post" }` can still add,
+    // remove or rewrite chunk imports. This hook is post-ordered as well, so the
+    // snapshot is taken from the final bundle.
+    generateBundle: {
+      order: "post",
+      handler(options, bundle) {
+        // generateBundle runs once per output. bundlewhy analyzes one output;
+        // several outputs are rejected after the build instead of silently
+        // keeping only the last one.
+        state.outputs += 1;
+        if (state.outputs > 1) return;
+        const modules = new Map();
+        const recordModule = (id) => {
+          if (modules.has(id)) return modules.get(id);
+          const info = this.getModuleInfo(id);
+          const file = moduleFilePath(id);
+          const pkg = file ? nearestPackage(file) : null;
+          const record = {
             id,
-          ),
-          inputFormat: info?.inputFormat ?? "unknown",
-          renderedLength: 0,
-          included: false,
-          chunks: [],
-          bailouts: [],
-          reasons: [],
-          packageName: pkg?.name ?? null,
-          packageVersion: pkg?.version ?? null,
-          packageDir: pkg?.dir ?? null,
-          // A string is a glob, so quote it: the bare words `true` and
-          // `false` stay reserved for the boolean values.
-          packageSideEffects:
-            pkg && pkg.sideEffects !== null
-              ? typeof pkg.sideEffects === "string"
-                ? JSON.stringify(pkg.sideEffects)
-                : summarizeValue(pkg.sideEffects)
+            path: file,
+            virtual: !file,
+            isEntry: Boolean(info?.isEntry),
+            importers: info?.importers ?? [],
+            dynamicImporters: info?.dynamicImporters ?? [],
+            importedIds: info?.importedIds ?? [],
+            dynamicImportedIds: info?.dynamicallyImportedIds ?? [],
+            exports: info?.exports ?? null,
+            usedExports: null,
+            moduleSideEffects: info
+              ? summarizeValue(info.moduleSideEffects)
               : null,
+            // Hook-level values (getModuleInfo) list only what JavaScript hooks
+            // set. They never reflect the configured
+            // treeshake.moduleSideEffects option, which Rolldown consults next,
+            // or a value that a native plugin (such as Vite's resolver) set.
+            treeshakeSideEffects: configuredModuleSideEffects(
+              state.moduleSideEffectsOption,
+              id,
+            ),
+            inputFormat: info?.inputFormat ?? "unknown",
+            renderedLength: 0,
+            included: false,
+            chunks: [],
+            bailouts: [],
+            reasons: [],
+            packageName: pkg?.name ?? null,
+            packageVersion: pkg?.version ?? null,
+            packageDir: pkg?.dir ?? null,
+            // A string is a glob, so quote it: the bare words `true` and
+            // `false` stay reserved for the boolean values.
+            packageSideEffects:
+              pkg && pkg.sideEffects !== null
+                ? typeof pkg.sideEffects === "string"
+                  ? JSON.stringify(pkg.sideEffects)
+                  : summarizeValue(pkg.sideEffects)
+                : null,
+          };
+          modules.set(id, record);
+          return record;
         };
-        modules.set(id, record);
-        return record;
-      };
 
-      for (const id of this.getModuleIds()) recordModule(id);
+        const externalIds = new Set();
+        for (const id of this.getModuleIds()) {
+          recordModule(id);
+          if (this.getModuleInfo(id)?.code === null) externalIds.add(id);
+        }
 
-      const chunks = [];
-      const assets = [];
-      for (const output of Object.values(bundle)) {
-        if (output.type === "asset") {
-          assets.push(output.fileName);
-          continue;
+        state.externalNames = externalImportNames(externalIds, options?.paths);
+        const chunks = [];
+        const assets = [];
+        for (const output of Object.values(bundle)) {
+          if (output.type === "asset") {
+            assets.push(output.fileName);
+            continue;
+          }
+          const chunkModules = [];
+          for (const [id, rendered] of Object.entries(output.modules)) {
+            const record = recordModule(id);
+            record.renderedLength += rendered.renderedLength;
+            record.usedExports = [
+              ...new Set([
+                ...(record.usedExports ?? []),
+                ...rendered.renderedExports,
+              ]),
+            ];
+            record.included = record.included || rendered.renderedLength > 0;
+            record.chunks.push(output.fileName);
+            chunkModules.push(id);
+          }
+          chunks.push({
+            file: output.fileName,
+            isEntry: output.isEntry,
+            isDynamicEntry: output.isDynamicEntry,
+            facadeModuleId: output.facadeModuleId ?? null,
+            modules: chunkModules,
+            map: output.sourcemapFileName ?? `${output.fileName}.map`,
+            // Emitted chunk graph: static imports are loaded together with the
+            // chunk, dynamic imports are requested later. `imports` mixes
+            // emitted chunk files with external specifiers, so
+            // `externalImports` names the entries that refer to an external
+            // module (by id or by its `output.paths` replacement). The lists
+            // are replaced by the finished build's bundle after `build()`.
+            ...chunkGraphFields(output, state.externalNames),
+          });
         }
-        const chunkModules = [];
-        for (const [id, rendered] of Object.entries(output.modules)) {
-          const record = recordModule(id);
-          record.renderedLength += rendered.renderedLength;
-          record.usedExports = [
-            ...new Set([
-              ...(record.usedExports ?? []),
-              ...rendered.renderedExports,
-            ]),
-          ];
-          record.included = record.included || rendered.renderedLength > 0;
-          record.chunks.push(output.fileName);
-          chunkModules.push(id);
-        }
-        chunks.push({
-          file: output.fileName,
-          isEntry: output.isEntry,
-          isDynamicEntry: output.isDynamicEntry,
-          facadeModuleId: output.facadeModuleId ?? null,
-          modules: chunkModules,
-          map: output.sourcemapFileName ?? `${output.fileName}.map`,
-        });
-      }
-      state.collection = { modules: [...modules.values()], chunks, assets };
+        state.collection = { modules: [...modules.values()], chunks, assets };
+      },
     },
   };
 }
@@ -351,6 +450,7 @@ await runAdapter(async (request) => {
     moduleSideEffectsOption: undefined,
     collection: null,
     outputs: 0,
+    externalNames: new Set(),
     warnings: [],
     logs: [],
   };
@@ -465,8 +565,9 @@ await runAdapter(async (request) => {
           },
           mergedConfig,
         );
+  let buildResult;
   try {
-    await vite.build(buildConfig);
+    buildResult = await vite.build(buildConfig);
   } catch (error) {
     if (error instanceof AdapterError) throw error;
     // Configuration evaluation errors were classified before the build. An
@@ -494,6 +595,22 @@ await runAdapter(async (request) => {
       "The bundlewhy collector plugin did not observe a client bundle",
       "Confirm the configuration builds a client bundle (library and SSR builds are not supported).",
     );
+  }
+
+  // Output-only plugins can rewrite chunk imports after the collector's
+  // `generateBundle` hook ran; take the chunk graph from the finished build.
+  const finalGraph = applyFinalChunkGraph(
+    state.collection,
+    buildResult,
+    state.externalNames,
+  );
+  if (!finalGraph) {
+    emit({
+      event: "progress",
+      stage: "collecting",
+      message:
+        "The finished build's chunks differ from the snapshot; chunk import data is omitted",
+    });
   }
 
   const resolved = state.resolved ?? {};

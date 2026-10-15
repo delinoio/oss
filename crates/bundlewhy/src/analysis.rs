@@ -1816,6 +1816,12 @@ mod tests {
                 .iter()
                 .any(|evidence| evidence.provenance.contains("INEFFECTIVE_DYNAMIC_IMPORT"))
         );
+        // The finding is tied to the importer and the emitted chunk.
+        assert!(dynamic.evidence.iter().any(|evidence| {
+            evidence.provenance == "emitted chunk graph"
+                && evidence.detail.contains("src/main.js")
+                && evidence.detail.contains("assets/index-BHjrzQLH.js")
+        }));
         assert_absent(
             diagnostics,
             "vite/ineffective-dynamic-import",

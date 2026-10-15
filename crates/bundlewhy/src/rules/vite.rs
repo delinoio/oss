@@ -1,6 +1,6 @@
 //! Vite rules backed by Rolldown module info, rendered modules and engine logs.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::{Context, DiagnosticDraft, FinalEmission, RuleId};
 use crate::model::{Condition, ConditionOutcome, Evidence, EvidenceStatus};
@@ -790,6 +790,285 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
     }
 }
 
+/// One requesting chunk of a proven dynamic importer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ChunkRoute {
+    /// Chunk file that holds the importer.
+    requester_chunk: String,
+    /// Chunk files from the requesting chunk to the chunk that holds the target
+    /// module. A single entry means that both live in the same chunk.
+    chunk_path: Vec<String>,
+}
+
+/// One dynamic importer whose `import()` of the target module does not load a
+/// separate chunk, proven from the emitted chunk graph in every chunk that
+/// holds the importer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RequesterProof {
+    /// Collected module id of the dynamic importer.
+    importer: String,
+    /// One route per chunk that holds the importer.
+    routes: Vec<ChunkRoute>,
+}
+
+/// What the emitted chunk graph says about one dynamic importer. The only
+/// claim the rule makes is `Proven`; the other two outcomes are kept apart so
+/// that an importer the graph cannot classify is never reported as unaffected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RequesterOutcome {
+    /// Every chunk that holds the importer already holds the module or loads
+    /// its chunk through static imports.
+    Proven(Vec<ChunkRoute>),
+    /// The graph is complete for every requesting chunk and at least one of
+    /// them reaches the module only through a dynamic request.
+    SeparateChunk,
+    /// The graph cannot decide: the importer is not emitted, the module has no
+    /// chunk, or a chunk on the way has no trusted static import list.
+    Unknown,
+}
+
+/// Result of walking the static imports of one requesting chunk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ChunkSearch {
+    /// The chunk that holds the target is reached; the path starts at the
+    /// requesting chunk.
+    Found(Vec<String>),
+    /// The target is not reached. `complete` is false when a visited chunk has
+    /// no trusted static import list or an edge is ambiguous, so a missing
+    /// edge could still exist.
+    NotFound { complete: bool },
+}
+
+/// Walks the trusted static imports of `requester_chunk` and looks for a chunk
+/// in `targets`. A chunk whose static imports were not collected contributes no
+/// edges and makes the search incomplete. An `imports` entry is a chunk edge
+/// only when it names an emitted chunk and the adapter did not list it as an
+/// external import: Rolldown mixes both kinds in `OutputChunk.imports`, and an
+/// external named like an emitted chunk cannot be told apart from that chunk,
+/// so such an entry makes the search incomplete instead of becoming an edge.
+/// An entry that names no emitted chunk is an external leaf and cannot hold the
+/// target.
+///
+/// `cancelled` is polled before each chunk is expanded. A cancelled search
+/// returns an incomplete `NotFound`, which the caller discards together with
+/// the rest of the cancelled run.
+fn search_static_closure(
+    chunks: &BTreeMap<&str, &crate::collect::CollectedChunk>,
+    requester_chunk: &str,
+    targets: &BTreeSet<&str>,
+    cancelled: &dyn Fn() -> bool,
+) -> ChunkSearch {
+    let mut parents: BTreeMap<&str, &str> = BTreeMap::new();
+    let mut seen: BTreeSet<&str> = BTreeSet::from([requester_chunk]);
+    let mut queue: VecDeque<&str> = VecDeque::from([requester_chunk]);
+    let mut complete = true;
+    while let Some(current) = queue.pop_front() {
+        if cancelled() {
+            return ChunkSearch::NotFound { complete: false };
+        }
+        if targets.contains(current) {
+            let mut path = vec![current.to_owned()];
+            let mut cursor = current;
+            while let Some(parent) = parents.get(cursor) {
+                path.push((*parent).to_owned());
+                cursor = parent;
+            }
+            path.reverse();
+            return ChunkSearch::Found(path);
+        }
+        let Some(chunk) = chunks.get(current) else {
+            // The requesting chunk itself is not an emitted chunk.
+            complete = false;
+            continue;
+        };
+        let (Some(imports), Some(externals)) = (&chunk.imports, &chunk.external_imports) else {
+            complete = false;
+            continue;
+        };
+        for next in imports {
+            if !chunks.contains_key(next.as_str()) {
+                continue;
+            }
+            if externals.contains(next) {
+                complete = false;
+                continue;
+            }
+            if seen.insert(next.as_str()) {
+                parents.insert(next.as_str(), current);
+                queue.push_back(next.as_str());
+            }
+        }
+    }
+    ChunkSearch::NotFound { complete }
+}
+
+/// The chunk sets that the dynamic `import()` of one requesting chunk must
+/// reach for the request to be ineffective; every set needs a static route.
+///
+/// A module that lives in one chunk is requested from that chunk. Rolldown's
+/// `inlineCommonChunks` can copy a module into several chunks, and the
+/// `import()` then loads one specific copy, so a static route to any other copy
+/// proves nothing. The requesting chunk's `dynamicImports` name the copies it
+/// loads through a separate request: each of them must itself be reached
+/// statically. Without such an edge the request resolved to a copy that is
+/// already loaded, and any copy counts. `None` means the graph cannot decide
+/// because the dynamic imports of the requesting chunk were not collected.
+fn required_target_sets<'a>(
+    chunks: &BTreeMap<&str, &crate::collect::CollectedChunk>,
+    requester_chunk: &str,
+    module_chunks: &BTreeSet<&'a str>,
+) -> Option<Vec<BTreeSet<&'a str>>> {
+    if module_chunks.len() <= 1 {
+        return Some(vec![module_chunks.clone()]);
+    }
+    let dynamic_imports = chunks.get(requester_chunk)?.dynamic_imports.as_ref()?;
+    let requested: Vec<&'a str> = module_chunks
+        .iter()
+        .copied()
+        .filter(|copy| dynamic_imports.iter().any(|name| name == copy))
+        .collect();
+    if requested.is_empty() {
+        Some(vec![module_chunks.clone()])
+    } else {
+        Some(
+            requested
+                .into_iter()
+                .map(|copy| BTreeSet::from([copy]))
+                .collect(),
+        )
+    }
+}
+
+/// Classifies one dynamic importer from the searches of all its requesting
+/// chunks. The single place where chunk searches turn into an outcome:
+/// `Proven` needs every requesting chunk to be found, any undecidable search
+/// makes the importer `Unknown`, and only a complete graph without a route
+/// yields `SeparateChunk`. `module_chunks` are all chunks that print the
+/// module; see [`required_target_sets`] for the copies of one module.
+/// `cancelled` is polled before every requesting chunk and inside each search;
+/// a cancelled classification is `Unknown` and is discarded with the run.
+fn classify_requester(
+    chunks: &BTreeMap<&str, &crate::collect::CollectedChunk>,
+    requester_chunks: &[&str],
+    module_chunks: &BTreeSet<&str>,
+    cancelled: &dyn Fn() -> bool,
+) -> RequesterOutcome {
+    if requester_chunks.is_empty() || module_chunks.is_empty() {
+        return RequesterOutcome::Unknown;
+    }
+    let mut routes = Vec::new();
+    let mut complete = true;
+    for chunk in requester_chunks {
+        if cancelled() {
+            return RequesterOutcome::Unknown;
+        }
+        let Some(target_sets) = required_target_sets(chunks, chunk, module_chunks) else {
+            complete = false;
+            continue;
+        };
+        let mut found: Option<Vec<String>> = None;
+        let mut reached_all = true;
+        for targets in &target_sets {
+            match search_static_closure(chunks, chunk, targets, cancelled) {
+                ChunkSearch::Found(chunk_path) => {
+                    found.get_or_insert(chunk_path);
+                }
+                ChunkSearch::NotFound { complete: done } => {
+                    complete &= done;
+                    reached_all = false;
+                }
+            }
+        }
+        if let (true, Some(chunk_path)) = (reached_all, found) {
+            routes.push(ChunkRoute {
+                requester_chunk: (*chunk).to_owned(),
+                chunk_path,
+            });
+        }
+    }
+    if routes.len() == requester_chunks.len() {
+        RequesterOutcome::Proven(routes)
+    } else if complete {
+        RequesterOutcome::SeparateChunk
+    } else {
+        RequesterOutcome::Unknown
+    }
+}
+
+/// Importers of one module, split by what the emitted chunk graph proves.
+#[derive(Debug, Default)]
+struct RequesterClassification {
+    proven: Vec<RequesterProof>,
+    /// Importers that load the module through a separate chunk.
+    separate_chunk: Vec<String>,
+    /// Importers the graph cannot classify.
+    unknown: Vec<String>,
+}
+
+/// Evaluates every dynamic importer of `module` on its own through
+/// [`classify_requester`].
+fn classify_dynamic_requesters(
+    context: &Context<'_>,
+    module: &crate::collect::CollectedModule,
+) -> RequesterClassification {
+    let chunks: BTreeMap<&str, &crate::collect::CollectedChunk> = context
+        .collection
+        .chunks
+        .iter()
+        .map(|chunk| (chunk.file.as_str(), chunk))
+        .collect();
+    let module_chunks: BTreeSet<&str> = module.chunks.iter().map(String::as_str).collect();
+    let mut classification = RequesterClassification::default();
+    let cancelled = || context.is_cancelled();
+    for importer_id in &module.dynamic_importers {
+        if cancelled() {
+            break;
+        }
+        let requester_chunks: Vec<&str> = context
+            .modules
+            .get(importer_id.as_str())
+            .map(|importer| importer.chunks.iter().map(String::as_str).collect())
+            .unwrap_or_default();
+        match classify_requester(&chunks, &requester_chunks, &module_chunks, &cancelled) {
+            RequesterOutcome::Proven(routes) => classification.proven.push(RequesterProof {
+                importer: importer_id.clone(),
+                routes,
+            }),
+            RequesterOutcome::SeparateChunk => {
+                classification.separate_chunk.push(importer_id.clone());
+            }
+            RequesterOutcome::Unknown => classification.unknown.push(importer_id.clone()),
+        }
+    }
+    classification
+}
+
+fn describe_chunk_path(path: &[String]) -> String {
+    match path {
+        [only] => format!("the same chunk {only}"),
+        _ => format!(
+            "chunk {} through static imports {}",
+            path[path.len() - 1],
+            path.join(" -> ")
+        ),
+    }
+}
+
+/// Describes every requesting chunk of a proven importer.
+fn describe_routes(routes: &[ChunkRoute]) -> String {
+    routes
+        .iter()
+        .map(|route| {
+            format!(
+                "in {} it loads {}",
+                route.requester_chunk,
+                describe_chunk_path(&route.chunk_path)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     let collection = context.collection;
     let logged: BTreeSet<&str> = collection
@@ -798,26 +1077,42 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
         .filter(|log| log.code.as_deref() == Some("INEFFECTIVE_DYNAMIC_IMPORT"))
         .filter_map(|log| log.id.as_deref())
         .collect();
-    let dynamic_entry_chunks: BTreeSet<&str> = collection
-        .chunks
-        .iter()
-        .filter(|chunk| chunk.is_dynamic_entry)
-        .map(|chunk| chunk.file.as_str())
-        .collect();
     for module in &collection.modules {
         // Poll before each module so Ctrl+C or `CancelRun` is observed between
         // modules instead of after the final-emission attribution of every one.
         if context.is_cancelled() {
             return;
         }
-        let graph_blocked = !module.importers.is_empty()
-            && !module.dynamic_importers.is_empty()
-            && !module
-                .chunks
-                .iter()
-                .any(|chunk| dynamic_entry_chunks.contains(chunk.as_str()));
+        if !module.included {
+            continue;
+        }
         let engine_reported = logged.contains(module.id.as_str());
-        if !module.included || !(graph_blocked || engine_reported) {
+        // The emitted chunk graph decides per requester. A static importer in
+        // an unrelated lazy chunk does not put the module into the requester's
+        // static closure, so importer lists alone never prove the claim.
+        let RequesterClassification {
+            proven: proofs,
+            separate_chunk,
+            unknown,
+        } = if !module.importers.is_empty() && !module.dynamic_importers.is_empty() {
+            let classification = classify_dynamic_requesters(context, module);
+            // A cancelled traversal yields a partial classification: stop
+            // before it is turned into a finding.
+            if context.is_cancelled() {
+                return;
+            }
+            classification
+        } else {
+            RequesterClassification::default()
+        };
+        if proofs.is_empty() && !engine_reported {
+            if !module.importers.is_empty() && !module.dynamic_importers.is_empty() {
+                tracing::debug!(
+                    module = %context.module_log_label(&module.id),
+                    dynamic_importers = module.dynamic_importers.len(),
+                    "vite ineffective-dynamic-import not reported: no requester is proven by the emitted chunk graph"
+                );
+            }
             continue;
         }
         let display = context.module_display(module);
@@ -841,6 +1136,53 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
                 dynamic_importers.join(", ")
             ),
         )];
+        if !proofs.is_empty() {
+            let lines: Vec<String> = proofs
+                .iter()
+                .map(|proof| {
+                    format!(
+                        "{} requests the module, which it already loads ({})",
+                        context.module_display_by_id(&proof.importer),
+                        describe_routes(&proof.routes)
+                    )
+                })
+                .collect();
+            evidence.push(Evidence::new(
+                "emitted chunk graph",
+                EvidenceStatus::Confirmed,
+                format!("{}.", lines.join("; ")),
+            ));
+        }
+        if !separate_chunk.is_empty() {
+            let names: Vec<String> = separate_chunk
+                .iter()
+                .map(|id| context.module_display_by_id(id))
+                .collect();
+            evidence.push(Evidence::new(
+                "emitted chunk graph",
+                EvidenceStatus::Confirmed,
+                format!(
+                    "These dynamic importers load the module through a separate chunk and are not \
+                     affected: {}.",
+                    names.join(", ")
+                ),
+            ));
+        }
+        if !unknown.is_empty() {
+            let names: Vec<String> = unknown
+                .iter()
+                .map(|id| context.module_display_by_id(id))
+                .collect();
+            evidence.push(Evidence::new(
+                "emitted chunk graph",
+                EvidenceStatus::Unavailable,
+                format!(
+                    "The emitted chunk graph is incomplete for these dynamic importers, so they \
+                     are neither reported nor ruled out: {}.",
+                    names.join(", ")
+                ),
+            ));
+        }
         if engine_reported {
             evidence.push(Evidence::new(
                 "rolldown log INEFFECTIVE_DYNAMIC_IMPORT",
@@ -849,13 +1191,35 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
                  chunk.",
             ));
         }
+        let loaded_detail = if proofs.is_empty() {
+            "Reported by Rolldown INEFFECTIVE_DYNAMIC_IMPORT".to_owned()
+        } else {
+            format!(
+                "Requesting chunks: {}",
+                proofs
+                    .iter()
+                    .flat_map(|proof| proof.routes.iter())
+                    .map(|route| route.requester_chunk.as_str())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
         drafts.push(DiagnosticDraft {
             rule: RuleId::ViteIneffectiveDynamicImport,
             status: EvidenceStatus::Confirmed,
             title: format!("Dynamic import of {display} does not create a separate chunk"),
-            summary: "The module is also imported statically, so it is bundled with its static \
-                      importer and the dynamic import only defers evaluation, not loading."
-                .to_owned(),
+            summary: if proofs.is_empty() {
+                "Rolldown reported that the dynamic import does not move the module into another \
+                 chunk, so it only defers evaluation, not loading."
+                    .to_owned()
+            } else {
+                "For the dynamic importers named in the evidence, the module is already part of \
+                 the requesting chunk or of a chunk it imports statically, so the dynamic import \
+                 only defers evaluation, not loading."
+                    .to_owned()
+            },
             conditions: vec![
                 Condition::new(
                     "The module is imported only dynamically",
@@ -863,9 +1227,10 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
                     format!("Static importers: {}", static_importers.join(", ")),
                 ),
                 Condition::new(
-                    "The module is emitted in its own dynamic chunk",
+                    "The dynamic import loads the module from a chunk that the requester does not \
+                     already load",
                     ConditionOutcome::Unmet,
-                    format!("Emitted in: {}", module.chunks.join(", ")),
+                    format!("{loaded_detail}. Emitted in: {}", module.chunks.join(", ")),
                 ),
             ],
             located,
@@ -1225,5 +1590,724 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod ineffective_dynamic_import_tests {
+    use super::*;
+    use crate::collect::{CollectedChunk, CollectedModule, Collection, EngineLog};
+
+    fn module(id: &str, importers: &[&str], dynamic: &[&str], chunks: &[&str]) -> CollectedModule {
+        CollectedModule {
+            id: id.to_owned(),
+            path: Some(format!("/project/{id}")),
+            included: true,
+            importers: importers.iter().map(|v| (*v).to_owned()).collect(),
+            dynamic_importers: dynamic.iter().map(|v| (*v).to_owned()).collect(),
+            chunks: chunks.iter().map(|v| (*v).to_owned()).collect(),
+            ..CollectedModule::default()
+        }
+    }
+
+    fn chunk(file: &str, imports: Option<&[&str]>) -> CollectedChunk {
+        CollectedChunk {
+            file: file.to_owned(),
+            imports: imports.map(|list| list.iter().map(|v| (*v).to_owned()).collect()),
+            external_imports: imports.map(|_| Vec::new()),
+            dynamic_imports: imports.map(|_| Vec::new()),
+            ..CollectedChunk::default()
+        }
+    }
+
+    /// A chunk with static imports and the chunks it requests dynamically.
+    fn chunk_with_dynamic(file: &str, imports: &[&str], dynamic: &[&str]) -> CollectedChunk {
+        CollectedChunk {
+            dynamic_imports: Some(dynamic.iter().map(|v| (*v).to_owned()).collect()),
+            ..chunk(file, Some(imports))
+        }
+    }
+
+    /// A chunk whose `imports` entries in `externals` name external modules.
+    fn chunk_with_externals(file: &str, imports: &[&str], externals: &[&str]) -> CollectedChunk {
+        CollectedChunk {
+            external_imports: Some(externals.iter().map(|v| (*v).to_owned()).collect()),
+            ..chunk(file, Some(imports))
+        }
+    }
+
+    fn run(collection: &Collection) -> Vec<DiagnosticDraft> {
+        let mut context = Context::new(
+            collection,
+            std::path::PathBuf::from("/project"),
+            "project".to_owned(),
+            Vec::new(),
+            crate::sources::SourceStore::new(false),
+        );
+        let mut drafts = Vec::new();
+        ineffective_dynamic_import(&mut context, &mut drafts);
+        drafts
+    }
+
+    fn engine_log(id: &str) -> EngineLog {
+        EngineLog {
+            code: Some("INEFFECTIVE_DYNAMIC_IMPORT".to_owned()),
+            id: Some(id.to_owned()),
+            ..EngineLog::default()
+        }
+    }
+
+    /// The target lives in its own chunk; its only static importer is another
+    /// lazy chunk. The entry's dynamic import loads a separate chunk.
+    fn lazy_route_collection() -> Collection {
+        Collection {
+            modules: vec![
+                module("src/entry.js", &[], &[], &["entry.js"]),
+                module("src/lazy-page.js", &[], &["src/entry.js"], &["page.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/lazy-page.js"],
+                    &["src/entry.js"],
+                    &["shared.js"],
+                ),
+            ],
+            chunks: vec![
+                chunk("entry.js", Some(&[])),
+                chunk("page.js", Some(&["shared.js"])),
+                chunk("shared.js", Some(&[])),
+            ],
+            ..Collection::default()
+        }
+    }
+
+    #[test]
+    fn static_importer_in_another_lazy_chunk_is_not_ineffective() {
+        assert!(run(&lazy_route_collection()).is_empty());
+    }
+
+    #[test]
+    fn same_chunk_requester_is_reported_with_chunk_evidence() {
+        let collection = Collection {
+            modules: vec![
+                module("src/main.js", &[], &[], &["main.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/main.js"],
+                    &["src/main.js"],
+                    &["main.js"],
+                ),
+            ],
+            chunks: vec![chunk("main.js", Some(&[]))],
+            ..Collection::default()
+        };
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].status, EvidenceStatus::Confirmed);
+        let graph = drafts[0]
+            .evidence
+            .iter()
+            .find(|e| e.provenance == "emitted chunk graph")
+            .expect("chunk graph evidence");
+        assert!(graph.detail.contains("src/main.js"), "{}", graph.detail);
+        assert!(graph.detail.contains("main.js"), "{}", graph.detail);
+        assert!(graph.detail.contains("same chunk"), "{}", graph.detail);
+    }
+
+    #[test]
+    fn requester_with_the_target_in_its_static_closure_is_reported() {
+        let mut collection = lazy_route_collection();
+        // The entry chunk now imports the shared chunk statically.
+        collection.chunks[0] = chunk("entry.js", Some(&["vendor.js"]));
+        collection
+            .chunks
+            .push(chunk("vendor.js", Some(&["shared.js"])));
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        let graph = drafts[0]
+            .evidence
+            .iter()
+            .find(|e| e.provenance == "emitted chunk graph")
+            .unwrap();
+        assert!(
+            graph.detail.contains("entry.js -> vendor.js -> shared.js"),
+            "{}",
+            graph.detail
+        );
+    }
+
+    #[test]
+    fn one_proven_requester_reports_and_names_the_unaffected_one() {
+        let mut collection = lazy_route_collection();
+        collection
+            .modules
+            .push(module("src/other.js", &[], &[], &["other.js"]));
+        collection.modules[2]
+            .dynamic_importers
+            .push("src/other.js".to_owned());
+        collection
+            .chunks
+            .push(chunk("other.js", Some(&["shared.js"])));
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        let details: Vec<&str> = drafts[0]
+            .evidence
+            .iter()
+            .filter(|e| e.provenance == "emitted chunk graph")
+            .map(|e| e.detail.as_str())
+            .collect();
+        assert_eq!(details.len(), 2, "{details:?}");
+        assert!(details[0].contains("src/other.js"), "{details:?}");
+        assert!(details[1].contains("not affected"), "{details:?}");
+        assert!(details[1].contains("src/entry.js"), "{details:?}");
+    }
+
+    #[test]
+    fn engine_log_keeps_the_finding_as_engine_reported_evidence() {
+        let mut collection = lazy_route_collection();
+        collection.logs.push(engine_log("src/shared.js"));
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        assert!(
+            drafts[0]
+                .evidence
+                .iter()
+                .any(|e| e.provenance.contains("INEFFECTIVE_DYNAMIC_IMPORT"))
+        );
+        assert!(drafts[0].summary.contains("Rolldown reported"));
+    }
+
+    #[test]
+    fn collection_without_chunk_imports_proves_only_the_same_chunk_case() {
+        // Old collection: no `imports` data on any chunk.
+        let mut collection = lazy_route_collection();
+        for chunk in &mut collection.chunks {
+            chunk.imports = None;
+            chunk.dynamic_imports = None;
+        }
+        assert!(run(&collection).is_empty());
+
+        let same_chunk = Collection {
+            modules: vec![
+                module("src/main.js", &[], &[], &["main.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/main.js"],
+                    &["src/main.js"],
+                    &["main.js"],
+                ),
+            ],
+            chunks: vec![chunk("main.js", None)],
+            ..Collection::default()
+        };
+        assert_eq!(run(&same_chunk).len(), 1);
+    }
+
+    #[test]
+    fn dynamic_importer_that_is_not_emitted_is_not_proven() {
+        let mut collection = lazy_route_collection();
+        collection.modules[0].chunks.clear();
+        assert!(run(&collection).is_empty());
+    }
+
+    /// One cell of the requester classification table.
+    struct Cell {
+        name: &'static str,
+        /// Chunks that hold the dynamic importer.
+        requesters: &'static [&'static str],
+        /// Chunks that hold the target module.
+        targets: &'static [&'static str],
+        /// Emitted chunks: (file, imports or None, entries of imports that are
+        /// externals).
+        graph: Vec<CollectedChunk>,
+        expected: RequesterOutcome,
+    }
+
+    fn route(requester_chunk: &str, path: &[&str]) -> ChunkRoute {
+        ChunkRoute {
+            requester_chunk: requester_chunk.to_owned(),
+            chunk_path: path.iter().map(|v| (*v).to_owned()).collect(),
+        }
+    }
+
+    #[test]
+    fn requester_classification_cells() {
+        let cells = vec![
+            Cell {
+                name: "requester chunk holds the target",
+                requesters: &["a.js"],
+                targets: &["a.js"],
+                graph: vec![chunk("a.js", Some(&[]))],
+                expected: RequesterOutcome::Proven(vec![route("a.js", &["a.js"])]),
+            },
+            Cell {
+                name: "target is reached through a transitive static import",
+                requesters: &["a.js"],
+                targets: &["c.js"],
+                graph: vec![
+                    chunk("a.js", Some(&["b.js"])),
+                    chunk("b.js", Some(&["c.js"])),
+                    chunk("c.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Proven(vec![route("a.js", &["a.js", "b.js", "c.js"])]),
+            },
+            Cell {
+                name: "complete graph without a static route is a separate chunk",
+                requesters: &["a.js"],
+                targets: &["c.js"],
+                graph: vec![chunk("a.js", Some(&[])), chunk("c.js", Some(&[]))],
+                expected: RequesterOutcome::SeparateChunk,
+            },
+            Cell {
+                name: "requester chunk without import data is unknown",
+                requesters: &["a.js"],
+                targets: &["c.js"],
+                graph: vec![chunk("a.js", None), chunk("c.js", Some(&[]))],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "chunk on the way without import data is unknown",
+                requesters: &["a.js"],
+                targets: &["c.js"],
+                graph: vec![
+                    chunk("a.js", Some(&["b.js"])),
+                    chunk("b.js", None),
+                    chunk("c.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "chunk without external import data is unknown",
+                requesters: &["a.js"],
+                targets: &["c.js"],
+                graph: vec![
+                    CollectedChunk {
+                        external_imports: None,
+                        ..chunk("a.js", Some(&["c.js"]))
+                    },
+                    chunk("c.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "importer that is not emitted is unknown",
+                requesters: &[],
+                targets: &["c.js"],
+                graph: vec![chunk("c.js", Some(&[]))],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "module without a chunk is unknown",
+                requesters: &["a.js"],
+                targets: &[],
+                graph: vec![chunk("a.js", Some(&[]))],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "every chunk of the importer keeps its own route",
+                requesters: &["a.js", "b.js"],
+                targets: &["c.js"],
+                graph: vec![
+                    chunk("a.js", Some(&["c.js"])),
+                    chunk("b.js", Some(&["x.js"])),
+                    chunk("x.js", Some(&["c.js"])),
+                    chunk("c.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Proven(vec![
+                    route("a.js", &["a.js", "c.js"]),
+                    route("b.js", &["b.js", "x.js", "c.js"]),
+                ]),
+            },
+            Cell {
+                name: "one requesting chunk with a separate chunk is not proven",
+                requesters: &["a.js", "b.js"],
+                targets: &["c.js"],
+                graph: vec![
+                    chunk("a.js", Some(&["c.js"])),
+                    chunk("b.js", Some(&[])),
+                    chunk("c.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::SeparateChunk,
+            },
+            Cell {
+                name: "a proven chunk next to an undecidable chunk is unknown",
+                requesters: &["a.js", "b.js"],
+                targets: &["c.js"],
+                graph: vec![
+                    chunk("a.js", Some(&["c.js"])),
+                    chunk("b.js", None),
+                    chunk("c.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "a separate chunk next to an undecidable chunk is unknown",
+                requesters: &["a.js", "b.js"],
+                targets: &["c.js"],
+                graph: vec![
+                    chunk("a.js", Some(&[])),
+                    chunk("b.js", None),
+                    chunk("c.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "external specifier that is not an emitted chunk is a leaf",
+                requesters: &["a.js"],
+                targets: &["c.js"],
+                graph: vec![
+                    chunk_with_externals("a.js", &["react"], &["react"]),
+                    chunk("c.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::SeparateChunk,
+            },
+            Cell {
+                name: "external named like the target chunk is not an edge",
+                requesters: &["a.js"],
+                targets: &["vendor.js"],
+                graph: vec![
+                    chunk_with_externals("a.js", &["vendor.js"], &["vendor.js"]),
+                    chunk("vendor.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "external named like an intermediate chunk is not an edge",
+                requesters: &["a.js"],
+                targets: &["c.js"],
+                graph: vec![
+                    chunk_with_externals("a.js", &["b.js"], &["b.js"]),
+                    chunk("b.js", Some(&["c.js"])),
+                    chunk("c.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "known limit: an external rendered under another string is followed",
+                requesters: &["a.js"],
+                targets: &["vendor.js"],
+                // The adapter names externals by module id. An external whose
+                // id differs from the string Rolldown rendered cannot be
+                // matched, so the rendered name is read as the emitted chunk.
+                graph: vec![
+                    chunk_with_externals("a.js", &["vendor.js"], &["./vendor.js"]),
+                    chunk("vendor.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Proven(vec![route("a.js", &["a.js", "vendor.js"])]),
+            },
+            Cell {
+                name: "copies: the dynamic import loads a copy outside the static closure",
+                requesters: &["a.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("a.js", &["copy-a.js"], &["copy-b.js"]),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::SeparateChunk,
+            },
+            Cell {
+                name: "copies: the dynamic import loads a copy inside the static closure",
+                requesters: &["a.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("a.js", &["copy-b.js"], &["copy-b.js"]),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Proven(vec![route("a.js", &["a.js", "copy-b.js"])]),
+            },
+            Cell {
+                name: "copies: no dynamic edge to a copy and a static route to one",
+                requesters: &["a.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("a.js", &["copy-a.js"], &[]),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Proven(vec![route("a.js", &["a.js", "copy-a.js"])]),
+            },
+            Cell {
+                name: "copies: dynamic imports were not collected",
+                requesters: &["a.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    CollectedChunk {
+                        dynamic_imports: None,
+                        ..chunk("a.js", Some(&["copy-a.js"]))
+                    },
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "copies: every requested copy must be in the static closure",
+                requesters: &["a.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("a.js", &["copy-a.js"], &["copy-a.js", "copy-b.js"]),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::SeparateChunk,
+            },
+            Cell {
+                name: "cycle without the target terminates as a separate chunk",
+                requesters: &["a.js"],
+                targets: &["c.js"],
+                graph: vec![
+                    chunk("a.js", Some(&["b.js"])),
+                    chunk("b.js", Some(&["a.js"])),
+                    chunk("c.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::SeparateChunk,
+            },
+        ];
+        for cell in cells {
+            let chunks: BTreeMap<&str, &CollectedChunk> = cell
+                .graph
+                .iter()
+                .map(|chunk| (chunk.file.as_str(), chunk))
+                .collect();
+            let targets: BTreeSet<&str> = cell.targets.iter().copied().collect();
+            assert_eq!(
+                classify_requester(&chunks, cell.requesters, &targets, &|| false),
+                cell.expected,
+                "{}",
+                cell.name
+            );
+        }
+    }
+
+    fn evidence_details(draft: &DiagnosticDraft) -> Vec<&str> {
+        draft
+            .evidence
+            .iter()
+            .filter(|e| e.provenance == "emitted chunk graph")
+            .map(|e| e.detail.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn copied_module_is_ineffective_only_for_the_copy_the_import_loads() {
+        let collection = |dynamic: &[&str]| Collection {
+            modules: vec![
+                module("src/entry.js", &[], &[], &["entry.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/entry.js"],
+                    &["src/entry.js"],
+                    &["copy-a.js", "copy-b.js"],
+                ),
+            ],
+            chunks: vec![
+                chunk_with_dynamic("entry.js", &["copy-a.js"], dynamic),
+                chunk("copy-a.js", Some(&[])),
+                chunk("copy-b.js", Some(&[])),
+            ],
+            ..Collection::default()
+        };
+        // The import() loads copy B, which the entry does not load statically.
+        assert!(run(&collection(&["copy-b.js"])).is_empty());
+        // The import() resolved to the copy that the entry already loads.
+        let drafts = run(&collection(&[]));
+        assert_eq!(drafts.len(), 1);
+        let details = evidence_details(&drafts[0]);
+        assert!(details[0].contains("copy-a.js"), "{details:?}");
+    }
+
+    #[test]
+    fn unclassifiable_importer_is_not_reported_as_unaffected() {
+        // `src/main.js` is proven (same chunk); `src/late.js` sits in a chunk
+        // without import data, so the graph cannot classify it.
+        let collection = Collection {
+            modules: vec![
+                module("src/main.js", &[], &[], &["main.js"]),
+                module("src/late.js", &[], &[], &["late.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/main.js"],
+                    &["src/main.js", "src/late.js"],
+                    &["main.js"],
+                ),
+            ],
+            chunks: vec![chunk("main.js", Some(&[])), chunk("late.js", None)],
+            ..Collection::default()
+        };
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        let details = evidence_details(&drafts[0]);
+        assert_eq!(details.len(), 2, "{details:?}");
+        assert!(details[0].contains("src/main.js"), "{details:?}");
+        assert!(
+            details[1].contains("neither reported nor ruled out"),
+            "{details:?}"
+        );
+        assert!(details[1].contains("src/late.js"), "{details:?}");
+        assert!(
+            !details.iter().any(|d| d.contains("not affected")),
+            "{details:?}"
+        );
+        let unknown = drafts[0]
+            .evidence
+            .iter()
+            .filter(|e| e.provenance == "emitted chunk graph")
+            .nth(1)
+            .unwrap();
+        assert_eq!(unknown.status, EvidenceStatus::Unavailable);
+    }
+
+    #[test]
+    fn separate_chunk_and_unknown_importers_are_reported_apart() {
+        let collection = Collection {
+            modules: vec![
+                module("src/main.js", &[], &[], &["main.js"]),
+                module("src/lazy.js", &[], &[], &["lazy.js"]),
+                module("src/late.js", &[], &[], &["late.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/main.js"],
+                    &["src/main.js", "src/lazy.js", "src/late.js"],
+                    &["main.js"],
+                ),
+            ],
+            chunks: vec![
+                chunk("main.js", Some(&[])),
+                chunk("lazy.js", Some(&[])),
+                chunk("late.js", None),
+            ],
+            ..Collection::default()
+        };
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        let details = evidence_details(&drafts[0]);
+        assert_eq!(details.len(), 3, "{details:?}");
+        assert!(details[1].contains("not affected") && details[1].contains("src/lazy.js"));
+        assert!(!details[1].contains("src/late.js"), "{details:?}");
+        assert!(details[2].contains("src/late.js"), "{details:?}");
+    }
+
+    #[test]
+    fn importer_in_several_chunks_reports_every_requesting_chunk() {
+        let collection = Collection {
+            modules: vec![
+                module("src/entry.js", &[], &[], &["a.js", "b.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/entry.js"],
+                    &["src/entry.js"],
+                    &["c.js"],
+                ),
+            ],
+            chunks: vec![
+                chunk("a.js", Some(&["c.js"])),
+                chunk("b.js", Some(&["x.js"])),
+                chunk("x.js", Some(&["c.js"])),
+                chunk("c.js", Some(&[])),
+            ],
+            ..Collection::default()
+        };
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        let details = evidence_details(&drafts[0]);
+        assert_eq!(details.len(), 1, "{details:?}");
+        assert!(
+            details[0].contains("in a.js it loads chunk c.js through static imports a.js -> c.js"),
+            "{details:?}"
+        );
+        assert!(
+            details[0].contains(
+                "in b.js it loads chunk c.js through static imports b.js -> x.js -> c.js"
+            ),
+            "{details:?}"
+        );
+        let condition = &drafts[0].conditions[1];
+        assert!(
+            condition.detail.contains("Requesting chunks: a.js, b.js"),
+            "{}",
+            condition.detail
+        );
+    }
+
+    #[test]
+    fn external_specifier_named_like_the_target_chunk_is_not_proof() {
+        // `OutputChunk.imports` of the entry lists `vendor.js` once, and the
+        // adapter marks it as an external module that shares the emitted
+        // chunk's file name.
+        let collection = Collection {
+            modules: vec![
+                module("src/entry.js", &[], &[], &["entry.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/other.js"],
+                    &["src/entry.js"],
+                    &["vendor.js"],
+                ),
+            ],
+            chunks: vec![
+                chunk_with_externals("entry.js", &["vendor.js"], &["vendor.js"]),
+                chunk("vendor.js", Some(&[])),
+            ],
+            ..Collection::default()
+        };
+        assert!(run(&collection).is_empty());
+    }
+
+    /// The traversal polls the signal before expanding each chunk, so a dense
+    /// chunk graph cannot hold up cancellation until the module loop resumes.
+    #[test]
+    fn chunk_graph_traversal_stops_when_the_run_is_cancelled() {
+        const CHAIN: usize = 50;
+        let graph: Vec<CollectedChunk> = (0..CHAIN)
+            .map(|index| {
+                let next = format!("c{}.js", index + 1);
+                chunk(&format!("c{index}.js"), Some(&[next.as_str()]))
+            })
+            .chain(std::iter::once(chunk(&format!("c{CHAIN}.js"), Some(&[]))))
+            .collect();
+        let chunks: BTreeMap<&str, &CollectedChunk> = graph
+            .iter()
+            .map(|chunk| (chunk.file.as_str(), chunk))
+            .collect();
+        let final_chunk = format!("c{CHAIN}.js");
+        let targets: BTreeSet<&str> = BTreeSet::from([final_chunk.as_str()]);
+        // (poll that first reports cancellation, expected polls, route found)
+        for (cancel_at, expected_polls, found) in [
+            (0usize, 1usize, false),
+            (10, 11, false),
+            (usize::MAX, CHAIN + 1, true),
+        ] {
+            let polls = std::sync::atomic::AtomicUsize::new(0);
+            let cancelled = || polls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= cancel_at;
+            let search = search_static_closure(&chunks, "c0.js", &targets, &cancelled);
+            assert_eq!(
+                polls.load(std::sync::atomic::Ordering::SeqCst),
+                expected_polls,
+                "cancel_at={cancel_at}"
+            );
+            assert_eq!(
+                matches!(search, ChunkSearch::Found(_)),
+                found,
+                "cancel_at={cancel_at}"
+            );
+            if !found {
+                assert_eq!(search, ChunkSearch::NotFound { complete: false });
+            }
+        }
+        // A cancelled classification never becomes a proof or a separate chunk.
+        let cancelled = || true;
+        assert_eq!(
+            classify_requester(&chunks, &["c0.js"], &targets, &cancelled),
+            RequesterOutcome::Unknown
+        );
+    }
+
+    #[test]
+    fn chunk_graph_cycles_terminate() {
+        let mut collection = lazy_route_collection();
+        collection.chunks[0] = chunk("entry.js", Some(&["a.js"]));
+        collection.chunks.push(chunk("a.js", Some(&["entry.js"])));
+        assert!(run(&collection).is_empty());
     }
 }

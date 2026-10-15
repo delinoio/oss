@@ -241,4 +241,18 @@ pub struct CollectedChunk {
     pub facade_module_id: Option<String>,
     pub modules: Vec<String>,
     pub map: Option<String>,
+    /// Chunk files this chunk imports statically (`OutputChunk.imports`).
+    /// `None` when the adapter did not collect them (adapter version 1), which
+    /// is different from a chunk that imports nothing (`Some` of an empty
+    /// list).
+    pub imports: Option<Vec<String>>,
+    /// The entries of `imports` that name an external module. `imports` mixes
+    /// emitted chunk files with external specifiers, and an external can share
+    /// its name with an emitted chunk, so an entry listed here is not a trusted
+    /// chunk edge. `None` when the adapter did not collect it.
+    pub external_imports: Option<Vec<String>>,
+    /// Chunk files this chunk requests with a dynamic `import()`
+    /// (`OutputChunk.dynamicImports`). `None` when the adapter did not collect
+    /// them.
+    pub dynamic_imports: Option<Vec<String>>,
 }
