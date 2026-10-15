@@ -3688,14 +3688,14 @@ Next), only grows when a step is selected, and is never persisted or saved.
   are unchanged. The styles are scoped to `.worker-steps`; other wizards keep
   the shared `wizard-progress` presentation.
 
-| Target item | Wizard state | Result |
-| --- | --- | --- |
-| After the visited limit | any | Not a button, not focusable, click does nothing. |
-| Any item | pending save, uncertain save, pending account evidence or inactive wizard | Button is disabled; no step change, no second write. |
-| Current step | idle | Enabled. Focuses the step heading; no entrance motion; drafts and any shown error stay. |
-| Before the current step | idle | Enabled. Selects it with the entrance motion, focuses the heading, clears the error and retains compatible drafts. |
-| After the current step, up to the visited limit | idle, preceding stages valid | Enabled. Selects it with the entrance motion and focuses the heading. |
-| After the current step, up to the visited limit | idle, a preceding stage invalid | Enabled. Does not select the target: it shows the first invalid stage without entrance motion, shows its error and focuses the first invalid control. |
+| Target item                                     | Wizard state                                                              | Result                                                                                                                                                |
+| ----------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| After the visited limit                         | any                                                                       | Not a button, not focusable, click does nothing.                                                                                                      |
+| Any item                                        | pending save, uncertain save, pending account evidence or inactive wizard | Button is disabled; no step change, no second write.                                                                                                  |
+| Current step                                    | idle                                                                      | Enabled. Focuses the step heading; no entrance motion; drafts and any shown error stay.                                                               |
+| Before the current step                         | idle                                                                      | Enabled. Selects it with the entrance motion, focuses the heading, clears the error and retains compatible drafts.                                    |
+| After the current step, up to the visited limit | idle, preceding stages valid                                              | Enabled. Selects it with the entrance motion and focuses the heading.                                                                                 |
+| After the current step, up to the visited limit | idle, a preceding stage invalid                                           | Enabled. Does not select the target: it shows the first invalid stage without entrance motion, shows its error and focuses the first invalid control. |
 
 Clamping: choosing a different harness clamps the limit to Harness (confirming
 then reopens Accounts). Committing a different source for a group, or adding a

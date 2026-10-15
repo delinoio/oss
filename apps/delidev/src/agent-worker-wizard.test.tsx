@@ -939,8 +939,9 @@ it("moves among current and visited steps, focuses the heading and keeps drafts"
   expect(stepHeading("Harness")).toBe(heading);
   expect(globalThis.document.activeElement).toBe(heading);
   expect(
-    (screen.getByRole("radio", { name: "Codex" }) as HTMLInputElement)
-      .getAttribute("aria-checked"),
+    (
+      screen.getByRole("radio", { name: "Codex" }) as HTMLInputElement
+    ).getAttribute("aria-checked"),
   ).toBe("true");
   expect(stepButtons()).toEqual(["Harness", "Accounts", "Model"]);
   settleEntrance(heading);
@@ -1148,7 +1149,9 @@ it("keeps four localized labels as buttons and plain items in Korean", async () 
       list.getAllByRole("button").map((b) => b.textContent!.replace(/^\d/, "")),
     ).toEqual(["하네스", "계정"]);
     expect(
-      list.getAllByRole("listitem").map((n) => n.textContent!.replace(/^\d/, "")),
+      list
+        .getAllByRole("listitem")
+        .map((n) => n.textContent!.replace(/^\d/, "")),
     ).toEqual(["하네스", "계정", "모델", "구성"]);
     expect(
       list.getByRole("button", { name: "계정" }).getAttribute("aria-current"),

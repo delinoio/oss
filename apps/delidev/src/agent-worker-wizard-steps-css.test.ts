@@ -153,8 +153,7 @@ describe("Agent Worker step labels", () => {
       )) {
         expect(getComputedStyle(target).display).toBe("flex");
         expect(
-          getComputedStyle(target.querySelector(".wizard-step-number")!)
-            .width,
+          getComputedStyle(target.querySelector(".wizard-step-number")!).width,
         ).toBe("28px");
       }
     },
