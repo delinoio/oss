@@ -185,13 +185,39 @@ enum Token<'a> {
 }
 
 /// Keywords after which an expression, and so a regular expression, starts.
-const REGEX_KEYWORDS: [&str; 12] = [
-    "return", "typeof", "case", "do", "else", "in", "of", "void", "yield", "delete", "throw", "new",
+/// `await` counts as the unary operator; a script that uses `await` as a plain
+/// identifier is a known limit of the scan.
+const REGEX_KEYWORDS: [&str; 14] = [
+    "return",
+    "typeof",
+    "case",
+    "do",
+    "else",
+    "in",
+    "instanceof",
+    "of",
+    "void",
+    "yield",
+    "delete",
+    "throw",
+    "new",
+    "await",
 ];
 
-/// Operators and keywords that cannot end an expression: a line terminator
-/// after them never starts a new statement.
-const OPEN_KEYWORDS: [&str; 7] = ["in", "instanceof", "typeof", "void", "delete", "new", "of"];
+/// Keywords that cannot end an expression: a line terminator after them never
+/// starts a new statement. Every entry is also in [`REGEX_KEYWORDS`]; the
+/// restricted productions `return`, `throw` and `yield` are left out because a
+/// line terminator after them does end the statement.
+const OPEN_KEYWORDS: [&str; 8] = [
+    "in",
+    "instanceof",
+    "typeof",
+    "void",
+    "delete",
+    "new",
+    "of",
+    "await",
+];
 
 /// True when the range is a comment rather than a string, template or regular
 /// expression literal.
@@ -3114,6 +3140,37 @@ y=/process.env.F/.test(z),process.env.G"#;
             let code = format!("{read}\n{word} && run()");
             assert_eq!(keyword_guard(&code, read), None, "{code:?}");
         }
+    }
+
+    #[test]
+    fn keyword_tables_agree_on_operand_keywords() {
+        let read = "process.env.FLAG";
+        for keyword in OPEN_KEYWORDS {
+            assert!(REGEX_KEYWORDS.contains(&keyword), "{keyword}");
+        }
+        for terminator in LINE_TERMINATORS {
+            for keyword in REGEX_KEYWORDS {
+                // A comment and any line terminator between the keyword and
+                // the slash still leave the slash starting a regular
+                // expression.
+                for comment in ["// c", "/* c */ // c", "/* a\nb */"] {
+                    let code = format!("{keyword} {comment}{terminator}/{read}/.test(x) && run()");
+                    assert!(
+                        in_ranges(&non_code_ranges(&code), code.find(read).unwrap()),
+                        "{code:?}"
+                    );
+                }
+            }
+            // A keyword that cannot end an expression takes its operand from
+            // the next line.
+            for keyword in OPEN_KEYWORDS {
+                let code = format!("x = {keyword}{terminator}{read} && run()");
+                assert_eq!(keyword_guard(&code, read), Some(AND_GUARD), "{code:?}");
+            }
+        }
+        // The operand of `await` is a regular expression, not a division.
+        let code = "async () => await // c\r/process.env.FLAG/.test(x) && run()";
+        assert!(in_ranges(&non_code_ranges(code), code.find(read).unwrap()));
     }
 
     #[test]
