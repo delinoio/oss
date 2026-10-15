@@ -23,6 +23,17 @@ Workspace request/result history retains optional immutable `directory_name` und
 
 Named storage acceptance and assignment, snapshot/restoration execution, recovery, Fork and deletion require original Worker capability 53. Deletion recomputes live paths from validated frozen fields and original UUID identities. It never follows a mutable registration name or silently converts retained UUID history. A name/path mismatch, occupied destination, missing capability or changed ownership preserves files and recovery evidence.
 
+## Grok subscription restore
+
+Managed backups never contain Grok credential material because the protected
+vault is outside the database image. Restore disconnects Grok accounts and
+quarantines any generation, keyed identity commitment, pending operation or lease
+as recovery-required evidence with its original owner fields unchanged; it grants
+no Worker authority and never calls native logout. Restore rewrites copied Worker
+devices as revoked while keeping their records readable by later scans such as
+account deletion. See the
+[Grok contract](cmds-delidev-grok-subscription-contract.md#grok-backup-and-restore).
+
 ## API format generation storage
 
 Capability 9 keeps bounded server-owned generations in account JSON, with no

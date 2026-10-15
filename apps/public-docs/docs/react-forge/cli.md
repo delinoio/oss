@@ -27,6 +27,13 @@ The [SFX format](/react-forge/formats/sfx/) adds `Format.Wav` tasks with `.wav` 
 
 [GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. The released static API excludes existing-file editing, animation and rigging. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
 
+## Analyze a scene (unreleased)
+
+`react-forge analyze <entry.tsx> [--data <json>] [--json]` runs a trusted task that returns a GLB or FBX `SceneSession`, waits for its settled revision, and prints topology totals plus up to ten largest mesh node IDs. `--json` returns the complete report, including all mesh rows. The command itself does not export or publish. Task code runs with your permissions and can explicitly perform its own effects. This command is implemented in source but is not yet in the released npm package.
+Add `--geometry-quality` to inspect exact indexed base geometry for unused vertices and redundant or degenerate triangles. The flag adds bounded finding counts and samples; it does not change the scene or reduce triangles. This option is also unreleased.
+
+In the unreleased source extension, a GLB/FBX task can set a [caller geometry budget](/react-forge/formats/glb/#caller-geometry-budgets-unreleased) when it creates its session. `run` writes Warn-mode budget notices to stderr in text mode and includes structured warnings in JSON results. A warning may precede a later failed export, so check the publication result. The CLI has no budget flags; the trusted task owns the policy.
+
 ## Animated scene tasks (unreleased)
 
 With the unreleased animation extension, return a `SceneSession` from the same

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -75,13 +76,7 @@ func nativeSessionFixtureWithSettings(t *testing.T, providerURL, key string, pol
 	if !validRejectionPolicy(policy) {
 		t.Fatal("fixture requires an explicit native rejection policy")
 	}
-	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if executable == "" {
-		t.Skip("explicit private native OpenCode session fixture")
-	}
-	if !filepath.IsAbs(executable) {
-		t.Fatal("select an absolute native executable")
-	}
+	executable, _ := nativetest.NativeOpenCodeExecutable(t)
 	requireNoManagedOpenCodeConfig(t)
 	config, logs := fixtureConfig(t, "native-session")
 	env, err := probeEnvironment(config)
@@ -247,9 +242,7 @@ func (l lostInputResponse) RoundTrip(request *http.Request) (*http.Response, err
 }
 
 func TestManualNativeOpenCodeSessionInput(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode session fixture")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	for _, lose := range []bool{false, true} {
 		t.Run(fmt.Sprintf("lost-response=%t", lose), func(t *testing.T) {
 			key := string(domain.NewID())

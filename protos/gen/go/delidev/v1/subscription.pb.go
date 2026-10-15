@@ -1431,7 +1431,7 @@ type GetSubscriptionProgressResponse struct {
 	Diagnostic       *CodexDiagnostic              `protobuf:"bytes,7,opt,name=diagnostic,proto3" json:"diagnostic,omitempty"`
 	LoginMethod      SubscriptionLoginMethod       `protobuf:"varint,8,opt,name=login_method,json=loginMethod,proto3,enum=delidev.v1.SubscriptionLoginMethod" json:"login_method,omitempty"`
 	NativeDiagnostic *NativeSubscriptionDiagnostic `protobuf:"bytes,9,opt,name=native_diagnostic,json=nativeDiagnostic,proto3" json:"native_diagnostic,omitempty"`
-	// Declared for Grok Build; no server path populates it yet.
+	// Safe metadata for the original Grok Build failure; absent on older servers.
 	GrokDiagnostic *GrokDiagnostic `protobuf:"bytes,10,opt,name=grok_diagnostic,json=grokDiagnostic,proto3" json:"grok_diagnostic,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache

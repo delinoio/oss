@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 )
 
 type nativeStopIntent string
@@ -41,9 +42,7 @@ func (l lostStopResponse) RoundTrip(request *http.Request) (*http.Response, erro
 }
 
 func TestManualNativeOpenCodeStop(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode Stop")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	for _, mode := range []string{"text", "permission", "question"} {
 		for _, lost := range []bool{false, true} {
 			t.Run(mode+"/lost="+fmtBool(lost), func(t *testing.T) { nativeStopFixture(t, mode, lost, liveStopIntent) })
@@ -52,27 +51,21 @@ func TestManualNativeOpenCodeStop(t *testing.T) {
 }
 
 func TestManualNativeOpenCodeOwnedStop(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode original owned Stop")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	for _, intent := range []nativeStopIntent{unobservedStopIntent, lostStreamStopIntent} {
 		t.Run(string(intent), func(t *testing.T) { nativeStopFixture(t, "text", false, intent) })
 	}
 }
 
 func TestManualNativeOpenCodeStopRecovery(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode original Stop recovery")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	for _, intent := range []nativeStopIntent{recoverCompletedStopIntent, recoverUnstartedStopIntent} {
 		t.Run(string(intent), func(t *testing.T) { nativeStopFixture(t, "text", false, intent) })
 	}
 }
 
 func TestManualNativeOpenCodeStoppedHistory(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode stopped history")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	for _, mode := range []string{"text", "permission", "question", "completed-race"} {
 		for _, lost := range []bool{false, true} {
 			t.Run(mode+"/lost="+fmtBool(lost), func(t *testing.T) { nativeStopFixture(t, mode, lost, verifiedHistoryStopIntent) })

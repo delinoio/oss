@@ -145,6 +145,55 @@ export function main() {
         bytes.subarray(0, magic[format].length).toString(),
         magic[format],
       );
+      if (format === "glb" || format === "fbx") {
+        const analysis = JSON.parse(
+          execFileSync(
+            process.execPath,
+            [
+              path.join(installed, "bin/react-forge.mjs"),
+              "analyze",
+              path.join(directory, "tasks", `${task}.tsx`),
+              "--json",
+            ],
+            { cwd: directory, encoding: "utf8" },
+          ),
+        );
+        assert.ok(analysis.meshCount > 0);
+        assert.equal(analysis.meshes.length, analysis.meshCount);
+        assert.ok(analysis.referencedGeometryCount > 0);
+      }
+    }
+    if (process.env.REACT_FORGE_SKIP_SCENE_TESTS !== "1") {
+      for (const format of ["glb", "fbx"]) {
+        const analysis = JSON.parse(
+          execFileSync(
+            process.execPath,
+            [
+              path.join(installed, "bin/react-forge.mjs"),
+              "analyze",
+              path.join(directory, "tasks/scene-analysis.tsx"),
+              "--data",
+              JSON.stringify({ format }),
+              "--json",
+            ],
+            { cwd: directory, encoding: "utf8" },
+          ),
+        );
+        assert.deepEqual(
+          [
+            analysis.meshCount,
+            analysis.referencedGeometryCount,
+            analysis.unusedGeometryCount,
+            analysis.uniqueVertexCount,
+            analysis.uniqueTriangleCount,
+            analysis.instanceVertexCount,
+            analysis.instanceTriangleCount,
+            analysis.registeredGeometryBytes,
+            analysis.referencedGeometryBytes,
+          ],
+          [4, 2, 1, 7, 3, 15, 7, 372, 236],
+        );
+      }
     }
     assert.equal(
       execFileSync(

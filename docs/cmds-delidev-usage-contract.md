@@ -433,12 +433,19 @@ use retained resources and never start native work, tokenization, inference or
 compaction. No RPC, allocation or migration is added. Claude/OpenCode and all
 original action, retry, account, history and cleanup boundaries remain unchanged.
 
-The existing Context presentation labels this as “Latest native-reported context
-tokens” in English and Korean and shows its observation time. It explains that
-this native snapshot may exclude later local context changes and may include a
-native context-limit estimate; it is not exact continuous occupancy or billing.
-Retained data after a failed/in-flight refresh or changed session revision is
-explicitly historical, with a visible read error on failure. Keep existing
+The Session Info Context presentation shows one prominent “Context used” metric
+in English and Korean: the exact native numerator and, only with validated
+matching capacity, `numerator / capacity`, a one-decimal derived percentage and a
+progress bar whose accessible values mirror them; the bar never replaces the
+numeric value. Unavailable or mismatched capacity shows only the reported
+numerator with the existing capacity-unavailable text and no bar or percentage,
+and a missing numerator reads “Not reported”, never zero. Default Info renders no
+latest/historical snapshot label, observation time, native-snapshot explanation
+or compaction explanation. The snapshot remains a native estimate, not exact
+continuous occupancy or billing, and the closed `latest`/`historical` status
+stays in the read contract only. A visible read error
+still reports a failed refresh, and the retained numerator is not confirmed by
+that read. Keep existing
 five-second polling and Refresh context separate from Compact context. Strict
 client decoding preserves exact decimal strings above JavaScript's safe integer
 range, source/status enums and original provenance; old absent-field replies

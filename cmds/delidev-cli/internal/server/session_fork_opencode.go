@@ -43,10 +43,16 @@ func prepareOpenCodeForkTranscript(tx *store.Tx, input domain.ForkJobInput, outp
 		if err == nil && emptyOpenCodeForkChanges(value, input.Completion.NativeThreadID) {
 			continue
 		}
-		if err != nil || value.Inherited != nil || value.State != domain.MessageComplete || (value.Role != domain.UserMessage && value.Role != domain.AssistantMessage) || value.NativeThreadID != string(input.Completion.NativeThreadID) || value.Tool != nil || value.Artifact != nil || value.Progress != nil || value.Claude != nil || value.ClaudeTool != nil || value.ClaudeProgress != nil || value.ClaudeInterruption != nil || value.GrokTool != nil || value.GrokUser != nil || value.GrokText != nil || value.Phase != nil || used[value.NativeID] || parts[value.NativeID] == "" || parent[value.NativeID] != value.NativeParentID || messages[value.NativeTurnID] == "" || messages[value.NativeParentID] == "" || value.FirstSequence == 0 || value.LastSequence < value.FirstSequence {
+		reasoning := err == nil && input.OpenCode.Profile.Reasoning() && openCodeForkReasoningRecord(value)
+		if err != nil || value.Inherited != nil || value.State != domain.MessageComplete || (value.Role != domain.UserMessage && value.Role != domain.AssistantMessage && !reasoning) || value.NativeThreadID != string(input.Completion.NativeThreadID) || value.Tool != nil || (value.Artifact != nil && !reasoning) || value.Progress != nil || value.Claude != nil || value.ClaudeTool != nil || value.ClaudeProgress != nil || value.ClaudeInterruption != nil || value.GrokTool != nil || value.GrokUser != nil || value.GrokText != nil || value.Phase != nil || used[value.NativeID] || parts[value.NativeID] == "" || parent[value.NativeID] != value.NativeParentID || messages[value.NativeTurnID] == "" || messages[value.NativeParentID] == "" || value.FirstSequence == 0 || value.LastSequence < value.FirstSequence {
 			return nil, forkConflict()
 		}
 		if value.Role == domain.UserMessage && (value.NativeParentID != value.NativeTurnID || value.InputID.Validate() != nil) || value.Role == domain.AssistantMessage && value.InputID != "" {
+			return nil, forkConflict()
+		}
+		// A reasoning record is re-parented exactly like assistant text: its
+		// part and parent message must both be in the Worker-verified map.
+		if reasoning && (value.NativeParentID == value.NativeTurnID || value.InputID != "") {
 			return nil, forkConflict()
 		}
 		used[value.NativeID] = true
@@ -94,31 +100,55 @@ func readOpenCodeForkMessages(tx *store.Tx, session domain.ID) ([]store.Record, 
 
 // Public canonical eligibility is checked before any native preparation and
 // again under publication authority. Native private history is a separate proof.
-func validateOpenCodeForkTranscript(tx *store.Tx, source domain.ID, thread domain.NativeIdentity) error {
+//
+// It reports whether the plain canonical transcript contains completed
+// reasoning records; the caller then negotiates profile v2 for exactly those
+// sources. Every other artifact family stays ineligible.
+func validateOpenCodeForkTranscript(tx *store.Tx, source domain.ID, thread domain.NativeIdentity) (bool, error) {
 	records, err := readOpenCodeForkMessages(tx, source)
 	if err != nil {
-		return err
+		return false, err
 	}
 	seen := map[string]bool{}
 	count := 0
+	reasoningRecords := 0
 	for _, row := range records {
 		value, err := store.Decode[domain.ExecutionMessage](row)
 		if err == nil && emptyOpenCodeForkChanges(value, thread) {
 			continue
 		}
-		if err != nil || value.Inherited != nil || value.State != domain.MessageComplete || (value.Role != domain.UserMessage && value.Role != domain.AssistantMessage) || value.NativeThreadID != string(thread) || value.Tool != nil || value.Artifact != nil || value.Progress != nil || value.Claude != nil || value.ClaudeTool != nil || value.ClaudeProgress != nil || value.ClaudeInterruption != nil || value.GrokTool != nil || value.GrokUser != nil || value.GrokText != nil || value.Phase != nil || seen[value.NativeID] || domain.NativeIdentity(value.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil || domain.NativeIdentity(value.NativeParentID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil || domain.NativeIdentity(value.NativeTurnID).Validate(domain.OpenCode, domain.NativeTurnIdentity) != nil || value.FirstSequence == 0 || value.LastSequence < value.FirstSequence {
-			return forkConflict()
+		reasoning := err == nil && openCodeForkReasoningRecord(value)
+		if err != nil || value.Inherited != nil || value.State != domain.MessageComplete || (value.Role != domain.UserMessage && value.Role != domain.AssistantMessage && !reasoning) || value.NativeThreadID != string(thread) || value.Tool != nil || (value.Artifact != nil && !reasoning) || value.Progress != nil || value.Claude != nil || value.ClaudeTool != nil || value.ClaudeProgress != nil || value.ClaudeInterruption != nil || value.GrokTool != nil || value.GrokUser != nil || value.GrokText != nil || value.Phase != nil || seen[value.NativeID] || domain.NativeIdentity(value.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil || domain.NativeIdentity(value.NativeParentID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil || domain.NativeIdentity(value.NativeTurnID).Validate(domain.OpenCode, domain.NativeTurnIdentity) != nil || value.FirstSequence == 0 || value.LastSequence < value.FirstSequence {
+			return false, forkConflict()
 		}
 		if value.Role == domain.UserMessage && (value.NativeParentID != value.NativeTurnID || value.InputID.Validate() != nil) || value.Role == domain.AssistantMessage && value.InputID != "" {
-			return forkConflict()
+			return false, forkConflict()
+		}
+		if reasoning {
+			if value.NativeParentID == value.NativeTurnID || value.InputID != "" {
+				return false, forkConflict()
+			}
+			reasoningRecords++
 		}
 		seen[value.NativeID] = true
 		count++
 	}
 	if count < 2 {
-		return forkConflict()
+		return false, forkConflict()
 	}
-	return nil
+	return reasoningRecords > 0, nil
+}
+
+// openCodeForkReasoningRecord recognizes the only artifact family profile v2
+// may clone: one completed plain-text reasoning part. Image, revision, plan,
+// summary/content and every tool/progress/harness-specific field stay rejected
+// by the caller's shared gate.
+func openCodeForkReasoningRecord(value domain.ExecutionMessage) bool {
+	a := value.Artifact
+	if a == nil || value.Role != domain.ArtifactMessage || value.State != domain.MessageComplete || a.Completed == nil || a.Started.Kind != domain.ReasoningTextArtifact || a.Completed.Kind != domain.ReasoningTextArtifact || a.Started.ImageGeneration != nil || a.Started.Revision != nil || a.Completed.ImageGeneration != nil || a.Completed.Revision != nil || len(a.Started.Summary) != 0 || len(a.Started.Content) != 0 || len(a.Completed.Summary) != 0 || len(a.Completed.Content) != 0 {
+		return false
+	}
+	return value.Phase == nil && value.Tool == nil && value.Progress == nil && value.Claude == nil && value.ClaudeTool == nil && value.ClaudeProgress == nil && value.ClaudeInterruption == nil && value.GrokTool == nil && value.GrokUser == nil && value.GrokText == nil && value.FunctionOutput == nil && value.DynamicTool == nil && len(value.Attachments) == 0
 }
 
 // Admission above independently validates all native mappings. This copy keeps

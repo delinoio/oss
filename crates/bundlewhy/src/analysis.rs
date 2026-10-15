@@ -815,6 +815,11 @@ mod tests {
         assert!(env.title.contains("BUNDLEWHY_FIXTURE_FLAG"));
         assert_eq!(env.location.as_ref().unwrap().path, "src/main.js");
         assert!(env.generated_location.is_some());
+        assert!(env.summary.contains("retains a branch guarded by"));
+        assert!(env.conditions.iter().any(|condition| {
+            condition.outcome == ConditionOutcome::Met
+                && condition.detail.contains("&& short-circuit branch")
+        }));
         assert!(
             !diagnostics
                 .iter()
@@ -1005,6 +1010,199 @@ mod tests {
             &fixture.output.analysis.diagnostics,
             "vite/commonjs-wrapped",
             "src/legacy/cjs.cjs",
+        );
+    }
+
+    /// Rewrites the Vite fixture so that `target_id` names a wrapped CommonJS
+    /// module with the given virtual/path facts, importing from the entry.
+    fn vite_cjs_variant(id: &'static str, path: Option<&'static str>, is_virtual: bool) -> Fixture {
+        run_fixture(BundlerChoice::Vite, move |value| {
+            let mut template = value["modules"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|module| {
+                    module["id"]
+                        .as_str()
+                        .is_some_and(|id| id.ends_with("src/legacy/cjs.cjs"))
+                })
+                .unwrap()
+                .clone();
+            template["id"] = serde_json::json!(id);
+            template["path"] = serde_json::json!(path);
+            template["virtual"] = serde_json::json!(is_virtual);
+            value["modules"].as_array_mut().unwrap().push(template);
+        })
+    }
+
+    fn action(diagnostic: &Diagnostic) -> &crate::model::CorrectiveAction {
+        diagnostic.corrective_action.as_ref().unwrap()
+    }
+
+    fn generated_placeholder_diagnostic<'a>(fixture: &'a Fixture, module: &str) -> &'a Diagnostic {
+        find(
+            &fixture.output.analysis.diagnostics,
+            "vite/commonjs-wrapped",
+            module,
+        )
+        .unwrap_or_else(|| panic!("missing vite/commonjs-wrapped for {module}"))
+    }
+
+    /// Words that name a specific Node built-in; guidance for a placeholder
+    /// whose original specifier is unknown must not use them.
+    fn names_specific_builtin(text: &str) -> bool {
+        text.split(|c: char| !c.is_alphanumeric() && c != '_')
+            .any(|word| matches!(word, "fs" | "os" | "crypto" | "net" | "child_process"))
+    }
+
+    fn assert_generated_placeholder_common(diagnostic: &Diagnostic, id: &str) {
+        assert_eq!(diagnostic.status, EvidenceStatus::Confirmed, "{id}");
+        assert!(
+            diagnostic
+                .evidence
+                .iter()
+                .all(|evidence| evidence.status == EvidenceStatus::Confirmed),
+            "{id}"
+        );
+        assert!(diagnostic.summary.contains("generates"), "{id}");
+        assert!(diagnostic.summary.contains("must not be edited"), "{id}");
+        assert!(
+            action(diagnostic).direction.contains("dependency path"),
+            "{id}"
+        );
+        assert!(action(diagnostic).direction.contains("server-only"), "{id}");
+        assert!(
+            !action(diagnostic)
+                .direction
+                .contains("ECMAScript module build"),
+            "{id}"
+        );
+        assert!(!action(diagnostic).direction.contains("ESM"), "{id}");
+        assert!(action(diagnostic).safety.contains("Do not edit"), "{id}");
+        assert!(!action(diagnostic).safety.contains("ESM build"), "{id}");
+        assert!(
+            !names_specific_builtin(&action(diagnostic).direction),
+            "{id}"
+        );
+    }
+
+    #[test]
+    fn vite_browser_external_with_builtin_suffix_gets_node_builtin_guidance() {
+        for id in [
+            "\u{0}__vite-browser-external:fs",
+            "__vite-browser-external:path",
+        ] {
+            let fixture = vite_cjs_variant(id, None, true);
+            let diagnostic =
+                generated_placeholder_diagnostic(&fixture, id.trim_start_matches('\0'));
+            assert_generated_placeholder_common(diagnostic, id);
+            assert!(diagnostic.summary.contains("Node built-in"), "{id}");
+            assert!(
+                action(diagnostic).direction.contains("Node built-in"),
+                "{id}"
+            );
+            assert!(action(diagnostic).direction.contains("polyfill"), "{id}");
+            assert!(
+                diagnostic
+                    .evidence
+                    .iter()
+                    .any(|evidence| evidence.detail.contains("built-in suffix")),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn vite_bare_browser_external_keeps_guidance_generic() {
+        // The bare id is also produced for a dependency file that its
+        // `browser` field maps to `false`, so it must not be called a built-in.
+        for id in ["__vite-browser-external", "\u{0}__vite-browser-external"] {
+            let fixture = vite_cjs_variant(id, None, true);
+            let diagnostic =
+                generated_placeholder_diagnostic(&fixture, id.trim_start_matches('\0'));
+            assert_generated_placeholder_common(diagnostic, id);
+            let direction = &action(diagnostic).direction;
+            assert!(direction.contains("browser field"), "{id}");
+            assert!(!direction.contains("polyfill"), "{id}");
+            assert!(!direction.contains("alias"), "{id}");
+            assert!(
+                !diagnostic.summary.contains("generates for a Node built-in"),
+                "{id}"
+            );
+            assert!(
+                !diagnostic.summary.contains("for a Node built-in imported"),
+                "{id}"
+            );
+            assert!(
+                !action(diagnostic).safety.contains("built-in"),
+                "{id}: the safety text must not assume a Node built-in"
+            );
+            assert!(
+                diagnostic
+                    .evidence
+                    .iter()
+                    .all(|evidence| { !evidence.detail.contains("generates for a Node built-in") }),
+                "{id}"
+            );
+            assert!(
+                diagnostic
+                    .evidence
+                    .iter()
+                    .any(|evidence| evidence.detail.contains("does not show whether")),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn vite_commonjs_guidance_stays_for_other_modules() {
+        // An ordinary file-backed module keeps the ESM-conversion advice.
+        let fixture = run_fixture(BundlerChoice::Vite, |_| {});
+        let ordinary = generated_placeholder_diagnostic(&fixture, "src/legacy/cjs.cjs");
+        assert!(
+            action(ordinary)
+                .direction
+                .contains("ECMAScript module build")
+        );
+        assert!(action(ordinary).safety.contains("ESM build"));
+
+        // A virtual CommonJS module with another id is not the placeholder.
+        let other = vite_cjs_variant("\u{0}virtual:other-cjs", None, true);
+        let diagnostic = generated_placeholder_diagnostic(&other, "virtual:other-cjs");
+        assert!(
+            action(diagnostic)
+                .direction
+                .contains("ECMAScript module build")
+        );
+        assert!(action(diagnostic).safety.contains("ESM build"));
+
+        // Ids that only share the placeholder prefix are not placeholders.
+        for id in ["__vite-browser-external:", "__vite-browser-externalish"] {
+            let lookalike = vite_cjs_variant(id, None, true);
+            let diagnostic = generated_placeholder_diagnostic(&lookalike, id);
+            assert!(
+                action(diagnostic)
+                    .direction
+                    .contains("ECMAScript module build"),
+                "{id}"
+            );
+            assert!(action(diagnostic).safety.contains("ESM build"), "{id}");
+        }
+
+        // A file-backed module that merely resembles the id keeps the advice.
+        let backed = vite_cjs_variant(
+            "__vite-browser-external",
+            Some("/__bundlewhy_project__/src/legacy/cjs.cjs"),
+            false,
+        );
+        assert!(
+            backed
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .filter(|d| d.rule == "vite/commonjs-wrapped")
+                .all(|d| action(d).direction.contains("ECMAScript module build"))
         );
     }
 
@@ -1486,6 +1684,81 @@ mod tests {
                         && diagnostic.title.contains("BUNDLEWHY_FIXTURE_FLAG")
                 )
         );
+    }
+
+    #[test]
+    fn data_only_env_reads_do_not_produce_a_branch_diagnostic() {
+        for bundler in [BundlerChoice::Vite, BundlerChoice::Rspack] {
+            let fixture = run_fixture_patched(
+                bundler,
+                true,
+                |_| {},
+                |build, _| {
+                    let (file, guard, read) = match bundler {
+                        BundlerChoice::Vite => (
+                            "assets/index-BHjrzQLH.js",
+                            "({}).BUNDLEWHY_FIXTURE_FLAG===`on`&&console.log(`flag branch`)",
+                            "({}).BUNDLEWHY_FIXTURE_FLAG",
+                        ),
+                        BundlerChoice::Rspack => (
+                            "main.js",
+                            "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag \
+                             branch\")",
+                            "process.env.BUNDLEWHY_FIXTURE_FLAG",
+                        ),
+                    };
+                    let path = build.join(file);
+                    let code = std::fs::read_to_string(&path).unwrap();
+                    assert!(code.contains(guard));
+                    let replacement = match bundler {
+                        // Keep the Vite read at the same generated offset so
+                        // its source mapping still points at the edited read.
+                        BundlerChoice::Vite => format!("{read};console.log(`flag branch`)"),
+                        BundlerChoice::Rspack => format!("console.log({read})"),
+                    };
+                    std::fs::write(&path, code.replace(guard, &replacement)).unwrap();
+                    if bundler == BundlerChoice::Vite {
+                        let map_path = build.join(format!("{file}.map"));
+                        let mut map: serde_json::Value =
+                            serde_json::from_str(&std::fs::read_to_string(&map_path).unwrap())
+                                .unwrap();
+                        let source_index = map["sources"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .position(|source| source.as_str().unwrap().ends_with("/src/main.js"))
+                            .unwrap();
+                        let source = map["sourcesContent"][source_index].as_str().unwrap();
+                        let branch = "if (process.env.BUNDLEWHY_FIXTURE_FLAG === \"on\") {\n  \
+                                      console.log(\"flag branch\");\n}";
+                        assert!(source.contains(branch));
+                        map["sourcesContent"][source_index] = serde_json::json!(source.replace(
+                            branch,
+                            "console.log(process.env.BUNDLEWHY_FIXTURE_FLAG);\nconsole.log(\"flag \
+                             branch\");\n// data-only read",
+                        ));
+                        std::fs::write(map_path, serde_json::to_vec(&map).unwrap()).unwrap();
+                    }
+                },
+            );
+            if bundler == BundlerChoice::Vite {
+                assert!(fixture.output.sources.iter().any(|source| {
+                    source.path == "src/main.js"
+                        && source
+                            .content
+                            .contains("console.log(process.env.BUNDLEWHY_FIXTURE_FLAG);")
+                }));
+            }
+            assert!(
+                !fixture
+                    .output
+                    .analysis
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| { diagnostic.rule == "minifier/unresolved-env-condition" }),
+                "{bundler:?} reported a branch for a data-only read"
+            );
+        }
     }
 
     #[test]

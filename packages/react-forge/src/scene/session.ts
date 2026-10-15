@@ -47,6 +47,33 @@ import {
 } from "./assets.js";
 export interface SceneSessionOptions {
   animationBakeFps?: number;
+  geometryBudget?: SceneGeometryBudget;
+}
+export enum SceneBudgetAction {
+  Warn = "warn",
+  Error = "error",
+}
+export enum SceneBudgetMetric {
+  SceneTriangles = "scene_triangles",
+  MeshTriangles = "mesh_triangles",
+  MeshCount = "mesh_count",
+}
+export interface SceneGeometryBudget {
+  readonly action: SceneBudgetAction;
+  readonly maxSceneTriangles?: number;
+  readonly maxMeshTriangles?: number;
+  readonly maxMeshCount?: number;
+}
+export interface SceneBudgetViolation {
+  readonly metric: SceneBudgetMetric;
+  readonly actual: number;
+  readonly limit: number;
+  readonly nodeId?: string;
+}
+export interface SceneBudgetWarning extends SceneBudgetViolation {
+  readonly format: Format.Glb | Format.Fbx;
+  readonly revision: number;
+  readonly code: "scene_budget_exceeded";
 }
 export interface AnimationSample {
   clip: NodeHandle;
@@ -57,6 +84,139 @@ export interface SceneGeometry {
   readonly min: Vec3;
   readonly max: Vec3;
   readonly revision: number;
+}
+export interface SceneMeshAnalysis {
+  readonly nodeId: string;
+  readonly vertexCount: number;
+  readonly triangleCount: number;
+  readonly geometryInstanceCount: number;
+  readonly geometryId?: string;
+}
+export enum SceneGeometryFindingCode {
+  UnusedVertex = "unused_vertex",
+  RepeatedIndexTriangle = "repeated_index_triangle",
+  ZeroAreaTriangle = "zero_area_triangle",
+  DuplicateTriangle = "duplicate_triangle",
+  OppositeWindingTriangle = "opposite_winding_triangle",
+}
+export interface SceneGeometryFinding {
+  readonly code: SceneGeometryFindingCode;
+  readonly count: number;
+  readonly samples: readonly number[];
+  readonly truncated: boolean;
+}
+export interface SceneGeometryQuality {
+  readonly geometryId: string;
+  readonly vertexCount: number;
+  readonly triangleCount: number;
+  readonly findings: readonly SceneGeometryFinding[];
+}
+export interface SceneAnalysis {
+  readonly documentId: string;
+  readonly revision: number;
+  readonly meshCount: number;
+  readonly referencedGeometryCount: number;
+  readonly uniqueVertexCount: number;
+  readonly uniqueTriangleCount: number;
+  readonly instanceVertexCount: number;
+  readonly instanceTriangleCount: number;
+  readonly registeredGeometryBytes: number;
+  readonly referencedGeometryBytes: number;
+  readonly unusedGeometryCount: number;
+  readonly meshes: readonly SceneMeshAnalysis[];
+  readonly budgetViolations: readonly SceneBudgetViolation[];
+  readonly geometryQuality?: readonly SceneGeometryQuality[];
+}
+
+function geometryBudget(value: unknown): Readonly<SceneGeometryBudget> {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw malformed();
+  const input = value as Record<string, unknown>;
+  const keys = [
+    "action",
+    "maxSceneTriangles",
+    "maxMeshTriangles",
+    "maxMeshCount",
+  ];
+  if (
+    Object.keys(input).some((key) => !keys.includes(key)) ||
+    (input.action !== SceneBudgetAction.Warn &&
+      input.action !== SceneBudgetAction.Error)
+  )
+    throw malformed();
+  const thresholds = keys.slice(1);
+  if (
+    !thresholds.some((key) => input[key] !== undefined) ||
+    thresholds.some(
+      (key) =>
+        input[key] !== undefined &&
+        (!Number.isSafeInteger(input[key]) || (input[key] as number) < 0),
+    )
+  )
+    throw malformed();
+  return Object.freeze({
+    action: input.action,
+    ...(input.maxSceneTriangles !== undefined && {
+      maxSceneTriangles: input.maxSceneTriangles as number,
+    }),
+    ...(input.maxMeshTriangles !== undefined && {
+      maxMeshTriangles: input.maxMeshTriangles as number,
+    }),
+    ...(input.maxMeshCount !== undefined && {
+      maxMeshCount: input.maxMeshCount as number,
+    }),
+  });
+}
+
+function budgetViolations(
+  policy: Readonly<SceneGeometryBudget> | undefined,
+  report: Omit<SceneAnalysis, "documentId" | "revision" | "budgetViolations">,
+  model: SceneModel,
+): readonly SceneBudgetViolation[] {
+  if (!policy) return Object.freeze([]);
+  const result: SceneBudgetViolation[] = [];
+  if (
+    policy.maxSceneTriangles !== undefined &&
+    report.instanceTriangleCount > policy.maxSceneTriangles
+  )
+    result.push(
+      Object.freeze({
+        metric: SceneBudgetMetric.SceneTriangles,
+        actual: report.instanceTriangleCount,
+        limit: policy.maxSceneTriangles,
+      }),
+    );
+  if (policy.maxMeshTriangles !== undefined) {
+    const rows = new Map(report.meshes.map((mesh) => [mesh.nodeId, mesh]));
+    const visit = (node: SceneNode) => {
+      if (node.type === "mesh") {
+        const row = rows.get(node.id);
+        if (row && row.triangleCount > policy.maxMeshTriangles!)
+          result.push(
+            Object.freeze({
+              metric: SceneBudgetMetric.MeshTriangles,
+              actual: row.triangleCount,
+              limit: policy.maxMeshTriangles!,
+              nodeId: node.id,
+            }),
+          );
+      }
+      node.children.forEach(visit);
+    };
+    model.nodes.forEach(visit);
+  }
+  if (
+    policy.maxMeshCount !== undefined &&
+    report.meshCount > policy.maxMeshCount
+  )
+    result.push(
+      Object.freeze({
+        metric: SceneBudgetMetric.MeshCount,
+        actual: report.meshCount,
+        limit: policy.maxMeshCount,
+      }),
+    );
+  return Object.freeze(result);
 }
 export interface SimplifyGeometryOptions {
   targetTriangles: number;
@@ -129,6 +289,9 @@ export class SceneSession {
   private readonly pending = new Set<Promise<unknown>>();
   private readonly operations = new Set<Promise<unknown>>();
   private readonly listeners = new Set<(event: Diagnostic) => void>();
+  private readonly warningListeners = new Set<
+    (warning: SceneBudgetWarning) => void
+  >();
   private queue: Promise<unknown> = Promise.resolve();
   private registrations: Promise<unknown> = Promise.resolve();
   private bytes = 0;
@@ -138,6 +301,7 @@ export class SceneSession {
   private currentRevision = 0;
   private disposal?: Promise<void>;
   private readonly animationBakeFps: number;
+  private readonly geometryBudget?: Readonly<SceneGeometryBudget>;
   constructor(
     readonly format: Format.Glb | Format.Fbx,
     options: SceneSessionOptions = {},
@@ -147,15 +311,21 @@ export class SceneSession {
         ErrorCode.UnsupportedPackage,
         "Expected a GLB or FBX format.",
       );
+    if (!options || typeof options !== "object" || Array.isArray(options))
+      throw malformed();
     const fps = options.animationBakeFps ?? 60;
     if (
-      Object.keys(options).some((k) => k !== "animationBakeFps") ||
+      Object.keys(options).some(
+        (k) => !["animationBakeFps", "geometryBudget"].includes(k),
+      ) ||
       !Number.isInteger(fps) ||
       fps < 1 ||
       fps > 240
     )
       throw malformed();
     this.animationBakeFps = fps;
+    if (options.geometryBudget !== undefined)
+      this.geometryBudget = geometryBudget(options.geometryBudget);
   }
   get revision() {
     return this.currentRevision;
@@ -223,6 +393,14 @@ export class SceneSession {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
+    };
+  }
+  onSceneWarning(listener: (warning: SceneBudgetWarning) => void): () => void {
+    this.signal();
+    if (typeof listener !== "function") throw malformed();
+    this.warningListeners.add(listener);
+    return () => {
+      this.warningListeners.delete(listener);
     };
   }
   render(children: ReactNode): Promise<void> {
@@ -836,11 +1014,18 @@ export class SceneSession {
   private async process(
     signal: AbortSignal,
     context: { revision: number },
-    inspect = false,
+    operation:
+      "generate" | "inspect" | "analyze" | "analyze_quality" = "generate",
     animation?: AnimationSample,
+    expectedRevision?: number,
   ) {
     const p = await this.pinned(signal);
     context.revision = p.revision;
+    if (expectedRevision !== undefined && p.revision !== expectedRevision)
+      throw new ForgeError(
+        ErrorCode.Conflict,
+        "Requested scene revision is stale.",
+      );
     if (
       animation &&
       (animation.clip.documentId !== this.documentId ||
@@ -856,31 +1041,141 @@ export class SceneSession {
           sample: { clip: animation.clip.nodeId, time: animation.time },
         }
       : p.model;
-    const output = await processDocument(
-      this.format,
-      inspect ? "inspect" : "generate",
-      model,
-      Buffer.alloc(0),
-      p.assets,
-      this.documentId,
-      p.revision,
-      signal,
-      { system: false, ids: [] },
-      (event) => {
-        for (const f of this.listeners) {
+    const run = (
+      kind: "generate" | "inspect" | "analyze" | "analyze_quality",
+    ) =>
+      processDocument(
+        this.format,
+        kind,
+        model,
+        Buffer.alloc(0),
+        p.assets,
+        this.documentId,
+        p.revision,
+        signal,
+        { system: false, ids: [] },
+        (event) => {
+          for (const f of this.listeners) {
+            try {
+              f(event);
+            } catch {
+              /* Observer isolation. */
+            }
+          }
+        },
+      );
+    let warnings: readonly SceneBudgetWarning[] = Object.freeze([]);
+    if (operation === "generate" && this.geometryBudget) {
+      // This native preflight validates and counts the same pinned model/assets
+      // that generation receives. It stays inside this queued export operation.
+      const preflight = await run("analyze");
+      checkSignal(signal);
+      const report = JSON.parse(preflight.geometry) as Omit<
+        SceneAnalysis,
+        "documentId" | "revision" | "budgetViolations"
+      >;
+      const violations = budgetViolations(this.geometryBudget, report, p.model);
+      if (
+        violations.length &&
+        this.geometryBudget.action === SceneBudgetAction.Error
+      )
+        throw new ForgeError(
+          ErrorCode.ResourceLimit,
+          "Scene geometry budget exceeded.",
+          { sceneBudget: violations[0], published: false },
+        );
+      warnings = Object.freeze(
+        violations.map((violation) =>
+          Object.freeze({
+            ...violation,
+            code: "scene_budget_exceeded" as const,
+            format: this.format,
+            revision: p.revision,
+          }),
+        ),
+      );
+      for (const warning of warnings)
+        for (const listener of this.warningListeners) {
           try {
-            f(event);
+            listener(warning);
           } catch {
             /* Observer isolation. */
           }
         }
-      },
-    );
+      checkSignal(signal);
+    }
+    const output = await run(operation);
     checkSignal(signal);
-    return { ...output, revision: p.revision };
+    return { ...output, revision: p.revision, warnings, model: p.model };
   }
   exportBuffer(options: { signal?: AbortSignal } = {}): Promise<Buffer> {
     return this.export(options);
+  }
+  analyze(
+    options: {
+      revision?: number;
+      signal?: AbortSignal;
+      geometryQuality?: boolean;
+    } = {},
+  ): Promise<SceneAnalysis> {
+    const signal = this.signal(options.signal);
+    if (
+      Object.keys(options).some(
+        (key) => !["revision", "signal", "geometryQuality"].includes(key),
+      ) ||
+      (options.geometryQuality !== undefined &&
+        typeof options.geometryQuality !== "boolean") ||
+      (options.revision !== undefined &&
+        (!Number.isSafeInteger(options.revision) || options.revision < 0))
+    )
+      throw malformed();
+    return this.track(Stage.Layout, (context) =>
+      this.ordered(signal, async () => {
+        const result = await this.process(
+          signal,
+          context,
+          options.geometryQuality ? "analyze_quality" : "analyze",
+          undefined,
+          options.revision,
+        );
+        const native = JSON.parse(result.geometry) as Omit<
+          SceneAnalysis,
+          "documentId" | "revision" | "budgetViolations"
+        >;
+        return Object.freeze({
+          ...native,
+          documentId: this.documentId,
+          revision: result.revision,
+          budgetViolations: budgetViolations(
+            this.geometryBudget,
+            native,
+            result.model,
+          ),
+          meshes: Object.freeze(
+            native.meshes.map((mesh) => Object.freeze(mesh)),
+          ),
+          ...(native.geometryQuality
+            ? {
+                geometryQuality: Object.freeze(
+                  native.geometryQuality.map((quality) =>
+                    Object.freeze({
+                      ...quality,
+                      findings: Object.freeze(
+                        quality.findings.map((finding) =>
+                          Object.freeze({
+                            ...finding,
+                            samples: Object.freeze(finding.samples),
+                          }),
+                        ),
+                      ),
+                    }),
+                  ),
+                ),
+              }
+            : {}),
+        });
+      }),
+    );
   }
   export(options: { signal?: AbortSignal } = {}): Promise<Buffer> {
     const signal = this.signal(options.signal);
@@ -909,7 +1204,11 @@ export class SceneSession {
           checkSignal(signal);
           const result = await this.process(signal, context);
           await publish(result.bytes, destination, { ...options, signal });
-          return { published: true as const, revision: result.revision };
+          return {
+            published: true as const,
+            revision: result.revision,
+            ...(result.warnings.length > 0 && { warnings: result.warnings }),
+          };
         },
       );
       // An early reservation failure must not release the preceding operation.
@@ -936,7 +1235,7 @@ export class SceneSession {
         const result = await this.process(
           signal,
           context,
-          true,
+          "inspect",
           options.animation,
         );
         if (result.revision !== options.revision)
@@ -976,6 +1275,7 @@ export class SceneSession {
       ]);
       this.assets.clear();
       this.listeners.clear();
+      this.warningListeners.clear();
       this.pending.clear();
       this.bytes = 0;
       this.scratchReserved = 0;

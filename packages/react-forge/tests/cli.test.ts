@@ -10,6 +10,95 @@ import test from "node:test";
 import { createRequire } from "node:module";
 const exec = promisify(execFile);
 
+test("CLI analyzes GLB and FBX tasks without automatic export", async () => {
+  if (process.env.REACT_FORGE_SKIP_SCENE_TESTS === "1") return;
+  const cli = fileURLToPath(new URL("../bin/react-forge.mjs", import.meta.url));
+  const entry = fileURLToPath(
+    new URL("../examples/scene-analysis.tsx", import.meta.url),
+  );
+  for (const format of ["glb", "fbx"]) {
+    const args = [cli, "analyze", entry, "--data", JSON.stringify({ format })];
+    const report = JSON.parse(
+      (await exec(process.execPath, [...args, "--json"])).stdout,
+    );
+    assert.equal(report.meshCount, 4);
+    assert.equal(report.referencedGeometryCount, 2);
+    assert.equal(report.unusedGeometryCount, 1);
+    assert.equal(report.registeredGeometryBytes, 372);
+    assert.equal(report.referencedGeometryBytes, 236);
+    assert.equal(report.uniqueVertexCount, 7);
+    assert.equal(report.uniqueTriangleCount, 3);
+    assert.equal(report.instanceVertexCount, 15);
+    assert.equal(report.instanceTriangleCount, 7);
+    assert.deepEqual(
+      report.meshes.map((row: { triangleCount: number }) => row.triangleCount),
+      [2, 2, 2, 1],
+    );
+    assert.equal(report.geometryQuality, undefined);
+    const quality = JSON.parse(
+      (await exec(process.execPath, [...args, "--geometry-quality", "--json"]))
+        .stdout,
+    );
+    assert.equal(quality.geometryQuality.length, 2);
+    assert.ok(
+      quality.meshes.every((row: { geometryId?: string }) => row.geometryId),
+    );
+    const qualityFixture = fileURLToPath(
+      new URL("../examples/scene-geometry-quality.tsx", import.meta.url),
+    );
+    const detailed = JSON.parse(
+      (
+        await exec(process.execPath, [
+          cli,
+          "analyze",
+          qualityFixture,
+          "--data",
+          JSON.stringify({ format }),
+          "--geometry-quality",
+          "--json",
+        ])
+      ).stdout,
+    );
+    assert.deepEqual(
+      detailed.geometryQuality[0].findings.map(
+        (finding: { count: number }) => finding.count,
+      ),
+      [1, 1, 2, 1, 1],
+    );
+    const text = (await exec(process.execPath, args)).stdout;
+    assert.match(text, /Scene revision .*4 meshes/);
+    assert.match(text, /triangles/);
+    await assert.rejects(
+      exec(process.execPath, [
+        ...args,
+        "--output",
+        `ignored.${format}`,
+        "--json",
+      ]),
+      (error: unknown) => {
+        assert.equal(
+          JSON.parse((error as { stdout: string }).stdout).error.code,
+          "malformed_input",
+        );
+        return true;
+      },
+    );
+  }
+  const document = fileURLToPath(
+    new URL("../examples/presentation.tsx", import.meta.url),
+  );
+  await assert.rejects(
+    exec(process.execPath, [cli, "analyze", document, "--json"]),
+    (error: unknown) => {
+      assert.equal(
+        JSON.parse((error as { stdout: string }).stdout).error.code,
+        "unsupported_edit",
+      );
+      return true;
+    },
+  );
+});
+
 test("workspace CLI runs TSX tasks and reports JSON, help, version and safe errors", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge-cli-"));
   const cli = fileURLToPath(new URL("../bin/react-forge.mjs", import.meta.url));

@@ -95,6 +95,17 @@ func (b *snapshotCopyBudget) take(size uint64) error {
 	return nil
 }
 
+// takeBytes charges retained evidence without consuming another filesystem
+// entry. Parsed Git config proofs retain their output and record headers after
+// the corresponding raw files have already consumed entry and byte budget.
+func (b *snapshotCopyBudget) takeBytes(size uint64) error {
+	if size > b.bytes {
+		return domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
+	}
+	b.bytes -= size
+	return nil
+}
+
 func snapshotUnsupported() error {
 	return domain.Fail(domain.Unsupported, "The workspace cannot be copied faithfully.", "Remove unsupported special files or external Git object/configuration dependencies before retrying; source files were preserved.")
 }

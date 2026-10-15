@@ -439,6 +439,9 @@ it.each(["X", "Escape"] as const)(
       value.current.revision,
     );
   },
+  // This flow drives Settings and two dialogs. It takes about 4.5s on a loaded
+  // development host and exceeded the 5s default on a shared CI shard.
+  30_000,
 );
 
 it.each(["X", "Escape"] as const)(
