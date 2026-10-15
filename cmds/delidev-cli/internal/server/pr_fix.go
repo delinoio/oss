@@ -472,6 +472,9 @@ func (s *Service) acceptPRFix(ctx context.Context, request domain.ID, operation 
 				return nil, domain.Fail(domain.Unsupported, "The selected Agent lacks the manual PR Git profile.", "Configure a verified Codex Agent; no harness fallback is performed.")
 			}
 			session = acceptedSession(domain.CreateSession{Name: "PR #" + target.Target.Number + " fix", NameMode: domain.ManualSessionName, AgentID: policy.AgentID, MachineID: policy.MachineID, ProjectID: input.ProjectID, Workspace: domain.Worktree, Source: domain.ManualSession}, nil, actor.DeviceID)
+			if err := requireExecutionJobBudget(tx, session, plan.Preparation, domain.SessionInput{Prompt: prompt, Mode: domain.ExecuteMode}); err != nil {
+				return nil, err
+			}
 			if err := queueSessionWorkspace(tx, id, &session, plan.Preparation); err != nil {
 				return nil, err
 			}
@@ -613,6 +616,12 @@ func bindPRFixAssignment(tx *store.Tx, attempt store.Record, job store.Record, o
 	}
 	value.Input, err = json.Marshal(input)
 	if err != nil {
+		return err
+	}
+	// The dispatch-time size check ran before the remediation was installed.
+	// Recheck the final serialized assignment so an over-limit result is a
+	// stable ResourceExhausted error that rolls back the claim.
+	if err := domain.RequireExecutionJobInput(value.Input, nil); err != nil {
 		return err
 	}
 	if _, err := tx.PutJob(job.ID, job.Revision, job.SessionID, job.ProjectID, value); err != nil {

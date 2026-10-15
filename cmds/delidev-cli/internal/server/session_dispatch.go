@@ -326,6 +326,28 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 
 func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.ExecutionJobInput, error) {
 	var empty domain.ExecutionJobInput
+	input, err := checkedExecutionAssignmentUnsized(tx, sr, session, machine, input)
+	if err != nil {
+		return empty, err
+	}
+	// Recheck the real serialized bytes before any caller publishes the job.
+	// The limit is shared with admission and is never raised.
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return empty, err
+	}
+	if err := domain.RequireExecutionJobInput(raw, nil); err != nil {
+		return empty, err
+	}
+	return input, nil
+}
+
+// checkedExecutionAssignmentUnsized performs every assignment check except the
+// serialized Job size limit. A caller that replaces the input after this check
+// (queued continuation) must measure the document it actually publishes; the
+// candidate still carries the predecessor's input, which may predate the limit.
+func checkedExecutionAssignmentUnsized(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.ExecutionJobInput, error) {
+	var empty domain.ExecutionJobInput
 	installation, err := checkedExecutionSelection(tx, session, machine, input)
 	if err != nil {
 		return empty, err
@@ -351,7 +373,10 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if err := requireNamedPreparation(machine, input.Preparation); err != nil {
 		return empty, err
 	}
-	return input, input.Validate()
+	if err := input.Validate(); err != nil {
+		return empty, err
+	}
+	return input, nil
 }
 
 // Source operations recheck current policy and workspace ownership without

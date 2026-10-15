@@ -1457,3 +1457,36 @@ test("custom theme deletion opener and confirmation are Danger while Cancel, Edi
   expectTone(dialog.getByRole("button", { name: "Confirm deletion" }), danger);
   expectTone(dialog.getByRole("button", { name: "Cancel" }), neutral);
 });
+
+test.each(Object.values(AppearanceProblem))(
+  "a %s problem renders no global alert outside Settings and one local alert with Reload inside",
+  async (problem) => {
+    scheme(false);
+    const value = fixture();
+    vi.mocked(value.bridge.read).mockResolvedValue({
+      revision: 1,
+      theme: Theme.System,
+      problem,
+    });
+    const main = render(
+      <AppearanceProvider bridge={value.bridge}>
+        <p>Main content</p>
+      </AppearanceProvider>,
+    );
+    await waitFor(() => expect(value.bridge.read).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(main.container.textContent).toBe("Main content");
+    main.unmount();
+    render(
+      <AppearanceProvider bridge={value.bridge}>
+        <AppearanceSettings />
+      </AppearanceProvider>,
+    );
+    await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(1));
+    expect(
+      screen.getByRole("button", { name: "Reload appearance" }),
+    ).toBeTruthy();
+  },
+);

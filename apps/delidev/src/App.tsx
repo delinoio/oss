@@ -11,7 +11,6 @@ import { SessionNameEditorProvider } from "./session-name-editor";
 import {
   SidebarPreference,
   SidebarPreferenceBoundary,
-  SidebarPreferenceNotice,
   useSidebarPreference,
   useWideSidebar,
 } from "./sidebar-preference";
@@ -272,6 +271,17 @@ function Shell({
       focusAllowed: false,
     });
   const toggleSidebar = () => {
+    // The product window renders no sidebar notice, so the toggle shortcut is
+    // the recovery action. While a problem fences saves, one press inspects the
+    // stored preference without saving or queueing the requested change; the
+    // next press after a healthy inspection saves it.
+    if (sidebarPreference.snapshot.problem) {
+      console.info("delidev.sidebar_preference.recovery_requested", {
+        problem: sidebarPreference.snapshot.problem,
+      });
+      sidebarPreference.reload();
+      return;
+    }
     sidebarPreference.select(
       sidebarCollapsed
         ? SidebarPreference.Expanded
@@ -952,8 +962,7 @@ function Shell({
     navigate(destination);
     pendingFocusDestination.current = destination;
   };
-  const sidebarShortcutEnabled =
-    !sidebarPreference.operation && !sidebarPreference.snapshot.problem;
+  const sidebarShortcutEnabled = !sidebarPreference.operation;
   const shortcutDeclarations = useShortcuts([
     {
       id: ShortcutId.ToggleSidebar,
@@ -1138,7 +1147,6 @@ function Shell({
                             : undefined
                         }
                       >
-                        <SidebarPreferenceNotice />
                         <button
                           ref={contextOpener}
                           type="button"
