@@ -744,10 +744,11 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
             };
             let located = context.chunk_location(index, offset);
             let mapped = located.generated.is_some();
-            if vite && !mapped {
-                if let Some(source) = mapped_source {
-                    context.vite_env_source_gaps.insert(source);
-                }
+            if vite
+                && !mapped
+                && let Some(source) = mapped_source
+            {
+                context.vite_env_source_gaps.insert(source);
             }
             tracing::debug!(
                 chunk = %context.chunks[index].file,
