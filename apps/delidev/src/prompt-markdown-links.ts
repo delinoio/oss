@@ -350,7 +350,7 @@ function decodeLabel(label: string): { text: string; offsets?: number[] } {
   if (!label.includes("\\")) return { text: label };
   let text = "";
   const offsets: number[] = [];
-  for (let index = 0; index < label.length; ) {
+  for (let index = 0; index < label.length;) {
     offsets.push(index);
     if (label[index] === "\\" && ESCAPED_CHAR.test(label[index + 1] ?? "")) {
       text += label[index + 1];

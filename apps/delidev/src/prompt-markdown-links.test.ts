@@ -182,16 +182,19 @@ it.each([
   ["[see [docs]](https://example.com)", 0],
   ["![img [alt]](https://example.com/a.png)", 0],
   ["[a [b [c]]](https://example.com)", 0],
-])("protects a nested-bracket label shape without collapsing it: %s", (text) => {
-  const scan = scanMarkdown(text);
-  expect(scan.links).toEqual([]);
-  expect(scan.protectedRanges).toEqual([{ start: 0, end: text.length }]);
-  expect(convertBareUrls(text, 0, text.length)).toBeUndefined();
-  const pasted = `${text} ${URL}`;
-  expect(convertBareUrls(pasted, 0, pasted.length)!.text).toBe(
-    `${text} ${LINK}`,
-  );
-});
+])(
+  "protects a nested-bracket label shape without collapsing it: %s",
+  (text) => {
+    const scan = scanMarkdown(text);
+    expect(scan.links).toEqual([]);
+    expect(scan.protectedRanges).toEqual([{ start: 0, end: text.length }]);
+    expect(convertBareUrls(text, 0, text.length)).toBeUndefined();
+    const pasted = `${text} ${URL}`;
+    expect(convertBareUrls(pasted, 0, pasted.length)!.text).toBe(
+      `${text} ${LINK}`,
+    );
+  },
+);
 
 it("keeps escaped label brackets collapsible and recovers from unmatched openers", () => {
   const escaped = "[a \\[b\\]](https://example.com)";
