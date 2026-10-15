@@ -1402,19 +1402,11 @@ fn mask_ignored(source: &str, ignored: &[(usize, usize)]) -> String {
 fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, usize)> {
     let code = mask_ignored(source, ignored);
     let bytes = code.as_bytes();
-    let mut blocks = Vec::new();
-    let mut stack = Vec::new();
-    for (index, byte) in bytes.iter().enumerate() {
-        match byte {
-            b'{' => stack.push(index),
-            b'}' => {
-                if let Some(open) = stack.pop() {
-                    blocks.push((open, index));
-                }
-            }
-            _ => {}
-        }
-    }
+    // Braces and parentheses are paired once for the whole text with a stack,
+    // and every lookup below reads these tables instead of rescanning the
+    // suffix, so the cost does not grow with the nesting depth.
+    let (blocks, block_close) = pair_delimiters(bytes, b'{', b'}');
+    let (_, paren_close) = pair_delimiters(bytes, b'(', b')');
     let enclosing = |position: usize| {
         blocks
             .iter()
@@ -1445,8 +1437,8 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             if bytes.get(cursor) != Some(&b'(') {
                 return None;
             }
-            cursor = matching_delimiter(bytes, cursor, b'(', b')')? + 1;
-            let body = function_body_block(&code, bytes, &blocks, cursor)?;
+            cursor = *paren_close.get(&cursor)? + 1;
+            let body = function_body_block(&code, bytes, &block_close, cursor)?;
             Some((found.start(), body))
         })
         .collect();
@@ -1490,7 +1482,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
                 .map(|offset| body + offset)
                 .filter(|open| bytes.get(*open) == Some(&b'{'))
         };
-        let block = open.and_then(|open| blocks.iter().find(|(start, _)| *start == open).copied());
+        let block = open.and_then(|open| block_close.get(&open).map(|close| (open, *close)));
         let end = block.map_or_else(
             || {
                 code[body..]
@@ -1515,7 +1507,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         if *byte != b'(' {
             continue;
         }
-        let Some(close) = matching_delimiter(bytes, open, b'(', b')') else {
+        let Some(close) = paren_close.get(&open).copied() else {
             continue;
         };
         let Some((body, arrow)) = arrow_or_function_body(bytes, close) else {
@@ -1540,7 +1532,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
                 .trim_start_matches("...");
             collect_binding_names(target, &mut names);
         }
-        let block = blocks.iter().find(|(start, _)| *start == body).copied();
+        let block = block_close.get(&body).map(|close| (body, *close));
         let end = block.map_or_else(
             || {
                 code[body..]
@@ -1575,8 +1567,8 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             .expect("static regex");
     for found in single_arrow.find_iter(&code) {
         let open = found.end() - 1;
-        if let Some(body) = blocks.iter().find(|(start, _)| *start == open) {
-            bodies.push(*body);
+        if let Some(close) = block_close.get(&open) {
+            bodies.push((open, *close));
         }
     }
     let declaration = Regex::new(r"\b(const|let|var|function)\s+eval\b").expect("static regex");
@@ -1603,6 +1595,30 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         scopes.push(scope);
     }
     scopes
+}
+
+/// Pairs `opening` and `closing` bytes with a stack in one pass. Returns the
+/// pairs in closing order and a table from each opener to its closer. An
+/// unmatched opener or closer has no entry.
+fn pair_delimiters(
+    bytes: &[u8],
+    opening: u8,
+    closing: u8,
+) -> (Vec<(usize, usize)>, HashMap<usize, usize>) {
+    let mut pairs = Vec::new();
+    let mut table = HashMap::new();
+    let mut stack = Vec::new();
+    for (index, byte) in bytes.iter().enumerate() {
+        if *byte == opening {
+            stack.push(index);
+        } else if *byte == closing
+            && let Some(open) = stack.pop()
+        {
+            pairs.push((open, index));
+            table.insert(open, index);
+        }
+    }
+    (pairs, table)
 }
 
 /// Finds a block-bodied function or arrow body after a parameter list.
@@ -1701,7 +1717,7 @@ fn is_control_flow_parentheses(code: &str, open: usize, keyword: &str) -> bool {
 fn function_body_block(
     code: &str,
     bytes: &[u8],
-    blocks: &[(usize, usize)],
+    block_close: &HashMap<usize, usize>,
     mut cursor: usize,
 ) -> Option<(usize, usize)> {
     let mut return_annotation = false;
@@ -1721,9 +1737,9 @@ fn function_body_block(
                     })
                 || return_annotation && code[..cursor].trim_end().ends_with("=>");
             if !type_brace {
-                return blocks.iter().find(|(open, _)| *open == cursor).copied();
+                return block_close.get(&cursor).map(|close| (cursor, *close));
             }
-            let (_, close) = blocks.iter().find(|(open, _)| *open == cursor).copied()?;
+            let close = *block_close.get(&cursor)?;
             cursor = close + 1;
             continue;
         }
@@ -3508,6 +3524,22 @@ y=/process.env.F/.test(z),process.env.G"#;
         let offsets = direct_eval_offsets(source);
         assert_eq!(offsets, vec![0, source.rfind("eval(d)").unwrap()]);
         assert_eq!(direct_eval_line(source), Some((0, 0)));
+    }
+
+    #[test]
+    fn deeply_nested_parentheses_are_scanned_in_linear_time() {
+        let depth = 200_000;
+        let source = format!("{}code{}; eval(x);", "(".repeat(depth), ")".repeat(depth));
+        let started = std::time::Instant::now();
+        let offsets = direct_eval_offsets(&source);
+        let elapsed = started.elapsed();
+        assert_eq!(offsets, vec![source.rfind("eval(x)").unwrap()]);
+        // Matching every opener by rescanning the suffix would take minutes
+        // here; one pass takes well under a second.
+        assert!(
+            elapsed < std::time::Duration::from_secs(20),
+            "scan took {elapsed:?}"
+        );
     }
 
     #[test]
