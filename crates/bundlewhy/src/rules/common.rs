@@ -1790,9 +1790,10 @@ struct EmittedEval {
 /// Finds the emitted direct `eval` calls that are attributable to `module` in
 /// `chunk_files`. A call is attributable when the chunk's source map resolves
 /// its generated position to the module's source file, or, for a chunk without
-/// a usable map, when the module is the only module the chunk comes from. A
-/// chunk shared with other modules and lacking a map proves nothing about
-/// which module owns an `eval`, so it is not counted.
+/// a usable map, when the module is the only included module the chunk comes
+/// from, whether or not the other modules have a file path. A chunk shared with
+/// other modules and lacking a map proves nothing about which module owns an
+/// `eval`, so it is not counted.
 fn emitted_evals(
     context: &Context<'_>,
     module: &CollectedModule,
@@ -1809,13 +1810,14 @@ fn emitted_evals(
         if offsets.is_empty() {
             continue;
         }
+        // Every included module that shares the chunk owns part of its text,
+        // including virtual and plugin-generated modules that have no file
+        // path: their `eval` calls must not be blamed on the analyzed module.
         let owners = context
             .collection
             .modules
             .iter()
-            .filter(|other| {
-                other.included && other.path.is_some() && other.chunks.iter().any(|f| f == file)
-            })
+            .filter(|other| other.included && other.chunks.iter().any(|f| f == file))
             .count();
         let has_map = chunk.map.is_some();
         for offset in offsets {
@@ -2067,12 +2069,14 @@ mod tests {
         )
     }
 
-    /// Emitted chunk text, an optional source map and the number of other
-    /// modules that share the chunk.
+    /// Emitted chunk text, an optional source map, the number of other file
+    /// modules that share the chunk and the number of virtual modules (no file
+    /// path) that share it.
     struct EmittedChunk {
         code: String,
         map: Option<String>,
         other_modules: usize,
+        virtual_modules: usize,
     }
 
     impl EmittedChunk {
@@ -2081,6 +2085,7 @@ mod tests {
                 code: code.to_owned(),
                 map: None,
                 other_modules: 0,
+                virtual_modules: 0,
             }
         }
     }
@@ -2115,6 +2120,15 @@ mod tests {
             modules.push(CollectedModule {
                 id: other.to_string_lossy().into_owned(),
                 path: Some(other.to_string_lossy().into_owned()),
+                included: true,
+                chunks: vec!["main.js".to_owned()],
+                ..CollectedModule::default()
+            });
+        }
+        for index in 0..emitted.virtual_modules {
+            modules.push(CollectedModule {
+                id: format!("\0virtual:generated-{index}?token=secret"),
+                path: None,
                 included: true,
                 chunks: vec!["main.js".to_owned()],
                 ..CollectedModule::default()
@@ -2784,10 +2798,53 @@ y=/process.env.F/.test(z),process.env.G"#;
             code: "const longLocalName = 1;\neval(code);".to_owned(),
             map: None,
             other_modules: 1,
+            virtual_modules: 0,
         };
         let drafts =
             eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, true, ManglingSetting::Enabled, &emitted);
         assert!(drafts.is_empty());
+    }
+
+    #[test]
+    fn virtual_module_sharing_a_chunk_without_map_blocks_attribution() {
+        // A virtual or plugin-generated module has no file path but still owns
+        // part of the chunk, so the call cannot be blamed on the file module.
+        let emitted = EmittedChunk {
+            code: "const longLocalName = 1;\neval(code);".to_owned(),
+            map: None,
+            other_modules: 0,
+            virtual_modules: 1,
+        };
+        for engine_reports_eval in [true, false] {
+            let drafts = eval_rule_drafts_for_chunk(
+                DEAD_EVAL_SOURCE,
+                engine_reports_eval,
+                ManglingSetting::Enabled,
+                &emitted,
+            );
+            assert!(drafts.is_empty(), "engine report: {engine_reports_eval}");
+        }
+        // Several virtual modules and a file module change nothing.
+        let crowded = EmittedChunk {
+            other_modules: 1,
+            virtual_modules: 2,
+            ..emitted
+        };
+        assert!(
+            eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, true, ManglingSetting::Enabled, &crowded)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn virtual_module_in_a_chunk_with_map_leaves_mapped_attribution() {
+        // The source map resolves the call to the module, so a virtual
+        // neighbour does not hide it.
+        let mut emitted = shared_chunk_with_map();
+        emitted.virtual_modules = 1;
+        let drafts =
+            eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, true, ManglingSetting::Enabled, &emitted);
+        assert_eq!(drafts.len(), 1);
     }
 
     fn shared_chunk_with_map() -> EmittedChunk {
@@ -2798,6 +2855,7 @@ y=/process.env.F/.test(z),process.env.G"#;
             code: "const longLocalName = 1;\neval(code);".to_owned(),
             map: Some(map.to_owned()),
             other_modules: 1,
+            virtual_modules: 0,
         }
     }
 
