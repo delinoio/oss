@@ -525,10 +525,14 @@ func recoveryCandidate(ctx context.Context, config Config, client delidevv1conne
 	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	_, err := client.SyncSubscriptionRecoveryCapture(bounded, authenticated(credential, &pb.SyncSubscriptionRecoveryCaptureRequest{
+	// The request owns its own copy of the bundle; clear it as soon as the RPC
+	// returns so the credential does not linger in the heap.
+	request := &pb.SyncSubscriptionRecoveryCaptureRequest{
 		Mutation: &pb.Mutation{RequestId: string(journal.CaptureRequest), Id: string(accountID), ExpectedRevision: original.Revision},
 		LeaseId:  string(original.ID), MachineId: string(credential.MachineID), InstanceId: string(instance), GenerationId: string(original.Generation), Bundle: bytes.Clone(file),
-	}))
+	}
+	_, err := client.SyncSubscriptionRecoveryCapture(bounded, authenticated(credential, request))
+	clear(request.Bundle)
 	if err != nil {
 		return nil, "", recoveryRPCFailure(err)
 	}

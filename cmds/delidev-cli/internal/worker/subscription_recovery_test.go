@@ -687,3 +687,39 @@ func TestCodexPreNativeCleanupCapturesUnusedOriginalBeforeDeletingIt(t *testing.
 		t.Fatal("an unconfirmed capture deleted the original file", err)
 	}
 }
+
+func TestCodexRecoveryClearsTheCaptureRequestBuffer(t *testing.T) {
+	f := newRecoveryFixture(t)
+	f.writeJournal()
+	f.processOwner(f.lease.OperationID)
+	// A surviving transient file with no retained capture is captured first.
+	if err := subscription.WriteCredentialFile(filepath.Join(f.home, "auth.json"), f.latest); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var buffers [][]byte
+	intercept := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			if sync, ok := req.Any().(*pb.SyncSubscriptionRecoveryCaptureRequest); ok {
+				mu.Lock()
+				buffers = append(buffers, sync.Bundle)
+				mu.Unlock()
+			}
+			return next(ctx, req)
+		}
+	})
+	f.client = delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.credential.Endpoint, connect.WithInterceptors(intercept))
+	if result := f.reconcile(f.instance); !result.settled {
+		t.Fatalf("recovery did not settle: %+v", result)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(buffers) != 1 || len(buffers[0]) == 0 {
+		t.Fatal("the capture request was not observed", len(buffers))
+	}
+	for _, b := range buffers[0] {
+		if b != 0 {
+			t.Fatal("the capture request retained the credential bundle after the RPC")
+		}
+	}
+}
