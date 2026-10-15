@@ -822,7 +822,8 @@ export function useSkillCompletion({
     if (!canEdit()) return;
     const map = projectionRef.current,
       edit = canonicalEditFromDisplay(map, nextDisplay, position),
-      plain = value.slice(0, edit.start) + edit.inserted + value.slice(edit.end),
+      plain =
+        value.slice(0, edit.start) + edit.inserted + value.slice(edit.end),
       caretAfter = edit.caret(position),
       composingNow = composing.current;
     if (plain === value) {
@@ -834,8 +835,7 @@ export function useSkillCompletion({
     // an IME is processed once composition has ended, never during it.
     let converted: string | undefined;
     if (!composingNow) {
-      const typed =
-        edit.inserted.length === 1 && isUrlDelimiter(edit.inserted);
+      const typed = edit.inserted.length === 1 && isUrlDelimiter(edit.inserted);
       if (typed || (lateComposition.current && edit.inserted)) {
         const result = convertDelimitedWords(
           plain,
@@ -857,7 +857,8 @@ export function useSkillCompletion({
               : EditKind.Deletion,
       selectionFor: (text) =>
         collapsedAt(caretAfter + (text.length - plain.length)),
-      seal: !composingNow && (converted !== undefined || /\s/u.test(edit.inserted)),
+      seal:
+        !composingNow && (converted !== undefined || /\s/u.test(edit.inserted)),
       session: composingNow ? compositionSession.current : undefined,
       apply: !composingNow,
     });
@@ -887,9 +888,9 @@ export function useSkillCompletion({
         : { text: plain, changed: false };
     return transact({
       candidates: result.changed ? [result.text, plain] : [plain],
-      kindFor: (admitted) =>
-        admitted === plain ? kind : EditKind.Conversion,
-      selectionFor: (admitted) => collapsedAt(end + (admitted.length - plain.length)),
+      kindFor: (admitted) => (admitted === plain ? kind : EditKind.Conversion),
+      selectionFor: (admitted) =>
+        collapsedAt(end + (admitted.length - plain.length)),
       seal: true,
     });
   };
@@ -916,10 +917,18 @@ export function useSkillCompletion({
   const isUndoKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     const key = (event.key ?? "").toLowerCase(),
       apple = isApplePlatform();
-    if (event.altKey || (apple ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey))
+    if (
+      event.altKey ||
+      (apple
+        ? !event.metaKey || event.ctrlKey
+        : !event.ctrlKey || event.metaKey)
+    )
       return undefined;
-    if (key === "z") return event.shiftKey ? "redo" : "undo";
-    if (!apple && key === "y" && !event.shiftKey) return "redo";
+    // Non-Latin layouts report another `key`; the physical code stays stable.
+    if (key === "z" || event.code === "KeyZ")
+      return event.shiftKey ? "redo" : "undo";
+    if (!apple && (key === "y" || event.code === "KeyY") && !event.shiftKey)
+      return "redo";
     return undefined;
   };
   const openLink = async (url: string) => {
@@ -945,7 +954,10 @@ export function useSkillCompletion({
     for (const span of spans) {
       const hit = [...span.getClientRects()].some(
         (rect) =>
-          x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom,
+          x >= rect.left &&
+          x <= rect.right &&
+          y >= rect.top &&
+          y <= rect.bottom,
       );
       if (hit)
         return scan.links.find(
@@ -1236,7 +1248,8 @@ export function useSkillCompletion({
           transact({
             candidates: [result.text],
             kindFor: () => EditKind.Conversion,
-            selectionFor: (text) => collapsedAt(at.start + text.length - value.length),
+            selectionFor: (text) =>
+              collapsedAt(at.start + text.length - value.length),
             seal: true,
             amend: session,
           });
@@ -1250,7 +1263,8 @@ export function useSkillCompletion({
         const data = event.clipboardData;
         // Clipboard files stay with the attachment owner, which sees the
         // event after this handler; mixed or text-less data is left native.
-        if (!canEdit() || composing.current || !data || data.files?.length) return;
+        if (!canEdit() || composing.current || !data || data.files?.length)
+          return;
         const text = data.getData("text/plain").replace(/\r\n?/gu, "\n");
         if (!text) return;
         event.preventDefault();

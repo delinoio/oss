@@ -19,12 +19,14 @@ import {
   SkillProvenance,
   newRequestId,
 } from "@delinoio/delidev-api-client";
-import {
-  useSkillCompletion,
-  type SkillTokenBinding,
-} from "./skill-completion";
+import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
 import { imageEntryHandlers } from "./image-attachments";
 import { copy } from "./localization";
+import {
+  projectMarkdown,
+  scanMarkdown,
+  selectionRevealsLink,
+} from "./prompt-markdown-links";
 
 const native = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -134,7 +136,10 @@ function fixture() {
     router.service(SkillService, { listSkills: read }),
   );
   const client = new QueryClient();
-  return (initial: string, props: { limit?: number; attach?: (files: File[]) => void } = {}) => (
+  return (
+    initial: string,
+    props: { limit?: number; attach?: (files: File[]) => void } = {},
+  ) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <Harness initial={initial} {...props} />
@@ -170,6 +175,11 @@ function mount(initial = DRAFT, props: { limit?: number } = {}) {
   const input = field();
   return { view, input };
 }
+// Browsers report every caret move through `selectionchange`; React's select
+// plugin deduplicates by that stream, so the helpers emit it as well.
+function reportSelection() {
+  fireEvent(document, new Event("selectionchange"));
+}
 function select(
   input: HTMLTextAreaElement,
   start: number,
@@ -179,12 +189,14 @@ function select(
   input.focus();
   input.setSelectionRange(start, end, direction);
   fireEvent.select(input);
+  reportSelection();
 }
 // Mirrors a native edit: the field text and caret change, then React sees it.
 function nativeEdit(input: HTMLTextAreaElement, text: string, caret: number) {
   fireEvent.change(input, {
     target: { value: text, selectionStart: caret, selectionEnd: caret },
   });
+  reportSelection();
 }
 function paste(
   input: HTMLTextAreaElement,
@@ -333,7 +345,11 @@ it("R04 paste: converts every eligible URL once, moves skill bindings and is one
   const shift = pasted.length;
   expect(bindingTexts()).toEqual([
     [0, 10, "$add-issue"],
-    [beforeBindings[1]![0]! + shift, beforeBindings[1]![1]! + shift, "$add-note"],
+    [
+      beforeBindings[1]![0]! + shift,
+      beforeBindings[1]![1]! + shift,
+      "$add-note",
+    ],
   ]);
   expect(probe.selections).toHaveLength(2);
   expect(probe.api.readCanonical().start).toBe(11 + pasted.length);
@@ -410,10 +426,18 @@ it("R06 delete: breaking the syntax leaves ordinary visible source", () => {
   select(input, 5);
   expect(input.value).toBe(DRAFT);
   const closing = DRAFT.indexOf(")");
-  nativeEdit(input, DRAFT.slice(0, closing) + DRAFT.slice(closing + 1), closing);
+  nativeEdit(
+    input,
+    DRAFT.slice(0, closing) + DRAFT.slice(closing + 1),
+    closing,
+  );
   expect(probe.canonical).toBe(DRAFT.replace(")", ""));
   expect(input.value).toBe(probe.canonical);
-  expect(screen.getByRole("textbox").parentElement!.querySelectorAll("[data-markdown-link]")).toHaveLength(0);
+  expect(
+    screen
+      .getByRole("textbox")
+      .parentElement!.querySelectorAll("[data-markdown-link]"),
+  ).toHaveLength(0);
   // Restoring the delimiter makes it a valid link again; the caret is at the
   // link end boundary, so it collapses.
   nativeEdit(input, DRAFT, closing + 1);
@@ -482,7 +506,11 @@ it("R07 selection: editing inside a revealed link keeps it valid and revealed", 
   expect(input.value).toBe(DRAFT);
   const caret = DRAFT.indexOf("Docs") + 2;
   select(input, caret);
-  nativeEdit(input, `${DRAFT.slice(0, caret)}!${DRAFT.slice(caret)}`, caret + 1);
+  nativeEdit(
+    input,
+    `${DRAFT.slice(0, caret)}!${DRAFT.slice(caret)}`,
+    caret + 1,
+  );
   expect(probe.canonical).toBe("see [Do!cs](https://e.com/d) ok");
   expect(input.value).toBe(probe.canonical);
   select(input, 0);
@@ -693,13 +721,20 @@ it("R16 modifier click: only the exact platform modifier opens the parsed URL on
   const displayed = input.value;
   const changes = probe.changes;
   const click = (init: MouseEventInit) => {
-    const down = fireEvent.mouseDown(input, { clientX: 10, clientY: 10, ...init });
+    const down = fireEvent.mouseDown(input, {
+      clientX: 10,
+      clientY: 10,
+      ...init,
+    });
     fireEvent.mouseUp(input, { clientX: 10, clientY: 10, ...init });
     const up = fireEvent.click(input, { clientX: 10, clientY: 10, ...init });
     return { down, up };
   };
   // Windows/Linux: Control alone.
-  expect(click({ button: 0, ctrlKey: true })).toEqual({ down: false, up: false });
+  expect(click({ button: 0, ctrlKey: true })).toEqual({
+    down: false,
+    up: false,
+  });
   await act(async () => {});
   expect(native.invoke).toHaveBeenCalledTimes(1);
   expect(native.invoke).toHaveBeenCalledWith("open_external_url", {
@@ -727,7 +762,10 @@ it("R16 modifier click: only the exact platform modifier opens the parsed URL on
     value: "MacIntel",
     configurable: true,
   });
-  expect(click({ button: 0, metaKey: true })).toEqual({ down: false, up: false });
+  expect(click({ button: 0, metaKey: true })).toEqual({
+    down: false,
+    up: false,
+  });
   await act(async () => {});
   expect(native.invoke).toHaveBeenCalledTimes(2);
   expect(click({ button: 0, ctrlKey: true }).down).toBe(true);
@@ -770,7 +808,9 @@ it("R16 modifier click: a pointer outside every link, a missing opener and nativ
   expect(native.invoke).toHaveBeenCalledTimes(1);
   expect(probe.canonical).toBe(DRAFT);
   expect(input.value).toBe(DISPLAY);
-  fireEvent.click(screen.getByRole("button", { name: copy("external-link.dismiss") }));
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("external-link.dismiss") }),
+  );
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
@@ -846,9 +886,9 @@ it("keeps the painted mirror aligned with the displayed text and canonical skill
     "$add-note",
   ]);
   // Skill spans keep their canonical start offsets as identity.
-  expect(skills.map((node) => (node as HTMLElement).dataset.skillStart)).toEqual(
-    ["0", String(probe.canonical.indexOf("$add-note"))],
-  );
+  expect(
+    skills.map((node) => (node as HTMLElement).dataset.skillStart),
+  ).toEqual(["0", String(probe.canonical.indexOf("$add-note"))]);
   // Revealed source stays one ordinary span with no link styling.
   select(input, 17);
   const source = view.container.querySelector("[data-markdown-link]")!;
@@ -865,3 +905,139 @@ it("ignores a caret-only change event and a stray undo with no history", () => {
   expect(probe.canonical).toBe(DRAFT);
   expect(probe.changes).toBe(0);
 });
+
+it("restored or replaced drafts are never converted", () => {
+  const { input } = mount("go https://a.test/x ");
+  expect(probe.canonical).toBe("go https://a.test/x ");
+  act(() => {
+    probe.api.replaceUnbound("see https://b.test/y ", 21);
+  });
+  expect(probe.canonical).toBe("see https://b.test/y ");
+  expect(input.value).toBe("see https://b.test/y ");
+});
+
+it("paints an unavailable skill token after a collapsed link at its displayed position", async () => {
+  const { view, input } = await boundDraft();
+  const end = input.value.length;
+  select(input, end);
+  nativeEdit(input, `${input.value}$zzz `, end + 5);
+  await vi.waitFor(() =>
+    expect(view.container.querySelector(".skill-token-unavailable")).not.toBe(
+      null,
+    ),
+  );
+  const span = view.container.querySelector(
+    ".skill-token-unavailable",
+  ) as HTMLElement;
+  expect(span.textContent).toBe("$zzz");
+  expect(span.dataset.skillStart).toBe(String(probe.canonical.indexOf("$zzz")));
+  const overlay = view.container.querySelector(".skill-text-overlay > div")!;
+  expect(overlay.textContent).toBe(`${input.value}​`);
+  expect(input.value.indexOf("$zzz")).toBe(
+    probe.canonical.indexOf("$zzz") - (LINK.length - "Docs".length),
+  );
+});
+
+// Seeded random walk over the whole state machine. After every operation the
+// field must show exactly the projection of the canonical text for the
+// canonical selection, selection maps must agree, and undoing every edit must
+// return to the initial draft with redo returning to the final one.
+function walker(seed: number) {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+}
+const WALK_PASTES = [
+  "https://a.test/p?q=[1]",
+  "text 한글 😀",
+  "[Docs](https://e.com/d)",
+  "x [y](https://z.test/a(b)) w",
+  "`https://c.test` ",
+  "\n",
+  "www.example.com mailto:a@b.test",
+  "https://a.test/x. ",
+  "![i](https://e.com/i.png)",
+  "```\nhttps://f.test\n",
+];
+const WALK_CHARS = ["a", "한", " ", "\n", "[", "]", "(", ")", "`", "!", "\\"];
+for (let seed = 1; seed <= 60; seed++) {
+  it(`holds the display, selection and history invariants on a random walk (seed ${seed})`, () => {
+    const next = walker(seed);
+    const initial = next() < 0.5 ? DRAFT : "";
+    const { input } = mount(initial);
+    const pick = <T,>(items: readonly T[]) =>
+      items[Math.floor(next() * items.length)]!;
+    const check = () => {
+      const canonical = probe.canonical;
+      const at = probe.api.readCanonical();
+      expect(at.text).toBe(canonical);
+      const links = scanMarkdown(canonical).links;
+      const projection = projectMarkdown(
+        canonical,
+        links,
+        (link) => !selectionRevealsLink(link, at),
+      );
+      expect(input.value).toBe(projection.text);
+      expect(input.selectionStart).toBe(projection.toDisplay(at.start));
+      expect(input.selectionEnd).toBe(projection.toDisplay(at.end));
+      expect(projection.toSource(input.selectionStart)).toBe(at.start);
+      expect(projection.toSource(input.selectionEnd)).toBe(at.end);
+    };
+    check();
+    let edits = 0;
+    for (let step = 0; step < 30; step++) {
+      const start = input.selectionStart,
+        end = input.selectionEnd;
+      const operation = pick([
+        "type",
+        "delete",
+        "paste",
+        "select",
+        "select",
+        "compose",
+      ]);
+      const before = probe.canonical;
+      if (operation === "type") {
+        const char = pick(WALK_CHARS);
+        const text = input.value.slice(0, start) + char + input.value.slice(end);
+        nativeEdit(input, text, start + char.length);
+      } else if (operation === "delete") {
+        const from = start === end ? Math.max(0, start - 1) : start;
+        const text = input.value.slice(0, from) + input.value.slice(end);
+        nativeEdit(input, text, from);
+      } else if (operation === "paste") {
+        paste(input, pick(WALK_PASTES));
+      } else if (operation === "compose") {
+        // A composition is one edit; its text commits when it ends.
+        fireEvent.compositionStart(input);
+        for (let update = 0; update < 1 + Math.floor(next() * 3); update++) {
+          const at = input.selectionStart,
+            to = input.selectionEnd,
+            chunk = pick(["ㅎ", "한", " ", "https://a.test/x", "\n"]);
+          nativeEdit(
+            input,
+            input.value.slice(0, at) + chunk + input.value.slice(to),
+            at + chunk.length,
+          );
+        }
+        fireEvent.compositionEnd(input);
+      } else {
+        const a = Math.floor(next() * (input.value.length + 1)),
+          b = next() < 0.5 ? a : Math.floor(next() * (input.value.length + 1));
+        select(input, Math.min(a, b), Math.max(a, b));
+      }
+      if (probe.canonical !== before) edits += 1;
+      check();
+    }
+    const final = probe.canonical;
+    // Every accepted edit is undoable; stepping back reaches the initial draft.
+    for (let step = 0; step < edits + 2; step++) undo(input);
+    expect(probe.canonical).toBe(initial);
+    check();
+    for (let step = 0; step < edits + 2; step++) redo(input);
+    expect(probe.canonical).toBe(final);
+    check();
+  });
+}

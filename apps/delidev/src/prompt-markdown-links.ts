@@ -582,7 +582,10 @@ export class MarkdownProjection {
       high = this.regions.length;
     while (low < high) {
       const mid = (low + high) >> 1;
-      if (this.regions[mid]!.displayStart + this.regions[mid]!.label.length <= offset)
+      if (
+        this.regions[mid]!.displayStart + this.regions[mid]!.label.length <=
+        offset
+      )
         low = mid + 1;
       else high = mid;
     }
@@ -737,7 +740,10 @@ export function canonicalEditFromDisplay(
     previous.slice(previous.length - tail) === nextDisplay.slice(hinted)
   ) {
     suffix = tail;
-    const limit = Math.min(previous.length - suffix, nextDisplay.length - suffix);
+    const limit = Math.min(
+      previous.length - suffix,
+      nextDisplay.length - suffix,
+    );
     while (prefix < limit && previous[prefix] === nextDisplay[prefix]) prefix++;
   } else {
     while (prefix < maxPrefix && previous[prefix] === nextDisplay[prefix])
@@ -764,7 +770,8 @@ export function canonicalEditFromDisplay(
     displayEnd,
     caret: (caret) => {
       if (caret <= displayStart) return projection.toSource(caret);
-      if (caret <= displayStart + inserted.length) return start + caret - displayStart;
+      if (caret <= displayStart + inserted.length)
+        return start + caret - displayStart;
       return projection.toSource(caret - displayDelta) + sourceDelta;
     },
   };
