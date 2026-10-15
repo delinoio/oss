@@ -164,14 +164,16 @@ remote fonts or external renderer assets are required.
 
 - Buttons that forget a profile or revoke authorization carry the semantic marker `data-action-tone="danger"`, set through the app-local `ActionTone` enum and `actionTone` helper in `src/action-tone.ts`. The marker uses the same DOM convention as the desktop client but shares no runtime code with it. `styles.css` defines `--danger-text` and `--danger-background` for light (`#b42332`, `#fff3f4`), explicit dark and system dark (`#ffb6bf`, `#392127`); one rule keyed on the marker gives a transparent background, danger-colored text and 1px border, and the pale hover background while enabled. Disabled attenuation (0.55), the 3px focus outline, the 48px minimum height and 6px corners, labels, accessible names, order and the confirmation flow are unchanged. The marker never depends on visible text.
 
-  | Control                                                                                       | Tone    |
-  | --------------------------------------------------------------------------------------------- | ------- |
-  | Forget on this device (Settings)                                                              | Danger  |
-  | Settings confirmation (reached only from Forget)                                              | Danger  |
-  | Revoke remote client (Diagnostics)                                                            | Danger  |
-  | Session confirmation while the revoke branch is open                                          | Danger  |
-  | Session confirmation for the original-request retry                                           | Default |
-  | Pairing retry, Inspect, Retry, Add profile, Stop, Resume and the Stop and Resume confirmation | untoned |
+  | Control                                                                                                                     | Tone    |
+  | --------------------------------------------------------------------------------------------------------------------------- | ------- |
+  | Forget on this device (Settings)                                                                                            | Danger  |
+  | Settings confirmation (reached only from Forget)                                                                            | Danger  |
+  | Revoke remote client (Diagnostics)                                                                                          | Danger  |
+  | Session confirmation while the revoke branch is open                                                                        | Danger  |
+  | Retry opener while the retained request is a revocation                                                                     | Danger  |
+  | Session confirmation for the retry of a retained revocation                                                                 | Danger  |
+  | Session confirmation for the retry of any other retained request                                                            | Default |
+  | Pairing retry, Inspect, Retry of any other retained request, Add profile, Stop, Resume and the Stop and Resume confirmation | untoned |
 
 - This app is a separate HTTPS remote client. Never add a Go/Worker/desktop
   sidecar, CEF, local execution or new business RPC to the platform bridge.

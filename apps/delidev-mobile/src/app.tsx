@@ -1197,6 +1197,10 @@ function Connected({
                     {c.inspect}
                   </button>
                   <button
+                    // The retained request replays the original revocation.
+                    {...(pending.operation === Operation.Revoke
+                      ? actionTone(ActionTone.Danger)
+                      : {})}
                     disabled={!enabled || busy || inspected !== pending.request}
                     onClick={() => {
                       setRevokeConfirm(false);
@@ -1278,7 +1282,9 @@ function Connected({
                 >
                   <button
                     {...actionTone(
-                      revokeConfirm ? ActionTone.Danger : ActionTone.Default,
+                      revokeConfirm || pending?.operation === Operation.Revoke
+                        ? ActionTone.Danger
+                        : ActionTone.Default,
                     )}
                     disabled={busy}
                     onClick={() => void confirm()}

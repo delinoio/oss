@@ -201,6 +201,29 @@ it("keeps the original-request retry confirmation neutral and Inspect and Retry 
   );
   expect(f.retry).not.toHaveBeenCalled();
 });
+it("marks the retained revocation retry and its confirmation Danger while Inspect stays untoned", async () => {
+  const f = fixture({
+    operation: Operation.Revoke,
+    phase: PendingPhase.Uncertain,
+    target: "device",
+    request: '{"requestId":"original-revoke","deviceId":"device"}',
+  });
+  const inspect = await screen.findByRole("button", { name: en.inspect });
+  expect(tone(inspect)).toBeNull();
+  await waitFor(() =>
+    expect((inspect as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(inspect);
+  await screen.findByText(en.inspected);
+  const retry = screen.getByRole("button", { name: en.retry });
+  expect(tone(retry)).toBe("danger");
+  fireEvent.click(retry);
+  expect(screen.getByRole("heading", { name: en.confirmRetry })).toBeTruthy();
+  expect(tone(dialog().getByRole("button", { name: en.confirm }))).toBe(
+    "danger",
+  );
+  expect(f.retry).not.toHaveBeenCalled();
+});
 it("keeps the revoke confirmation Danger only while the revoke branch is open", async () => {
   fixture(uncertain);
   const inspect = await screen.findByRole("button", { name: en.inspect });
