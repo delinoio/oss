@@ -125,7 +125,7 @@ func newGrokFixture(t *testing.T) *grokFixture {
 		if err != nil {
 			return nil, err
 		}
-		machine.Installations = []domain.Installation{{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "/controlled/native/grok", ProtocolVerified: true, ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}}
+		machine.Installations = []domain.Installation{{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "/controlled/native/grok", ExecutableSHA256: grokAdmittedDigest, ProtocolVerified: true, ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}}
 		return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
 	})
 	if err != nil {
@@ -163,6 +163,10 @@ func (f *grokFixture) sealed(t *testing.T, account, generation domain.ID, princi
 	}
 	return raw
 }
+
+// grokAdmittedDigest is the executable identity of the fixture installation. Admission
+// refuses an observation without one.
+const grokAdmittedDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func (f *grokFixture) finishWith(lease *pb.TakeSubscriptionResponse, request domain.ID, bundle []byte, success, refresh, cleanup bool) (*pb.FinishSubscriptionResponse, error) {
 	response, err := f.client.FinishSubscription(context.Background(), subscriptionRequest(f.workerToken, &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(request), Id: string(f.input.AccountID), ExpectedRevision: lease.LeaseRevision}, LeaseId: lease.LeaseId, GenerationId: lease.GenerationId, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Bundle: bundle, Succeeded: success, RefreshConfirmed: refresh, CleanupConfirmed: cleanup}))
@@ -1037,5 +1041,22 @@ func TestGrokRetireUnpublishedGenerationSurvivesAnEndedRequest(t *testing.T) {
 	f.service.retireUnpublishedGrokGeneration(ctx, f.secrets, f.input.AccountID, domain.NewID(), staged)
 	if _, err := f.secrets.Get(context.Background(), ref); err == nil {
 		t.Fatal("an ended request kept an unreferenced staged generation")
+	}
+}
+
+// The Take returns the observation it admitted, including the executable identity
+// the Worker must match before it materializes the credential.
+func TestGrokTakeReturnsTheAdmittedExecutableIdentity(t *testing.T) {
+	f := newGrokFixture(t)
+	lease, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var admitted domain.Installation
+	if err := json.Unmarshal(lease.InstallationJson, &admitted); err != nil {
+		t.Fatal(err)
+	}
+	if admitted.Harness != domain.GrokBuild || admitted.ExecutableSHA256 != grokAdmittedDigest {
+		t.Fatalf("the Take did not return the admitted executable identity: %+v", admitted)
 	}
 }

@@ -145,6 +145,10 @@ func TestGrokTakeRefusalCarriesPhaseAndVersions(t *testing.T) {
 		{"invalid version metadata", func(i *domain.Installation) { i.Version = "not-a-version" }, domain.GrokVersion, "", "version metadata is invalid", ""},
 		{"missing executable", func(i *domain.Installation) { i.State, i.ResolvedPath = domain.InstallationMissing, "" }, domain.GrokDiscovery, "1.0.52", "executable discovery", domain.NotFound},
 		{"never observed", func(i *domain.Installation) { i.ObservedAt = nil }, domain.GrokDiscovery, "1.0.52", "executable discovery", ""},
+		// The Take authorizes the probed bytes, so an observation without a valid
+		// executable identity is discovery evidence the lease cannot use.
+		{"no executable identity", func(i *domain.Installation) { i.ExecutableSHA256 = "" }, domain.GrokDiscovery, "1.0.52", "executable discovery", ""},
+		{"malformed executable identity", func(i *domain.Installation) { i.ExecutableSHA256 = "not-a-digest" }, domain.GrokDiscovery, "1.0.52", "executable discovery", ""},
 		{"observed in the future", func(i *domain.Installation) { at := observed.Add(time.Hour); i.ObservedAt = &at }, domain.GrokDiscovery, "1.0.52", "executable discovery", ""},
 		{"stored profile failure on a future observation", func(i *domain.Installation) {
 			at := observed.Add(time.Hour)
@@ -171,7 +175,7 @@ func TestGrokTakeRefusalCarriesPhaseAndVersions(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			f := newGrokFixture(t)
 			f.setGrokInstallation(t, func(installations *[]domain.Installation) {
-				(*installations)[0] = domain.Installation{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: "1.0.52", ResolvedPath: "/controlled/native/grok", ProtocolVerified: true, ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}
+				(*installations)[0] = domain.Installation{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: "1.0.52", ResolvedPath: "/controlled/native/grok", ExecutableSHA256: grokAdmittedDigest, ProtocolVerified: true, ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}
 				test.edit(&(*installations)[0])
 			})
 			_, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
@@ -228,7 +232,7 @@ func TestGrokAdmissionFailurePreservesRecordedClassification(t *testing.T) {
 		i.Protocol.GrokDiagnostic = domain.GrokErrorDiagnostic(domain.WithGrokDiagnostic(i.Version, domain.GrokRuntime, domain.Fail(domain.PermissionDenied, "x", "y")))
 	}
 	detected := func(edit func(*domain.Installation)) *domain.Installation {
-		i := &domain.Installation{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "/controlled/native/grok", ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}
+		i := &domain.Installation{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "/controlled/native/grok", ExecutableSHA256: grokAdmittedDigest, ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}
 		edit(i)
 		return i
 	}

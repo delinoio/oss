@@ -246,6 +246,57 @@ func TestDiscoveryBoundsAndGrokUpdateSuppression(t *testing.T) {
 	}
 }
 
+// A detected Grok Build installation reports the SHA-256 of the executable that
+// was probed, because a subscription Take authorizes those bytes. The identity
+// follows the installation state: nothing is reported for a missing, failed or
+// incompatible executable, and none for a harness that has no identity contract.
+func TestDiscoveryReportsTheExecutableIdentityOfADetectedGrokInstallation(t *testing.T) {
+	input := allMissing(t)
+	detected := fixture(t, "test \"$1\" = --no-auto-update\ntest \"$2\" = --version\nprintf 'grok 1.2.3\\n'\n")
+	input.Selections.Executables[3].Path = detected
+	input.Selections.Executables[1].Path = fixture(t, "printf 'unrecognized output\\n'\n")
+	root, owner := discoveryRoot(t), domain.NewID()
+	result, err := Discover(context.Background(), DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: owner}, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := result.ValidateDiscovery(input); err != nil {
+		t.Fatal(err)
+	}
+	want, err := InspectExecutable(context.Background(), detected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grok := result.Installations[3]
+	if grok.State != domain.InstallationDetected || grok.ExecutableSHA256 != want || !domain.ValidExecutableDigest(grok.ExecutableSHA256) {
+		t.Fatalf("the detected Grok installation did not report its executable identity: %+v", grok)
+	}
+	for index, installation := range result.Installations {
+		if index != 3 && installation.ExecutableSHA256 != "" {
+			t.Fatalf("installation %d (%s, %s) reported an identity", index, installation.Harness, installation.State)
+		}
+	}
+	if err := process.ReconcileOwner(filepath.Join(root, "processes"), owner); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Bytes replaced while the version probe ran are never reported as verified: the
+// digest taken before the probe must equal the one taken after it.
+func TestDiscoveryRefusesAGrokExecutableThatChangesDuringTheProbe(t *testing.T) {
+	input := allMissing(t)
+	input.Selections.Executables[3].Path = fixture(t, "printf '#!/bin/sh\\nprintf \"grok 1.2.3\\\\n\"\\n# replaced\\n' > \"$0\"\nprintf 'grok 1.2.3\\n'\n")
+	root, owner := discoveryRoot(t), domain.NewID()
+	if _, err := Discover(context.Background(), DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: owner}, input); domain.SafeError(err).Code != domain.Unavailable {
+		t.Fatalf("an executable replaced during the probe was reported: %v", err)
+	} else if !strings.Contains(domain.SafeError(err).Message, "changed during discovery") {
+		t.Fatalf("the probe failed for another reason: %v", err)
+	}
+	if err := process.ReconcileOwner(filepath.Join(root, "processes"), owner); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCanceledDiscoveryReapsOwnedProcessesAndKeepsProfile(t *testing.T) {
 	input := allMissing(t)
 	input.Selections.Executables[0].Path = fixture(t, "while :; do sleep 1; done\n")

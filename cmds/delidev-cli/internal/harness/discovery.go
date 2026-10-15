@@ -165,10 +165,15 @@ func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 		logger.InfoContext(ctx, "harness discovery started", "harness", i.Harness, "explicit_path", i.ExplicitPath != "")
 		resolved, state := resolve(i.Harness, i.ExplicitPath)
 		i.ResolvedPath, i.State = resolved, state
-		var codexDigest string
-		if i.Harness == domain.Codex && state == domain.InstallationUnchecked {
+		// Codex and Grok Build installations carry the SHA-256 of the executable
+		// that was probed. It is taken before the probe and compared after it, so
+		// bytes replaced during discovery are never reported as verified. Grok
+		// Build's identity is what a subscription Take authorizes: the Worker must
+		// launch exactly these bytes.
+		var executableDigest string
+		if (i.Harness == domain.Codex || i.Harness == domain.GrokBuild) && state == domain.InstallationUnchecked {
 			var err error
-			codexDigest, err = InspectExecutable(ctx, resolved)
+			executableDigest, err = InspectExecutable(ctx, resolved)
 			if err != nil {
 				return domain.HarnessDiscoveryOutput{}, err
 			}
@@ -278,8 +283,15 @@ func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 		logger.InfoContext(ctx, "harness discovery completed", "harness", i.Harness, "state", i.State)
 		if i.Harness == domain.Codex && i.State == domain.InstallationDetected {
 			digest, err := InspectExecutable(ctx, i.ResolvedPath)
-			if err != nil || digest != codexDigest {
+			if err != nil || digest != executableDigest {
 				return domain.HarnessDiscoveryOutput{}, domain.NativeModelFailure()
+			}
+			i.ExecutableSHA256 = digest
+		}
+		if i.Harness == domain.GrokBuild && i.State == domain.InstallationDetected {
+			digest, err := InspectExecutable(ctx, i.ResolvedPath)
+			if err != nil || digest != executableDigest {
+				return domain.HarnessDiscoveryOutput{}, domain.Fail(domain.Unavailable, "The Grok Build executable changed during discovery.", "Refresh discovery after the installation is stable; no executable identity was reported.")
 			}
 			i.ExecutableSHA256 = digest
 		}

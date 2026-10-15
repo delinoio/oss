@@ -55,7 +55,8 @@ func grokDiagnosticMessage(d *domain.GrokDiagnostic) *pb.GrokDiagnostic {
 //	incompatible                          -> discovery / unsupported
 //	failed                                -> discovery / unavailable
 //	unchecked, or detected without a
-//	  resolved path, with no observation
+//	  resolved path or executable
+//	  identity (SHA-256), with no observation
 //	  time, or with an observation time
 //	  later than the admission time plus
 //	  grokObservationSkew                 -> discovery / unsupported
@@ -98,11 +99,12 @@ const grokObservationSkew = time.Second
 
 // grokDiscoveryObserved reports whether discovery produced usable evidence for
 // the installation at the given admission time: it is detected, has a resolved
-// path and has a recorded observation time that is not in the future beyond
+// path and the SHA-256 identity of the probed executable (the lease may launch
+// only those bytes) and has a recorded observation time that is not in the future beyond
 // grokObservationSkew (for example after the server clock moved backward). It
 // is the single predicate shared by admission and its classification.
 func grokDiscoveryObserved(found *domain.Installation, now time.Time) bool {
-	return found.State == domain.InstallationDetected && found.ResolvedPath != "" && found.ObservedAt != nil && !found.ObservedAt.IsZero() && !found.ObservedAt.After(now.Add(grokObservationSkew))
+	return found.State == domain.InstallationDetected && found.ResolvedPath != "" && domain.ValidExecutableDigest(found.ExecutableSHA256) && found.ObservedAt != nil && !found.ObservedAt.IsZero() && !found.ObservedAt.After(now.Add(grokObservationSkew))
 }
 
 // grokDiscoveryProblem returns the safe problem that discovery recorded for the

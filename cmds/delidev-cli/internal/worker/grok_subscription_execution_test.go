@@ -19,6 +19,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -48,10 +49,16 @@ type grokExecutionServer struct {
 	// installationJSON is the verified observation an execute Take returns; nil
 	// returns none.
 	installationJSON []byte
+	// admittedDigest is the identity of the executable installationJSON admits.
+	admittedDigest string
 	// onTake inspects the durable claim a Take finds; takenClaims counts the calls.
 	onTake      func(managedSubscriptionJournal)
 	takenClaims atomic.Int32
 }
+
+// grokFixtureDigest is the executable identity the fake server admits. Tests that
+// launch no executable need no matching bytes behind the path.
+var grokFixtureDigest = strings.Repeat("c", 64)
 
 func newGrokExecutionServer(t *testing.T) *grokExecutionServer {
 	t.Helper()
@@ -62,7 +69,25 @@ func newGrokExecutionServer(t *testing.T) *grokExecutionServer {
 	logs := &bytes.Buffer{}
 	f := &grokExecutionServer{t: t, logs: logs, account: domain.NewID(), generation: domain.NewID(), credential: Credential{ServerID: domain.NewID(), MachineID: domain.NewID()}}
 	f.config = Config{Root: root, Logger: slog.New(slog.NewJSONHandler(logs, nil)), grokExecution: true}
-	f.installationJSON = f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: filepath.Join(root, "controlled", "grok")})
+	// The admitted executable exists at its canonical path with the admitted
+	// digest, because the credential callback verifies the bytes it launches.
+	executable := filepath.Join(root, "controlled", "grok")
+	if err := os.MkdirAll(filepath.Dir(executable), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	executable, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitted, err := harness.InspectExecutable(context.Background(), executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.admittedDigest = admitted
+	f.installationJSON = f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: executable, ExecutableSHA256: admitted})
 	f.envelope = mustSeal(t, f.credential.ServerID, f.account, f.generation, mustParse(t, grokWorkerFile(t, "synthetic-principal-1", "one", "2026-10-14T06:00:00Z")))
 	f.home = filepath.Join(root, "profile", "grok")
 	if err := security.PrivateDir(filepath.Dir(f.home)); err != nil {
@@ -600,7 +625,11 @@ func TestGrokExecutionUsesTheInstallationTheTakeAuthorized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.installationJSON = f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: "1.0.99", ResolvedPath: resolved})
+	digest, err := harness.InspectExecutable(context.Background(), resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.installationJSON = f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: "1.0.99", ResolvedPath: resolved, ExecutableSHA256: digest})
 	run, err := f.begin(t)
 	if err != nil {
 		t.Fatal(err)
@@ -629,13 +658,16 @@ func TestGrokExecutionRefusesAnUnusableAuthorizedInstallationAndReleasesTheLease
 		"none":     func(*grokExecutionServer) []byte { return nil },
 		"not json": func(*grokExecutionServer) []byte { return []byte("not json") },
 		"another harness": func(f *grokExecutionServer) []byte {
-			return f.installationDocument(domain.Installation{Harness: domain.Codex, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "/controlled/native/grok"})
+			return f.installationDocument(domain.Installation{Harness: domain.Codex, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "/controlled/native/grok", ExecutableSHA256: grokFixtureDigest})
 		},
 		"below the baseline": func(f *grokExecutionServer) []byte {
-			return f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: domain.GrokProtocolVersion, ResolvedPath: "/controlled/native/grok"})
+			return f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: domain.GrokProtocolVersion, ResolvedPath: "/controlled/native/grok", ExecutableSHA256: grokFixtureDigest})
 		},
 		"relative path": func(f *grokExecutionServer) []byte {
-			return f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "grok"})
+			return f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "grok", ExecutableSHA256: grokFixtureDigest})
+		},
+		"no executable digest": func(f *grokExecutionServer) []byte {
+			return f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "/controlled/native/grok"})
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -903,6 +935,55 @@ func TestGrokRecoveryOfAStartedExecutionRequiresItsProcessIndex(t *testing.T) {
 			}
 			if !started && (err != nil || len(f.finishes) != 1 || !f.finishes[0].CleanupConfirmed) {
 				t.Fatalf("recovery of an execution that never started failed: %v", err)
+			}
+		})
+	}
+}
+
+// The credential is delivered only to the bytes the Take admitted. Bytes replaced
+// at the same canonical path after the Take, at any later point before the
+// native process starts, receive no credential, and the lease is released with
+// confirmed cleanup because nothing was written.
+func TestGrokExecutionNeverDeliversTheCredentialToReplacedBytes(t *testing.T) {
+	replace := func(t *testing.T, f *grokExecutionServer, run *grokSubscriptionRun) {
+		t.Helper()
+		if err := os.WriteFile(run.installation.ResolvedPath, []byte("#!/bin/sh\necho replaced\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, stage := range map[string]func(t *testing.T, f *grokExecutionServer, run *grokSubscriptionRun) error{
+		"before the launch target": func(t *testing.T, f *grokExecutionServer, run *grokSubscriptionRun) error {
+			replace(t, f, run)
+			_, _, _, err := run.launchTarget(context.Background(), f.config, run.owner, domain.ExecutionJobInput{})
+			return err
+		},
+		"between the launch target and the credential": func(t *testing.T, f *grokExecutionServer, run *grokSubscriptionRun) error {
+			if _, _, _, err := run.launchTarget(context.Background(), f.config, run.owner, domain.ExecutionJobInput{}); err != nil {
+				t.Fatalf("the admitted bytes were refused: %v", err)
+			}
+			replace(t, f, run)
+			_, err := run.prepare(context.Background())
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newGrokExecutionServer(t)
+			run, err := f.begin(t)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := stage(t, f, run); domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatalf("replaced bytes were not refused: %v", err)
+			}
+			if _, err := os.Lstat(f.authPath()); !os.IsNotExist(err) {
+				t.Fatal("a credential was written for replaced bytes")
+			}
+			if err := run.release(true); err != nil {
+				t.Fatal(err)
+			}
+			request := f.onlyFinish(t)
+			if request.Succeeded || !request.CleanupConfirmed || len(request.Bundle) != 0 {
+				t.Fatalf("the refused lease was not released with confirmed cleanup: %+v", request)
 			}
 		})
 	}

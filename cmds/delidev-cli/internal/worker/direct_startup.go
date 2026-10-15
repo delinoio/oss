@@ -92,11 +92,16 @@ func resolveExecutionStartup(ctx context.Context, config Config, job domain.ID, 
 // therefore re-observed for that executable, whether the path changed or only
 // the bytes behind the same canonical path did: the credential must never reach
 // a binary the evidence does not describe, so the bytes are inspected again
-// before launch and the ready report verifies them once more afterwards. A
-// pinned original digest (a selection that already carried one) is never
-// replaced: an executable that does not match it fails closed. A nil attempt (a
-// job that has no direct startup) has no evidence to move.
-func (a *executionStartupAttempt) rebindExecutable(ctx context.Context, config Config, job domain.ID, input domain.ExecutionJobInput, executable, version string) (domain.Installation, error) {
+// before launch and the ready report verifies them once more afterwards.
+//
+// authorized is the digest of the executable the Take admitted. The evidence
+// follows the authorized bytes and never the bytes found now: contents that do
+// not hash to it fail closed, so a replacement at the same canonical path is
+// never promoted into the evidence. A pinned original digest (a selection that
+// already carried one) is never replaced either: an executable that does not
+// match it fails closed. A nil attempt (a job that has no direct startup) has
+// no evidence to move; the caller still verifies the bytes against authorized.
+func (a *executionStartupAttempt) rebindExecutable(ctx context.Context, config Config, job domain.ID, input domain.ExecutionJobInput, executable, version, authorized string) (domain.Installation, error) {
 	installation := input.Installation
 	if a == nil {
 		return installation, nil
@@ -104,6 +109,9 @@ func (a *executionStartupAttempt) rebindExecutable(ctx context.Context, config C
 	digest, err := harness.InspectExecutable(ctx, executable)
 	if err != nil {
 		return installation, domain.Fail(domain.RecoveryRequired, "The authorized native executable cannot be verified.", "Refresh Worker discovery; no PATH fallback is used.")
+	}
+	if authorized != "" && digest != authorized {
+		return installation, domain.Fail(domain.RecoveryRequired, "The authorized native executable changed since it was admitted.", "Refresh Worker discovery; the credential is not delivered to different bytes.")
 	}
 	if input.Startup != nil && input.Startup.ExecutableSHA256 != "" && input.Startup.ExecutableSHA256 != digest {
 		return installation, domain.Fail(domain.RecoveryRequired, "The original native executable changed.", "Restore the original executable before continuing its native history.")

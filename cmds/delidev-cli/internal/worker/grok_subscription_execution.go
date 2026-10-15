@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -44,10 +45,12 @@ type grokSubscriptionRun struct {
 
 // authorizedGrokInstallation decodes and validates the installation returned by
 // the execute Take: a Grok Build installation at or above the subscription
-// baseline with an absolute path.
+// baseline with an absolute path and the SHA-256 identity of the executable the
+// server admitted. The identity is what the lease authorizes: the Worker may
+// launch only bytes that hash to it, so an observation without one is refused.
 func authorizedGrokInstallation(raw []byte) (domain.Installation, error) {
 	var installation domain.Installation
-	if domain.Decode(raw, &installation) != nil || installation.Harness != domain.GrokBuild || !domain.GrokSubscriptionVersionAllowed(installation.Version) || !filepath.IsAbs(installation.ResolvedPath) {
+	if domain.Decode(raw, &installation) != nil || installation.Harness != domain.GrokBuild || !domain.GrokSubscriptionVersionAllowed(installation.Version) || !filepath.IsAbs(installation.ResolvedPath) || !domain.ValidExecutableDigest(installation.ExecutableSHA256) {
 		return domain.Installation{}, subscription.Invalid()
 	}
 	return installation, nil
@@ -63,17 +66,40 @@ func (r *grokSubscriptionRun) executable() (string, string, error) {
 	return resolved, r.installation.Version, nil
 }
 
+// verifiedExecutable is executable plus proof that the bytes behind the path are
+// the ones the Take authorized: the current contents must hash to the digest of
+// the admitted observation. Bytes replaced at the same canonical path after
+// discovery or Take fail closed; the current contents are never adopted as the
+// authorized identity.
+func (r *grokSubscriptionRun) verifiedExecutable(ctx context.Context) (string, string, error) {
+	executable, version, err := r.executable()
+	if err != nil {
+		return "", "", err
+	}
+	digest, err := harness.InspectExecutable(ctx, executable)
+	if err != nil {
+		return "", "", domain.Fail(domain.RecoveryRequired, "The authorized native executable cannot be verified.", "Refresh Worker discovery; no PATH fallback is used.")
+	}
+	if digest != r.installation.ExecutableSHA256 {
+		return "", "", domain.Fail(domain.RecoveryRequired, "The authorized native executable changed since it was admitted.", "Refresh Worker discovery; the credential is not delivered to different bytes.")
+	}
+	return executable, version, nil
+}
+
 // launchTarget returns the executable and version the lease authorized and
 // moves the startup evidence to it. The evidence (the executable the ready
 // report inspects, its digest and the journal a continuation resolves) must
 // describe the executable that is launched, not the one resolved before the
-// Take; when the identity cannot be proven the execution fails closed.
+// Take; when the identity cannot be proven, or the bytes differ from the digest
+// the Take admitted, the execution fails closed. The check holds for a job with
+// no direct startup evidence too, because the credential reaches the executable
+// either way.
 func (r *grokSubscriptionRun) launchTarget(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput) (string, string, domain.Installation, error) {
-	executable, version, err := r.executable()
+	executable, version, err := r.verifiedExecutable(ctx)
 	if err != nil {
 		return "", "", input.Installation, err
 	}
-	installation, err := config.startup.rebindExecutable(ctx, config, owner, input, executable, version)
+	installation, err := config.startup.rebindExecutable(ctx, config, owner, input, executable, version, r.installation.ExecutableSHA256)
 	if err != nil {
 		return "", "", input.Installation, err
 	}
@@ -153,6 +179,12 @@ func (r *grokSubscriptionRun) prepare(ctx context.Context) ([]string, error) {
 	// process may exist and before any credential is written. A later missing
 	// index is then never completion proof: only an index that is present and
 	// reconciles empty proves the owned process is gone.
+	// The last gate before the credential can exist: the executable the native
+	// process is about to start must still be the one the Take authorized, so
+	// bytes replaced since the launch target was verified never receive it.
+	if _, _, err := r.verifiedExecutable(ctx); err != nil {
+		return nil, err
+	}
 	owner := filepath.Join(r.processes, string(r.owner))
 	if err := security.PrivateDir(owner); err != nil {
 		return nil, domain.SafeError(err)

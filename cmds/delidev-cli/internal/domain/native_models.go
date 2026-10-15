@@ -68,6 +68,10 @@ type NativeModelObservation struct {
 var nativeModelSelector = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$`)
 var nativeExecutableDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// ValidExecutableDigest reports whether value is a lowercase SHA-256 executable
+// identity as reported by discovery and the startup evidence.
+func ValidExecutableDigest(value string) bool { return nativeExecutableDigest.MatchString(value) }
+
 func NativeModelFailure() *Error {
 	return Fail(Unsupported, "The native model observation is malformed or exceeds its supported bounds.", "Refresh the selected Codex installation; no models were registered.")
 }

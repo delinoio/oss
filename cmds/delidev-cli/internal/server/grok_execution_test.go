@@ -66,7 +66,7 @@ func (f *grokExecutionFixture) prepareJobs(count int) []memberJob {
 	c.Options = domain.AgentOptions{Permission: domain.PermissionDefault}
 	c.GrokContext = &domain.GrokModelContext{Tokens: 32000, Source: domain.UserDeclared}
 	observed := time.Now().UTC()
-	f.input.Installation = domain.Installation{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "/controlled/native/grok", ProtocolVerified: true, ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}
+	f.input.Installation = domain.Installation{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "/controlled/native/grok", ExecutableSHA256: grokAdmittedDigest, ProtocolVerified: true, ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}
 	f.input.ConfigurationDigest, _ = c.Digest()
 	var jobs []memberJob
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.jobs", nil, func(tx *store.Tx) (any, error) {

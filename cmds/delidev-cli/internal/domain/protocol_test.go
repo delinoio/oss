@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func protocolOutput() (HarnessDiscoveryInput, HarnessDiscoveryOutput) {
 	input := HarnessDiscoveryInput{Revision: 1, VerifyProtocol: true, Selections: ExecutableSelections{Executables: []ExecutableSelection{}}}
@@ -77,6 +80,44 @@ func TestNativeProtocolObservationIsSeparateFromExecutionReadiness(t *testing.T)
 				t.Fatal("invalid observation accepted")
 			}
 		})
+	}
+}
+
+// A SHA-256 executable identity is part of a detected Codex or Grok Build
+// installation only: a Grok subscription Take authorizes those bytes, Codex
+// native models bind to them, and no other harness has an identity contract.
+func TestDiscoveryExecutableIdentityBelongsToDetectedCodexAndGrokOnly(t *testing.T) {
+	const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	index := map[Harness]int{Codex: 0, ClaudeCode: 1, OpenCode: 2, GrokBuild: 3}
+	for _, test := range []struct {
+		name    string
+		harness Harness
+		edit    func(*Installation)
+		valid   bool
+	}{
+		{"detected Grok Build", GrokBuild, func(i *Installation) { i.ExecutableSHA256 = digest }, true},
+		{"detected Codex", Codex, func(i *Installation) { i.ExecutableSHA256 = digest }, true},
+		{"detected Claude Code", ClaudeCode, func(i *Installation) { i.ExecutableSHA256 = digest }, false},
+		{"detected OpenCode", OpenCode, func(i *Installation) { i.ExecutableSHA256 = digest }, false},
+		{"missing Grok Build", GrokBuild, func(i *Installation) {
+			i.State, i.ExecutableSHA256, i.Version, i.ResolvedPath = InstallationMissing, digest, "", ""
+			i.Protocol, i.ProtocolVerified, i.Problem = nil, false, InstallationProblem(InstallationMissing)
+		}, false},
+		{"upper-case digest", GrokBuild, func(i *Installation) { i.ExecutableSHA256 = strings.ToUpper(digest) }, false},
+		{"short digest", GrokBuild, func(i *Installation) { i.ExecutableSHA256 = digest[:63] }, false},
+		{"non-hex digest", GrokBuild, func(i *Installation) { i.ExecutableSHA256 = strings.Repeat("g", 64) }, false},
+		{"no digest", GrokBuild, func(i *Installation) { i.ExecutableSHA256 = "" }, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			input, output := protocolOutput()
+			test.edit(&output.Installations[index[test.harness]])
+			if err := output.ValidateDiscovery(input); (err == nil) != test.valid {
+				t.Fatalf("validation = %v, want valid=%v", err, test.valid)
+			}
+		})
+	}
+	if !ValidExecutableDigest(digest) || ValidExecutableDigest("") || ValidExecutableDigest(digest+"0") {
+		t.Fatal("the shared digest predicate is wrong")
 	}
 }
 
