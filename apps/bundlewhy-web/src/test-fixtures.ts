@@ -7,6 +7,11 @@ import {
   CoverageState,
   EngineSupport,
   EvidenceStatus,
+  ExportScope,
+  ExportUsagePathEnd,
+  ExportUsageSchema,
+  ExportUsageState,
+  ExportUsageTruncation,
   LocationKind,
   OptimizationCategory,
   ReportMode,
@@ -203,5 +208,66 @@ export function fixtureSource() {
       "// header\nimport { render } from './render';\nimport _ from 'lodash';\nrender(_);",
     contentIncluded: true,
     stale: true,
+  });
+}
+
+type ExportReferenceInit = {
+  module: string;
+  exportPath?: string[];
+};
+
+/** Builds an export reference; no export path means module scope. */
+export function exportReference({
+  module,
+  exportPath = [],
+}: ExportReferenceInit) {
+  return {
+    module,
+    exportPath,
+    scope: exportPath.length > 0 ? ExportScope.NAMED : ExportScope.MODULE,
+  };
+}
+
+export function exportEdge(
+  consumer: ExportReferenceInit,
+  provider: ExportReferenceInit,
+  dependencyId = "",
+  location = "",
+) {
+  return {
+    consumer: exportReference(consumer),
+    provider: exportReference(provider),
+    dependencyId,
+    location,
+  };
+}
+
+/** A two-edge chain: entry (module scope) -> lib.foo -> shared.bar. */
+export function fixtureExportUsage(
+  overrides: MessageInitShape<typeof ExportUsageSchema> = {},
+) {
+  return create(ExportUsageSchema, {
+    state: ExportUsageState.AVAILABLE,
+    truncation: ExportUsageTruncation.NONE,
+    paths: [
+      {
+        edges: [
+          exportEdge(
+            { module: "src/main.ts" },
+            { module: "src/lib.ts", exportPath: ["foo"] },
+            "27",
+            "6:13-16",
+          ),
+          exportEdge(
+            { module: "src/lib.ts", exportPath: ["foo"] },
+            { module: "src/shared.ts", exportPath: ["bar"] },
+            "37",
+            "4:32-35",
+          ),
+        ],
+        end: ExportUsagePathEnd.ROOT,
+      },
+    ],
+    ...overrides,
   });
 }
