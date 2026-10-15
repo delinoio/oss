@@ -132,6 +132,12 @@ fn is_line_terminator(character: char) -> bool {
     matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
 }
 
+/// True for a character that ends a statement in the heuristic scans: `;` or
+/// any line terminator.
+fn is_statement_end(character: char) -> bool {
+    character == ';' || is_line_terminator(character)
+}
+
 /// Byte length of the ECMAScript line terminator that starts at `index`, or 0
 /// when none does: 1 for LF and CR, 3 for U+2028 and U+2029 (`E2 80 A8` and
 /// `E2 80 A9`). Every byte-level scan uses this with [`is_line_terminator`] so
@@ -1550,7 +1556,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         let end = block.map_or_else(
             || {
                 code[body..]
-                    .find([';', '\n'])
+                    .find(is_statement_end)
                     .map_or(bytes.len(), |offset| body + offset)
             },
             |(_, close)| close,
@@ -1598,7 +1604,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         let end = block.map_or_else(
             || {
                 code[body..]
-                    .find([';', '\n'])
+                    .find(is_statement_end)
                     .map_or(bytes.len(), |offset| body + offset)
             },
             |(_, close)| close,
@@ -1616,7 +1622,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
     let single = Regex::new(r"\beval\s*=>").expect("static regex");
     for found in single.find_iter(&code) {
         let end = code[found.end()..]
-            .find([';', '\n'])
+            .find(is_statement_end)
             .map_or(bytes.len(), |offset| found.end() + offset);
         scopes.push((found.start(), end));
     }
@@ -1816,7 +1822,7 @@ fn named_function_is_expression(code: &str, start: usize) -> bool {
     let keyword_start = prefix
         .len()
         .saturating_sub(keyword.unwrap_or_default().len());
-    !raw_prefix[keyword_start..].contains(['\n', '\r'])
+    !raw_prefix[keyword_start..].contains(is_line_terminator)
 }
 
 fn matching_delimiter(bytes: &[u8], open: usize, opening: u8, closing: u8) -> Option<usize> {
@@ -1839,7 +1845,9 @@ fn matching_delimiter(bytes: &[u8], open: usize, opening: u8, closing: u8) -> Op
 fn is_case_label(prefix: &str) -> bool {
     let label = prefix.strip_suffix(':').unwrap_or(prefix);
     let statement = label
-        .rsplit_once(['{', '}', ';', '\n'])
+        .rsplit_once(|character: char| {
+            matches!(character, '{' | '}') || is_statement_end(character)
+        })
         .map_or(label, |(_, rest)| rest)
         .trim();
     statement == "default"
@@ -3037,6 +3045,31 @@ y=/process.env.F/.test(z),process.env.G"#;
         // The column counts bytes after the last terminator.
         assert_eq!(line_and_column("\u{2029}\u{e9}x", 5), (1, 2));
         assert_eq!(line_and_column("abc", 2), (0, 2));
+    }
+
+    #[test]
+    fn eval_shadow_scopes_end_at_every_line_terminator() {
+        for terminator in LINE_TERMINATORS {
+            // An expression-bodied arrow ends at the line terminator, so the
+            // next line's eval is a real direct eval.
+            for source in [
+                format!("const f = (eval) => eval(1){terminator}eval(2)"),
+                format!("const f = eval => eval(1){terminator}eval(2)"),
+            ] {
+                let (line, _) = direct_eval_line(&source).expect(&source);
+                assert_eq!(line, 1, "{source:?}");
+            }
+            // `return` followed by a line terminator ends the statement, so
+            // the function is a declaration scoped to its block.
+            let source = format!(
+                "function outer() {{ return{terminator}function eval() {{}} }} eval(code);"
+            );
+            assert!(direct_eval_line(&source).is_some(), "{source:?}");
+            // A `case` label is recognized after any terminator.
+            let source =
+                format!("switch (a) {{ case 1:{terminator}function eval() {{}} }} eval(code);");
+            assert!(direct_eval_line(&source).is_some(), "{source:?}");
+        }
     }
 
     #[test]
