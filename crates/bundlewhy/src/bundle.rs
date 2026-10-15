@@ -20,8 +20,8 @@ use crate::{
     },
     rules::export_usage::{MAX_EDGES_PER_PATH, MAX_PATHS},
     sources::{
-        as_text, filesystem_path, is_binary_asset_path, is_generated_asset_module,
-        safe_project_relative, sha256_hex,
+        LiveFileFailure, as_text, filesystem_path, is_binary_asset_path, is_generated_asset_module,
+        probe_entry, read_vetted_file, safe_project_relative, sha256_hex,
     },
 };
 
@@ -520,19 +520,37 @@ pub fn normalized_status(status: RunStatus, run_dir: &Path) -> RunStatus {
     match status {
         RunStatus::Running => RunStatus::Failed,
         RunStatus::Cancelled | RunStatus::Failed => status,
-        _ if run_dir.join(INCOMPLETE_MARKER).exists() => RunStatus::Partial,
-        _ => status,
+        _ => match probe_entry(&run_dir.join(INCOMPLETE_MARKER)) {
+            Ok(()) => RunStatus::Partial,
+            Err(LiveFileFailure::Missing) => status,
+            Err(failure) => {
+                // The marker cannot be inspected, so completeness cannot be
+                // proven; an unfinished run is never presented as complete.
+                tracing::warn!(
+                    run_dir = %run_dir.display(),
+                    ?failure,
+                    "incomplete marker could not be inspected; presenting the run as partial"
+                );
+                RunStatus::Partial
+            }
+        },
     }
 }
 
 pub fn load(run_dir: &Path) -> BwResult<ResultBundle> {
     let path = run_dir.join(BUNDLE_FILE);
-    if !path.exists() && std::fs::symlink_metadata(&path).is_err() {
-        return Err(BwError::new(
-            ErrorCode::ResultInvalid,
-            format!("No result bundle at {}", path.display()),
-            "Pass a run directory created by `bundlewhy analyze` (it contains analysis.json).",
-        ));
+    if let Err(error) = std::fs::symlink_metadata(&path) {
+        return Err(match LiveFileFailure::from_io(&error) {
+            LiveFileFailure::Missing => BwError::new(
+                ErrorCode::ResultInvalid,
+                format!("No result bundle at {}", path.display()),
+                "Pass a run directory created by `bundlewhy analyze` (it contains analysis.json).",
+            ),
+            failure => {
+                tracing::warn!(path = %path.display(), ?failure, %error, "result bundle is inaccessible");
+                invalid(format!("analysis.json is inaccessible: {error}"))
+            }
+        });
     }
     // The run directory is untrusted: only a bounded regular file (never a
     // symlink or special file such as /dev/zero) is read.
@@ -558,10 +576,11 @@ pub fn load(run_dir: &Path) -> BwResult<ResultBundle> {
             bundle.analysis.duration_ms = completion.duration_ms;
             bundle.analysis.finished_at = completion.finished_at;
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+        Err(error) => match LiveFileFailure::from_io(&error) {
             // Bundles saved before completion.json use analysis.json timing.
-        }
-        Err(error) => return Err(invalid(format!("completion.json is inaccessible: {error}"))),
+            LiveFileFailure::Missing => {}
+            _ => return Err(invalid(format!("completion.json is inaccessible: {error}"))),
+        },
     }
     let status = normalized_status(bundle.analysis.status, run_dir);
     if bundle.analysis.status == RunStatus::Running {
@@ -609,26 +628,15 @@ const MAX_STALE_CHECK_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Reads a project file for a stale check only when it resolves to a regular
 /// file inside the project root and is not larger than the limit. Special
-/// files (for example `/dev/zero`) and symlinks leaving the root are refused.
-fn read_project_file(canonical_root: &Path, relative: &Path) -> Option<Vec<u8>> {
-    let resolved = std::fs::canonicalize(canonical_root.join(relative)).ok()?;
-    if !resolved.starts_with(canonical_root) {
-        return None;
-    }
-    let metadata = std::fs::metadata(&resolved).ok()?;
-    if !metadata.is_file() || metadata.len() > MAX_STALE_CHECK_BYTES {
-        return None;
-    }
-    let mut bytes = Vec::new();
-    std::io::Read::read_to_end(
-        &mut std::io::Read::take(
-            std::fs::File::open(&resolved).ok()?,
-            MAX_STALE_CHECK_BYTES + 1,
-        ),
-        &mut bytes,
+/// files (for example `/dev/zero`) and symlinks leaving the root are refused
+/// with `LiveFileFailure::NotPermitted`; a removed file is
+/// `LiveFileFailure::Missing`; any other failure keeps its I/O error kind.
+fn read_project_file(canonical_root: &Path, relative: &Path) -> Result<Vec<u8>, LiveFileFailure> {
+    read_vetted_file(
+        &canonical_root.join(relative),
+        |resolved| resolved.starts_with(canonical_root),
+        MAX_STALE_CHECK_BYTES,
     )
-    .ok()?;
-    (bytes.len() as u64 <= MAX_STALE_CHECK_BYTES).then_some(bytes)
 }
 
 /// True when the saved source is a bundler-generated asset module whose hash
@@ -664,8 +672,10 @@ fn is_unverifiable_asset(source: &SourceFile, live: &[u8]) -> bool {
 ///
 /// The `BW_SOURCE_FRESHNESS_UNVERIFIED` warning is recomputed the same way:
 /// earlier ones are dropped and one warning is added only for sources that
-/// exist but cannot be read during this call; a removed file is stale, not
-/// unverified.
+/// cannot be inspected or read during this call. Every filesystem failure is
+/// classified through `LiveFileFailure`: only `NotFound` (a removed file) is
+/// stale; permission, not-a-directory, other I/O failures and files that are
+/// not vetted for reading are unverified, never changed.
 pub fn mark_stale(bundle: &mut ResultBundle) {
     let root = PathBuf::from(&bundle.project_root);
     if bundle.project_root.is_empty() || !root.is_absolute() {
@@ -710,16 +720,24 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
         else {
             continue;
         };
-        // A file that cannot be verified (too large, special, outside the
-        // root) is not reported stale; only a removed file or a hash mismatch
-        // is.
-        let removed = std::fs::symlink_metadata(canonical_root.join(&relative)).is_err();
+        // Only a removed file (`NotFound`) or a hash mismatch is a change. A
+        // file that cannot be verified (too large, special, outside the root,
+        // or an I/O failure such as permission denied) is never reported stale;
+        // it only leaves its freshness unverified.
         if existence_only {
-            source.stale = removed;
+            source.stale = match probe_entry(&canonical_root.join(&relative)) {
+                Ok(()) => false,
+                Err(failure) if failure.is_removal() => true,
+                Err(failure) => {
+                    tracing::warn!(path = %source.path, ?failure, "existence check failed on reopen; freshness is unverified");
+                    freshness_unverified += 1;
+                    false
+                }
+            };
             continue;
         }
-        let is_stale = match read_project_file(&canonical_root, &relative) {
-            Some(bytes) => {
+        source.stale = match read_project_file(&canonical_root, &relative) {
+            Ok(bytes) => {
                 if is_unverifiable_asset(source, &bytes) {
                     tracing::debug!(path = %source.path, "asset stub source is not freshness-checked");
                     false
@@ -727,17 +745,15 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
                     sha256_hex(&bytes) != source.sha256
                 }
             }
-            None => {
-                if !removed {
-                    // Present but unreadable: no change can be claimed, only
-                    // that freshness cannot be checked.
-                    tracing::warn!(path = %source.path, "live read failed on reopen; freshness is unverified");
-                    freshness_unverified += 1;
-                }
-                removed
+            Err(failure) if failure.is_removal() => true,
+            Err(failure) => {
+                // Present or not provably removed, but not readable: no change
+                // can be claimed, only that freshness cannot be checked.
+                tracing::warn!(path = %source.path, ?failure, "live read failed on reopen; freshness is unverified");
+                freshness_unverified += 1;
+                false
             }
         };
-        source.stale = is_stale;
     }
     // Sources that were not rechecked keep their saved flag and still count.
     let stale = bundle.sources.iter().filter(|source| source.stale).count();
@@ -1750,8 +1766,14 @@ mod tests {
             .unwrap();
         std::os::unix::fs::symlink("/dev/zero", project.join("zero.js")).unwrap();
         let canonical = std::fs::canonicalize(&project).unwrap();
-        assert!(read_project_file(&canonical, Path::new("escape.js")).is_none());
-        assert!(read_project_file(&canonical, Path::new("zero.js")).is_none());
+        assert_eq!(
+            read_project_file(&canonical, Path::new("escape.js")),
+            Err(LiveFileFailure::NotPermitted)
+        );
+        assert_eq!(
+            read_project_file(&canonical, Path::new("zero.js")),
+            Err(LiveFileFailure::NotPermitted)
+        );
         std::fs::write(project.join("inside.js"), "ok").unwrap();
         assert_eq!(
             read_project_file(&canonical, Path::new("inside.js")).unwrap(),
@@ -1865,6 +1887,219 @@ mod tests {
         assert!(saved.sources[0].stale);
         assert_eq!(problem_count(&saved, "BW_SOURCE_FRESHNESS_UNVERIFIED"), 0);
         assert_eq!(problem_count(&saved, "BW_SOURCE_STALE"), 1);
+    }
+
+    /// How a source's backing path is set up for a reopen test.
+    #[derive(Clone, Copy, Debug)]
+    enum Backing {
+        Unchanged,
+        Edited,
+        Removed,
+        /// A directory in place of the file.
+        Directory,
+        /// The parent of the path is a regular file (not-a-directory error).
+        ParentIsFile,
+        /// A symlink whose target was removed.
+        #[cfg(unix)]
+        DanglingSymlink,
+        /// A symlink leaving the project root.
+        #[cfg(unix)]
+        EscapingSymlink,
+        /// The parent directory cannot be searched (permission denied).
+        #[cfg(unix)]
+        PermissionDenied,
+    }
+
+    /// Builds a project whose `src/a.js` is set up as `backing` and returns the
+    /// reopened bundle. Returns `None` when the setup cannot be created here.
+    fn reopen_with(dir: &Path, backing: Backing, existence_only: bool) -> Option<ResultBundle> {
+        let project = dir.join("project");
+        let src = project.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let file = src.join("a.js");
+        let text = "export const a = 1;";
+        let mut locked = None;
+        match backing {
+            Backing::Unchanged => std::fs::write(&file, text).unwrap(),
+            Backing::Edited => std::fs::write(&file, "edited").unwrap(),
+            Backing::Removed => {}
+            Backing::Directory => std::fs::create_dir(&file).unwrap(),
+            Backing::ParentIsFile => {
+                std::fs::remove_dir(&src).unwrap();
+                std::fs::write(&src, "file").unwrap();
+            }
+            #[cfg(unix)]
+            Backing::DanglingSymlink => {
+                std::os::unix::fs::symlink(project.join("gone.js"), &file).unwrap();
+            }
+            #[cfg(unix)]
+            Backing::EscapingSymlink => {
+                std::fs::write(dir.join("outside.js"), text).unwrap();
+                std::os::unix::fs::symlink(dir.join("outside.js"), &file).unwrap();
+            }
+            #[cfg(unix)]
+            Backing::PermissionDenied => {
+                std::fs::write(&file, text).unwrap();
+                if !crate::sources::test_support::deny_access(&src) {
+                    return None;
+                }
+                locked = Some(src.clone());
+            }
+        }
+        let mut saved = unverified_bundle(&project, text);
+        saved.analysis.problems.clear();
+        if existence_only {
+            saved.project_relative.clear();
+            saved
+                .existence_relative
+                .insert("src-0123456789abcdef".to_owned(), "src/a.js".to_owned());
+        }
+        mark_stale(&mut saved);
+        #[cfg(unix)]
+        if let Some(src) = locked {
+            crate::sources::test_support::restore_access(&src);
+        }
+        #[cfg(not(unix))]
+        let _ = locked;
+        Some(saved)
+    }
+
+    /// Every cell of the reopen classification: a removed file is stale, a
+    /// changed file is stale, and any other failure (or an unvetted file) is
+    /// unverified without a changed claim. Text and existence-only sources
+    /// follow the same rule.
+    #[test]
+    fn reopen_classifies_every_filesystem_failure_for_text_and_existence_only_sources() {
+        // (backing, text: (stale, unverified), existence-only: (stale,
+        // unverified))
+        let table = [
+            (Backing::Unchanged, (false, 0), (false, 0)),
+            (Backing::Edited, (true, 0), (false, 0)),
+            (Backing::Removed, (true, 0), (true, 0)),
+            // A directory exists but cannot be read as a file.
+            (Backing::Directory, (false, 1), (false, 0)),
+            (Backing::ParentIsFile, (false, 1), (false, 1)),
+            #[cfg(unix)]
+            (Backing::DanglingSymlink, (true, 0), (false, 0)),
+            #[cfg(unix)]
+            (Backing::EscapingSymlink, (false, 1), (false, 0)),
+            #[cfg(unix)]
+            (Backing::PermissionDenied, (false, 1), (false, 1)),
+        ];
+        for (backing, text, existence) in table {
+            for (existence_only, (stale, unverified)) in [(false, text), (true, existence)] {
+                let dir = tempfile::tempdir().unwrap();
+                let Some(saved) = reopen_with(dir.path(), backing, existence_only) else {
+                    eprintln!("skipped {backing:?}: permissions cannot block this account");
+                    continue;
+                };
+                let label = format!("{backing:?} existence_only={existence_only}");
+                assert_eq!(saved.sources[0].stale, stale, "{label}");
+                assert_eq!(
+                    problem_count(&saved, "BW_SOURCE_STALE"),
+                    usize::from(stale),
+                    "{label}"
+                );
+                assert_eq!(
+                    problem_count(&saved, "BW_SOURCE_FRESHNESS_UNVERIFIED"),
+                    usize::from(unverified > 0),
+                    "{label}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn project_file_reads_are_classified_not_collapsed() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(project.join("blocker"), "file").unwrap();
+        std::fs::create_dir(project.join("dir.js")).unwrap();
+        std::fs::write(project.join("ok.js"), "ok").unwrap();
+        assert_eq!(
+            read_project_file(&project, Path::new("ok.js")).unwrap(),
+            b"ok"
+        );
+        // (relative path, expected failure)
+        let table = [
+            ("missing.js", LiveFileFailure::Missing),
+            ("dir.js", LiveFileFailure::NotPermitted),
+            (
+                "blocker/a.js",
+                LiveFileFailure::Unreadable(std::io::ErrorKind::NotADirectory),
+            ),
+        ];
+        for (relative, expected) in table {
+            assert_eq!(
+                read_project_file(&project, Path::new(relative)).unwrap_err(),
+                expected,
+                "{relative}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unreadable_incomplete_marker_never_presents_a_run_as_complete() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("run");
+        std::fs::create_dir(&run_dir).unwrap();
+        assert_eq!(
+            normalized_status(RunStatus::Complete, &run_dir),
+            RunStatus::Complete
+        );
+        std::fs::write(run_dir.join(INCOMPLETE_MARKER), "").unwrap();
+        assert_eq!(
+            normalized_status(RunStatus::Complete, &run_dir),
+            RunStatus::Partial
+        );
+        std::fs::remove_file(run_dir.join(INCOMPLETE_MARKER)).unwrap();
+        // A run directory that is a regular file cannot hold a marker.
+        let file_dir = dir.path().join("file");
+        std::fs::write(&file_dir, "file").unwrap();
+        assert_eq!(
+            normalized_status(RunStatus::Complete, &file_dir),
+            RunStatus::Partial
+        );
+        #[cfg(unix)]
+        {
+            if crate::sources::test_support::deny_access(&run_dir) {
+                let status = normalized_status(RunStatus::Complete, &run_dir);
+                crate::sources::test_support::restore_access(&run_dir);
+                assert_eq!(status, RunStatus::Partial);
+            } else {
+                eprintln!("skipped: permissions cannot block this account");
+            }
+        }
+    }
+
+    #[test]
+    fn load_separates_a_missing_bundle_from_an_inaccessible_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("run");
+        std::fs::create_dir(&run_dir).unwrap();
+        let error = load(&run_dir).unwrap_err();
+        assert!(error.message.contains("No result bundle"), "{error:?}");
+
+        // The run directory is a regular file: the bundle path is not
+        // "missing".
+        let file_dir = dir.path().join("file");
+        std::fs::write(&file_dir, "file").unwrap();
+        let error = load(&file_dir).unwrap_err();
+        assert!(error.message.contains("inaccessible"), "{error:?}");
+
+        #[cfg(unix)]
+        {
+            let locked = dir.path().join("locked");
+            std::fs::create_dir(&locked).unwrap();
+            if crate::sources::test_support::deny_access(&locked) {
+                let result = load(&locked);
+                crate::sources::test_support::restore_access(&locked);
+                let error = result.unwrap_err();
+                assert!(error.message.contains("inaccessible"), "{error:?}");
+            } else {
+                eprintln!("skipped: permissions cannot block this account");
+            }
+        }
     }
 
     #[test]

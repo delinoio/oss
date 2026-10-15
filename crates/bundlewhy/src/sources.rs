@@ -317,11 +317,91 @@ pub fn filesystem_path(path: &Path) -> PathBuf {
         .map_or(without_query, |(file, _)| file);
     let candidates = [&*text, without_query, without_fragment];
     for candidate in candidates {
-        if std::fs::symlink_metadata(candidate).is_ok() {
+        // Only a definitely missing candidate is skipped; when the entry
+        // cannot be inspected for another reason it may exist, so it is kept.
+        if !matches!(
+            probe_entry(Path::new(candidate)),
+            Err(LiveFileFailure::Missing)
+        ) {
             return PathBuf::from(candidate);
         }
     }
     PathBuf::from(without_fragment)
+}
+
+/// Why the live file behind a source could not be read. Every filesystem
+/// failure that decides whether a source is removed, changed or merely
+/// unverifiable is classified through this type, on the first run and when a
+/// saved run is reopened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiveFileFailure {
+    /// The file does not exist (`NotFound`). This is the only failure that
+    /// proves the file was removed.
+    Missing,
+    /// The file was not vetted for reading (it leaves the allowed area, is not
+    /// a regular file, or is too large). It is never a change.
+    NotPermitted,
+    /// Any other I/O failure (permission denied, not a directory, interrupted,
+    /// ...). The file may still exist and match the analysis, so no change can
+    /// be claimed.
+    Unreadable(std::io::ErrorKind),
+}
+
+impl LiveFileFailure {
+    /// Classifies an I/O error kind.
+    pub fn from_kind(kind: std::io::ErrorKind) -> Self {
+        match kind {
+            std::io::ErrorKind::NotFound => Self::Missing,
+            other => Self::Unreadable(other),
+        }
+    }
+
+    /// Classifies an I/O error.
+    pub fn from_io(error: &std::io::Error) -> Self {
+        Self::from_kind(error.kind())
+    }
+
+    /// True only when the failure proves that the file was removed.
+    pub fn is_removal(self) -> bool {
+        self == Self::Missing
+    }
+}
+
+/// Checks that a path entry exists without following a final symlink.
+pub fn probe_entry(path: &Path) -> Result<(), LiveFileFailure> {
+    std::fs::symlink_metadata(path)
+        .map(|_| ())
+        .map_err(|error| LiveFileFailure::from_io(&error))
+}
+
+/// Reads a file only when it resolves (after symlinks) to a path accepted by
+/// `vet` and is a regular file of at most `max_bytes`. Every failure is
+/// classified as a `LiveFileFailure`, including a file removed or replaced
+/// between the metadata check and the read.
+pub fn read_vetted_file(
+    path: &Path,
+    vet: impl FnOnce(&Path) -> bool,
+    max_bytes: u64,
+) -> Result<Vec<u8>, LiveFileFailure> {
+    let resolved = std::fs::canonicalize(path).map_err(|error| LiveFileFailure::from_io(&error))?;
+    if !vet(&resolved) {
+        return Err(LiveFileFailure::NotPermitted);
+    }
+    let metadata =
+        std::fs::metadata(&resolved).map_err(|error| LiveFileFailure::from_io(&error))?;
+    if !metadata.is_file() || metadata.len() > max_bytes {
+        return Err(LiveFileFailure::NotPermitted);
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(&resolved)
+        .and_then(|file| {
+            std::io::Read::read_to_end(&mut std::io::Read::take(file, max_bytes + 1), &mut bytes)
+        })
+        .map_err(|error| LiveFileFailure::from_io(&error))?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(LiveFileFailure::NotPermitted);
+    }
+    Ok(bytes)
 }
 
 /// Returns the text of `bytes` when they are valid UTF-8 without NUL bytes.
@@ -336,10 +416,10 @@ pub fn as_text(bytes: &[u8]) -> Option<&str> {
 enum LiveRead {
     /// Raw bytes; they may not be text (for example an imported image).
     Bytes(Vec<u8>),
-    /// Not vetted for reading (outside the project and not a module path,
-    /// special file, or too large); never treated as a change.
-    NotPermitted,
-    Unreadable(std::io::Error),
+    /// The read failed; `LiveFileFailure::NotPermitted` (outside the project
+    /// and not a module path, special file, or too large) is never treated as
+    /// a change.
+    Failed(LiveFileFailure),
 }
 
 impl SourceStore {
@@ -443,16 +523,24 @@ impl SourceStore {
                 as_text(&bytes) != Some(snapshot.as_str()),
                 false,
             ),
+            (Some(_), LiveRead::Failed(LiveFileFailure::NotPermitted)) if stub => {
+                (None, sha256_hex(b""), false, true)
+            }
             // A removed file is a change; any other read failure only means
-            // that freshness could not be checked (`classify_unreadable_snapshot`).
-            (Some(_), LiveRead::Unreadable(error)) if stub => {
-                let stale = Self::unreadable_snapshot_is_stale(&classified.display, &error);
+            // that freshness could not be checked (`snapshot_failure_is_stale`).
+            (Some(_), LiveRead::Failed(failure)) if stub => {
+                let stale = Self::snapshot_failure_is_stale(&classified.display, failure);
                 unverified_freshness |= !stale;
                 (None, sha256_hex(b""), stale, true)
             }
-            (Some(_), LiveRead::NotPermitted) if stub => (None, sha256_hex(b""), false, true),
-            (Some(snapshot), LiveRead::Unreadable(error)) => {
-                let stale = Self::unreadable_snapshot_is_stale(&classified.display, &error);
+            (Some(snapshot), LiveRead::Failed(LiveFileFailure::NotPermitted)) => (
+                Some(snapshot.clone()),
+                sha256_hex(snapshot.as_bytes()),
+                false,
+                derived,
+            ),
+            (Some(snapshot), LiveRead::Failed(failure)) => {
+                let stale = Self::snapshot_failure_is_stale(&classified.display, failure);
                 unverified_freshness |= !stale;
                 (
                     Some(snapshot.clone()),
@@ -461,12 +549,6 @@ impl SourceStore {
                     derived,
                 )
             }
-            (Some(snapshot), LiveRead::NotPermitted) => (
-                Some(snapshot.clone()),
-                sha256_hex(snapshot.as_bytes()),
-                false,
-                derived,
-            ),
             (None, LiveRead::Bytes(bytes)) => match as_text(&bytes) {
                 Some(_) if is_known_asset_path(&classified.display) => {
                     tracing::debug!(path = %classified.display, "asset source has no build snapshot; retaining existence only");
@@ -483,13 +565,8 @@ impl SourceStore {
                 }
                 None => (None, sha256_hex(&bytes), false, true),
             },
-            (None, LiveRead::NotPermitted) => {
-                tracing::debug!(path = %classified.display, "source not vetted for live reading");
-                self.unreadable.push(classified.display);
-                return None;
-            }
-            (None, LiveRead::Unreadable(error)) => {
-                tracing::debug!(path = %classified.display, %error, "source file unreadable");
+            (None, LiveRead::Failed(failure)) => {
+                tracing::debug!(path = %classified.display, ?failure, "source file unreadable or not vetted for live reading");
                 self.unreadable.push(classified.display);
                 return None;
             }
@@ -537,15 +614,14 @@ impl SourceStore {
     /// returns whether the source counts as stale. Only a removed file
     /// (`NotFound`) proves a change since the build; any other failure leaves
     /// the snapshot valid, so the source is only freshness-unverified.
-    fn unreadable_snapshot_is_stale(source_path: &str, error: &std::io::Error) -> bool {
-        if error.kind() == std::io::ErrorKind::NotFound {
+    fn snapshot_failure_is_stale(source_path: &str, failure: LiveFileFailure) -> bool {
+        if failure.is_removal() {
             tracing::debug!(path = %source_path, "source with a build snapshot was removed since the build");
             return true;
         }
         tracing::warn!(
             path = %source_path,
-            error_kind = ?error.kind(),
-            error = %error,
+            ?failure,
             "live read failed; freshness of source with a build snapshot is unverified"
         );
         false
@@ -562,39 +638,19 @@ impl SourceStore {
             .get(&normalize(path))
             .or_else(|| self.live_read_failures.get(&normalize(file_path)))
         {
-            return LiveRead::Unreadable(std::io::Error::from(*kind));
+            return LiveRead::Failed(LiveFileFailure::from_kind(*kind));
         }
-        let resolved = match std::fs::canonicalize(file_path) {
-            Ok(resolved) => resolved,
-            Err(error) => return LiveRead::Unreadable(error),
-        };
         let root =
             std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
-        let vetted = resolved.starts_with(&root)
-            || self.allowed.contains(&normalize(path))
-            || self.allowed.contains(&normalize(file_path))
-            || self.allowed.contains(&resolved);
-        if !vetted {
-            return LiveRead::NotPermitted;
-        }
-        let metadata = match std::fs::metadata(&resolved) {
-            Ok(metadata) => metadata,
-            Err(error) => return LiveRead::Unreadable(error),
+        let vet = |resolved: &Path| {
+            resolved.starts_with(&root)
+                || self.allowed.contains(&normalize(path))
+                || self.allowed.contains(&normalize(file_path))
+                || self.allowed.contains(resolved)
         };
-        if !metadata.is_file() || metadata.len() > MAX_SOURCE_BYTES {
-            return LiveRead::NotPermitted;
-        }
-        let mut bytes = Vec::new();
-        let read = std::fs::File::open(&resolved).and_then(|file| {
-            std::io::Read::read_to_end(
-                &mut std::io::Read::take(file, MAX_SOURCE_BYTES + 1),
-                &mut bytes,
-            )
-        });
-        match read {
-            Ok(_) if bytes.len() as u64 <= MAX_SOURCE_BYTES => LiveRead::Bytes(bytes),
-            Ok(_) => LiveRead::NotPermitted,
-            Err(error) => LiveRead::Unreadable(error),
+        match read_vetted_file(file_path, vet, MAX_SOURCE_BYTES) {
+            Ok(bytes) => LiveRead::Bytes(bytes),
+            Err(failure) => LiveRead::Failed(failure),
         }
     }
 
@@ -610,6 +666,30 @@ impl SourceStore {
                 file
             })
             .collect()
+    }
+}
+
+/// Filesystem helpers shared by unit tests in this crate.
+#[cfg(all(test, unix))]
+pub(crate) mod test_support {
+    use std::path::Path;
+
+    /// Removes all permissions from a directory. Returns false (and leaves the
+    /// directory unchanged) on platforms or accounts where this does not
+    /// block access, for example when running as root.
+    pub(crate) fn deny_access(dir: &Path) -> bool {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read_dir(dir).is_err() {
+            return true;
+        }
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        false
+    }
+
+    pub(crate) fn restore_access(dir: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 }
 
@@ -1742,5 +1822,307 @@ mod tests {
         );
         assert!(source.content_included);
         assert_eq!(source.sha256, sha256_hex(snapshot.as_bytes()));
+    }
+
+    #[test]
+    fn live_file_failure_classifier_table() {
+        use std::io::ErrorKind;
+        // (kind, classification, proves removal)
+        let table = [
+            (ErrorKind::NotFound, LiveFileFailure::Missing, true),
+            (
+                ErrorKind::PermissionDenied,
+                LiveFileFailure::Unreadable(ErrorKind::PermissionDenied),
+                false,
+            ),
+            (
+                ErrorKind::NotADirectory,
+                LiveFileFailure::Unreadable(ErrorKind::NotADirectory),
+                false,
+            ),
+            (
+                ErrorKind::IsADirectory,
+                LiveFileFailure::Unreadable(ErrorKind::IsADirectory),
+                false,
+            ),
+            (
+                ErrorKind::InvalidData,
+                LiveFileFailure::Unreadable(ErrorKind::InvalidData),
+                false,
+            ),
+            (
+                ErrorKind::Interrupted,
+                LiveFileFailure::Unreadable(ErrorKind::Interrupted),
+                false,
+            ),
+            (
+                ErrorKind::TimedOut,
+                LiveFileFailure::Unreadable(ErrorKind::TimedOut),
+                false,
+            ),
+            (
+                ErrorKind::Other,
+                LiveFileFailure::Unreadable(ErrorKind::Other),
+                false,
+            ),
+        ];
+        for (kind, expected, removal) in table {
+            assert_eq!(LiveFileFailure::from_kind(kind), expected, "{kind:?}");
+            assert_eq!(
+                LiveFileFailure::from_io(&std::io::Error::from(kind)),
+                expected,
+                "{kind:?}"
+            );
+            assert_eq!(expected.is_removal(), removal, "{kind:?}");
+        }
+        assert!(!LiveFileFailure::NotPermitted.is_removal());
+    }
+
+    #[test]
+    fn read_vetted_file_classifies_every_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let inside = |resolved: &Path| resolved.starts_with(&root);
+        std::fs::write(root.join("ok.js"), "ok").unwrap();
+        std::fs::write(root.join("big.js"), "0123456789").unwrap();
+        std::fs::create_dir(root.join("dir.js")).unwrap();
+        std::fs::write(root.join("blocker"), "file").unwrap();
+
+        assert_eq!(
+            read_vetted_file(&root.join("ok.js"), inside, 16).unwrap(),
+            b"ok"
+        );
+        // (path, expected failure)
+        let table = [
+            ("missing.js", LiveFileFailure::Missing),
+            ("dir.js", LiveFileFailure::NotPermitted),
+            ("big.js", LiveFileFailure::NotPermitted),
+        ];
+        for (name, expected) in table {
+            assert_eq!(
+                read_vetted_file(&root.join(name), inside, 5).unwrap_err(),
+                expected,
+                "{name}"
+            );
+        }
+        // A path below a regular file is not "removed".
+        assert_eq!(
+            read_vetted_file(&root.join("blocker/a.js"), inside, 16).unwrap_err(),
+            LiveFileFailure::Unreadable(std::io::ErrorKind::NotADirectory)
+        );
+        // A path rejected by the vetting closure is never a change.
+        assert_eq!(
+            read_vetted_file(&root.join("ok.js"), |_| false, 16).unwrap_err(),
+            LiveFileFailure::NotPermitted
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_vetted_file_classifies_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let project = root.join("project");
+        std::fs::create_dir(&project).unwrap();
+        let project = std::fs::canonicalize(&project).unwrap();
+        let inside = |resolved: &Path| resolved.starts_with(&project);
+        std::fs::write(root.join("outside.js"), "outside").unwrap();
+        std::fs::write(project.join("real.js"), "real").unwrap();
+        std::os::unix::fs::symlink(root.join("outside.js"), project.join("escape.js")).unwrap();
+        std::os::unix::fs::symlink(project.join("real.js"), project.join("inner.js")).unwrap();
+        std::os::unix::fs::symlink(project.join("gone.js"), project.join("dangling.js")).unwrap();
+        std::os::unix::fs::symlink(project.join("loop-b"), project.join("loop-a")).unwrap();
+        std::os::unix::fs::symlink(project.join("loop-a"), project.join("loop-b")).unwrap();
+        std::os::unix::fs::symlink("/dev/zero", project.join("zero.js")).unwrap();
+
+        assert_eq!(
+            read_vetted_file(&project.join("inner.js"), inside, 16).unwrap(),
+            b"real"
+        );
+        // (name, expected failure)
+        let table = [
+            ("escape.js", LiveFileFailure::NotPermitted),
+            ("zero.js", LiveFileFailure::NotPermitted),
+            // The target is gone, so the file is effectively removed.
+            ("dangling.js", LiveFileFailure::Missing),
+        ];
+        for (name, expected) in table {
+            assert_eq!(
+                read_vetted_file(&project.join(name), inside, 16).unwrap_err(),
+                expected,
+                "{name}"
+            );
+        }
+        // A symlink loop is an I/O failure, not a removal.
+        let failure = read_vetted_file(&project.join("loop-a"), inside, 16).unwrap_err();
+        assert!(
+            matches!(failure, LiveFileFailure::Unreadable(_)),
+            "{failure:?}"
+        );
+    }
+
+    #[test]
+    fn read_vetted_file_classifies_a_file_changed_between_check_and_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let file = root.join("a.js");
+
+        // Removed after canonicalization, before the metadata check.
+        std::fs::write(&file, "x").unwrap();
+        let failure = read_vetted_file(
+            &file,
+            |resolved| {
+                std::fs::remove_file(resolved).unwrap();
+                true
+            },
+            16,
+        )
+        .unwrap_err();
+        assert_eq!(failure, LiveFileFailure::Missing);
+
+        // Replaced by a directory after canonicalization.
+        std::fs::write(&file, "x").unwrap();
+        let failure = read_vetted_file(
+            &file,
+            |resolved| {
+                std::fs::remove_file(resolved).unwrap();
+                std::fs::create_dir(resolved).unwrap();
+                true
+            },
+            16,
+        )
+        .unwrap_err();
+        assert_eq!(failure, LiveFileFailure::NotPermitted);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_vetted_file_and_probe_report_permission_denied() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let locked = root.join("locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::write(locked.join("a.js"), "x").unwrap();
+        if !test_support::deny_access(&locked) {
+            eprintln!("skipped: the filesystem permissions cannot block this account");
+            return;
+        }
+        let read = read_vetted_file(&locked.join("a.js"), |_| true, 16);
+        let probe = probe_entry(&locked.join("a.js"));
+        // The directory is also not "missing" when it is looked up directly.
+        let list = std::fs::read_dir(&locked).map_err(|error| LiveFileFailure::from_io(&error));
+        test_support::restore_access(&locked);
+        let denied = LiveFileFailure::Unreadable(std::io::ErrorKind::PermissionDenied);
+        assert_eq!(read.unwrap_err(), denied);
+        assert_eq!(probe.unwrap_err(), denied);
+        assert_eq!(list.err(), Some(denied));
+    }
+
+    /// First-run counterpart of the reopen table: the same filesystem setups
+    /// classify identically for a source with a build snapshot.
+    #[test]
+    fn first_run_classifies_real_filesystem_failures_for_snapshot_sources() {
+        #[derive(Clone, Copy, Debug)]
+        enum Setup {
+            Removed,
+            Directory,
+            ParentIsFile,
+            #[cfg(unix)]
+            DanglingSymlink,
+            #[cfg(unix)]
+            PermissionDenied,
+        }
+        // (setup, stale, freshness unverified)
+        let table = [
+            (Setup::Removed, true, false),
+            (Setup::Directory, false, false),
+            (Setup::ParentIsFile, false, true),
+            #[cfg(unix)]
+            (Setup::DanglingSymlink, true, false),
+            #[cfg(unix)]
+            (Setup::PermissionDenied, false, true),
+        ];
+        for (setup, stale, unverified) in table {
+            let dir = tempfile::tempdir().unwrap();
+            let root = std::fs::canonicalize(dir.path()).unwrap();
+            let src = root.join("src");
+            std::fs::create_dir(&src).unwrap();
+            let file = src.join("a.js");
+            #[cfg(unix)]
+            let mut locked = false;
+            match setup {
+                Setup::Removed => {}
+                Setup::Directory => std::fs::create_dir(&file).unwrap(),
+                Setup::ParentIsFile => {
+                    std::fs::remove_dir(&src).unwrap();
+                    std::fs::write(&src, "file").unwrap();
+                }
+                #[cfg(unix)]
+                Setup::DanglingSymlink => {
+                    std::os::unix::fs::symlink(root.join("gone.js"), &file).unwrap();
+                }
+                #[cfg(unix)]
+                Setup::PermissionDenied => {
+                    std::fs::write(&file, "x").unwrap();
+                    if !test_support::deny_access(&src) {
+                        eprintln!("skipped {setup:?}: permissions cannot block this account");
+                        continue;
+                    }
+                    locked = true;
+                }
+            }
+            let mut store = SourceStore::new(true);
+            store
+                .snapshots
+                .insert(normalize(&file), "export const a = 1;".to_owned());
+            let added = store.add_file(&root, &file);
+            #[cfg(unix)]
+            if locked {
+                test_support::restore_access(&src);
+            }
+            assert!(added.is_some(), "{setup:?}");
+            assert_eq!(
+                store.changed_since_build.len(),
+                usize::from(stale),
+                "{setup:?}"
+            );
+            assert_eq!(
+                store.freshness_unverified.len(),
+                usize::from(unverified),
+                "{setup:?}"
+            );
+            assert_eq!(store.into_files()[0].stale, stale, "{setup:?}");
+        }
+    }
+
+    #[test]
+    fn probe_entry_distinguishes_missing_from_other_failures() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("blocker"), "file").unwrap();
+        std::fs::write(dir.path().join("a.js"), "x").unwrap();
+        assert_eq!(probe_entry(&dir.path().join("a.js")), Ok(()));
+        assert_eq!(
+            probe_entry(&dir.path().join("missing.js")),
+            Err(LiveFileFailure::Missing)
+        );
+        assert_eq!(
+            probe_entry(&dir.path().join("blocker/a.js")),
+            Err(LiveFileFailure::Unreadable(
+                std::io::ErrorKind::NotADirectory
+            ))
+        );
+    }
+
+    #[test]
+    fn filesystem_path_keeps_a_candidate_that_cannot_be_ruled_out() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("blocker"), "file").unwrap();
+        // A literal path below a regular file is not definitely missing, so the
+        // literal name is kept rather than the query-free one.
+        let literal = dir.path().join("blocker/a.js?raw");
+        assert_eq!(filesystem_path(&literal), literal);
+        // A definitely missing literal falls back to the query-free path.
+        let missing = dir.path().join("a.js?raw");
+        assert_eq!(filesystem_path(&missing), dir.path().join("a.js"));
     }
 }
