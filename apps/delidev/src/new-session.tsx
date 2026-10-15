@@ -710,10 +710,11 @@ export function NewSession({
     active,
     blocked,
     textarea: firstMessage,
-    replace: (value, caret) => {
+    draft: skills.draftSnapshot,
+    replace: (value, start, end) => {
       historyEditing.current = true;
       try {
-        skills.replaceUnbound(value, caret);
+        skills.replaceUnbound(value, start, end);
       } finally {
         historyEditing.current = false;
       }
@@ -1198,7 +1199,7 @@ export function NewSession({
                       ? copy("new-session.generalChatPlaceholder")
                       : copy("new-session.describeATaskAskAQuestion_4ed4ad")
                   }
-                  value={prompt}
+                  value={skills.displayValue}
                   onChange={(event) =>
                     skills.onChange(
                       event.target.value,

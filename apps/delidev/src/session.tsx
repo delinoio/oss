@@ -1553,13 +1553,6 @@ export function SessionView({
   useLayoutEffect(() => {
     const input = composer.current;
     if (!input) return;
-    input.style.height = "auto";
-    const maximum = Number.parseFloat(getComputedStyle(input).maxHeight);
-    input.style.height = `${Math.min(input.scrollHeight, Number.isFinite(maximum) ? maximum : 180)}px`;
-  }, [draft, session?.id]);
-  useLayoutEffect(() => {
-    const input = composer.current;
-    if (!input) return;
     let width = input.clientWidth;
     const workspace = input.closest<HTMLElement>(".session-workspace");
     // Conversation containers can be shorter than the retained workspace after
@@ -1620,6 +1613,15 @@ export function SessionView({
     active: conversationActive,
     disabled: locked,
   });
+  // The textarea shows the collapsed display text, so revealing a link changes
+  // its wrapped height even though the canonical draft is unchanged.
+  useLayoutEffect(() => {
+    const input = composer.current;
+    if (!input) return;
+    input.style.height = "auto";
+    const maximum = Number.parseFloat(getComputedStyle(input).maxHeight);
+    input.style.height = `${Math.min(input.scrollHeight, Number.isFinite(maximum) ? maximum : 180)}px`;
+  }, [draft, skills.displayValue, session?.id]);
   const revert = useSessionRevert({
     session,
     active: conversationActive,
@@ -3450,7 +3452,7 @@ export function SessionView({
                             ShortcutId.SessionNewline,
                           )}
                           id={`prompt-${id}`}
-                          value={draft}
+                          value={skills.displayValue}
                           onChange={(event) =>
                             skills.onChange(
                               event.target.value,

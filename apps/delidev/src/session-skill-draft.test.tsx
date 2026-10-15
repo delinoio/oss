@@ -280,3 +280,62 @@ it("keeps composition-confirmation Enter away from local and connection send own
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
 }, 10_000);
+
+it("queues a pasted follow-up URL as canonical Markdown", async () => {
+  const f = fixture();
+  render(<App transport={f.transport} />);
+  fireEvent.click(
+    await sidebar().findByRole("button", {
+      name: /General Chat Skill original/,
+    }),
+  );
+  const input = await currentSession().findByRole("textbox", {
+    name: "Message",
+  });
+  const url = "https://example.com/follow-up";
+  fireEvent.paste(input, { clipboardData: { getData: () => url, files: [] } });
+  expect(input).toHaveProperty("value", url);
+  fireEvent.click(
+    currentSession().getByRole("button", { name: "Queue message" }),
+  );
+  await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
+  expect(
+    JSON.parse(
+      new TextDecoder().decode(f.enqueue.mock.calls[0]![0].documentJson),
+    ).prompt,
+  ).toBe(`[${url}](${url})`);
+}, 10_000);
+
+it("refits the session composer when a collapsed link is revealed", async () => {
+  const scrollHeight = vi
+    .spyOn(HTMLTextAreaElement.prototype, "scrollHeight", "get")
+    .mockImplementation(function (this: HTMLTextAreaElement) {
+      return this.value.length * 2;
+    });
+  try {
+    const f = fixture();
+    render(<App transport={f.transport} />);
+    fireEvent.click(
+      await sidebar().findByRole("button", {
+        name: /General Chat Skill original/,
+      }),
+    );
+    const input = (await currentSession().findByRole("textbox", {
+      name: "Message",
+    })) as HTMLTextAreaElement;
+    const url = "https://example.com/follow-up";
+    fireEvent.paste(input, {
+      clipboardData: { getData: () => url, files: [] },
+    });
+    expect(input.value).toBe(url);
+    expect(input.style.height).toBe(`${url.length * 2}px`);
+    input.setSelectionRange(3, 3);
+    fireEvent.select(input);
+    expect(input.value).toBe(`[${url}](${url})`);
+    await waitFor(() =>
+      expect(input.style.height).toBe(`${input.value.length * 2}px`),
+    );
+  } finally {
+    scrollHeight.mockRestore();
+  }
+}, 10_000);
