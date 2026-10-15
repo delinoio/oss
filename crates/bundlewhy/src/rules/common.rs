@@ -131,6 +131,23 @@ fn is_line_terminator(character: char) -> bool {
     matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
 }
 
+/// Byte length of the ECMAScript line terminator that starts at `index`, or 0
+/// when none does: 1 for LF and CR, 3 for U+2028 and U+2029 (`E2 80 A8` and
+/// `E2 80 A9`). Every byte-level scan uses this with [`is_line_terminator`] so
+/// that all consumers agree on what ends a line.
+fn line_terminator_len(bytes: &[u8], index: usize) -> usize {
+    match bytes.get(index) {
+        Some(b'\n' | b'\r') => 1,
+        Some(0xe2)
+            if bytes.get(index + 1) == Some(&0x80)
+                && matches!(bytes.get(index + 2), Some(0xa8 | 0xa9)) =>
+        {
+            3
+        }
+        _ => 0,
+    }
+}
+
 /// Byte ranges of string literals, template literal text, comments and regular
 /// expression literals in JavaScript. Text there is never a property read.
 ///
@@ -242,12 +259,8 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                         b'[' => in_class = true,
                         b']' => in_class = false,
                         b'/' if !in_class => break,
-                        b'\n' | b'\r' => break,
-                        // U+2028 and U+2029 are `E2 80 A8` and `E2 80 A9`.
-                        0xe2 if bytes.get(position + 1) == Some(&0x80)
-                            && matches!(bytes.get(position + 2), Some(0xa8 | 0xa9)) =>
-                        {
-                            stopped_before = true;
+                        _ if line_terminator_len(bytes, position) > 0 => {
+                            stopped_before = line_terminator_len(bytes, position) > 1;
                             break;
                         }
                         _ => {}
@@ -265,9 +278,7 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
             }
             // U+2028 and U+2029 are whitespace, not a token that decides
             // whether a following `/` starts a regular expression.
-            0xe2 if bytes.get(index + 1) == Some(&0x80)
-                && matches!(bytes.get(index + 2), Some(0xa8 | 0xa9)) =>
-            {
+            _ if line_terminator_len(bytes, index) == 3 => {
                 index += 3;
             }
             _ => {
@@ -293,25 +304,35 @@ fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
     index > 0 && offset < ranges[index - 1].1
 }
 
-fn next_code_byte(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<u8> {
+/// The next byte that is neither inside an ignored range nor whitespace,
+/// including every ECMAScript line terminator, and its position.
+fn next_code_byte(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<(usize, u8)> {
     let mut index = start;
     while index < bytes.len() {
+        let terminator = line_terminator_len(bytes, index);
         if in_ranges(ignored, index) || bytes[index].is_ascii_whitespace() {
             index += 1;
+        } else if terminator > 0 {
+            index += terminator;
         } else {
-            return Some(bytes[index]);
+            return Some((index, bytes[index]));
         }
     }
     None
 }
 
-fn asi_terminates(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> bool {
-    let Some(next) = next_code_byte(bytes, index + 1, ignored) else {
+/// Whether the line terminator that ends just before `after` ends a statement:
+/// the next code token cannot continue the expression.
+fn asi_terminates(bytes: &[u8], after: usize, ignored: &[(usize, usize)]) -> bool {
+    let Some((position, next)) = next_code_byte(bytes, after, ignored) else {
         return true;
     };
+    let repeated = |byte: u8| {
+        next_code_byte(bytes, position + 1, ignored).map(|(_, following)| following) != Some(byte)
+    };
     match next {
-        b'+' => next_code_byte(bytes, index + 2, ignored) != Some(b'+'),
-        b'-' => next_code_byte(bytes, index + 2, ignored) != Some(b'-'),
+        b'+' => repeated(b'+'),
+        b'-' => repeated(b'-'),
         b'!' | b'%' | b'&' | b'(' | b')' | b'*' | b',' | b'.' | b'/' | b':' | b';' | b'<'
         | b'=' | b'>' | b'?' | b'[' | b']' | b'^' | b'{' | b'}' | b'|' | b'~' => false,
         _ => true,
@@ -440,7 +461,8 @@ fn env_guards(
             current_scope = parent;
         }
 
-        if bytes[index] == b'\n' && asi_terminates(bytes, index, ignored) {
+        let terminator = line_terminator_len(bytes, index);
+        if terminator > 0 && asi_terminates(bytes, index + terminator, ignored) {
             for read in scopes[current_scope].pending_reads.drain(..) {
                 if guards[read].is_none() {
                     blocked[read] = true;
@@ -549,7 +571,7 @@ fn env_guards(
                 }
             }
             b'=' if bytes.get(index + 1) == Some(&b'>') => {
-                if next_code_byte(bytes, index + 2, ignored) != Some(b'{') {
+                if next_code_byte(bytes, index + 2, ignored).map(|(_, next)| next) != Some(b'{') {
                     scopes.push(ScanScope {
                         parent: current_scope,
                         context: ScopeContext::Neutral,
@@ -2435,6 +2457,41 @@ y=/process.env.F/.test(z),process.env.G"#;
                 assert_eq!(guard(&code, read), None, "{code:?}");
             }
         }
+    }
+
+    #[test]
+    fn every_line_terminator_is_an_asi_boundary() {
+        let read = "process.env.FLAG";
+        for terminator in LINE_TERMINATORS {
+            // A statement boundary before `ready` ends the read, so the later
+            // `&&` belongs to another expression.
+            for code in [
+                format!("// c{terminator}{read}{terminator}ready&&run()"),
+                format!("/* c */ {read}{terminator}ready&&run()"),
+                format!("{read}{terminator}// c{terminator}ready&&run()"),
+                format!("x = 1; {read}{terminator} {terminator}ready||run()"),
+            ] {
+                assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+            }
+            // A line that continues the expression keeps the read guarded,
+            // however many terminators and comments come first.
+            for code in [
+                format!("{read}{terminator}&&run()"),
+                format!("{read}{terminator}// c{terminator}{terminator}&&run()"),
+                format!("{read}{terminator}/* c */ ||run()"),
+                format!("// c{terminator}{read}{terminator}?run():stop()"),
+            ] {
+                assert!(keyword_guard(&code, read).is_some(), "{code:?}");
+            }
+        }
+        // The scan resumes after a three-byte terminator, not inside it.
+        assert_eq!(
+            line_terminator_len("\u{2028}".as_bytes(), 0),
+            3,
+            "U+2028 is three bytes"
+        );
+        assert_eq!(line_terminator_len("a\r".as_bytes(), 1), 1);
+        assert_eq!(line_terminator_len("\u{2027}".as_bytes(), 0), 0);
     }
 
     fn keyword_guard(code: &str, read: &str) -> Option<&'static str> {
