@@ -246,22 +246,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	nativeConfig.Claim = binding.Claim
 	phase = "native-restore"
 	config.startup.setPhase(domain.StartupInitialize)
-	var api *opencode.OwnedAPI
-	if forkSeed != nil {
-		previousHome := home
-		api, err = opencode.OpenResumedAPI(nativeCtx, nativeConfig, previousHome, forkSeed.Native, forkSeed.NativeReference, input.ThreadRequestID, opencode.BuildAgent, false)
-	} else if checkpoint != nil {
-		// Every execution and compaction action of the history is bound to
-		// this profile, so the retained checkpoint resumes in place.
-		previousHome := home
-		previousAgent, err := input.Configuration.OpenCodePrimaryForInput(input.Continuation.InputMode)
-		if err != nil {
-			return nil, err
-		}
-		api, err = opencode.OpenResumedAPI(nativeCtx, nativeConfig, previousHome, checkpoint.Native, checkpoint.NativeReference, input.ThreadRequestID, previousAgent, input.Continuation.Intent == domain.ContinueExplicitly)
-	} else {
-		api, err = opencode.OpenOwnedAPI(nativeCtx, nativeConfig)
-	}
+	api, err := openCodeNativeAPI(nativeCtx, nativeConfig, home, forkSeed, checkpoint, input, opencode.OpenResumedAPI)
 	if err != nil {
 		return nil, err
 	}
@@ -478,4 +463,30 @@ func acceptOpenCodeInput(ctx context.Context, api *opencode.OwnedAPI, binding *O
 		}
 	}
 	return nil, publicationUncertain()
+}
+
+// openCodeResumedAPIOpener is the checkpoint-resume entry point used by
+// openCodeNativeAPI. Production code always passes opencode.OpenResumedAPI.
+type openCodeResumedAPIOpener func(ctx context.Context, config opencode.APIExecutionConfig, home string, raw []byte, ref opencode.CheckpointReference, request domain.ID, previousAgent opencode.PrimaryAgent, explicitResume bool) (*opencode.OwnedAPI, error)
+
+// openCodeNativeAPI opens the native API for a fork resume, a checkpoint
+// continuation or a fresh start. Every error is returned unchanged, so a
+// classified resume failure (RecoveryRequired, Unsupported) is never replaced
+// by a later error from a session that was never opened. A failure returns a
+// nil API, and the caller registers its deferred Close only after success.
+func openCodeNativeAPI(ctx context.Context, nativeConfig opencode.APIExecutionConfig, home string, forkSeed *openCodeForkCheckpoint, checkpoint *openCodeExecutionCheckpoint, input domain.ExecutionJobInput, openResumed openCodeResumedAPIOpener) (*opencode.OwnedAPI, error) {
+	switch {
+	case forkSeed != nil:
+		return openResumed(ctx, nativeConfig, home, forkSeed.Native, forkSeed.NativeReference, input.ThreadRequestID, opencode.BuildAgent, false)
+	case checkpoint != nil:
+		// Every execution and compaction action of the history is bound to
+		// this profile, so the retained checkpoint resumes in place.
+		previousAgent, err := input.Configuration.OpenCodePrimaryForInput(input.Continuation.InputMode)
+		if err != nil {
+			return nil, err
+		}
+		return openResumed(ctx, nativeConfig, home, checkpoint.Native, checkpoint.NativeReference, input.ThreadRequestID, previousAgent, input.Continuation.Intent == domain.ContinueExplicitly)
+	default:
+		return opencode.OpenOwnedAPI(ctx, nativeConfig)
+	}
 }

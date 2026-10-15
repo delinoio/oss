@@ -423,12 +423,30 @@ export class PendingCloseRegistry {
       });
   }
 
-  /** Windows currently holding a liveness lock, or null when unknowable. */
-  private async liveWindows(): Promise<Set<string> | null> {
+  /**
+   * Windows currently holding a liveness lock, or null when unknowable. A
+   * query that fails or does not settle within `syncTimeoutMs` is inconclusive
+   * (null), never proof that a window is gone. The deadline timer is added to
+   * `timers` so a finished barrier clears it, and a result that arrives after
+   * the deadline is ignored (its rejection is swallowed).
+   */
+  private async liveWindows(
+    timers?: ReturnType<typeof setTimeout>[],
+  ): Promise<Set<string> | null> {
     if (!this.locks) return null;
     const prefix = this.lockName("");
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     try {
-      const state = await this.locks.query();
+      const query = this.locks.query();
+      const timedOut = new Promise<null>((resolve) => {
+        deadline = setTimeout(() => resolve(null), syncTimeoutMs);
+        (deadline as unknown as { unref?: () => void }).unref?.();
+        timers?.push(deadline);
+      });
+      // Observe a late rejection so it can never surface as unhandled.
+      query.catch(() => undefined);
+      const state = await Promise.race([query, timedOut]);
+      if (!state) return null;
       const live = new Set<string>();
       for (const name of lockNames(state)) {
         if (name.startsWith(prefix) && name !== this.lockName(this.window))
@@ -437,6 +455,12 @@ export class PendingCloseRegistry {
       return live;
     } catch {
       return null;
+    } finally {
+      if (deadline !== undefined) {
+        clearTimeout(deadline);
+        const index = timers?.indexOf(deadline) ?? -1;
+        if (index >= 0) timers?.splice(index, 1);
+      }
     }
   }
 
@@ -455,8 +479,8 @@ export class PendingCloseRegistry {
    * suspended or throttled window still holds its liveness lock and may resume
    * and reconcile at any moment, so it stays awaited until it acknowledges,
    * says Bye or its lock disappears. Only without a liveness source (no Web
-   * Locks, or the lock query failing) does a window that stays silent for the
-   * timeout count as gone.
+   * Locks, or the lock query failing or not settling within the timeout) does a
+   * window that stays silent for the timeout count as gone.
    */
   private announce(key: string): Promise<void> {
     if (!this.channel || !this.active) return Promise.resolve();
@@ -519,7 +543,7 @@ export class PendingCloseRegistry {
           });
         waiter.check();
       };
-      void this.liveWindows().then((live) => {
+      void this.liveWindows(timers).then((live) => {
         if (live) discovered(live);
         else later(() => discovered(null), discoveryMs);
       });
@@ -528,7 +552,7 @@ export class PendingCloseRegistry {
       let unknown = 0;
       const recheck = () => {
         if (finished) return;
-        void this.liveWindows().then((live) => {
+        void this.liveWindows(timers).then((live) => {
           if (finished) return;
           discovered(live);
           // A failing liveness query is inconclusive: keep awaiting silent

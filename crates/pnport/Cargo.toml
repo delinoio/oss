@@ -13,7 +13,6 @@ pnport-core = { path = "../pnport-core" }
 clap = { version = "4.5.32", features = ["derive"] }
 dirs = "6"
 fs2 = "0.4.3"
-libc = "0.2.182"
 pnp = "=0.12.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -33,3 +32,15 @@ security-framework = "=3.7.0"
 plist = "1"
 
 [dev-dependencies]
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.182"
+
+[target.'cfg(windows)'.dependencies]
+fspy_detours_sys = { workspace = true }
+ntapi = { workspace = true }
+winapi = { workspace = true, features = ["fileapi", "stringapiset", "winnls", "processthreadsapi", "winbase"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Console", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Memory", "Win32_System_LibraryLoader", "Win32_System_IO"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+cc = { workspace = true }
