@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::{BwError, BwResult, ErrorCode, problem},
     model::{
-        Analysis, Diagnostic, ExportReference, ExportScope, ExportUsage, ExportUsagePathEnd,
-        ExportUsageState, ExportUsageTruncation, ProblemSeverity, RunStatus, SCHEMA_VERSION,
-        SourceFile,
+        Analysis, Diagnostic, ExportReference, ExportScope, ExportUsage, ExportUsageEdge,
+        ExportUsagePathEnd, ExportUsageState, ExportUsageTruncation, ProblemSeverity, RunStatus,
+        SCHEMA_VERSION, SourceFile,
     },
     rules::export_usage::{MAX_EDGES_PER_PATH, MAX_PATHS},
     sources::{
@@ -381,8 +381,49 @@ fn validate_export_usage(diagnostic: &Diagnostic, usage: &ExportUsage) -> BwResu
         {
             return Err(bad("path edges are not connected"));
         }
+        // The last edge provides the diagnostic's own module; otherwise the
+        // chain is evidence about some other module.
+        if path
+            .edges
+            .last()
+            .is_some_and(|edge| edge.provider.module != diagnostic.module)
+        {
+            return Err(bad("a path does not end at the diagnostic module"));
+        }
+        if repeats_inside_chain(&path.edges) {
+            return Err(bad("a path repeats an export before its first edge"));
+        }
+        if closes_cycle(&path.edges) != (path.end == ExportUsagePathEnd::Cycle) {
+            return Err(bad("a path end disagrees with its first edge about a cycle"));
+        }
     }
     Ok(())
+}
+
+/// True when the first edge (the outermost consumer) revisits an export of the
+/// chain: its consumer is the consumer or provider of another edge, or the
+/// consumer of the only edge is its own provider. The analysis ends exactly
+/// these chains with `CYCLE`.
+fn closes_cycle(edges: &[ExportUsageEdge]) -> bool {
+    let Some((first, rest)) = edges.split_first() else {
+        return false;
+    };
+    first.consumer == first.provider
+        || rest
+            .iter()
+            .any(|edge| edge.consumer == first.consumer || edge.provider == first.consumer)
+}
+
+/// True when an edge other than the first revisits an export of the edges
+/// closer to the diagnostic module, or consumes the export it provides. The
+/// analysis ends a chain at the first such edge, so it never extends past one.
+fn repeats_inside_chain(edges: &[ExportUsageEdge]) -> bool {
+    edges.iter().enumerate().skip(1).any(|(index, edge)| {
+        edge.consumer == edge.provider
+            || edges[index + 1..]
+                .iter()
+                .any(|inner| inner.consumer == edge.consumer || inner.provider == edge.consumer)
+    })
 }
 
 /// Reads `analysis.json` only when it is a regular file no larger than the
@@ -856,6 +897,7 @@ mod tests {
         let mut bundle = bundle();
         bundle.analysis.diagnostics.push(Diagnostic {
             id: "d-0123456789ab".to_owned(),
+            module: "src/shared.js".to_owned(),
             export_usage: Some(usage),
             ..Diagnostic::default()
         });
@@ -906,7 +948,7 @@ mod tests {
     #[test]
     fn rejects_every_invalid_export_usage_shape() {
         type Edit = fn(&mut ExportUsage);
-        let cases: [(&str, Edit); 15] = [
+        let cases: [(&str, Edit); 17] = [
             ("unspecified state", |usage| {
                 usage.state = ExportUsageState::Unspecified;
             }),
@@ -950,6 +992,12 @@ mod tests {
             ("disconnected edges", |usage| {
                 usage.paths[0].edges[1].consumer = named("src/other.js", "foo");
             }),
+            ("path ends at another module", |usage| {
+                usage.paths[0].edges[1].provider = named("src/other.js", "bar");
+            }),
+            ("cycle end without a closing edge", |usage| {
+                usage.paths[0].end = ExportUsagePathEnd::Cycle;
+            }),
         ];
         for (name, edit) in cases {
             let mut usage = valid_usage();
@@ -958,6 +1006,229 @@ mod tests {
             assert_eq!(error.code, ErrorCode::ResultInvalid, "{name}");
             assert!(error.message.contains("export usage"), "{name}");
         }
+    }
+
+    /// Chain shape against the diagnostic module and the cycle rules. Every
+    /// row names a chain, the end it carries and whether a saved bundle with
+    /// it opens. Mirrors the "Saved export usage" table in the contract.
+    #[test]
+    fn export_usage_chain_shape_table() {
+        use ExportUsagePathEnd::{Cycle, Root, Truncated};
+        let foo = || named("src/lib.js", "foo");
+        let bar = || named("src/shared.js", "bar");
+        let main = || module_scope("src/main.js");
+        let cases: Vec<(&str, Vec<ExportUsageEdge>, ExportUsagePathEnd, bool)> = vec![
+            (
+                "one edge into the diagnostic module",
+                vec![usage_edge(main(), bar())],
+                Root,
+                true,
+            ),
+            (
+                "one edge into another module",
+                vec![usage_edge(main(), foo())],
+                Root,
+                false,
+            ),
+            (
+                "the last edge provides another module although earlier edges name the diagnostic \
+                 module",
+                vec![usage_edge(main(), bar()), usage_edge(bar(), foo())],
+                Root,
+                false,
+            ),
+            (
+                "a self-referencing edge ends the chain with a cycle",
+                vec![usage_edge(bar(), bar())],
+                Cycle,
+                true,
+            ),
+            (
+                "a self-referencing edge cannot be a root",
+                vec![usage_edge(bar(), bar())],
+                Root,
+                false,
+            ),
+            (
+                "a self-referencing edge cannot be truncated",
+                vec![usage_edge(bar(), bar())],
+                Truncated,
+                false,
+            ),
+            (
+                "a self-referencing start edge cannot be extended",
+                vec![usage_edge(main(), bar()), usage_edge(bar(), bar())],
+                Root,
+                false,
+            ),
+            (
+                "the first edge returns to the provider of a later edge",
+                vec![usage_edge(bar(), foo()), usage_edge(foo(), bar())],
+                Cycle,
+                true,
+            ),
+            (
+                "a closing first edge cannot be a root",
+                vec![usage_edge(bar(), foo()), usage_edge(foo(), bar())],
+                Root,
+                false,
+            ),
+            (
+                "the first edge consumes the export it provides above another edge",
+                vec![usage_edge(foo(), foo()), usage_edge(foo(), bar())],
+                Cycle,
+                true,
+            ),
+            (
+                "a chain without a repeated export cannot end with a cycle",
+                vec![usage_edge(main(), foo()), usage_edge(foo(), bar())],
+                Cycle,
+                false,
+            ),
+            (
+                "an inner edge revisits an export of the later edges",
+                vec![
+                    usage_edge(main(), bar()),
+                    usage_edge(bar(), foo()),
+                    usage_edge(foo(), bar()),
+                ],
+                Root,
+                false,
+            ),
+            (
+                "an inner revisit cannot be hidden by a cycle end",
+                vec![
+                    usage_edge(main(), bar()),
+                    usage_edge(bar(), foo()),
+                    usage_edge(foo(), bar()),
+                ],
+                Cycle,
+                false,
+            ),
+        ];
+        for (name, edges, end, opens) in cases {
+            let usage = ExportUsage {
+                state: ExportUsageState::Available,
+                note: String::new(),
+                paths: vec![ExportUsagePath { edges, end }],
+                truncation: if end == Truncated {
+                    ExportUsageTruncation::Depth
+                } else {
+                    ExportUsageTruncation::None
+                },
+            };
+            let result = parse_usage(usage);
+            assert_eq!(result.is_ok(), opens, "{name}: {:?}", result.err());
+            if !opens {
+                assert_eq!(result.unwrap_err().code, ErrorCode::ResultInvalid, "{name}");
+            }
+        }
+    }
+
+    /// Everything the traversal can produce opens: the validation accepts
+    /// exactly the chains the analysis can derive. Random small graphs over
+    /// few modules and exports make cycles, self-references and shared
+    /// exports likely.
+    #[test]
+    fn every_chain_the_traversal_derives_passes_validation() {
+        use std::path::PathBuf;
+
+        use crate::{
+            collect::{CollectedExportEdge, CollectedExportRef, CollectedExportUsage, Collection},
+            rules::{
+                Context,
+                export_usage::{ExportUsageIndex, Limits, MAX_EDGES_PER_PATH, MAX_PATHS, traverse},
+            },
+            sources::SourceStore,
+        };
+
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = move |bound: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % bound as u64) as usize
+        };
+        let reference = |module: usize, export: usize| CollectedExportRef {
+            module: format!("m{module}"),
+            export: match export {
+                0 => None,
+                1 => Some(vec!["a".to_owned()]),
+                _ => Some(vec!["b".to_owned()]),
+            },
+        };
+        let mut checked_paths = 0usize;
+        let mut cycles = 0usize;
+        let mut incomplete = 0usize;
+        for case in 0..2_000 {
+            let modules = 2 + next(3);
+            let edge_count = 1 + next(12);
+            let edges: Vec<CollectedExportEdge> = (0..edge_count)
+                .map(|index| CollectedExportEdge {
+                    consumer: reference(next(modules), next(3)),
+                    provider: reference(next(modules), next(3)),
+                    dependency_id: Some(index.to_string()),
+                    location: None,
+                })
+                .collect();
+            let collection = Collection {
+                export_usage: Some(CollectedExportUsage {
+                    available: true,
+                    edges,
+                    skipped_edges: u32::from(next(4) == 0),
+                    unattributed_edges: u32::from(next(4) == 0),
+                    ..CollectedExportUsage::default()
+                }),
+                ..Collection::default()
+            };
+            let context = Context::new(
+                &collection,
+                PathBuf::from("/project"),
+                "project".to_owned(),
+                Vec::new(),
+                SourceStore::new(false),
+            );
+            let limits = match case % 4 {
+                0 => Limits::DEFAULT,
+                1 => Limits {
+                    max_edges_per_path: 1 + next(3),
+                    ..Limits::DEFAULT
+                },
+                2 => Limits {
+                    max_paths: 1 + next(MAX_PATHS),
+                    max_expansions: next(6),
+                    ..Limits::DEFAULT
+                },
+                _ => Limits {
+                    max_queued: 1 + next(4),
+                    max_edges_per_path: MAX_EDGES_PER_PATH,
+                    ..Limits::DEFAULT
+                },
+            };
+            let usage_data = collection.export_usage.as_ref().unwrap();
+            let index = ExportUsageIndex::new(usage_data);
+            for module in 0..modules {
+                let name = format!("m{module}");
+                let usage = traverse(&context, &index, &name, limits);
+                for path in &usage.paths {
+                    checked_paths += 1;
+                    cycles += usize::from(path.end == ExportUsagePathEnd::Cycle);
+                    incomplete += usize::from(path.end == ExportUsagePathEnd::Incomplete);
+                }
+                let diagnostic = Diagnostic {
+                    id: "d-0123456789ab".to_owned(),
+                    module: name,
+                    export_usage: Some(usage.clone()),
+                    ..Diagnostic::default()
+                };
+                validate_export_usage(&diagnostic, &usage)
+                    .unwrap_or_else(|error| panic!("case {case}: {} for {usage:?}", error.message));
+            }
+        }
+        // The sample must exercise the interesting ends, or it proves little.
+        assert!(checked_paths > 1_000, "{checked_paths}");
+        assert!(cycles > 50, "{cycles}");
+        assert!(incomplete > 20, "{incomplete}");
     }
 
     #[test]
