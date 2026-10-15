@@ -857,8 +857,13 @@ export function useSkillCompletion({
               : EditKind.Deletion,
       selectionFor: (text) =>
         collapsedAt(caretAfter + (text.length - plain.length)),
+      // A word boundary seals the entry whether the whitespace was typed or
+      // removed, so a run of Backspace/Delete splits at each removed space.
       seal:
-        !composingNow && (converted !== undefined || /\s/u.test(edit.inserted)),
+        !composingNow &&
+        (converted !== undefined ||
+          /\s/u.test(edit.inserted) ||
+          /\s/u.test(value.slice(edit.start, edit.end))),
       session: composingNow ? compositionSession.current : undefined,
       apply: !composingNow,
     });

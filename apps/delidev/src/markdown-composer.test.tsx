@@ -489,6 +489,70 @@ it("R24 localized boundary: a URL glued to a letter or digit of any script is ne
   ).toBe(true);
 });
 
+it("R25 deletion across whitespace: a removed space or newline seals the deletion entry like a typed one", () => {
+  const { input } = mount("one two");
+  select(input, 7);
+  // Backspace through "two" and the separating space: one entry that ends
+  // with the removed space, then "one" forms the next entry.
+  for (const [text, caret] of [
+    ["one tw", 6],
+    ["one t", 5],
+    ["one ", 4],
+    ["one", 3],
+    ["on", 2],
+    ["o", 1],
+  ] as const)
+    nativeEdit(input, text, caret);
+  expect(probe.canonical).toBe("o");
+  undo(input);
+  expect(probe.canonical).toBe("one");
+  undo(input);
+  expect(probe.canonical).toBe("one two");
+  redo(input);
+  expect(probe.canonical).toBe("one");
+  redo(input);
+  expect(probe.canonical).toBe("o");
+});
+
+it("R25 deletion across whitespace: forward Delete, newlines and multi-character removals seal too", () => {
+  const { input } = mount("ab\ncd ef");
+  // Forward Delete from the caret before "ab": "a", "b", then the newline.
+  select(input, 0);
+  for (const text of ["b\ncd ef", "\ncd ef", "cd ef", "d ef", " ef"])
+    nativeEdit(input, text, 0);
+  expect(probe.canonical).toBe(" ef");
+  undo(input);
+  expect(probe.canonical).toBe("cd ef");
+  undo(input);
+  expect(probe.canonical).toBe("ab\ncd ef");
+  redo(input);
+  redo(input);
+  // A single removal that contains whitespace seals on its own.
+  nativeEdit(input, "ef", 0);
+  nativeEdit(input, "f", 0);
+  expect(probe.canonical).toBe("f");
+  undo(input);
+  expect(probe.canonical).toBe("ef");
+  undo(input);
+  expect(probe.canonical).toBe(" ef");
+});
+
+it("R25 deletion across whitespace: removing a link whose source holds a space seals the entry", () => {
+  const draft = "x [a b](https://e.com/d) y";
+  const { input } = mount(draft);
+  expect(input.value).toBe("x a b y");
+  // Delete the whole label (one removal of the link source), then more text.
+  select(input, 2, 5);
+  nativeEdit(input, "x  y", 2);
+  expect(probe.canonical).toBe("x  y");
+  nativeEdit(input, "x y", 1);
+  expect(probe.canonical).toBe("x y");
+  undo(input);
+  expect(probe.canonical).toBe("x  y");
+  undo(input);
+  expect(probe.canonical).toBe(draft);
+});
+
 it("R05 paste with files: image ownership stays with the form handler", () => {
   const attach = vi.fn();
   render(fixture()("", { attach }));
@@ -1065,6 +1129,9 @@ const WALK_PASTES = [
   "https://a.test/x. ",
   "![i](https://e.com/i.png)",
   "```\nhttps://f.test\n",
+  "한https://a.test/g 3https://a.test/h ",
+  "\\![d](https://e.com/d)",
+  "![a [b](https://b.test)](i.png) https://c.test/k ",
 ];
 const WALK_CHARS = ["a", "한", " ", "\n", "[", "]", "(", ")", "`", "!", "\\"];
 for (let seed = 1; seed <= 60; seed++) {
