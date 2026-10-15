@@ -125,8 +125,14 @@ test("built CSS marks resolve at root and nested paths", async () => {
   const { directory } = await build();
   try {
     const all = await files(directory);
-    assert(all.some((file) => file.endsWith(".wasm")), "WASM is emitted");
-    assert(all.some((file) => /static\/js\/.+\.js$/.test(file)), "JS chunks");
+    assert(
+      all.some((file) => file.endsWith(".wasm")),
+      "WASM is emitted",
+    );
+    assert(
+      all.some((file) => /static\/js\/.+\.js$/.test(file)),
+      "JS chunks",
+    );
     for (const base of ["", "/nested/delidev"])
       assert.deepEqual(await brokenRasterUrls(directory, base), [], base);
     // Entry scripts and stylesheets referenced by HTML must load in both places.
@@ -152,7 +158,9 @@ test("built CSS marks resolve at root and nested paths", async () => {
 test("negative control: the './' policy breaks CSS image URLs", async () => {
   const { directory } = await build("./");
   try {
-    const broken = await brokenRasterUrls(directory, "").catch((error) => error);
+    const broken = await brokenRasterUrls(directory, "").catch(
+      (error) => error,
+    );
     // Either every raster URL is broken (404) or the digest set is incomplete.
     assert(
       broken instanceof Error || broken.length > 0,
