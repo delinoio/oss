@@ -4775,6 +4775,51 @@ fn logs_keep_names_static_block_decisions() {
     }
 }
 
+/// Every way application code can replace `Object` or `Object.defineProperty`
+/// keeps the names, for the aliased helper and for the inlined direct call,
+/// and the program behaves the same before and after.
+#[test]
+fn keeps_members_when_define_property_may_be_replaced() {
+    let helper = r#"const t=(a,b)=>Object.defineProperty(a,"name",{value:b,configurable:true});"#;
+    let direct = r#"class G{constructor(){this.secretField=1}static{Object.defineProperty(this,"name",{value:"G",configurable:true})}}"#;
+    let aliased = r#"const e=Object.defineProperty,t=(a,b)=>e(a,"name",{value:b,configurable:true});class G{constructor(){this.secretField=1}static{t(this,"G")}}"#;
+    let wrapper = r#"{const o=Object.defineProperty;Object.defineProperty=function(a,...r){globalThis.leaked=a;return o.call(this,a,...r)}}"#;
+    let reflect = r#"Reflect.set(Object,"defineProperty",function(a){globalThis.leaked=a})"#;
+    let global = r#"globalThis.Object={defineProperty(a){globalThis.leaked=a}}"#;
+    let define =
+        r#"Object.defineProperty(Object,"defineProperty",{value(a){globalThis.leaked=a}})"#;
+    let assign = r#"Object.assign(Object,{defineProperty(a){globalThis.leaked=a}})"#;
+    let tail = "new G;console.log(new globalThis.leaked().secretField);export{};";
+    for patch in [wrapper, reflect, global, define, assign] {
+        for class in [direct, aliased] {
+            let class = if class == aliased {
+                class.to_owned()
+            } else {
+                format!("{helper}{class}")
+            };
+            let code = format!("{patch};{class}{tail}");
+            let temp = bundle(&[("index.js", &code)]);
+            let output = run_typeopt(temp.path(), &[]);
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            same_behavior(temp.path());
+            let index = out(temp.path(), "index.js");
+            assert!(
+                index.contains("secretField"),
+                "renamed for {code}:\n{index}"
+            );
+            let log = strip_ansi(&String::from_utf8_lossy(&output.stderr));
+            assert!(
+                log.contains("reason=DefinePropertyPatched"),
+                "expected a patch rejection for {code}:\n{log}"
+            );
+        }
+    }
+}
+
 /// Call inlining can replace the helper call with its body before the
 /// property passes run; that form is accepted with the same checks.
 #[test]

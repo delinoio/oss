@@ -170,6 +170,10 @@ enum NameBlockMismatch {
     DefinePropertyAlias,
     /// `Object` is not the library global.
     ShadowedObject,
+    /// Application code, or an external runtime import, may replace `Object`
+    /// or `Object.defineProperty`, so a call to either form can run
+    /// arbitrary code with the constructor.
+    DefinePropertyPatched,
 }
 
 fn contains_receiver(node: Node) -> bool {
@@ -332,6 +336,20 @@ impl Builder<'_, '_> {
             return Err(NameBlockMismatch::HelperWritten);
         }
         Ok(declaration)
+    }
+
+    /// Neither the `Object` global nor `Object.defineProperty` is replaced
+    /// by application code or an external runtime import. Computed once per
+    /// program through the shared intrinsic patch scan; it covers the direct
+    /// and the aliased form of the callee.
+    fn define_property_intact(&mut self) -> bool {
+        if let Some(intact) = self.define_property_intact {
+            return intact;
+        }
+        let intact = super::builtin_intact(self.ctx, "Object", "defineProperty");
+        tracing::debug!(intact, "Object.defineProperty patch query");
+        self.define_property_intact = Some(intact);
+        intact
     }
 
     /// `node` is exactly `Object.defineProperty` with the library `Object`.
@@ -613,7 +631,14 @@ impl Builder<'_, '_> {
                 if member.kind() != SyntaxKind::ClassStaticBlockDeclaration {
                     return Err("static-receiver");
                 }
-                match self.name_helper_block(member) {
+                let block = self.name_helper_block(member).and_then(|()| {
+                    if self.define_property_intact() {
+                        Ok(())
+                    } else {
+                        Err(NameBlockMismatch::DefinePropertyPatched)
+                    }
+                });
+                match block {
                     Ok(()) => {
                         *name_blocks += 1;
                         tracing::debug!(
