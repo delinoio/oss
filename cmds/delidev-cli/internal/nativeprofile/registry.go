@@ -678,7 +678,7 @@ func (r *Registry) RecordHistory(ctx context.Context, key Key, history domain.ID
 	if err != nil {
 		return err
 	}
-	if history.Validate() != nil {
+	if history.Validate() != nil || key.Purpose.RegisteredOnly() {
 		return invalidKey()
 	}
 	return r.withRegistry(ctx, func(file *registryFile) (bool, error) {

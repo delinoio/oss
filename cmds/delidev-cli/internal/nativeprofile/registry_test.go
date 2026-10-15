@@ -1127,6 +1127,17 @@ func TestRegisterLegacyRejectsHistoriesForRegisteredOnlyPurpose(t *testing.T) {
 	if _, ok, err := r.Lookup(context.Background(), key); err != nil || ok {
 		t.Fatalf("a rejected registration left an entry: ok=%v err=%v", ok, err)
 	}
+	// An entry registered without histories cannot gain one later either, or the
+	// next registry load would reject the whole registry.
+	if _, err := r.RegisterLegacy(context.Background(), key, relative); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.RecordHistory(context.Background(), key, domain.NewID()); err == nil {
+		t.Fatal("a registered-only purpose recorded a conversation history")
+	}
+	if _, ok, err := r.Lookup(context.Background(), key); err != nil || !ok {
+		t.Fatalf("a rejected history left the registry unusable: ok=%v err=%v", ok, err)
+	}
 }
 
 // Closing a lease is final only once the lock close succeeded. A failed close

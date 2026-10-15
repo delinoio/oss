@@ -2976,8 +2976,9 @@ and fails every entry point before any lock is taken:
 | managed origin (directory and owner intact)  | `registry_invalid`                            |
 | legacy origin holding a conversation history | `registry_invalid`                            |
 
-`RegisterLegacy` of a registered-only key with histories is rejected as an
-invalid key before anything is written.
+`RegisterLegacy` or `RecordHistory` of a registered-only key with a history is
+rejected as an invalid key before anything is written, so no write can produce a
+registry that the next load rejects.
 
 Checkpoint readers verify the home through a read-only registry lookup that
 takes no lock and creates no file or directory, so it also works on a
