@@ -71,17 +71,17 @@ The branch-evidence scanner treats array literals, object literals, function bod
 
 The scanner decides what each `(`, `[` and `{` opens from the token that precedes it, using one table. A comment between the token and the opener is ignored.
 
-| Preceding token | `(` | `[` | `{` |
-| --- | --- | --- | --- |
-| Start of input, `;`, `{`, `=>`, `else`, `do`, a block's closing `}`, or the `)` that closes an `if`, `while`, `for` or `switch` head | grouping | array literal | block |
-| `if`, `while`, `for`, `switch` | statement head | array literal | block |
-| Operator keyword (`return`, `typeof`, `await`, `yield`, `in`, `of`, `instanceof`, `case`, `void`, `delete`, `throw`, `new`, `extends`, `default`) | grouping | array literal | object literal |
-| Other punctuation or operator, including spread `...`, postfix `++` and `--`, `/` as division, and template text that ends in `${` | grouping | array literal | object literal |
-| Identifier, number, any other word, a property name (even one spelled like a keyword), `.`, `?.`, `function*` | call arguments | computed member | block |
-| `)` or `]` that ends an operand, an object literal's closing `}` | call arguments | computed member | block |
-| String, template or regular expression literal (with or without flags) | call arguments | computed member | block |
+| Preceding token                                                                                                                                   | `(`            | `[`             | `{`            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | --------------- | -------------- |
+| Start of input, `;`, `{`, `=>`, `else`, `do`, a block's closing `}`, or the `)` that closes an `if`, `while`, `for` or `switch` head              | grouping       | array literal   | block          |
+| `if`, `while`, `for`, `switch`                                                                                                                    | statement head | array literal   | block          |
+| Operator keyword (`return`, `typeof`, `await`, `yield`, `in`, `of`, `instanceof`, `case`, `void`, `delete`, `throw`, `new`, `extends`, `default`) | grouping       | array literal   | object literal |
+| Other punctuation or operator, including spread `...`, postfix `++` and `--`, `/` as division, and template text that ends in `${`                | grouping       | array literal   | object literal |
+| Identifier, number, any other word, a property name (even one spelled like a keyword), `.`, `?.`, `function*`                                     | call arguments | computed member | block          |
+| `)` or `]` that ends an operand, an object literal's closing `}`                                                                                  | call arguments | computed member | block          |
+| String, template or regular expression literal (with or without flags)                                                                            | call arguments | computed member | block          |
 
-Grouping parentheses and computed members keep the surrounding condition, so a read inside them can still control a following operator. Array literals, object literals, blocks and call arguments are value containers: when one closes, reads that are only values inside it are dropped, and a following `&&`, `||`, `??` or `?:` never becomes evidence for them. A branch operator inside a container still guards its own read. A `:` before `{` is treated as an object literal because a label or `case` block cannot be told apart without parsing.
+Grouping parentheses and computed members keep the surrounding condition, so a read inside them can still control a following operator. Array literals, object literals, blocks and call arguments are value containers: when one closes, reads that are only values inside it are dropped, and a following `&&`, `||`, `??` or `?:` never becomes evidence for them. A branch operator inside a container still guards its own read. An array or object literal whose closing bracket is directly followed by a member access (`[`, `.` or `?.`), as in `[read][0]&&run()`, yields its element or property, so its reads stay pending and the following operator is their evidence; a call, a block or any other token after the bracket drops them. A `:` before `{` is treated as an object literal because a label or `case` block cannot be told apart without parsing.
 
 Vite's unresolved-environment detector confirms a generated `({}).NAME` against verified original source text. If a generated environment candidate maps to a source that is unreadable or has no build-time text snapshot, the candidate is skipped and dead-code elimination coverage is `PARTIAL` with a note that environment-variable findings may be missing. Other source gaps do not downgrade Vite dead-code coverage. Name-mangling coverage is partial when original source text is unverifiable for its direct-eval detector. Rspack's environment detector does not require that Vite-specific confirmation, so unreadable source text alone does not downgrade Rspack dead-code elimination coverage. Disabled minification remains `NOT_APPLICABLE`; a non-default minifier remains `UNAVAILABLE`.
 

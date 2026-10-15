@@ -376,6 +376,12 @@ impl ContainerKind {
             Self::CallArguments | Self::ArrayLiteral | Self::ObjectLiteral | Self::Block
         )
     }
+
+    /// Literals whose elements or properties can be read directly by a member
+    /// access that follows the closing bracket.
+    fn is_literal(self) -> bool {
+        matches!(self, Self::ArrayLiteral | Self::ObjectLiteral)
+    }
 }
 
 fn env_guards(
@@ -484,10 +490,21 @@ fn env_guards(
                 // object, function object or call result). Reads that were
                 // only values inside it must not inherit an operator that
                 // follows the container. Guards found inside the container
-                // remain recorded on their own reads.
+                // remain recorded on their own reads. An array or object
+                // literal that is immediately read through a member access
+                // (`[read][0]`) yields its element, so its reads stay pending.
                 let kind = scopes[current_scope].kind;
                 last_close = Some((index, kind));
-                if !kind.is_value_container() {
+                let dereferenced =
+                    kind.is_literal() && member_access_follows(bytes, index + 1, ignored);
+                if !kind.is_value_container() || dereferenced {
+                    if dereferenced {
+                        // The element now belongs to the enclosing condition.
+                        let enclosing = scopes[parent].context;
+                        for &read in pending_reads.iter().chain(&conditional_pending) {
+                            contexts[read] = enclosing;
+                        }
+                    }
                     scopes[parent].pending_reads.extend(pending_reads);
                     scopes[parent].pending_reads.extend(conditional_pending);
                     scopes[parent].pending_reads.sort_unstable();
@@ -666,6 +683,28 @@ fn scope_prefix<'a>(code: &'a str, index: usize, ignored: &[(usize, usize)]) -> 
         }
         end = code[..start].trim_end().len();
     }
+}
+
+/// True when the code after a closing bracket continues with a member access
+/// (`[`, `.` or `?.`), so the closed literal is dereferenced.
+fn member_access_follows(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> bool {
+    let mut index = start;
+    while index < bytes.len() {
+        if in_ranges(ignored, index) || bytes[index].is_ascii_whitespace() {
+            index += 1;
+            continue;
+        }
+        return match bytes[index] {
+            b'[' | b'.' => true,
+            // `?.` is optional chaining, but `?.5` is a conditional.
+            b'?' => {
+                bytes.get(index + 1) == Some(&b'.')
+                    && !bytes.get(index + 2).is_some_and(u8::is_ascii_digit)
+            }
+            _ => false,
+        };
+    }
+    false
 }
 
 /// The token before an opener, reduced to what decides how the opener parses.
@@ -2643,6 +2682,56 @@ y=/process.env.F/.test(z),process.env.G"#;
         // Template substitutions start an operand.
         assert_eq!(guard("`x${[process.env.FLAG]&&run()}`"), None);
         assert_eq!(guard("`x${(process.env.FLAG)&&run()}`"), and);
+    }
+
+    #[test]
+    fn literals_read_through_a_member_access_keep_their_branch_evidence() {
+        let guard = |code: &str| {
+            let read = "process.env.FLAG";
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        let and = Some("the retained read controls a && short-circuit branch");
+        let or = Some("the retained read controls a || short-circuit branch");
+        let nullish = Some("the retained read controls a ?? fallback branch");
+        let conditional = Some("the retained read controls a conditional (?:) branch");
+        // The element of an array literal, or the property of an object
+        // literal, is the value that reaches the operator.
+        assert_eq!(guard("[process.env.FLAG][0]&&run()"), and);
+        assert_eq!(guard("[process.env.FLAG] [0] && run()"), and);
+        assert_eq!(guard("[process.env.FLAG]\n[0]&&run()"), and);
+        assert_eq!(guard("[process.env.FLAG] /* c */ [0]&&run()"), and);
+        assert_eq!(guard("x=[process.env.FLAG][0]&&run()"), and);
+        assert_eq!(guard("[process.env.FLAG][0]||run()"), or);
+        assert_eq!(guard("[process.env.FLAG][0]??run()"), nullish);
+        assert_eq!(guard("[process.env.FLAG][0]?a():b()"), conditional);
+        assert_eq!(guard("[process.env.FLAG].at(0)&&run()"), and);
+        assert_eq!(guard("[process.env.FLAG]?.[0]&&run()"), and);
+        assert_eq!(guard("[process.env.FLAG]?.at(0)&&run()"), and);
+        assert_eq!(guard("[process.env.FLAG][0][0]&&run()"), and);
+        assert_eq!(guard("x={a:process.env.FLAG}.a&&run()"), and);
+        assert_eq!(guard("x={a:process.env.FLAG}[\"a\"]&&run()"), and);
+        assert_eq!(
+            guard("if([process.env.FLAG][0])run()"),
+            Some("the retained read is in an if condition")
+        );
+        // Without a member access, or when a call, block or conditional
+        // follows, the literal stays a plain value.
+        for code in [
+            "[process.env.FLAG]&&run()",
+            "[process.env.FLAG](0)&&run()",
+            "[process.env.FLAG]?.5:1",
+            "[process.env.FLAG]\n(0)&&run()",
+            "{a:process.env.FLAG}.a&&run()",
+            "check(process.env.FLAG)[0]&&run()",
+            "check(process.env.FLAG).a&&run()",
+            "(function(){return process.env.FLAG}).a&&run()",
+            "(function(){return process.env.FLAG})[0]&&run()",
+            "[process.env.FLAG,1][1]&&run()",
+        ] {
+            assert_eq!(guard(code), None, "{code}");
+        }
     }
 
     #[test]

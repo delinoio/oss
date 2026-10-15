@@ -2459,7 +2459,7 @@ mod tests {
     }
 
     #[test]
-    fn env_reads_keep_their_container_classification_after_keywords_and_regexes() {
+    fn env_reads_keep_their_container_classification_after_keywords_regexes_and_members() {
         let guard = "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag branch\")";
         let read = "process.env.BUNDLEWHY_FIXTURE_FLAG";
         let diagnostic_count = |replacement: String| {
@@ -2501,6 +2501,9 @@ mod tests {
         );
         // A bracket after a regular expression literal is a computed member.
         assert_eq!(diagnostic_count(format!("/x/[{read}]{suffix}")), 1);
+        // An array literal that is indexed yields the environment value.
+        assert_eq!(diagnostic_count(format!("[{read}][0]{suffix}")), 1);
+        assert_eq!(diagnostic_count(format!("[{read}]{suffix}")), 0);
     }
 
     #[test]
