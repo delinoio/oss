@@ -166,6 +166,15 @@ func TestSubagentEarlyStatusRequiresIndependentDescendantProof(t *testing.T) {
 	if _, err := c.InspectDescendants(context.Background()); err == nil || len(c.pendingChildStatuses) != 1 {
 		t.Fatal("unknown ancestry lost its completion fence")
 	}
+	// Canonical spawn proves publication ownership, but only a fresh inventory
+	// can discharge the early-status fence while other siblings are present.
+	spawn := map[string]any{"type": "collabAgentToolCall", "id": "missing-inventory-child", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{foreign}, "agentsStates": map[string]any{string(foreign): map[string]any{"status": "running", "message": nil}}}
+	if event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn}); err != nil || event.Kind != SubagentEvent {
+		t.Fatal("canonical spawn did not establish child ownership", err)
+	}
+	if _, err := c.InspectDescendants(context.Background()); err == nil || len(c.pendingChildStatuses) != 1 {
+		t.Fatal("published child missing from inventory lost its completion fence")
+	}
 }
 
 func TestSubagentCanonicalCollaborationKeepsRequestedModelAndChildScope(t *testing.T) {

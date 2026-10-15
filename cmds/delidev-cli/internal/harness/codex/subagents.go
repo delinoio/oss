@@ -272,7 +272,7 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 		return Event{Kind: MetadataEvent, ThreadID: c.thread, Correlated: true, Metadata: RawSupplementDiscarded}, nil
 	}
 	for id := range c.pendingChildStatuses {
-		if _, known := c.subagents[string(id)]; !known && !seen[string(id)] {
+		if !seen[string(id)] {
 			return Event{}, incompatible()
 		}
 	}
