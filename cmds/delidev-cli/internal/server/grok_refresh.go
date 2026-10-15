@@ -78,6 +78,10 @@ const (
 	// operation; its error stands for a failed fence write.
 	grokFaultFenceWrite grokFaultPoint = "fence_write"
 
+	// grokFaultAfterWorkerLogoutCleanup runs after the scanner removed the vault
+	// generations of a Worker-lease logout and before it disconnects the account.
+	grokFaultAfterWorkerLogoutCleanup grokFaultPoint = "after_worker_logout_cleanup"
+
 	// grokFaultDurableRead runs before every read of the durable login operation
 	// by the watcher and the pre-poll check; an error stands for an unreadable
 	// durable state.

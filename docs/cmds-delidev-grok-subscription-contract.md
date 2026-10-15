@@ -1388,6 +1388,28 @@ revoked` and `revoked_generation` equal to the current generation) before any
   bundle was removed. Only the lease's own Worker, instance and epoch bind it. A
   different Worker or instance is refused and the fence stays. Fenced leases of other
   actions are never released by a retry.
+
+  The Worker's cleanup confirmation is recorded durably on the lease
+  (`cleanup_confirmed`) before the first vault byte is deleted. From that
+  checkpoint on the logout needs no Worker: the settlement transaction runs under
+  the server's own principal and checks only the immutable lease binding, never
+  the Worker device's authorization or its current instance, so a Worker revoked
+  or replaced between the vault removal and the commit cannot leave a fenced
+  account that references a deleted generation. A settlement that still does not
+  commit (a crash, a store failure) leaves the checkpoint, and the scanner
+  (`recoverGrokWorkerLogout`) removes every generation, releases the lease and
+  disconnects the account, but only when the exact Worker can no longer report
+  (device revoked or instance replaced); while that Worker can report, its own
+  Finish retry settles it and the scanner stays out.
+
+  | Checkpoint | Exact Worker can report | Revoked generation proven | Settled by                                                                  | Test                                                                         |
+  | ---------- | ----------------------- | ------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+  | absent     | any                     | any                       | only the exact Worker's Finish (nothing was deleted yet)                    | `TestGrokWorkerLogoutScannerFinishesOnlyACheckpointedLogoutOfALostWorker`    |
+  | durable    | yes                     | yes                       | the Worker's Finish retry; the scanner does not compete                     | `TestGrokWorkerLogoutScannerFinishesOnlyACheckpointedLogoutOfALostWorker`    |
+  | durable    | no                      | yes                       | the scanner: every generation removed, lease released, account disconnected | `TestGrokWorkerLogoutScannerFinishesOnlyACheckpointedLogoutOfALostWorker`    |
+  | durable    | no, lost during Finish  | yes                       | the same Finish commit, under the durable lease binding                     | `TestGrokWorkerLogoutSettlesAfterTheVaultRemovalWhateverHappenedToTheWorker` |
+  | any        | any                     | no                        | nobody: the bundle is never deleted without a proven revocation             | `TestGrokWorkerLogoutScannerFinishesOnlyACheckpointedLogoutOfALostWorker`    |
+
 - **Deletion.** Deletion reuses logout-before-delete: a connected Grok account
   (generation, connection, pending operation, lease or recovery fence) cannot be
   deleted, so deletion proceeds only after the logout settled with the cleanup

@@ -262,6 +262,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			refresh            bool
 			queuedFence        bool
 			orphan             bool
+			workerLogout       bool
 		}
 		var candidates []candidate
 		eligible := map[domain.ID]bool{}
@@ -287,6 +288,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					continue
 				} else if a.Subscription != nil && !a.Subscription.RecoveryRequired && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.State == domain.SubscriptionPreparing && !a.Subscription.ServerOperation.NativeStarted && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() && a.Subscription.Pending != nil && a.Subscription.Pending.Phase == domain.SubscriptionQueued && a.Subscription.Lease == nil {
 					candidates = append(candidates, candidate{account: r.ID})
+				} else if grokWorkerLogoutNeedsCleanup(tx, a) {
+					eligible[a.Subscription.Lease.OperationID] = true
+					if retries[a.Subscription.Lease.OperationID].due(now) {
+						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.Lease.OperationID, cleanup: true, grok: true, workerLogout: true})
+					}
 				} else if grokQueuedFenceNeedsReconcile(a) && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() {
 					eligible[a.Subscription.ServerOperation.ID] = true
 					if retries[a.Subscription.ServerOperation.ID].due(now) {
@@ -353,6 +359,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					if err := s.fenceOrphanedGrokOperation(child, next.account, next.operation); err != nil && child.Err() == nil {
 						result.failed = true
 						s.logger.WarnContext(child, "grok_orphaned_operation_fence_pending", "phase", grokLogPhaseCleanup, "operation_id", next.operation, "code", domain.SafeError(err).Code)
+					}
+				} else if next.workerLogout {
+					if err := s.recoverGrokWorkerLogout(child, next.account, next.operation); err != nil && child.Err() == nil {
+						result.failed = true
+						s.logger.WarnContext(child, "grok_worker_logout_recovery_pending", "phase", grokLogPhaseCleanup, "operation_id", next.operation, "code", domain.SafeError(err).Code)
 					}
 				} else if next.queuedFence {
 					if err := s.reconcileGrokQueuedFence(child, next.account, next.operation); err != nil && child.Err() == nil {

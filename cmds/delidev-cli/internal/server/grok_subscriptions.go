@@ -154,6 +154,17 @@ func grokSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Insta
 // while that fence stands; every other caller (Take readback, progress) keeps
 // the epoch binding. See grokStaleLease for the table.
 func (s *Service) grokSubscriptionLeaseView(ctx context.Context, tx *store.Tx, id, lease, machine, instance domain.ID, allowStale bool) (store.Record, domain.Account, domain.SubscriptionLease, error) {
+	return s.grokSubscriptionLeaseBinding(ctx, tx, id, lease, machine, instance, allowStale, true)
+}
+
+// grokSubscriptionLeaseBinding is grokSubscriptionLeaseView with the mutable
+// Worker check optional. currentWorker=false keeps every immutable binding of the
+// stored lease (lease, Worker device, machine, instance, epoch) and skips only
+// the check that the instance is still the machine's current one. It is for the
+// settlement of a Worker-lease logout whose vault bundle is already deleted:
+// that decision is irreversible, so a Worker device revoked or an instance
+// replaced meanwhile must not make the settlement fail.
+func (s *Service) grokSubscriptionLeaseBinding(ctx context.Context, tx *store.Tx, id, lease, machine, instance domain.ID, allowStale, currentWorker bool) (store.Record, domain.Account, domain.SubscriptionLease, error) {
 	r, a, err := grokSubscriptionAccount(tx, id, 0)
 	if err != nil {
 		return r, a, domain.SubscriptionLease{}, err
@@ -170,10 +181,157 @@ func (s *Service) grokSubscriptionLeaseView(ctx context.Context, tx *store.Tx, i
 	if l.Epoch != s.subscriptionServerEpoch() && !(allowStale && st.RecoveryRequired) {
 		return r, a, domain.SubscriptionLease{}, subscriptionDenied()
 	}
-	if err := currentInstance(tx, machine, instance); err != nil {
-		return r, a, *l, err
+	if currentWorker {
+		if err := currentInstance(tx, machine, instance); err != nil {
+			return r, a, *l, err
+		}
 	}
 	return r, a, *l, nil
+}
+
+// grokDisconnect applies the disconnected end state of a completed logout: the
+// connection, the credential generation and everything derived from it are gone.
+func grokDisconnect(a *domain.Account) {
+	st := a.Subscription
+	a.Connection = nil
+	a.Health = domain.AccountDisconnected
+	a.Validation = nil
+	a.Catalog = nil
+	a.Quota = nil
+	a.ConfirmedExhausted = false
+	st.Generation = ""
+	st.IdentityCommitment = ""
+}
+
+// checkpointGrokWorkerLogout durably records, before any vault deletion, that
+// the exact Worker confirmed the cleanup of its private credential files for the
+// revoked generation of a Worker-lease logout. The mutable Worker checks still
+// apply here because nothing irreversible has happened yet.
+func (s *Service) checkpointGrokWorkerLogout(ctx context.Context, input subscriptionFinishInput) error {
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "grok.subscription.logout-checkpoint", struct{ Account, Lease domain.ID }{input.Account, input.Lease}, func(tx *store.Tx) (any, error) {
+		if err := tx.Authorize(); err != nil {
+			return nil, err
+		}
+		r, a, l, err := s.grokSubscriptionLeaseBinding(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, true, true)
+		if err != nil {
+			return nil, err
+		}
+		st := a.Subscription
+		if l.Action != domain.SubscriptionLogout || st.Generation != input.Generation || st.RevokedGeneration == "" || st.RevokedGeneration != l.Generation {
+			return nil, subscriptionDenied()
+		}
+		if st.Lease.CleanupConfirmed {
+			return struct{}{}, nil
+		}
+		st.Lease.CleanupConfirmed = true
+		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
+			return nil, err
+		}
+		return struct{}{}, nil
+	})
+	if err != nil {
+		s.logger.WarnContext(ctx, "grok_worker_logout_checkpoint_failed", "phase", grokLogPhaseCleanup, "account_id", input.Account, "lease_id", input.Lease, "code", domain.SafeError(err).Code)
+	}
+	return err
+}
+
+// grokWorkerLogoutNeedsCleanup selects a Worker-lease logout that nobody can
+// settle any more: its cleanup checkpoint is durable, the token is proven
+// revoked, and the exact Worker that owns the lease can no longer report Finish
+// (its device was revoked or its instance is no longer the machine's current
+// one). The Worker's home was proven clean before the checkpoint, so the rest is
+// server-only and the scanner finishes it without any Worker. While the exact
+// Worker can still report, its own Finish repeats the cleanup, so the scanner
+// never competes with it. The cells:
+//
+//	checkpoint | revoked generation == generation | exact Worker can report | scanner
+//	durable    | yes                               | yes                     | nothing (the Worker's Finish retry settles it)
+//	durable    | yes                               | no                      | removes every generation, releases the lease, disconnects
+//	durable    | no                                | any                     | nothing (not a proven revocation)
+//	absent     | any                               | any                     | nothing (only the exact Worker's Finish settles it)
+func grokWorkerLogoutNeedsCleanup(tx *store.Tx, a domain.Account) bool {
+	st := a.Subscription
+	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionGrok || a.ProviderID != "" || a.Removal != nil || a.Connection == nil || st == nil || st.Lease == nil {
+		return false
+	}
+	l := st.Lease
+	if l.Action != domain.SubscriptionLogout || !l.CleanupConfirmed || l.Shared || len(st.Members) != 0 || st.Generation == "" || st.Generation != l.Generation || st.RevokedGeneration != st.Generation {
+		return false
+	}
+	owner := domain.Principal{Type: domain.WorkerDevice, DeviceID: l.DeviceID, MachineID: l.MachineID}
+	return subscriptionActorValid(tx, owner) != nil || currentInstance(tx, l.MachineID, l.InstanceID) != nil
+}
+
+// recoverGrokWorkerLogout finishes a Worker-lease logout whose Worker is gone,
+// from its durable checkpoint: it removes every vault generation of the account, then releases the
+// lease and disconnects the account in one commit, settling the lease's logout
+// operation. It rechecks no Worker state: the checkpoint is the Worker's proof.
+func (s *Service) recoverGrokWorkerLogout(ctx context.Context, id, operation domain.ID) error {
+	bounded, cancel := context.WithTimeout(ctx, 2*grokCleanupTimeout)
+	defer cancel()
+	unlock, err := s.lockAccounts(bounded)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	var lease domain.SubscriptionLease
+	settled := false
+	err = s.Store.Read(bounded, func(tx *store.Tx) error {
+		_, a, e := grokSubscriptionAccount(tx, id, 0)
+		if e != nil {
+			return e
+		}
+		if !grokWorkerLogoutNeedsCleanup(tx, a) || a.Subscription.Lease.OperationID != operation {
+			// The Worker's own Finish (or an earlier scan) settled it meanwhile.
+			settled = true
+			return nil
+		}
+		lease = *a.Subscription.Lease
+		return nil
+	})
+	if err != nil || settled {
+		return err
+	}
+	vault, err := s.secrets()
+	if err != nil {
+		return err
+	}
+	cleanup, cancelCleanup := grokBookkeepingContext(bounded, grokCleanupTimeout)
+	err = cleanupSubscriptionReferences(cleanup, vault, id, "")
+	cancelCleanup()
+	if err != nil {
+		s.logger.WarnContext(ctx, "grok_worker_logout_cleanup_pending", "phase", grokLogPhaseCleanup, "account_id", id, "operation_id", operation, "correlation_id", operation, "step", grokStepCleanup, "code", domain.SafeError(err).Code)
+		return err
+	}
+	_ = s.grokFault(grokFaultAfterWorkerLogoutCleanup)
+	_, err = s.Store.Mutate(bounded, domain.NewID(), "grok.subscription.logout-recover", struct{ Account, Operation domain.ID }{id, operation}, func(tx *store.Tx) (any, error) {
+		r, a, err := grokSubscriptionAccount(tx, id, 0)
+		if err != nil {
+			return nil, err
+		}
+		if !grokWorkerLogoutNeedsCleanup(tx, a) || a.Subscription.Lease.ID != lease.ID {
+			return nil, subscriptionDenied()
+		}
+		st := a.Subscription
+		if p := st.Pending; p != nil && p.ID == lease.OperationID {
+			settleGrokOperation(st, grokSettlement{Operation: p.ID, Action: domain.SubscriptionLogout, Actor: p.Actor, Epoch: s.subscriptionServerEpoch(), State: domain.SubscriptionSucceeded}, time.Now().UTC())
+			st.Pending = nil
+		}
+		st.Lease, st.Members = nil, nil
+		st.RecoveryRequired, st.RevokedGeneration = false, ""
+		grokDisconnect(&a)
+		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
+			return nil, err
+		}
+		return accountReceipt{ID: id}, nil
+	})
+	if err != nil {
+		s.logger.WarnContext(ctx, "grok_worker_logout_disconnect_pending", "phase", grokLogPhaseCleanup, "account_id", id, "operation_id", operation, "correlation_id", operation, "step", grokStepCleanup, "code", domain.SafeError(err).Code)
+		return err
+	}
+	delete(s.subscriptionProgress, operation)
+	s.logger.InfoContext(ctx, "grok_worker_logout_cleanup_confirmed", "phase", grokLogPhaseCleanup, "account_id", id, "operation_id", operation, "correlation_id", operation, "step", grokStepCleanup)
+	return nil
 }
 
 // grokStaleLease is the one table of a lease that predates the server's current
@@ -669,6 +827,12 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		// instead of stranding a revoked bundle behind a disconnected account.
 		logoutCleaned := false
 		if usable && lease.Action == domain.SubscriptionLogout && input.Cleanup {
+			// The Worker's cleanup confirmation is durable before the first vault
+			// byte is deleted, so everything after this point can finish without the
+			// Worker (see grokWorkerLogoutNeedsCleanup).
+			if err := s.checkpointGrokWorkerLogout(ctx, input); err != nil {
+				return nil, rpc.Error(err, c)
+			}
 			cleanupCtx, cancelCleanup := grokBookkeepingContext(ctx, grokCleanupTimeout)
 			err := cleanupSubscriptionReferences(cleanupCtx, vault, input.Account, "", protectedGenerations(original.Subscription)...)
 			cancelCleanup()
@@ -689,12 +853,27 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		// logged only after the commit, because the transaction can still fail
 		// after the in-memory record changed.
 		var settled *grokSettledEvent
-		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "grok.subscription.finish", input, func(tx *store.Tx) (any, error) {
+		// The store authorizes the principal of every mutation. After the vault
+		// removal of a Worker-lease logout the settlement runs as the server's own
+		// principal, so that a Worker device revoked in between cannot fail the
+		// commit; the Worker's identity is still bound through the stored lease.
+		mutateCtx := ctx
+		if logoutCleaned {
+			mutateCtx = domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice})
+		}
+		result, err = s.Store.Mutate(mutateCtx, domain.ID(m.RequestId), "grok.subscription.finish", input, func(tx *store.Tx) (any, error) {
 			settled = nil
-			if err := tx.Authorize(); err != nil {
-				return nil, err
+			// After the vault removal of a Worker-lease logout the decision is
+			// irreversible: the settlement is made from the durable lease and the
+			// checkpoint, and never rechecks mutable Worker state (the Worker device's
+			// authorization, the current instance), or a Worker revoked or replaced in
+			// between would leave a fenced account that references a deleted generation.
+			if !logoutCleaned {
+				if err := tx.Authorize(); err != nil {
+					return nil, err
+				}
 			}
-			r, a, _, err := s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, true)
+			r, a, _, err := s.grokSubscriptionLeaseBinding(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, true, !logoutCleaned)
 			if err != nil {
 				return nil, err
 			}
@@ -775,14 +954,7 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 						a.Health = domain.AccountReady
 					}
 				} else if lease.Action == domain.SubscriptionLogout {
-					a.Connection = nil
-					a.Health = domain.AccountDisconnected
-					a.Validation = nil
-					a.Catalog = nil
-					a.Quota = nil
-					a.ConfirmedExhausted = false
-					state.Generation = ""
-					state.IdentityCommitment = ""
+					grokDisconnect(&a)
 				}
 			}
 			if settling != nil {

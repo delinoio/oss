@@ -258,3 +258,162 @@ func TestGrokWorkerLogoutDoesNotRefenceADisconnectedAccountAfterTheCommit(t *tes
 		t.Fatal("the completed Worker logout was not left disconnected and unfenced")
 	}
 }
+
+// The Worker-lease logout is irreversible once its vault bundle is removed, so
+// its settlement is made from the durable lease and checkpoint. The cells, each
+// with the exact Worker lost between the vault removal and the settlement
+// commit:
+//
+//	what happened to the exact Worker | Finish result    | scanner
+//	device revoked                    | settles, disconnects | nothing left to do
+//	instance replaced                 | settles, disconnects | nothing left to do
+func TestGrokWorkerLogoutSettlesAfterTheVaultRemovalWhateverHappenedToTheWorker(t *testing.T) {
+	for name, lose := range map[string]func(f *grokFixture, tx *store.Tx) error{
+		"device revoked": func(f *grokFixture, tx *store.Tx) error {
+			r, err := tx.Get(domain.DeviceKind, f.device)
+			if err != nil {
+				return err
+			}
+			d, err := store.Decode[domain.Device](r)
+			if err != nil {
+				return err
+			}
+			d.Revoked = true
+			_, err = tx.Put(domain.DeviceKind, r.ID, r.Revision, "", "", d)
+			return err
+		},
+		"instance replaced": func(f *grokFixture, tx *store.Tx) error {
+			return tx.SetWorkerInstance(f.input.MachineID, domain.NewID(), time.Now().UTC())
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newGrokFixture(t)
+			f.login("synthetic-principal-1")
+			f.markRevoked(t)
+			lease, err := f.take(f.queue(logoutAction), logoutAction)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.secrets.afterDelete = func() {
+				if _, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.lose-worker", nil, func(tx *store.Tx) (any, error) {
+					return nil, lose(f, tx)
+				}); err != nil {
+					t.Error(err)
+				}
+			}
+			_, _ = f.finishWith(lease, domain.NewID(), nil, true, false, true)
+			f.secrets.afterDelete = nil
+			a := f.assertGrokOperationValid(t)
+			st := a.Subscription
+			if a.Connection != nil || a.Health != domain.AccountDisconnected || st.Generation != "" || st.Lease != nil || st.RecoveryRequired || st.Pending != nil || st.RevokedGeneration != "" {
+				t.Fatalf("the settlement failed after the vault removal: connected=%v lease=%v fenced=%v generation=%q", a.Connection != nil, st.Lease != nil, st.RecoveryRequired, st.Generation)
+			}
+			if refs, err := f.secrets.UnremovedReferences(context.Background(), f.input.AccountID); err != nil || len(refs) != 0 {
+				t.Fatal("the revoked bundle was not removed")
+			}
+		})
+	}
+}
+
+// The Worker-lease logout checkpoint and the scanner path. A settlement that
+// cannot commit after the vault removal (injected here as a failed Finish after
+// the removal) leaves the checkpoint; the scanner finishes it only when the exact
+// Worker cannot report any more, and never before the checkpoint exists.
+//
+//	checkpoint | exact Worker can report | scanner selects it
+//	absent     | no                      | no
+//	durable    | yes                     | no (the Worker's own retry settles it)
+//	durable    | no                      | yes: removes every generation, releases the lease, disconnects
+func TestGrokWorkerLogoutScannerFinishesOnlyACheckpointedLogoutOfALostWorker(t *testing.T) {
+	setup := func(t *testing.T) (*grokFixture, *pb.TakeSubscriptionResponse, domain.ID) {
+		f := newGrokFixture(t)
+		f.login("synthetic-principal-1")
+		f.markRevoked(t)
+		op := f.queue(logoutAction)
+		lease, err := f.take(op, logoutAction)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f, lease, domain.ID(op.OperationId)
+	}
+	selected := func(f *grokFixture) (needs bool) {
+		_, a := f.record()
+		_ = f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+			needs = grokWorkerLogoutNeedsCleanup(tx, a)
+			return nil
+		})
+		return
+	}
+	loseWorker := func(t *testing.T, f *grokFixture) {
+		t.Helper()
+		if _, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.lose-worker", nil, func(tx *store.Tx) (any, error) {
+			return nil, tx.SetWorkerInstance(f.input.MachineID, domain.NewID(), time.Now().UTC())
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("no checkpoint, lost Worker", func(t *testing.T) {
+		f, _, _ := setup(t)
+		loseWorker(t, f)
+		if selected(f) {
+			t.Fatal("the scanner selected a logout whose Worker never confirmed its cleanup")
+		}
+	})
+	t.Run("checkpoint, Worker still able", func(t *testing.T) {
+		f, lease, _ := setup(t)
+		f.secrets.mu.Lock()
+		f.secrets.deleteError = domain.Fail(domain.Unavailable, "The vault removal failed.", "")
+		f.secrets.mu.Unlock()
+		if _, err := f.finishWith(lease, domain.NewID(), nil, true, false, true); err == nil {
+			t.Fatal("a failed removal was acknowledged")
+		}
+		_, a := f.record()
+		if !a.Subscription.Lease.CleanupConfirmed || !a.Subscription.RecoveryRequired {
+			t.Fatal("the cleanup checkpoint was not durable before the removal failed")
+		}
+		if selected(f) {
+			t.Fatal("the scanner competed with a Worker that can still report")
+		}
+	})
+	t.Run("checkpoint, lost Worker", func(t *testing.T) {
+		f, lease, op := setup(t)
+		f.secrets.mu.Lock()
+		f.secrets.deleteError = domain.Fail(domain.Unavailable, "The vault removal failed.", "")
+		f.secrets.mu.Unlock()
+		if _, err := f.finishWith(lease, domain.NewID(), nil, true, false, true); err == nil {
+			t.Fatal("a failed removal was acknowledged")
+		}
+		loseWorker(t, f)
+		if !selected(f) {
+			t.Fatal("the scanner did not select a checkpointed logout of a lost Worker")
+		}
+		// A removal that still fails keeps the lease, the generation and the fence.
+		if err := f.service.recoverGrokWorkerLogout(ownerContext(), f.input.AccountID, op); err == nil {
+			t.Fatal("a failing vault removal was reported as recovered")
+		}
+		if _, a := f.record(); a.Connection == nil || a.Subscription.Lease == nil || !a.Subscription.RecoveryRequired {
+			t.Fatal("a failed scanner removal gave up the cleanup owner")
+		}
+		f.secrets.mu.Lock()
+		f.secrets.deleteError = nil
+		f.secrets.mu.Unlock()
+		if err := f.service.recoverGrokWorkerLogout(ownerContext(), f.input.AccountID, op); err != nil {
+			t.Fatal(err)
+		}
+		a := f.assertGrokOperationValid(t)
+		st := a.Subscription
+		if a.Connection != nil || a.Health != domain.AccountDisconnected || st.Generation != "" || st.Lease != nil || st.RecoveryRequired || st.Pending != nil || st.RevokedGeneration != "" {
+			t.Fatal("the scanner did not settle the checkpointed logout")
+		}
+		if refs, err := f.secrets.UnremovedReferences(context.Background(), f.input.AccountID); err != nil || len(refs) != 0 {
+			t.Fatal("the revoked bundle was not removed")
+		}
+		if p := f.progressFor(string(op)); p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED {
+			t.Fatalf("progress after the scanner settled the logout = %v", p.State)
+		}
+		// A second scan finds nothing to do.
+		if err := f.service.recoverGrokWorkerLogout(ownerContext(), f.input.AccountID, op); err != nil {
+			t.Fatalf("a settled logout made the scanner fail: %v", err)
+		}
+	})
+}
