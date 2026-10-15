@@ -291,8 +291,17 @@ and align their descriptors (append newly listed pages in inventory order,
 refresh labels from observed URLs, and drop descriptors the inventory no longer
 lists) without selecting a page or taking ownership of another window's
 operation. A removal-pending (empty) inventory is authoritative: it drops this
-profile's Page descriptors the same way, without any native mutation, while a
-page owned by an unsettled original Close keeps its descriptor in every Session
+profile's Page descriptors the same way, without any native mutation. The
+invalidation is profile-wide: the observing Session also removes the profile's
+Page descriptors from every other retained Session snapshot of the
+connection-owned tab store, including inactive Sessions that do not poll, through
+`SessionTabsStore.reconcileUnavailableProfile`. Only descriptors of exactly that
+profile are removed (the same page id under another profile, non-Page tabs, tab
+order and unrelated selections stay unchanged), a removed selected Page follows
+the existing `closePage` selection fallback in its own Session, the pass never
+selects or polls a Session, and a repeated pass publishes nothing. A revisited
+Session therefore cannot present a removed stale descriptor. A page
+owned by an unsettled original Close keeps its descriptor in every Session
 and every same-origin product window (the close is profile-scoped, so the shared
 tab store records the owner and a reconciling Session never drops that page)
 until the owner observes the proof or abandons the operation. Product windows
