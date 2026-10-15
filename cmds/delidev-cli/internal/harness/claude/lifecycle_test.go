@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -357,6 +358,38 @@ func TestExecutionBindingRejectsInvalidIdentityWithoutRetainingContents(t *testi
 			}
 			if _, err := BindExecution(cfg, input, text); err == nil {
 				t.Fatal("invalid original execution binding accepted")
+			}
+		})
+	}
+}
+
+func TestNativeResultMetadataPreservesSingleInputCompletion(t *testing.T) {
+	for _, name := range []string{"metadata", "foreign-input", "queued-turn", "negative-timing", "oversized-phases", "resume"} {
+		t.Run(name, func(t *testing.T) {
+			b := contentFixture(t)
+			event := lifecycleResult(t, b, Completed, false)
+			for key, value := range map[string]any{"result_index": 0, "queued_turn_count": 0, "user_message_uuids": []domain.ID{b.input}, "time_to_request_phases_ms": map[string]uint64{"system_prompt": 2}, "process_turn_index": 0, "time_to_request_cpu_ms": 1, "first_content_frame_ms": 3, "frame_received_wall_ms": 123.5, "turn_start_resume_kind": "none"} {
+				event = lifecycleChange(t, event, key, value)
+			}
+			switch name {
+			case "foreign-input":
+				event = lifecycleChange(t, event, "user_message_uuids", []domain.ID{domain.NewID()})
+			case "queued-turn":
+				event = lifecycleChange(t, event, "queued_turn_count", 1)
+			case "negative-timing":
+				event = lifecycleChange(t, event, "frame_received_wall_ms", -1)
+			case "oversized-phases":
+				phases := map[string]uint64{}
+				for i := 0; i < 33; i++ {
+					phases[fmt.Sprintf("phase%d", i)] = 0
+				}
+				event = lifecycleChange(t, event, "time_to_request_phases_ms", phases)
+			case "resume":
+				event = lifecycleChange(t, event, "resume_reason", "interrupted_turn")
+			}
+			_, correlated, err := b.validateResult(event.Body)
+			if (err == nil) != (name == "metadata") || err == nil && !correlated {
+				t.Fatalf("unexpected completion metadata result: %v", err)
 			}
 		})
 	}

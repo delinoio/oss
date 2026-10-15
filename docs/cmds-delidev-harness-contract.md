@@ -415,6 +415,21 @@ Ordinary tests use a private executable fixture only. Opt-in installed macOS tes
 
 ### Claude Code applied settings evidence
 
+The result may report a nonnegative `result_index`, zero `queued_turn_count`,
+the same singleton `user_message_uuids`, and typed timing/resource observations.
+Timing phase maps have at most 32 bounded names and unsigned integer values;
+wall timestamps are nonnegative. These observations grant no input, resume or
+completion authority. Original result identity, content closure and terminal
+reason checks remain mandatory.
+
+Live partial and complete assistant replies may stamp `user_message_uuid` and
+`user_message_uuids`. The single-input binding requires the exact original input
+and, when supplied, a singleton list containing that same input; foreign,
+batched, child or list-only stamps fail. Stamps never replace replay-based input
+acceptance. Bounded `thinking_display` and positive `thinking_duration_ms` are
+presentation metadata only. Automatic interrupted-turn `resume_reason` remains
+unsupported under the disabled automatic-resume profile.
+
 The lifecycle's required boolean `product_feedback_disabled` reports the
 organization's `allow_product_feedback` policy, not the local feedback setting.
 Both policy values are valid. The private environment explicitly pins

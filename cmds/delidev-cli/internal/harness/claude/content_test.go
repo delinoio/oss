@@ -368,3 +368,35 @@ func TestClaudeNonExecutionMetadataRequiresExactFailedOriginalTool(t *testing.T)
 		})
 	}
 }
+
+func TestNativeReplyStampsPreserveOriginalInputAuthority(t *testing.T) {
+	for _, name := range []string{"single", "list", "foreign", "batch", "list-only", "null", "display-type", "resume"} {
+		t.Run(name, func(t *testing.T) {
+			b := contentFixture(t)
+			event := contentPartial(t, b, "", map[string]any{"type": "message_start", "message": contentMessage("msg_stamped")})
+			event = lifecycleChange(t, event, "user_message_uuid", b.input)
+			event = lifecycleChange(t, event, "thinking_display", "summarized")
+			switch name {
+			case "list":
+				event = lifecycleChange(t, event, "user_message_uuids", []domain.ID{b.input})
+			case "foreign":
+				event = lifecycleChange(t, event, "user_message_uuid", domain.NewID())
+			case "batch":
+				event = lifecycleChange(t, event, "user_message_uuids", []domain.ID{domain.NewID(), b.input})
+			case "list-only":
+				event = lifecycleChange(t, event, "user_message_uuid", nil)
+				event = lifecycleChange(t, event, "user_message_uuids", []domain.ID{b.input})
+			case "null":
+				event = lifecycleChange(t, event, "user_message_uuids", []domain.ID{})
+			case "display-type":
+				event = lifecycleChange(t, event, "thinking_display", true)
+			case "resume":
+				event = lifecycleChange(t, event, "resume_reason", "interrupted_turn")
+			}
+			_, err := b.Observe(event)
+			if (err == nil) != (name == "single" || name == "list") {
+				t.Fatalf("unexpected stamped response result: %v", err)
+			}
+		})
+	}
+}

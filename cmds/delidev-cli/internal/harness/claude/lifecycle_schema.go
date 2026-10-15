@@ -209,40 +209,99 @@ func (b *ExecutionBinding) validateResult(raw []byte) (NativeResult, bool, error
 	// Keep final output, diagnostic strings, permission denials, provider usage
 	// and costs private until their dedicated adapters validate each family.
 	var result struct {
-		Type                   string          `json:"type"`
-		Kind                   ResultKind      `json:"subtype"`
-		Session                domain.ID       `json:"session_id"`
-		UUID                   string          `json:"uuid"`
-		Input                  domain.ID       `json:"user_message_uuid"`
-		Reason                 TerminalReason  `json:"terminal_reason"`
-		Error                  *bool           `json:"is_error"`
-		StopReason             *string         `json:"stop_reason"`
-		Duration               *uint64         `json:"duration_ms"`
-		APIDuration            *uint64         `json:"duration_api_ms"`
-		Turns                  *uint64         `json:"num_turns"`
-		Text                   json.RawMessage `json:"result"`
-		Errors                 json.RawMessage `json:"errors"`
-		Status                 *int            `json:"api_error_status"`
-		Cost                   json.RawMessage `json:"total_cost_usd"`
-		Usage                  json.RawMessage `json:"usage"`
-		ModelUsage             json.RawMessage `json:"modelUsage"`
-		Denials                json.RawMessage `json:"permission_denials"`
-		StructuredOutput       json.RawMessage `json:"structured_output"`
-		DeferredTool           json.RawMessage `json:"deferred_tool_use"`
-		Origin                 json.RawMessage `json:"origin"`
-		FastMode               string          `json:"fast_mode_state"`
-		FastModeReason         string          `json:"fast_mode_disabled_reason"`
-		TTFT                   *uint64         `json:"ttft_ms"`
-		StreamTTFT             *uint64         `json:"ttft_stream_ms"`
-		TimeToRequest          *uint64         `json:"time_to_request_ms"`
-		RequestSent            *float64        `json:"request_sent_wall_ms"`
-		TimeToRequestFromSpawn *uint64         `json:"time_to_request_from_spawn_ms"`
-		WarmSpareClaimed       *bool           `json:"warm_spare_claimed"`
-		TimeOrigin             *float64        `json:"time_origin_ms"`
+		Type                   string            `json:"type"`
+		Kind                   ResultKind        `json:"subtype"`
+		Session                domain.ID         `json:"session_id"`
+		UUID                   string            `json:"uuid"`
+		Input                  domain.ID         `json:"user_message_uuid"`
+		Reason                 TerminalReason    `json:"terminal_reason"`
+		Error                  *bool             `json:"is_error"`
+		StopReason             *string           `json:"stop_reason"`
+		Duration               *uint64           `json:"duration_ms"`
+		APIDuration            *uint64           `json:"duration_api_ms"`
+		Turns                  *uint64           `json:"num_turns"`
+		Text                   json.RawMessage   `json:"result"`
+		Errors                 json.RawMessage   `json:"errors"`
+		Status                 *int              `json:"api_error_status"`
+		Cost                   json.RawMessage   `json:"total_cost_usd"`
+		Usage                  json.RawMessage   `json:"usage"`
+		ModelUsage             json.RawMessage   `json:"modelUsage"`
+		Denials                json.RawMessage   `json:"permission_denials"`
+		StructuredOutput       json.RawMessage   `json:"structured_output"`
+		DeferredTool           json.RawMessage   `json:"deferred_tool_use"`
+		Origin                 json.RawMessage   `json:"origin"`
+		FastMode               string            `json:"fast_mode_state"`
+		FastModeReason         string            `json:"fast_mode_disabled_reason"`
+		TTFT                   *uint64           `json:"ttft_ms"`
+		StreamTTFT             *uint64           `json:"ttft_stream_ms"`
+		TimeToRequest          *uint64           `json:"time_to_request_ms"`
+		RequestSent            *float64          `json:"request_sent_wall_ms"`
+		TimeToRequestFromSpawn *uint64           `json:"time_to_request_from_spawn_ms"`
+		WarmSpareClaimed       *bool             `json:"warm_spare_claimed"`
+		TimeOrigin             *float64          `json:"time_origin_ms"`
+		ResultIndex            *uint64           `json:"result_index,omitempty"`
+		QueuedTurns            *uint64           `json:"queued_turn_count,omitempty"`
+		Inputs                 json.RawMessage   `json:"user_message_uuids,omitempty"`
+		TimePhases             map[string]uint64 `json:"time_to_request_phases_ms,omitempty"`
+		ResumeKind             *string           `json:"turn_start_resume_kind,omitempty"`
+		ProcessTurn            *uint64           `json:"process_turn_index,omitempty"`
+		CPUTime                *uint64           `json:"time_to_request_cpu_ms,omitempty"`
+		LoopLag                *uint64           `json:"time_to_request_loop_lag_ms,omitempty"`
+		MajorFaults            *uint64           `json:"time_to_request_major_faults,omitempty"`
+		FirstInputTokens       *uint64           `json:"first_request_input_tokens,omitempty"`
+		ServerReceived         *float64          `json:"user_message_server_received_wall_ms,omitempty"`
+		FirstContent           *uint64           `json:"first_content_frame_ms,omitempty"`
+		FirstStreamPost        *uint64           `json:"first_stream_post_ms,omitempty"`
+		FirstStreamAck         *uint64           `json:"first_stream_post_ack_ms,omitempty"`
+		FirstStreamWait        *uint64           `json:"first_stream_post_queue_wait_ms,omitempty"`
+		FirstStreamBehind      *string           `json:"first_stream_post_queued_behind,omitempty"`
+		FirstStreamWall        *float64          `json:"first_stream_post_wall_ms,omitempty"`
+		FrameReceived          *float64          `json:"frame_received_wall_ms,omitempty"`
+		FrameEnqueued          *float64          `json:"frame_enqueued_wall_ms,omitempty"`
+		TurnStarted            *float64          `json:"turn_started_wall_ms,omitempty"`
+		IntakePhases           map[string]uint64 `json:"frame_intake_phases_ms,omitempty"`
+		StartPhases            map[string]uint64 `json:"turn_start_phases_ms,omitempty"`
+		ControlTime            *uint64           `json:"turn_start_control_requests_ms,omitempty"`
+		FirstTextPost          *uint64           `json:"first_text_post_ms,omitempty"`
+		FirstTextWait          *uint64           `json:"first_text_post_queue_wait_ms,omitempty"`
+		FirstTextBehind        *string           `json:"first_text_post_queued_behind,omitempty"`
+		FirstTextWall          *float64          `json:"first_text_post_wall_ms,omitempty"`
 	}
 	if decodeNativeObject(raw, &result) != nil || (b.finished && !b.continuing) || (result.Input != "" && result.Input != b.input) || result.Error == nil || result.Duration == nil || result.APIDuration == nil || result.Turns == nil || result.FastMode != "off" || result.FastModeReason != "sdk_opt_in_required" ||
 		!slices.Contains([]CommandState{CommandStarted, CommandCompleted, CommandCancelled}, b.command) || !slices.Contains([]ResultKind{ResultSuccess, ResultExecutionError, ResultMaxTurns, ResultMaxBudget, ResultStructuredOutput}, result.Kind) {
 		return NativeResult{}, false, lifecycleUncertain()
+	}
+	if result.QueuedTurns != nil && *result.QueuedTurns != 0 {
+		return NativeResult{}, false, lifecycleUncertain()
+	}
+	if len(result.Inputs) != 0 {
+		if result.Input == "" {
+			return NativeResult{}, false, lifecycleUncertain()
+		}
+		single, _ := json.Marshal(result.Input)
+		if b.validateReplyInputStamp(single, result.Inputs, nil) != nil {
+			return NativeResult{}, false, lifecycleUncertain()
+		}
+	}
+	for _, phases := range []map[string]uint64{result.TimePhases, result.IntakePhases, result.StartPhases} {
+		if len(phases) > 32 {
+			return NativeResult{}, false, lifecycleUncertain()
+		}
+		for key := range phases {
+			if domain.Text(key, "native timing phase", 128, true) != nil {
+				return NativeResult{}, false, lifecycleUncertain()
+			}
+		}
+	}
+	for _, descriptor := range []*string{result.ResumeKind, result.FirstStreamBehind, result.FirstTextBehind} {
+		if descriptor != nil && domain.Text(*descriptor, "native timing descriptor", 128, true) != nil {
+			return NativeResult{}, false, lifecycleUncertain()
+		}
+	}
+	for _, timestamp := range []*float64{result.ServerReceived, result.FirstStreamWall, result.FrameReceived, result.FrameEnqueued, result.TurnStarted, result.FirstTextWall} {
+		if timestamp != nil && *timestamp < 0 {
+			return NativeResult{}, false, lifecycleUncertain()
+		}
 	}
 	if b.continuing {
 		var fields map[string]json.RawMessage

@@ -267,8 +267,8 @@ func decodeContentBlock(raw []byte) (NativeContentBlock, error) {
 
 func (b *ExecutionBinding) observeContent(event StreamEvent) (observed []ContentEvent, returned error) {
 	defer func() {
-		if returned != nil && b.interrupt != nil && b.logger != nil {
-			b.logger.Warn("claude_stop_content_validation_failed", "owner_id", b.owner, "partial", event.Type == "stream_event", "assistant", event.Type == "assistant", "user", event.Type == "user", "initialized", b.initialized, "accepted", b.accepted, "finished", b.finished)
+		if returned != nil && b.logger != nil {
+			b.logger.Warn("claude_content_validation_failed", "owner_id", b.owner, "partial", event.Type == "stream_event", "assistant", event.Type == "assistant", "user", event.Type == "user", "initialized", b.initialized, "accepted", b.accepted, "finished", b.finished)
 		}
 	}()
 	if !b.initialized || !b.accepted {
@@ -321,17 +321,48 @@ func (b *ExecutionBinding) contentParent(parent *string) (string, error) {
 	return *parent, nil
 }
 
+// A live binding owns one input, so native batch/fold stamps cannot introduce
+// another sender or accept an input on behalf of the replay lifecycle.
+func (b *ExecutionBinding) validateReplyInputStamp(single, list json.RawMessage, parent *string) error {
+	if len(single) == 0 {
+		if len(list) != 0 {
+			return lifecycleUncertain()
+		}
+		return nil
+	}
+	var input domain.ID
+	if parent != nil || json.Unmarshal(single, &input) != nil || input != b.input {
+		return lifecycleUncertain()
+	}
+	if len(list) != 0 {
+		var inputs []domain.ID
+		if json.Unmarshal(list, &inputs) != nil || len(inputs) != 1 || inputs[0] != input {
+			return lifecycleUncertain()
+		}
+	}
+	return nil
+}
+
 func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, returned error) {
 	var envelope struct {
-		Type    string          `json:"type"`
-		Event   json.RawMessage `json:"event"`
-		Session domain.ID       `json:"session_id"`
-		Parent  *string         `json:"parent_tool_use_id"`
-		UUID    string          `json:"uuid"`
-		TTFT    *uint64         `json:"ttft_ms"`
+		Type            string          `json:"type"`
+		Event           json.RawMessage `json:"event"`
+		Session         domain.ID       `json:"session_id"`
+		Parent          *string         `json:"parent_tool_use_id"`
+		UUID            string          `json:"uuid"`
+		TTFT            *uint64         `json:"ttft_ms"`
+		ThinkingDisplay json.RawMessage `json:"thinking_display,omitempty"`
+		Input           json.RawMessage `json:"user_message_uuid,omitempty"`
+		Inputs          json.RawMessage `json:"user_message_uuids,omitempty"`
 	}
-	if decodeNativeObject(raw, &envelope) != nil {
+	if decodeNativeObject(raw, &envelope) != nil || b.validateReplyInputStamp(envelope.Input, envelope.Inputs, envelope.Parent) != nil {
 		return nil, lifecycleUncertain()
+	}
+	if len(envelope.ThinkingDisplay) != 0 {
+		var display *string
+		if json.Unmarshal(envelope.ThinkingDisplay, &display) != nil || display == nil || domain.Text(*display, "native thinking display", 128, true) != nil {
+			return nil, lifecycleUncertain()
+		}
 	}
 	parent, err := b.contentParent(envelope.Parent)
 	if err != nil {
@@ -645,20 +676,23 @@ func decodeContentDelta(raw []byte) (ContentDeltaKind, string, error) {
 
 func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) {
 	var envelope struct {
-		Type            string                 `json:"type"`
-		Message         json.RawMessage        `json:"message"`
-		Session         domain.ID              `json:"session_id"`
-		Parent          *string                `json:"parent_tool_use_id"`
-		UUID            string                 `json:"uuid"`
-		Timestamp       string                 `json:"timestamp"`
-		Error           NativeAssistantProblem `json:"error"`
-		APIError        bool                   `json:"is_api_error_message"`
-		RequestID       *string                `json:"request_id"`
-		SubagentType    *string                `json:"subagent_type"`
-		TaskDescription *string                `json:"task_description"`
-		Aborted         json.RawMessage        `json:"aborted"`
+		Type             string                 `json:"type"`
+		Message          json.RawMessage        `json:"message"`
+		Session          domain.ID              `json:"session_id"`
+		Parent           *string                `json:"parent_tool_use_id"`
+		UUID             string                 `json:"uuid"`
+		Timestamp        string                 `json:"timestamp"`
+		Error            NativeAssistantProblem `json:"error"`
+		APIError         bool                   `json:"is_api_error_message"`
+		RequestID        *string                `json:"request_id"`
+		SubagentType     *string                `json:"subagent_type"`
+		TaskDescription  *string                `json:"task_description"`
+		Aborted          json.RawMessage        `json:"aborted"`
+		Input            json.RawMessage        `json:"user_message_uuid,omitempty"`
+		Inputs           json.RawMessage        `json:"user_message_uuids,omitempty"`
+		ThinkingDuration *uint64                `json:"thinking_duration_ms,omitempty"`
 	}
-	if decodeNativeObject(raw, &envelope) != nil {
+	if decodeNativeObject(raw, &envelope) != nil || b.validateReplyInputStamp(envelope.Input, envelope.Inputs, envelope.Parent) != nil || envelope.ThinkingDuration != nil && *envelope.ThinkingDuration == 0 {
 		if b.interrupt != nil && b.logger != nil {
 			b.logger.Warn("claude_stop_assistant_envelope_invalid", "owner_id", b.owner)
 		}
