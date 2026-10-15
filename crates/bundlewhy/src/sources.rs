@@ -201,6 +201,12 @@ fn split_query(path: &str) -> (&str, Option<&str>) {
     }
 }
 
+/// The path of a source as logs name it: without an import query or fragment,
+/// which can carry credentials or values of the local environment.
+fn log_path(display: &str) -> &str {
+    display.split(['?', '#']).next().unwrap_or_default()
+}
+
 /// True when `path` carries an import query, which makes it a module derived
 /// from the file instead of the file itself (for example `a.js?raw`).
 pub fn has_import_query(path: &str) -> bool {
@@ -421,7 +427,7 @@ impl SourceStore {
                 && self.readable_without_snapshot.contains(&existing_path)
                 && !self.unverified.iter().any(|path| path == &existing_path)
             {
-                tracing::debug!(path = %existing_path, "promoting cached unavailable source to coverage gap");
+                tracing::debug!(path = %log_path(&existing_path), "promoting cached unavailable source to coverage gap");
                 self.unverified.push(existing_path);
             }
             return Some((id, content));
@@ -443,18 +449,18 @@ impl SourceStore {
             // snapshot and the live file is not text: the two cannot be
             // compared, so the source is unverifiable and never stale.
             (Some(_), LiveRead::Bytes(_)) if stub => {
-                tracing::debug!(path = %classified.display, "generated asset module is not freshness-checked");
+                tracing::debug!(path = %log_path(&classified.display), "generated asset module is not freshness-checked");
                 (None, String::new(), false, true)
             }
             (None, LiveRead::Bytes(bytes)) if as_text(&bytes).is_none() => {
-                tracing::debug!(path = %classified.display, "non-text source is not freshness-checked");
+                tracing::debug!(path = %log_path(&classified.display), "non-text source is not freshness-checked");
                 (None, String::new(), false, true)
             }
             // A module derived through an import query (for example
             // `Comp.vue?vue&type=style`) holds transformed code, which is
             // not expected to equal the file.
             (Some(snapshot), LiveRead::Bytes(_)) if derived => {
-                tracing::debug!(path = %classified.display, "derived module is not content-checked");
+                tracing::debug!(path = %log_path(&classified.display), "derived module is not content-checked");
                 (
                     Some(snapshot.clone()),
                     sha256_hex(snapshot.as_bytes()),
@@ -487,11 +493,11 @@ impl SourceStore {
             ),
             (None, LiveRead::Bytes(bytes)) => match as_text(&bytes) {
                 Some(_) if is_known_asset_path(&classified.display) => {
-                    tracing::debug!(path = %classified.display, "asset source has no build snapshot; retaining existence only");
+                    tracing::debug!(path = %log_path(&classified.display), "asset source has no build snapshot; retaining existence only");
                     (None, String::new(), false, true)
                 }
                 Some(_) => {
-                    tracing::debug!(path = %classified.display, "live source has no build snapshot");
+                    tracing::debug!(path = %log_path(&classified.display), "live source has no build snapshot");
                     self.readable_without_snapshot
                         .insert(classified.display.clone());
                     if track_coverage_gap {
@@ -502,18 +508,18 @@ impl SourceStore {
                 None => (None, sha256_hex(&bytes), false, true),
             },
             (None, LiveRead::NotPermitted) => {
-                tracing::debug!(path = %classified.display, "source not vetted for live reading");
+                tracing::debug!(path = %log_path(&classified.display), "source not vetted for live reading");
                 self.unreadable.push(classified.display);
                 return None;
             }
             (None, LiveRead::Unreadable(error)) => {
-                tracing::debug!(path = %classified.display, %error, "source file unreadable");
+                tracing::debug!(path = %log_path(&classified.display), %error, "source file unreadable");
                 self.unreadable.push(classified.display);
                 return None;
             }
         };
         if stale {
-            tracing::debug!(path = %classified.display, "source changed after the build read it");
+            tracing::debug!(path = %log_path(&classified.display), "source changed after the build read it");
             self.changed_since_build.push(classified.display.clone());
         }
         let id = source_id(&key);

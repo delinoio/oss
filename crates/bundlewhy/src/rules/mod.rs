@@ -204,16 +204,24 @@ impl<'a> Context<'a> {
     /// inline loader options or resource queries, which can hold credentials
     /// or values of the local environment, so the raw identifier is never
     /// logged. A collected module is named by its display path (the resource
-    /// path without query or loader options); any other identifier is named by
-    /// a prefix of its SHA-256 digest, which identifies it within one log
-    /// without revealing it.
+    /// path without query, fragment or loader options); any other identifier is
+    /// named by a prefix of its SHA-256 digest, which identifies it within
+    /// one log without revealing it.
     pub fn module_log_label(&self, module_id: &str) -> String {
         match self
             .modules
             .get(module_id)
             .and_then(|module| module.path.as_deref())
         {
-            Some(path) => self.display_path(Path::new(path)),
+            // A collected path can still carry an import query or fragment
+            // (`main.js?token=...#part`), so the label ends at the first `?`
+            // or `#`.
+            Some(path) => self
+                .display_path(Path::new(path))
+                .split(['?', '#'])
+                .next()
+                .unwrap_or_default()
+                .to_owned(),
             None => format!("module-{}", &sha256_hex(module_id.as_bytes())[..16]),
         }
     }

@@ -3004,6 +3004,12 @@ y=/process.env.F/.test(z),process.env.G"#;
     /// subscriber caches that no one listens until a later subscriber is
     /// registered, so a run that captured nothing is repeated.
     fn eval_rule_log(emitted: &EmittedChunk) -> String {
+        eval_rule_log_for_path(emitted, "")
+    }
+
+    /// Like `eval_rule_log`, with `path_suffix` appended to the analyzed
+    /// module's file path.
+    fn eval_rule_log_for_path(emitted: &EmittedChunk, path_suffix: &str) -> String {
         for _ in 0..50 {
             let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
             let writer = logs.clone();
@@ -3013,7 +3019,13 @@ y=/process.env.F/.test(z),process.env.G"#;
                 .with_writer(move || LogWriter(writer.clone()))
                 .finish();
             let guard = tracing::subscriber::set_default(subscriber);
-            eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, true, ManglingSetting::Enabled, emitted);
+            eval_rule_drafts_for_module_path(
+                DEAD_EVAL_SOURCE,
+                true,
+                ManglingSetting::Enabled,
+                emitted,
+                path_suffix,
+            );
             drop(guard);
             let bytes = logs.lock().unwrap().clone();
             if !bytes.is_empty() {
@@ -3050,6 +3062,28 @@ y=/process.env.F/.test(z),process.env.G"#;
             assert!(!log.contains("hunter2"), "{name}: {log}");
             assert!(!log.contains("token="), "{name}: {log}");
             assert!(!log.contains("virtual:"), "{name}: {log}");
+        }
+    }
+
+    #[test]
+    fn eval_attribution_logs_strip_queries_and_fragments_from_the_module_path() {
+        // The module path itself carries a query and a fragment with a
+        // credential; none of it reaches a log line.
+        for suffix in [
+            "?token=hunter2",
+            "?vue&type=script&lang=ts#frag-hunter2",
+            "#hunter2",
+        ] {
+            for emitted in [
+                EmittedChunk::plain("const longLocalName = 1;\neval(code);"),
+                EmittedChunk::plain("const longLocalName = 1;"),
+            ] {
+                let log = eval_rule_log_for_path(&emitted, suffix);
+                assert!(log.contains("module=src/main.js"), "{suffix}: {log}");
+                for secret in ["hunter2", "token=", "type=script", "frag"] {
+                    assert!(!log.contains(secret), "{suffix}: {log}");
+                }
+            }
         }
     }
 
