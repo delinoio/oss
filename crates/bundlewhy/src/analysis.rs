@@ -316,11 +316,20 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             }
         }
     }
-    let missing_maps: Vec<String> = chunks
-        .iter()
-        .filter(|chunk| chunk.map.is_none())
-        .map(|chunk| chunk.file.clone())
-        .collect();
+    // Chunks made only of bundler-owned virtual helpers have no source-backed
+    // candidate a map could attribute; they are neither a problem nor a
+    // coverage penalty. Their generated-location findings stay available.
+    let mut missing_maps: Vec<String> = Vec::new();
+    for chunk in chunks.iter().filter(|chunk| chunk.map.is_none()) {
+        if collection.is_virtual_only_chunk(&chunk.file) {
+            tracing::debug!(
+                chunk = chunk.file.as_str(),
+                "virtual-only helper chunk has no source map; not counted as missing"
+            );
+        } else {
+            missing_maps.push(chunk.file.clone());
+        }
+    }
     if !missing_maps.is_empty() {
         problems.push(problem(
             ErrorCode::SourceMapMissing,
@@ -2777,5 +2786,277 @@ mod tests {
         let engine = fixture.output.analysis.engine.unwrap();
         assert_eq!(engine.support, EngineSupport::UnsupportedSelected);
         assert_eq!(engine.supported_versions, "vite 8.3.4");
+    }
+
+    /// One extra chunk appended to the Vite fixture: its emitted text, the
+    /// collected module ids it lists and whether a map file is written.
+    struct ExtraChunk {
+        file: &'static str,
+        code: &'static str,
+        modules: Vec<&'static str>,
+        map: ExtraMap,
+    }
+
+    #[derive(Clone, Copy)]
+    enum ExtraMap {
+        Absent,
+        EmptyMappings,
+    }
+
+    const PRELOAD_HELPER: &str = "\u{0}vite/preload-helper.js";
+    const ROLLDOWN_RUNTIME: &str = "\u{0}rolldown/runtime.js";
+    const HELPER_CODE: &str = "var e=Object.create;export{e as t};\n";
+    const APP_MODULE: &str = "/__bundlewhy_project__/src/lazy/common.js";
+
+    fn helper_chunks() -> Vec<ExtraChunk> {
+        vec![
+            ExtraChunk {
+                file: "assets/preload-helper-HclGiUj8.js",
+                code: HELPER_CODE,
+                modules: vec![PRELOAD_HELPER],
+                map: ExtraMap::Absent,
+            },
+            ExtraChunk {
+                file: "assets/rolldown-runtime-QTnfLwEv.js",
+                code: HELPER_CODE,
+                modules: vec![ROLLDOWN_RUNTIME],
+                map: ExtraMap::Absent,
+            },
+        ]
+    }
+
+    fn vite_with_extra_chunks(
+        extra: &[ExtraChunk],
+        edit: impl Fn(&mut serde_json::Value),
+    ) -> Fixture {
+        run_fixture_patched(
+            BundlerChoice::Vite,
+            true,
+            |value| {
+                let chunks = value["chunks"].as_array_mut().unwrap();
+                for chunk in extra {
+                    chunks.push(serde_json::json!({
+                        "file": chunk.file,
+                        "isEntry": false,
+                        "isDynamicEntry": false,
+                        "facadeModuleId": null,
+                        "modules": chunk.modules,
+                    }));
+                }
+                edit(value);
+            },
+            |build, _| {
+                for chunk in extra {
+                    let path = build.join(chunk.file);
+                    std::fs::write(&path, chunk.code).unwrap();
+                    if let ExtraMap::EmptyMappings = chunk.map {
+                        let map = serde_json::json!({
+                            "version": 3,
+                            "sources": [],
+                            "names": [],
+                            "mappings": "",
+                        });
+                        std::fs::write(
+                            build.join(format!("{}.map", chunk.file)),
+                            serde_json::to_vec(&map).unwrap(),
+                        )
+                        .unwrap();
+                    }
+                }
+            },
+        )
+    }
+
+    fn missing_map_problems(analysis: &Analysis) -> Vec<&Problem> {
+        analysis
+            .problems
+            .iter()
+            .filter(|entry| entry.code == "BW_SOURCE_MAP_MISSING")
+            .collect()
+    }
+
+    #[test]
+    fn virtual_only_chunks_without_maps_are_not_missing_maps() {
+        let baseline = run_fixture(BundlerChoice::Vite, |_| {});
+        let fixture = vite_with_extra_chunks(&helper_chunks(), |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(missing_map_problems(analysis).is_empty());
+        assert_eq!(analysis.status, baseline.output.analysis.status);
+        for (left, right) in analysis
+            .coverage
+            .iter()
+            .zip(baseline.output.analysis.coverage.iter())
+        {
+            assert_eq!(left.state, right.state, "{:?}", left.category);
+            assert_eq!(left.note, right.note, "{:?}", left.category);
+        }
+        assert!(
+            !dead_code_coverage(analysis)
+                .note
+                .contains("no usable source map")
+        );
+    }
+
+    #[test]
+    fn source_backed_chunk_without_map_is_still_missing() {
+        let fixture = vite_with_extra_chunks(&helper_chunks(), |value| {
+            for chunk in value["chunks"].as_array_mut().unwrap() {
+                if chunk["file"] == "assets/common-DMiq4WEy.js" {
+                    chunk["map"] = "missing.map".into();
+                }
+            }
+        });
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].message.contains("assets/common-DMiq4WEy.js"));
+        assert!(!problems[0].message.contains("preload-helper"));
+        assert!(!problems[0].message.contains("rolldown-runtime"));
+        let dce = dead_code_coverage(analysis);
+        assert_eq!(dce.state, CoverageState::Partial);
+        assert!(dce.note.contains("1 chunk(s) have no usable source map"));
+    }
+
+    #[test]
+    fn mixed_virtual_and_source_chunk_keeps_the_map_requirement() {
+        let mixed = vec![ExtraChunk {
+            file: "assets/mixed-AAAA.js",
+            code: HELPER_CODE,
+            modules: vec![ROLLDOWN_RUNTIME, APP_MODULE],
+            map: ExtraMap::Absent,
+        }];
+        let fixture = vite_with_extra_chunks(&mixed, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].message.contains("assets/mixed-AAAA.js"));
+    }
+
+    #[test]
+    fn virtual_only_helpers_keep_the_unsupported_engine_note() {
+        let fixture = vite_with_extra_chunks(&helper_chunks(), |value| {
+            value["bundlerVersion"] = serde_json::Value::String("8.0.0".to_owned());
+        });
+        let analysis = &fixture.output.analysis;
+        assert!(missing_map_problems(analysis).is_empty());
+        let dce = dead_code_coverage(analysis);
+        assert_eq!(dce.state, CoverageState::Partial);
+        assert!(dce.note.contains("unsupported engine"), "{}", dce.note);
+        assert!(!dce.note.contains("no usable source map"));
+    }
+
+    #[test]
+    fn mixed_helper_and_source_chunks_warn_only_for_source_backed_names() {
+        let mut chunks = helper_chunks();
+        chunks.extend([
+            ExtraChunk {
+                file: "assets/components-CVP2oapY.js",
+                code: HELPER_CODE,
+                modules: vec![APP_MODULE],
+                map: ExtraMap::Absent,
+            },
+            ExtraChunk {
+                file: "assets/shared-DGKhew9c.js",
+                code: HELPER_CODE,
+                modules: vec![APP_MODULE],
+                map: ExtraMap::Absent,
+            },
+            ExtraChunk {
+                file: "assets/components-DPIrGkNp.js",
+                code: HELPER_CODE,
+                modules: vec![APP_MODULE],
+                map: ExtraMap::EmptyMappings,
+            },
+        ]);
+        let fixture = vite_with_extra_chunks(&chunks, |value| {
+            value["bundlerVersion"] = serde_json::Value::String("8.2.2".to_owned());
+        });
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert_eq!(
+            problems[0].message,
+            "No usable source map for: assets/components-CVP2oapY.js, assets/shared-DGKhew9c.js, \
+             assets/components-DPIrGkNp.js"
+        );
+        assert!(
+            dead_code_coverage(analysis)
+                .note
+                .contains("3 chunk(s) have no usable source map")
+        );
+    }
+
+    #[test]
+    fn virtual_only_helper_chunks_stay_analyzed_with_generated_attribution() {
+        let fixture = vite_with_extra_chunks(&helper_chunks(), |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(missing_map_problems(analysis).is_empty());
+        // Suppressing the warning must not drop the chunk from the analysis:
+        // detectors still scan its generated text and sizes are still
+        // reported, with attribution honestly marked unavailable.
+        for file in [
+            "assets/preload-helper-HclGiUj8.js",
+            "assets/rolldown-runtime-QTnfLwEv.js",
+        ] {
+            let chunk = analysis
+                .chunks
+                .iter()
+                .find(|chunk| chunk.file == file)
+                .unwrap();
+            assert!(chunk.raw_bytes > 0);
+            assert_eq!(
+                chunk.attribution,
+                crate::model::AttributionState::Unavailable
+            );
+        }
+    }
+
+    #[test]
+    fn virtual_only_chunk_predicate_requires_bundler_owned_pathless_modules() {
+        let collection =
+            |chunk_modules: Vec<&str>, modules: Vec<(&str, bool, Option<&str>)>| Collection {
+                chunks: vec![crate::collect::CollectedChunk {
+                    file: "a.js".to_owned(),
+                    modules: chunk_modules.into_iter().map(str::to_owned).collect(),
+                    ..Default::default()
+                }],
+                modules: modules
+                    .into_iter()
+                    .map(|(id, is_virtual, path)| crate::collect::CollectedModule {
+                        id: id.to_owned(),
+                        is_virtual,
+                        path: path.map(str::to_owned),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            };
+        let helper = (PRELOAD_HELPER, true, None);
+        assert!(collection(vec![PRELOAD_HELPER], vec![helper]).is_virtual_only_chunk("a.js"));
+        assert!(!collection(vec![PRELOAD_HELPER], vec![helper]).is_virtual_only_chunk("b.js"));
+        // No listed modules: treated as source-backed.
+        assert!(!collection(vec![], vec![helper]).is_virtual_only_chunk("a.js"));
+        // Listed id is not in the collected modules.
+        assert!(!collection(vec![PRELOAD_HELPER], vec![]).is_virtual_only_chunk("a.js"));
+        // Plugin virtual modules are not bundler-owned.
+        let plugin = ("\u{0}virtual:routes", true, None);
+        assert!(
+            !collection(vec!["\u{0}virtual:routes"], vec![plugin]).is_virtual_only_chunk("a.js")
+        );
+        // A bundler-owned id that has a file path is source-backed.
+        let pathed = (PRELOAD_HELPER, true, Some("/x/helper.js"));
+        assert!(!collection(vec![PRELOAD_HELPER], vec![pathed]).is_virtual_only_chunk("a.js"));
+        // A non-virtual module is source-backed.
+        let real = (PRELOAD_HELPER, false, None);
+        assert!(!collection(vec![PRELOAD_HELPER], vec![real]).is_virtual_only_chunk("a.js"));
+        // One source-backed module makes the chunk source-backed.
+        let app = (APP_MODULE, false, Some("/x/common.js"));
+        assert!(
+            !collection(vec![PRELOAD_HELPER, APP_MODULE], vec![helper, app])
+                .is_virtual_only_chunk("a.js")
+        );
     }
 }

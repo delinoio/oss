@@ -37,6 +37,35 @@ pub struct Collection {
     pub export_usage: Option<CollectedExportUsage>,
 }
 
+/// Module id prefixes of helpers that the bundler itself injects (Vite's
+/// `\0vite/preload-helper.js`, Rolldown's `\0rolldown/runtime.js`). Plugin
+/// virtual modules such as `\0virtual:*` are not bundler-owned and keep their
+/// source-map requirement.
+const BUNDLER_OWNED_VIRTUAL_PREFIXES: [&str; 2] = ["\0vite/", "\0rolldown/"];
+
+impl Collection {
+    /// True when the emitted chunk `file` lists at least one module and every
+    /// listed module is a bundler-owned virtual helper with no source file.
+    /// Such a chunk has no original source a map could attribute, so a missing
+    /// map cannot hide a source-backed candidate. Unknown ids, ids without a
+    /// bundler-owned prefix, modules with a file path and chunks with no
+    /// listed modules are all treated as source-backed.
+    pub fn is_virtual_only_chunk(&self, file: &str) -> bool {
+        let Some(chunk) = self.chunks.iter().find(|chunk| chunk.file == file) else {
+            return false;
+        };
+        !chunk.modules.is_empty()
+            && chunk.modules.iter().all(|id| {
+                BUNDLER_OWNED_VIRTUAL_PREFIXES
+                    .iter()
+                    .any(|prefix| id.starts_with(prefix))
+                    && self.modules.iter().any(|module| {
+                        module.id == *id && module.is_virtual && module.path.is_none()
+                    })
+            })
+    }
+}
+
 /// Export usage graph collected from the engine (Rspack's `RsdoctorPlugin`).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
