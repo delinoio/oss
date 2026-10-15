@@ -13,7 +13,7 @@ use crate::{
         SourceFile,
     },
     rules::{self, Context},
-    sources::{SourceStore, classify},
+    sources::{AssetExemption, SourceStore, classify},
 };
 
 pub struct AnalysisInput<'a> {
@@ -353,7 +353,27 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         ));
     }
 
-    let mut store = SourceStore::new(input.include_sources);
+    // The Vite URL-module rule for `.svg` and query imports is engine
+    // specific: other engines run such files through loaders that can emit
+    // executable code, so they only get positive evidence from the engine.
+    let mut store = SourceStore::new(input.include_sources).with_asset_exemption(
+        if collection.bundler == "vite" {
+            AssetExemption::ViteUrlModules
+        } else {
+            AssetExemption::None
+        },
+    );
+    store.asset_modules = collection
+        .modules
+        .iter()
+        .filter(|module| {
+            module.module_type.as_deref().is_some_and(|module_type| {
+                module_type == "asset" || module_type.starts_with("asset/")
+            })
+        })
+        .filter_map(|module| module.path.as_deref())
+        .map(|path| crate::sources::normalize(Path::new(path)))
+        .collect();
     store.allowed = collection
         .modules
         .iter()
@@ -2433,6 +2453,166 @@ mod tests {
                 .iter()
                 .any(|entry| entry.code == "BW_MINIFIER_NON_DEFAULT")
         );
+    }
+
+    /// Rspack fixture whose `evaluate.js` module is replaced by an included
+    /// `icon.svg` module: a readable backing file that holds the eval source,
+    /// no source-map `sourcesContent` and the engine's eval bailout. The
+    /// closure can further edit the collection.
+    fn rspack_svg_eval_fixture(
+        edit: impl Fn(&mut serde_json::Value, &mut serde_json::Value),
+    ) -> Fixture {
+        let svg_dir = tempfile::tempdir().unwrap();
+        let svg = svg_dir.path().join("icon.svg");
+        let evaluate = manifest_dir()
+            .join("../../packages/bundlewhy/fixtures/rspack-app/src/dynamic/evaluate.js");
+        std::fs::write(&svg, std::fs::read(evaluate).unwrap()).unwrap();
+        let svg_text = svg.to_string_lossy().replace('\\', "/");
+        let fixture = run_fixture(BundlerChoice::Rspack, |value| {
+            let mut module = serde_json::Value::Null;
+            for entry in value["modules"].as_array_mut().unwrap() {
+                if entry["name"] == "./src/dynamic/evaluate.js" {
+                    entry["path"] = svg_text.clone().into();
+                    module = entry.clone();
+                }
+            }
+            edit(value, &mut module);
+            for entry in value["modules"].as_array_mut().unwrap() {
+                if entry["name"] == "./src/dynamic/evaluate.js" {
+                    *entry = module.clone();
+                }
+            }
+        });
+        drop(svg_dir);
+        fixture
+    }
+
+    #[test]
+    fn rspack_svg_module_without_snapshot_is_an_unverified_coverage_gap() {
+        let fixture = rspack_svg_eval_fixture(|_, _| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        assert_eq!(
+            analysis
+                .problems
+                .iter()
+                .filter(|entry| entry.code == "BW_SOURCE_UNVERIFIED")
+                .count(),
+            1
+        );
+        assert_absent(
+            &analysis.diagnostics,
+            "minifier/direct-eval-blocks-mangling",
+            "icon.svg",
+        );
+        let mangling = analysis
+            .coverage
+            .iter()
+            .find(|entry| entry.category == OptimizationCategory::NameMangling)
+            .unwrap();
+        assert_eq!(mangling.state, CoverageState::Partial);
+        assert!(mangling.note.contains("direct-eval"));
+        // The gap is recorded without storing unverified text.
+        let icon = fixture
+            .output
+            .sources
+            .iter()
+            .find(|source| source.path.ends_with("icon.svg"))
+            .unwrap();
+        assert_eq!(icon.revision_evidence, SourceRevisionEvidence::Unavailable);
+        assert!(icon.content.is_empty());
+    }
+
+    #[test]
+    fn vite_svg_module_without_snapshot_keeps_existence_only_evidence() {
+        let svg_dir = tempfile::tempdir().unwrap();
+        let svg = svg_dir.path().join("icon.svg");
+        std::fs::write(&svg, "eval('not executable as imported')").unwrap();
+        let svg_text = svg.to_string_lossy().replace('\\', "/");
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            for entry in value["modules"].as_array_mut().unwrap() {
+                if entry["path"]
+                    .as_str()
+                    .is_some_and(|path| path.ends_with("/src/dynamic/evaluate.js"))
+                {
+                    entry["path"] = svg_text.clone().into();
+                }
+            }
+        });
+        let analysis = &fixture.output.analysis;
+        assert!(
+            !analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_SOURCE_UNVERIFIED")
+        );
+        assert_ne!(
+            analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::NameMangling)
+                .unwrap()
+                .state,
+            CoverageState::Partial
+        );
+        assert_absent(
+            &analysis.diagnostics,
+            "minifier/direct-eval-blocks-mangling",
+            "icon.svg",
+        );
+        let icon = fixture
+            .output
+            .sources
+            .iter()
+            .find(|source| source.path.ends_with("icon.svg"));
+        assert!(icon.is_none_or(|source| source.content.is_empty()));
+    }
+
+    #[test]
+    fn rspack_asset_module_type_is_positive_asset_evidence() {
+        for module_type in ["asset/resource", "asset/inline", "asset/source", "asset"] {
+            let fixture = rspack_svg_eval_fixture(|_, module| {
+                module["moduleType"] = module_type.into();
+            });
+            let analysis = &fixture.output.analysis;
+            assert!(
+                !analysis
+                    .problems
+                    .iter()
+                    .any(|entry| entry.code == "BW_SOURCE_UNVERIFIED"),
+                "{module_type}"
+            );
+            let mangling = analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::NameMangling)
+                .unwrap();
+            assert_ne!(mangling.state, CoverageState::Partial, "{module_type}");
+        }
+    }
+
+    #[test]
+    fn rspack_svg_gap_keeps_minifier_precedence() {
+        for (disabled, expected) in [
+            (true, CoverageState::NotApplicable),
+            (false, CoverageState::Unavailable),
+        ] {
+            let fixture = rspack_svg_eval_fixture(|value, _| {
+                if disabled {
+                    value["minifyEnabled"] = false.into();
+                } else {
+                    value["defaultMinifier"] = false.into();
+                }
+            });
+            let mangling = fixture
+                .output
+                .analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::NameMangling)
+                .unwrap();
+            assert_eq!(mangling.state, expected, "disabled={disabled}");
+        }
     }
 
     #[test]
