@@ -1801,6 +1801,10 @@ fn emitted_evals(
     chunk_files: &[String],
 ) -> Vec<EmittedEval> {
     let mut found = Vec::new();
+    // The module path can carry an import query or fragment that the source
+    // map's source lacks, so both sides are compared by their backing file.
+    let module_literal = crate::sources::normalize(module_path);
+    let module_key = crate::sources::module_file_key(module_path);
     for file in chunk_files {
         let Some(index) = context.chunk_index(file) else {
             continue;
@@ -1823,9 +1827,10 @@ fn emitted_evals(
         for offset in offsets {
             let attributable = if has_map {
                 let (line, column) = chunk.position(offset);
-                chunk
-                    .original(line, column)
-                    .is_some_and(|(path, _, _)| crate::sources::normalize(&path) == module_path)
+                chunk.original(line, column).is_some_and(|(path, _, _)| {
+                    crate::sources::normalize(&path) == module_literal
+                        || crate::sources::module_file_key(&path) == module_key
+                })
             } else {
                 owners <= 1
             };
@@ -1891,14 +1896,12 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
             .filter(|file| context.chunk_index(file).is_some())
             .cloned()
             .collect();
-        let module_path = crate::sources::normalize(Path::new(
-            module.path.as_deref().expect("module path checked above"),
-        ));
+        let module_path = Path::new(module.path.as_deref().expect("module path checked above"));
         // The source scan and the engine report only name a candidate. Tree
         // shaking and minification may have removed the call, so a finding
         // needs an eval call in the emitted chunk that maps back to this
         // module.
-        let emitted = emitted_evals(context, module, &module_path, &chunk_files);
+        let emitted = emitted_evals(context, module, module_path, &chunk_files);
         let Some(first_emitted) = emitted.first() else {
             tracing::debug!(
                 rule = "minifier/direct-eval-blocks-mangling",
@@ -2096,6 +2099,18 @@ mod tests {
         mangle: ManglingSetting,
         emitted: &EmittedChunk,
     ) -> Vec<DiagnosticDraft> {
+        eval_rule_drafts_for_module_path(source, engine_reports_eval, mangle, emitted, "")
+    }
+
+    /// Like `eval_rule_drafts_for_chunk`, with `path_suffix` (an import query
+    /// or fragment) appended to the analyzed module's file path.
+    fn eval_rule_drafts_for_module_path(
+        source: &str,
+        engine_reports_eval: bool,
+        mangle: ManglingSetting,
+        emitted: &EmittedChunk,
+        path_suffix: &str,
+    ) -> Vec<DiagnosticDraft> {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let source_path = root.join("src/main.js");
@@ -2110,9 +2125,10 @@ mod tests {
         // The identifier carries a resource query, as a bundler identifier can;
         // no log line may repeat it.
         let module_id = format!("{}?token=hunter2", source_path.to_string_lossy());
+        let module_file = format!("{}{path_suffix}", source_path.to_string_lossy());
         let mut modules = vec![CollectedModule {
             id: module_id.clone(),
-            path: Some(source_path.to_string_lossy().into_owned()),
+            path: Some(module_file.clone()),
             included: true,
             chunks: vec!["main.js".to_owned()],
             ..CollectedModule::default()
@@ -2160,6 +2176,10 @@ mod tests {
         sources
             .snapshots
             .insert(crate::sources::normalize(&source_path), source.to_owned());
+        sources.snapshots.insert(
+            crate::sources::normalize(Path::new(&module_file)),
+            source.to_owned(),
+        );
         let mut context = Context::new(
             &collection,
             root.to_path_buf(),
@@ -2947,6 +2967,63 @@ y=/process.env.F/.test(z),process.env.G"#;
             .as_ref()
             .expect("generated location");
         assert_eq!(generated.line, 2);
+    }
+
+    #[test]
+    fn module_path_with_import_query_or_fragment_matches_the_mapped_source() {
+        // The collected module path names a derived module of `main.js`, while
+        // the source map names the file itself.
+        for suffix in [
+            "?vue&type=script",
+            "?vue&type=script&lang.ts",
+            "?vue&src=../other/main.js",
+            "#frag",
+            "?vue&type=script#frag",
+            "?",
+            "#",
+        ] {
+            let drafts = eval_rule_drafts_for_module_path(
+                DEAD_EVAL_SOURCE,
+                true,
+                ManglingSetting::Enabled,
+                &shared_chunk_with_map(),
+                suffix,
+            );
+            assert_eq!(drafts.len(), 1, "suffix {suffix}");
+        }
+    }
+
+    #[test]
+    fn module_path_with_import_query_does_not_match_another_mapped_source() {
+        let mut emitted = shared_chunk_with_map();
+        emitted.map = emitted.map.map(|map| {
+            map.replace(
+                r#""sources":["../src/other0.js","../src/main.js"]"#,
+                r#""sources":["../src/main.js","../src/other0.js"]"#,
+            )
+        });
+        for suffix in ["?vue&type=script", "#frag", "?vue&type=script#frag"] {
+            let drafts = eval_rule_drafts_for_module_path(
+                DEAD_EVAL_SOURCE,
+                true,
+                ManglingSetting::Enabled,
+                &emitted,
+                suffix,
+            );
+            assert!(drafts.is_empty(), "suffix {suffix}");
+        }
+    }
+
+    #[test]
+    fn mapped_source_with_import_query_matches_the_module_file() {
+        // The map names a derived module and the collected path is the file.
+        let mut emitted = shared_chunk_with_map();
+        emitted.map = emitted
+            .map
+            .map(|map| map.replace("../src/main.js", "../src/main.js?vue&type=script"));
+        let drafts =
+            eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, true, ManglingSetting::Enabled, &emitted);
+        assert_eq!(drafts.len(), 1);
     }
 
     #[test]

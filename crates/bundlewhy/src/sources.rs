@@ -316,6 +316,43 @@ pub fn filesystem_path(path: &Path) -> PathBuf {
     PathBuf::from(without_fragment)
 }
 
+/// Identity of the file that backs a module path or a source-map source, for
+/// comparing the two. Bundlers name a derived module by appending an import
+/// query or fragment to the file (`Comp.vue?vue&type=script`, `a.js#frag`),
+/// prefix virtual or plugin-generated identifiers with a NUL byte
+/// (`\0/src/a.js?commonjs-proxy`), and on Windows write either separator
+/// (`C:\\src\\a.js` and `C:/src/a.js`). The key drops the prefix, the query
+/// and the fragment (a literal file name that really contains `?` or `#` wins,
+/// as in [`filesystem_path`]), unifies separators of a Windows path and
+/// normalizes `.` and `..` after the suffix is gone, so a `..` inside a query
+/// never changes the path.
+pub fn module_file_key(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    let text = text.trim_start_matches('\0');
+    let is_windows_path = {
+        let bytes = text.as_bytes();
+        text.starts_with("\\\\")
+            || (bytes.len() >= 3
+                && bytes[0].is_ascii_alphabetic()
+                && bytes[1] == b':'
+                && matches!(bytes[2], b'\\' | b'/'))
+    };
+    let unified;
+    let text = if is_windows_path {
+        unified = text.replace('\\', "/");
+        unified.as_str()
+    } else {
+        text
+    };
+    normalize(&filesystem_path(Path::new(text)))
+}
+
+/// True when `left` and `right` name the same backing file; see
+/// [`module_file_key`].
+pub fn same_module_file(left: &Path, right: &Path) -> bool {
+    normalize(left) == normalize(right) || module_file_key(left) == module_file_key(right)
+}
+
 /// Returns the text of `bytes` when they are valid UTF-8 without NUL bytes.
 pub fn as_text(bytes: &[u8]) -> Option<&str> {
     if bytes.contains(&0) {
@@ -1479,6 +1516,66 @@ mod tests {
         // Outside the project nothing is listed for a saved-run recheck.
         assert!(store.project_relative.is_empty());
         assert!(store.existence_relative.is_empty());
+    }
+
+    #[test]
+    fn module_file_key_ignores_query_fragment_prefix_and_windows_separators() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("Comp.vue"), "").unwrap();
+        std::fs::write(root.join("C#.js"), "").unwrap();
+        let file = root.join("Comp.vue");
+        let base = module_file_key(&file);
+        assert_eq!(base, file);
+        for module in [
+            "Comp.vue?vue&type=script",
+            "Comp.vue?vue&type=script&lang.ts",
+            "Comp.vue?vue&src=../other/x.vue",
+            "Comp.vue#frag",
+            "Comp.vue?vue&type=style#frag",
+            "Comp.vue?",
+            "Comp.vue#",
+        ] {
+            assert_eq!(module_file_key(&root.join(module)), base, "{module}");
+            assert!(same_module_file(&root.join(module), &file), "{module}");
+            assert!(same_module_file(&file, &root.join(module)), "{module}");
+        }
+        // A NUL prefix marks a virtual identifier that wraps a real file.
+        let prefixed = format!("\0{}?commonjs-proxy", file.to_string_lossy());
+        assert_eq!(module_file_key(Path::new(&prefixed)), base);
+        assert!(same_module_file(Path::new(&prefixed), &file));
+        // A `.` or `..` segment is normalized after the suffix is removed.
+        assert_eq!(
+            module_file_key(&root.join("sub/../Comp.vue?x=1")),
+            base,
+            "dot segments"
+        );
+        // A literal file name that contains `#` is its own file.
+        let literal = root.join("C#.js");
+        assert_eq!(module_file_key(&root.join("C#.js?raw")), literal);
+        assert!(!same_module_file(&root.join("C#.js?raw"), &root.join("C")));
+        // Different files stay different, whatever their suffix.
+        assert!(!same_module_file(
+            &root.join("Comp.vue?vue&type=script"),
+            &root.join("Other.vue")
+        ));
+        assert!(!same_module_file(
+            &root.join("Comp.vue.map"),
+            &root.join("Comp.vue?x")
+        ));
+        // A Windows path compares equal across separators and suffixes.
+        assert_eq!(
+            module_file_key(Path::new("C:\\proj\\src\\Comp.vue?vue&type=script")),
+            module_file_key(Path::new("C:/proj/src/Comp.vue")),
+        );
+        assert_eq!(
+            module_file_key(Path::new("\\\\server\\share\\a.js#frag")),
+            module_file_key(Path::new("//server/share/a.js")),
+        );
+        assert_eq!(
+            module_file_key(Path::new("\0C:\\proj\\a.js?commonjs-proxy")),
+            module_file_key(Path::new("C:/proj/a.js")),
+        );
     }
 
     #[test]
