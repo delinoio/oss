@@ -116,7 +116,21 @@ func LoginCodeValid(code []byte) bool {
 type AuthConfig struct {
 	Process       process.Config
 	Version, Home string
+	// DirectStartup marks a version-4 direct-startup executable identity (path
+	// and digest, no pre-inspected version). Such an identity has no numeric
+	// version gate: the original process still proves it is Claude Code.
+	DirectStartup bool
 }
+
+// authVersionAllowed applies the numeric baseline to inspected installations
+// and waives it only for the digest-pinned direct-startup identity.
+func authVersionAllowed(config AuthConfig) bool {
+	if config.DirectStartup && config.Version == "" {
+		return true
+	}
+	return domain.HarnessVersionAllowed(domain.ClaudeCode, config.Version)
+}
+
 type AuthStatus struct {
 	LoggedIn          bool    `json:"loggedIn"`
 	AuthMethod        string  `json:"authMethod"`
@@ -136,7 +150,7 @@ func authProblem() *domain.Error {
 	return domain.Fail(domain.Unauthenticated, "Claude subscription authentication could not be confirmed.", "Inspect the original Runner Device and login operation; do not resend the approval code.")
 }
 func authEnvironment(config AuthConfig) ([]string, error) {
-	if !domain.HarnessVersionAllowed(domain.ClaudeCode, config.Version) {
+	if !authVersionAllowed(config) {
 		return nil, incompatible()
 	}
 	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home})
@@ -200,7 +214,10 @@ func VerifyAuthVersion(ctx context.Context, config AuthConfig) error {
 	if err != nil {
 		return domain.SafeError(err)
 	}
-	if string(bytes.TrimSpace(raw)) != config.Version+" (Claude Code)" {
+	// A versionless direct-startup identity is never probed by a standalone
+	// child: the original execution process proves its own protocol. Without a
+	// pinned version nothing can match, so this check fails closed.
+	if string(bytes.TrimSpace(raw)) != config.Version+" (Claude Code)" || config.Version == "" {
 		return incompatible()
 	}
 	return nil

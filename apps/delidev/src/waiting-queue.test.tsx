@@ -47,7 +47,7 @@ function fixture() {
     }),
   );
   let visible = rows.slice();
-  const read = vi.fn(async () => ({
+  const read = vi.fn(async (_request?: { pageToken: string }) => ({
     inputs: visible,
     nextPageToken: "",
     currentQueueGeneration: 9007199254740993n,
@@ -66,7 +66,7 @@ function fixture() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const view = (revision = "1") => (
+  const view = (revision = "1", excludeInputIds?: ReadonlySet<string>) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>
@@ -79,6 +79,7 @@ function fixture() {
             saveDraft={() => {}}
             readOnly={false}
             refreshHistory={() => {}}
+            excludeInputIds={excludeInputIds}
           />
         </MutationIntents>
       </QueryClientProvider>
@@ -268,4 +269,75 @@ it("keeps the end drop inside the final row and sends one move to the end", asyn
   });
   fireEvent.dragEnd(handle);
   expect(view.container.querySelector(".queue-drop-end")).toBeNull();
+});
+
+it("omits the excluded original input while later waiting inputs keep their controls", async () => {
+  const f = fixture();
+  render(f.view("1", new Set([f.rows[0].id])));
+  await screen.findByText("Second");
+  expect(screen.queryByText("First")).toBeNull();
+  expect(screen.getByText("Third")).toBeDefined();
+});
+it("hides the waiting list when only the excluded original input is waiting", async () => {
+  const f = fixture();
+  f.replace([f.rows[0]]);
+  render(f.view("1", new Set([f.rows[0].id])));
+  await waitFor(() => expect(f.read).toHaveBeenCalled());
+  expect(screen.queryByText("First")).toBeNull();
+});
+
+it("keeps the end-drop target on the last visible row when the excluded input is last", async () => {
+  const f = fixture();
+  const view = render(f.view("1", new Set([f.rows[2].id])));
+  await screen.findByText("Second");
+  expect(screen.queryByText("Third")).toBeNull();
+  const handle = screen
+    .getByText("First")
+    .closest("article")!
+    .querySelector<HTMLButtonElement>(".queue-drag-handle")!;
+  fireEvent.dragStart(handle, { dataTransfer: { setData: vi.fn() } });
+  const target = view.container.querySelector(".queue-drop-end")!;
+  expect(target.parentElement).toBe(
+    screen.getByText("Second").closest(".queue-drop-row"),
+  );
+  fireEvent.drop(target);
+  await waitFor(() => expect(f.move).toHaveBeenCalledOnce());
+  expect(f.move.mock.calls[0][0]).toMatchObject({
+    mutation: { id: f.rows[0].id },
+    beforeInputId: "",
+  });
+});
+it("continues a page-boundary move down using the filtered order", async () => {
+  const f = fixture();
+  const [first, second, hidden] = f.rows;
+  const last = create(ResourceSchema, {
+    ...hidden,
+    id: newRequestId(),
+    documentJson: encode({
+      prompt: "Fourth",
+      sequence: 4,
+      delivery: "queued",
+      mode: "execute",
+    }),
+  });
+  f.read.mockImplementation(async (request?: { pageToken: string }) => ({
+    inputs: request?.pageToken ? [hidden, last] : [first, second],
+    nextPageToken: request?.pageToken ? "" : "page-2",
+    currentQueueGeneration: 9007199254740993n,
+    waitingCount: 4,
+  }));
+  render(f.view("1", new Set([hidden.id])));
+  await screen.findByText("Second");
+  const row = screen.getByText("Second").closest("article")!;
+  fireEvent.click(
+    within(row).getByRole("button", { name: "More input actions" }),
+  );
+  fireEvent.click(within(row).getByRole("menuitem", { name: "Move down" }));
+  await waitFor(() => expect(f.move).toHaveBeenCalledOnce());
+  // The hidden row must not become the anchor: the target is the visible end.
+  expect(f.move.mock.calls[0][0]).toMatchObject({
+    mutation: { id: second.id },
+    beforeInputId: "",
+    beforeInputRevision: 0n,
+  });
 });

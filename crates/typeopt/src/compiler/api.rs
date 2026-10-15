@@ -1171,6 +1171,11 @@ impl Node {
         Node::from(self.raw().as_import_equals_declaration().module_reference)
     }
 
+    /// The block of a `static { … }` class member.
+    pub fn static_block_body(self) -> Node {
+        Node::from(self.raw().as_class_static_block_declaration().body())
+    }
+
     pub fn keyword_token(self) -> SyntaxKind {
         self.raw().as_meta_property().keyword_token
     }
