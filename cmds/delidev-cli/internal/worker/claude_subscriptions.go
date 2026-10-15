@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -119,6 +120,16 @@ func openClaudeProfile(config Config, credential Credential, account, profile do
 	executable, err := filepath.EvalSymlinks(installation.ResolvedPath)
 	if err != nil || !filepath.IsAbs(executable) || executable != installation.ResolvedPath {
 		return nil, subscription.Invalid()
+	}
+	// Re-inspect the retained digest here, at the single point every
+	// profile-bearing launch passes through, so a binary replaced after
+	// resolution (for example while waiting for the lease) never receives the
+	// profile directories.
+	digestCtx, stopDigest := context.WithTimeout(context.Background(), 30*time.Second)
+	digestErr := verifyClaudeExecutableDigest(digestCtx, config.Logger, installation)
+	stopDigest()
+	if digestErr != nil {
+		return nil, digestErr
 	}
 	for _, dir := range []string{filepath.Join(config.Root, "native-claude"), filepath.Join(config.Root, "native-claude", string(credential.ServerID)), filepath.Dir(root)} {
 		if err := security.PrivateDir(dir); err != nil {
@@ -524,16 +535,31 @@ func claudeCleanupInstallation(ctx context.Context, config Config, journal manag
 	if err != nil {
 		return domain.Installation{}, err
 	}
-	if installation.ExecutableSHA256 != "" {
-		digest, err := harness.InspectExecutable(ctx, installation.ResolvedPath)
-		if err != nil || digest != installation.ExecutableSHA256 {
-			if config.Logger != nil {
-				config.Logger.WarnContext(ctx, "claude_cleanup_executable_changed", "inspected", err == nil)
-			}
-			return domain.Installation{}, domain.Fail(domain.RecoveryRequired, "The original native executable changed.", "Restore the original executable before recovering its native profile.")
-		}
+	if err := verifyClaudeExecutableDigest(ctx, config.Logger, installation); err != nil {
+		return domain.Installation{}, err
 	}
 	return installation, nil
+}
+
+// verifyClaudeExecutableDigest is the one executable-identity recheck for every
+// launch that carries a native Claude profile. An installation that retains a
+// digest must still match the bytes on disk right now; one that retains none
+// (an inspected entry without a digest) has nothing to compare. A mismatch
+// fails closed before any process receives the profile. The check cannot close
+// the window between this read and the later exec; that residual race is
+// documented in the execution startup contract.
+func verifyClaudeExecutableDigest(ctx context.Context, logger *slog.Logger, installation domain.Installation) error {
+	if installation.ExecutableSHA256 == "" {
+		return nil
+	}
+	digest, err := harness.InspectExecutable(ctx, installation.ResolvedPath)
+	if err != nil || digest != installation.ExecutableSHA256 {
+		if logger != nil {
+			logger.WarnContext(ctx, "claude_profile_executable_changed", "inspected", err == nil)
+		}
+		return domain.Fail(domain.RecoveryRequired, "The original native executable changed.", "Restore the original executable before opening its native profile.")
+	}
+	return nil
 }
 
 func claudeRetainedInstallation(config Config, journal managedSubscriptionJournal) (domain.Installation, error) {

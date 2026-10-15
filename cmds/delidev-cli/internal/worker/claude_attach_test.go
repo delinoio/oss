@@ -317,3 +317,67 @@ func TestClaudeCleanupInstallationRechecksRetainedExecutableDigest(t *testing.T)
 		}
 	})
 }
+
+func TestOpenClaudeProfileRechecksRetainedDigestBeforeProfileAccess(t *testing.T) {
+	original := []byte("#!/bin/sh\nexit 0\n")
+	replaced := []byte("#!/bin/sh\nexit 7\n")
+	for _, tc := range []struct {
+		name     string
+		inspect  bool
+		retain   string // "match", "none" or "other"
+		mutate   func(path string)
+		wantOpen bool
+	}{
+		{"direct startup unchanged", false, "match", func(string) {}, true},
+		{"direct startup replaced while waiting", false, "match", func(p string) { _ = os.WriteFile(p, replaced, 0o700) }, false},
+		{"direct startup removed while waiting", false, "match", func(p string) { _ = os.Remove(p) }, false},
+		{"inspected with digest unchanged", true, "match", func(string) {}, true},
+		{"inspected with digest replaced", true, "match", func(p string) { _ = os.WriteFile(p, replaced, 0o700) }, false},
+		{"inspected with foreign digest", true, "other", func(string) {}, false},
+		{"inspected without digest replaced", true, "none", func(p string) { _ = os.WriteFile(p, replaced, 0o700) }, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			executable := filepath.Join(root, "claude")
+			if err := os.WriteFile(executable, original, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			digest, err := harness.InspectExecutable(context.Background(), executable)
+			if err != nil {
+				t.Fatal(err)
+			}
+			installation := domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: executable}
+			switch tc.retain {
+			case "match":
+				installation.ExecutableSHA256 = digest
+			case "other":
+				installation.ExecutableSHA256 = strings.Repeat("0", 64)
+			}
+			if tc.inspect {
+				installation.Version = domain.ClaudeProtocolVersion
+			}
+			tc.mutate(executable)
+			config := Config{Root: filepath.Join(root, "state")}
+			credential := Credential{ServerID: domain.NewID(), MachineID: domain.NewID()}
+			profile, err := openClaudeProfile(config, credential, domain.NewID(), domain.NewID(), installation, domain.NewID(), true)
+			if tc.wantOpen {
+				if err != nil {
+					t.Fatal("unchanged executable was rejected", err)
+				}
+				if err := profile.close(); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal("changed executable reached the profile", err)
+			}
+			if _, statErr := os.Lstat(filepath.Join(config.Root, "native-claude")); !os.IsNotExist(statErr) {
+				t.Fatal("profile directories were touched before the digest check", statErr)
+			}
+		})
+	}
+}

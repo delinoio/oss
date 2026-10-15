@@ -98,10 +98,13 @@ private journal before the native profile is created or touched, so only
 journals written before that field existed lack it. Historical device-owned
 cleanup reuses that retained installation; only such legacy journals fall back
 to the single fully verified entry of the current attach inventory, and
-ambiguous or missing evidence fails closed as invalid. Before cleanup launches
-the executable with access to the original profile, it re-inspects the file and
-compares any retained digest; a mismatch or an unreadable file fails closed as
-recovery-required.
+ambiguous or missing evidence fails closed as invalid. The single profile open
+that every profile-bearing launch passes through (execution, login, logout and
+cleanup) re-inspects the executable and compares any retained digest before
+creating or touching a profile directory or launching a process with the profile
+environment; a mismatch or an unreadable file fails closed as recovery-required.
+A binary replaced between that inspection and the exec is a residual race that
+the later startup-ready digest check still catches.
 Workers lacking the new capability receive no new execution assignment; clients receive an
 update requirement rather than an instruction to run manual inspection.
 
