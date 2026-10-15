@@ -1833,6 +1833,27 @@ it("R41 backslash before whitespace in a plain link destination: it is literal a
   expect(scanMarkdown(`[label](${DOCS}/a\\))`).links).toHaveLength(1);
 });
 
+it("R42 image inside a link label whose description holds a link: the image is consumed whole and the outer link still collapses", () => {
+  const outer = "https://outer.test";
+  const draft = `[open ![see [docs](${DOCS})](logo.png)](${outer})`;
+  const { input, view } = mount(draft);
+  expect(scanMarkdown(draft).links.map((link) => link.url)).toEqual([outer]);
+  expect(input.value).toBe(`open ![see [docs](${DOCS})](logo.png)`);
+  // A caret inside the label reveals the whole source and maps exactly.
+  select(input, 2);
+  expect(input.value).toBe(draft);
+  expect(probe.api.readCanonical().start).toBe(1 + 2);
+  view.unmount();
+  // The same holds for a reference image, and a link beside the image still
+  // rejects the outer one.
+  const reference = `[logo]: i.png\n\n[open ![see [docs](${DOCS})][logo]](${outer})`;
+  expect(scanMarkdown(reference).links.map((link) => link.url)).toEqual([
+    outer,
+  ]);
+  const beside = `[open ![i](i.png) [docs](${DOCS})](${outer})`;
+  expect(scanMarkdown(beside).links.map((link) => link.url)).toEqual([DOCS]);
+});
+
 // Seeded random walk over the whole state machine. After every operation the
 // field must show exactly the projection of the canonical text for the
 // canonical selection, selection maps must agree, and undoing every edit must

@@ -429,11 +429,8 @@ function unescapeLabel(
   return { label, offsets };
 }
 
-/** First element of an ascending list at or after `start`. */
-function firstFrom(
-  sorted: readonly number[],
-  start: number,
-): number | undefined {
+/** Index of the first element of an ascending list at or after `start`. */
+function lowerBound(sorted: readonly number[], start: number): number {
   let low = 0,
     high = sorted.length;
   while (low < high) {
@@ -441,7 +438,15 @@ function firstFrom(
     if (sorted[mid]! < start) low = mid + 1;
     else high = mid;
   }
-  return sorted[low];
+  return low;
+}
+
+/** First element of an ascending list at or after `start`. */
+function firstFrom(
+  sorted: readonly number[],
+  start: number,
+): number | undefined {
+  return sorted[lowerBound(sorted, start)];
 }
 
 function mergeRanges(ranges: MarkdownRange[]): MarkdownRange[] {
@@ -644,6 +649,79 @@ function scanNormalized(text: string): MarkdownScan {
       ? close + 1
       : undefined;
   };
+  // Opening brackets that follow an unescaped `!`, in source order.
+  const imageOpens = opens.filter((open) => pairAt.get(open)?.image === true);
+  // Exclusive end of the image whose description opens at `open`, inline or by
+  // reference, or -1 when that bracket pair is not a valid image. Memoized.
+  const imageEnds = new Map<number, number>();
+  const imageEndAt = (open: number): number => {
+    const known = imageEnds.get(open);
+    if (known !== undefined) return known;
+    const pair = pairAt.get(open);
+    let end = -1;
+    if (pair?.image) {
+      if (text[pair.close + 1] === "(" && budget.spend(2))
+        end =
+          parseDestination(
+            { text, end: pair.segmentEnd },
+            pair.close + 2,
+            budget,
+          )?.end ?? -1;
+      if (end < 0 && definitions.size > 0 && !budget.exhausted)
+        end = referenceEnd(pair) ?? -1;
+    }
+    imageEnds.set(open, end);
+    return end;
+  };
+  // A link label may not hold another link. A link marker that lies inside the
+  // description of a valid image that opens inside the label belongs to that
+  // image, which is consumed whole (P5), so it does not count. For each marker
+  // `coverStart` holds the largest start of a valid image that covers it (or -1);
+  // an image opening after the label's `[` is exactly one whose start is above
+  // it, so a label holds a link iff some marker inside it has a cover start at
+  // or below the label's `[`. A minimum tree over the markers answers that for
+  // any marker range in logarithmic time, so no label is ever rescanned.
+  let coverTree: Int32Array | undefined;
+  const buildCoverTree = (): Int32Array | undefined => {
+    const size = linkMarkers.length,
+      tree = new Int32Array(2 * size).fill(-1),
+      covering: { open: number; end: number }[] = [];
+    let next = 0;
+    for (let index = 0; index < size; index++) {
+      if (!budget.spend(2)) return undefined;
+      const marker = linkMarkers[index]!;
+      while (next < imageOpens.length && imageOpens[next]! < marker) {
+        const imageOpen = imageOpens[next++]!,
+          end = imageEndAt(imageOpen);
+        if (end > imageOpen) covering.push({ open: imageOpen, end });
+      }
+      // Starts ascend, so the top of the stack is the largest start; a covering
+      // image that ended can never cover a later marker.
+      while (covering.length && covering[covering.length - 1]!.end <= marker)
+        covering.pop();
+      tree[size + index] = covering.length
+        ? covering[covering.length - 1]!.open
+        : -1;
+    }
+    for (let node = size - 1; node >= 1; node--)
+      tree[node] = Math.min(tree[2 * node]!, tree[2 * node + 1]!);
+    return tree;
+  };
+  const holdsLink = (open: number, close: number): boolean => {
+    let low = lowerBound(linkMarkers, open + 1);
+    const high = lowerBound(linkMarkers, close - 1);
+    if (low >= high) return false;
+    coverTree ??= buildCoverTree();
+    if (coverTree === undefined || !budget.spend(2)) return false;
+    const size = linkMarkers.length;
+    let smallest = Number.POSITIVE_INFINITY,
+      upper = high + size;
+    for (low += size; low < upper; low >>= 1, upper >>= 1) {
+      if (low & 1) smallest = Math.min(smallest, coverTree[low++]!);
+      if (upper & 1) smallest = Math.min(smallest, coverTree[--upper]!);
+    }
+    return smallest <= open;
+  };
   let consumed = 0;
   for (const open of opens) {
     if (open < consumed) continue;
@@ -661,8 +739,8 @@ function scanNormalized(text: string): MarkdownScan {
         // (links, images, URLs) is detected. P6: only a link label may not
         // hold another link, and an image inside a label is not a link.
         if (!image) {
-          const marker = firstFrom(linkMarkers, open + 1);
-          if (marker !== undefined && marker < close - 1) continue;
+          if (holdsLink(open, close)) continue;
+          if (budget.exhausted) break;
         }
         claims.push({ start, end: parsed.end });
         consumed = parsed.end;

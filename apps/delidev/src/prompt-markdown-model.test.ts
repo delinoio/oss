@@ -141,6 +141,41 @@ describe("precedence table", () => {
     expect(urls("[a](https://a.test/\\))")).toEqual(["https://a.test/)"]);
   });
 
+  it("P6 a link inside the description of an image in the label does not count", () => {
+    const outer = "https://outer.test";
+    expect(
+      urls(`[open ![see [docs](https://d.test)](logo.png)](${outer})`),
+    ).toEqual([outer]);
+    expect(
+      urls(
+        `[open ![see [docs](https://d.test)][logo]](${outer})\n\n[logo]: i.png`,
+      ),
+    ).toEqual([outer]);
+    // A nested image description is consumed by the outermost image.
+    expect(
+      urls(`[open ![a ![b [c](https://c.test)](d.png)](e.png)](${outer})`),
+    ).toEqual([outer]);
+    // An image bracket with no destination or definition is not an image, so
+    // the link in it is a nested link and rejects the outer one.
+    expect(urls(`[open ![see [docs](https://d.test)] x](${outer})`)).toEqual([
+      "https://d.test",
+    ]);
+    expect(urls(`[open ![i](i.png) [docs](https://d.test)](${outer})`)).toEqual(
+      ["https://d.test"],
+    );
+  });
+
+  it("P6 many images with links in one label stay within the work budget", () => {
+    const image = "![a [b](https://b.test)](c.png) ";
+    const text = `[${image.repeat(8000)}](https://o.test)`;
+    const scan = scanMarkdown(text);
+    expect(scan.complete).toBe(true);
+    expect(scan.links.map((link) => link.url)).toEqual(["https://o.test"]);
+    // Nested labels with such images are answered without rescanning either.
+    const nested = `${`[ ${image.repeat(20)}`.repeat(1500)}x${"](u)".repeat(1500)}`;
+    expect(scanMarkdown(nested).complete).toBe(true);
+  });
+
   it("P6 a title is scanned up to the protected-span limit", () => {
     const title = (count: number) =>
       `[a](https://a.test "${"w ".repeat(count)}https://t.test") https://c.test`;
@@ -515,6 +550,30 @@ function referenceModel(text: string): ModelScan {
     }
     return known(ownLabel(open, close)) ? close + 1 : undefined;
   };
+  // Exclusive end of the image whose description opens at `open`, inline or by
+  // reference, or -1 when that bracket pair is not an image.
+  const imageEnd = (open: number) => {
+    const pair = pairs.get(open);
+    if (!pair || !pair.image) return -1;
+    if (text[pair.close + 1] === "(") {
+      const dest = modelDestination(
+        text.slice(0, pair.segmentEnd),
+        pair.close + 2,
+      );
+      if (dest) return dest.end;
+    }
+    return definitions.size > 0 ? (referenceEnd(open, pair) ?? -1) : -1;
+  };
+  // A link label may not hold another link. A marker inside the description
+  // of an image that is itself inside the label belongs to the image, whose
+  // description contributes no link.
+  const holdsLink = (open: number, close: number) =>
+    linkMarkers.some(
+      (m) =>
+        m > open &&
+        m < close - 1 &&
+        !opens.some((o) => o > open && o < m && imageEnd(o) > m),
+    );
   let consumed = 0;
   for (const open of opens) {
     if (open < consumed) continue;
@@ -526,8 +585,7 @@ function referenceModel(text: string): ModelScan {
     if (text[close + 1] === "(") {
       const dest = modelDestination(t, close + 2);
       if (dest) {
-        if (!image && linkMarkers.some((m) => m > open && m < close - 1))
-          continue;
+        if (!image && holdsLink(open, close)) continue;
         claim(start, dest.end);
         consumed = dest.end;
         if (image || !dest.simple) continue;
@@ -621,6 +679,9 @@ const PHRASES = [
   "[a](https://e.test\\\nmore)",
   "![a](i.png\\ more)",
   "[open ![i](i.png)](https://d.test)",
+  "[open ![see [docs](https://d.test)](i.png)](https://o.test)",
+  "[open ![see [docs](https://d.test)][a]](https://o.test)",
+  "[open ![see [docs](https://d.test)] x](https://o.test)",
   "![x [y](https://c.test)](i.png)",
   "![x][a]",
   "[x][a]",
@@ -678,6 +739,11 @@ describe("differential test against the reference model", () => {
       "[label](https://a.test\\\nmore) https://b.test",
       "[label](https://a.test\\) https://b.test",
       "![label](i.png\\ more) https://b.test",
+      "[open ![see [docs](https://docs.test)](logo.png)](https://outer.test)",
+      "[open ![see [docs](https://docs.test)][logo]](https://outer.test)\n\n[logo]: i.png",
+      "[open ![see [docs](https://docs.test)] x](https://outer.test)",
+      "[open ![a ![see [docs](https://docs.test)](b.png)](c.png) y](https://outer.test)",
+      "[open ![a](b.png) [docs](https://docs.test)](https://outer.test)",
     ]) {
       const model = referenceModel(text),
         scan = scanMarkdown(text);
