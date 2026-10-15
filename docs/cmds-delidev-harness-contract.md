@@ -429,9 +429,10 @@ unsupported until their original history effects have an owning adapter.
 
 Result `subagent_stats` accepts only its complete bounded native counter shape;
 these aggregates are discarded and cannot publish task lifecycle or cleanup.
-Native cumulative model usage preserves optional nonnegative `thinkingTokens`
+Native cumulative model usage validates optional nonnegative `thinkingTokens`
 and the closed `costBasis` values `list`, `managed` and `unknown`. These remain
-native observations, with no inferred billing or replacement token totals.
+private native observations and are excluded from the existing public usage
+counter schema, with no inferred billing or replacement token totals.
 
 The result may report a nonnegative `result_index`, zero `queued_turn_count`,
 the same singleton `user_message_uuids`, and typed timing/resource observations.

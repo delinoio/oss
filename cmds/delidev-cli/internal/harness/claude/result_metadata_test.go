@@ -73,3 +73,27 @@ func TestNativeSafeguardMetadataNeverGrantsToolAuthority(t *testing.T) {
 		t.Fatal("unbounded native classifier inventory accepted")
 	}
 }
+
+func TestNativeModelMetadataDoesNotExpandPublicCounterSchema(t *testing.T) {
+	var usage NativeModelUsage
+	if err := json.Unmarshal([]byte(`{"inputTokens":3,"outputTokens":5,"thinkingTokens":2,"costBasis":"managed"}`), &usage); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(usage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fields["thinkingTokens"]; ok {
+		t.Fatal("unallocated native counter entered public conversion")
+	}
+	if _, ok := fields["costBasis"]; ok {
+		t.Fatal("native pricing metadata entered public conversion")
+	}
+	if string(fields["inputTokens"]) != "3" || string(fields["outputTokens"]) != "5" {
+		t.Fatal("published counters changed")
+	}
+}

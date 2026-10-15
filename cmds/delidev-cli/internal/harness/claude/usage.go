@@ -138,6 +138,15 @@ type ResultUsage struct {
 	NativeCostUSD *NativeUSD                  `json:"native_cumulative_cost_usd"`
 }
 
+// These new native descriptors have no public usage-schema allocation. Keep
+// validation private while preserving the existing published counter graph.
+func (u NativeModelUsage) MarshalJSON() ([]byte, error) {
+	type wire NativeModelUsage
+	value := wire(u)
+	value.Thinking, value.CostBasis = nil, nil
+	return json.Marshal(value)
+}
+
 func nonnegativeCounts(values ...*int64) bool {
 	for _, value := range values {
 		if value != nil && *value < 0 {
