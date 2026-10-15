@@ -214,7 +214,7 @@ func (s *Service) initializeServerSubscriptions(ctx context.Context) error {
 			if a.SubscriptionService == domain.SubscriptionGrok && a.ProviderID == "" && o.GrokDiagnostic == nil && (o.CodeConsumed || o.RefreshClaimed || o.GrokRevocation != "") {
 				// A claimed operation fenced by the restart is never recovered
 				// automatically, so its recovery diagnostic is recorded here or nowhere.
-				o.GrokDiagnostic = &domain.GrokDiagnostic{Phase: grokDiagnosticPhaseOf(o.Action), Code: domain.RecoveryRequired, CorrelationID: o.ID}
+				o.GrokDiagnostic = grokOperationDiagnostic(o.ID, grokDiagnosticPhaseOf(o.Action), domain.RecoveryRequired)
 			}
 			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 				return nil, err

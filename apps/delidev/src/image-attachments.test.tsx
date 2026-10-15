@@ -404,8 +404,8 @@ it("shows exact creation constraints locally in each language and preserves tool
         "Still PNG, JPEG or WebP only.",
         "Up to 8 images per message, 10 MiB each, 40 MiB total.",
         "Up to 40 million pixels per image.",
-        "Requires a Codex Agent Worker with an image-capable model and a Runner Device that supports image inputs.",
-        "Claude Code, OpenCode and Grok Build image inputs are not supported in DeliDev.",
+        "Requires a Codex or OpenCode Agent Worker with an image-capable model and a Runner Device that supports image inputs.",
+        "Claude Code and Grok Build image inputs are not supported in DeliDev. OpenCode accepts up to 384 KiB of images per message and requires message text.",
       ],
     ],
     [
@@ -416,8 +416,8 @@ it("shows exact creation constraints locally in each language and preserves tool
         "정지 PNG, JPEG 또는 WebP만 지원합니다.",
         "메시지당 최대 8개, 이미지당 10 MiB, 총 40 MiB.",
         "이미지당 최대 4천만 픽셀.",
-        "이미지 입력을 지원하는 모델을 사용하는 Codex Agent Worker와 이미지 입력을 지원하는 Runner Device가 필요합니다.",
-        "DeliDev에서는 Claude Code, OpenCode, Grok Build의 이미지 입력을 지원하지 않습니다.",
+        "이미지 입력을 지원하는 모델을 사용하는 Codex 또는 OpenCode Agent Worker와 이미지 입력을 지원하는 Runner Device가 필요합니다.",
+        "DeliDev에서는 Claude Code, Grok Build의 이미지 입력을 지원하지 않습니다. OpenCode는 메시지당 최대 384 KiB의 이미지를 지원하며 메시지 텍스트가 필요합니다.",
       ],
     ],
   ] as const;

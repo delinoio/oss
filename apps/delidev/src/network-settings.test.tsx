@@ -498,7 +498,6 @@ it("retains three network profile payload pages and restores an older accepted r
       </QueryClientProvider>
     </TransportProvider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
   await screen.findByRole("heading", { name: "Profile 1" });
   for (let number = 2; number <= 4; number++) {
     fireEvent.click(
@@ -546,9 +545,8 @@ it.each(["Edit profile", "Delete profile"])(
 
 it("keeps the inline server owner alive after an independent profile dialog closes", async () => {
   const f = fixture(false, undefined, true);
-  expect(f.reads).not.toHaveBeenCalled();
   const disclosure = screen.getByRole("button", { name: "Network settings" });
-  fireEvent.click(disclosure);
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
   await screen.findByRole("heading", { name: "Current route" });
   expect(screen.queryByRole("dialog")).toBeNull();
   await waitFor(() =>
@@ -631,7 +629,6 @@ it("does not fabricate Direct or generation zero before the server route read", 
       </QueryClientProvider>
     </TransportProvider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
   await screen.findByText("Reading current route…");
   expect(screen.queryByText(/Selected route:/)).toBeNull();
   expect(
@@ -646,7 +643,6 @@ it("does not fabricate Direct or generation zero before the server route read", 
 it("drops inline uncertain selections on collapse without replay", async () => {
   const f = fixture(true, undefined, true);
   const disclosure = screen.getByRole("button", { name: "Network settings" });
-  fireEvent.click(disclosure);
   await screen.findByRole("heading", { name: "Current route" });
   await waitFor(() =>
     expect(
@@ -671,7 +667,6 @@ it("disposes an inline deletion confirmation's uncertain request independently",
   f.remove.mockRejectedValueOnce(
     new ConnectError("Lost deletion response", Code.Unavailable),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
   fireEvent.click(
     await screen.findByRole("button", { name: "Delete profile" }),
   );
@@ -702,7 +697,6 @@ it("fences an accepted inline selection response after collapse", async () => {
       }),
   );
   const disclosure = screen.getByRole("button", { name: "Network settings" });
-  fireEvent.click(disclosure);
   await screen.findByText(/Selected route:/);
   await waitFor(() =>
     expect(
@@ -733,7 +727,6 @@ it("fences an accepted inline selection response after collapse", async () => {
 
 it("names icon-only profile deletion with the original target and opens only its confirmation", async () => {
   const f = fixture(false, undefined, true, true);
-  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
   const opener = await screen.findByRole("button", {
     name: `Delete profile · Pinned proxy`,
   });
@@ -745,4 +738,217 @@ it("names icon-only profile deletion with the original target and opens only its
   fireEvent.click(screen.getByRole("button", { name: "Close Delete profile" }));
   await waitFor(() => expect(document.activeElement).toBe(opener));
   expect(f.remove).not.toHaveBeenCalled();
+});
+
+it("starts the inline workspace expanded with gated reads, no dialog and no mutation", async () => {
+  const f = fixture(false, undefined, true);
+  const disclosure = screen.getByRole("button", { name: "Network settings" });
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("heading", { name: "Current route" })).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await screen.findByText(/Selected route: Direct/);
+  await screen.findByRole("option", { name: /Pinned proxy/ });
+  expect(f.reads).toHaveBeenCalled();
+  expect(
+    screen
+      .getByRole("combobox", { name: "Profile to select" })
+      .getAttribute("data-value") ?? "",
+  ).toBe("");
+  expect(f.select).not.toHaveBeenCalled();
+  expect(f.save).not.toHaveBeenCalled();
+  expect(f.remove).not.toHaveBeenCalled();
+  expect(
+    document.querySelector<HTMLDetailsElement>(".network-transfer")?.open,
+  ).toBe(false);
+});
+
+it("starts an inactive inline workspace expanded without any network read", async () => {
+  const reads = vi.fn();
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => {
+        reads();
+        return { capabilities: [SystemCapability.SERVER_OUTBOUND_PROXY_V1] };
+      },
+    });
+    router.service(ResourceService, {
+      listResources: () => {
+        reads();
+        return { resources: [] };
+      },
+    });
+    router.service(NetworkService, {
+      getNetworkRoute: () => {
+        reads();
+        return {};
+      },
+    });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SettingsLifetime>
+          {() => (
+            <MutationIntents>
+              <NetworkSettings active={false} />
+            </MutationIntents>
+          )}
+        </SettingsLifetime>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "Network settings" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(reads).not.toHaveBeenCalled();
+});
+
+it("keeps the expanded inline workspace truthful while the capability read is pending and after it fails", async () => {
+  let fail!: () => void;
+  const capabilityRead = new Promise<never>((_, reject) => {
+    fail = () =>
+      reject(new ConnectError("Fixture capability failure", Code.Unavailable));
+  });
+  const routeReads = vi.fn();
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => capabilityRead });
+    router.service(ResourceService, {
+      listResources: () => ({ resources: [] }),
+    });
+    router.service(NetworkService, {
+      getNetworkRoute: () => {
+        routeReads();
+        return {};
+      },
+    });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SettingsLifetime>
+          {() => (
+            <MutationIntents>
+              <NetworkSettings active />
+            </MutationIntents>
+          )}
+        </SettingsLifetime>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "Network settings" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(screen.queryByText(/Selected route:/)).toBeNull();
+  expect(screen.queryByText(/Direct/)).toBeNull();
+  await act(async () => {
+    fail();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(screen.queryByText(/Selected route:/)).toBeNull();
+  expect(screen.queryByText(/Generation 0/)).toBeNull();
+  expect(routeReads).not.toHaveBeenCalled();
+});
+
+it("shows an unavailable route instead of Direct when the initial route read fails", async () => {
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.SERVER_OUTBOUND_PROXY_V1],
+      }),
+    });
+    router.service(ResourceService, {
+      listResources: () => ({ resources: [] }),
+    });
+    router.service(NetworkService, {
+      getNetworkRoute: () => {
+        throw new ConnectError("Fixture route failure", Code.Unavailable);
+      },
+    });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SettingsLifetime>
+          {() => (
+            <MutationIntents>
+              <NetworkSettings active />
+            </MutationIntents>
+          )}
+        </SettingsLifetime>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  await screen.findByText(/Current route is unavailable/);
+  expect(screen.queryByText(/Selected route:/)).toBeNull();
+  expect(screen.queryByText(/Generation 0/)).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: "Select this revision" })
+      .matches(":disabled"),
+  ).toBe(true);
+});
+
+it("moves focus to the disclosure on collapse, disposes the workspace and drafts, and mounts a fresh workspace on reopen", async () => {
+  const f = fixture(false, undefined, true);
+  const disclosure = screen.getByRole("button", { name: "Network settings" });
+  await screen.findByRole("option", { name: /Pinned proxy/ });
+  const profile = await screen.findByRole("combobox", {
+    name: "Profile to select",
+  });
+  fireEvent.change(profile, { target: { value: f.row.id } });
+  expect((profile as HTMLSelectElement).value).toBe(f.row.id);
+  await waitFor(() =>
+    expect((profile as HTMLSelectElement).disabled).toBe(false),
+  );
+  act(() => profile.focus());
+  expect(document.activeElement).toBe(profile);
+  fireEvent.click(disclosure);
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("heading", { name: "Current route" })).toBeNull();
+  expect(
+    screen.queryByRole("combobox", { name: "Profile to select" }),
+  ).toBeNull();
+  expect(document.activeElement).toBe(disclosure);
+  fireEvent.click(disclosure);
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+  const fresh = (await screen.findByRole("combobox", {
+    name: "Profile to select",
+  })) as HTMLSelectElement;
+  expect(fresh).not.toBe(profile);
+  expect(fresh.value).toBe("");
+  expect(f.select).not.toHaveBeenCalled();
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("starts Runner Device network closed and unread until its modal is opened", async () => {
+  const f = fixture();
+  const trigger = screen.getByRole("button", { name: "Network settings" });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Current route" })).toBeNull();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(f.reads).not.toHaveBeenCalled();
+  fireEvent.click(trigger);
+  await screen.findByRole("dialog", { name: "Runner Device network" });
+  expect(await screen.findAllByText("9007199254740993 · stale")).toHaveLength(
+    2,
+  );
 });

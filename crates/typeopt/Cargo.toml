@@ -13,6 +13,7 @@ ctrlc = "3"
 brotli = { version = "8", default-features = false, features = ["std"] }
 flate2.workspace = true
 libc.workspace = true
+rustc-hash.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = "1"
 sha2.workspace = true

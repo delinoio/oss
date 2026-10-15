@@ -125,9 +125,10 @@ func (g GrokDeviceGrant) Format(f fmt.State, _ rune) {
 
 // grokOpaqueASCII decodes a quoted JSON string into owned bytes, so a device
 // code never becomes an immutable string. The decoded value must be non-empty,
-// at most max bytes and made only of printable ASCII without quote or backslash;
-// the JSON encoding is not constrained, so a legal escape (\/ or \u00XX) of a
-// printable character is accepted and every other escape is refused.
+// at most max bytes and made only of printable ASCII (0x21 to 0x7e, including
+// quote and backslash, which form encoding transmits safely). The JSON encoding
+// is not constrained, so every legal escape of a printable character (\", \\,
+// \/ or \u00XX) is accepted and every other escape is refused.
 func grokOpaqueASCII(raw json.RawMessage, max int) ([]byte, bool) {
 	if len(raw) < 3 || len(raw) > 6*max+2 || raw[0] != '"' || raw[len(raw)-1] != '"' {
 		return nil, false
@@ -146,8 +147,8 @@ func grokOpaqueASCII(raw json.RawMessage, max int) ([]byte, bool) {
 				return fail()
 			}
 			switch inner[i] {
-			case '/':
-				c = '/'
+			case '/', '"', '\\':
+				c = inner[i]
 			case 'u':
 				if i+4 > len(inner)-1 {
 					return fail()
@@ -177,7 +178,7 @@ func grokOpaqueASCII(raw json.RawMessage, max int) ([]byte, bool) {
 				return fail()
 			}
 		}
-		if c < 0x21 || c > 0x7e || c == '"' || c == '\\' || len(out) == max {
+		if c < 0x21 || c > 0x7e || len(out) == max {
 			return fail()
 		}
 		out = append(out, c)

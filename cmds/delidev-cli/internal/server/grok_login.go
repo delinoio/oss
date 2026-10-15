@@ -250,6 +250,50 @@ func serverSubscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (sto
 	return subscriptionAccount(tx, id, revision)
 }
 
+// presentGrokServerLogin adds the server-owned presentation of a Grok login or
+// refresh to a progress response that grokProgressView already described. A
+// server-owned success publishes the generation under the operation's finish
+// identifier, so it is reported only while the account still references it. The
+// authorization URL and the suggested name exist only in server memory for the
+// life of the login, so a Worker-owned operation, which never has an entry, is
+// unaffected: the URL is served only while the original login is waiting in this
+// server epoch, the suggested name only with the generation it names. Called
+// under the account gate.
+func (s *Service) presentGrokServerLogin(response *pb.GetSubscriptionProgressResponse, a domain.Account, view grokProgress) {
+	st := a.Subscription
+	if st == nil || st.ServerOperation == nil {
+		return
+	}
+	o := st.ServerOperation
+	p, ok := s.subscriptionProgress[o.ID]
+	if ok && !p.Until.IsZero() && !time.Now().Before(p.Until) {
+		delete(s.subscriptionProgress, o.ID)
+		p, ok = subscriptionProgress{}, false
+	}
+	if ok && view.State == domain.SubscriptionWaiting && !view.Canceled && o.Epoch == s.subscriptionServerEpoch() {
+		response.Url = p.URL
+		response.UserCode = p.UserCode
+	}
+	if view.State == domain.SubscriptionSucceeded && a.Connection != nil && st.Generation == o.FinishID {
+		response.Generation = string(o.FinishID)
+		if ok && p.Generation == o.FinishID {
+			response.SuggestedName = p.Name
+		}
+	}
+}
+
+// forgetGrokServerLoginProgress drops the memory-only presentation of a
+// server-owned login when another or a revoked actor asks for it.
+func (s *Service) forgetGrokServerLoginProgress(a domain.Account, operation string) {
+	if st := a.Subscription; st != nil && st.ServerOperation != nil && string(st.ServerOperation.ID) == operation {
+		delete(s.subscriptionProgress, st.ServerOperation.ID)
+	}
+}
+
+func grokLoginUnsupportedAction() *domain.Error {
+	return domain.Fail(domain.Unsupported, "Only Grok login and refresh are available on the server.", "Use login or refresh; logout is separate lifecycle work.")
+}
+
 // grokOutcome is the settled result of the OAuth steps, before it is written.
 type grokOutcome struct {
 	bundle subscription.GrokBundle
@@ -282,6 +326,25 @@ func (s *Service) logGrok(ctx context.Context, level slog.Level, message string,
 	}
 	base := []any{"phase", phase, "operation_id", o.ID, "correlation_id", o.ID, "step", step}
 	s.logger.Log(ctx, level, message, append(base, attrs...)...)
+}
+
+// grokLoginStopped reports whether the durable operation can no longer continue:
+// it was canceled, fenced, removed or replaced, or its actor vanished. It is the
+// same predicate as the store watcher's, evaluated on demand, and it reports a
+// read failure as stopped because a step must not send a claimed request on
+// state it could not confirm.
+func (s *Service) grokLoginStopped(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation) bool {
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := grokSubscriptionAccount(tx, id, 0)
+		if err != nil {
+			return err
+		}
+		if a.Subscription == nil || a.Subscription.RecoveryRequired || a.Subscription.Pending == nil || a.Subscription.Pending.ID != o.ID || a.Subscription.Pending.Canceled || subscriptionActorValid(tx, o.Actor) != nil {
+			return subscriptionDenied()
+		}
+		return nil
+	})
+	return err != nil
 }
 
 // runGrokLogin owns one server-owned Grok browser login from claim to its
@@ -360,17 +423,7 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for {
-			err := s.Store.Read(ctx, func(tx *store.Tx) error {
-				_, a, err := grokSubscriptionAccount(tx, id, 0)
-				if err != nil {
-					return err
-				}
-				if a.Subscription == nil || a.Subscription.RecoveryRequired || a.Subscription.Pending == nil || a.Subscription.Pending.ID != original.ID || a.Subscription.Pending.Canceled || subscriptionActorValid(tx, original.Actor) != nil {
-					return subscriptionDenied()
-				}
-				return nil
-			})
-			if err != nil {
+			if s.grokLoginStopped(ctx, id, original) {
 				cancel()
 				return
 			}
@@ -605,14 +658,37 @@ func grokDiagnosticFor(o domain.ServerSubscriptionOperation, outcome grokOutcome
 	if !outcome.needsDiagnostic() {
 		return nil
 	}
-	return &domain.GrokDiagnostic{Phase: domain.GrokDiagnosticLogin, Code: outcome.code, CorrelationID: o.ID}
+	return grokLoginDiagnostic(o.ID, outcome.code)
+}
+
+// grokOperationDiagnostic builds the locally reconstructed diagnostic of a
+// failed or uncertain Go-owned OAuth step (login or refresh). No native
+// executable is involved, so it carries no detected version.
+func grokOperationDiagnostic(operation domain.ID, phase domain.GrokPhase, code domain.Code) *domain.GrokDiagnostic {
+	d := grokLocalDiagnostic("", phase, code)
+	d.CorrelationID = string(operation)
+	return d
+}
+
+// grokLoginDiagnostic is the diagnostic of a failed or uncertain login.
+func grokLoginDiagnostic(operation domain.ID, code domain.Code) *domain.GrokDiagnostic {
+	return grokOperationDiagnostic(operation, domain.GrokLogin, code)
 }
 
 // grokLateCancelOutcome applies a cancellation or a vanished actor to the settled
-// outcome of a login. Before the exchange claim, or for an outcome that already
-// failed, it is an ordinary cancellation. A successful claimed exchange is
-// published (the cancellation came too late) unless the actor is gone, which fences
-// it; an uncertain outcome stays as it is.
+// outcome of a login. The cancellation changes the outcome only where it stopped
+// the operation; an outcome that settled on its own is final:
+//
+//	settled outcome         | claimed, cancel | claimed, actor gone | unclaimed, cancel or actor gone
+//	succeeded               | published (too late to cancel) | fenced (recovery) | canceled
+//	failed                  | failed          | failed              | canceled (the claim refusal and the steps report a stop as a failure)
+//	expired                 | expired         | expired             | canceled
+//	canceled                | canceled        | canceled            | canceled
+//	recovery (uncertain)    | recovery        | recovery            | recovery
+//
+// A claimed failure (a provider refusal or a failed verification) or expiry is a
+// complete outcome of its own, so it keeps its state and diagnostic. Before the
+// claim nothing was redeemed, so a stop reported as a failure is canceled.
 func grokLateCancelOutcome(claimed, success bool, result domain.SubscriptionLoginState, code domain.Code, canceled, actorGone bool) (bool, domain.SubscriptionLoginState, domain.Code) {
 	if result == domain.SubscriptionRecovery {
 		return success, result, code
@@ -620,7 +696,7 @@ func grokLateCancelOutcome(claimed, success bool, result domain.SubscriptionLogi
 	switch {
 	case claimed && success && actorGone:
 		return false, domain.SubscriptionRecovery, domain.RecoveryRequired
-	case claimed && success:
+	case claimed:
 		return success, result, code
 	case canceled || actorGone:
 		return false, domain.SubscriptionCanceled, domain.Canceled
@@ -779,49 +855,6 @@ func (s *Service) finishGrokLogin(ctx context.Context, id domain.ID, o domain.Se
 	return nil
 }
 
-// grokDiagnosticMessage presents the durable diagnostic with fixed safe text.
-func grokDiagnosticMessage(d *domain.GrokDiagnostic) *pb.GrokDiagnostic {
-	if d == nil || d.Validate() != nil {
-		return nil
-	}
-	message, guidance := "Grok sign-in did not complete.", "Start a new Grok sign-in."
-	switch {
-	case d.Phase == domain.GrokDiagnosticRefresh:
-		message, guidance = "Grok credential refresh did not complete.", "Start a new refresh later."
-		switch d.Code {
-		case domain.RecoveryRequired:
-			message, guidance = "Grok credential refresh has an uncertain outcome.", "Do not retry the refresh. Sign in to the account again after inspecting it."
-		case domain.Unauthenticated:
-			message, guidance = "Grok no longer accepts the stored credential.", "Sign in to the account again."
-		case domain.Unavailable:
-			message, guidance = "Grok refresh services are unavailable.", "Check the server's network access to the Grok sign-in service, then try again."
-		case domain.Conflict:
-			message, guidance = "The stored Grok credential does not match the account.", "Sign in to the account again."
-		}
-	case d.Phase == domain.GrokDiagnosticLogout:
-		message, guidance = "Grok sign-out did not complete.", "Request the sign-out again."
-		switch d.Code {
-		case domain.RecoveryRequired:
-			message, guidance = "Grok sign-out has an uncertain outcome.", "Do not retry the sign-out. Inspect the account before starting another."
-		case domain.Unavailable:
-			message, guidance = "Grok sign-out services are unavailable.", "Check the server's network access to the Grok sign-in service, then try again."
-		case domain.Conflict:
-			message, guidance = "The stored Grok credential does not match the account.", "Sign in to the account again."
-		}
-	case d.Code == domain.RecoveryRequired:
-		message, guidance = "Grok sign-in has an uncertain outcome.", "Do not retry the original sign-in. Inspect the account before starting another."
-	case d.Code == domain.PermissionDenied:
-		message, guidance = "Grok did not authorize this sign-in.", "Start a new Grok sign-in and approve the request."
-	case d.Code == domain.Unauthenticated:
-		message, guidance = "Grok sign-in could not be verified.", "Start a new Grok sign-in."
-	case d.Code == domain.Unavailable:
-		message, guidance = "Grok sign-in services are unavailable.", "Check the server's network access to the Grok sign-in service, then try again."
-	case d.Code == domain.Conflict:
-		message, guidance = "This Grok account is already connected.", "Use the existing account instead of adding it again."
-	}
-	return &pb.GrokDiagnostic{DetectedVersion: d.DetectedVersion, SupportedVersion: d.SupportedVersion, Phase: pb.GrokDiagnosticPhase(d.Phase), Code: string(d.Code), Message: message, Guidance: guidance, CorrelationId: string(d.CorrelationID)}
-}
-
 // grokCallbackQuery validates a forwarded callback: only code, state and scope,
 // each exactly once and bounded.
 func grokCallbackQuery(raw []byte) (code []byte, state string, ok bool) {
@@ -962,7 +995,7 @@ func (s *Service) recoverGrokLogin(ctx context.Context, id, operation domain.ID)
 			o.State = domain.SubscriptionCanceled
 		}
 		o.NativeStarted = false
-		o.GrokDiagnostic = &domain.GrokDiagnostic{Phase: domain.GrokDiagnosticLogin, Code: domain.Unavailable, CorrelationID: o.ID}
+		o.GrokDiagnostic = grokLoginDiagnostic(o.ID, domain.Unavailable)
 		if o.State == domain.SubscriptionCanceled {
 			o.GrokDiagnostic = nil
 		}

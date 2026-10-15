@@ -124,9 +124,10 @@ fn trusted_url(url: &tauri::Url) -> bool {
                 && url.scheme() == "http"
                 && url.host_str() == Some("127.0.0.1")
                 && url.port() == Some(46311));
+    // Product navigation writes a same-document query with replaceState.
+    // The query does not select the native document or grant authority.
     origin
         && ["", "/", "/index.html"].contains(&url.path())
-        && url.query().is_none()
         && url.username().is_empty()
         && url.password().is_none()
 }
@@ -2974,6 +2975,9 @@ mod tests {
             "tauri://localhost/",
             "tauri://localhost/index.html#main",
             "http://tauri.localhost/",
+            "http://tauri.localhost/?screen=settings&category=appearance",
+            "tauri://localhost/index.html?screen=sessions#main",
+            "tauri://localhost/?native=1&screen=settings",
         ] {
             assert!(trusted_url(&value.parse().unwrap()), "{value}");
         }
@@ -2982,7 +2986,7 @@ mod tests {
             "http://tauri.localhost:81/",
             "tauri://other/",
             "tauri://localhost/private",
-            "tauri://localhost/?token=bad",
+            "tauri://localhost/private?screen=settings",
             "tauri://user@localhost/",
         ] {
             assert!(!trusted_url(&value.parse().unwrap()), "{value}");

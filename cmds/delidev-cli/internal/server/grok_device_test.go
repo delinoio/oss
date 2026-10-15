@@ -822,24 +822,89 @@ func TestGrokCancelRacingTheSettlementOfASuccessfulClaimedLoginIsTooLate(t *test
 }
 
 func TestGrokLateCancelOutcomeTable(t *testing.T) {
+	const (
+		failed    = domain.SubscriptionFailed
+		expired   = domain.SubscriptionExpired
+		canceled  = domain.SubscriptionCanceled
+		recovery  = domain.SubscriptionRecovery
+		succeeded = domain.SubscriptionSucceeded
+	)
 	for name, c := range map[string]struct {
 		claimed, success, canceled, gone bool
 		result, want                     domain.SubscriptionLoginState
 	}{
-		"unclaimed cancel":              {false, false, true, false, domain.SubscriptionFailed, domain.SubscriptionCanceled},
-		"claimed failure cancel":        {true, false, true, false, domain.SubscriptionFailed, domain.SubscriptionCanceled},
-		"claimed success cancel":        {true, true, true, false, domain.SubscriptionSucceeded, domain.SubscriptionSucceeded},
-		"claimed success vanished":      {true, true, false, true, domain.SubscriptionSucceeded, domain.SubscriptionRecovery},
-		"claimed success cancel vanish": {true, true, true, true, domain.SubscriptionSucceeded, domain.SubscriptionRecovery},
-		"uncertain cancel":              {true, false, true, false, domain.SubscriptionRecovery, domain.SubscriptionRecovery},
-		"no cancel":                     {true, true, false, false, domain.SubscriptionSucceeded, domain.SubscriptionSucceeded},
+		"unclaimed failure, cancel":        {false, false, true, false, failed, canceled},
+		"unclaimed failure, actor gone":    {false, false, false, true, failed, canceled},
+		"unclaimed expiry, cancel":         {false, false, true, false, expired, canceled},
+		"unclaimed failure, no event":      {false, false, false, false, failed, failed},
+		"unclaimed canceled, cancel":       {false, false, true, false, canceled, canceled},
+		"claimed failure, cancel":          {true, false, true, false, failed, failed},
+		"claimed failure, actor gone":      {true, false, false, true, failed, failed},
+		"claimed failure, both":            {true, false, true, true, failed, failed},
+		"claimed expiry, cancel":           {true, false, true, false, expired, expired},
+		"claimed canceled, cancel":         {true, false, true, false, canceled, canceled},
+		"claimed success, cancel":          {true, true, true, false, succeeded, succeeded},
+		"claimed success, actor gone":      {true, true, false, true, succeeded, recovery},
+		"claimed success, cancel and gone": {true, true, true, true, succeeded, recovery},
+		"claimed success, no event":        {true, true, false, false, succeeded, succeeded},
+		"claimed uncertain, cancel":        {true, false, true, false, recovery, recovery},
+		"claimed uncertain, actor gone":    {true, false, false, true, recovery, recovery},
+		"unclaimed uncertain, cancel":      {false, false, true, false, recovery, recovery},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, got, _ := grokLateCancelOutcome(c.claimed, c.success, c.result, domain.Canceled, c.canceled, c.gone); got != c.want {
+			gotSuccess, got, _ := grokLateCancelOutcome(c.claimed, c.success, c.result, domain.Canceled, c.canceled, c.gone)
+			if got != c.want {
 				t.Fatalf("settled as %v, want %v", got, c.want)
+			}
+			if gotSuccess != (c.want == succeeded) {
+				t.Fatalf("success = %v for %v", gotSuccess, got)
 			}
 		})
 	}
+}
+
+// A claimed failure that settled on its own (a provider refusal or a failed
+// verification) keeps its failed state and diagnostic when a cancellation lands
+// before the settlement is written.
+func TestGrokCancelRacingTheSettlementOfAClaimedFailureKeepsTheFailure(t *testing.T) {
+	g := newGrokDeviceFixture(t)
+	g.idp.DeviceScript = []string{"access_denied"}
+	g.service.grokFaultHook = func(p grokFaultPoint) error {
+		if p == grokFaultBeforeLoginFinish {
+			g.cancelLogin(t)
+		}
+		return nil
+	}
+	run := g.startDevice(t)
+	p, a := g.settle(t, run, stateFailed)
+	g.service.grokFaultHook = nil
+	if p.GrokDiagnostic == nil || p.GrokDiagnostic.Code != string(domain.PermissionDenied) || p.GrokDiagnostic.Phase != pb.GrokDiagnosticPhase_GROK_DIAGNOSTIC_PHASE_LOGIN || !a.Subscription.ServerOperation.CodeConsumed {
+		t.Fatalf("the provider refusal was rewritten by a late cancellation: %+v", p.GrokDiagnostic)
+	}
+	g.requireNoBundle(t, a)
+}
+
+// A cancellation committed between two polls is observed before the next poll
+// is sent, even when the periodic store watcher has not noticed it yet.
+func TestGrokDeviceLoginCancelCommittedJustBeforeAPollSendsNoFurtherPoll(t *testing.T) {
+	g := newGrokDeviceFixture(t)
+	g.idp.DeviceScript = pendingScript(5)
+	g.clock.mu.Lock()
+	g.clock.hook = func(ctx context.Context, n int) error {
+		if n == 2 {
+			// The cancellation commits as the interval elapses: the wait returns
+			// normally and nothing has canceled the login context yet.
+			g.cancelLogin(t)
+		}
+		return nil
+	}
+	g.clock.mu.Unlock()
+	run := g.startDevice(t)
+	_, a := g.settle(t, run, stateCanceled)
+	if polls := g.idp.DevicePolls(); polls != 1 || !a.Subscription.ServerOperation.CodeConsumed {
+		t.Fatalf("a poll was sent after the cancellation committed (polls=%d, claim=%v)", polls, a.Subscription.ServerOperation.CodeConsumed)
+	}
+	g.requireNoBundle(t, a)
 }
 
 // A poll is bounded by the device-code deadline: with less time left than the
