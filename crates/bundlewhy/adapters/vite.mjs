@@ -300,7 +300,8 @@ await runAdapter(async (request) => {
   // Validate the adapter's own API needs before any project configuration is
   // evaluated, so an engine API mismatch is never reported as a project
   // configuration or build failure.
-  const { api: vite, missing: missingViteApi } = normalizeViteModule(viteModule);
+  const { api: vite, missing: missingViteApi } =
+    normalizeViteModule(viteModule);
   if (missingViteApi.length > 0) {
     throw new AdapterError(
       AdapterErrorCode.CollectionFailed,

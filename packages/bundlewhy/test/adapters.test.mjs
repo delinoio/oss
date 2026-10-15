@@ -366,10 +366,7 @@ function writeFakeViteProject({ cjsApi, version = "5.0.12" }) {
     path.join(vite, "index.cjs"),
     `const api = ${cjsApi};\nmodule.exports = api;\n`,
   );
-  fs.writeFileSync(
-    path.join(dir, "vite.config.mjs"),
-    "export default {};\n",
-  );
+  fs.writeFileSync(path.join(dir, "vite.config.mjs"), "export default {};\n");
   return dir;
 }
 
@@ -428,7 +425,11 @@ test("normalizeViteModule prefers named exports and falls back to default", () =
   const incomplete = normalizeViteModule({
     default: { loadConfigFromFile: fallback, version: "5.0.0" },
   });
-  assert.deepEqual(incomplete.missing, ["build", "mergeConfig", "createLogger"]);
+  assert.deepEqual(incomplete.missing, [
+    "build",
+    "mergeConfig",
+    "createLogger",
+  ]);
   assert.deepEqual(normalizeViteModule(undefined).missing.length, 4);
 });
 
@@ -456,7 +457,10 @@ test("vite adapter reports a missing Vite API as a collection failure", () => {
   assert.match(error.message, /loadConfigFromFile/);
   assert.match(error.recovery, /vite@8\.3\.4/);
   assert.match(error.recovery, /compatible/);
-  assert.doesNotMatch(error.recovery, /Fix the error in the Vite configuration/);
+  assert.doesNotMatch(
+    error.recovery,
+    /Fix the error in the Vite configuration/,
+  );
 });
 
 test("vite adapter does not report a missing build API as a build failure", () => {
@@ -473,7 +477,11 @@ test("vite adapter does not report a missing build API as a build failure", () =
 
 test("vite configuration factories that throw stay configuration load failures", () => {
   const dir = writeFakeViteProject({ cjsApi: fakeViteApi() });
-  const { status, events } = runFakeVite(dir, {}, { FAKE_VITE_CONFIG_FAILS: "1" });
+  const { status, events } = runFakeVite(
+    dir,
+    {},
+    { FAKE_VITE_CONFIG_FAILS: "1" },
+  );
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 1);
   const error = events.find((event) => event.event === "error");
