@@ -12,7 +12,7 @@ use std::{
 
 use serde::Deserialize;
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     sync::Notify,
 };
 
@@ -69,6 +69,9 @@ enum AdapterEvent {
     Engine {
         package: String,
         version: String,
+    },
+    Protection {
+        root: String,
     },
     Error {
         code: String,
@@ -260,14 +263,26 @@ async fn check_node_version(node: &Path) -> BwResult<()> {
     }
 }
 
+async fn acknowledge_protection(
+    stdin: &mut tokio::process::ChildStdin,
+    protocol_token: &str,
+) -> std::io::Result<()> {
+    stdin
+        .write_all(format!("BUNDLEWHY-PROTECTION-ACK {protocol_token}\n").as_bytes())
+        .await?;
+    stdin.flush().await
+}
+
 /// Runs the adapter and returns its collection. `on_progress` receives stage
-/// updates.
+/// updates and `on_protection` receives the resolved project root before the
+/// build starts.
 pub async fn run(
     run_dir: &Path,
     selection: &Selection,
     options: &AdapterOptions,
     cancel: Arc<CancelSignal>,
     mut on_progress: impl FnMut(RunStage, String),
+    mut on_protection: impl FnMut(PathBuf),
 ) -> BwResult<Collection> {
     let adapter_dir = run_dir.join("adapter");
     write_adapter_files(&adapter_dir)?;
@@ -303,7 +318,7 @@ pub async fn run(
         .arg(adapter_dir.join(spec.adapter_file))
         .arg(&request_path)
         .current_dir(&selection.project_root)
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
@@ -331,6 +346,7 @@ pub async fn run(
     let pid = child.id();
     tracing::info!(adapter = spec.adapter_file, pid, "adapter started");
 
+    let mut stdin = child.stdin.take().expect("piped stdin");
     let stdout = child.stdout.take().expect("piped stdout");
     let mut stderr = child.stderr.take().expect("piped stderr");
     let stderr_task = tokio::spawn(async move {
@@ -356,7 +372,8 @@ pub async fn run(
     let mut reported_error: Option<BwError> = None;
     let mut cancelled = false;
     let mut exit_status: Option<std::io::Result<std::process::ExitStatus>> = None;
-    let mut handle_line = |line: &str, reported_error: &mut Option<BwError>| {
+    let mut handle_line = |line: &str, reported_error: &mut Option<BwError>| -> bool {
+        let mut protection = false;
         match line
             .strip_prefix(&frame_prefix)
             .ok_or(())
@@ -368,6 +385,11 @@ pub async fn run(
             }
             Ok(AdapterEvent::Engine { package, version }) => {
                 tracing::info!(%package, %version, "engine detected");
+            }
+            Ok(AdapterEvent::Protection { root }) => {
+                tracing::debug!(%root, "adapter resolved project root");
+                on_protection(PathBuf::from(root));
+                protection = true;
             }
             Ok(AdapterEvent::Error {
                 code,
@@ -385,12 +407,22 @@ pub async fn run(
             // Bundler plugins may print to stdout; ignore non-protocol lines.
             Err(()) => tracing::debug!(length = line.len(), "ignored non-protocol adapter output"),
         }
+        protection
     };
     loop {
         tokio::select! {
             line = lines.next_line() => {
                 match line {
-                    Ok(Some(line)) => handle_line(&line, &mut reported_error),
+                    Ok(Some(line)) => {
+                        if handle_line(&line, &mut reported_error)
+                            && acknowledge_protection(&mut stdin, &protocol_token)
+                                .await
+                                .is_err()
+                        {
+                            tracing::warn!("failed to acknowledge adapter protection snapshot");
+                            break;
+                        }
+                    }
                     Ok(None) | Err(_) => break,
                 }
             }
@@ -411,7 +443,14 @@ pub async fn run(
         // descendants indefinitely.
         let drained = tokio::time::timeout(PIPE_DRAIN, async {
             while let Ok(Some(line)) = lines.next_line().await {
-                handle_line(&line, &mut reported_error);
+                if handle_line(&line, &mut reported_error)
+                    && acknowledge_protection(&mut stdin, &protocol_token)
+                        .await
+                        .is_err()
+                {
+                    tracing::warn!("failed to acknowledge adapter protection snapshot");
+                    break;
+                }
             }
         })
         .await;
@@ -582,11 +621,64 @@ exit 0
             &options,
             Arc::new(CancelSignal::default()),
             |_, _| {},
+            |_| {},
         );
         let collection = tokio::time::timeout(Duration::from_secs(10), task)
             .await
             .expect("run must not hang")
             .unwrap();
+        assert_eq!(collection.bundler, "vite");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn protection_events_wait_for_the_supervisor_acknowledgement() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let collect = dir.path().join("collect.json");
+        let fake_node = dir.path().join("fake-node.sh");
+        std::fs::write(
+            &fake_node,
+            format!(
+                r#"#!/bin/sh
+if [ "$1" = "--version" ]; then echo v24.0.0; exit 0; fi
+token=$(sed -n 's/.*"protocolToken":"\([0-9a-f]*\)".*/\1/p' "$2")
+echo "BUNDLEWHY-FRAME $token {{\"event\":\"protection\",\"root\":\"{}\"}}"
+IFS= read -r acknowledgement
+test "$acknowledgement" = "BUNDLEWHY-PROTECTION-ACK $token" || exit 1
+echo '{{"collectVersion":1,"bundler":"vite"}}' > '{}'
+echo "BUNDLEWHY-FRAME $token {{\"event\":\"done\"}}"
+"#,
+                project.display(),
+                collect.display()
+            ),
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&fake_node).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        std::fs::set_permissions(&fake_node, permissions).unwrap();
+        let selection = Selection {
+            project_root: project,
+            project_name: "p".to_owned(),
+            bundler: crate::engine::BundlerChoice::Vite,
+            config_file: None,
+        };
+        let options = AdapterOptions {
+            config_name: None,
+            allow_unsupported_engine: false,
+            node: fake_node,
+        };
+        let collection = run(
+            dir.path(),
+            &selection,
+            &options,
+            Arc::new(CancelSignal::default()),
+            |_, _| {},
+            |_| {},
+        )
+        .await
+        .unwrap();
         assert_eq!(collection.bundler, "vite");
     }
 
@@ -674,10 +766,17 @@ wait
         let cancel = Arc::new(CancelSignal::default());
         let trigger = cancel.clone();
         let mut stages = Vec::new();
-        let task = run(dir.path(), &selection, &options, cancel, |stage, _| {
-            stages.push(stage);
-            trigger.cancel();
-        });
+        let task = run(
+            dir.path(),
+            &selection,
+            &options,
+            cancel,
+            |stage, _| {
+                stages.push(stage);
+                trigger.cancel();
+            },
+            |_| {},
+        );
         let error = tokio::time::timeout(Duration::from_secs(10), task)
             .await
             .unwrap()
