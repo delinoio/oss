@@ -126,7 +126,11 @@ export function resolveMangleSetting(output) {
   const minify =
     entry !== null && typeof entry === "object" ? entry.minify : undefined;
   if (minify === false || minify === "dce-only") return MangleSetting.Disabled;
-  if (minify !== null && typeof minify === "object" && minify.mangle === false) {
+  if (
+    minify !== null &&
+    typeof minify === "object" &&
+    minify.mangle === false
+  ) {
     return MangleSetting.Disabled;
   }
   return MangleSetting.Enabled;

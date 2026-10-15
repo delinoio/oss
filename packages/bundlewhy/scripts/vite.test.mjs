@@ -58,10 +58,7 @@ test("output minify options decide the effective mangle setting", () => {
     Disabled,
   );
   // A single-entry output array is read as that entry.
-  assert.equal(
-    resolveMangleSetting([{ minify: { mangle: false } }]),
-    Disabled,
-  );
+  assert.equal(resolveMangleSetting([{ minify: { mangle: false } }]), Disabled);
   assert.equal(resolveMangleSetting([]), Enabled);
 });
 
