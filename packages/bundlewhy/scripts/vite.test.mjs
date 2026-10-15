@@ -336,6 +336,9 @@ export default {
   assert.equal(seen.watch, null);
   assert.ok(collection.configSummary.plugins.includes("require-config-file"));
   assert.ok(!collection.configSummary.plugins.includes("bundlewhy:collector"));
+  assert.ok(
+    !collection.configSummary.plugins.includes("bundlewhy:config-file"),
+  );
 });
 
 test("Vite diagnostic keeps configFile disabled without a configuration file", (t) => {
@@ -390,4 +393,46 @@ test("Vite diagnostic does not blame the native build for a plugin hook error", 
   assert.match(error.message, /plugin hook broke/);
   assert.match(error.recovery, /diagnostic build/);
   assert.doesNotMatch(error.recovery, /^Fix the build error/);
+});
+
+test("Vite diagnostic evaluates a stateful config factory exactly once", (t) => {
+  const { work, projectRoot } = makeProject(t);
+  writeEntry(projectRoot, "project-entry");
+  const configFile = path.join(projectRoot, "vite.config.js");
+  const counter = path.join(work, "factory-calls.log");
+  const probe = path.join(work, "factory-probe.json");
+  // The factory records every call outside the project and rejects a second
+  // call, like a configuration that claims a one-shot process-level resource.
+  fs.writeFileSync(
+    configFile,
+    `import fs from "node:fs";
+export default () => {
+  fs.appendFileSync(${JSON.stringify(counter)}, "call\\n");
+  const calls = fs.readFileSync(${JSON.stringify(counter)}, "utf8").trim().split("\\n").length;
+  if (calls > 1) throw new Error("factory evaluated " + calls + " times");
+  return {
+    plugins: [{
+      name: "read-config-file",
+      configResolved(config) {
+        fs.writeFileSync(${JSON.stringify(probe)}, JSON.stringify({
+          configFile: config.configFile,
+          dependencies: config.configFileDependencies,
+        }));
+      },
+    }],
+  };
+};
+`,
+  );
+
+  const { collection } = runDiagnostic(work, projectRoot, configFile);
+  assert.equal(
+    fs.readFileSync(counter, "utf8").trim().split("\n").length,
+    1,
+    "the config factory must run once for the whole diagnostic run",
+  );
+  const seen = JSON.parse(fs.readFileSync(probe, "utf8"));
+  assert.equal(fs.realpathSync(seen.configFile), fs.realpathSync(configFile));
+  assert.ok(Array.isArray(seen.dependencies));
+  assert.ok(collection.chunks.length > 0);
 });

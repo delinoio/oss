@@ -26,6 +26,12 @@ import {
 export const ADAPTER_ID = "bundlewhy-collector-vite";
 export const ADAPTER_VERSION = "1";
 
+/** Plugins that the adapter adds; they are not part of the project's config. */
+const BUNDLEWHY_PLUGIN_NAMES = new Set([
+  "bundlewhy:collector",
+  "bundlewhy:config-file",
+]);
+
 /** Vite API functions that the adapter calls on the project's installation. */
 export const REQUIRED_VITE_API = Object.freeze([
   "loadConfigFromFile",
@@ -139,6 +145,32 @@ export function configuredModuleSideEffects(option, id) {
     if (test) return String(rule.sideEffects);
   }
   return "null";
+}
+
+/**
+ * Gives plugins the real `resolvedConfig.configFile` without evaluating the
+ * configuration file a second time.
+ *
+ * The adapter loads the configuration file once itself and builds with that
+ * loaded object and `configFile: false`, so Vite never evaluates a stateful
+ * configuration factory (process-level side effects, one-shot resources) twice.
+ * With `configFile: false` Vite leaves `resolvedConfig.configFile` undefined,
+ * yet plugins such as React Router's Vite plugin require it. This plugin runs
+ * first among the `pre` plugins, so its synchronous `configResolved` handler
+ * sets the value before any project plugin reads it.
+ */
+export function configFileIdentityPlugin(configFile, dependencies = []) {
+  const normalize = (file) => path.resolve(file).replaceAll("\\", "/");
+  return {
+    name: "bundlewhy:config-file",
+    enforce: "pre",
+    apply: "build",
+    configResolved(config) {
+      if (config.configFile !== undefined) return;
+      config.configFile = normalize(configFile);
+      config.configFileDependencies = dependencies.map(normalize);
+    },
+  };
 }
 
 function collectorPlugin(state) {
@@ -340,8 +372,11 @@ await runAdapter(async (request) => {
 
   // Load the configuration once on its own so that evaluation errors and
   // rejecting configuration factories are reported as configuration
-  // problems, not build failures. The loaded config is then built inline.
+  // problems, not build failures. The loaded config is then built inline, so
+  // the configuration is evaluated only once.
   let userConfig = {};
+  let loadedConfigFile = null;
+  let loadedDependencies = [];
   if (request.configFile) {
     try {
       const loaded = await vite.loadConfigFromFile(
@@ -356,6 +391,10 @@ await runAdapter(async (request) => {
         "silent",
       );
       userConfig = loaded?.config ?? {};
+      loadedConfigFile = loaded?.path ?? request.configFile;
+      loadedDependencies = Array.isArray(loaded?.dependencies)
+        ? loaded.dependencies
+        : [];
     } catch (error) {
       throw new AdapterError(
         AdapterErrorCode.ConfigLoadFailed,
@@ -402,27 +441,30 @@ await runAdapter(async (request) => {
       watch: null,
     },
   };
-  // With a configuration file, let Vite load that file itself so plugins see
-  // the real `resolvedConfig.configFile` (React Router's Vite plugin rejects
-  // the build without it). The inline config then carries only bundlewhy's
-  // overrides, so the user's configuration is applied exactly once and the
-  // preliminary load above only informs root capture. Vite merges the inline
-  // plugins after the file's plugins, which keeps the collector last.
-  // Without a configuration file nothing can be loaded, so the config stays
-  // disabled.
-  const buildConfig = request.configFile
-    ? {
-        ...collectionOverrides,
-        root,
-        configFile: request.configFile,
-        plugins: [collectorPlugin(state)],
-      }
-    : vite.mergeConfig(userConfig, {
-        ...collectionOverrides,
-        root: userConfig.root ?? request.projectRoot,
-        configFile: false,
-        plugins: [collectorPlugin(state)],
-      });
+  // The user's configuration is evaluated exactly once: the preliminary load
+  // above produced `userConfig`, and the build receives that object with
+  // `configFile: false`. Passing `configFile` to Vite would make it evaluate a
+  // stateful configuration factory a second time. When a configuration file
+  // was loaded, a leading `pre` plugin restores the real
+  // `resolvedConfig.configFile` that plugins such as React Router's Vite plugin
+  // require. The collector is merged after the project's plugins and stays last.
+  const mergedConfig = vite.mergeConfig(userConfig, {
+    ...collectionOverrides,
+    root,
+    configFile: false,
+    plugins: [collectorPlugin(state)],
+  });
+  const buildConfig =
+    loadedConfigFile === null
+      ? mergedConfig
+      : vite.mergeConfig(
+          {
+            plugins: [
+              configFileIdentityPlugin(loadedConfigFile, loadedDependencies),
+            ],
+          },
+          mergedConfig,
+        );
   try {
     await vite.build(buildConfig);
   } catch (error) {
@@ -471,7 +513,7 @@ await runAdapter(async (request) => {
     mode: resolved.mode ?? "production",
     "define keys": (resolved.defineKeys ?? []).join(", ") || "(none)",
     plugins: (resolved.plugins ?? [])
-      .filter((name) => name !== "bundlewhy:collector")
+      .filter((name) => !BUNDLEWHY_PLUGIN_NAMES.has(name))
       .join(", "),
   };
 
