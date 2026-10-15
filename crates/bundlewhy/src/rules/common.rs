@@ -148,6 +148,37 @@ fn line_terminator_len(bytes: &[u8], index: usize) -> usize {
     }
 }
 
+/// Whether a `/` at `start` begins a regular expression literal, given the
+/// last significant byte before it and the non-code `ranges` found so far.
+///
+/// After an alphabetic byte the previous token is decided on the code with
+/// comments removed, so a keyword such as `else` still counts when a comment
+/// sits between it and the slash.
+fn regex_allowed(
+    code: &str,
+    ranges: &[(usize, usize)],
+    previous: Option<u8>,
+    start: usize,
+) -> bool {
+    match previous {
+        None => true,
+        Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
+        Some(byte) if byte.is_ascii_alphabetic() => {
+            let head = strip_comments_for_prefix(code, start, ranges);
+            [
+                "return", "typeof", "case", "do", "else", "in", "of", "void", "yield", "delete",
+                "throw", "new",
+            ]
+            .iter()
+            .any(|keyword| {
+                head.ends_with(keyword)
+                    && !head[..head.len() - keyword.len()].ends_with(is_identifier_char)
+            })
+        }
+        _ => false,
+    }
+}
+
 /// Byte ranges of string literals, template literal text, comments and regular
 /// expression literals in JavaScript. Text there is never a property read.
 ///
@@ -161,28 +192,6 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
     let mut templates: Vec<usize> = Vec::new();
     let mut previous_significant: Option<u8> = None;
     let mut index = 0usize;
-    let regex_allowed = |previous: Option<u8>, start: usize| -> bool {
-        match previous {
-            None => true,
-            Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
-            Some(byte) if byte.is_ascii_alphabetic() => {
-                let head = &code[..start];
-                let trimmed = head.trim_end();
-                [
-                    "return", "typeof", "case", "do", "else", "in", "of", "void", "yield",
-                    "delete", "throw", "new",
-                ]
-                .iter()
-                .any(|keyword| {
-                    trimmed.ends_with(keyword)
-                        && !trimmed[..trimmed.len() - keyword.len()].ends_with(|character: char| {
-                            character.is_alphanumeric() || character == '_' || character == '$'
-                        })
-                })
-            }
-            _ => false,
-        }
-    };
     // Scans a quoted string or template text starting after the opener.
     let scan_until = |mut position: usize, terminator: u8, template: bool| -> (usize, bool) {
         while position < bytes.len() {
@@ -246,7 +255,7 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 ranges.push((index, end));
                 index = end;
             }
-            b'/' if regex_allowed(previous_significant, index) => {
+            b'/' if regex_allowed(code, &ranges, previous_significant, index) => {
                 let mut position = index + 1;
                 let mut in_class = false;
                 // True when a multi-byte line terminator ended the literal. It
@@ -662,11 +671,18 @@ fn env_guards(
 /// the last token of the prefix.
 ///
 /// A block comment must end exactly at the trimmed end. A line comment ends at
-/// its newline, so trimming whitespace may stop inside the comment (trailing
-/// spaces, a carriage return); the remainder after the trimmed end is then
-/// only whitespace that lies before `index`. String, template and regular
-/// expression ranges are never skipped.
-fn scope_prefix<'a>(code: &'a str, index: usize, ignored: &[(usize, usize)]) -> &'a str {
+/// its line terminator (see [`is_line_terminator`]), so trimming whitespace may
+/// stop inside the comment (trailing spaces); the remainder after the trimmed
+/// end is then only whitespace that lies before `index`. String, template and
+/// regular expression ranges are never skipped.
+///
+/// Every consumer that needs the previous token (regular expression context,
+/// control keywords, member names) reads it from this prefix.
+fn strip_comments_for_prefix<'a>(
+    code: &'a str,
+    index: usize,
+    ignored: &[(usize, usize)],
+) -> &'a str {
     let mut end = code[..index].trim_end().len();
     loop {
         let Some(range_index) = ignored
@@ -693,7 +709,8 @@ fn is_identifier_char(character: char) -> bool {
 }
 
 /// True when `prefix` (the code before an opening parenthesis, as returned by
-/// [`scope_prefix`]) ends with `keyword` used as a control keyword.
+/// [`strip_comments_for_prefix`]) ends with `keyword` used as a control
+/// keyword.
 ///
 /// Rejected: an identifier that merely ends in the keyword (`notif`, `$if`,
 /// `éif`), and a property, method or private name written after a member
@@ -711,7 +728,7 @@ fn ends_with_control_keyword(
     let start = prefix.len() - keyword.len();
     match code[..start].chars().next_back() {
         Some(character) if is_identifier_char(character) || character == '#' => false,
-        _ => !scope_prefix(code, start, ignored).ends_with('.'),
+        _ => !strip_comments_for_prefix(code, start, ignored).ends_with('.'),
     }
 }
 
@@ -722,7 +739,7 @@ fn scope_context(
     parent: ScopeContext,
     ignored: &[(usize, usize)],
 ) -> ScopeContext {
-    let prefix = scope_prefix(code, index, ignored);
+    let prefix = strip_comments_for_prefix(code, index, ignored);
     let last = prefix.chars().next_back();
     if opener == b'[' {
         // A bracket after an expression is a computed member access and keeps
@@ -2492,6 +2509,46 @@ y=/process.env.F/.test(z),process.env.G"#;
         );
         assert_eq!(line_terminator_len("a\r".as_bytes(), 1), 1);
         assert_eq!(line_terminator_len("\u{2027}".as_bytes(), 0), 0);
+    }
+
+    #[test]
+    fn regex_context_ignores_comments_before_the_slash() {
+        let read = "process.env.FLAG";
+        let in_regex = |code: &str| in_ranges(&non_code_ranges(code), code.find(read).unwrap());
+        for terminator in LINE_TERMINATORS {
+            for keyword in [
+                "return", "typeof", "else", "do", "void", "yield", "delete", "throw", "new", "in",
+                "of",
+            ] {
+                for comment in ["// c", "//", "// c  ", "/* c */ // d", "/* a\nb */"] {
+                    for gap in [" ", ""] {
+                        let code =
+                            format!("{keyword}{gap}{comment}{terminator}/{read}/.test(x)&&run()");
+                        assert!(in_regex(&code), "{code:?}");
+                    }
+                }
+            }
+            // The slash after `if(x)foo();else` from a real bundle shape.
+            let code = format!("if(x)foo();else // c{terminator}/{read}/.test(x)&&run()");
+            assert!(in_regex(&code), "{code:?}");
+            assert_eq!(keyword_guard_in_code(&code, read), None, "{code:?}");
+            // An identifier that merely ends in a keyword before a comment is
+            // an operand, so the slash divides.
+            for name in ["notreturn", "$do", "x_in"] {
+                let code = format!("{name} // c{terminator}/{read}/ 2");
+                assert!(!in_regex(&code), "{code:?}");
+            }
+        }
+    }
+
+    /// Like `keyword_guard`, but skips reads that sit in non-code text.
+    fn keyword_guard_in_code(code: &str, read: &str) -> Option<&'static str> {
+        let start = code.find(read).unwrap();
+        let ignored = non_code_ranges(code);
+        if in_ranges(&ignored, start) {
+            return None;
+        }
+        env_guard(code, start, start + read.len(), &ignored).map(EnvGuard::evidence)
     }
 
     fn keyword_guard(code: &str, read: &str) -> Option<&'static str> {
