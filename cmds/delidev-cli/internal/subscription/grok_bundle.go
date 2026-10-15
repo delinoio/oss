@@ -143,6 +143,20 @@ type GrokBundle struct {
 	identity GrokIdentity
 }
 
+// ProtectedValues are the secret values the bundle holds (the access key and the
+// refresh token), for the guards that keep a credential out of native frames and
+// retained output. The caller owns the returned strings' lifetime; Go strings are
+// immutable, so they cannot be cleared.
+func (b GrokBundle) ProtectedValues() []string {
+	var values []string
+	for _, value := range []string{b.entry.Key, b.entry.RefreshToken} {
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
 // Identity returns the parsed identity fields (no credential material).
 func (b GrokBundle) Identity() GrokIdentity { return b.identity }
 

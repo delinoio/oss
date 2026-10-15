@@ -168,7 +168,7 @@ func TestGrokExecutionMaterializesOnlyAfterTakeAndRetiresBeforeFinish(t *testing
 	if _, err := os.Lstat(f.authPath()); !os.IsNotExist(err) {
 		t.Fatal("the credential was written before the harness asked for it")
 	}
-	if err := run.prepare(context.Background()); err != nil {
+	if _, err := run.prepare(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Lstat(f.authPath())
@@ -211,7 +211,7 @@ func TestGrokExecutionReturnsAnUnchangedCredentialWithoutRefreshConfirmation(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := run.prepare(context.Background()); err != nil {
+	if _, err := run.prepare(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if err := run.finish(true); err != nil {
@@ -256,7 +256,7 @@ func TestGrokExecutionCleansUpOnEveryExitPath(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := run.prepare(context.Background()); err != nil {
+			if _, err := run.prepare(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			test.setup(t, f)
@@ -340,7 +340,7 @@ func TestGrokExecutionLogsUseTheExecutionPhaseWithoutCredentialsPathsOrIdentity(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := run.prepare(context.Background()); err != nil {
+	if _, err := run.prepare(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	f.nativeRotate(t)
@@ -367,7 +367,7 @@ func TestGrokRecoveryRetiresTheLeftoverCredentialAndReportsCleanupOnly(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := run.prepare(context.Background()); err != nil {
+	if _, err := run.prepare(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	f.nativeRotate(t)
@@ -403,7 +403,7 @@ func TestGrokRecoveryNeverConfirmsCleanupItCannotProve(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := run.prepare(context.Background()); err != nil {
+	if _, err := run.prepare(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	f.nativeRotate(t)
@@ -651,7 +651,7 @@ func TestGrokRecoveryDoesNotConfirmCleanupOfAHomeItCannotProve(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := run.prepare(context.Background()); err != nil {
+		if _, err := run.prepare(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 		f.nativeRotate(t)
@@ -724,4 +724,25 @@ func TestGrokRecoveryDoesNotConfirmCleanupOfAHomeItCannotProve(t *testing.T) {
 			t.Fatalf("recovery of a retired credential was blocked: %v", err)
 		}
 	})
+}
+
+// The materialized credential's own values are handed to the native frame guard,
+// so a native frame that reflects the cached access or refresh token is held back
+// like an API token.
+func TestGrokPreparedCredentialReturnsItsProtectedValues(t *testing.T) {
+	f := newGrokExecutionServer(t)
+	run, err := f.begin(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protected, err := run.prepare(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(protected) != 2 || protected[0] == "" || protected[1] == "" || protected[0] == protected[1] {
+		t.Fatalf("the credential's access and refresh values were not protected: %d values", len(protected))
+	}
+	if err := run.finish(true); err != nil {
+		t.Fatal(err)
+	}
 }

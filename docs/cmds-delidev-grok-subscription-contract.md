@@ -832,6 +832,10 @@ blocks) is unchanged.
   journal records the home and `execution_started` before the file is written.
   Registration of the execution still happens, advertises no API proxy path and
   grants no relay authority.
+- **Reflection guard.** The access and refresh values of the materialized credential
+  are handed to the native frame guard and the text holdback exactly like an API
+  token (`PrepareCredential` returns them), so a frame that reflects them, exactly or
+  base64 encoded, is refused before it reaches events or retained output.
 - **ACP profile.** Subscription mode replaces only the credential source. The
   private `config.toml` keeps the selected-model pinning but carries no
   `base_url`, `env_key` or `api_backend`; the launched environment drops exactly

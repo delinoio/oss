@@ -114,24 +114,24 @@ func beginGrokSubscriptionExecution(ctx context.Context, config Config, owner do
 
 // prepare is the harness credential callback. The journal records that a
 // credential may exist before it is written, so recovery after a crash retires it.
-func (r *grokSubscriptionRun) prepare(ctx context.Context) error {
+func (r *grokSubscriptionRun) prepare(ctx context.Context) ([]string, error) {
 	if err := ctx.Err(); err != nil {
-		return domain.SafeError(err)
+		return nil, domain.SafeError(err)
 	}
 	r.lease.journal.ExecutionStarted = true
 	if err := writeJSON(r.lease.journalPath, r.lease.journal); err != nil {
-		return subscription.Invalid()
+		return nil, subscription.Invalid()
 	}
 	r.attempted = true
 	original, err := r.lease.materializeGrokBound(r.lease.grokHome)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	r.original = original
 	if r.logger != nil {
 		r.logger.InfoContext(ctx, "grok_subscription_execution_credential_ready", "phase", "EXECUTION", "step", "credential", "account_id", r.lease.account, "lease_id", r.lease.response.LeaseId)
 	}
-	return nil
+	return original.ProtectedValues(), nil
 }
 
 // finish joins the native owner, retires the credential and releases the lease.

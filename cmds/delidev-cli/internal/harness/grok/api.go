@@ -63,8 +63,11 @@ type apiConfig struct {
 	// PrepareCredential materializes the account credential in the bound private
 	// home. It runs once after every native inspection of the empty private
 	// profile and immediately before the native process starts, so the
-	// credential never exists while discovery or configuration inspection runs.
-	PrepareCredential func(context.Context) error `json:"-"`
+	// credential never exists while discovery or configuration inspection runs. It
+	// returns the credential values the native process will hold (access and
+	// refresh tokens), which join the protected values of the native frame guard and
+	// the text holdback exactly like an API token.
+	PrepareCredential func(context.Context) ([]string, error) `json:"-"`
 }
 
 type apiProfile struct {
@@ -317,9 +320,11 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 		// endpoints, and only after the credential exists in the private home.
 		prepared.Env = append(withoutLoopbackBlocks(env), "GROK_DEFAULT_MODEL="+selectedModel)
 		phase = credentialPhase
-		if err := config.PrepareCredential(ready); err != nil {
+		protected, err := config.PrepareCredential(ready)
+		if err != nil {
 			return nil, err
 		}
+		prepared.ProtectedValues = append(slices.Clone(prepared.ProtectedValues), protected...)
 	} else {
 		prepared.Env = append(env, credentialVariable+"="+config.Token, "GROK_DEFAULT_MODEL="+selectedModel)
 		prepared.ProtectedValues = append(slices.Clone(prepared.ProtectedValues), config.Token)

@@ -4,6 +4,7 @@ package grok
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -75,7 +76,7 @@ func newSubscriptionFixture(t *testing.T, mode string) *subscriptionFixture {
 	config.Probe.Version = "1.0.52"
 	f := &subscriptionFixture{config: config, logs: logs}
 	path := filepath.Join(config.Probe.Home, "auth.json")
-	f.config.PrepareCredential = func(context.Context) error {
+	f.config.PrepareCredential = func(context.Context) ([]string, error) {
 		f.prepared.Add(1)
 		if _, err := os.Lstat(path); err == nil {
 			t.Error("the credential existed before it was prepared")
@@ -87,7 +88,7 @@ func newSubscriptionFixture(t *testing.T, mode string) *subscriptionFixture {
 		if _, err := os.Lstat(filepath.Join(config.Probe.Process.Cwd, "tmp", "input-started")); err == nil {
 			t.Error("the credential was prepared after input")
 		}
-		return os.WriteFile(path, []byte(`{"synthetic":"`+subscriptionFixtureSentinel+`"}`), 0o600)
+		return []string{subscriptionFixtureSentinel}, os.WriteFile(path, []byte(`{"synthetic":"`+subscriptionFixtureSentinel+`"}`), 0o600)
 	}
 	return f
 }
@@ -165,8 +166,8 @@ func TestSubscriptionAuthenticationFailuresAreTypedUnavailable(t *testing.T) {
 
 func TestSubscriptionCredentialFailureStopsBeforeLaunch(t *testing.T) {
 	f := newSubscriptionFixture(t, "input-valid")
-	f.config.PrepareCredential = func(context.Context) error {
-		return domain.Fail(domain.Unavailable, "The credential could not be prepared.", "Retry.")
+	f.config.PrepareCredential = func(context.Context) ([]string, error) {
+		return nil, domain.Fail(domain.Unavailable, "The credential could not be prepared.", "Retry.")
 	}
 	api, err := openAPI(context.Background(), f.config)
 	if err == nil {
@@ -289,5 +290,34 @@ func TestSubscriptionInitializeProfileAdvertisesCachedToken(t *testing.T) {
 		if (err == nil) != test.valid {
 			t.Fatalf("%s: validity=%v want %v (%v)", test.name, err == nil, test.valid, err)
 		}
+	}
+}
+
+// The values PrepareCredential reports join the protected values of the native
+// frame guard, so a frame that reflects the credential (exact or base64 encoded)
+// is refused instead of being published.
+func TestSubscriptionCredentialValuesJoinTheNativeFrameGuard(t *testing.T) {
+	f := newSubscriptionFixture(t, "input-valid")
+	inner := f.config.PrepareCredential
+	f.config.PrepareCredential = func(ctx context.Context) ([]string, error) {
+		if _, err := inner(ctx); err != nil {
+			return nil, err
+		}
+		return []string{"managed-access-token-value", "managed-refresh-token-value"}, nil
+	}
+	api, err := openAPI(context.Background(), f.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer api.Close()
+	for _, secret := range []string{"managed-access-token-value", "managed-refresh-token-value"} {
+		for _, frame := range []string{`{"text":"` + secret + `"}`, `{"text":"` + base64.StdEncoding.EncodeToString([]byte(secret)) + `"}`} {
+			if api.protected.Safe([]byte(frame)) {
+				t.Fatalf("a native frame reflecting %q was not held back", secret)
+			}
+		}
+	}
+	if !api.protected.Safe([]byte(`{"text":"ordinary output"}`)) {
+		t.Fatal("ordinary output was held back")
 	}
 }
