@@ -894,28 +894,82 @@ fn search_static_closure(
     ChunkSearch::NotFound { complete }
 }
 
+/// The chunk sets that the dynamic `import()` of one requesting chunk must
+/// reach for the request to be ineffective; every set needs a static route.
+///
+/// A module that lives in one chunk is requested from that chunk. Rolldown's
+/// `inlineCommonChunks` can copy a module into several chunks, and the
+/// `import()` then loads one specific copy, so a static route to any other copy
+/// proves nothing. The requesting chunk's `dynamicImports` name the copies it
+/// loads through a separate request: each of them must itself be reached
+/// statically. Without such an edge the request resolved to a copy that is
+/// already loaded, and any copy counts. `None` means the graph cannot decide
+/// because the dynamic imports of the requesting chunk were not collected.
+fn required_target_sets<'a>(
+    chunks: &BTreeMap<&str, &crate::collect::CollectedChunk>,
+    requester_chunk: &str,
+    module_chunks: &BTreeSet<&'a str>,
+) -> Option<Vec<BTreeSet<&'a str>>> {
+    if module_chunks.len() <= 1 {
+        return Some(vec![module_chunks.clone()]);
+    }
+    let dynamic_imports = chunks.get(requester_chunk)?.dynamic_imports.as_ref()?;
+    let requested: Vec<&'a str> = module_chunks
+        .iter()
+        .copied()
+        .filter(|copy| dynamic_imports.iter().any(|name| name == copy))
+        .collect();
+    if requested.is_empty() {
+        Some(vec![module_chunks.clone()])
+    } else {
+        Some(
+            requested
+                .into_iter()
+                .map(|copy| BTreeSet::from([copy]))
+                .collect(),
+        )
+    }
+}
+
 /// Classifies one dynamic importer from the searches of all its requesting
 /// chunks. The single place where chunk searches turn into an outcome:
 /// `Proven` needs every requesting chunk to be found, any undecidable search
 /// makes the importer `Unknown`, and only a complete graph without a route
-/// yields `SeparateChunk`.
+/// yields `SeparateChunk`. `module_chunks` are all chunks that print the
+/// module; see [`required_target_sets`] for the copies of one module.
 fn classify_requester(
     chunks: &BTreeMap<&str, &crate::collect::CollectedChunk>,
     requester_chunks: &[&str],
-    targets: &BTreeSet<&str>,
+    module_chunks: &BTreeSet<&str>,
 ) -> RequesterOutcome {
-    if requester_chunks.is_empty() || targets.is_empty() {
+    if requester_chunks.is_empty() || module_chunks.is_empty() {
         return RequesterOutcome::Unknown;
     }
     let mut routes = Vec::new();
     let mut complete = true;
     for chunk in requester_chunks {
-        match search_static_closure(chunks, chunk, targets) {
-            ChunkSearch::Found(chunk_path) => routes.push(ChunkRoute {
+        let Some(target_sets) = required_target_sets(chunks, chunk, module_chunks) else {
+            complete = false;
+            continue;
+        };
+        let mut found: Option<Vec<String>> = None;
+        let mut reached_all = true;
+        for targets in &target_sets {
+            match search_static_closure(chunks, chunk, targets) {
+                ChunkSearch::Found(chunk_path) => {
+                    found.get_or_insert(chunk_path);
+                }
+                ChunkSearch::NotFound { complete: done } => {
+                    complete &= done;
+                    reached_all = false;
+                }
+            }
+        }
+        if let (true, Some(chunk_path)) = (reached_all, found) {
+            routes.push(ChunkRoute {
                 requester_chunk: (*chunk).to_owned(),
                 chunk_path,
-            }),
-            ChunkSearch::NotFound { complete: done } => complete &= done,
+            });
         }
     }
     if routes.len() == requester_chunks.len() {
@@ -949,7 +1003,7 @@ fn classify_dynamic_requesters(
         .iter()
         .map(|chunk| (chunk.file.as_str(), chunk))
         .collect();
-    let targets: BTreeSet<&str> = module.chunks.iter().map(String::as_str).collect();
+    let module_chunks: BTreeSet<&str> = module.chunks.iter().map(String::as_str).collect();
     let mut classification = RequesterClassification::default();
     for importer_id in &module.dynamic_importers {
         let requester_chunks: Vec<&str> = context
@@ -957,7 +1011,7 @@ fn classify_dynamic_requesters(
             .get(importer_id.as_str())
             .map(|importer| importer.chunks.iter().map(String::as_str).collect())
             .unwrap_or_default();
-        match classify_requester(&chunks, &requester_chunks, &targets) {
+        match classify_requester(&chunks, &requester_chunks, &module_chunks) {
             RequesterOutcome::Proven(routes) => classification.proven.push(RequesterProof {
                 importer: importer_id.clone(),
                 routes,
@@ -1542,6 +1596,14 @@ mod ineffective_dynamic_import_tests {
         }
     }
 
+    /// A chunk with static imports and the chunks it requests dynamically.
+    fn chunk_with_dynamic(file: &str, imports: &[&str], dynamic: &[&str]) -> CollectedChunk {
+        CollectedChunk {
+            dynamic_imports: Some(dynamic.iter().map(|v| (*v).to_owned()).collect()),
+            ..chunk(file, Some(imports))
+        }
+    }
+
     /// A chunk whose `imports` entries in `externals` name external modules.
     fn chunk_with_externals(file: &str, imports: &[&str], externals: &[&str]) -> CollectedChunk {
         CollectedChunk {
@@ -1909,6 +1971,64 @@ mod ineffective_dynamic_import_tests {
                 expected: RequesterOutcome::Proven(vec![route("a.js", &["a.js", "vendor.js"])]),
             },
             Cell {
+                name: "copies: the dynamic import loads a copy outside the static closure",
+                requesters: &["a.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("a.js", &["copy-a.js"], &["copy-b.js"]),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::SeparateChunk,
+            },
+            Cell {
+                name: "copies: the dynamic import loads a copy inside the static closure",
+                requesters: &["a.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("a.js", &["copy-b.js"], &["copy-b.js"]),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Proven(vec![route("a.js", &["a.js", "copy-b.js"])]),
+            },
+            Cell {
+                name: "copies: no dynamic edge to a copy and a static route to one",
+                requesters: &["a.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("a.js", &["copy-a.js"], &[]),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Proven(vec![route("a.js", &["a.js", "copy-a.js"])]),
+            },
+            Cell {
+                name: "copies: dynamic imports were not collected",
+                requesters: &["a.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    CollectedChunk {
+                        dynamic_imports: None,
+                        ..chunk("a.js", Some(&["copy-a.js"]))
+                    },
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "copies: every requested copy must be in the static closure",
+                requesters: &["a.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("a.js", &["copy-a.js"], &["copy-a.js", "copy-b.js"]),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::SeparateChunk,
+            },
+            Cell {
                 name: "cycle without the target terminates as a separate chunk",
                 requesters: &["a.js"],
                 targets: &["c.js"],
@@ -1943,6 +2063,34 @@ mod ineffective_dynamic_import_tests {
             .filter(|e| e.provenance == "emitted chunk graph")
             .map(|e| e.detail.as_str())
             .collect()
+    }
+
+    #[test]
+    fn copied_module_is_ineffective_only_for_the_copy_the_import_loads() {
+        let collection = |dynamic: &[&str]| Collection {
+            modules: vec![
+                module("src/entry.js", &[], &[], &["entry.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/entry.js"],
+                    &["src/entry.js"],
+                    &["copy-a.js", "copy-b.js"],
+                ),
+            ],
+            chunks: vec![
+                chunk_with_dynamic("entry.js", &["copy-a.js"], dynamic),
+                chunk("copy-a.js", Some(&[])),
+                chunk("copy-b.js", Some(&[])),
+            ],
+            ..Collection::default()
+        };
+        // The import() loads copy B, which the entry does not load statically.
+        assert!(run(&collection(&["copy-b.js"])).is_empty());
+        // The import() resolved to the copy that the entry already loads.
+        let drafts = run(&collection(&[]));
+        assert_eq!(drafts.len(), 1);
+        let details = evidence_details(&drafts[0]);
+        assert!(details[0].contains("copy-a.js"), "{details:?}");
     }
 
     #[test]
