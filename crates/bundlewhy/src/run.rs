@@ -99,17 +99,25 @@ fn protected_files(selection: &Selection) -> BTreeMap<PathBuf, Option<String>> {
 }
 
 fn project_name_at(root: &Path, fallback: &str) -> String {
-    std::fs::read(root.join("package.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        .and_then(|manifest| {
-            manifest
-                .get("name")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| fallback.to_owned())
+    let mut directory = Some(root);
+    while let Some(current) = directory {
+        let name = std::fs::read(current.join("package.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|manifest| {
+                manifest
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned)
+            });
+        if let Some(name) = name {
+            return name;
+        }
+        let parent = current.parent();
+        directory = parent.filter(|parent| *parent != current);
+    }
+    fallback.to_owned()
 }
 
 fn prepare_out_dir(out_dir: &Path) -> BwResult<PathBuf> {
@@ -951,5 +959,19 @@ mod tests {
             project_name_at(&external, &selection.project_name),
             "web-app"
         );
+    }
+
+    #[test]
+    fn project_name_uses_nearest_ancestor_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("repo/apps/web/src");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            dir.path().join("repo/apps/web/package.json"),
+            r#"{"name":"web-app"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(project_name_at(&root, "fallback"), "web-app");
     }
 }
