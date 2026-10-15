@@ -1269,7 +1269,16 @@ independent Fork `thread/fork`).
    `trust_level = "untrusted"` for the thread directory, its nearest Git
    repository root, the main repository root of a linked worktree and every
    workspace root, each in its cleaned and symlink-resolved spelling (never the
-   caller's raw spelling), and replaces a retained `trusted` value of those keys
+   caller's raw spelling), and, for every project root marker the private
+   configuration selects through `project_root_markers` (top level or any
+   profile) other than `.git`, each ancestor of those directories up to the
+   filesystem root that holds the marker. Codex locates the trust boundary
+   through those markers, so a root found only through a configured marker would
+   otherwise keep a retained `trusted` entry active and with it its
+   `.codex/config.toml` layer. The markers are read from the same decoded
+   document under the same lock, and a `project_root_markers` value that is not
+   a list of plain file names (no separator, not `.` or `..`) is an invalid
+   shape. The adapter replaces a retained `trusted` value of those keys
    and of every existing key that normalizes to the same directory (a trailing
    separator, dot segments and, on Windows, a different case).
    It removes the top-level `mcp_servers` table and the `mcp_servers` table of
@@ -1365,33 +1374,42 @@ has a test (`project_isolation_cells_test.go` runs each row through the pure
 document function and through the file). A rejected shape leaves the file
 unchanged and fails with `reason=trust-unwritable`.
 
-| Dimension                | State                                                                  | Result                                                                               |
-| ------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Config shape and profile | No file or empty file                                                  | Created with the untrusted keys                                                      |
-| Config shape and profile | Top-level `mcp_servers` (table or scalar)                              | Removed                                                                              |
-| Config shape and profile | Selected profile defines `mcp_servers`                                 | Removed from that profile; its other settings are kept                               |
-| Config shape and profile | Unselected profile or several profiles define `mcp_servers`            | Removed from every profile                                                           |
-| Config shape and profile | `profile` names a profile that is not defined                          | Every defined profile is still stripped                                              |
-| Config shape and profile | `profiles` is not a table, or a profile entry is not a table           | Rejected; file unchanged                                                             |
-| Plugin source            | `features.plugins` absent or `true` at the top level                   | Set to `false`; other features are kept                                              |
-| Plugin source            | `features.plugins = true` in a profile                                 | Override removed; other profile features are kept                                    |
-| Plugin source            | Enabled `[plugins.*]` entry in the private home                        | Entry kept and inert while the feature is `false`                                    |
-| Plugin source            | `features` or a profile's `features` is not a table                    | Rejected; file unchanged                                                             |
-| Plugin source            | Effective `features.plugins` is absent, `null` or `true` after binding | Rejected with `plugins-enabled` before any input (a managed policy can re-enable it) |
-| Plugin source            | Effective `features` is malformed                                      | Rejected with `inventory-unreadable` before any input                                |
-| Path spelling            | Clean absolute directory                                               | Written as is                                                                        |
-| Path spelling            | Trailing separator, dot segments or repeated separators                | Only the cleaned key is written                                                      |
-| Path spelling            | Symlinked directory                                                    | The symlink spelling and the resolved spelling are written                           |
-| Path spelling            | Existing `trusted` key that normalizes to the same directory           | Set to `untrusted`; unrelated keys and fields are kept                               |
-| Path spelling            | Existing key that differs only by case, case-sensitive platform        | A different directory; left unchanged                                                |
-| Path spelling            | Existing key that differs only by case, Windows                        | The same directory; set to `untrusted`                                               |
-| Path spelling            | Non-Git directory                                                      | The directory key alone isolates it                                                  |
-| Path spelling            | Existing project entry (equivalent or not) is not a table              | Rejected; file unchanged                                                             |
-| Lock lifecycle           | First acquisition of a home                                            | Creates one entry                                                                    |
-| Lock lifecycle           | A second caller awaits the same home (any spelling of its path)        | Shares the entry and waits; the entry outlives the first release                     |
-| Lock lifecycle           | Last release                                                           | Removes the entry                                                                    |
-| Lock lifecycle           | Distinct homes                                                         | Distinct entries, never shared                                                       |
-| Lock lifecycle           | Success, unchanged file, invalid file, rejected request                | The lock is released on every path; no entry is retained                             |
+| Dimension                | State                                                                  | Result                                                                                                     |
+| ------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Config shape and profile | No file or empty file                                                  | Created with the untrusted keys                                                                            |
+| Config shape and profile | Top-level `mcp_servers` (table or scalar)                              | Removed                                                                                                    |
+| Config shape and profile | Selected profile defines `mcp_servers`                                 | Removed from that profile; its other settings are kept                                                     |
+| Config shape and profile | Unselected profile or several profiles define `mcp_servers`            | Removed from every profile                                                                                 |
+| Config shape and profile | `profile` names a profile that is not defined                          | Every defined profile is still stripped                                                                    |
+| Config shape and profile | `profiles` is not a table, or a profile entry is not a table           | Rejected; file unchanged                                                                                   |
+| Plugin source            | `features.plugins` absent or `true` at the top level                   | Set to `false`; other features are kept                                                                    |
+| Plugin source            | `features.plugins = true` in a profile                                 | Override removed; other profile features are kept                                                          |
+| Plugin source            | Enabled `[plugins.*]` entry in the private home                        | Entry kept and inert while the feature is `false`                                                          |
+| Plugin source            | `features` or a profile's `features` is not a table                    | Rejected; file unchanged                                                                                   |
+| Plugin source            | Effective `features.plugins` is absent, `null` or `true` after binding | Rejected with `plugins-enabled` before any input (a managed policy can re-enable it)                       |
+| Plugin source            | Effective `features` is malformed                                      | Rejected with `inventory-unreadable` before any input                                                      |
+| Path spelling            | Clean absolute directory                                               | Written as is                                                                                              |
+| Path spelling            | Trailing separator, dot segments or repeated separators                | Only the cleaned key is written                                                                            |
+| Path spelling            | Symlinked directory                                                    | The symlink spelling and the resolved spelling are written                                                 |
+| Path spelling            | Existing `trusted` key that normalizes to the same directory           | Set to `untrusted`; unrelated keys and fields are kept                                                     |
+| Path spelling            | Existing key that differs only by case, case-sensitive platform        | A different directory; left unchanged                                                                      |
+| Path spelling            | Existing key that differs only by case, Windows                        | The same directory; set to `untrusted`                                                                     |
+| Path spelling            | Non-Git directory                                                      | The directory key alone isolates it                                                                        |
+| Path spelling            | Existing project entry (equivalent or not) is not a table              | Rejected; file unchanged                                                                                   |
+| Root markers             | `project_root_markers` absent, or only `.git`                          | The directory, its nearest Git root and a linked worktree's main root are untrusted                        |
+| Root markers             | `project_root_markers` is an empty list                                | Codex treats the directory as the root; only the directory and its Git roots are untrusted                 |
+| Root markers             | Custom marker held by an ancestor of the directory                     | The directory and every ancestor holding the marker are untrusted; an existing `trusted` value is replaced |
+| Root markers             | Several markers, or the same marker at several ancestors               | Every ancestor holding any marker is untrusted                                                             |
+| Root markers             | Marker held only by the directory itself or only below it              | No additional key; a directory below the thread directory is not its root                                  |
+| Root markers             | Marker held by no ancestor                                             | No additional key                                                                                          |
+| Root markers             | Markers set in a profile                                               | Merged with the top-level list, because a profile merges over the top level                                |
+| Root markers             | Marker list is not a list of plain file names                          | Rejected; file unchanged                                                                                   |
+| Root markers             | Markers selected by a layer outside the private home                   | Not readable here; a surviving server is rejected by the inventory probe                                   |
+| Lock lifecycle           | First acquisition of a home                                            | Creates one entry                                                                                          |
+| Lock lifecycle           | A second caller awaits the same home (any spelling of its path)        | Shares the entry and waits; the entry outlives the first release                                           |
+| Lock lifecycle           | Last release                                                           | Removes the entry                                                                                          |
+| Lock lifecycle           | Distinct homes                                                         | Distinct entries, never shared                                                                             |
+| Lock lifecycle           | Success, unchanged file, invalid file, rejected request                | The lock is released on every path; no entry is retained                                                   |
 
 The effective inventory is checked at two moments, and a configuration layer can
 contribute a server or re-enable plugins at either. Every row has a test
@@ -1423,6 +1441,7 @@ files, concurrent members, start and resume rows, inventory rejection rows and
 logs), `project_isolation_cells_test.go` (the state table above),
 `project_isolation_path_test.go` (path normalization),
 `project_isolation_layers_test.go` (the layer and timing table above),
+`project_isolation_roots_test.go` (the root-marker rows, through the pure key function, the file and the thread binding),
 `project_isolation_enabled_test.go` (the enabled-state rows for every layer, timing and operation),
 `project_isolation_lock_test.go` (lock lifecycle),
 the shared-owner binding test, and the explicit installed-native

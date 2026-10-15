@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	toml "github.com/pelletier/go-toml/v2"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -32,6 +34,21 @@ func managedFixtureBundle(rotation string) []byte {
 func fixtureHomeIsolated() bool {
 	raw, err := os.ReadFile(filepath.Join(os.Getenv("CODEX_HOME"), "config.toml"))
 	return err == nil && strings.Contains(string(raw), "untrusted")
+}
+
+// fixtureProjectUntrusted reports whether the private home records the
+// directory as untrusted.
+func fixtureProjectUntrusted(directory string) bool {
+	raw, err := os.ReadFile(filepath.Join(os.Getenv("CODEX_HOME"), "config.toml"))
+	if err != nil {
+		return false
+	}
+	var document struct {
+		Projects map[string]struct {
+			TrustLevel string `toml:"trust_level"`
+		} `toml:"projects"`
+	}
+	return toml.Unmarshal(raw, &document) == nil && document.Projects[directory].TrustLevel == "untrusted"
 }
 
 // fixtureSurvivorActive reports whether a survivor of the given timing is
@@ -134,6 +151,13 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 				entry["enabled"] = value
 			}
 			config["mcp_servers"] = map[string]any{survivor[0] + "-server": entry}
+		}
+		// DELIDEV_CODEX_MARKER_ROOT names a directory whose own .codex/config.toml
+		// defines an MCP server. Codex activates that layer exactly while the
+		// private home does not record the directory untrusted, however the
+		// directory was located (project_root_markers included).
+		if root := os.Getenv("DELIDEV_CODEX_MARKER_ROOT"); root != "" && !fixtureProjectUntrusted(root) {
+			config["mcp_servers"] = map[string]any{"marker-root-server": map[string]any{"command": "private-marker-root-command"}}
 		}
 		// Only the read before project isolation reports the workspace servers:
 		// isolation settles the project untrusted first, so Codex ignores the

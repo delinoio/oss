@@ -267,6 +267,14 @@ func runManagedIsolation(t *testing.T, mode string, resume bool, mutate func(*Th
 // DELIDEV_CODEX_SURVIVOR layer) to the native process.
 func runManagedIsolationWithEnv(t *testing.T, mode string, resume bool, mutate func(*ThreadSettings), env ...string) isolationRun {
 	t.Helper()
+	return runManagedIsolationSeeded(t, mode, resume, mutate, nil, env...)
+}
+
+// runManagedIsolationSeeded additionally lets the caller write the private home
+// (and return more fixture environment entries) once the thread settings are
+// final and before the native process starts.
+func runManagedIsolationSeeded(t *testing.T, mode string, resume bool, mutate func(*ThreadSettings), seed func(home string, settings ThreadSettings) []string, env ...string) isolationRun {
+	t.Helper()
 	settings := threadSettings(t)
 	settings.Provider = "openai"
 	if mutate != nil {
@@ -279,6 +287,9 @@ func runManagedIsolationWithEnv(t *testing.T, mode string, resume bool, mutate f
 	capture := filepath.Join(config.Process.Cwd, "thread-operations.jsonl")
 	config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_CAPTURE="+capture)
 	config.Process.Env = append(config.Process.Env, env...)
+	if seed != nil {
+		config.Process.Env = append(config.Process.Env, seed(config.Home, settings)...)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	t.Cleanup(cancel)
 	client, err := Open(ctx, config)

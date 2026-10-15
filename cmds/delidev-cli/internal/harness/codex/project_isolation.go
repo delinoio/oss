@@ -160,8 +160,8 @@ func (c *Client) isolateProject(ctx context.Context, settings ThreadSettings, pa
 	if !policyFor(c.isolationProfile()).SeedTrust {
 		return nil
 	}
-	keys := projectTrustKeys(append([]string{settings.Cwd}, settings.WorkspaceRoots...))
-	if err := isolateHomeConfig(c.home, keys); err != nil {
+	directories := append([]string{settings.Cwd}, settings.WorkspaceRoots...)
+	if err := isolateHomeDirectories(c.home, directories); err != nil {
 		return c.rejectIsolation(ctx, isolationStageProjectTrust, isolationTrustUnwritable)
 	}
 	pinIsolatedDefaults(params)
@@ -245,11 +245,24 @@ func normalizeProjectKey(path string, foldCase bool) string {
 }
 
 // projectTrustKeys returns the deduplicated keys Codex may use to record trust
-// for the directories: each directory in its cleaned and symlink-resolved
-// spelling, the nearest Git repository root and, for a linked worktree, the
-// main repository root of each spelling. The caller's raw spelling is never
-// written.
+// for the directories under the default project root marker (.git); see
+// projectTrustKeysFor.
 func projectTrustKeys(directories []string) []string {
+	return projectTrustKeysFor(directories, nil)
+}
+
+// projectTrustKeysFor returns the deduplicated keys Codex may use to record
+// trust for the directories: each directory in its cleaned and
+// symlink-resolved spelling, the nearest Git repository root, the main
+// repository root of a linked worktree of each spelling and, for every
+// configured project root marker other than .git, each ancestor that holds the
+// marker. Codex locates the trust boundary through project_root_markers, so a
+// root found only through a configured marker would otherwise keep a trusted
+// entry active. Markers are matched at every ancestor up to the filesystem
+// root (not only the nearest), because a root that is trusted anywhere above the
+// directory can activate its repository layer. The caller's raw spelling is
+// never written.
+func projectTrustKeysFor(directories, markers []string) []string {
 	var keys []string
 	add := func(path string) {
 		if path != "" && !slices.Contains(keys, path) {
@@ -270,9 +283,102 @@ func projectTrustKeys(directories []string) []string {
 			root, main := gitRoots(spelling)
 			add(root)
 			add(main)
+			for _, marked := range markerRoots(spelling, markers) {
+				add(marked)
+			}
 		}
 	}
 	return keys
+}
+
+// markerRoots returns every ancestor of the directory (the directory included)
+// that holds one of the markers, nearest first. The Git marker is resolved by
+// gitRoots and is skipped here.
+func markerRoots(directory string, markers []string) []string {
+	var names []string
+	for _, marker := range markers {
+		if marker != gitMarker && !slices.Contains(names, marker) {
+			names = append(names, marker)
+		}
+	}
+	var roots []string
+	if len(names) == 0 {
+		return roots
+	}
+	for current := filepath.Clean(directory); ; {
+		for _, name := range names {
+			if _, err := os.Lstat(filepath.Join(current, name)); err == nil {
+				roots = append(roots, current)
+				break
+			}
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return roots
+		}
+		current = parent
+	}
+}
+
+const (
+	gitMarker               = ".git"
+	projectRootMarkersField = "project_root_markers"
+)
+
+// configuredRootMarkers returns the project root markers the private
+// configuration selects: the top-level list and, because a profile merges over
+// the top level, the list of every profile. An absent key selects the default
+// (.git), which gitRoots always covers; an empty list selects no marker, so
+// Codex treats the directory itself as the root. A value that is not a list of
+// plain file names is invalid.
+func configuredRootMarkers(document map[string]any) ([]string, error) {
+	var markers []string
+	read := func(table map[string]any) error {
+		raw, present := table[projectRootMarkersField]
+		if !present {
+			return nil
+		}
+		var entries []any
+		switch list := raw.(type) {
+		case []any:
+			entries = list
+		case []string:
+			for _, entry := range list {
+				entries = append(entries, entry)
+			}
+		default:
+			return fmt.Errorf("invalid native project root markers")
+		}
+		for _, entry := range entries {
+			name, ok := entry.(string)
+			if !ok || name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+				return fmt.Errorf("invalid native project root marker")
+			}
+			if !slices.Contains(markers, name) {
+				markers = append(markers, name)
+			}
+		}
+		return nil
+	}
+	if err := read(document); err != nil {
+		return nil, err
+	}
+	if raw, present := document["profiles"]; present {
+		profiles, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid native profiles table")
+		}
+		for _, name := range sortedKeys(profiles) {
+			profile, ok := profiles[name].(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("invalid native profile entry")
+			}
+			if err := read(profile); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return markers, nil
 }
 
 // gitRoots finds the nearest ancestor with a .git entry. A .git file points a
@@ -486,7 +592,24 @@ func sortedKeys(table map[string]any) []string {
 // is not rewritten and a changed file is replaced atomically with owner-only
 // permissions.
 func isolateHomeConfig(home string, keys []string) error {
-	if len(keys) == 0 || !filepath.IsAbs(home) {
+	return isolateHome(home, func(map[string]any) ([]string, error) { return keys, nil })
+}
+
+// isolateHomeDirectories isolates the private home for thread directories. The
+// project keys depend on the project_root_markers of the same configuration, so
+// they are derived from the decoded document under the same lock and read.
+func isolateHomeDirectories(home string, directories []string) error {
+	return isolateHome(home, func(document map[string]any) ([]string, error) {
+		markers, err := configuredRootMarkers(document)
+		if err != nil {
+			return nil, err
+		}
+		return projectTrustKeysFor(directories, markers), nil
+	})
+}
+
+func isolateHome(home string, derive func(map[string]any) ([]string, error)) error {
+	if !filepath.IsAbs(home) {
 		return fmt.Errorf("invalid project isolation request")
 	}
 	defer lockHomeConfig(home)()
@@ -502,6 +625,13 @@ func isolateHomeConfig(home string, keys []string) error {
 		}
 	} else if !os.IsNotExist(err) {
 		return err
+	}
+	keys, err := derive(document)
+	if err != nil {
+		return err
+	}
+	if len(keys) == 0 {
+		return fmt.Errorf("invalid project isolation request")
 	}
 	changed, err := isolateHomeDocument(document, keys)
 	if err != nil || !changed {
