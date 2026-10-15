@@ -3204,6 +3204,21 @@ fn ignores_ambiguous_precache_calls_with_empty_revisions() {
 }
 
 #[test]
+fn ignores_precache_calls_inside_with_scopes() {
+    let sw = r#"with({precacheAndRoute(){}}){precacheAndRoute([{url:"index.html",revision:""}])}with({workbox:{precacheAndRoute(){}}}){workbox.precacheAndRoute([{url:"index.html",revision:"old"}])}"#;
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    let temp = bundle(&chunks);
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(out(temp.path(), "sw.js"), sw);
+}
+
+#[test]
 fn ignores_ambiguous_precache_calls_with_nonempty_revisions() {
     let sw = r#"function precache(){};precache([{url:"index.html",revision:"p1"}]);function precacheAndRoute(){};precacheAndRoute([{url:"index.html",revision:"a1"}]);const api={precacheAndRoute(){}};api.precacheAndRoute([{url:"index.html",revision:"m1"}]);"#;
     let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();

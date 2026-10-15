@@ -14,7 +14,7 @@ use swc_core::{
         ast::{
             BindingIdent, CallExpr, Callee, ClassDecl, ClassExpr, EsVersion, Expr, FnDecl, FnExpr,
             Id, ImportDecl, ImportSpecifier, Lit, MemberProp, ModuleExportName, ObjectLit, Prop,
-            PropName, PropOrSpread,
+            PropName, PropOrSpread, WithStmt,
         },
         parser::{EsSyntax, Syntax, parse_file_as_program},
         transforms::base::resolver,
@@ -1426,6 +1426,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         direct_workbox_bindings: BTreeSet<Id>,
         namespace_workbox_bindings: BTreeSet<Id>,
         ambiguous_bindings: BTreeSet<String>,
+        with_depth: usize,
         values: Vec<(String, usize, usize, bool)>,
     }
 
@@ -1483,6 +1484,13 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
     }
 
     impl Visit for Entries<'_> {
+        fn visit_with_stmt(&mut self, statement: &WithStmt) {
+            statement.obj.visit_with(self);
+            self.with_depth += 1;
+            statement.body.visit_with(self);
+            self.with_depth -= 1;
+        }
+
         fn visit_call_expr(&mut self, call: &CallExpr) {
             let (name, trusted) = match &call.callee {
                 Callee::Expr(callee) => match &**callee {
@@ -1507,6 +1515,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
                 },
                 _ => (None, false),
             };
+            let trusted = trusted && self.with_depth == 0;
             if name.is_some_and(|name| {
                 matches!(name, "precache" | "precacheAndRoute")
                     || self
@@ -1594,6 +1603,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
             direct_workbox_bindings: bindings.direct,
             namespace_workbox_bindings: bindings.namespace,
             ambiguous_bindings: bindings.ambiguous,
+            with_depth: 0,
             values: Vec::new(),
         };
         program.visit_with(&mut visitor);
