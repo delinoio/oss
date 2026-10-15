@@ -64,7 +64,7 @@ subscription execution. The Worker does not report 21 unless it was enabled and
 the server echoed it, and a server that did not enable execution rejects 21 as
 an unknown capability unless the Runner Device still owns an execute lease: disabling
 new execution must not strand the cleanup of a lease already granted, so the
-original Worker negotiates 21 for recovery only, and execute Takes stay refused. GetSubscriptionProgress
+original Worker is answered with the echo of 21 on its first attach, before it reports it (a Worker reports 21 only after the server echoed it), and negotiates 21 for recovery only, and execute Takes stay refused. GetSubscriptionProgress
 populates `grok_diagnostic` only for a failed or uncertain server-owned Grok
 browser or device login (phase `LOGIN`; see
 [Server-owned browser login](#server-owned-browser-login) and

@@ -701,8 +701,8 @@ func TestGrokSubscriptionRegistrationRequiresTheExecuteLeaseAndAdvertisesNoRelay
 // Worker can retire the credential, while a device without such a lease keeps
 // seeing 21 as unknown.
 func TestGrokDisablingExecutionKeepsOwnedLeaseRecoveryAvailable(t *testing.T) {
-	attach := func(f *grokExecutionFixture) (*connect.Response[pb.AttachWorkerResponse], error) {
-		return f.authorityFixture.client.AttachWorker(context.Background(), subscriptionRequest(f.workerToken, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{grokWorkerReservation}}))
+	attach := func(f *grokExecutionFixture, capabilities ...pb.WorkerCapability) (*connect.Response[pb.AttachWorkerResponse], error) {
+		return f.authorityFixture.client.AttachWorker(context.Background(), subscriptionRequest(f.workerToken, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: capabilities}))
 	}
 	t.Run("owned lease", func(t *testing.T) {
 		f := newGrokExecutionFixture(t)
@@ -716,7 +716,16 @@ func TestGrokDisablingExecutionKeepsOwnedLeaseRecoveryAvailable(t *testing.T) {
 		if err := f.service.retainLostSubscriptionLeases(f.input.MachineID, f.instance, true); err != nil {
 			t.Fatal(err)
 		}
-		response, err := attach(f)
+		// A Worker reports 21 only after the server echoed it, so the first attach
+		// reports nothing and must already be answered with the echo.
+		first, err := attach(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Contains(first.Msg.SupportedWorkerCapabilities, grokWorkerReservation) {
+			t.Fatal("Worker 21 was not echoed to the owning device before it reported it")
+		}
+		response, err := attach(f, grokWorkerReservation)
 		if err != nil {
 			t.Fatalf("the owning device could not negotiate Worker 21 for recovery: %v", err)
 		}
@@ -734,7 +743,14 @@ func TestGrokDisablingExecutionKeepsOwnedLeaseRecoveryAvailable(t *testing.T) {
 	t.Run("no lease", func(t *testing.T) {
 		f := newGrokExecutionFixture(t)
 		f.service.grokExecution = false
-		if _, err := attach(f); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		first, err := attach(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if slices.Contains(first.Msg.SupportedWorkerCapabilities, grokWorkerReservation) {
+			t.Fatal("Worker 21 was echoed to a device that owns no lease")
+		}
+		if _, err := attach(f, grokWorkerReservation); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatalf("Worker 21 was accepted from a device that owns no lease: %v", err)
 		}
 	})

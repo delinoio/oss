@@ -97,7 +97,10 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	}
 	machine, instance := domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId)
 	capabilities := make([]domain.WorkerCapability, 0, len(req.Msg.Capabilities))
-	grokOwned := false
+	// Whether this Runner Device still owns an execute lease is decided before the
+	// negotiation, independently of what the Worker reports: a Worker reports 21
+	// only after the server echoed it, so the echo cannot wait for the report.
+	grokOwned := !s.grokExecution && s.grokExecuteLeaseOwnedBy(ctx, machine)
 	for _, capability := range req.Msg.Capabilities {
 		switch capability {
 		case pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1:
@@ -204,7 +207,6 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			// lease: disabling new execution must not strand the cleanup of a lease
 			// that was already granted, so the original Worker negotiates 21 for
 			// recovery even while the switch is off.
-			grokOwned = s.grokExecuteLeaseOwnedBy(ctx, machine)
 			if !s.grokExecution && !grokOwned {
 				return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported an unknown native capability.", "Upgrade the Worker and report only verified capability identifiers."), correlation)
 			}
