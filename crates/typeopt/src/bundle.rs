@@ -1422,6 +1422,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
     struct Entries<'a> {
         text: &'a str,
         base: u32,
+        unresolved_ctxt: SyntaxContext,
         direct_workbox_bindings: BTreeSet<Id>,
         namespace_workbox_bindings: BTreeSet<Id>,
         ambiguous_bindings: BTreeSet<String>,
@@ -1494,7 +1495,11 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
                     Expr::Member(member) => match &member.prop {
                         MemberProp::Ident(name) => (
                             Some(name.sym.as_ref()),
-                            is_workbox_receiver(&member.obj, &self.namespace_workbox_bindings),
+                            is_workbox_receiver(
+                                &member.obj,
+                                &self.namespace_workbox_bindings,
+                                self.unresolved_ctxt,
+                            ),
                         ),
                         _ => (None, false),
                     },
@@ -1524,12 +1529,16 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         }
     }
 
-    fn is_workbox_receiver(receiver: &Expr, namespace_workbox_bindings: &BTreeSet<Id>) -> bool {
+    fn is_workbox_receiver(
+        receiver: &Expr,
+        namespace_workbox_bindings: &BTreeSet<Id>,
+        unresolved_ctxt: SyntaxContext,
+    ) -> bool {
         match receiver {
             Expr::Ident(name) => {
-                // The resolver leaves unresolved globals empty and marks local
-                // bindings.
-                (name.sym == "workbox" && name.ctxt == SyntaxContext::empty())
+                // The resolver marks unresolved globals with its supplied
+                // unresolved context and gives local bindings distinct IDs.
+                (name.sym == "workbox" && name.ctxt == unresolved_ctxt)
                     || namespace_workbox_bindings.contains(&name.to_id())
             }
             Expr::Member(member) => {
@@ -1540,7 +1549,11 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
                     && matches!(&*member.obj, Expr::Ident(root)
                         if matches!(root.sym.as_ref(), "self" | "globalThis" | "window")))
                     || (name.sym == "precaching"
-                        && is_workbox_receiver(&member.obj, namespace_workbox_bindings))
+                        && is_workbox_receiver(
+                            &member.obj,
+                            namespace_workbox_bindings,
+                            unresolved_ctxt,
+                        ))
             }
             _ => false,
         }
@@ -1562,7 +1575,10 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         if !errors.is_empty() {
             return Vec::new();
         }
-        program.visit_mut_with(&mut resolver(Mark::new(), Mark::new(), false));
+        let unresolved_mark = Mark::new();
+        let top_level_mark = Mark::new();
+        program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
+        let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
         let mut bindings = WorkboxBindings {
             direct: BTreeSet::new(),
             namespace: BTreeSet::new(),
@@ -1573,6 +1589,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         let mut visitor = Entries {
             text,
             base: file.start_pos.0,
+            unresolved_ctxt,
             direct_workbox_bindings: bindings.direct,
             namespace_workbox_bindings: bindings.namespace,
             ambiguous_bindings: bindings.ambiguous,

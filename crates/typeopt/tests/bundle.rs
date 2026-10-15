@@ -3234,6 +3234,21 @@ fn fails_empty_revision_for_direct_workbox_precache_call() {
 }
 
 #[test]
+fn fails_empty_revision_for_bare_workbox_receiver() {
+    let sw = r#"workbox.precacheAndRoute([{url:"index.html",revision:""}]);"#;
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    let temp = bundle(&chunks);
+    let output = run_typeopt(temp.path(), &[]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("cannot refresh empty precache revision"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn fails_empty_revision_for_imported_workbox_precache_call() {
     let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
     chunks[0] = (
