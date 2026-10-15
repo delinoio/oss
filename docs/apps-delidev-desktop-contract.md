@@ -3691,6 +3691,34 @@ Next), only grows when a step is selected, and is never persisted or saved.
   are unchanged. The styles are scoped to `.worker-steps`; other wizards keep
   the shared `wizard-progress` presentation.
 
+Step strip hit areas. The strip never lets two adjacent step hit areas overlap,
+so the visible edge of a step always activates that step. Step spacing is owned
+by the shared `wizard-progress` rule (24px between steps at every width) and the
+worker stylesheet declares no gap, because the shared rule's higher specificity
+would silently override one. Each button reaches 8px past its item on both
+sides horizontally and 4px vertically, and keeps a 36px minimum height. Overlap
+is the facing reaches minus the gap; a negative value is the clearance left
+between the hit areas.
+
+| Viewport width  | Placement              | Gap  | Reach of each facing pair | Overlap | Minimum hit height |
+| --------------- | ---------------------- | ---- | ------------------------- | ------- | ------------------ |
+| 761px and wider | Same row               | 24px | 8px + 8px                 | -8px    | 36px               |
+| 761px and wider | Wrapped onto a new row | 24px | 4px + 4px                 | -16px   | 36px               |
+| 641px to 760px  | Same row               | 24px | 8px + 8px                 | -8px    | 36px               |
+| 641px to 760px  | Wrapped onto a new row | 24px | 4px + 4px                 | -16px   | 36px               |
+| 640px and below | Same row               | 24px | 8px + 8px                 | -8px    | 36px               |
+| 640px and below | Wrapped onto a new row | 24px | 4px + 4px                 | -16px   | 36px               |
+
+`step-hit-area-css.test.ts` evaluates the committed stylesheets (media
+conditions, specificity and load order) at every width threshold and fails when
+any row's overlap is zero or positive, when the worker sheet declares a gap on
+the strip, or when a rule the evaluator skips targets the strip. Other control
+strips keep adjacent targets non-overlapping the same way: the shared tab strip
+has no gap and no negative margins, and the only other negative inline margin
+in the desktop stylesheets is the sole dismiss button of an inline error row,
+which has no neighbouring control. The same test fails on any new negative
+inline margin or pseudo-element offset until it is documented there.
+
 | Target item                                     | Wizard state                                                              | Result                                                                                                                                                |
 | ----------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | After the visited limit                         | any                                                                       | Not a button, not focusable, click does nothing.                                                                                                      |

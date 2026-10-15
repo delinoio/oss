@@ -17,7 +17,9 @@
   padding: 0;
   margin: 0;
   display: flex;
-  gap: 24px;
+  /* Step spacing comes from the shared wizard-progress rule (24px at every
+     width). Do not declare a gap here: that rule has higher specificity and
+     would silently override it. */
   border-bottom: 1px solid var(--border);
   padding-bottom: 24px;
 }
@@ -46,7 +48,9 @@
 }
 .worker-steps button.worker-step-target {
   min-height: 36px;
-  /* Negative margins grow the hit area without changing the strip layout. */
+  /* Negative margins grow the hit area without changing the strip layout. The
+     reach of two neighbours (8px each) stays below the 24px step gap, so
+     adjacent hit areas never overlap. */
   margin: -4px -8px;
   padding: 4px 8px;
   cursor: pointer;
@@ -308,7 +312,6 @@
 }
 @media (max-width: 760px) {
   .worker-steps {
-    gap: 12px;
     flex-wrap: wrap;
   }
   .worker-footer {
