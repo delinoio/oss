@@ -285,15 +285,26 @@ function unescapeLabel(
   return { label, offsets };
 }
 
-function labelHasNestedLink(text: string, start: number, end: number) {
-  for (let index = start; index < end - 1; index++) {
-    if (text[index] === "\\") {
-      index++;
-      continue;
-    }
-    if (text[index] === "]" && text[index + 1] === "(") return true;
+/**
+ * True when an unescaped, non-code `](` marker lies inside `[start, end)` with
+ * its `(` also inside the range. `markers` holds the ascending offsets of every
+ * such `]` found by the single bracket pass, so each query costs one binary
+ * search instead of a rescan of the label.
+ */
+function labelHasNestedLink(
+  markers: readonly number[],
+  start: number,
+  end: number,
+): boolean {
+  let low = 0,
+    high = markers.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (markers[mid]! < start) low = mid + 1;
+    else high = mid;
   }
-  return false;
+  const first = markers[low];
+  return first !== undefined && first < end - 1;
 }
 
 function mergeRanges(ranges: MarkdownRange[]): MarkdownRange[] {
@@ -330,7 +341,9 @@ export function scanMarkdown(text: string): MarkdownScan {
   // Linear bracket matching outside code; escapes never open or close.
   const opens: number[] = [],
     closeOf = new Map<number, number>(),
-    stack: number[] = [];
+    stack: number[] = [],
+    // Offsets of every `]` that is directly followed by `(` (ascending).
+    markers: number[] = [];
   for (let index = 0; index < text.length; index++) {
     if (!budget.spend()) break;
     if (inCode[index]) continue;
@@ -342,8 +355,10 @@ export function scanMarkdown(text: string): MarkdownScan {
     if (char === "[") {
       stack.push(index);
       opens.push(index);
-    } else if (char === "]" && stack.length) closeOf.set(stack.pop()!, index);
-    else if (
+    } else if (char === "]") {
+      if (text[index + 1] === "(") markers.push(index);
+      if (stack.length) closeOf.set(stack.pop()!, index);
+    } else if (
       char === "<" &&
       (index === 0 || text[index - 1] !== "\\") &&
       /^<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>/u.test(
@@ -377,7 +392,7 @@ export function scanMarkdown(text: string): MarkdownScan {
     // An image description is flattened text, so it may hold links; the whole
     // image is protected before any nested-label rejection applies. Only a
     // link label may not hold another link.
-    if (!image && labelHasNestedLink(text, open + 1, close)) continue;
+    if (!image && labelHasNestedLink(markers, open + 1, close)) continue;
     protectedRanges.push({ start, end: parsed.end });
     consumed = parsed.end;
     if (image || !parsed.simple) continue;

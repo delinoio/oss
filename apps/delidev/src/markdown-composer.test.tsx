@@ -406,6 +406,23 @@ it("R21 image with links: the whole image stays protected source, never collapse
   );
 });
 
+it("R22 deeply nested labels: the scan stays within its budget, only the innermost link collapses", () => {
+  const { input } = mount("");
+  const nested = `${"[".repeat(3000)}${"a".repeat(30_000)}${"](https://n.test)".repeat(3000)}`;
+  paste(input, nested);
+  expect(probe.canonical).toBe(nested);
+  // Every outer label holds the innermost link, which alone collapses.
+  expect(input.value.length).toBeLessThan(nested.length);
+  expect(input.value.startsWith("[".repeat(2999))).toBe(true);
+  // The scan completed, so a following bare URL still converts.
+  const started = performance.now();
+  paste(input, " https://b.test/y ");
+  expect(performance.now() - started).toBeLessThan(2000);
+  expect(probe.canonical).toBe(
+    `${nested} [https://b.test/y](https://b.test/y) `,
+  );
+});
+
 it("R05 paste with files: image ownership stays with the form handler", () => {
   const attach = vi.fn();
   render(fixture()("", { attach }));

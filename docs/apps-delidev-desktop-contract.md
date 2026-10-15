@@ -6029,8 +6029,11 @@ angle destinations, titles, images, `www.` text, incomplete or edited syntax)
 stays ordinary visible source. Fenced code, inline code, images, other inline
 links, autolinks and reference definitions are protected: bare URLs inside them
 are never converted. An image is protected as a whole, including links and bare
-URLs in its description; only a link label rejects a nested link. At most 256 links collapse; the scan has a linear work
-budget, and when it is exhausted nothing converts. No title is ever fetched.
+URLs in its description; only a link label rejects a nested link, and a `](`
+inside code or after a backslash is ordinary label text. At most 256 links
+collapse; the scan has a linear work budget (a label's nested-link test is
+answered from the single bracket pass, so no label is ever rescanned), and when
+it is exhausted nothing converts. No title is ever fetched.
 
 **Conversion.** Conversion reuses `findUrlTokens` and `validHttpUrl`, so
 punctuation and unbalanced-bracket trimming, credential and 2,048/1,000,000
@@ -6117,6 +6120,7 @@ is the textarea text. Offsets in the Bindings column are canonical.
 | R19 | Limit rejection                                            | Unchanged                                                                                                                                           | Restored to the last projection                                                               | Unchanged                                                        | Unchanged                                        | Unchanged                                                      |
 | R20 | Owner replacement (submit, restoration)                    | Replaced                                                                                                                                            | Re-projected                                                                                  | Collapsed at the end                                             | Cleared                                          | Owner-defined                                                  |
 | R21 | Image whose description holds a link or a bare URL         | Unchanged: the whole image is protected source, so no nested link collapses and no URL inside it converts                                           | Same as canonical (nothing collapses inside an image)                                         | Unchanged                                                        | Unchanged                                        | Unchanged                                                      |
+| R22 | Deeply nested link labels near the 256 KiB limit           | Unchanged; only the innermost label can be a link, every outer label that holds it stays visible source, and a following bare URL still converts    | Same as canonical apart from the innermost collapsed label                                    | Unchanged                                                        | Unchanged                                        | Unchanged                                                      |
 
 **Validation boundary.** jsdom fixtures prove the maps, the state table and event
 wiring. They do not establish real caret, drag-selection, IME, native undo menu,

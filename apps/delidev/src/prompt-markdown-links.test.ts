@@ -172,6 +172,70 @@ describe("link scanning", () => {
   });
 });
 
+describe("bounded nested-label scanning", () => {
+  const LIMIT = 256 * 1024;
+  const shapes: [string, (count: number) => string][] = [
+    [
+      "opens first, then one destination per level",
+      (count) => `${"[".repeat(count)}x${"](https://a.test)".repeat(count)}`,
+    ],
+    [
+      "many open brackets, then a long gap before the first marker",
+      (count) =>
+        `${"[".repeat(count)}${"a".repeat(count * 24)}${"](https://a.test)".repeat(count)}`,
+    ],
+    [
+      "recursively nested labels with text between levels",
+      (count) =>
+        `${"[a ".repeat(count)}x${"](https://a.test) b".repeat(count)}`,
+    ],
+    [
+      "nested labels inside images",
+      (count) =>
+        `${"![a ".repeat(count)}x${"](https://a.test) b".repeat(count)}`,
+    ],
+  ];
+  for (const [name, build] of shapes) {
+    it(`stays linear near the prompt limit: ${name}`, () => {
+      let count = 1;
+      while (build(count + 1).length <= LIMIT) count = Math.ceil(count * 1.25);
+      while (build(count).length > LIMIT) count--;
+      const text = build(count);
+      expect(text.length).toBeLessThanOrEqual(LIMIT);
+      expect(text.length).toBeGreaterThan(LIMIT * 0.9);
+      const started = performance.now();
+      const scan = scanMarkdown(text);
+      const elapsed = performance.now() - started;
+      // A quadratic rescan of every candidate outer label takes many seconds.
+      expect(elapsed).toBeLessThan(750);
+      expect(scan.complete).toBe(true);
+      // Only the innermost label may become a link; every outer label holds it.
+      expect(scan.links.length).toBeLessThanOrEqual(1);
+      const converted = convertBareUrls(text, 0, text.length, scan);
+      expect(converted.changed).toBe(false);
+    });
+  }
+  it("counts a link marker inside code as ordinary label text", () => {
+    const text = "[a `](x)` b](https://y.test)";
+    expect(scanMarkdown(text).links.map((link) => link.url)).toEqual([
+      "https://y.test",
+    ]);
+  });
+  it("still rejects a label that holds a real nested link", () => {
+    expect(
+      scanMarkdown("[a [b](https://b.test) c](https://c.test)").links.map(
+        (link) => link.url,
+      ),
+    ).toEqual(["https://b.test"]);
+    // An escaped bracket never forms a nested-link marker.
+    expect(
+      scanMarkdown("[a \\](x) b](https://y.test)").links.map(
+        (link) => link.label,
+      ),
+    ).toEqual(["a ](x) b"]);
+  });
+});
+
 describe("projection", () => {
   const source = "Hi [Docs](https://e.com/d) and [a\\]b](https://e.com/e)!";
   const scan = scanMarkdown(source);
