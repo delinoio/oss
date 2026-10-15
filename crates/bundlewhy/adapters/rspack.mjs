@@ -505,22 +505,31 @@ await runAdapter(async (request) => {
     return { config, overrides, diagnosticConfig, resolvedEntry };
   };
 
+  // Everything that describes the configuration the collected build ran with
+  // is derived here, so a repeat build with a freshly loaded configuration
+  // reports its own values and never the first attempt's.
+  const describeConfig = (config) => {
+    const rawTarget = config.target ?? "web";
+    // Inspect every raw target entry; the summary below is for display only.
+    const targets = (Array.isArray(rawTarget) ? rawTarget : [rawTarget]).map(
+      (entry) => (typeof entry === "string" ? entry : ""),
+    );
+    return {
+      minimizer: describeMinimizer(rspackModule, config),
+      nodeTarget: targets.some((entry) =>
+        /(^|[^a-z])(node|async-node|electron-main|electron-preload|nwjs|node-webkit)/.test(
+          entry,
+        ),
+      ),
+      target: Array.isArray(rawTarget)
+        ? rawTarget.map((entry) => summarizeValue(entry)).join(", ")
+        : summarizeValue(rawTarget),
+    };
+  };
+
   let prepared = await prepareBuild({ fresh: false, resolvedEntry: null });
   let { config, overrides, diagnosticConfig } = prepared;
-  const minimizer = describeMinimizer(rspackModule, config);
-  const rawTarget = config.target ?? "web";
-  // Inspect every raw target entry; the summary below is for display only.
-  const targets = (Array.isArray(rawTarget) ? rawTarget : [rawTarget]).map(
-    (entry) => (typeof entry === "string" ? entry : ""),
-  );
-  const nodeTarget = targets.some((entry) =>
-    /(^|[^a-z])(node|async-node|electron-main|electron-preload|nwjs|node-webkit)/.test(
-      entry,
-    ),
-  );
-  const target = Array.isArray(rawTarget)
-    ? rawTarget.map((entry) => summarizeValue(entry)).join(", ")
-    : summarizeValue(rawTarget);
+  let { minimizer, nodeTarget, target } = describeConfig(config);
   // The value that the build receives for `plugins`, read once so that a
   // getter cannot answer differently later.
   const projectPlugins = diagnosticConfig.plugins;
@@ -562,6 +571,7 @@ await runAdapter(async (request) => {
         resolvedEntry: prepared.resolvedEntry,
       });
       ({ config, overrides, diagnosticConfig } = prepared);
+      ({ minimizer, nodeTarget, target } = describeConfig(config));
     }
   }
   if (!observed) {

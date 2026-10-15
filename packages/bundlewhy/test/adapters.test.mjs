@@ -1032,6 +1032,89 @@ for (const shape of repeatShapes) {
   });
 }
 
+// A configuration may answer differently on every load (a function reading
+// the environment, a file that changed). Every value that describes the
+// collected build comes from the configuration that produced the build.
+// Mirrors the "Repeat build" derived-values table in the contract.
+const repeatDerivedShapes = [
+  {
+    name: "first node and unminified, repeat web and default minifier",
+    first: `{ target: "node", optimization: { minimize: false } }`,
+    second: `{ target: "web" }`,
+    expected: {
+      ssrBuild: false,
+      minifyEnabled: true,
+      defaultMinifier: true,
+      target: "web",
+      minimizer: "default",
+    },
+  },
+  {
+    name: "first web and default minifier, repeat node and unminified",
+    first: `{ target: "web" }`,
+    second: `{ target: "node", optimization: { minimize: false } }`,
+    expected: {
+      ssrBuild: true,
+      minifyEnabled: false,
+      defaultMinifier: true,
+      target: "node",
+      minimizer: "default",
+    },
+  },
+  {
+    name: "first and repeat agree",
+    first: `{ target: "node" }`,
+    second: `{ target: "node" }`,
+    expected: {
+      ssrBuild: true,
+      minifyEnabled: true,
+      defaultMinifier: true,
+      target: "node",
+      minimizer: "default",
+    },
+  },
+];
+
+for (const shape of repeatDerivedShapes) {
+  test(`the repeat build reports its own configuration (${shape.name})`, () => {
+    const dir = wrappedProject();
+    fs.writeFileSync(
+      path.join(dir, "rspack.config.mjs"),
+      `import fs from "node:fs";
+const marker = ${JSON.stringify(path.join(dir, "loaded.txt"))};
+const second = fs.existsSync(marker);
+fs.writeFileSync(marker, "x");
+const first = ${shape.first};
+const repeat = ${shape.second};
+export default {
+  mode: "production",
+  context: import.meta.dirname,
+  entry: "./src/main.js",
+  ...(second ? repeat : first),
+};
+`,
+    );
+    const { status, events, collection } = runWrapped(
+      dir,
+      "compilation-hook-throws",
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+    assert.equal(status, 0, JSON.stringify(events));
+    assert.equal(
+      collection.exportUsage.reason,
+      ExportUsageReason.BuildFailedWithObserver,
+    );
+    assert.equal(collection.ssrBuild, shape.expected.ssrBuild);
+    assert.equal(collection.minifyEnabled, shape.expected.minifyEnabled);
+    assert.equal(collection.defaultMinifier, shape.expected.defaultMinifier);
+    assert.equal(collection.configSummary.target, shape.expected.target);
+    assert.equal(
+      collection.configSummary["optimization.minimizer"],
+      shape.expected.minimizer,
+    );
+  });
+}
+
 test("a build without the observer loads the configuration once", () => {
   const dir = wrappedProject();
   const source = repeatShapes[0].source(dir);
