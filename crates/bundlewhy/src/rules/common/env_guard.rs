@@ -523,6 +523,9 @@ struct Returns {
     values: Vec<Id>,
     /// Number of `return` and `throw` statements, with or without a value.
     statements: usize,
+    /// Nesting count of `try` blocks with a `catch` clause being parsed: a
+    /// `throw` there is caught and does not leave its `finally` block.
+    caught: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -751,6 +754,7 @@ impl<'a> Parser<'a> {
                 // Like a `return`, a `throw` completes the function abruptly.
                 if self.dead == 0
                     && let Some(frame) = self.returns.last_mut()
+                    && frame.caught == 0
                 {
                     frame.statements += 1;
                 }
@@ -975,10 +979,17 @@ impl<'a> Parser<'a> {
 
     /// A `return` or `throw` in a `finally` block replaces the value returned
     /// by the `try` and `catch` blocks, so those values are dropped.
+    ///
+    /// Only a completion that leaves the `finally` block replaces them: a
+    /// `throw` inside a `try` block that has a `catch` clause is caught there
+    /// and does not count.
     fn parse_try(&mut self) {
         self.bump();
         let start = self.returns.last().map_or(0, |frame| frame.values.len());
+        let caught = self.try_block_is_caught();
+        self.set_caught(caught, 1);
         self.within(Self::parse_block);
+        self.set_caught(caught, -1);
         if self.eat_word("catch") {
             if self.is_punct("(") {
                 self.parse_call_arguments();
@@ -996,6 +1007,21 @@ impl<'a> Parser<'a> {
             {
                 frame.values.drain(start..middle);
             }
+        }
+    }
+
+    /// Whether the `try` block at the cursor is followed by a `catch` clause.
+    fn try_block_is_caught(&self) -> bool {
+        let close = self.close.get(self.pos).copied().unwrap_or(usize::MAX);
+        self.is_punct("{")
+            && close != usize::MAX
+            && is_word(self.tokens.get(close + 1).copied(), "catch")
+    }
+
+    /// Enter (`+1`) or leave (`-1`) a `try` block whose `throw` is caught.
+    fn set_caught(&mut self, caught: bool, delta: isize) {
+        if caught && let Some(frame) = self.returns.last_mut() {
+            frame.caught = frame.caught.saturating_add_signed(delta);
         }
     }
 
@@ -3784,6 +3810,44 @@ mod tests {
                 "return before the try statement",
                 "(function(){if(a)return process.env.FLAG;try{f()}finally{return 1}})()&&run()",
                 Some("and"),
+            ),
+            // Only a completion that leaves the `finally` block replaces the
+            // pending return; a `throw` caught inside it does not.
+            (
+                "finally throw caught inside the finally block",
+                "(function(){try{return process.env.FLAG}finally{try{throw \
+                 1}catch(e){}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally throw caught by a nested try with a finally clause too",
+                "(function(){try{return process.env.FLAG}finally{try{throw \
+                 1}catch(e){}finally{cleanup()}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally throw in a try block without a catch",
+                "(function(){try{return process.env.FLAG}finally{try{throw \
+                 1}finally{cleanup()}}})()&&run()",
+                None,
+            ),
+            (
+                "finally return in a try block with a catch",
+                "(function(){try{return process.env.FLAG}finally{try{return \
+                 1}catch(e){}}})()&&run()",
+                None,
+            ),
+            (
+                "finally throw in a catch block",
+                "(function(){try{return process.env.FLAG}finally{try{f()}catch(e){throw \
+                 1}}})()&&run()",
+                None,
+            ),
+            (
+                "finally uncaught throw after a caught one",
+                "(function(){try{return process.env.FLAG}finally{try{throw 1}catch(e){}throw \
+                 2}})()&&run()",
+                None,
             ),
             // A constructor call ignores a primitive result.
             (
