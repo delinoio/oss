@@ -101,6 +101,10 @@ pub struct Context<'a> {
     /// Original files whose missing snapshots prevented Vite environment
     /// candidates from being confirmed.
     pub vite_env_source_gaps: HashSet<String>,
+    /// Guarded Vite environment candidates, keyed by chunk file and generated
+    /// byte offset, that sit in a segment of a usable source map with no
+    /// source. They cannot be confirmed against any original text.
+    pub vite_env_unmapped_candidates: HashSet<(String, usize)>,
     /// Polled cooperatively by long-running detectors; true stops them.
     pub cancelled: Option<&'a (dyn Fn() -> bool + Sync)>,
     /// Export usage edges grouped for traversal; built on first use.
@@ -166,6 +170,7 @@ impl<'a> Context<'a> {
             chunks,
             sources,
             vite_env_source_gaps: HashSet::new(),
+            vite_env_unmapped_candidates: HashSet::new(),
             cancelled: None,
             export_usage_index: std::cell::OnceCell::new(),
         }

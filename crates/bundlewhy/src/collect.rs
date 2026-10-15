@@ -2,7 +2,10 @@
 
 use std::collections::BTreeMap;
 
+use clap::ValueEnum;
 use serde::Deserialize;
+
+use crate::engine::BundlerChoice;
 
 pub const COLLECT_VERSION: u32 = 1;
 
@@ -35,6 +38,48 @@ pub struct Collection {
     /// Export-to-export usage edges that the engine reported. Absent for
     /// engines and adapter versions that do not collect them.
     pub export_usage: Option<CollectedExportUsage>,
+}
+
+/// Exact module ids of the helpers that the Vite build itself injects (Vite's
+/// `\0vite/preload-helper.js`, Rolldown's `\0rolldown/runtime.js`). Plugin
+/// virtual module ids are user-controlled, so a namespace prefix such as
+/// `\0vite/` or `\0rolldown/` proves nothing: only these verified ids are
+/// bundler-owned. Every other virtual module, including `\0virtual:*` and
+/// look-alike ids in these namespaces, keeps its source-map requirement.
+const VITE_OWNED_VIRTUAL_IDS: [&str; 2] = ["\0vite/preload-helper.js", "\0rolldown/runtime.js"];
+
+impl Collection {
+    /// Decodes the `bundler` field into the supported bundler. An unknown or
+    /// empty value yields `None` and is treated as unsupported.
+    pub fn bundler_choice(&self) -> Option<BundlerChoice> {
+        BundlerChoice::from_str(&self.bundler, false).ok()
+    }
+
+    /// True when this is a Vite collection and the emitted chunk `file` lists
+    /// at least one module and every listed module is a Vite-owned virtual
+    /// helper with no source file. Such a chunk has no original source a map
+    /// could attribute, so a missing map cannot hide a source-backed
+    /// candidate. Only Vite collections qualify: Rspack and unsupported
+    /// bundlers never treat a `\0vite/preload-helper.js` or
+    /// `\0rolldown/runtime.js` id as bundler-owned and keep the map
+    /// requirement for every chunk. Unknown ids, ids outside the
+    /// verified helper table, modules with a file path and chunks with no
+    /// listed modules are all treated as source-backed.
+    pub fn is_virtual_only_chunk(&self, file: &str) -> bool {
+        if self.bundler_choice() != Some(BundlerChoice::Vite) {
+            return false;
+        }
+        let Some(chunk) = self.chunks.iter().find(|chunk| chunk.file == file) else {
+            return false;
+        };
+        !chunk.modules.is_empty()
+            && chunk.modules.iter().all(|id| {
+                VITE_OWNED_VIRTUAL_IDS.contains(&id.as_str())
+                    && self.modules.iter().any(|module| {
+                        module.id == *id && module.is_virtual && module.path.is_none()
+                    })
+            })
+    }
 }
 
 /// Export usage graph collected from the engine (Rspack's `RsdoctorPlugin`).
