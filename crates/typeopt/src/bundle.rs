@@ -1527,6 +1527,8 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
     fn is_workbox_receiver(receiver: &Expr, namespace_workbox_bindings: &BTreeSet<Id>) -> bool {
         match receiver {
             Expr::Ident(name) => {
+                // The resolver leaves unresolved globals empty and marks local
+                // bindings.
                 (name.sym == "workbox" && name.ctxt == SyntaxContext::empty())
                     || namespace_workbox_bindings.contains(&name.to_id())
             }
