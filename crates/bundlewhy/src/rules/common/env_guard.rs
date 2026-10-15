@@ -390,6 +390,10 @@ enum Node<'a> {
     /// `new function () { ... }`: an object returned by the inline function
     /// replaces the new instance; any other returned value is ignored.
     Construct { callee: Id },
+    /// A template literal with substitutions, holding the value derived from
+    /// them. Tested directly it is never empty; compared or selected from, its
+    /// value is read.
+    Template(Id),
     /// An array literal.
     Array { elements: Vec<Element> },
     /// An object literal.
@@ -1371,11 +1375,15 @@ impl<'a> Parser<'a> {
         sole
     }
 
-    fn parse_template(&mut self) {
+    /// A template literal with substitutions: a node derived from every
+    /// substitution.
+    fn parse_template(&mut self) -> Expr {
         // At the head piece.
         self.bump();
+        let mut value: Expr = None;
         loop {
-            self.within(Self::parse_expr);
+            let part = self.within(Self::parse_expr);
+            value = self.combine(BinaryOp::Other, value, part);
             match self.tok() {
                 Some(token) if token.kind == TokenKind::Template(TemplatePart::Middle) => {
                     self.bump();
@@ -1387,6 +1395,7 @@ impl<'a> Parser<'a> {
                 _ => break,
             }
         }
+        value.and_then(|value| self.push(Node::Template(value)))
     }
 
     /// An operand. The flag is true for an arrow function, which no member
@@ -1407,10 +1416,7 @@ impl<'a> Parser<'a> {
                 self.bump();
                 (None, false)
             }
-            TokenKind::Template(TemplatePart::Head) => {
-                self.parse_template();
-                (None, false)
-            }
+            TokenKind::Template(TemplatePart::Head) => (self.parse_template(), false),
             TokenKind::Template(_) => (None, false),
             TokenKind::Punct => match token.text {
                 "(" => self.parse_paren(),
@@ -1743,6 +1749,7 @@ impl<'a> Parser<'a> {
                         object_property(properties, key, rest, &mut work);
                     }
                 }
+                (Node::Template(inner), Some(_)) => work.push((Some(*inner), None)),
                 (Node::Construct { callee }, Some(_)) => {
                     if let Node::Function { returns } = &self.nodes[*callee] {
                         for &value in returns {
@@ -1761,6 +1768,7 @@ impl<'a> Parser<'a> {
                     Node::TypeOf(_)
                     | Node::Function { .. }
                     | Node::Construct { .. }
+                    | Node::Template(_)
                     | Node::Array { .. }
                     | Node::Object { .. },
                     None,
@@ -1772,9 +1780,10 @@ impl<'a> Parser<'a> {
                 (Node::Equality(left, right), None) => {
                     work.push((*left, None));
                     work.push((*right, None));
-                    // `typeof x === "undefined"` tests x.
+                    // `typeof x === "undefined"` tests x, and `${x}` === "on"
+                    // compares the text of x.
                     for operand in [left, right].into_iter().flatten() {
-                        if let Node::TypeOf(inner) = &self.nodes[*operand] {
+                        if let Node::TypeOf(inner) | Node::Template(inner) = &self.nodes[*operand] {
                             work.push((Some(*inner), None));
                         }
                     }
@@ -2359,6 +2368,83 @@ mod tests {
             (
                 "constructor with a primitive return",
                 "new function(){return process.env.FLAG}()&&run()",
+                None,
+            ),
+        ];
+        for &(kind, code, expected) in rows {
+            assert_eq!(flag_guard(code), expected, "{kind}: {code}");
+        }
+    }
+
+    /// The value of a template literal with substitutions is read when it is
+    /// compared or selected from. Each row is a cell of the Template row of
+    /// the node-kind table in `docs/crates-bundlewhy-foundation.md`.
+    #[test]
+    fn template_values_keep_their_substitution_reads() {
+        let rows: &[(&str, &str, Option<&str>)] = &[
+            (
+                "equality, template first",
+                "`${process.env.FLAG}`===\"on\"&&run()",
+                Some("and"),
+            ),
+            (
+                "equality, template last",
+                "\"on\"==`${process.env.FLAG}`&&run()",
+                Some("and"),
+            ),
+            (
+                "inequality with static text",
+                "`x${process.env.FLAG}y`!==\"xy\"||run()",
+                Some("or"),
+            ),
+            (
+                "second substitution",
+                "`${a}${process.env.FLAG}`===\"on\"&&run()",
+                Some("and"),
+            ),
+            (
+                "substitution holding a conditional",
+                "`${a?process.env.FLAG:b}`===\"on\"&&run()",
+                Some("and"),
+            ),
+            (
+                "conditional test",
+                "(`${process.env.FLAG}`===\"on\")?a:b",
+                Some("conditional"),
+            ),
+            (
+                "if condition",
+                "if(`${process.env.FLAG}`===\"on\")run()",
+                Some("if"),
+            ),
+            (
+                "member access",
+                "`${process.env.FLAG}`.length&&run()",
+                Some("and"),
+            ),
+            (
+                "method call",
+                "`${process.env.FLAG}`.startsWith(\"o\")&&run()",
+                Some("and"),
+            ),
+            (
+                "template tested directly",
+                "`${process.env.FLAG}`&&run()",
+                None,
+            ),
+            (
+                "read outside the template",
+                "`${a}`===\"on\"&&process.env.FLAG",
+                None,
+            ),
+            (
+                "tagged template",
+                "tag`${process.env.FLAG}`===\"on\"&&run()",
+                None,
+            ),
+            (
+                "template without substitutions",
+                "`on`===\"on\"&&process.env.FLAG",
                 None,
             ),
         ];
