@@ -123,16 +123,21 @@ func (g Git) validateManagedCloneSource(ctx context.Context, root, source string
 	}
 	return nil
 }
-func cloneArguments(source, destination, template, remote string, noCheckout, independentFork bool) []string {
+
+// cloneArguments builds the restricted clone command. localSource is set only
+// for a clone from the Worker-private repository source cache: it admits the
+// file protocol for that one command and copies every object so the session
+// store never shares hardlinks or alternates with the cache.
+func cloneArguments(source, destination, template, remote string, noCheckout, localSource bool) []string {
 	args := []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "http.followRedirects=false", "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false"}
-	if independentFork {
+	if localSource {
 		args = append(args, "-c", "protocol.file.allow=always")
 	}
 	args = append(args, "clone", "--origin="+remote, "--no-recurse-submodules", "--template="+template)
 	if noCheckout {
 		args = append(args, "--no-checkout")
 	}
-	if independentFork {
+	if localSource {
 		args = append(args, "--no-local", "--no-hardlinks")
 	}
 	return append(args, "--", source, destination)
@@ -353,7 +358,16 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	if err != nil {
 		return *entry, nil, err
 	}
-	_, err = clone.run(bounded, root, cloneArguments(source, prepared.Path, filepath.Join(m.Root, "empty-hooks"), remote, true, false)...)
+	// The first use of a validated source identity on this Runner Device fills
+	// the Worker-private source cache from the pinned URL. Every session,
+	// including that first one, then receives its own independent copy from the
+	// cache while the cache lease serializes changes to that one source.
+	cache, err := m.acquireRepositoryCache(bounded, git, spec, manifest.SessionID)
+	if err != nil {
+		return *entry, nil, err
+	}
+	err = m.cloneFromRepositoryCache(bounded, clone, cache, root, prepared.Path, source, remote)
+	cache.release(bounded, err)
 	if err != nil {
 		return *entry, nil, err
 	}

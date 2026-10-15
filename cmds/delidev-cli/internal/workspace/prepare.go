@@ -149,7 +149,7 @@ func (m *Manager) initialize() error {
 		return err
 	}
 	m.Root = canonical
-	for _, name := range []string{"workspaces", "locks", "empty-hooks", "processes", "execution-claims", "execution-history", "pr-startup", "sidechat-preparations"} {
+	for _, name := range []string{"workspaces", "locks", "empty-hooks", "processes", "execution-claims", "execution-history", "pr-startup", "sidechat-preparations", repositoryCacheDirectory} {
 		if err := security.PrivateDir(filepath.Join(m.Root, name)); err != nil {
 			return err
 		}
