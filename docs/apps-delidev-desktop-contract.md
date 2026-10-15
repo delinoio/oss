@@ -6481,6 +6481,57 @@ Skill completion handles keys first. IME, modifiers, selections and pending or u
 
 API quota bars share the subscription percentage color rule: interpolate danger-text → warning-text at 0–50% and warning-text → success-text at 50–100%, using the displayed rounded integer and active semantic tokens. Accent, WebKit and Mozilla fills use one uniform color independent of freshness; text continues to distinguish retained and unavailable evidence. This presentation grants no quota recovery or account authority.
 
+
+### Composer Markdown links
+
+All four composer placements (project creation, General Chat creation, session
+follow-up and queued input edit) share the `useSkillCompletion` controller, which
+also owns prompt Markdown links. The pure model lives in
+`prompt-markdown-links.ts` and the adapter-owned undo history in
+`prompt-edit-history.ts`. No backend, schema, proto or dependency changes.
+
+- **Canonical draft.** The draft, the submitted payload, skill binding offsets,
+  history entries and copy/cut text are always the canonical Markdown. The single
+  accessible multiline textarea shows a derived display text (`displayValue`);
+  only the display collapses. Reveal and collapse never edit the draft or
+  invalidate bindings. Offsets map between both coordinate systems; an edit that
+  crosses a link boundary covers the whole link.
+- **Conversion triggers.** A pasted plain-text bare HTTP(S) URL converts
+  immediately to `[URL](URL)`. A typed URL converts when one space or newline
+  delimiter is inserted; the delimiter is kept. A URL at the buffer end, text
+  restored by history or draft recovery, and edits during IME composition are
+  never converted. Image paste ownership stays with the attachment input.
+- **Detection and escaping.** Conversion reuses `findUrlTokens` and
+  `validHttpUrl` (length, credential and punctuation rules), so `www.`,
+  `mailto:`, `javascript:`, non-HTTP(S), invalid, credential-bearing and
+  overlong URLs stay unchanged. URLs inside existing links, images, inline code,
+  fenced code and autolinks are skipped, so conversion is idempotent and never
+  nests. Label `\`, `[`, `]` and destination `\`, `(`, `)` are backslash-escaped;
+  the parsed destination always equals the original URL.
+- **Presentation.** A valid inline HTTP(S) link displays as its label with the
+  `--link` color and underline when the caret or selection does not intersect
+  it. A caret strictly inside, or a selection overlapping, the link reveals the
+  full source; leaving collapses it. Invalid Markdown remains visible source.
+  Titles are never fetched.
+- **History.** Programmatic conversion clears the native undo stack, so every
+  edit is recorded in `PromptEditHistory`. Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z, Ctrl+Y
+  (non-macOS) and native `historyUndo`/`historyRedo` run through it. A conversion
+  and the paste or delimiter that triggered it are one undo/redo step. History
+  resets when the draft changes outside the adapter.
+- **Limit.** A conversion that would exceed the 256 KiB canonical prompt limit is
+  dropped atomically and the original URL stays; the triggering edit is still
+  subject to the normal limit.
+- **Opening.** Cmd+click (macOS) or Ctrl+click (Windows/Linux) with no other
+  modifier and the primary button opens exactly the parsed URL once through
+  `openExternalUrl` (`open_external_url`) without submit, text change or
+  navigation. Plain, wrong-modifier, Alt/Shift combinations, middle and right
+  clicks do nothing. Without a native opener the link stays editable text.
+  Native failures show the localized `external-link.*` alert from the composer
+  warning slot, preserve the draft and never retry.
+- **Logging.** Conversions log a `prompt link conversion` debug event with the
+  trigger and count, never the URL; failed opens log a warning with the failure
+  code only.
+
 ### Quota reset countdowns
 
 `TimestampMode.QuotaCountdown` applies only to quota reset instants in subscription
