@@ -280,6 +280,20 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 				// A start notification may precede the original spawn evidence.
 				// It cannot allocate product ownership; wait for the canonical
 				// sender/receiver spawn or the validated descendant inventory.
+				_, knownParent := c.subagents[string(*t.ParentThreadID)]
+				if *t.ParentThreadID != c.thread && !knownParent && c.pendingChildStarts[*t.ParentThreadID] == "" {
+					return c.childMetadata(), true, nil
+				}
+				if c.pendingChildStarts == nil {
+					c.pendingChildStarts = make(map[domain.ID]domain.ID)
+				}
+				if prior, exists := c.pendingChildStarts[t.ID]; exists && prior != *t.ParentThreadID {
+					return Event{}, true, incompatible()
+				}
+				if len(c.pendingChildStarts) >= 4096 && c.pendingChildStarts[t.ID] == "" {
+					return Event{}, true, incompatible()
+				}
+				c.pendingChildStarts[t.ID] = *t.ParentThreadID
 				return c.childMetadata(), true, nil
 			}
 			if o.ParentID != string(*t.ParentThreadID) {
@@ -299,6 +313,19 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 	_ = json.Unmarshal(fields["threadId"], &thread)
 	o, known := c.subagents[thread]
 	if !known {
+		// Native child status can arrive before the spawn tool completes. The
+		// original start proves only passive routing, never product ownership or
+		// child settlement; canonical spawn/history evidence still owns both.
+		if native.Method == "thread/status/changed" && c.pendingChildStarts[domain.ID(thread)] != "" {
+			var status ThreadStatus
+			if domain.Decode(fields["status"], &status) != nil || validateThreadStatus(status) != nil {
+				return Event{}, true, incompatible()
+			}
+			if c.logger != nil {
+				c.logger.Info("Codex child status preceded spawn evidence", "owner_id", c.ownerID, "status", status.Type)
+			}
+			return c.childMetadata(), true, nil
+		}
 		return Event{}, false, nil
 	}
 	o.Source = domain.CodexHistorySource

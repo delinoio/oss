@@ -196,6 +196,19 @@ func TestSubagentThreadStartedRequiresPriorOwnershipEvidence(t *testing.T) {
 		}
 	}
 	parent = c.thread
+	for _, status := range []any{ThreadStatus{Type: ThreadIdle}, map[string]any{"type": "active", "activeFlags": []string{}}, ThreadStatus{Type: ThreadNotLoaded}} {
+		event, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": child, "status": status})
+		if err != nil || event.Kind != MetadataEvent || len(c.subagents) != 0 || c.execution.active != turn {
+			t.Fatal("early child status blocked the root or invented ownership", err)
+		}
+	}
+	foreign, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": domain.NewID(), "status": ThreadStatus{Type: ThreadIdle}})
+	if err != nil || foreign.Kind != NativeExtensionEvent {
+		t.Fatal("unannounced foreign thread status was silently consumed", err)
+	}
+	if _, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": child, "status": map[string]any{"type": "unknown"}}); err == nil {
+		t.Fatal("malformed early child status was accepted")
+	}
 	spawn := map[string]any{"type": "collabAgentToolCall", "id": "original-spawn", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{child}, "agentsStates": map[string]any{string(child): map[string]any{"status": "running", "message": nil}}}
 	proved, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn})
 	if err != nil || proved.Kind != SubagentEvent || len(proved.Subagents) != 1 {
