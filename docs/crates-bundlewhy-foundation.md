@@ -69,17 +69,17 @@ The `vite/side-effect-retained` rule also checks the final emitted code. Rolldow
 
 Resource identity is decided in one place for collected modules, source-map sources and shared-resource counting: the module identifier or source path is split into a backing file, an import query and a fragment. Query and fragment are part of the identity because bundlers derive different modules from one file with either; only the file names the backing file on disk.
 
-| Input | File | Query | Fragment |
-| --- | --- | --- | --- |
-| `/app/a.js` | `/app/a.js` | none | none |
-| `/app/a.js?raw` | `/app/a.js` | `raw` | none |
-| `/app/a.js?raw#one` | `/app/a.js` | `raw` | `one` |
-| `/app/a.js#one` | `/app/a.js` | none | `one` |
-| `/app/a.js#one?raw` | `/app/a.js` | none | `one?raw` (a `?` after `#` belongs to the fragment) |
-| `/app/a.js?` and `/app/a.js#` | `/app/a.js` | empty / none | none / empty |
-| `\0virtual:a?x#y` | `virtual:a` | `x` | `y` (leading NUL bytes mark a virtual module, which has no backing file) |
-| `C:\app\a.vue?x#y` | `C:/app/a.vue` | `x` | `y` (a drive-letter or UNC path uses `\` as separator on every host, so Windows source maps compare equal to collected paths; a `\` in a POSIX path stays a file-name character) |
-| `css-loader!/app/a.vue?x` | `/app/a.vue` | `x` | none (the loader prefix ends at the last `!`) |
+| Input                         | File           | Query        | Fragment                                                                                                                                                                         |
+| ----------------------------- | -------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/app/a.js`                   | `/app/a.js`    | none         | none                                                                                                                                                                             |
+| `/app/a.js?raw`               | `/app/a.js`    | `raw`        | none                                                                                                                                                                             |
+| `/app/a.js?raw#one`           | `/app/a.js`    | `raw`        | `one`                                                                                                                                                                            |
+| `/app/a.js#one`               | `/app/a.js`    | none         | `one`                                                                                                                                                                            |
+| `/app/a.js#one?raw`           | `/app/a.js`    | none         | `one?raw` (a `?` after `#` belongs to the fragment)                                                                                                                              |
+| `/app/a.js?` and `/app/a.js#` | `/app/a.js`    | empty / none | none / empty                                                                                                                                                                     |
+| `\0virtual:a?x#y`             | `virtual:a`    | `x`          | `y` (leading NUL bytes mark a virtual module, which has no backing file)                                                                                                         |
+| `C:\app\a.vue?x#y`            | `C:/app/a.vue` | `x`          | `y` (a drive-letter or UNC path uses `\` as separator on every host, so Windows source maps compare equal to collected paths; a `\` in a POSIX path stays a file-name character) |
+| `css-loader!/app/a.vue?x`     | `/app/a.vue`   | `x`          | none (the loader prefix ends at the last `!`)                                                                                                                                    |
 
 The query starts at the first `?` and ends at the first `#` after it; the fragment starts at the first `#`. File paths are then lexically normalized. A webpack-style source (`webpack://<namespace>/<path>`) carries the module file only, so its query and fragment are dropped and it matches a module with a query or fragment only as unverified. The number of modules a map source could stand for is counted at the specificity of the module: by file for a module without query and fragment, by file and query for a module with a query only, and by full identity for a module with a fragment. The same count decides the "share the resource" outcome above, so two modules that differ only by fragment never both claim the bytes of one map source.
 
