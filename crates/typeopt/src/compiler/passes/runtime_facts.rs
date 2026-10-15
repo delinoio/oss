@@ -1555,11 +1555,112 @@ enum ImportTarget {
     Unknown,
 }
 
+/// Bare names in Node 24's `module.builtinModules` inventory. Keep this list
+/// explicit so a prefix-only `node:` module never becomes a bare host import.
+/// The inventory test compares every entry with the active Node 24 runtime.
+const BARE_NODE_CORE_MODULES: &[&str] = &[
+    "_http_agent",
+    "_http_client",
+    "_http_common",
+    "_http_incoming",
+    "_http_outgoing",
+    "_http_server",
+    "_stream_duplex",
+    "_stream_passthrough",
+    "_stream_readable",
+    "_stream_transform",
+    "_stream_wrap",
+    "_stream_writable",
+    "_tls_common",
+    "_tls_wrap",
+    "assert",
+    "assert/strict",
+    "async_hooks",
+    "buffer",
+    "child_process",
+    "cluster",
+    "console",
+    "constants",
+    "crypto",
+    "dgram",
+    "diagnostics_channel",
+    "dns",
+    "dns/promises",
+    "domain",
+    "events",
+    "fs",
+    "fs/promises",
+    "http",
+    "http2",
+    "https",
+    "inspector",
+    "inspector/promises",
+    "module",
+    "net",
+    "os",
+    "path",
+    "path/posix",
+    "path/win32",
+    "perf_hooks",
+    "process",
+    "punycode",
+    "querystring",
+    "readline",
+    "readline/promises",
+    "repl",
+    "stream",
+    "stream/consumers",
+    "stream/promises",
+    "stream/web",
+    "string_decoder",
+    "sys",
+    "timers",
+    "timers/promises",
+    "tls",
+    "trace_events",
+    "tty",
+    "url",
+    "util",
+    "util/types",
+    "v8",
+    "vm",
+    "wasi",
+    "worker_threads",
+    "zlib",
+];
+
+fn is_bare_node_core_module(name: &str) -> bool {
+    BARE_NODE_CORE_MODULES.binary_search(&name).is_ok()
+}
+
+/// JavaScript `require` literals have no checker symbol. An ambient module
+/// declaration supplies their host identity, unless a loaded userland package
+/// with the same root could be selected by an alternate resolver.
+fn ambient_bare_node_core_module(ctx: &Ctx, name: &str) -> bool {
+    if !is_bare_node_core_module(name) {
+        return false;
+    }
+    let root = name.split('/').next().unwrap_or(name);
+    let package_segment = format!("/node_modules/{root}/");
+    if ctx
+        .externals
+        .iter()
+        .any(|&file| source_file_info(file).file_name.contains(&package_segment))
+    {
+        return false;
+    }
+    ctx.externals.iter().any(|&file| {
+        file.statements().iter().any(|declaration| {
+            declaration.kind() == SyntaxKind::ModuleDeclaration && declaration.name().text() == name
+        })
+    })
+}
+
 /// Classifies a literal module specifier without loading the module.
 fn import_target(ctx: &mut Ctx, importer: &str, specifier: Node) -> ImportTarget {
     let text = specifier.text();
-    // The explicit scheme identifies a host module. A bare core-looking name
-    // can resolve to a browser package or ambient declaration instead.
+    // The explicit scheme identifies a host module. A bare builtin is inert
+    // only if resolution has not identified a concrete userland module.
     if text.starts_with("node:") {
         return ImportTarget::Inert;
     }
@@ -1570,19 +1671,25 @@ fn import_target(ctx: &mut Ctx, importer: &str, specifier: Node) -> ImportTarget
         // the application files by path.
         return if relative_application_file(ctx, importer, text) {
             ImportTarget::Application
+        } else if ambient_bare_node_core_module(ctx, text) {
+            ImportTarget::Inert
         } else {
             ImportTarget::Unknown
         };
     }
     let declarations = ctx.checker.sym(symbol).declarations.to_vec();
-    // An ambient `declare module "x"` inside the application still names
-    // runtime code the compiler cannot see.
+    // An ambient declaration cannot redirect a Node 24 bare builtin at
+    // runtime. Other ambient names still designate unknown runtime code.
     let Some(file) = declarations
         .first()
         .copied()
         .filter(|d| d.kind() == SyntaxKind::SourceFile)
     else {
-        return ImportTarget::Unknown;
+        return if !declarations.is_empty() && ambient_bare_node_core_module(ctx, text) {
+            ImportTarget::Inert
+        } else {
+            ImportTarget::Unknown
+        };
     };
     let name = source_file_info(file).file_name.clone();
     if name.ends_with(".json") {
@@ -2927,6 +3034,33 @@ fn to_int32(value: f64) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bare_node_core_inventory_matches_node_24() {
+        let output = std::process::Command::new("node")
+            .args([
+                "-e",
+                r#"const { builtinModules, isBuiltin } = require('node:module');
+if (process.versions.node.split('.')[0] !== '24') throw new Error('Node 24 required');
+if (isBuiltin('test') || !isBuiltin('node:test')) throw new Error('prefix-only boundary');
+console.log(JSON.stringify(builtinModules.filter(name => !name.startsWith('node:')).sort()));"#,
+            ])
+            .output()
+            .expect("Node 24 is required for the bare builtin inventory check");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let host_modules: Vec<String> = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            BARE_NODE_CORE_MODULES,
+            host_modules.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        for name in ["test", "sea", "sqlite", "test/reporters", "http-polyfill"] {
+            assert!(!is_bare_node_core_module(name), "{name}");
+        }
+    }
 
     #[test]
     fn numbers_round_trip() {
