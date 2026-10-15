@@ -17,6 +17,7 @@ import (
 type Ordinary struct {
 	macOS             bool
 	ghDirectory       string
+	shellHome         string
 	sessionBusAddress string
 	runtimeDirectory  string
 }
@@ -66,6 +67,9 @@ func Resolve(goos string, env []string, cwd string) Ordinary {
 		directory = filepath.Join(cwd, directory)
 	}
 	context := Ordinary{ghDirectory: filepath.Clean(directory), macOS: goos == "darwin"}
+	if home := get("HOME"); goos == "darwin" && filepath.IsAbs(home) && len(home) <= 4096 && !strings.ContainsAny(home, "\x00\r\n") {
+		context.shellHome = filepath.Clean(home)
+	}
 	if goos == "linux" {
 		// These selectors connect gh to the Worker user's existing Secret Service.
 		// They carry no credentials and grant no ownership of the bus or store.
@@ -106,6 +110,10 @@ func (c Ordinary) Apply(env []string) []string {
 
 // Available is a safe diagnostic classification, never a path or login proof.
 func (c Ordinary) Available() bool { return c.ghDirectory != "" }
+
+// ShellHome lets ordinary macOS shell tools locate the user's login keychain.
+// The native provider process keeps its independently owned private HOME.
+func (c Ordinary) ShellHome() string { return c.shellHome }
 
 // ProcessSession preserves macOS login Keychain access for ordinary tools. It
 // grants no credential or process ownership; headless Workers retain Background.

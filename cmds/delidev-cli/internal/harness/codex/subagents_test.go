@@ -57,6 +57,7 @@ func (f *threadFixture) handleSubagentRead(id json.RawMessage, method string, ra
 		if f.subagents == nil {
 			a, b := maps.Clone(f.thread), maps.Clone(f.thread)
 			a["id"], b["id"] = domain.NewID(), domain.NewID()
+			a["sessionId"], b["sessionId"] = a["id"], b["id"]
 			a["parentThreadId"] = f.thread["id"]
 			b["parentThreadId"] = a["id"]
 			f.subagents = []map[string]any{b, a}
@@ -137,6 +138,45 @@ func TestSubagentDescendantInspectionReadsHistoryWithoutChildControls(t *testing
 	}
 }
 
+func TestSubagentEarlyStatusRequiresIndependentDescendantProof(t *testing.T) {
+	c, _ := openSubagentFixture(t, "thread-subagent-read")
+	if _, err := c.StartThread(context.Background(), domain.NewID(), threadSettings(t)); err != nil {
+		t.Fatal(err)
+	}
+	turn := domain.NewID()
+	c.execution.active = turn
+	c.execution.turns[turn] = trackedTurn{Turn: Turn{ID: turn, Status: TurnRunning}}
+	inventory, err := c.InspectDescendants(context.Background())
+	if err != nil || len(inventory.Subagents) != 2 {
+		t.Fatal("fixture inventory failed", err)
+	}
+	child := domain.ID(inventory.Subagents[0].NativeID)
+	c.subagents = nil
+	event, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": child, "status": ThreadStatus{Type: ThreadIdle}})
+	if err != nil || event.Kind != MetadataEvent || len(c.subagents) != 0 || len(c.pendingChildStatuses) != 1 {
+		t.Fatal("status before child start invented ownership", err)
+	}
+	if _, err := c.InspectDescendants(context.Background()); err != nil || len(c.pendingChildStatuses) != 0 {
+		t.Fatal("independent inventory did not resolve early status", err)
+	}
+	foreign := domain.NewID()
+	if _, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": foreign, "status": ThreadStatus{Type: ThreadIdle}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.InspectDescendants(context.Background()); err == nil || len(c.pendingChildStatuses) != 1 {
+		t.Fatal("unknown ancestry lost its completion fence")
+	}
+	// Canonical spawn proves publication ownership, but only a fresh inventory
+	// can discharge the early-status fence while other siblings are present.
+	spawn := map[string]any{"type": "collabAgentToolCall", "id": "missing-inventory-child", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{foreign}, "agentsStates": map[string]any{string(foreign): map[string]any{"status": "running", "message": nil}}}
+	if event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn}); err != nil || event.Kind != SubagentEvent {
+		t.Fatal("canonical spawn did not establish child ownership", err)
+	}
+	if _, err := c.InspectDescendants(context.Background()); err == nil || len(c.pendingChildStatuses) != 1 {
+		t.Fatal("published child missing from inventory lost its completion fence")
+	}
+}
+
 func TestSubagentCanonicalCollaborationKeepsRequestedModelAndChildScope(t *testing.T) {
 	c, turn := observationClient()
 	child := domain.NewID()
@@ -187,7 +227,7 @@ func TestSubagentThreadStartedRequiresPriorOwnershipEvidence(t *testing.T) {
 	c, turn := observationClient()
 	child := domain.NewID()
 	parent := c.thread
-	thread := threadWire{ID: child, ParentThreadID: &parent, SessionID: c.execution.thread.SessionID, CLIVersion: SupportedVersion, ModelProvider: c.execution.settings.Provider, Status: ThreadStatus{Type: ThreadIdle}}
+	thread := threadWire{ID: child, ParentThreadID: &parent, SessionID: domain.NewID(), CLIVersion: SupportedVersion, ModelProvider: c.execution.settings.Provider, Status: ThreadStatus{Type: ThreadIdle}}
 	for _, parentID := range []domain.ID{c.thread, domain.NewID()} {
 		parent = parentID
 		event, err := observeFixture(c, "thread/started", map[string]any{"thread": thread})
@@ -196,6 +236,19 @@ func TestSubagentThreadStartedRequiresPriorOwnershipEvidence(t *testing.T) {
 		}
 	}
 	parent = c.thread
+	for _, status := range []any{ThreadStatus{Type: ThreadIdle}, map[string]any{"type": "active", "activeFlags": []string{}}, ThreadStatus{Type: ThreadNotLoaded}} {
+		event, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": child, "status": status})
+		if err != nil || event.Kind != MetadataEvent || len(c.subagents) != 0 || c.execution.active != turn {
+			t.Fatal("early child status blocked the root or invented ownership", err)
+		}
+	}
+	foreign, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": domain.NewID(), "status": ThreadStatus{Type: ThreadIdle}})
+	if err != nil || foreign.Kind != MetadataEvent || len(c.pendingChildStatuses) != 2 || len(c.subagents) != 0 {
+		t.Fatal("unannounced status lost its unresolved ancestry fence", err)
+	}
+	if _, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": child, "status": map[string]any{"type": "unknown"}}); err == nil {
+		t.Fatal("malformed early child status was accepted")
+	}
 	spawn := map[string]any{"type": "collabAgentToolCall", "id": "original-spawn", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{child}, "agentsStates": map[string]any{string(child): map[string]any{"status": "running", "message": nil}}}
 	proved, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn})
 	if err != nil || proved.Kind != SubagentEvent || len(proved.Subagents) != 1 {

@@ -426,6 +426,77 @@ describe("shared Page descriptors follow native browser pages", () => {
       );
     });
   });
+  describe("reconciling an unavailable profile", () => {
+    const keys = (store: SessionTabsStore, id: string) =>
+      store.snapshot(id).tabs.map(sessionTabKey);
+    it("removes unheld profile pages from every retained session with per-session selection fallback", () => {
+      const store = new SessionTabsStore();
+      store.open("a", page("p1", "x"));
+      store.open("a", page("p2", "x"));
+      store.open("a", { kind: SessionTabKind.Diagnostics });
+      store.open("b", page("p1", "x"));
+      store.open("b", page("p1", "y"));
+      store.select("b", sessionTabKey(page("p1", "y")));
+      store.open("c", page("p1", "x"));
+      store.open("c", { kind: SessionTabKind.Diagnostics });
+      store.open("c", page("p2", "x"));
+      store.select("c", sessionTabKey(page("p2", "x")));
+      const aSelected = store.snapshot("a").selected;
+      store.reconcileUnavailableProfile("p1");
+      expect(keys(store, "a")).toEqual([
+        SessionTabKind.Conversation,
+        sessionTabKey(page("p2", "x")),
+        SessionTabKind.Diagnostics,
+      ]);
+      expect(store.snapshot("a").selected).toBe(aSelected);
+      // The removed selected Page follows the closePage fallback per Session.
+      expect(keys(store, "b")).toEqual([SessionTabKind.Conversation]);
+      expect(store.snapshot("b").selected).toBe(SessionTabKind.Conversation);
+      expect(keys(store, "c")).toEqual([
+        SessionTabKind.Conversation,
+        SessionTabKind.Diagnostics,
+        sessionTabKey(page("p2", "x")),
+      ]);
+      expect(store.snapshot("c").selected).toBe(sessionTabKey(page("p2", "x")));
+    });
+    it("keeps pages held by a pending Close or owned by the caller in every session", () => {
+      const store = new SessionTabsStore();
+      const owner = {};
+      for (const id of ["a", "b"]) {
+        store.open(id, page("p1", "held"));
+        store.open(id, page("p1", "owned"));
+        store.open(id, page("p1", "free"));
+      }
+      store.holdPendingClose("p1", "held", owner);
+      store.reconcileUnavailableProfile("p1", new Set(["owned"]));
+      for (const id of ["a", "b"])
+        expect(keys(store, id)).toEqual([
+          SessionTabKind.Conversation,
+          sessionTabKey(page("p1", "held")),
+          sessionTabKey(page("p1", "owned")),
+        ]);
+      store.releasePendingClose("p1", "held", owner);
+      store.reconcileUnavailableProfile("p1");
+      for (const id of ["a", "b"])
+        expect(keys(store, id)).toEqual([SessionTabKind.Conversation]);
+    });
+    it("is idempotent and keeps snapshot identity when nothing is removable", () => {
+      const store = new SessionTabsStore();
+      store.open("a", page("p2", "x"));
+      store.open("b", page("p1", "x"));
+      store.reconcileUnavailableProfile("p1");
+      const a = store.snapshot("a");
+      const b = store.snapshot("b");
+      let notified = 0;
+      const unsubscribe = store.subscribe(() => (notified += 1));
+      store.reconcileUnavailableProfile("p1");
+      store.reconcileUnavailableProfile("never-seen");
+      expect(store.snapshot("a")).toBe(a);
+      expect(store.snapshot("b")).toBe(b);
+      expect(notified).toBe(0);
+      unsubscribe();
+    });
+  });
   describe("restoring a native inventory", () => {
     const listed = (id: string, label = `https://${id}.test/`) => ({
       id,
