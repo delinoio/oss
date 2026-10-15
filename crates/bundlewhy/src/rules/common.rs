@@ -347,6 +347,46 @@ struct ScanScope {
     arrow_expression: bool,
     /// How the opener of this scope was classified. See `ContainerKind`.
     kind: ContainerKind,
+    /// Byte offset of the opener; the root scope uses 0.
+    open: usize,
+    /// A `typeof`, `void` or `delete` operand is being scanned. Reads that
+    /// start in it are not values of the guard (see `read_propagation_rows`).
+    discard: bool,
+    /// A `return` statement is being scanned in this scope.
+    returning: bool,
+    /// Reads returned by `return` statements of this function body.
+    returned: Vec<usize>,
+    /// Reads returned by function objects that end this scope's expression.
+    function_returns: Vec<usize>,
+    /// Number of top-level commas, which is the index of the last element of
+    /// an array literal.
+    elements: usize,
+    /// An array literal with a spread element has unknown element indexes.
+    spread: bool,
+    /// Key of the last property of an object literal: byte range of its name.
+    last_key: Option<(usize, usize)>,
+}
+
+impl ScanScope {
+    fn new(parent: usize, context: ScopeContext, kind: ContainerKind, open: usize) -> Self {
+        Self {
+            parent,
+            context,
+            conditional_questions: 0,
+            pending_reads: Vec::new(),
+            conditional_pending: Vec::new(),
+            arrow_expression: false,
+            kind,
+            open,
+            discard: false,
+            returning: false,
+            returned: Vec::new(),
+            function_returns: Vec::new(),
+            elements: 0,
+            spread: false,
+            last_key: None,
+        }
+    }
 }
 
 /// Classification of a `(`, `[` or `{` opener, decided by `preceding_token`
@@ -363,6 +403,8 @@ enum ContainerKind {
     /// Computed member access; inherits the surrounding context.
     ComputedMember,
     CallArguments,
+    /// Parenthesized operand of `typeof`, `void` or `delete`.
+    Discarded,
     ArrayLiteral,
     ObjectLiteral,
     /// Function, class or statement block.
@@ -373,15 +415,35 @@ impl ContainerKind {
     fn is_value_container(self) -> bool {
         matches!(
             self,
-            Self::CallArguments | Self::ArrayLiteral | Self::ObjectLiteral | Self::Block
+            Self::CallArguments
+                | Self::Discarded
+                | Self::ArrayLiteral
+                | Self::ObjectLiteral
+                | Self::Block
         )
     }
+}
 
-    /// Literals whose elements or properties can be read directly by a member
-    /// access that follows the closing bracket.
-    fn is_literal(self) -> bool {
-        matches!(self, Self::ArrayLiteral | Self::ObjectLiteral)
-    }
+/// What a block opener starts, decided from the tokens before it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum BodyKind {
+    /// Body of a `function` expression or declaration.
+    Function,
+    /// Block body of an arrow function.
+    Arrow,
+    /// Statement block (`if`, `else`, loops, `try`, a bare block).
+    Statement,
+    /// Class bodies, methods and anything else that is never invoked in place.
+    Other,
+}
+
+/// Tokens that are keywords for the scanner's own bookkeeping.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum WordEvent {
+    /// `typeof`, `void` or `delete`: the operand is not a value of the guard.
+    Discard,
+    /// `return`: the expression is the value of the enclosing function.
+    Return,
 }
 
 fn env_guards(
@@ -396,15 +458,12 @@ fn env_guards(
     let mut guards = vec![None; reads.len()];
     let mut blocked = vec![false; reads.len()];
     let mut contexts = vec![ScopeContext::Neutral; reads.len()];
-    let mut scopes = vec![ScanScope {
-        parent: 0,
-        context: ScopeContext::Neutral,
-        conditional_questions: 0,
-        pending_reads: Vec::new(),
-        conditional_pending: Vec::new(),
-        arrow_expression: false,
-        kind: ContainerKind::Grouping,
-    }];
+    let mut scopes = vec![ScanScope::new(
+        0,
+        ScopeContext::Neutral,
+        ContainerKind::Grouping,
+        0,
+    )];
     let mut current_scope = 0;
     let mut next_start = 0;
     let mut next_end = 0;
@@ -418,7 +477,13 @@ fn env_guards(
             next_start += 1;
         }
         while next_end < reads.len() && reads[next_end].1 <= index {
-            scopes[current_scope].pending_reads.push(next_end);
+            if scopes[current_scope].discard {
+                // The operand of `typeof`, `void` or `delete` is not a value
+                // of any branch that follows it.
+                contexts[next_end] = ScopeContext::Invalid;
+            } else {
+                scopes[current_scope].pending_reads.push(next_end);
+            }
             next_end += 1;
         }
         while ignored_index < ignored.len() && ignored[ignored_index].1 <= index {
@@ -431,6 +496,15 @@ fn env_guards(
             continue;
         }
 
+        if scopes[current_scope].discard && ends_discarded_operand(bytes, index) {
+            scopes[current_scope].discard = false;
+        }
+        match word_event(code, index, ignored) {
+            Some(WordEvent::Discard) => scopes[current_scope].discard = true,
+            Some(WordEvent::Return) => scopes[current_scope].returning = true,
+            None => {}
+        }
+
         if scopes[current_scope].arrow_expression
             && matches!(bytes[index], b',' | b';' | b')' | b']' | b'}')
         {
@@ -441,13 +515,21 @@ fn env_guards(
             // An expression-bodied arrow evaluates to a function object at
             // the enclosing expression. Do not let its unguarded reads flow
             // into an enclosing branch operator. Guards found inside the
-            // arrow body remain recorded on their own reads.
-            drop(pending_reads);
-            drop(conditional_pending);
+            // arrow body remain recorded on their own reads. When the arrow
+            // ends a parenthesized expression, its body is what a call of
+            // that expression returns.
+            if bytes[index] == b')'
+                && arrow_kind(code, scopes[current_scope].open, ignored) == BodyKind::Arrow
+            {
+                scopes[parent].function_returns.extend(pending_reads);
+                scopes[parent].function_returns.extend(conditional_pending);
+            }
             current_scope = parent;
         }
 
         if bytes[index] == b'\n' && asi_terminates(bytes, index, ignored) {
+            scopes[current_scope].discard = false;
+            settle_return(&mut scopes[current_scope]);
             for read in scopes[current_scope].pending_reads.drain(..) {
                 if guards[read].is_none() {
                     blocked[read] = true;
@@ -470,15 +552,15 @@ fn env_guards(
                     last_close,
                     ignored,
                 );
-                scopes.push(ScanScope {
-                    parent: current_scope,
-                    context,
-                    conditional_questions: 0,
-                    pending_reads: Vec::new(),
-                    conditional_pending: Vec::new(),
-                    arrow_expression: false,
-                    kind,
-                });
+                let mut scope = ScanScope::new(current_scope, context, kind, index);
+                // A parenthesized or computed operand of `typeof`, `void` or
+                // `delete` is still that operand.
+                scope.discard = scopes[current_scope].discard
+                    && matches!(
+                        kind,
+                        ContainerKind::Grouping | ContainerKind::ComputedMember
+                    );
+                scopes.push(scope);
                 current_scope = scopes.len() - 1;
             }
             b')' | b']' | b'}' if current_scope != 0 => {
@@ -486,32 +568,80 @@ fn env_guards(
                 let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
                 let conditional_pending =
                     std::mem::take(&mut scopes[current_scope].conditional_pending);
+                if scopes[current_scope].returning {
+                    // The closing bracket ends a `return` expression.
+                    scopes[current_scope]
+                        .returned
+                        .extend(pending_reads.iter().chain(&conditional_pending));
+                    scopes[current_scope].returning = false;
+                }
+                let returned = std::mem::take(&mut scopes[current_scope].returned);
+                let function_returns = std::mem::take(&mut scopes[current_scope].function_returns);
                 // A closed value container evaluates to a value (array,
                 // object, function object or call result). Reads that were
                 // only values inside it must not inherit an operator that
                 // follows the container. Guards found inside the container
                 // remain recorded on their own reads. An array or object
-                // literal that is immediately read through a member access
-                // (`[read][0]`) yields its element, so its reads stay pending.
+                // literal whose selected element or property is the read
+                // (`[read][0]`) yields that read, so it stays pending.
                 let kind = scopes[current_scope].kind;
                 last_close = Some((index, kind));
-                let dereferenced =
-                    kind.is_literal() && member_access_follows(bytes, index + 1, ignored);
-                if !kind.is_value_container() || dereferenced {
-                    if dereferenced {
-                        // The element now belongs to the enclosing condition.
-                        let enclosing = scopes[parent].context;
-                        for &read in pending_reads.iter().chain(&conditional_pending) {
-                            contexts[read] = enclosing;
-                        }
+                let selected = match kind {
+                    ContainerKind::ArrayLiteral => {
+                        !scopes[current_scope].spread
+                            && array_element_selected(
+                                bytes,
+                                index + 1,
+                                ignored,
+                                scopes[current_scope].elements,
+                            )
                     }
+                    ContainerKind::ObjectLiteral => {
+                        scopes[current_scope].last_key.is_some_and(|(start, end)| {
+                            property_selected(bytes, index + 1, ignored, &bytes[start..end])
+                        })
+                    }
+                    _ => false,
+                };
+                if selected {
+                    flow_reads(
+                        &mut scopes,
+                        &mut contexts,
+                        parent,
+                        pending_reads.into_iter().chain(conditional_pending),
+                    );
+                } else if !kind.is_value_container() {
                     scopes[parent].pending_reads.extend(pending_reads);
                     scopes[parent].pending_reads.extend(conditional_pending);
                     scopes[parent].pending_reads.sort_unstable();
                 }
+                // A call result is the value a function returns, so the reads
+                // it returns reach the operator that follows the call.
+                let called = next_code_byte(bytes, index + 1, ignored) == Some(b'(');
+                match kind {
+                    ContainerKind::Block if !returned.is_empty() => {
+                        match body_kind(code, scopes[current_scope].open, ignored) {
+                            BodyKind::Function if called => {
+                                flow_reads(&mut scopes, &mut contexts, parent, returned);
+                            }
+                            BodyKind::Function | BodyKind::Arrow => {
+                                if next_code_byte(bytes, index + 1, ignored) == Some(b')') {
+                                    scopes[parent].function_returns.extend(returned);
+                                }
+                            }
+                            BodyKind::Statement => scopes[parent].returned.extend(returned),
+                            BodyKind::Other => {}
+                        }
+                    }
+                    ContainerKind::Grouping if called && !function_returns.is_empty() => {
+                        flow_reads(&mut scopes, &mut contexts, parent, function_returns);
+                    }
+                    _ => {}
+                }
                 current_scope = parent;
             }
             b';' => {
+                settle_return(&mut scopes[current_scope]);
                 let context = scopes[current_scope].context;
                 match context {
                     ScopeContext::For(ForClause::Test) => {
@@ -546,6 +676,8 @@ fn env_guards(
                 }
             }
             b',' => {
+                scopes[current_scope].elements += 1;
+                scopes[current_scope].last_key = None;
                 for read in scopes[current_scope].pending_reads.drain(..) {
                     if guards[read].is_none() {
                         blocked[read] = true;
@@ -565,6 +697,9 @@ fn env_guards(
                         .extend(pending_reads);
                     scopes[current_scope].conditional_questions -= 1;
                 } else {
+                    if scopes[current_scope].kind == ContainerKind::ObjectLiteral {
+                        scopes[current_scope].last_key = property_key(code, index, ignored);
+                    }
                     for read in scopes[current_scope].pending_reads.drain(..) {
                         if guards[read].is_none() {
                             blocked[read] = true;
@@ -577,17 +712,22 @@ fn env_guards(
                     }
                 }
             }
+            b'.' if scopes[current_scope].kind == ContainerKind::ArrayLiteral
+                && bytes[index..].starts_with(b"...") =>
+            {
+                // A spread element shifts the indexes of the elements after it.
+                scopes[current_scope].spread = true;
+            }
             b'=' if bytes.get(index + 1) == Some(&b'>') => {
                 if next_code_byte(bytes, index + 2, ignored) != Some(b'{') {
-                    scopes.push(ScanScope {
-                        parent: current_scope,
-                        context: ScopeContext::Neutral,
-                        conditional_questions: 0,
-                        pending_reads: Vec::new(),
-                        conditional_pending: Vec::new(),
-                        arrow_expression: true,
-                        kind: ContainerKind::Grouping,
-                    });
+                    let mut scope = ScanScope::new(
+                        current_scope,
+                        ScopeContext::Neutral,
+                        ContainerKind::Grouping,
+                        index,
+                    );
+                    scope.arrow_expression = true;
+                    scopes.push(scope);
                     current_scope = scopes.len() - 1;
                 }
             }
@@ -685,26 +825,280 @@ fn scope_prefix<'a>(code: &'a str, index: usize, ignored: &[(usize, usize)]) -> 
     }
 }
 
-/// True when the code after a closing bracket continues with a member access
-/// (`[`, `.` or `?.`), so the closed literal is dereferenced.
-fn member_access_follows(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> bool {
-    let mut index = start;
-    while index < bytes.len() {
-        if in_ranges(ignored, index) || bytes[index].is_ascii_whitespace() {
-            index += 1;
-            continue;
+/// Move the reads of a finished `return` expression to the function's
+/// returned reads instead of dropping them with the statement.
+fn settle_return(scope: &mut ScanScope) {
+    if scope.returning {
+        let pending = std::mem::take(&mut scope.pending_reads);
+        let conditional = std::mem::take(&mut scope.conditional_pending);
+        scope.returned.extend(pending);
+        scope.returned.extend(conditional);
+        scope.returning = false;
+    }
+}
+
+/// Hand reads to the expression that contains the value they now produce.
+/// Their fallback condition becomes the one of that expression.
+fn flow_reads(
+    scopes: &mut [ScanScope],
+    contexts: &mut [ScopeContext],
+    target: usize,
+    reads: impl IntoIterator<Item = usize>,
+) {
+    let discard = scopes[target].discard;
+    let enclosing = scopes[target].context;
+    for read in reads {
+        if discard {
+            contexts[read] = ScopeContext::Invalid;
+        } else {
+            contexts[read] = enclosing;
+            scopes[target].pending_reads.push(read);
         }
-        return match bytes[index] {
-            b'[' | b'.' => true,
-            // `?.` is optional chaining, but `?.5` is a conditional.
-            b'?' => {
-                bytes.get(index + 1) == Some(&b'.')
-                    && !bytes.get(index + 2).is_some_and(u8::is_ascii_digit)
+    }
+    scopes[target].pending_reads.sort_unstable();
+}
+
+/// True for a token that ends the operand of `typeof`, `void` or `delete`.
+/// Prefix operators (`!`, `+`, `-`, `~`) can start the operand, so they do
+/// not end it; keeping the operand open only drops more reads.
+fn ends_discarded_operand(bytes: &[u8], index: usize) -> bool {
+    match bytes[index] {
+        b'&' | b'|' | b',' | b';' | b':' | b'=' | b'<' | b'>' | b'*' | b'/' | b'%' | b'^' => true,
+        // `?.` is optional chaining, but `?.5` is a conditional.
+        b'?' => {
+            !(bytes.get(index + 1) == Some(&b'.')
+                && !bytes.get(index + 2).is_some_and(u8::is_ascii_digit))
+        }
+        _ => false,
+    }
+}
+
+/// Recognize the words the scanner tracks, at the first byte of a word that
+/// is not a property name.
+fn word_event(code: &str, index: usize, ignored: &[(usize, usize)]) -> Option<WordEvent> {
+    let bytes = code.as_bytes();
+    if !matches!(bytes[index], b't' | b'v' | b'd' | b'r')
+        || (index > 0 && is_identifier_byte(bytes[index - 1]))
+    {
+        return None;
+    }
+    let length = bytes[index..]
+        .iter()
+        .take_while(|byte| is_identifier_byte(**byte))
+        .count();
+    let event = match &code[index..index + length] {
+        "typeof" | "void" | "delete" => WordEvent::Discard,
+        "return" => WordEvent::Return,
+        _ => return None,
+    };
+    let prefix = scope_prefix(code, index, ignored);
+    // A property named like a keyword is an ordinary member.
+    if prefix.ends_with('.') && !prefix.ends_with("...") {
+        return None;
+    }
+    Some(event)
+}
+
+/// Index of the next byte that is code (not whitespace, comment or literal).
+fn next_code_index(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<usize> {
+    (start..bytes.len())
+        .find(|&index| !in_ranges(ignored, index) && !bytes[index].is_ascii_whitespace())
+}
+
+/// The string, template, comment or regular expression range that starts at
+/// `offset`.
+fn ignored_range_at(ignored: &[(usize, usize)], offset: usize) -> Option<(usize, usize)> {
+    let index = ignored.partition_point(|(start, _)| *start < offset);
+    ignored
+        .get(index)
+        .copied()
+        .filter(|(start, _)| *start == offset)
+}
+
+/// Name of the property whose value ends before the `:` at `colon`.
+fn property_key(code: &str, colon: usize, ignored: &[(usize, usize)]) -> Option<(usize, usize)> {
+    let prefix = scope_prefix(code, colon, ignored);
+    let last = prefix.len().checked_sub(1)?;
+    if in_ranges(ignored, last) {
+        let index = ignored.partition_point(|(start, _)| *start <= last);
+        let (start, end) = ignored[index.checked_sub(1)?];
+        let quoted = matches!(code.as_bytes()[start], b'\'' | b'"');
+        return (quoted && end >= start + 2 && end == prefix.len()).then_some((start + 1, end - 1));
+    }
+    let word = word_before(prefix)?;
+    Some((prefix.len() - word.len(), prefix.len()))
+}
+
+/// Member access that follows a closed literal.
+enum MemberAccess {
+    /// `[` at this index.
+    Computed(usize),
+    /// `.` or `?.`; the member name starts after this index.
+    Named(usize),
+    /// `?.[`; the `[` is at this index.
+    OptionalComputed(usize),
+}
+
+fn member_access(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<MemberAccess> {
+    let index = next_code_index(bytes, start, ignored)?;
+    match bytes[index] {
+        b'[' => Some(MemberAccess::Computed(index)),
+        b'.' if !bytes[index..].starts_with(b"...") => Some(MemberAccess::Named(index + 1)),
+        // `?.` is optional chaining, but `?.5` is a conditional.
+        b'?' if bytes.get(index + 1) == Some(&b'.')
+            && !bytes.get(index + 2).is_some_and(u8::is_ascii_digit) =>
+        {
+            match next_code_index(bytes, index + 2, ignored) {
+                Some(open) if bytes[open] == b'[' => Some(MemberAccess::OptionalComputed(open)),
+                _ => Some(MemberAccess::Named(index + 2)),
             }
-            _ => false,
+        }
+        _ => None,
+    }
+}
+
+/// True when the member access after an array literal selects its last
+/// element: `[...][N]`, `[...]?.[N]`, `[...].at(N)` or `[...]?.at(N)`, where
+/// `N` is the decimal index of that element.
+fn array_element_selected(
+    bytes: &[u8],
+    start: usize,
+    ignored: &[(usize, usize)],
+    element: usize,
+) -> bool {
+    let (open, closing) = match member_access(bytes, start, ignored) {
+        Some(MemberAccess::Computed(open) | MemberAccess::OptionalComputed(open)) => (open, b']'),
+        Some(MemberAccess::Named(after)) => {
+            let Some(name) = next_code_index(bytes, after, ignored) else {
+                return false;
+            };
+            let length = bytes[name..]
+                .iter()
+                .take_while(|byte| is_identifier_byte(**byte))
+                .count();
+            if &bytes[name..name + length] != b"at" {
+                return false;
+            }
+            match next_code_index(bytes, name + length, ignored) {
+                Some(open) if bytes[open] == b'(' => (open, b')'),
+                _ => return false,
+            }
+        }
+        None => return false,
+    };
+    let Some(digits) = next_code_index(bytes, open + 1, ignored) else {
+        return false;
+    };
+    let length = bytes[digits..]
+        .iter()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    let index = std::str::from_utf8(&bytes[digits..digits + length])
+        .ok()
+        .and_then(|text| text.parse::<usize>().ok());
+    index == Some(element)
+        && next_code_index(bytes, digits + length, ignored).is_some_and(|end| bytes[end] == closing)
+}
+
+/// True when the member access after an object literal selects the property
+/// named `key`: `{...}.key`, `{...}?.key`, `{...}["key"]` or `{...}['key']`.
+fn property_selected(bytes: &[u8], start: usize, ignored: &[(usize, usize)], key: &[u8]) -> bool {
+    match member_access(bytes, start, ignored) {
+        Some(MemberAccess::Named(after)) => {
+            let Some(name) = next_code_index(bytes, after, ignored) else {
+                return false;
+            };
+            let length = bytes[name..]
+                .iter()
+                .take_while(|byte| is_identifier_byte(**byte))
+                .count();
+            &bytes[name..name + length] == key
+        }
+        Some(MemberAccess::Computed(open) | MemberAccess::OptionalComputed(open)) => {
+            // The quoted name is a string literal, which the code scan skips.
+            let Some(quote) =
+                (open + 1..bytes.len()).find(|&index| !bytes[index].is_ascii_whitespace())
+            else {
+                return false;
+            };
+            let Some((string_start, string_end)) = ignored_range_at(ignored, quote) else {
+                return false;
+            };
+            matches!(bytes[string_start], b'\'' | b'"')
+                && string_end >= string_start + 2
+                && &bytes[string_start + 1..string_end - 1] == key
+                && next_code_index(bytes, string_end, ignored).is_some_and(|end| bytes[end] == b']')
+        }
+        None => false,
+    }
+}
+
+/// Classify an arrow function whose `=>` starts at `arrow`. An async arrow
+/// returns a promise, never the value of its body.
+fn arrow_kind(code: &str, arrow: usize, ignored: &[(usize, usize)]) -> BodyKind {
+    let prefix = scope_prefix(code, arrow, ignored);
+    let head = if prefix.ends_with(')') {
+        matching_backward(prefix.as_bytes(), prefix.len() - 1, b'(', b')')
+            .map(|paren| prefix[..paren].trim_end())
+    } else {
+        word_before(prefix).map(|word| prefix[..prefix.len() - word.len()].trim_end())
+    };
+    if head.is_some_and(|head| word_before(head) == Some("async")) {
+        BodyKind::Other
+    } else {
+        BodyKind::Arrow
+    }
+}
+
+/// Classify the block whose `{` is at `open`.
+fn body_kind(code: &str, open: usize, ignored: &[(usize, usize)]) -> BodyKind {
+    let prefix = scope_prefix(code, open, ignored);
+    if prefix.ends_with("=>") {
+        return arrow_kind(code, prefix.len() - 2, ignored);
+    }
+    let Some(&last) = prefix.as_bytes().last() else {
+        return BodyKind::Statement;
+    };
+    if matches!(last, b';' | b'{' | b'}') {
+        return BodyKind::Statement;
+    }
+    if last != b')' {
+        return match word_before(prefix) {
+            Some("else" | "do" | "try" | "finally") => BodyKind::Statement,
+            _ => BodyKind::Other,
         };
     }
-    false
+    let Some(paren) = matching_backward(prefix.as_bytes(), prefix.len() - 1, b'(', b')') else {
+        return BodyKind::Other;
+    };
+    // `function name(` and `function* name(`; an async or generator function
+    // returns a promise or an iterator, never the returned value itself.
+    let head = prefix[..paren].trim_end();
+    let Some(word) = word_before(head) else {
+        return BodyKind::Other;
+    };
+    let function_head = |text: &str| -> Option<BodyKind> {
+        let text = text.trim_end();
+        let (text, generator) = match text.strip_suffix('*') {
+            Some(text) => (text.trim_end(), true),
+            None => (text, false),
+        };
+        if word_before(text) != Some("function") {
+            return None;
+        }
+        let before = text[..text.len() - "function".len()].trim_end();
+        Some(if generator || word_before(before) == Some("async") {
+            BodyKind::Other
+        } else {
+            BodyKind::Function
+        })
+    };
+    match word {
+        "if" | "for" | "while" | "switch" | "catch" | "with" | "await" => BodyKind::Statement,
+        _ => function_head(head)
+            .or_else(|| function_head(&head[..head.len() - word.len()]))
+            .unwrap_or(BodyKind::Other),
+    }
 }
 
 /// The token before an opener, reduced to what decides how the opener parses.
@@ -715,6 +1109,9 @@ enum PrecedingToken {
     StatementStart,
     /// An operator, separator or operator keyword; an operand starts here.
     Operator,
+    /// `typeof`, `void` or `delete`: an operand starts here, but the result
+    /// does not preserve the operand's truthiness.
+    DiscardOperator,
     /// `if`, `while`, `for` or `switch`, which take a parenthesized head.
     StatementHead(ScopeContext),
     /// An operand just ended (identifier, number, `)`, `]`, an object
@@ -723,22 +1120,22 @@ enum PrecedingToken {
     OperandEnd,
 }
 
-const OPERATOR_KEYWORDS: [&str; 14] = [
+const OPERATOR_KEYWORDS: [&str; 11] = [
     "return",
-    "typeof",
     "await",
     "yield",
     "in",
     "of",
     "instanceof",
     "case",
-    "void",
-    "delete",
     "throw",
     "new",
     "extends",
     "default",
 ];
+
+/// Unary operators whose result does not depend on the operand's value.
+const DISCARDING_KEYWORDS: [&str; 3] = ["typeof", "void", "delete"];
 
 fn is_identifier_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$') || byte >= 0x80
@@ -803,6 +1200,7 @@ fn preceding_token(
                 "while" => PrecedingToken::StatementHead(ScopeContext::Guard(EnvGuard::While)),
                 "switch" => PrecedingToken::StatementHead(ScopeContext::Guard(EnvGuard::Switch)),
                 "for" => PrecedingToken::StatementHead(ScopeContext::For(ForClause::Initializer)),
+                word if DISCARDING_KEYWORDS.contains(&word) => PrecedingToken::DiscardOperator,
                 word if OPERATOR_KEYWORDS.contains(&word) => PrecedingToken::Operator,
                 _ => PrecedingToken::OperandEnd,
             }
@@ -843,6 +1241,11 @@ fn scope_context(
         // Parentheses after an operand are call arguments; elsewhere they
         // only group and keep the surrounding condition.
         (b'(', PrecedingToken::OperandEnd) => (ScopeContext::Invalid, ContainerKind::CallArguments),
+        // The operand of `typeof`, `void` or `delete` is not a value of the
+        // branch that follows; a branch inside it still guards its own read.
+        (b'(', PrecedingToken::DiscardOperator) => {
+            (ScopeContext::Invalid, ContainerKind::Discarded)
+        }
         (b'(', _) => (parent, ContainerKind::Grouping),
         // A bracket after an operand is a computed member access and keeps the
         // surrounding condition; elsewhere it starts an array literal.
@@ -850,7 +1253,9 @@ fn scope_context(
         (b'[', _) => (ScopeContext::Invalid, ContainerKind::ArrayLiteral),
         // A brace where an operand starts is an object literal; elsewhere it
         // is a function, class or statement block.
-        (_, PrecedingToken::Operator) => (ScopeContext::Invalid, ContainerKind::ObjectLiteral),
+        (_, PrecedingToken::Operator | PrecedingToken::DiscardOperator) => {
+            (ScopeContext::Invalid, ContainerKind::ObjectLiteral)
+        }
         _ => (ScopeContext::Invalid, ContainerKind::Block),
     }
 }
@@ -2447,7 +2852,7 @@ y=/process.env.F/.test(z),process.env.G"#;
     #[test]
     fn opener_classification_table_covers_every_preceding_token() {
         use ContainerKind::{
-            ArrayLiteral, Block, CallArguments, ComputedMember, Grouping, ObjectLiteral,
+            ArrayLiteral, Block, CallArguments, ComputedMember, Discarded, Grouping, ObjectLiteral,
             StatementHead,
         };
         // Each row: preceding code, then the kinds of `(`, `[` and `{`.
@@ -2470,15 +2875,21 @@ y=/process.env.F/.test(z),process.env.G"#;
             // Operator keywords start an operand.
             ("return", Grouping, ArrayLiteral, ObjectLiteral),
             ("return ", Grouping, ArrayLiteral, ObjectLiteral),
-            ("typeof", Grouping, ArrayLiteral, ObjectLiteral),
+            ("typeof", Discarded, ArrayLiteral, ObjectLiteral),
             ("await", Grouping, ArrayLiteral, ObjectLiteral),
             ("yield", Grouping, ArrayLiteral, ObjectLiteral),
             ("a in", Grouping, ArrayLiteral, ObjectLiteral),
             ("a of", Grouping, ArrayLiteral, ObjectLiteral),
             ("a instanceof", Grouping, ArrayLiteral, ObjectLiteral),
             ("case", Grouping, ArrayLiteral, ObjectLiteral),
-            ("void", Grouping, ArrayLiteral, ObjectLiteral),
-            ("delete", Grouping, ArrayLiteral, ObjectLiteral),
+            ("void", Discarded, ArrayLiteral, ObjectLiteral),
+            ("delete", Discarded, ArrayLiteral, ObjectLiteral),
+            ("typeof ", Discarded, ArrayLiteral, ObjectLiteral),
+            ("a;typeof/* c */", Discarded, ArrayLiteral, ObjectLiteral),
+            ("mytypeof", CallArguments, ComputedMember, Block),
+            ("a.typeof", CallArguments, ComputedMember, Block),
+            ("a.void", CallArguments, ComputedMember, Block),
+            ("a.delete", CallArguments, ComputedMember, Block),
             ("throw", Grouping, ArrayLiteral, ObjectLiteral),
             ("new", Grouping, ArrayLiteral, ObjectLiteral),
             ("class A extends", Grouping, ArrayLiteral, ObjectLiteral),
@@ -2582,6 +2993,7 @@ y=/process.env.F/.test(z),process.env.G"#;
             // Every other closing bracket ends an operand.
             (")", Grouping, CallArguments, ComputedMember, Block),
             (")", CallArguments, CallArguments, ComputedMember, Block),
+            (")", Discarded, CallArguments, ComputedMember, Block),
             ("]", ComputedMember, CallArguments, ComputedMember, Block),
             ("]", ArrayLiteral, CallArguments, ComputedMember, Block),
             ("}", ObjectLiteral, CallArguments, ComputedMember, Block),
@@ -2644,12 +3056,19 @@ y=/process.env.F/.test(z),process.env.G"#;
             "return (process.env.FLAG) && run()",
             "await(process.env.FLAG)&&run()",
             "yield(process.env.FLAG)&&run()",
-            "typeof(process.env.FLAG)&&run()",
-            "void(process.env.FLAG)&&run()",
             "x=a in(process.env.FLAG)&&run()",
             "if(a)(process.env.FLAG)&&run()",
         ] {
             assert_eq!(guard(code), and, "{code}");
+        }
+        // The operand of `typeof`, `void` and `delete` is not a value of the
+        // branch that follows it.
+        for code in [
+            "typeof(process.env.FLAG)&&run()",
+            "void(process.env.FLAG)&&run()",
+            "delete(process.env.FLAG)&&run()",
+        ] {
+            assert_eq!(guard(code), None, "{code}");
         }
         // A property named like a keyword is an ordinary call or member.
         assert_eq!(guard("a.return(process.env.FLAG)&&run()"), None);
@@ -2731,6 +3150,729 @@ y=/process.env.F/.test(z),process.env.G"#;
             "[process.env.FLAG,1][1]&&run()",
         ] {
             assert_eq!(guard(code), None, "{code}");
+        }
+    }
+
+    /// Short names for the guards a table row can expect.
+    fn guard_name(guard: Option<EnvGuard>) -> Option<&'static str> {
+        guard.map(|guard| match guard {
+            EnvGuard::ShortCircuitAnd => "and",
+            EnvGuard::ShortCircuitOr => "or",
+            EnvGuard::NullishCoalescing => "nullish",
+            EnvGuard::Conditional => "conditional",
+            EnvGuard::If => "if",
+            EnvGuard::While => "while",
+            EnvGuard::Switch => "switch",
+            EnvGuard::For => "for",
+        })
+    }
+
+    fn flag_guard(code: &str) -> Option<&'static str> {
+        let read = "process.env.FLAG";
+        let start = code.find(read).unwrap();
+        guard_name(env_guards(code, &[(start, start + read.len())], &non_code_ranges(code))[0])
+    }
+
+    /// One row per construct that a read can flow through before it reaches a
+    /// branch operator. Each row is a cell of the read-propagation table in
+    /// `docs/crates-bundlewhy-foundation.md`.
+    #[test]
+    fn read_propagation_rows() {
+        // (construct, code, expected guard)
+        let rows: &[(&str, &str, Option<&str>)] = &[
+            // Operators that derive a value from the read keep it.
+            ("equality", "'on'===process.env.FLAG&&run()", Some("and")),
+            ("relational", "process.env.FLAG>1&&run()", Some("and")),
+            ("arithmetic", "process.env.FLAG+1||run()", Some("or")),
+            ("logical not", "!process.env.FLAG&&run()", Some("and")),
+            ("unary minus", "-process.env.FLAG&&run()", Some("and")),
+            ("unary plus", "+process.env.FLAG&&run()", Some("and")),
+            ("bitwise not", "~process.env.FLAG&&run()", Some("and")),
+            ("await", "await process.env.FLAG&&run()", Some("and")),
+            ("in", "process.env.FLAG in obj&&run()", Some("and")),
+            (
+                "instanceof",
+                "process.env.FLAG instanceof T&&run()",
+                Some("and"),
+            ),
+            (
+                "assignment target value",
+                "x=process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "compound assignment value",
+                "x+=process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "second operand of &&",
+                "a&&process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "first operand of ||",
+                "process.env.FLAG||a&&run()",
+                Some("or"),
+            ),
+            (
+                "plain assignment value",
+                "x=process.env.FLAG;ready&&run()",
+                None,
+            ),
+            (
+                "plain initializer",
+                "var x=process.env.FLAG,y=ready&&run()",
+                None,
+            ),
+            // Members and calls of the read itself derive from the read.
+            (
+                "member of the read",
+                "process.env.FLAG.length&&run()",
+                Some("and"),
+            ),
+            (
+                "computed member of the read",
+                "process.env.FLAG[0]&&run()",
+                Some("and"),
+            ),
+            (
+                "optional member of the read",
+                "process.env.FLAG?.x&&run()",
+                Some("and"),
+            ),
+            (
+                "method call on the read",
+                "process.env.FLAG.trim()&&run()",
+                Some("and"),
+            ),
+            ("call of the read", "process.env.FLAG()&&run()", Some("and")),
+            (
+                "read as computed key",
+                "a[process.env.FLAG]&&run()",
+                Some("and"),
+            ),
+            (
+                "read as optional computed key",
+                "a?.[process.env.FLAG]&&run()",
+                Some("and"),
+            ),
+            // A call argument is not the call's value.
+            ("call argument", "f(process.env.FLAG)&&run()", None),
+            (
+                "optional call argument",
+                "f?.(process.env.FLAG)&&run()",
+                None,
+            ),
+            ("new argument", "new F(process.env.FLAG)&&run()", None),
+            (
+                "spread call argument",
+                "f(...process.env.FLAG)&&run()",
+                None,
+            ),
+            ("spread array element", "[...process.env.FLAG]&&run()", None),
+            (
+                "member of a call",
+                "f(process.env.FLAG).length&&run()",
+                None,
+            ),
+            // Array literals: only the selected element is the value.
+            ("array", "[process.env.FLAG]&&run()", None),
+            ("array length", "[process.env.FLAG].length&&run()", None),
+            (
+                "array length (nested)",
+                "[[process.env.FLAG]].length&&run()",
+                None,
+            ),
+            (
+                "array unrelated index",
+                "[process.env.FLAG][1]&&run()",
+                None,
+            ),
+            (
+                "array first element",
+                "[process.env.FLAG][0]&&run()",
+                Some("and"),
+            ),
+            (
+                "array first element (optional)",
+                "[process.env.FLAG]?.[0]&&run()",
+                Some("and"),
+            ),
+            (
+                "array element at",
+                "[process.env.FLAG].at(0)&&run()",
+                Some("and"),
+            ),
+            (
+                "array element at (optional)",
+                "[process.env.FLAG]?.at(0)&&run()",
+                Some("and"),
+            ),
+            ("array wrong at", "[process.env.FLAG].at(1)&&run()", None),
+            (
+                "array last element",
+                "[a,process.env.FLAG][1]&&run()",
+                Some("and"),
+            ),
+            (
+                "array earlier element",
+                "[a,process.env.FLAG][0]&&run()",
+                None,
+            ),
+            ("array first of two", "[process.env.FLAG,a][0]&&run()", None),
+            ("array hole", "[,process.env.FLAG][1]&&run()", Some("and")),
+            (
+                "array after spread",
+                "[...a,process.env.FLAG][1]&&run()",
+                None,
+            ),
+            ("array method", "[process.env.FLAG].map(f)&&run()", None),
+            ("array join", "[process.env.FLAG].join('')&&run()", None),
+            (
+                "array includes",
+                "[process.env.FLAG].includes(a)&&run()",
+                None,
+            ),
+            (
+                "array optional method",
+                "[process.env.FLAG]?.map(f)&&run()",
+                None,
+            ),
+            (
+                "array computed string",
+                "[process.env.FLAG][\"length\"]&&run()",
+                None,
+            ),
+            (
+                "array conditional",
+                "[process.env.FLAG][0]?a():b()",
+                Some("conditional"),
+            ),
+            ("array nullish", "[process.env.FLAG][0]??b", Some("nullish")),
+            (
+                "array in condition",
+                "if([process.env.FLAG][0])run()",
+                Some("if"),
+            ),
+            (
+                "array length in condition",
+                "if([process.env.FLAG].length)run()",
+                None,
+            ),
+            // Object literals: only the selected property is the value.
+            ("object", "x={a:process.env.FLAG}&&run()", None),
+            (
+                "object property",
+                "x={a:process.env.FLAG}.a&&run()",
+                Some("and"),
+            ),
+            (
+                "object property (optional)",
+                "x={a:process.env.FLAG}?.a&&run()",
+                Some("and"),
+            ),
+            (
+                "object computed property",
+                "x={a:process.env.FLAG}[\"a\"]&&run()",
+                Some("and"),
+            ),
+            (
+                "object computed single quotes",
+                "x={a:process.env.FLAG}['a']&&run()",
+                Some("and"),
+            ),
+            (
+                "object quoted key",
+                "x={'a':process.env.FLAG}.a&&run()",
+                Some("and"),
+            ),
+            (
+                "object last property",
+                "x={a:1,b:process.env.FLAG}.b&&run()",
+                Some("and"),
+            ),
+            (
+                "object other property",
+                "x={a:process.env.FLAG}.b&&run()",
+                None,
+            ),
+            (
+                "object other computed property",
+                "x={a:process.env.FLAG}['b']&&run()",
+                None,
+            ),
+            (
+                "object earlier property",
+                "x={a:process.env.FLAG,b:1}.a&&run()",
+                None,
+            ),
+            (
+                "object inherited member",
+                "x={a:process.env.FLAG}.toString()&&run()",
+                None,
+            ),
+            (
+                "object property prefix",
+                "x={ab:process.env.FLAG}.a&&run()",
+                None,
+            ),
+            (
+                "object property longer",
+                "x={a:process.env.FLAG}.ab&&run()",
+                None,
+            ),
+            (
+                "object conditional value",
+                "x={a:c?d:process.env.FLAG}.a&&run()",
+                Some("and"),
+            ),
+            // typeof, void and delete discard their operand's value.
+            ("typeof", "typeof process.env.FLAG&&run()", None),
+            (
+                "typeof parenthesized",
+                "typeof(process.env.FLAG)&&run()",
+                None,
+            ),
+            ("typeof spaced", "typeof (process.env.FLAG)&&run()", None),
+            (
+                "typeof double parentheses",
+                "typeof((process.env.FLAG))&&run()",
+                None,
+            ),
+            (
+                "typeof outside parentheses",
+                "(typeof process.env.FLAG)&&run()",
+                None,
+            ),
+            (
+                "typeof comparison",
+                "typeof process.env.FLAG==='string'&&run()",
+                None,
+            ),
+            (
+                "typeof inequality",
+                "typeof process.env.FLAG!=='undefined'||run()",
+                None,
+            ),
+            (
+                "typeof conditional",
+                "typeof process.env.FLAG==='string'?a():b()",
+                None,
+            ),
+            (
+                "typeof computed member",
+                "typeof a[process.env.FLAG]&&run()",
+                None,
+            ),
+            (
+                "typeof member",
+                "typeof process.env.FLAG.length&&run()",
+                None,
+            ),
+            (
+                "typeof array element",
+                "typeof [process.env.FLAG][0]&&run()",
+                None,
+            ),
+            (
+                "typeof comment",
+                "typeof/* c */process.env.FLAG&&run()",
+                None,
+            ),
+            ("typeof in if", "if(typeof process.env.FLAG)run()", None),
+            (
+                "typeof parenthesized in if",
+                "if(typeof(process.env.FLAG))run()",
+                None,
+            ),
+            (
+                "typeof comparison in if",
+                "if(typeof process.env.FLAG==='string')run()",
+                None,
+            ),
+            (
+                "typeof in while",
+                "while(typeof process.env.FLAG)run()",
+                None,
+            ),
+            ("void", "void process.env.FLAG&&run()", None),
+            ("void parenthesized", "void(process.env.FLAG)&&run()", None),
+            ("delete", "delete process.env.FLAG&&run()", None),
+            (
+                "delete parenthesized",
+                "delete(process.env.FLAG)&&run()",
+                None,
+            ),
+            ("delete member", "delete a[process.env.FLAG]&&run()", None),
+            (
+                "typeof inner branch",
+                "typeof(process.env.FLAG&&a)&&run()",
+                Some("and"),
+            ),
+            (
+                "typeof then comparison read",
+                "typeof a===process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "typeof then second operand",
+                "typeof a&&process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "typeof then conditional",
+                "typeof a?process.env.FLAG:b",
+                None,
+            ),
+            (
+                "typeof then sequence",
+                "typeof a,process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "typeof then statement",
+                "typeof a;process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "typeof on a new line",
+                "typeof a\nprocess.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "typeof in a nested scope",
+                "typeof f(a,process.env.FLAG)&&run()",
+                None,
+            ),
+            (
+                "typeof property",
+                "a.typeof+process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "void property",
+                "a.void+process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "delete property",
+                "a.delete+process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "typeof prefix word",
+                "mytypeof+process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "typeof suffix word",
+                "typeofa+process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            // Immediately invoked functions return their value.
+            (
+                "function object",
+                "(function(){return process.env.FLAG})&&run()",
+                None,
+            ),
+            (
+                "function object call member",
+                "(function(){return process.env.FLAG}).call()&&run()",
+                None,
+            ),
+            ("arrow object", "(()=>process.env.FLAG)&&run()", None),
+            (
+                "iife",
+                "(function(){return process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "iife semicolon",
+                "(function(){return process.env.FLAG;})()&&run()",
+                Some("and"),
+            ),
+            (
+                "iife spaced",
+                "(function () { return process.env.FLAG } ) ( ) && run()",
+                Some("and"),
+            ),
+            (
+                "iife inner call",
+                "(function(){return process.env.FLAG}())&&run()",
+                Some("and"),
+            ),
+            (
+                "iife inner call semicolon",
+                "(function(){return process.env.FLAG;}())&&run()",
+                Some("and"),
+            ),
+            (
+                "iife named",
+                "(function f(){return process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "iife with arguments",
+                "(function(a){return process.env.FLAG})(1)&&run()",
+                Some("and"),
+            ),
+            (
+                "iife prefix not",
+                "!function(){return process.env.FLAG}()&&run()",
+                Some("and"),
+            ),
+            (
+                "iife prefix void",
+                "void function(){return process.env.FLAG}()&&run()",
+                None,
+            ),
+            (
+                "iife arrow block",
+                "(()=>{return process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "iife arrow expression",
+                "(()=>process.env.FLAG)()&&run()",
+                Some("and"),
+            ),
+            (
+                "iife arrow parameters",
+                "((a,b)=>process.env.FLAG)(1,2)&&run()",
+                Some("and"),
+            ),
+            (
+                "iife arrow single parameter",
+                "(a=>process.env.FLAG)(1)&&run()",
+                Some("and"),
+            ),
+            (
+                "iife conditional",
+                "(function(){return process.env.FLAG})()?a():b()",
+                Some("conditional"),
+            ),
+            (
+                "iife nullish",
+                "(function(){return process.env.FLAG})()??b",
+                Some("nullish"),
+            ),
+            (
+                "iife or",
+                "(function(){return process.env.FLAG})()||b",
+                Some("or"),
+            ),
+            (
+                "iife in if",
+                "if((function(){return process.env.FLAG})())run()",
+                Some("if"),
+            ),
+            (
+                "iife arrow in if",
+                "if((()=>process.env.FLAG)())run()",
+                Some("if"),
+            ),
+            (
+                "iife assignment",
+                "x=(function(){return process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "iife nested statement",
+                "(function(){if(a){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "iife unbraced return",
+                "(function(){if(a)return process.env.FLAG;return 0})()&&run()",
+                Some("and"),
+            ),
+            (
+                "iife inner branch",
+                "(function(){return process.env.FLAG&&a})()||run()",
+                Some("and"),
+            ),
+            (
+                "iife no return",
+                "(function(){process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "iife statement before return",
+                "(function(){process.env.FLAG;return 1})()&&run()",
+                None,
+            ),
+            (
+                "iife return then read",
+                "(function(){return 1;process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "iife return on its own line",
+                "(function(){return\nprocess.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "iife comma last",
+                "(function(){return a,process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "iife comma first",
+                "(function(){return process.env.FLAG,a})()&&run()",
+                None,
+            ),
+            (
+                "iife as argument",
+                "f((function(){return process.env.FLAG})())&&run()",
+                None,
+            ),
+            (
+                "iife async function",
+                "(async function(){return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "iife async arrow",
+                "(async()=>process.env.FLAG)()&&run()",
+                None,
+            ),
+            (
+                "iife async arrow parameter",
+                "(async a=>process.env.FLAG)(1)&&run()",
+                None,
+            ),
+            (
+                "iife async arrow block",
+                "(async()=>{return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "iife generator",
+                "(function*(){return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "iife typeof",
+                "typeof (function(){return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "iife method",
+                "({m(){return process.env.FLAG}}).m()&&run()",
+                None,
+            ),
+            (
+                "iife class method",
+                "(class{m(){return process.env.FLAG}})&&run()",
+                None,
+            ),
+            (
+                "iife not last in group",
+                "(function(){return process.env.FLAG},a)()&&run()",
+                None,
+            ),
+            // Comma and conditional expressions.
+            ("sequence last", "(a,process.env.FLAG)&&run()", Some("and")),
+            ("sequence first", "(process.env.FLAG,a)&&run()", None),
+            (
+                "sequence statement",
+                "a,process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "conditional test",
+                "process.env.FLAG?a:b",
+                Some("conditional"),
+            ),
+            (
+                "conditional consequent",
+                "ready?process.env.FLAG:other",
+                None,
+            ),
+            (
+                "conditional consequent then &&",
+                "ready?process.env.FLAG:other&&run()",
+                None,
+            ),
+            (
+                "conditional group",
+                "(ready?process.env.FLAG:other)&&run()",
+                Some("and"),
+            ),
+            (
+                "conditional group alternate",
+                "(ready?other:process.env.FLAG)||run()",
+                Some("or"),
+            ),
+            (
+                "conditional in if",
+                "if(ready?process.env.FLAG:other)run()",
+                Some("if"),
+            ),
+        ];
+        for &(construct, code, expected) in rows {
+            assert_eq!(flag_guard(code), expected, "{construct}: {code}");
+        }
+    }
+
+    /// Constructs that need a real parser. The scanner picks the direction in
+    /// which the read is not treated as guarded, so the finding stays an
+    /// inference only when the generated code shows the branch. Each row is
+    /// listed under "Known limits" in `docs/crates-bundlewhy-foundation.md`.
+    #[test]
+    fn read_propagation_known_limits_are_not_guarded() {
+        for (limit, code) in [
+            (
+                "array element selected by a negative or non-literal index",
+                "[process.env.FLAG].at(-1)&&run()",
+            ),
+            (
+                "array element selected through a string index",
+                "[process.env.FLAG][\"0\"]&&run()",
+            ),
+            (
+                "array element selected through a variable index",
+                "[process.env.FLAG][index]&&run()",
+            ),
+            (
+                "array element selected through a nested literal",
+                "[[process.env.FLAG]][0][0]&&run()",
+            ),
+            (
+                "array element selected through a method",
+                "[process.env.FLAG].find(Boolean)&&run()",
+            ),
+            (
+                "object property with a computed key",
+                "x={[key]:process.env.FLAG}.key&&run()",
+            ),
+            (
+                "object property reached through a spread",
+                "x={...{a:process.env.FLAG}}.a&&run()",
+            ),
+            (
+                "object property reached through a getter",
+                "x={get a(){return process.env.FLAG}}.a&&run()",
+            ),
+            (
+                "operand of typeof extended by a binary operator",
+                "typeof a+process.env.FLAG&&run()",
+            ),
+            (
+                "function value called through call",
+                "(function(){return process.env.FLAG}).call(this)&&run()",
+            ),
+            (
+                "function value called through a variable",
+                "var f=function(){return process.env.FLAG};f()&&run()",
+            ),
+            (
+                "function returned by an immediately invoked function",
+                "(function(){return function(){return process.env.FLAG}})()()&&run()",
+            ),
+        ] {
+            assert_eq!(flag_guard(code), None, "{limit}: {code}");
         }
     }
 

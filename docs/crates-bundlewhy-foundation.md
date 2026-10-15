@@ -67,7 +67,7 @@ Therefore, `vite/side-effect-retained` remains Inferred unless the effective dec
 
 Inlining and constant folding are `COVERAGE_STATE_UNAVAILABLE` for both engines: neither engine exposes those decisions and no verified detector exists. Module concatenation is covered for both engines. Source-map `sourceRoot` and `sources` are joined with a single separator that never trims the root, so URL roots such as `webpack:///` keep their scheme. A failed run's engine identity leaves support unspecified because no version was discovered. A source binding named `eval` (a parameter, variable or function) makes `eval(...)` calls inside that binding's scope ordinary calls; shadowing is decided per call, so the source-scan fallback still reports a direct eval elsewhere in the module. `BW_MINIFIER_NON_DEFAULT` is reported only when minification runs. Missing source maps mark the affected chunk's attribution `UNAVAILABLE`, fall back to generated locations and record `BW_SOURCE_MAP_MISSING`. A partial collection keeps usable results, sets `RUN_STATUS_PARTIAL` and marks affected categories `COVERAGE_STATE_PARTIAL`; an emitted chunk that cannot be read marks dead-code elimination and name mangling partial. The env-condition scan and the source scan for direct `eval` ignore string, template, comment and regular expression literal text. Retained code alone is never reported as a defect.
 
-The branch-evidence scanner treats array literals, object literals, function bodies and call argument lists as value containers. When such a container closes, reads that are only values inside it are dropped instead of being handed to the enclosing expression, so a following `&&`, `||`, `??` or `?:` never becomes evidence for them. Branch operators inside the container, parenthesized conditions and computed-member conditions keep their evidence.
+The branch-evidence scanner treats array literals, object literals, function bodies, call argument lists and parenthesized `typeof`, `void` and `delete` operands as value containers. When such a container closes, reads that are only values inside it are dropped instead of being handed to the enclosing expression, so a following `&&`, `||`, `??` or `?:` never becomes evidence for them. Branch operators inside the container, parenthesized conditions and computed-member conditions keep their evidence.
 
 The scanner decides what each `(`, `[` and `{` opens from the token that precedes it, using one table. A comment between the token and the opener is ignored.
 
@@ -75,13 +75,49 @@ The scanner decides what each `(`, `[` and `{` opens from the token that precede
 | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | --------------- | -------------- |
 | Start of input, `;`, `{`, `=>`, `else`, `do`, a block's closing `}`, or the `)` that closes an `if`, `while`, `for` or `switch` head              | grouping       | array literal   | block          |
 | `if`, `while`, `for`, `switch`                                                                                                                    | statement head | array literal   | block          |
-| Operator keyword (`return`, `typeof`, `await`, `yield`, `in`, `of`, `instanceof`, `case`, `void`, `delete`, `throw`, `new`, `extends`, `default`) | grouping       | array literal   | object literal |
+| Value-preserving operator keyword (`return`, `await`, `yield`, `in`, `of`, `instanceof`, `case`, `throw`, `new`, `extends`, `default`)            | grouping       | array literal   | object literal |
+| Discarding operator keyword (`typeof`, `void`, `delete`)                                                                                          | discarded operand | array literal | object literal |
 | Other punctuation or operator, including spread `...`, postfix `++` and `--`, `/` as division, and template text that ends in `${`                | grouping       | array literal   | object literal |
 | Identifier, number, any other word, a property name (even one spelled like a keyword), `.`, `?.`, `function*`                                     | call arguments | computed member | block          |
 | `)` or `]` that ends an operand, an object literal's closing `}`                                                                                  | call arguments | computed member | block          |
 | String, template or regular expression literal (with or without flags)                                                                            | call arguments | computed member | block          |
 
-Grouping parentheses and computed members keep the surrounding condition, so a read inside them can still control a following operator. Array literals, object literals, blocks and call arguments are value containers: when one closes, reads that are only values inside it are dropped, and a following `&&`, `||`, `??` or `?:` never becomes evidence for them. A branch operator inside a container still guards its own read. An array or object literal whose closing bracket is directly followed by a member access (`[`, `.` or `?.`), as in `[read][0]&&run()`, yields its element or property, so its reads stay pending and the following operator is their evidence; a call, a block or any other token after the bracket drops them. A `:` before `{` is treated as an object literal because a label or `case` block cannot be told apart without parsing.
+Grouping parentheses and computed members keep the surrounding condition, so a read inside them can still control a following operator. Array literals, object literals, blocks, call arguments and discarded operands are value containers: when one closes, reads that are only values inside it are dropped, and a following `&&`, `||`, `??` or `?:` never becomes evidence for them. A branch operator inside a container still guards its own read. A `:` before `{` is treated as an object literal because a label or `case` block cannot be told apart without parsing.
+
+The next table lists how a read reaches a following `&&`, `||`, `??`, `?:` or statement condition. Each row is covered by one test row in `read_propagation_rows`.
+
+| Construct around the read                                                                                          | Following branch operator uses the read |
+| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| Unary `!`, `-`, `+`, `~`, `await`; binary comparison, arithmetic, `in`, `instanceof`; assignment value             | yes, the value derives from the read    |
+| Member, computed member, optional member or method call on the read itself (`read.length`, `read[0]`, `read.trim()`) | yes, the value derives from the read    |
+| The read as the key of a computed member (`a[read]`)                                                               | yes, the value derives from the read    |
+| Call, optional call or `new` argument list, spread argument                                                        | no, the argument is not the result      |
+| Array literal element                                                                                              | only the element selected below         |
+| Array literal followed by `[N]`, `?.[N]`, `.at(N)` or `?.at(N)` with `N` the decimal index of the element holding the read | yes, the access yields that element     |
+| Array literal followed by any other member, method, index or call, or an array with a spread before the element    | no                                      |
+| Object literal followed by `.key`, `?.key`, `["key"]` or `['key']` with `key` the last property holding the read   | yes, the access yields that property    |
+| Object literal followed by any other member, method or call, or a read in an earlier property                      | no                                      |
+| Operand of `typeof`, `void` or `delete`, parenthesized or not, up to the next token that cannot continue the operand (`&`, `\|`, `,`, `;`, `:`, `=`, `<`, `>`, `*`, `/`, `%`, `^`, `?`, a line break that ends the statement) | no, the result ignores the operand's value |
+| A branch operator inside a `typeof`, `void` or `delete` parenthesized operand                                      | yes, it guards its own read             |
+| Function object, class or method that is not invoked in place                                                      | no                                      |
+| `function` or arrow function invoked in place, `(function(){...})()`, `(function(){...}())`, `!function(){...}()`, `(()=>{...})()` or `(()=>expr)()`, with the read in a `return` expression or in the arrow body | yes, the call returns it                |
+| Invoked function whose read is not in a `return` expression, is returned before a comma, or follows a line break after `return` | no                                      |
+| Async function, async arrow, generator, method or a function passed as an argument                                | no, the call result is a promise, iterator or argument |
+| Sequence `(a, read)`; read after the last comma                                                                    | yes                                     |
+| Sequence `(read, a)`; read before a comma                                                                          | no                                      |
+| Conditional expression group `(c ? read : other)`                                                                  | yes, either branch can be the value     |
+| Conditional branch without a group (`c ? read : other && run()`)                                                   | no, the operator binds to `other`       |
+| Read in the test of `c ? a : b`                                                                                    | yes, the conditional is the guard       |
+
+### Known limits
+
+The branch-evidence scanner is a token scanner. When a construct cannot be decided without a real parser, the scanner does not treat the read as guarded, so the finding is not produced and no branch is claimed. These cases are pinned by `read_propagation_known_limits_are_not_guarded`:
+
+- An array element selected by a negative or non-literal index (`.at(-1)`, `["0"]`, `[index]`), through a nested literal (`[[read]][0][0]`) or through a method such as `find`.
+- An object property with a computed key, a getter or a spread.
+- An operand of `typeof`, `void` or `delete` that continues through a binary operator (`typeof a + read`); the read stays part of the discarded operand until a token that cannot continue it.
+- A function value invoked through `call`, `apply` or a variable, and a function returned by an invoked function.
+
 
 Vite's unresolved-environment detector confirms a generated `({}).NAME` against verified original source text. If a generated environment candidate maps to a source that is unreadable or has no build-time text snapshot, the candidate is skipped and dead-code elimination coverage is `PARTIAL` with a note that environment-variable findings may be missing. Other source gaps do not downgrade Vite dead-code coverage. Name-mangling coverage is partial when original source text is unverifiable for its direct-eval detector. Rspack's environment detector does not require that Vite-specific confirmation, so unreadable source text alone does not downgrade Rspack dead-code elimination coverage. Disabled minification remains `NOT_APPLICABLE`; a non-default minifier remains `UNAVAILABLE`.
 
