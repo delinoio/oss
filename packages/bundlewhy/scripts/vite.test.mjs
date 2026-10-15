@@ -8,7 +8,11 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { normalizeCollectionRoot } from "../../../crates/bundlewhy/adapters/vite.mjs";
+import {
+  MangleSetting,
+  normalizeCollectionRoot,
+  resolveMangleSetting,
+} from "../../../crates/bundlewhy/adapters/vite.mjs";
 
 const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -31,6 +35,30 @@ test("collection roots use Vite's separator format in every resolution mode", ()
     normalizeCollectionRoot(process.cwd()),
     fs.realpathSync(process.cwd()).replaceAll("\\", "/"),
   );
+});
+
+test("output minify options decide the effective mangle setting", () => {
+  const { Enabled, Disabled } = MangleSetting;
+  assert.equal(resolveMangleSetting(undefined), Enabled);
+  assert.equal(resolveMangleSetting({}), Enabled);
+  assert.equal(resolveMangleSetting({ minify: true }), Enabled);
+  assert.equal(resolveMangleSetting({ minify: {} }), Enabled);
+  assert.equal(resolveMangleSetting({ minify: { mangle: true } }), Enabled);
+  assert.equal(resolveMangleSetting({ minify: { mangle: {} } }), Enabled);
+  assert.equal(resolveMangleSetting({ minify: false }), Disabled);
+  assert.equal(resolveMangleSetting({ minify: "dce-only" }), Disabled);
+  assert.equal(
+    resolveMangleSetting({
+      minify: { compress: true, mangle: false, codegen: true },
+    }),
+    Disabled,
+  );
+  // A single-entry output array is read as that entry.
+  assert.equal(
+    resolveMangleSetting([{ minify: { mangle: false } }]),
+    Disabled,
+  );
+  assert.equal(resolveMangleSetting([]), Enabled);
 });
 
 function makeProject(t) {
@@ -435,4 +463,39 @@ export default () => {
   assert.equal(fs.realpathSync(seen.configFile), fs.realpathSync(configFile));
   assert.ok(Array.isArray(seen.dependencies));
   assert.ok(collection.chunks.length > 0);
+});
+
+test("Vite diagnostic records the effective output mangle setting", (t) => {
+  const cases = [
+    { name: "default", output: "", expected: "enabled" },
+    {
+      name: "explicit-false",
+      output:
+        "rolldownOptions: { output: { minify: { compress: true, mangle: false, codegen: true } } },",
+      expected: "disabled",
+    },
+    {
+      name: "explicit-true",
+      output: "rolldownOptions: { output: { minify: { mangle: true } } },",
+      expected: "enabled",
+    },
+  ];
+  for (const { name, output, expected } of cases) {
+    const { work, projectRoot } = makeProject(t);
+    writeEntry(projectRoot, "mangle-entry");
+    const configFile = path.join(projectRoot, "vite.config.js");
+    fs.writeFileSync(
+      configFile,
+      `export default { build: { minify: "oxc", ${output} } };\n`,
+    );
+    const { collection } = runDiagnostic(work, projectRoot, configFile);
+    assert.equal(collection.mangle, expected, name);
+    assert.equal(
+      collection.configSummary["build.rolldownOptions.output.minify.mangle"],
+      expected,
+      name,
+    );
+    assert.equal(collection.minifyEnabled, true, name);
+    assert.equal(collection.defaultMinifier, true, name);
+  }
 });

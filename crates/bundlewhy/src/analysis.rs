@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     chunks::{Chunk, measure},
-    collect::Collection,
+    collect::{Collection, ManglingSetting},
     engine::BundlerChoice,
     error::{ErrorCode, problem},
     model::{
@@ -219,6 +219,16 @@ fn coverage(
                              uses {}.",
                             collection.minifier
                         ),
+                    )
+                }
+                OptimizationCategory::NameMangling
+                    if collection.mangle == ManglingSetting::Disabled =>
+                {
+                    (
+                        CoverageState::NotApplicable,
+                        "Name mangling is disabled by build.rolldownOptions.output.minify.mangle, \
+                         so names stay readable regardless of the source."
+                            .to_owned(),
                     )
                 }
                 // Vite's generated env expression needs confirmation from the
@@ -2759,6 +2769,53 @@ mod tests {
                 .unwrap();
             assert_eq!(entry.state, CoverageState::NotApplicable, "{category:?}");
         }
+    }
+
+    #[test]
+    fn disabled_mangling_suppresses_the_eval_claim_and_marks_coverage() {
+        let enabled = run_fixture(BundlerChoice::Vite, |_| {});
+        assert!(
+            find(
+                &enabled.output.analysis.diagnostics,
+                "minifier/direct-eval-blocks-mangling",
+                "src/dynamic/evaluate.js"
+            )
+            .is_some(),
+            "the fixture must report the finding while mangling is enabled"
+        );
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            value["mangle"] = serde_json::json!("disabled");
+            value["configSummary"]["build.rolldownOptions.output.minify.mangle"] =
+                serde_json::json!("disabled");
+        });
+        let analysis = &fixture.output.analysis;
+        assert_absent(
+            &analysis.diagnostics,
+            "minifier/direct-eval-blocks-mangling",
+            "",
+        );
+        let entry = analysis
+            .coverage
+            .iter()
+            .find(|entry| entry.category == OptimizationCategory::NameMangling)
+            .unwrap();
+        assert_eq!(entry.state, CoverageState::NotApplicable);
+        assert!(entry.note.contains("mangle"), "{}", entry.note);
+        // Dead-code elimination is unaffected by the mangling setting.
+        let dce = analysis
+            .coverage
+            .iter()
+            .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+            .unwrap();
+        assert_ne!(dce.state, CoverageState::NotApplicable);
+    }
+
+    #[test]
+    fn collections_without_a_mangle_field_assume_mangling() {
+        let collection: Collection = serde_json::from_str("{}").unwrap();
+        assert_eq!(collection.mangle, ManglingSetting::Enabled);
+        let collection: Collection = serde_json::from_str(r#"{"mangle":"disabled"}"#).unwrap();
+        assert_eq!(collection.mangle, ManglingSetting::Disabled);
     }
 
     #[test]

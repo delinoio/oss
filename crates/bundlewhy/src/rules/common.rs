@@ -9,7 +9,7 @@ use regex::Regex;
 
 use super::{Context, DiagnosticDraft, RuleId};
 use crate::{
-    collect::CollectedModule,
+    collect::{CollectedModule, ManglingSetting},
     model::{Condition, ConditionOutcome, Evidence, EvidenceStatus},
 };
 
@@ -1702,6 +1702,15 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
     if !collection.minify_enabled || !collection.default_minifier {
         return;
     }
+    // Disabled mangling keeps every name readable, so retained names cannot be
+    // attributed to eval. A source scan never overrides this explicit setting.
+    if collection.mangle == ManglingSetting::Disabled {
+        tracing::debug!(
+            rule = "minifier/direct-eval-blocks-mangling",
+            "skipping direct eval check because name mangling is disabled"
+        );
+        return;
+    }
     for module in &collection.modules {
         if context.is_cancelled() {
             return;
@@ -1831,6 +1840,14 @@ mod tests {
     use super::*;
 
     fn eval_rule_drafts(source: &str, engine_reports_eval: bool) -> Vec<DiagnosticDraft> {
+        eval_rule_drafts_with_mangling(source, engine_reports_eval, ManglingSetting::Enabled)
+    }
+
+    fn eval_rule_drafts_with_mangling(
+        source: &str,
+        engine_reports_eval: bool,
+        mangle: ManglingSetting,
+    ) -> Vec<DiagnosticDraft> {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let source_path = root.join("src/main.js");
@@ -1843,6 +1860,7 @@ mod tests {
         let collection = crate::collect::Collection {
             default_minifier: true,
             minify_enabled: true,
+            mangle,
             logs: if engine_reports_eval {
                 vec![crate::collect::EngineLog {
                     code: Some("EVAL".to_owned()),
@@ -2484,6 +2502,30 @@ y=/process.env.F/.test(z),process.env.G"#;
                 Some((expected.0, expected.1)),
                 "{source}"
             );
+        }
+    }
+
+    #[test]
+    fn disabled_mangling_never_blames_direct_eval() {
+        let source = "const longLocalName = 1;\nexport function run(code) {\n  return eval(code) \
+                      + longLocalName;\n}\n";
+        for engine_reports_eval in [false, true] {
+            assert!(
+                eval_rule_drafts_with_mangling(
+                    source,
+                    engine_reports_eval,
+                    ManglingSetting::Disabled
+                )
+                .is_empty(),
+                "engine_reports_eval={engine_reports_eval}"
+            );
+            let drafts = eval_rule_drafts_with_mangling(
+                source,
+                engine_reports_eval,
+                ManglingSetting::Enabled,
+            );
+            assert_eq!(drafts.len(), 1, "engine_reports_eval={engine_reports_eval}");
+            assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
         }
     }
 

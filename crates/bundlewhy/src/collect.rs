@@ -17,6 +17,9 @@ pub struct Collection {
     pub minifier_version: String,
     pub default_minifier: bool,
     pub minify_enabled: bool,
+    /// Effective output name-mangling setting. Collections written before the
+    /// field existed, and engines that do not report it, assume mangling.
+    pub mangle: ManglingSetting,
     pub adapter_id: String,
     pub adapter_version: String,
     pub overrides: Vec<String>,
@@ -35,6 +38,18 @@ pub struct Collection {
     /// Export-to-export usage edges that the engine reported. Absent for
     /// engines and adapter versions that do not collect them.
     pub export_usage: Option<CollectedExportUsage>,
+}
+
+/// Whether the minifier mangles names for the analyzed output.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ManglingSetting {
+    /// Mangling runs, or the collection does not say otherwise.
+    #[default]
+    Enabled,
+    /// The configuration disables mangling, so names stay readable regardless
+    /// of the source.
+    Disabled,
 }
 
 /// Export usage graph collected from the engine (Rspack's `RsdoctorPlugin`).

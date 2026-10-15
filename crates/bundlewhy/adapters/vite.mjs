@@ -24,7 +24,7 @@ import {
 } from "./common.mjs";
 
 export const ADAPTER_ID = "bundlewhy-collector-vite";
-export const ADAPTER_VERSION = "1";
+export const ADAPTER_VERSION = "2";
 
 /** Plugins that the adapter adds; they are not part of the project's config. */
 const BUNDLEWHY_PLUGIN_NAMES = new Set([
@@ -98,6 +98,34 @@ export function normalizeCollectionRoot(root, preserveSymlinks = false) {
   } catch {
     return root.replaceAll("\\", "/");
   }
+}
+
+/** Effective output name-mangling settings recorded in a collection. */
+export const MangleSetting = Object.freeze({
+  Enabled: "enabled",
+  Disabled: "disabled",
+});
+
+/**
+ * Resolves whether the Oxc minifier mangles names for one Rolldown output.
+ *
+ * Rolldown's `output.minify` is `boolean | "dce-only" | MinifyOptions`.
+ * `false` and `"dce-only"` never mangle, and an options object mangles unless
+ * its `mangle` is `false`. Everything else (absent, `true`, an object without
+ * `mangle: false`) keeps the minifier default, which mangles. A single-entry
+ * output array is read as that entry; several outputs are rejected after the
+ * build, so the first entry is enough for the diagnostic message. Only the
+ * explicit output option is read, never the source text.
+ */
+export function resolveMangleSetting(output) {
+  const entry = Array.isArray(output) ? output[0] : output;
+  const minify =
+    entry !== null && typeof entry === "object" ? entry.minify : undefined;
+  if (minify === false || minify === "dce-only") return MangleSetting.Disabled;
+  if (minify !== null && typeof minify === "object" && minify.mangle === false) {
+    return MangleSetting.Disabled;
+  }
+  return MangleSetting.Enabled;
 }
 
 /**
@@ -211,6 +239,10 @@ function collectorPlugin(state) {
         treeshake: summarizeValue(
           config.build.rolldownOptions?.treeshake ??
             config.build.rollupOptions?.treeshake,
+        ),
+        mangle: resolveMangleSetting(
+          config.build.rolldownOptions?.output ??
+            config.build.rollupOptions?.output,
         ),
         mode: config.mode,
         defineKeys: Object.keys(config.define ?? {}).sort(),
@@ -507,6 +539,8 @@ await runAdapter(async (request) => {
     "build.minify": summarizeValue(minify),
     "build.target": resolved.target ?? "unknown",
     "build.rolldownOptions.treeshake": resolved.treeshake ?? "undefined",
+    "build.rolldownOptions.output.minify.mangle":
+      resolved.mangle ?? MangleSetting.Enabled,
     "build.lib": String(Boolean(resolved.lib)),
     "build.ssr": String(Boolean(resolved.ssr)),
     "original build.sourcemap": summarizeValue(resolved.sourcemap),
@@ -525,6 +559,7 @@ await runAdapter(async (request) => {
     minifierVersion: minifierName === "oxc" ? vite.rolldownVersion : "unknown",
     defaultMinifier: minifierName === "oxc",
     minifyEnabled,
+    mangle: resolved.mangle ?? MangleSetting.Enabled,
     adapterId: ADAPTER_ID,
     adapterVersion: ADAPTER_VERSION,
     engineDetails: { rolldownVersion: vite.rolldownVersion },
