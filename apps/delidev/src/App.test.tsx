@@ -3952,8 +3952,16 @@ it("rechecks the original welcome status failure without creating or controlling
 });
 
 it.each([
-  ["en", "Your sessions, in one place", "Select a retained session or start a new conversation."],
-  ["ko", "내 세션을 한곳에서", "유지된 세션을 선택하거나 새 대화를 시작하세요."],
+  [
+    "en",
+    "Your sessions, in one place",
+    "Select a retained session or start a new conversation.",
+  ],
+  [
+    "ko",
+    "내 세션을 한곳에서",
+    "유지된 세션을 선택하거나 새 대화를 시작하세요.",
+  ],
 ])(
   "renders only the %s welcome heading when no session is selected",
   async (locale, heading, removedSubtitle) => {
@@ -3990,7 +3998,9 @@ it("keeps the welcome status failure and its retry action without a subtitle", a
   ).toBeTruthy();
   expect(welcome.querySelector(":scope > p")).toBeNull();
   expect(
-    screen.queryByText("Select a retained session or start a new conversation."),
+    screen.queryByText(
+      "Select a retained session or start a new conversation.",
+    ),
   ).toBeNull();
 });
 
