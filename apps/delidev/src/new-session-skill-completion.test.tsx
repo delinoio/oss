@@ -225,8 +225,18 @@ it.each([NewSessionKind.Session, NewSessionKind.GeneralChat])(
     const link = view.container.querySelector("[data-markdown-link]");
     expect(link?.textContent).toBe("https://example.com/docs");
     expect(link?.className).toBe("markdown-link-label");
+    // Submission is a no-op until the status, machine and default queries have
+    // settled, so a slow runner must wait for the enabled submit control.
+    const submit = view.container.querySelector<HTMLButtonElement>(
+      "button.new-session-submit",
+    )!;
+    await waitFor(() => expect(submit.disabled).toBe(false), {
+      timeout: 10_000,
+    });
     fireEvent.submit(input.form!);
-    await waitFor(() => expect(f.createSession).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(f.createSession).toHaveBeenCalledTimes(1), {
+      timeout: 10_000,
+    });
     const document = JSON.parse(
       new TextDecoder().decode(f.createSession.mock.calls[0]![0].documentJson),
     ) as { prompt: string };
