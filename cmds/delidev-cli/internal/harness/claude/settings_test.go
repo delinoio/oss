@@ -94,6 +94,43 @@ func TestRawStreamHasNoInventedInitialAppliedSettings(t *testing.T) {
 	}
 }
 
+func TestAppliedSettingsMetadataDoesNotEnableOrchestration(t *testing.T) {
+	for _, name := range []string{"available", "unavailable", "requested", "enabled", "invalid-availability", "null-availability", "invalid-request", "invalid-policy", "oversized-policy", "model-change"} {
+		t.Run(name, func(t *testing.T) {
+			value := settingsFixture()
+			applied := value["applied"].(map[string]any)
+			applied["ultracodeRequested"] = false
+			applied["ultracodeAvailable"] = true
+			value["remote_control_policy_lock_reason"] = "Fixture policy prevents remote control."
+			switch name {
+			case "unavailable":
+				applied["ultracodeAvailable"] = false
+			case "requested":
+				applied["ultracodeRequested"] = true
+			case "enabled":
+				applied["ultracode"] = true
+			case "invalid-availability":
+				applied["ultracodeAvailable"] = "true"
+			case "null-availability":
+				applied["ultracodeAvailable"] = nil
+			case "invalid-request":
+				applied["ultracodeRequested"] = nil
+			case "invalid-policy":
+				value["remote_control_policy_lock_reason"] = nil
+			case "oversized-policy":
+				value["remote_control_policy_lock_reason"] = strings.Repeat("x", 4097)
+			case "model-change":
+				applied["model"] = "other-model"
+			}
+			raw, _ := json.Marshal(value)
+			_, err := decodeAppliedSettings(raw, "fixed-model", HighEffort)
+			if (err == nil) != (name == "available" || name == "unavailable") {
+				t.Fatalf("unexpected settings metadata result: %v", err)
+			}
+		})
+	}
+}
+
 func TestAppliedEffortHasNoAdvertisedSupportGate(t *testing.T) {
 	value := settingsFixture()
 	effort := NativeEffort("Future-Effort")

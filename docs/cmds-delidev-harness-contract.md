@@ -415,6 +415,12 @@ Ordinary tests use a private executable fixture only. Opt-in installed macOS tes
 
 ### Claude Code applied settings evidence
 
+The `2.1.287` settings response may also report a bounded private
+`remote_control_policy_lock_reason`, boolean `ultracodeAvailable` and explicitly
+false `ultracodeRequested`. These optional presentation fields are discarded;
+availability cannot authorize orchestration. The applied `ultracode` value must
+still be false, with unchanged model, effort, empty sources and effective settings.
+
 Before returning an API stream, initialization issues one separately correlated `get_settings` read within its existing bounded initialization deadline. The private `2.1.236` profile requires exact top-level and nested field names, empty effective settings/source collections, explicit absent advisor and disabled ultracode. Unknown/missing/null shapes, additional source/policy settings and unrequested model orchestration fail without sending input; no raw settings/source content enters logs or returned product data. This check preserves the private launch profile rather than interpreting an arbitrary raw cascade as execution authority.
 
 The native `applied.model` must equal the immutable native selector. `applied.effort` is a closed native enum or explicit null; an explicit requested effort must match, while an omitted selection retains the native-reported default or null without manufacturing one. Missing effort differs from reported null. Permission evidence remains the separately verified native initialization/system mode; this model/effort read cannot grant or change permission. Initialization failure closes and reconciles the original owned scope.
