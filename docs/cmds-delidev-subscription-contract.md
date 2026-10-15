@@ -1007,6 +1007,12 @@ retired with the credential files, including during account deletion.
 
 ## Claude native version admission and diagnostics
 
+Native `auth status --json` may include the optional `analyticsDisabled`,
+`projectsDirectory` and `configDirectory` presentation fields. The adapter accepts
+their declared types, discards them after decoding and preserves all first-party
+subscription and disconnected-profile checks. These fields grant no credential,
+profile or execution authority; unknown fields remain unsupported.
+
 Server-owned setup-token login, Runner subscription selection and the Worker lifecycle admit any verified Claude Code installation whose valid SemVer precedence is at or above the pinned `2.1.236` baseline, using `domain.HarnessVersionAllowed`. Admission only permits the real native protocol, settings, authentication and cleanup checks to run. The `claude auth` and `--version` verification compares the executable output with the observed installation version, never with the baseline constant. A malformed or lower version stays unsupported before any native launch.
 
 `NativeSubscriptionDiagnostic.detected_version` carries the observed executable version, including on the server login path, and `phase` carries the real failing native phase. A server login rejected during Claude protocol discovery reports Discovery, not Launch. `required_version` stays in the proto and Go validator as the pinned minimum baseline for wire compatibility; clients must not present it as an exact requirement. An authentication-status failure after successful version validation never advises installing a specific version. Server and Runner messages for unsupported installations do not name a fixed version.

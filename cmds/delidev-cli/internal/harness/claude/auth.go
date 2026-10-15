@@ -206,10 +206,20 @@ func VerifyAuthVersion(ctx context.Context, config AuthConfig) error {
 	return nil
 }
 func ReadAuthStatus(ctx context.Context, config AuthConfig) (AuthStatus, error) {
-	var status AuthStatus
+	// Newer native versions report local presentation metadata alongside auth.
+	// Accept these declared fields without retaining paths or treating them as
+	// authentication evidence; unknown fields still fail strict decoding.
+	var response struct {
+		AuthStatus
+		AnalyticsDisabled *bool  `json:"analyticsDisabled,omitempty"`
+		ProjectsDirectory string `json:"projectsDirectory,omitempty"`
+		ConfigDirectory   string `json:"configDirectory,omitempty"`
+	}
 	raw, err := authCommand(ctx, config, "auth", "status", "--json")
 	defer clear(raw)
-	if domain.Decode(raw, &status) != nil || status.APIProvider != "firstParty" {
+	decodeErr := domain.Decode(raw, &response)
+	status := response.AuthStatus
+	if decodeErr != nil || status.APIProvider != "firstParty" {
 		return status, authProblem()
 	}
 	if err != nil {

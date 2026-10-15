@@ -150,7 +150,7 @@ func init() {
 	case "status":
 		data, err := os.ReadFile(marker)
 		if err != nil {
-			fmt.Println(`{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}`)
+			fmt.Println(`{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty","analyticsDisabled":true,"projectsDirectory":"/fixture/claude/projects","configDirectory":"/fixture/claude"}`)
 			os.Exit(1)
 		}
 		_, _ = os.Stdout.Write(data)
@@ -161,6 +161,31 @@ func init() {
 		os.Exit(0)
 	}
 	os.Exit(86)
+}
+
+func TestNativeClaudeAuthStatusMetadataPreservesAuthenticationChecks(t *testing.T) {
+	first, _ := fixtureConfig(t, "auth-native-metadata")
+	config := AuthConfig{Process: first.Process, Version: first.Version, Home: first.Home}
+	for _, tc := range []struct {
+		name, extra string
+		wantError   bool
+	}{
+		{"declared metadata", `,"analyticsDisabled":true,"projectsDirectory":"/fixture/projects","configDirectory":"/fixture/config"`, false},
+		{"unknown metadata", `,"unknownAuthAuthority":true`, true},
+		{"invalid metadata type", `,"analyticsDisabled":"true"`, true},
+		{"API credential source", `,"apiKeySource":"apiKeyHelper","analyticsDisabled":true`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := `{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"fixture@example.invalid","orgId":"fixture-org","subscriptionType":"pro"` + tc.extra + `}`
+			if err := os.WriteFile(filepath.Join(config.Home, "fixture-account-state.json"), []byte(raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			status, err := ReadAuthStatus(context.Background(), config)
+			if (err != nil) != tc.wantError || !tc.wantError && !status.Subscription() {
+				t.Fatalf("unexpected authentication result: subscription=%v error=%v", status.Subscription(), err)
+			}
+		})
+	}
 }
 
 func TestNativeClaudeAuthProcessIsolationExitAndLogout(t *testing.T) {
