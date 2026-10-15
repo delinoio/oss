@@ -153,24 +153,45 @@ pub fn find_interpreter(name: &OsStr, search_path: Option<&OsStr>) -> Result<Pat
 
 pub fn find_on_path(name: &OsStr, search_path: Option<&OsStr>, cwd: &Path) -> Option<PathBuf> {
     for directory in std::env::split_paths(search_path?) {
-        let candidate = cwd.join(directory).join(name);
-        if !candidate.is_file() {
+        #[cfg(windows)]
+        {
+            // Do not invoke cmd.exe implicitly. Explicit .cmd/.bat invocation
+            // belongs to an explicitly selected shell; PE images and declared
+            // dependency shebangs retain literal argument semantics.
+            let candidate = cwd.join(&directory).join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+            if Path::new(name).extension().is_none() {
+                let candidate = candidate.with_extension("exe");
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
             continue;
         }
-        #[cfg(unix)]
+        #[cfg(not(windows))]
         {
-            use std::{ffi::CString, os::unix::ffi::OsStrExt};
-            let Ok(path) = CString::new(candidate.as_os_str().as_bytes()) else {
-                continue;
-            };
-            if unsafe { libc::access(path.as_ptr(), libc::X_OK) } != 0 {
+            let candidate = cwd.join(directory).join(name);
+            if !candidate.is_file() {
                 continue;
             }
+            #[cfg(unix)]
+            {
+                use std::{ffi::CString, os::unix::ffi::OsStrExt};
+                let Ok(path) = CString::new(candidate.as_os_str().as_bytes()) else {
+                    continue;
+                };
+                if unsafe { libc::access(path.as_ptr(), libc::X_OK) } != 0 {
+                    continue;
+                }
+            }
+            // Injection admission happens after PATH selection. A protected,
+            // but executable, candidate must fail explicitly rather
+            // than select a different program from a later
+            // directory.
+            return Some(candidate);
         }
-        // Injection admission happens after PATH selection. A protected, but
-        // executable, candidate must fail explicitly rather than select a
-        // different program from a later directory.
-        return Some(candidate);
     }
     None
 }
@@ -205,6 +226,18 @@ fn executable_permissions(path: &Path) -> Result<()> {
 pub fn validate(path: &Path) -> Result<PathBuf> {
     let path = fs::canonicalize(path).map_err(access_error)?;
     executable_permissions(&path)?;
+    #[cfg(windows)]
+    {
+        let bytes = fs::read(&path).map_err(access_error)?;
+        let architecture = if cfg!(target_arch = "aarch64") {
+            crate::pe::Architecture::Arm64
+        } else {
+            crate::pe::Architecture::X64
+        };
+        if !crate::pe::admits(&bytes, architecture, crate::pe::ImageKind::Executable) {
+            return Err(invalid());
+        }
+    }
     #[cfg(target_os = "macos")]
     {
         if ["/bin", "/sbin", "/usr/bin", "/usr/sbin", "/System"]
@@ -364,6 +397,7 @@ impl LaunchAdmission {
 
 fn access_error(error: std::io::Error) -> Error {
     let kind = match error.raw_os_error() {
+        #[cfg(unix)]
         Some(libc::ELOOP) => ExecFailureKind::InterpreterLoop,
         _ if error.kind() == std::io::ErrorKind::NotFound => ExecFailureKind::NotFound,
         _ => ExecFailureKind::PermissionDenied,

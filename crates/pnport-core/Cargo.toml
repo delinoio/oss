@@ -27,3 +27,6 @@ ed25519-dalek = "=2.2.0"
 core-foundation = "0.10.1"
 security-framework = "=3.7.0"
 plist = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_System_Memory"] }

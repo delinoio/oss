@@ -7500,8 +7500,10 @@ dependencies = [
  "core-foundation 0.10.1",
  "dirs",
  "fs2",
+ "fspy_detours_sys",
  "fspy_shared_unix",
  "libc",
+ "ntapi",
  "plist",
  "pnp",
  "pnport-core",
@@ -7514,6 +7516,8 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "winapi",
+ "windows-sys 0.61.2",
  "zip 2.4.2",
 ]
 
@@ -7536,6 +7540,7 @@ dependencies = [
  "tempfile",
  "tracing",
  "url",
+ "windows-sys 0.61.2",
  "zip 2.4.2",
 ]
 
@@ -7543,9 +7548,18 @@ dependencies = [
 name = "pnport-preload"
 version = "0.1.2"
 dependencies = [
+ "fspy_detours_sys",
+ "fspy_nostd",
  "libc",
+ "ntapi",
  "pnport-core",
  "serde_json",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "winapi",
+ "winsafe",
 ]
 
 [[package]]

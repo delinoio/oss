@@ -19,6 +19,13 @@ pub fn digest(bytes: &[u8]) -> String {
 }
 
 pub fn normalize(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    let native = crate::windows::dos_path(&{
+        use std::os::windows::ffi::OsStrExt;
+        path.as_os_str().encode_wide().collect::<Vec<_>>()
+    });
+    #[cfg(windows)]
+    let path = native.as_path();
     let mut result = PathBuf::new();
     for part in path.components() {
         match part {
@@ -144,7 +151,7 @@ pub struct Graph {
 
 impl Graph {
     pub fn load(path: &Path) -> Result<Self> {
-        let path = fs::canonicalize(path).map_err(|_| manifest_error())?;
+        let path = normalize(&fs::canonicalize(path).map_err(|_| manifest_error())?);
         let bytes = read_manifest(&path)?;
         let source = std::str::from_utf8(&bytes).map_err(|_| manifest_error())?;
         let mut inputs = vec![Input {
@@ -253,6 +260,19 @@ impl Graph {
     }
 
     pub fn resolve(&self, name: &str, issuer: &Path) -> Result<PathBuf> {
+        if !issuer.is_absolute() {
+            return Err(manifest_error());
+        }
+        #[cfg(windows)]
+        let name = self
+            .package(issuer)
+            .and_then(|package| {
+                package
+                    .package_dependencies
+                    .keys()
+                    .find(|candidate| candidate.eq_ignore_ascii_case(name))
+            })
+            .map_or(name, String::as_str);
         match pnp::resolve_to_unqualified_via_manifest(&self.manifest, name, issuer) {
             Ok(Resolution::Resolved(path, sub)) => {
                 Ok(sub.map_or(path.clone(), |sub| path.join(sub)))
@@ -265,6 +285,9 @@ impl Graph {
     }
 
     pub fn package(&self, issuer: &Path) -> Option<&PackageInformation> {
+        if !issuer.is_absolute() {
+            return None;
+        }
         let locator = pnp::find_locator(&self.manifest, issuer)?;
         self.manifest
             .package_registry_data
@@ -321,6 +344,10 @@ impl Graph {
         self.cache_container(issuer)
             && name.as_encoded_bytes().starts_with(b".")
             && !matches!(name.as_encoded_bytes(), b"." | b".." | b".bin")
+            && !(cfg!(windows)
+                && name
+                    .to_str()
+                    .is_some_and(|name| name.eq_ignore_ascii_case(".bin")))
             && !self.package(issuer).is_some_and(|package| {
                 package
                     .package_dependencies
@@ -352,6 +379,13 @@ impl Graph {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
             Err(_) => return Err(filesystem_conflict()),
         };
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if metadata.file_attributes() & 0x400 != 0 {
+                return Err(filesystem_conflict());
+            }
+        }
         if !metadata.is_dir() {
             return Err(filesystem_conflict());
         }

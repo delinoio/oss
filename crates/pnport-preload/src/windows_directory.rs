@@ -1,0 +1,288 @@
+// SPDX-License-Identifier: Apache-2.0
+#![allow(
+    non_upper_case_globals,
+    reason = "NT API constants retain their upstream names"
+)]
+//! Native directory records for merged dependency/cache views. Enumeration
+//! cursors are shared by duplicated handles, as on the native open object.
+
+use std::os::windows::fs::MetadataExt;
+
+use super::*;
+
+struct Item {
+    name: Vec<u16>,
+    metadata: fs::Metadata,
+}
+pub(super) struct Listing {
+    items: Vec<Item>,
+    index: usize,
+    pattern: Vec<u16>,
+}
+
+unsafe extern "system" {
+    fn RtlIsNameInExpression(
+        expression: PUNICODE_STRING,
+        name: PUNICODE_STRING,
+        ignore_case: BOOLEAN,
+        table: *mut u16,
+    ) -> BOOLEAN;
+}
+
+fn matching(pattern: &[u16], name: &[u16]) -> bool {
+    let mut pattern = pattern.to_vec();
+    // RtlIsNameInExpression expects an uppercase expression for IgnoreCase.
+    // Upcase through Windows' invariant Unicode table, not Unicode expansion.
+    for unit in &mut pattern {
+        *unit = unsafe { ntapi::ntrtl::RtlUpcaseUnicodeChar(*unit) };
+    }
+    let mut name = name.to_vec();
+    let mut expression = UNICODE_STRING {
+        Length: (pattern.len() * 2) as u16,
+        MaximumLength: (pattern.len() * 2) as u16,
+        Buffer: pattern.as_mut_ptr(),
+    };
+    let mut value = UNICODE_STRING {
+        Length: (name.len() * 2) as u16,
+        MaximumLength: (name.len() * 2) as u16,
+        Buffer: name.as_mut_ptr(),
+    };
+    unsafe { RtlIsNameInExpression(&mut expression, &mut value, 1, ptr::null_mut()) != 0 }
+}
+
+fn listing(file: &OpenFile, pattern: Vec<u16>) -> std::result::Result<Listing, NTSTATUS> {
+    let mut items = Vec::new();
+    let physical = &file.translation.physical;
+    for entry in fs::read_dir(physical).map_err(|_| MISSING)? {
+        let entry = entry.map_err(|_| IO_ERROR)?;
+        let name: Vec<_> = entry.file_name().encode_wide().collect();
+        if matching(&pattern, &name) {
+            items.push(Item {
+                name,
+                metadata: fs::metadata(entry.path()).map_err(|_| IO_ERROR)?,
+            });
+        }
+    }
+    let additions = {
+        let runtime = RUNTIME
+            .get()
+            .ok_or(IO_ERROR)?
+            .lock()
+            .map_err(|_| IO_ERROR)?;
+        runtime
+            .view
+            .directory_entries(&file.translation.logical, physical)
+    }
+    .map_err(|error| error_status(error.code))?;
+    for entry in additions {
+        let name: Vec<_> = entry.name.encode_utf16().collect();
+        if items.iter().any(|item| item.name == name) || !matching(&pattern, &name) {
+            continue;
+        }
+        let translation = translate(&file.translation.logical.join(&entry.name), false)?;
+        items.push(Item {
+            name,
+            metadata: fs::metadata(&translation.physical).map_err(|_| MISSING)?,
+        });
+    }
+    Ok(Listing {
+        items,
+        index: 0,
+        pattern,
+    })
+}
+
+fn layout(class: FILE_INFORMATION_CLASS) -> Option<usize> {
+    match class {
+        FileDirectoryInformation => Some(64),
+        FileFullDirectoryInformation => Some(68),
+        FileBothDirectoryInformation => Some(94),
+        FileNamesInformation => Some(12),
+        FileIdBothDirectoryInformation => Some(104),
+        FileIdFullDirectoryInformation => Some(80),
+        _ => None,
+    }
+}
+fn put32(buffer: &mut [u8], offset: usize, value: u32) {
+    buffer[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+fn put64(buffer: &mut [u8], offset: usize, value: u64) {
+    buffer[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+}
+
+unsafe fn query(
+    file: HANDLE,
+    event: HANDLE,
+    apc: PIO_APC_ROUTINE,
+    context: PVOID,
+    ios: PIO_STATUS_BLOCK,
+    buffer: PVOID,
+    length: ULONG,
+    class: FILE_INFORMATION_CLASS,
+    single: bool,
+    pattern: PUNICODE_STRING,
+    restart: bool,
+) -> Option<NTSTATUS> {
+    let owned = handle(file)?;
+    let additions = {
+        let runtime = RUNTIME.get()?.lock().ok()?;
+        runtime
+            .view
+            .directory_entries(&owned.translation.logical, &owned.translation.physical)
+    };
+    match additions {
+        Ok(entries) if entries.is_empty() => return None,
+        Err(error) => return Some(error_status(error.code)),
+        _ => {}
+    }
+    // Do not claim completion-port/APC semantics with a synchronous emulation.
+    // Native-backed directories with no merged entries use the native syscall.
+    if apc.is_some() || !context.is_null() {
+        return Some(fail(Code::PnportUnsupportedOperation));
+    }
+    let Some(header) = layout(class) else {
+        return Some(fail(Code::PnportUnsupportedOperation));
+    };
+    if ios.is_null() || buffer.is_null() || (length as usize) < header {
+        return Some(INVALID);
+    }
+    let mut cursor = match owned.listing.lock() {
+        Ok(value) => value,
+        Err(_) => return Some(IO_ERROR),
+    };
+    if restart || cursor.is_none() {
+        let pattern = if let Some(previous) = cursor.as_ref() {
+            previous.pattern.clone()
+        } else if pattern.is_null() {
+            vec![b'*' as u16]
+        } else {
+            match unicode(pattern) {
+                Ok(value) => value,
+                Err(status) => return Some(status),
+            }
+        };
+        *cursor = match listing(&owned, pattern) {
+            Ok(value) => Some(value),
+            Err(status) => return Some(status),
+        };
+    }
+    let cursor = cursor.as_mut().unwrap();
+    let bytes = std::slice::from_raw_parts_mut(buffer.cast::<u8>(), length as usize);
+    let mut used = 0;
+    let mut previous = None;
+    while let Some(item) = cursor.items.get(cursor.index) {
+        let needed = header + item.name.len() * 2;
+        let aligned = (needed + 7) & !7;
+        if used + needed > bytes.len() {
+            break;
+        }
+        let record = &mut bytes[used..used + needed];
+        record.fill(0);
+        if class != FileNamesInformation {
+            put64(record, 8, item.metadata.creation_time());
+            put64(record, 16, item.metadata.last_access_time());
+            put64(record, 24, item.metadata.last_write_time());
+            put64(record, 32, item.metadata.last_write_time());
+            put64(record, 40, item.metadata.len());
+            put64(record, 48, item.metadata.len().saturating_add(4095) & !4095);
+            put32(record, 56, item.metadata.file_attributes());
+            put32(record, 60, (item.name.len() * 2) as u32);
+        } else {
+            put32(record, 8, (item.name.len() * 2) as u32);
+        }
+        for (i, unit) in item.name.iter().enumerate() {
+            record[header + i * 2..header + i * 2 + 2].copy_from_slice(&unit.to_le_bytes());
+        }
+        if let Some(previous) = previous {
+            put32(bytes, previous, (used - previous) as u32);
+        }
+        previous = Some(used);
+        cursor.index += 1;
+        used += if used + aligned <= bytes.len() {
+            aligned
+        } else {
+            needed
+        };
+        if single {
+            break;
+        }
+    }
+    let status = if used != 0 {
+        0
+    } else if cursor.index >= cursor.items.len() {
+        0x80000006u32 as i32
+    } else {
+        0x80000005u32 as i32
+    };
+    (*ios).Information = used;
+    (*ios).u.Status = status;
+    if !event.is_null() {
+        SetEvent(event);
+    }
+    Some(status)
+}
+
+hook!(QUERY, ntapi::ntioapi::NtQueryDirectoryFile, c"NtQueryDirectoryFile", (file: HANDLE, event: HANDLE, apc: PIO_APC_ROUTINE, context: PVOID, ios: PIO_STATUS_BLOCK, buffer: PVOID, length: ULONG, class: FILE_INFORMATION_CLASS, single: BOOLEAN, pattern: PUNICODE_STRING, restart: BOOLEAN) -> NTSTATUS, {
+    let Some(_guard) = Guard::enter() else { return (QUERY.real())(file,event,apc,context,ios,buffer,length,class,single,pattern,restart); };
+    query(file,event,apc,context,ios,buffer,length,class,single != 0,pattern,restart != 0).unwrap_or_else(|| (QUERY.real())(file,event,apc,context,ios,buffer,length,class,single,pattern,restart))
+});
+
+static QUERY_EX: Detour<
+    unsafe extern "system" fn(
+        HANDLE,
+        HANDLE,
+        PIO_APC_ROUTINE,
+        PVOID,
+        PIO_STATUS_BLOCK,
+        PVOID,
+        ULONG,
+        FILE_INFORMATION_CLASS,
+        ULONG,
+        PUNICODE_STRING,
+    ) -> NTSTATUS,
+> = unsafe {
+    Detour::dynamic(c"NtQueryDirectoryFileEx", {
+        unsafe extern "system" fn replacement(
+            file: HANDLE,
+            event: HANDLE,
+            apc: PIO_APC_ROUTINE,
+            context: PVOID,
+            ios: PIO_STATUS_BLOCK,
+            buffer: PVOID,
+            length: ULONG,
+            class: FILE_INFORMATION_CLASS,
+            flags: ULONG,
+            pattern: PUNICODE_STRING,
+        ) -> NTSTATUS {
+            let Some(_guard) = Guard::enter() else {
+                return (QUERY_EX.real())(
+                    file, event, apc, context, ios, buffer, length, class, flags, pattern,
+                );
+            };
+            if flags & !3 != 0 {
+                return fail(Code::PnportUnsupportedOperation);
+            }
+            query(
+                file,
+                event,
+                apc,
+                context,
+                ios,
+                buffer,
+                length,
+                class,
+                flags & 2 != 0,
+                pattern,
+                flags & 1 != 0,
+            )
+            .unwrap_or_else(|| {
+                (QUERY_EX.real())(
+                    file, event, apc, context, ios, buffer, length, class, flags, pattern,
+                )
+            })
+        }
+        replacement
+    })
+};
+
+pub(super) const DETOURS: &[DetourAny] = &[QUERY.as_any(), QUERY_EX.as_any()];

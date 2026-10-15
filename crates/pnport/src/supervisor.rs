@@ -1,16 +1,17 @@
+#[cfg(unix)]
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::{
     ffi::OsString,
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicI32, Ordering},
 };
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 use std::{
     process::{Command, ExitStatus},
     time::{Duration, Instant},
 };
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 use pnport::graph::Input;
 use pnport::{
     diagnostic::{Code, Error, Result},
@@ -21,6 +22,7 @@ pub fn platform() -> Result<()> {
     if !cfg!(all(
         any(
             target_os = "macos",
+            all(target_os = "windows", target_env = "msvc"),
             all(target_os = "linux", target_env = "gnu")
         ),
         any(target_arch = "x86_64", target_arch = "aarch64")
@@ -29,6 +31,13 @@ pub fn platform() -> Result<()> {
             Code::PnportUnsupportedOperation,
             "This release supports macOS 15+ and glibc Linux on x64/arm64. Windows support is \
              planned for pnport 0.2.0.",
+        ));
+    }
+    #[cfg(windows)]
+    if !crate::windows::supported() {
+        return Err(Error::new(
+            Code::PnportUnsupportedOperation,
+            "Windows 10 22H2 or newer is required.",
         ));
     }
     #[cfg(target_os = "macos")]
@@ -74,6 +83,8 @@ pub fn artifact() -> Result<PathBuf> {
 fn artifact_in_directory(directory: &Path) -> Result<PathBuf> {
     let packaged = directory.join(if cfg!(target_os = "macos") {
         "libpnport_preload.dylib"
+    } else if cfg!(windows) {
+        "pnport_preload.dll"
     } else {
         "libpnport_preload.so"
     });
@@ -86,6 +97,17 @@ fn artifact_in_directory(directory: &Path) -> Result<PathBuf> {
         packaged
     };
     let bytes = fs::read(&artifact).map_err(|_| injection_error())?;
+    #[cfg(windows)]
+    {
+        let architecture = if cfg!(target_arch = "aarch64") {
+            pnport_core::pe::Architecture::Arm64
+        } else {
+            pnport_core::pe::Architecture::X64
+        };
+        if !pnport_core::pe::admits(&bytes, architecture, pnport_core::pe::ImageKind::Library) {
+            return Err(injection_error());
+        }
+    }
     #[cfg(target_os = "linux")]
     {
         let machine = if cfg!(target_arch = "aarch64") {
@@ -190,13 +212,13 @@ pub(crate) fn runtime_failure(session: &Path) -> Result<Option<Error>> {
     )))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 #[derive(Default)]
 struct PendingLaunches {
     observed: std::collections::HashMap<PathBuf, (Option<(u64, u64)>, Instant)>,
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn marker_identity(metadata: &fs::Metadata) -> Option<(u64, u64)> {
     #[cfg(unix)]
     {
@@ -210,7 +232,7 @@ fn marker_identity(metadata: &fs::Metadata) -> Option<(u64, u64)> {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn pending_entry_state(
     session: &Path,
     path: &Path,
@@ -238,7 +260,7 @@ fn pending_entry_state(
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 impl PendingLaunches {
     #[cfg(target_os = "macos")]
     fn pause(&mut self, duration: Duration) {
@@ -336,6 +358,7 @@ impl PendingLaunches {
     }
 }
 
+#[cfg(unix)]
 static SIGNAL: AtomicI32 = AtomicI32::new(0);
 #[cfg(target_os = "linux")]
 pub(crate) fn handled_signal() -> i32 {
@@ -378,7 +401,11 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         let _ = artifact;
         crate::linux::run_traced(view, &prepared, &node_options)
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        crate::windows::run(view, artifact, &prepared, &node_options)
+    }
+    #[cfg(target_os = "macos")]
     {
         #[cfg(target_os = "macos")]
         let admission =
@@ -616,7 +643,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         result
     }
 }
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn exit_code(status: ExitStatus) -> i32 {
     #[cfg(unix)]
     {

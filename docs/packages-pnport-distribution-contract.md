@@ -34,6 +34,20 @@ is specific to 0.1.2 and does not close or add Windows support.
 
 ## Scope
 
+The source target registry owns all six eventual targets and derives the
+publication inventory from the source version: four for 0.1.x, six starting
+with stable 0.2.0. Manifest generation and archive inventory checks use that same
+version boundary. Windows native npm/archive inventories retain both the fspy
+MIT notice and Microsoft's Detours MIT notice alongside pnport's Apache-2.0
+license. No existing package version or channel acquires Windows dependencies.
+
+The package command's `development` mode selects a native target explicitly and
+writes only a local archive under generated development output. It does not
+produce npm tarballs, release evidence or publication authority. This permits
+testing a Windows source build before version promotion. Keep the PowerShell
+installer rejection until complete native and installed acceptance; preparing
+target metadata or a development archive never removes that gate.
+
 Native CI and release candidate jobs additionally run installed hidden-cache directory/mutation conformance and prepared offline Yarn 4.18.0 / Vitest 5.0.1 / Vite 8.3.0 cache conformance. Execute the prepared `vitest` package bin through the supplied packaged CLI's `run --` path, with its matching companion, so Vitest and its workers use the native view. Yarn/npm are used only for fixture preparation. Each fresh temporary project must create its first lockfile under `CI=true`; disable immutable installs only for its preparation call, without changing repository install policy or offline execution settings. Default settings create `.vite` inside physical `node_modules`; two inline/split runs must preserve cache bytes, native dependency access and doctor readiness. Source-only support does not mutate or grant capabilities to published 0.1.0/preview artifacts.
 
 macOS packages and CLI admission require private companion ABI format 3 for the pending-image constructor lease protocol. Package inspection rejects older format 1/2 macOS libraries; Linux/Windows retain their independent format 1. Build and install the executable and companion together. This private protocol change retains CLI commands, doctor JSON v1 and the exact-version publication guard.
