@@ -183,7 +183,7 @@ function fixture() {
     const input = await screen.findByRole("textbox", { name: "Message" });
     fireEvent.change(input, { target: { value: "$ret", selectionStart: 4 } });
     fireEvent.click(await screen.findByRole("option", { name: /retained/ }));
-    expect(input).toHaveProperty("value", "$retained");
+    expect(input).toHaveProperty("value", "$retained ");
     return input;
   };
   const returnToOriginal = async () => {
@@ -253,7 +253,7 @@ it(
     await screen.findByRole("img", { name: "Image 1" });
     const input = await f.returnToOriginal();
     expect(input).toBe(originalInput);
-    expect(input).toHaveProperty("value", "$retained");
+    expect(input).toHaveProperty("value", "$retained ");
     expect(screen.getByRole("img", { name: "Image 1" })).toBeDefined();
     await waitFor(() =>
       expect(
@@ -335,7 +335,7 @@ it(
     await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
     const request = f.enqueue.mock.calls[0][0];
     expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({
-      prompt: "$retained",
+      prompt: "$retained ",
       mode: "plan",
     });
     expect(request.skills?.selections).toEqual([f.selection]);
