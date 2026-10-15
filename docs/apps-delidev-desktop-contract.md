@@ -1632,7 +1632,19 @@ The Shell owns one controller (`useDestinationWindowController`). Descendants re
 | Failed      | native rejection or unknown error       | admits a new operation (the notice is cleared)                        | Pending, or Idle on dismiss          |
 | Unavailable | host is not Tauri (web preview, mobile) | not claimed: the control's handler runs                               | n/a                                  |
 
-Failure shows one localized `role="alert"` notice with a dismiss button through the existing notice treatment. It never navigates the current window, retries automatically, changes the selection, scroll, draft or drawer, or creates a resource. Renderer logs (`delidev.destination_window`) carry only the phase (`requested`, `dropped`, `settled`, `failed`) and a closed failure code, never the route, IDs or titles. A Search result opening shares the existing pending/unavailable Search status: the original parent is resolved first, an unreadable result shows the existing alert, and no window opens.
+Failure shows one localized `role="alert"` notice with a dismiss button through the existing notice treatment. It never navigates the current window, retries automatically, changes the selection, scroll, draft or drawer, or creates a resource. A Search result opening shares the existing pending/unavailable Search status: the original parent is resolved first, an unreadable result shows the existing alert, and no window opens.
+
+Destination window code paths log only phases, closed failure codes and closed reasons. They never log a route, an opaque Session, Sidechat or item ID, a title or connection data, including when the log site is shared with a current-window path.
+
+| Log site                                                                           | Event                                      | Fields                                         |
+| ---------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------- |
+| Controller admission (`requested`, `dropped`) and settlement (`settled`)           | `delidev.destination_window`               | `phase`                                        |
+| Controller rejection (`failed`)                                                    | `delidev.destination_window`               | `phase`, closed failure code                   |
+| Search result resolution for a new window (metadata read failed or malformed)      | `delidev.search.session_route_unavailable` | closed reason only (anonymous resolution mode) |
+| Search result resolution for the current window (retained for its own diagnostics) | `delidev.search.session_route_unavailable` | closed reason and opaque Session ID            |
+| Native command (`requested`, `authorized`, `created`, `failed`)                    | `destination_window` operation             | `operation`, `phase`, closed failure code      |
+
+The Search resolution takes its logging mode from the caller: the destination window path always requests the anonymous mode, so a never-visited result whose metadata cannot be read or is malformed leaves no identifier in the renderer log. A repository scan test keeps the destination window sources limited to the fields above.
 
 #### Native operation
 

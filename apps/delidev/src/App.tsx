@@ -69,6 +69,7 @@ import { SessionView } from "./session";
 import {
   resolveSearchSession,
   SearchOpenStatus,
+  SearchResolutionLogging,
   SearchSessionRoute,
 } from "./search-session-routing";
 import { Search, Settings, Surface } from "./views";
@@ -819,11 +820,14 @@ function Shell({
         searchAbort.current = controller;
         const owner = transport;
         setSearchOpening({ id, status: SearchOpenStatus.Pending });
+        // Destination window code paths log no identifiers, so this read
+        // reports only its closed unavailable reason.
         const resolution = await resolveSearchSession(
           queryClient,
           owner,
           id,
           controller.signal,
+          SearchResolutionLogging.Anonymous,
         );
         if (searchAbort.current === controller) searchAbort.current = undefined;
         if (

@@ -5476,7 +5476,43 @@ describe("destination windows", () => {
     expect(
       screen.getByRole("textbox", { name: "Search conversations" }),
     ).toBeTruthy();
+    // The destination path logs the closed reason, never the result's ID.
+    expect(warn).toHaveBeenCalledWith(
+      "delidev.search.session_route_unavailable",
+      { reason: "read-failed" },
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(child.id);
     warn.mockRestore();
+  });
+
+  it("logs no identifier when a never-visited result has malformed metadata", async () => {
+    enable();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const value = fixture([], [], [], false, true);
+    const malformed = retainedSession("Malformed hit", {
+      source_session_id: "",
+    });
+    value.extraResources.push(malformed);
+    value.searchHits.push(searchHit(malformed, "Malformed hit"));
+    render(<App transport={value.transport} />);
+    await searchRetained(value);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Malformed hit" }),
+      primaryClick,
+    );
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /could not be opened/,
+    );
+    expect(destinationWindow.open).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      "delidev.search.session_route_unavailable",
+      { reason: "malformed-parent-metadata" },
+    );
+    const logged = JSON.stringify([...warn.mock.calls, ...info.mock.calls]);
+    expect(logged).not.toContain(malformed.id);
+    warn.mockRestore();
+    info.mockRestore();
   });
 
   it("reports a native failure with a localized alert, no fallback navigation and no retry", async () => {
