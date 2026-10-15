@@ -62,8 +62,12 @@ func grokSameEntry(_ *os.Root, _ string, entry, retained os.FileInfo) bool {
 	return os.SameFile(entry, retained)
 }
 
-// grokFileIdentity is the device and inode of an opened directory.
-func grokFileIdentity(info os.FileInfo) string {
+// grokDirIdentity is the device and inode of an opened directory.
+func grokDirIdentity(dir *os.File) string {
+	info, err := dir.Stat()
+	if err != nil {
+		return ""
+	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return ""

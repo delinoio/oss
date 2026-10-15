@@ -4,6 +4,7 @@
 package subscription
 
 import (
+	"fmt"
 	"os"
 
 	"golang.org/x/sys/windows"
@@ -80,6 +81,12 @@ func grokSameEntry(root *os.Root, name string, _, retained os.FileInfo) bool {
 	return err != nil || os.SameFile(info, retained)
 }
 
-// grokFileIdentity has no portable textual form on Windows; recovery then relies
-// on the existence and retirement checks alone.
-func grokFileIdentity(os.FileInfo) string { return "" }
+// grokDirIdentity is the volume serial number and file index of an opened
+// directory, read from its handle.
+func grokDirIdentity(dir *os.File) string {
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(windows.Handle(dir.Fd()), &info); err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d:%d", info.VolumeSerialNumber, info.FileIndexHigh, info.FileIndexLow)
+}

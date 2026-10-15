@@ -241,8 +241,9 @@ func retireRecordedGrokHome(grokHome, identity string) bool {
 	defer home.Close()
 	// A directory at the recorded path that is not the one the lease bound may be a
 	// successor of a renamed original; cleaning it proves nothing about the
-	// original, so cleanup stays unconfirmed.
-	if identity != "" && home.Identity() != "" && home.Identity() != identity {
+	// original, so cleanup stays unconfirmed. Without a journaled identity there is
+	// nothing to compare, which is treated the same way.
+	if identity == "" || home.Identity() != identity {
 		return false
 	}
 	if home.Verify() != nil || home.RetireAuthFile() != nil {

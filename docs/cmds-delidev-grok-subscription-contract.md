@@ -884,7 +884,9 @@ blocks) is unchanged.
   health; a refresh, login or logout lease, a different instance, a successful
   or credential-bearing report and unconfirmed cleanup stay refused. Recovery
   never retakes the lease, starts a native process or replays input. The Worker
-  journals the identity of the home it bound and whether it already retired the
+  journals the identity of the home it bound (device and inode, or volume serial number
+  and file index on Windows, read from the held handle; a journal without one is never
+  cleaned) and whether it already retired the
   credential: a recorded home that is missing confirms cleanup only if no
   credential was ever written or the Worker retired it, and a directory at the path
   that is not the one the lease bound is never cleaned as if it were, because the
