@@ -1956,6 +1956,9 @@ mod tests {
                     .as_str()
                     .is_some_and(|id| id.ends_with("src/effects/register.js"))
                 {
+                    // An effect-only module declares no export, so the
+                    // finding can state that nothing uses one.
+                    module["exports"] = serde_json::json!([]);
                     module["moduleSideEffects"] = serde_json::json!(module_side_effects);
                     module["treeshakeSideEffects"] = serde_json::json!(treeshake_side_effects);
                     module["packageSideEffects"] = serde_json::json!(package_side_effects);
@@ -2170,6 +2173,145 @@ mod tests {
                     .is_empty()
             );
         }
+    }
+
+    /// Runs the Vite fixture with `src/effects/register.js` declaring
+    /// `exports` and the given hook value, and returns its finding.
+    fn retained_with_exports(exports: &[&str], module_side_effects: &str) -> Diagnostic {
+        let exports: Vec<String> = exports.iter().map(|name| (*name).to_owned()).collect();
+        let module_side_effects = module_side_effects.to_owned();
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["id"]
+                    .as_str()
+                    .is_some_and(|id| id.ends_with("src/effects/register.js"))
+                {
+                    module["exports"] = serde_json::json!(exports);
+                    module["usedExports"] = serde_json::json!([]);
+                    module["moduleSideEffects"] = serde_json::json!(module_side_effects);
+                }
+            }
+        });
+        find(
+            &fixture.output.analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .expect("register.js stays reported")
+        .clone()
+    }
+
+    fn export_use_outcome(diagnostic: &Diagnostic) -> ConditionOutcome {
+        diagnostic
+            .conditions
+            .iter()
+            .find(|condition| condition.description == "No export of the module is used")
+            .expect("export use condition")
+            .outcome
+    }
+
+    #[test]
+    fn vite_side_effect_retained_does_not_assert_unused_exports_without_importer_data() {
+        // Re-export facades, default re-exports and directly exported
+        // components that a same-chunk importer reads have an empty
+        // `renderedExports` list. That list does not show that no importer
+        // uses the export.
+        for (exports, hook) in [
+            (
+                vec!["EmbeddedActionsParser", "Lexer", "createToken"],
+                "null",
+            ),
+            (vec!["default"], "null"),
+            (vec!["unstable_batchedUpdates"], "null"),
+            (vec!["FontAwesomeIcon"], "no-treeshake"),
+            (vec!["FontAwesomeIcon"], "false"),
+            (vec!["FontAwesomeIcon"], "true"),
+        ] {
+            let case = format!("{exports:?} / {hook}");
+            let finding = retained_with_exports(&exports, hook);
+            assert_eq!(
+                export_use_outcome(&finding),
+                ConditionOutcome::Unknown,
+                "{case}"
+            );
+            // Even an effect declaration does not make the finding
+            // Confirmed: an importer, not the declaration, can be the reason.
+            assert_eq!(finding.status, EvidenceStatus::Inferred, "{case}");
+            for text in [&finding.title, &finding.summary] {
+                assert!(
+                    !text.contains("none of its exports is used"),
+                    "{case}: {text}"
+                );
+            }
+            assert!(finding.summary.contains("unknown"), "{}", finding.summary);
+            assert!(
+                finding.summary.contains("chunk-level bindings"),
+                "{}",
+                finding.summary
+            );
+            let direction = direction(&finding);
+            assert!(direction.contains("Check which importers"), "{direction}");
+            for declaration_advice in [
+                "sideEffects",
+                "moduleSideEffects",
+                "side-effect free with",
+                "narrow",
+            ] {
+                assert!(
+                    !direction.contains(declaration_advice),
+                    "{case}: {direction}"
+                );
+            }
+            let safety = &finding.corrective_action.as_ref().unwrap().safety;
+            assert!(safety.contains("Do not remove"), "{safety}");
+            assert!(
+                finding
+                    .evidence
+                    .iter()
+                    .any(|evidence| evidence.status == EvidenceStatus::Inferred
+                        && evidence.detail.contains("not established")),
+                "{:?}",
+                finding.evidence
+            );
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_keeps_effect_only_modules_confirmed() {
+        // A module that declares no export has nothing for an importer to
+        // read, so the rendered code is the only reason it is kept.
+        let finding = retained_with_exports(&[], "no-treeshake");
+        assert_eq!(export_use_outcome(&finding), ConditionOutcome::Met);
+        assert_eq!(finding.status, EvidenceStatus::Confirmed);
+        assert!(!finding.summary.contains("unknown"), "{}", finding.summary);
+        assert!(direction(&finding).contains("Move top-level side effects"));
+        let analyzed = retained_with_exports(&[], "null");
+        assert_eq!(export_use_outcome(&analyzed), ConditionOutcome::Met);
+        assert_eq!(analyzed.status, EvidenceStatus::Inferred);
+        assert!(has_inferred_effect_evidence(&analyzed));
+    }
+
+    #[test]
+    fn vite_side_effect_retained_fixture_effect_only_import_is_still_reported() {
+        // The unmodified fixture module is imported without bindings and its
+        // code remains rendered. It is still reported, as unknown export use.
+        let baseline = run_fixture(BundlerChoice::Vite, |_| {});
+        let finding = find(
+            &baseline.output.analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .expect("register.js stays reported");
+        assert_eq!(export_use_outcome(finding), ConditionOutcome::Unknown);
+        assert!(!finding.title.contains("none of its exports is used"));
+    }
+
+    #[test]
+    fn vite_side_effect_retained_id_ignores_the_export_use_state() {
+        let with_exports = retained_with_exports(&["FontAwesomeIcon"], "null");
+        let without_exports = retained_with_exports(&[], "null");
+        assert_eq!(with_exports.id, without_exports.id);
+        assert_eq!(with_exports.title, without_exports.title);
     }
 
     /// Runs the Vite fixture after adding one emitted chunk whose facade is

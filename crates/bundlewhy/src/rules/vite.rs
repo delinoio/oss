@@ -42,8 +42,9 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         .filter_map(|chunk| chunk.facade_module_id.as_deref())
         .collect();
     for module in &collection.modules {
-        // Export-less modules (for example `import "./polyfill"`) qualify:
-        // rendered code with no rendered export is the evidence.
+        // Rendered code with no rendered export qualifies. Whether the module
+        // declares exports decides how much the finding can claim (see
+        // `ExportUse`).
         let no_rendered_exports = module.used_exports.as_ref().is_some_and(Vec::is_empty);
         let esm = module.input_format.as_deref() == Some("es");
         // Scripts that an HTML entry loads are entry points too: their
@@ -74,47 +75,32 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                 .unwrap_or(NOT_DECLARED),
         };
         let declaration = SideEffectDeclaration::from_collected(&values);
+        let export_use = ExportUse::of(module);
+        tracing::debug!(
+            module = %module.id,
+            export_use = ?export_use,
+            declaration = ?declaration,
+            rendered_length = module.rendered_length,
+            "vite side-effect-retained candidate"
+        );
         // The title feeds the diagnostic ID, so it stays the same however the
-        // declaration changes and one retained module keeps one ID.
-        let title = format!("{display} is retained although none of its exports is used");
-        let (status, summary) = match declaration {
-            // An effect declaration is itself the engine-visible reason the
-            // module is kept.
-            SideEffectDeclaration::Effectful(source) => (
-                EvidenceStatus::Confirmed,
-                format!(
-                    "Rolldown rendered {} bytes of this module although none of its exports is \
-                     used. {} declares side effects for it, so Rolldown keeps it.",
-                    module.rendered_length,
-                    source.subject()
-                ),
-            ),
-            // A side-effect-free module is discarded when nothing uses it, so
-            // the retention points to another use of the module.
-            SideEffectDeclaration::Free(source) => (
+        // declaration or the export-use state changes and one retained module
+        // keeps one ID. It states only what Rolldown reported.
+        let title = format!("{display} is retained although Rolldown renders no export of it");
+        let (status, summary) = match export_use {
+            ExportUse::Undetermined => (
                 EvidenceStatus::Inferred,
                 format!(
-                    "Rolldown rendered {} bytes of this module although none of its exports is \
-                     used, and {} declares it side-effect free. Rolldown may discard such a \
-                     module even when its code has side effects, so another use of the module \
-                     probably keeps it, but Rolldown did not report why.",
+                    "Rolldown rendered {} bytes of this module and lists no rendered export for \
+                     it. That list holds only the exports that Rolldown renders as chunk-level \
+                     bindings, so an importer in the same chunk can still use the module's \
+                     exports or re-exports, and bundlewhy did not collect which names importers \
+                     read. Whether any export is used is unknown.{}",
                     module.rendered_length,
-                    source.subject()
+                    declaration.undetermined_note()
                 ),
             ),
-            // Rolldown reports no retention reason for rendered modules, so
-            // the cause stays an inference from the observed facts.
-            SideEffectDeclaration::Analyzed
-            | SideEffectDeclaration::Undeclared
-            | SideEffectDeclaration::Unresolved(_) => (
-                EvidenceStatus::Inferred,
-                format!(
-                    "Rolldown rendered {} bytes of this module although none of its exports is \
-                     used, and did not report why. The module may contain top-level code with \
-                     side effects that Rolldown keeps.",
-                    module.rendered_length
-                ),
-            ),
+            ExportUse::NoneDeclared => declaration.finding(module.rendered_length),
         };
         let (outcome, declared_detail) = declaration.condition(&values);
         let mut evidence = vec![
@@ -136,22 +122,41 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                 ),
             ),
         ];
-        match declaration {
-            SideEffectDeclaration::Effectful(_) => {}
-            SideEffectDeclaration::Free(_) => evidence.push(Evidence::new(
+        match (export_use, declaration) {
+            (ExportUse::Undetermined, _) => evidence.push(Evidence::new(
                 INFERENCE,
                 EvidenceStatus::Inferred,
-                "Rolldown reports no retention reason; a remaining use of the module is inferred \
-                 from its retained bytes, because a side-effect-free module is discarded when \
-                 nothing uses it",
+                "renderedExports lists only exports rendered as chunk-level bindings; which names \
+                 an importer reads from the module was not collected, so export use is not \
+                 established",
             )),
-            _ => evidence.push(Evidence::new(
+            (ExportUse::NoneDeclared, SideEffectDeclaration::Effectful(_)) => {}
+            (ExportUse::NoneDeclared, SideEffectDeclaration::Free(_)) => {
+                evidence.push(Evidence::new(
+                    INFERENCE,
+                    EvidenceStatus::Inferred,
+                    "Rolldown reports no retention reason; a remaining use of the module is \
+                     inferred from its retained bytes, because a side-effect-free module is \
+                     discarded when nothing uses it",
+                ))
+            }
+            (ExportUse::NoneDeclared, _) => evidence.push(Evidence::new(
                 INFERENCE,
                 EvidenceStatus::Inferred,
                 "Rolldown reports no retention reason; top-level side effects are inferred from \
                  the retained bytes",
             )),
         }
+        let (direction, safety) = match export_use {
+            ExportUse::Undetermined => (
+                UNDETERMINED_DIRECTION.to_owned(),
+                UNDETERMINED_SAFETY.to_owned(),
+            ),
+            ExportUse::NoneDeclared => (
+                declaration.direction().to_owned(),
+                declaration.safety().to_owned(),
+            ),
+        };
         drafts.push(DiagnosticDraft {
             rule: RuleId::ViteSideEffectRetained,
             status,
@@ -160,8 +165,8 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
             conditions: vec![
                 Condition::new(
                     "No export of the module is used",
-                    ConditionOutcome::Met,
-                    "renderedExports is empty",
+                    export_use.outcome(),
+                    export_use.detail(),
                 ),
                 Condition::new(
                     "The module is declared side-effect free",
@@ -178,13 +183,79 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
             module: display,
             dependency_paths: context.dependency_paths(&module.id),
             evidence,
-            direction: declaration.direction().to_owned(),
-            safety: declaration.safety().to_owned(),
+            direction,
+            safety,
             dependency: context.is_dependency(module),
             export_usage: None,
         });
     }
 }
+
+/// What the collected data establishes about the use of a module's exports
+/// when Rolldown lists no rendered export for it.
+///
+/// `renderedExports` names only the exports that Rolldown renders as
+/// chunk-level bindings. An importer bundled in the same chunk reads a
+/// re-export facade, a directly exported component or a forwarded value
+/// without one, and the collection holds no per-importer binding data, so an
+/// empty list does not show that no importer uses an export.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExportUse {
+    /// The module declares no export, so nothing can read one. Only the
+    /// module's top-level code can keep it.
+    NoneDeclared,
+    /// The module declares exports and the collection cannot show whether an
+    /// importer reads them.
+    Undetermined,
+}
+
+impl ExportUse {
+    fn of(module: &crate::collect::CollectedModule) -> Self {
+        if module
+            .exports
+            .as_deref()
+            .is_some_and(|exports| !exports.is_empty())
+        {
+            Self::Undetermined
+        } else {
+            Self::NoneDeclared
+        }
+    }
+
+    fn outcome(self) -> ConditionOutcome {
+        match self {
+            Self::NoneDeclared => ConditionOutcome::Met,
+            Self::Undetermined => ConditionOutcome::Unknown,
+        }
+    }
+
+    fn detail(self) -> &'static str {
+        match self {
+            Self::NoneDeclared => "The module declares no export and renderedExports is empty",
+            Self::Undetermined => {
+                "renderedExports is empty, but it lists only exports rendered as chunk-level \
+                 bindings; which names importers read from the module was not collected, so export \
+                 use is unknown"
+            }
+        }
+    }
+}
+
+/// The direction when export use is unknown. It sends the reader to the
+/// importers and never asks to change a side-effect declaration, which would
+/// drop code that a live importer needs.
+const UNDETERMINED_DIRECTION: &str =
+    "Check which importers read this module's exports or re-exports, for example a facade that a \
+     static import consumes, a component that a registration call receives, or a value used \
+     during setup. If one does, the module is in use and needs no change. If none does, the \
+     module is imported only for its top-level code: keep the import when that code is needed, \
+     otherwise remove the import from the importer that does not need it.";
+
+/// The safety note when export use is unknown.
+const UNDETERMINED_SAFETY: &str =
+    "Do not remove a module or an import that an importer reads or evaluates for its effect \
+     (re-exports, components, polyfills, registrations, CSS imports); the use would be silently \
+     lost. Do not change side-effect declarations on the strength of this finding alone.";
 
 /// The collected `package` value when the package has no `sideEffects` field.
 const NOT_DECLARED: &str = "not declared";
@@ -316,6 +387,58 @@ impl SideEffectDeclaration {
             },
             // An unrecognized hook value cannot be matched to the other values.
             _ => Self::Unresolved(UnresolvedBy::Hook),
+        }
+    }
+
+    /// The status and summary when the module declares no export.
+    fn finding(self, rendered_length: u64) -> (EvidenceStatus, String) {
+        match self {
+            // An effect declaration is itself the engine-visible reason the
+            // module is kept.
+            Self::Effectful(source) => (
+                EvidenceStatus::Confirmed,
+                format!(
+                    "Rolldown rendered {rendered_length} bytes of this module although it \
+                     declares no export that anything could use. {} declares side effects for it, \
+                     so Rolldown keeps it.",
+                    source.subject()
+                ),
+            ),
+            // A side-effect-free module is discarded when nothing uses it, so
+            // the retention points to another use of the module.
+            Self::Free(source) => (
+                EvidenceStatus::Inferred,
+                format!(
+                    "Rolldown rendered {rendered_length} bytes of this module although it \
+                     declares no export that anything could use, and {} declares it side-effect \
+                     free. Rolldown may discard such a module even when its code has side \
+                     effects, so another use of the module probably keeps it, but Rolldown did \
+                     not report why.",
+                    source.subject()
+                ),
+            ),
+            // Rolldown reports no retention reason for rendered modules, so
+            // the cause stays an inference from the observed facts.
+            Self::Analyzed | Self::Undeclared | Self::Unresolved(_) => (
+                EvidenceStatus::Inferred,
+                format!(
+                    "Rolldown rendered {rendered_length} bytes of this module although it \
+                     declares no export that anything could use, and did not report why. The \
+                     module may contain top-level code with side effects that Rolldown keeps."
+                ),
+            ),
+        }
+    }
+
+    /// A trailing sentence for the summary when export use is unknown. It
+    /// names the declaration without presenting it as the cause.
+    fn undetermined_note(self) -> String {
+        match self {
+            Self::Effectful(source) => {
+                format!(" {} also declares side effects for it.", source.subject())
+            }
+            Self::Free(source) => format!(" {} declares it side-effect free.", source.subject()),
+            Self::Analyzed | Self::Undeclared | Self::Unresolved(_) => String::new(),
         }
     }
 
