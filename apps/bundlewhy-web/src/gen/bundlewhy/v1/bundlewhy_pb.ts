@@ -1670,9 +1670,10 @@ export enum ExportUsagePathEnd {
   TRUNCATED = 3,
 
   /**
-   * The engine reported an earlier edge into the first export that bundlewhy
-   * could not use because an endpoint is not an identifiable module. The chain
-   * may continue beyond this point, so it is not a confirmed start.
+   * The engine reported edges that bundlewhy could not use (an endpoint is not
+   * an identifiable module or an export reference is unreadable), and one of
+   * them may be an earlier edge into the first export. The chain may continue
+   * beyond this point, so it is not a confirmed start.
    *
    * @generated from enum value: EXPORT_USAGE_PATH_END_INCOMPLETE = 4;
    */

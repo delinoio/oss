@@ -19,7 +19,7 @@ export function pathEndExplanation(end: ExportUsagePathEnd): string {
     case ExportUsagePathEnd.TRUNCATED:
       return "Traversal stopped at a limit before the start of this chain was reached.";
     case ExportUsagePathEnd.INCOMPLETE:
-      return "Chain start not confirmed: Rspack reported an earlier edge into the first export that bundlewhy could not use, because an endpoint is not a module it can identify or an export reference it can read. The chain may continue beyond this point.";
+      return "Chain start not confirmed: Rspack reported edges that bundlewhy could not use, because an endpoint is not a module it can identify or an export reference it can read, and one of them may be an earlier edge into the first export. The chain may continue beyond this point.";
     default:
       return "The end of this chain was not recorded.";
   }

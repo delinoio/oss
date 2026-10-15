@@ -166,7 +166,7 @@ describe("export usage section", () => {
       [ExportUsagePathEnd.TRUNCATED, /stopped at a limit before the start/],
       [
         ExportUsagePathEnd.INCOMPLETE,
-        /Chain start not confirmed.*could not use.*export reference it can read.*may continue beyond/,
+        /Chain start not confirmed.*could not use.*export reference it can read.*may be an earlier edge.*may continue beyond/,
       ],
       [ExportUsagePathEnd.UNSPECIFIED, /end of this chain was not recorded/],
     ];

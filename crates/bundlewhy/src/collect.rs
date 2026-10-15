@@ -49,9 +49,10 @@ pub struct CollectedExportUsage {
     /// Engine edges that were dropped because a module could not be mapped or
     /// an export reference could not be read.
     pub skipped_edges: u32,
-    /// Dropped edges per collected provider module: each entry says that an
-    /// edge into that module exists but cannot be shown, so a chain that ends
-    /// at the module has not reached a confirmed start.
+    /// Dropped edges per collected provider export: each entry says that an
+    /// edge into that export (or into an unreadable export of that module)
+    /// exists but cannot be shown, so a chain that ends at a matching export
+    /// has not reached a confirmed start.
     pub skipped_providers: Vec<CollectedSkippedProvider>,
     /// Dropped edges whose provider module could not be determined at all.
     /// Such an edge may be an earlier edge of any chain.
@@ -59,12 +60,32 @@ pub struct CollectedExportUsage {
     pub edges: Vec<CollectedExportEdge>,
 }
 
-/// Edges dropped by the adapter that target one collected module.
+/// Edges dropped by the adapter that target one collected module and one
+/// export (or an export that could not be read).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CollectedSkippedProvider {
     pub module: String,
+    /// What the adapter could tell about the provider export. A missing or
+    /// unrecognized value is `Unknown`, the conservative reading.
+    pub scope: SkippedProviderScope,
+    /// Export path segments; meaningful only when `scope` is `Named`.
+    pub export: Vec<String>,
     pub edges: u32,
+}
+
+/// Which export of the provider module a dropped edge targeted.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkippedProviderScope {
+    /// The dropped edge named one export, given by `export`.
+    Named,
+    /// The dropped edge targeted module or namespace scope.
+    Module,
+    /// The export could not be read: the edge may have targeted any export.
+    #[default]
+    #[serde(other)]
+    Unknown,
 }
 
 /// Stable codes for export usage that the adapter could not collect. The

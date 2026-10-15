@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import {
   ExportUsageReason,
   MAX_EXPORT_USAGE_EDGES,
+  SkippedProviderScope,
   decodeExportUsageEdges,
 } from "../../../crates/bundlewhy/adapters/common.mjs";
 
@@ -599,6 +600,24 @@ test("decodeExportUsageEdges attributes every skipped edge to the provider that 
   const decode = (raw) =>
     decodeExportUsageEdges(raw, decodeIdentifiers, decodeCollected);
   const good = [1, ["a"], 2, null, "10", "3:1-4"];
+  const moduleScope = (module, edges) => ({
+    module,
+    scope: SkippedProviderScope.Module,
+    export: [],
+    edges,
+  });
+  const named = (module, exportPath, edges) => ({
+    module,
+    scope: SkippedProviderScope.Named,
+    export: exportPath,
+    edges,
+  });
+  const unreadable = (module, edges) => ({
+    module,
+    scope: SkippedProviderScope.Unknown,
+    export: [],
+    edges,
+  });
   const cases = [
     {
       name: "stored edges are not skipped",
@@ -611,35 +630,35 @@ test("decodeExportUsageEdges attributes every skipped edge to the provider that 
       name: "consumer module key is unknown: the collected provider lost an edge",
       raw: [[99, ["a"], 2, null, "1", null]],
       skipped: 1,
-      providers: [{ module: "/p/b.js", edges: 1 }],
+      providers: [moduleScope("/p/b.js", 1)],
       unattributed: 0,
     },
     {
       name: "consumer is a concatenated container: the collected provider lost an edge",
       raw: [[3, ["a"], 2, null, "1", null]],
       skipped: 1,
-      providers: [{ module: "/p/b.js", edges: 1 }],
+      providers: [moduleScope("/p/b.js", 1)],
       unattributed: 0,
     },
     {
       name: "consumer export path is invalid: the collected provider lost an edge",
       raw: [[1, [""], 2, null, "1", null]],
       skipped: 1,
-      providers: [{ module: "/p/b.js", edges: 1 }],
+      providers: [moduleScope("/p/b.js", 1)],
       unattributed: 0,
     },
     {
-      name: "provider export path is invalid: the collected provider lost an edge",
+      name: "provider export path is invalid: the collected provider lost an edge into an unreadable export",
       raw: [[1, ["a"], 2, ["b", ""], "1", null]],
       skipped: 1,
-      providers: [{ module: "/p/b.js", edges: 1 }],
+      providers: [unreadable("/p/b.js", 1)],
       unattributed: 0,
     },
     {
-      name: "short tuple with a collected provider key",
+      name: "short tuple with a collected provider key names no export",
       raw: [[1, ["a"], 2]],
       skipped: 1,
-      providers: [{ module: "/p/b.js", edges: 1 }],
+      providers: [unreadable("/p/b.js", 1)],
       unattributed: 0,
     },
     {
@@ -672,9 +691,52 @@ test("decodeExportUsageEdges attributes every skipped edge to the provider that 
         good,
       ],
       skipped: 3,
+      providers: [moduleScope("/p/a.js", 1), moduleScope("/p/b.js", 2)],
+      unattributed: 0,
+    },
+    {
+      name: "a readable provider export path is kept",
+      raw: [[99, ["a"], 2, ["x", "y"], "1", null]],
+      skipped: 1,
+      providers: [named("/p/b.js", ["x", "y"], 1)],
+      unattributed: 0,
+    },
+    {
+      name: "a non-string provider export segment is unreadable",
+      raw: [[99, ["a"], 2, ["x", 7], "1", null]],
+      skipped: 1,
+      providers: [unreadable("/p/b.js", 1)],
+      unattributed: 0,
+    },
+    {
+      name: "a provider export that is not a list or null is unreadable",
+      raw: [[99, ["a"], 2, "x", "1", null]],
+      skipped: 1,
+      providers: [unreadable("/p/b.js", 1)],
+      unattributed: 0,
+    },
+    {
+      name: "an empty provider export list is unreadable",
+      raw: [[99, ["a"], 2, [], "1", null]],
+      skipped: 1,
+      providers: [unreadable("/p/b.js", 1)],
+      unattributed: 0,
+    },
+    {
+      name: "different exports of one module are counted separately",
+      raw: [
+        [99, ["a"], 2, ["x"], "1", null],
+        [98, ["a"], 2, ["x"], "2", null],
+        [97, ["a"], 2, ["y"], "3", null],
+        [96, ["a"], 2, null, "4", null],
+        [95, ["a"], 2, [""], "5", null],
+      ],
+      skipped: 5,
       providers: [
-        { module: "/p/a.js", edges: 1 },
-        { module: "/p/b.js", edges: 2 },
+        moduleScope("/p/b.js", 1),
+        named("/p/b.js", ["x"], 2),
+        named("/p/b.js", ["y"], 1),
+        unreadable("/p/b.js", 1),
       ],
       unattributed: 0,
     },

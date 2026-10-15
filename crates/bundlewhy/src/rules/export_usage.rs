@@ -10,13 +10,16 @@
 //! constants and `reason_note` below. No adapter or engine text is displayed.
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     path::Path,
 };
 
 use super::Context;
 use crate::{
-    collect::{CollectedExportEdge, CollectedExportRef, CollectedExportUsage, ExportUsageReason},
+    collect::{
+        CollectedExportEdge, CollectedExportRef, CollectedExportUsage, ExportUsageReason,
+        SkippedProviderScope,
+    },
     model::{
         ExportReference, ExportScope, ExportUsage, ExportUsageEdge, ExportUsagePath,
         ExportUsagePathEnd, ExportUsageState, ExportUsageTruncation,
@@ -132,9 +135,14 @@ pub struct ExportUsageIndex<'a> {
     by_provider_module: HashMap<&'a str, Vec<&'a CollectedExportEdge>>,
     /// Edges dropped here because an endpoint cannot be shown.
     unusable_edges: u32,
-    /// Dropped edges (by the adapter or here) per provider module they
-    /// targeted: an edge into that module exists but cannot be shown.
-    skipped_into: HashMap<&'a str, u32>,
+    /// Exports that a dropped edge targeted by name or by module scope: an
+    /// edge into exactly that export exists but cannot be shown.
+    skipped_exports: HashSet<CollectedExportRef>,
+    /// Modules with a dropped edge whose provider export could not be read:
+    /// the edge may have targeted any export of the module.
+    skipped_unreadable: HashSet<&'a str>,
+    /// Every module with a dropped edge, whatever its export.
+    skipped_modules: HashSet<&'a str>,
     /// Dropped edges whose provider module is unknown. Such an edge may be
     /// an earlier edge of any chain.
     unattributed_edges: u32,
@@ -145,7 +153,9 @@ pub struct ExportUsageIndex<'a> {
 impl<'a> ExportUsageIndex<'a> {
     pub fn new(usage: &'a CollectedExportUsage) -> Self {
         let mut unusable_edges = 0u32;
-        let mut skipped_into: HashMap<&str, u32> = HashMap::new();
+        let mut skipped_exports: HashSet<CollectedExportRef> = HashSet::new();
+        let mut skipped_unreadable: HashSet<&str> = HashSet::new();
+        let mut skipped_modules: HashSet<&str> = HashSet::new();
         let mut unattributed_edges = usage.unattributed_edges;
         let mut adapter_attributed = u64::from(usage.unattributed_edges);
         for skipped in usage
@@ -156,25 +166,48 @@ impl<'a> ExportUsageIndex<'a> {
             adapter_attributed += u64::from(skipped.edges);
             if skipped.module.is_empty() {
                 unattributed_edges = unattributed_edges.saturating_add(skipped.edges);
-            } else {
-                let count = skipped_into.entry(skipped.module.as_str()).or_default();
-                *count = count.saturating_add(skipped.edges);
+                continue;
+            }
+            skipped_modules.insert(skipped.module.as_str());
+            let named =
+                !skipped.export.is_empty() && skipped.export.iter().all(|part| !part.is_empty());
+            match skipped.scope {
+                SkippedProviderScope::Named if named => {
+                    skipped_exports.insert(CollectedExportRef {
+                        module: skipped.module.clone(),
+                        export: Some(skipped.export.clone()),
+                    });
+                }
+                SkippedProviderScope::Module => {
+                    skipped_exports.insert(CollectedExportRef {
+                        module: skipped.module.clone(),
+                        export: None,
+                    });
+                }
+                // A named entry without a readable path is as uncertain as
+                // an unknown scope.
+                SkippedProviderScope::Named | SkippedProviderScope::Unknown => {
+                    skipped_unreadable.insert(skipped.module.as_str());
+                }
             }
         }
         let mut edges: Vec<&CollectedExportEdge> = Vec::with_capacity(usage.edges.len());
         for edge in &usage.edges {
             if usable_reference(&edge.consumer) && usable_reference(&edge.provider) {
                 edges.push(edge);
+                continue;
+            }
+            unusable_edges = unusable_edges.saturating_add(1);
+            if edge.provider.module.is_empty() {
+                unattributed_edges = unattributed_edges.saturating_add(1);
+                continue;
+            }
+            skipped_modules.insert(edge.provider.module.as_str());
+            if usable_reference(&edge.provider) {
+                // Only the consumer is unusable: the provider export is known.
+                skipped_exports.insert(edge.provider.clone());
             } else {
-                unusable_edges = unusable_edges.saturating_add(1);
-                if edge.provider.module.is_empty() {
-                    unattributed_edges = unattributed_edges.saturating_add(1);
-                } else {
-                    let count = skipped_into
-                        .entry(edge.provider.module.as_str())
-                        .or_default();
-                    *count = count.saturating_add(1);
-                }
+                skipped_unreadable.insert(edge.provider.module.as_str());
             }
         }
         // The adapter total never counts less than its own attribution, so a
@@ -214,7 +247,9 @@ impl<'a> ExportUsageIndex<'a> {
             by_provider,
             by_provider_module,
             unusable_edges,
-            skipped_into,
+            skipped_exports,
+            skipped_unreadable,
+            skipped_modules,
             unattributed_edges,
             skipped_total,
         }
@@ -233,14 +268,26 @@ impl<'a> ExportUsageIndex<'a> {
         self.skipped_total
     }
 
-    /// True when an edge that could have targeted `module` was dropped, so
-    /// "no edge targets this module" would be a claim that the data cannot
-    /// support. A dropped edge counts when its provider is `module` or when
-    /// its provider is unknown. An edge into another module, including a
-    /// module that was not collected, cannot be an earlier edge of a chain
-    /// through `module`.
+    /// True when an edge that could have targeted some export of `module` was
+    /// dropped, so "no edge targets this module" would be a claim that the
+    /// data cannot support. A dropped edge counts when its provider module is
+    /// `module` or when its provider is unknown. An edge into another module,
+    /// including a module that was not collected, cannot be an earlier edge
+    /// of a chain through `module`.
     fn may_hide_edge_into(&self, module: &str) -> bool {
-        self.unattributed_edges > 0 || self.skipped_into.contains_key(module)
+        self.unattributed_edges > 0 || self.skipped_modules.contains(module)
+    }
+
+    /// True when a dropped edge could have been an earlier edge of a chain
+    /// whose first export is `reference`: an edge that targeted exactly that
+    /// export, an edge that targeted an unreadable export of its module, or
+    /// an edge whose provider is unknown. An edge into a different export of
+    /// the same module is not one: the traversal links edges by exact module
+    /// and export, so a chain never continues through another export.
+    fn may_hide_edge_into_export(&self, reference: &CollectedExportRef) -> bool {
+        self.unattributed_edges > 0
+            || self.skipped_unreadable.contains(reference.module.as_str())
+            || self.skipped_exports.contains(reference)
     }
 }
 
@@ -422,7 +469,7 @@ pub fn traverse_with_stats(
         if upstream.is_empty() {
             // No usable edge consumes the first export. That is a confirmed
             // start only when no dropped edge could have been one.
-            let end = if index.may_hide_edge_into(&outermost.consumer.module) {
+            let end = if index.may_hide_edge_into_export(&outermost.consumer) {
                 ExportUsagePathEnd::Incomplete
             } else {
                 ExportUsagePathEnd::Root
@@ -520,7 +567,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        collect::{CollectedModule, CollectedSkippedProvider, Collection},
+        collect::{CollectedModule, CollectedSkippedProvider, Collection, SkippedProviderScope},
         sources::SourceStore,
     };
 
@@ -938,9 +985,222 @@ mod tests {
             .map(|(module, edges)| CollectedSkippedProvider {
                 module: (*module).to_owned(),
                 edges: *edges,
+                ..CollectedSkippedProvider::default()
             })
             .collect();
         usage.unattributed_edges = unattributed;
+    }
+
+    /// Dropped edge as the adapter reports it: provider module, what is known
+    /// about the provider export, and the number of edges.
+    fn skipped(
+        module: &str,
+        scope: SkippedProviderScope,
+        export: &[&str],
+        edges: u32,
+    ) -> CollectedSkippedProvider {
+        CollectedSkippedProvider {
+            module: module.to_owned(),
+            scope,
+            export: export.iter().map(|part| (*part).to_owned()).collect(),
+            edges,
+        }
+    }
+
+    /// Chain end per dropped edge and first export. The chain below always
+    /// ends at the first export of `x`, which no usable edge consumes; only a
+    /// dropped edge that could have been an edge into exactly that export
+    /// makes the start unconfirmed. Mirrors the "Dropped edge and chain end"
+    /// table in the contract.
+    #[test]
+    fn dropped_edge_and_chain_end_table() {
+        use ExportUsagePathEnd::{Incomplete, Root};
+        use SkippedProviderScope::{Module, Named, Unknown};
+        enum Drop {
+            /// Reported by the adapter in `skippedProviders`.
+            Adapter(CollectedSkippedProvider),
+            /// Reported by the adapter in `unattributedEdges`.
+            Unattributed,
+            /// A collected edge that the index drops.
+            Index(CollectedExportEdge),
+        }
+        let first_named: Option<&[&str]> = Some(A);
+        let first_module: Option<&[&str]> = None;
+        let unusable_consumer = |provider: (&'static str, Option<&'static [&'static str]>)| {
+            edge(("", None), provider, "9")
+        };
+        let cases: Vec<(&str, Drop, ExportUsagePathEnd, ExportUsagePathEnd)> = vec![
+            // (name, dropped edge, end when the first export is x.a,
+            //  end when the first export is x at module scope)
+            (
+                "named export of the first export",
+                Drop::Adapter(skipped("x", Named, &["a"], 1)),
+                Incomplete,
+                Root,
+            ),
+            (
+                "named export that differs in the last segment",
+                Drop::Adapter(skipped("x", Named, &["b"], 1)),
+                Root,
+                Root,
+            ),
+            (
+                "named export that extends the first export's path",
+                Drop::Adapter(skipped("x", Named, &["a", "sub"], 1)),
+                Root,
+                Root,
+            ),
+            (
+                "module scope of the same module",
+                Drop::Adapter(skipped("x", Module, &[], 1)),
+                Root,
+                Incomplete,
+            ),
+            (
+                "unreadable export of the same module",
+                Drop::Adapter(skipped("x", Unknown, &[], 1)),
+                Incomplete,
+                Incomplete,
+            ),
+            (
+                "named scope without a path counts as unreadable",
+                Drop::Adapter(skipped("x", Named, &[], 1)),
+                Incomplete,
+                Incomplete,
+            ),
+            (
+                "named scope with an empty segment counts as unreadable",
+                Drop::Adapter(skipped("x", Named, &["a", ""], 1)),
+                Incomplete,
+                Incomplete,
+            ),
+            (
+                "another module",
+                Drop::Adapter(skipped("elsewhere", Unknown, &[], 1)),
+                Root,
+                Root,
+            ),
+            (
+                "entry without a module is unattributed",
+                Drop::Adapter(skipped("", Named, &["a"], 1)),
+                Incomplete,
+                Incomplete,
+            ),
+            (
+                "edge with an unknown provider module",
+                Drop::Unattributed,
+                Incomplete,
+                Incomplete,
+            ),
+            (
+                "index drop with an unusable consumer into the first export",
+                Drop::Index(unusable_consumer(("x", Some(A)))),
+                Incomplete,
+                Root,
+            ),
+            (
+                "index drop with an unusable consumer into another export",
+                Drop::Index(unusable_consumer(("x", Some(B)))),
+                Root,
+                Root,
+            ),
+            (
+                "index drop with an unusable consumer into module scope",
+                Drop::Index(unusable_consumer(("x", None))),
+                Root,
+                Incomplete,
+            ),
+            (
+                "index drop with an unreadable provider export",
+                Drop::Index(edge(("entry", None), ("x", Some(&[])), "9")),
+                Incomplete,
+                Incomplete,
+            ),
+            (
+                "index drop with an empty provider module",
+                Drop::Index(edge(("entry", None), ("", None), "9")),
+                Incomplete,
+                Incomplete,
+            ),
+            (
+                "index drop into another module",
+                Drop::Index(unusable_consumer(("elsewhere", Some(A)))),
+                Root,
+                Root,
+            ),
+        ];
+        for (name, dropped, named_end, module_end) in cases {
+            for (first, expected) in [(first_named, named_end), (first_module, module_end)] {
+                let mut edges = vec![edge(("x", first), ("m", Some(B)), "1")];
+                let mut providers = Vec::new();
+                let mut total = 0;
+                let mut unattributed = 0;
+                match &dropped {
+                    Drop::Adapter(entry) => {
+                        total = entry.edges;
+                        providers.push(entry.clone());
+                    }
+                    Drop::Unattributed => {
+                        total = 1;
+                        unattributed = 1;
+                    }
+                    Drop::Index(dropped_edge) => edges.push(dropped_edge.clone()),
+                }
+                let mut data = collection(edges);
+                let usage = data.export_usage.as_mut().unwrap();
+                usage.skipped_edges = total;
+                usage.skipped_providers = providers;
+                usage.unattributed_edges = unattributed;
+                let result = build_for(&data, "m");
+                assert_eq!(
+                    result.paths.iter().map(|path| path.end).collect::<Vec<_>>(),
+                    [expected],
+                    "{name} (first export {first:?})"
+                );
+                if expected == Incomplete {
+                    assert!(
+                        result.note.contains("engine edge(s)"),
+                        "{name}: {}",
+                        result.note
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn skipped_provider_scope_reads_known_values_and_falls_back_to_unknown() {
+        let read = |json: &str| -> CollectedSkippedProvider { serde_json::from_str(json).unwrap() };
+        assert_eq!(
+            read(r#"{"module":"x","scope":"named","export":["a","b"],"edges":2}"#),
+            skipped("x", SkippedProviderScope::Named, &["a", "b"], 2)
+        );
+        assert_eq!(
+            read(r#"{"module":"x","scope":"module","export":[],"edges":1}"#),
+            skipped("x", SkippedProviderScope::Module, &[], 1)
+        );
+        // An entry from an adapter without export tracking, an unreadable
+        // export and a scope from a newer adapter all mean "any export".
+        for json in [
+            r#"{"module":"x","edges":3}"#,
+            r#"{"module":"x","scope":"unknown","export":[],"edges":3}"#,
+            r#"{"module":"x","scope":"from-the-future","export":["a"],"edges":3}"#,
+        ] {
+            let entry = read(json);
+            assert_eq!(entry.scope, SkippedProviderScope::Unknown, "{json}");
+            assert_eq!(entry.edges, 3, "{json}");
+        }
+    }
+
+    #[test]
+    fn a_dropped_edge_into_another_export_does_not_hide_the_absence_of_edges() {
+        // Starting edges are module-level: any dropped edge into the
+        // diagnostic module could have been one, whatever its export.
+        let mut data = collection(vec![edge(("a", Some(A)), ("b", Some(B)), "1")]);
+        data.export_usage.as_mut().unwrap().skipped_edges = 1;
+        data.export_usage.as_mut().unwrap().skipped_providers =
+            vec![skipped("a", SkippedProviderScope::Named, &["other"], 1)];
+        assert_eq!(build_for(&data, "a").note, NOTE_NO_USABLE_EDGE);
     }
 
     #[test]

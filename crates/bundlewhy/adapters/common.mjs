@@ -257,6 +257,13 @@ export const ExportUsageReason = Object.freeze({
   EdgeLimitExceeded: "edge-limit-exceeded",
 });
 
+/** What a skipped edge says about its provider export. */
+export const SkippedProviderScope = Object.freeze({
+  Named: "named",
+  Module: "module",
+  Unknown: "unknown",
+});
+
 /**
  * Decodes Rspack's positional export usage tuples into collection edges.
  *
@@ -270,9 +277,11 @@ export const ExportUsageReason = Object.freeze({
  * skipped edge is also attributed so that a chain end is never reported as a
  * start when an earlier edge was dropped:
  *
- * - its provider is a collected module: counted for that module in
- *   `skippedProviders` (an earlier edge into that module exists but cannot
- *   be shown);
+ * - its provider is a collected module: counted in `skippedProviders` for
+ *   that module and for the provider export when it can be read (`named`
+ *   path, `module` scope for a `null` path), else with scope `unknown`: an
+ *   earlier edge into that export exists but cannot be shown, and an
+ *   `unknown` export may be any export of the module;
  * - its provider is a known module that is not collected (for example a
  *   concatenated container): counted only in `skippedEdges`, because no
  *   chain through a collected module can end at it;
@@ -314,12 +323,34 @@ export function decodeExportUsageEdges(rawEdges, identifiers, collectedIds) {
       : undefined;
     if (!providerModule) {
       unattributedEdges += 1;
-    } else if (collectedIds.has(providerModule)) {
-      skippedByProvider.set(
-        providerModule,
-        (skippedByProvider.get(providerModule) ?? 0) + 1,
-      );
+      return;
     }
+    if (!collectedIds.has(providerModule)) return;
+    // The provider export is kept only when it can be read: a tuple that is
+    // too short or has an invalid path names no export.
+    const provider =
+      Array.isArray(raw) && raw.length > 3 ? exportPath(raw[3]) : { ok: false };
+    const entry = !provider.ok
+      ? {
+          module: providerModule,
+          scope: SkippedProviderScope.Unknown,
+          export: [],
+        }
+      : provider.value === null
+        ? {
+            module: providerModule,
+            scope: SkippedProviderScope.Module,
+            export: [],
+          }
+        : {
+            module: providerModule,
+            scope: SkippedProviderScope.Named,
+            export: provider.value,
+          };
+    const key = JSON.stringify(entry);
+    const known = skippedByProvider.get(key);
+    if (known) known.edges += 1;
+    else skippedByProvider.set(key, { ...entry, edges: 1 });
   };
   for (const raw of rawEdges) {
     if (!Array.isArray(raw) || raw.length < 6) {
@@ -364,10 +395,8 @@ export function decodeExportUsageEdges(rawEdges, identifiers, collectedIds) {
     return a < b ? -1 : a > b ? 1 : 0;
   });
   const skippedProviders = [...skippedByProvider]
-    .map(([module, count]) => ({ module, edges: count }))
-    .sort((left, right) =>
-      left.module < right.module ? -1 : left.module > right.module ? 1 : 0,
-    );
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([, entry]) => entry);
   return {
     available: true,
     reason: null,
