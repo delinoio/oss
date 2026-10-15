@@ -1259,17 +1259,17 @@ existing handling in the observation boundary.
 
 The isolation table is a single source (`policyFor`) and every row has a test:
 
-| Profile kind | Operation | Requested sandbox / approval | Effective sandbox / approval | Seeding | Inventory check |
-| --- | --- | --- | --- | --- | --- |
-| API ordinary | start, resume (including compaction restore and Revert), Fork | explicit | as requested | yes | yes |
-| API ordinary | start, resume, Fork | permission `default` / empty approval | `read-only` / `on-request` | yes | yes |
-| ChatGPT-managed ordinary, including subscription and shared owner members | start, resume (including compaction restore and Revert), Fork | explicit | as requested | yes | yes |
-| ChatGPT-managed ordinary, including shared owner home | start, resume | permission `default` / empty approval | `read-only` / `on-request` | yes | yes |
-| Shared account owner connection | none (members bind threads) | not applicable | not applicable | no | no |
-| Sidechat (API or managed) | start, Fork, resume | read-only, `never` | `read-only` / `never` | no | existing Sidechat configuration check |
-| Automatic title (API or managed) | start | read-only, `never`, private empty workspace | `read-only` / `never` | no | managed title: existing title check; API title: none |
-| Native review | start | named read-only profile | as requested | no | existing review configuration check |
-| Probe, discovery, quota, credit, subscription, model observation | none | not applicable | not applicable | no | no |
+| Profile kind                                                              | Operation                                                     | Requested sandbox / approval                | Effective sandbox / approval | Seeding | Inventory check                                      |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------- | ---------------------------- | ------- | ---------------------------------------------------- |
+| API ordinary                                                              | start, resume (including compaction restore and Revert), Fork | explicit                                    | as requested                 | yes     | yes                                                  |
+| API ordinary                                                              | start, resume, Fork                                           | permission `default` / empty approval       | `read-only` / `on-request`   | yes     | yes                                                  |
+| ChatGPT-managed ordinary, including subscription and shared owner members | start, resume (including compaction restore and Revert), Fork | explicit                                    | as requested                 | yes     | yes                                                  |
+| ChatGPT-managed ordinary, including shared owner home                     | start, resume                                                 | permission `default` / empty approval       | `read-only` / `on-request`   | yes     | yes                                                  |
+| Shared account owner connection                                           | none (members bind threads)                                   | not applicable                              | not applicable               | no      | no                                                   |
+| Sidechat (API or managed)                                                 | start, Fork, resume                                           | read-only, `never`                          | `read-only` / `never`        | no      | existing Sidechat configuration check                |
+| Automatic title (API or managed)                                          | start                                                         | read-only, `never`, private empty workspace | `read-only` / `never`        | no      | managed title: existing title check; API title: none |
+| Native review                                                             | start                                                         | named read-only profile                     | as requested                 | no      | existing review configuration check                  |
+| Probe, discovery, quota, credit, subscription, model observation          | none                                                          | not applicable                              | not applicable               | no      | no                                                   |
 
 Tests: `project_isolation_test.go` (table, profile derivation, pinned defaults,
 trust keys including linked worktrees, atomic idempotent replacement, invalid
