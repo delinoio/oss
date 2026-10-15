@@ -4,6 +4,7 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"path/filepath"
@@ -480,4 +481,11 @@ func configureOrdinaryTools(config *Config) {
 		config.OrdinaryTools = executionenv.Ordinary{}
 	}
 	config.Process.Env = config.OrdinaryTools.Apply(config.Process.Env)
+	if home := config.OrdinaryTools.ShellHome(); home != "" {
+		// gh's macOS credential store lookup also depends on the shell HOME.
+		// Set only the native shell policy; provider HOME and CODEX_HOME remain
+		// private, and existing execution-token exclusions remain in force.
+		encoded, _ := json.Marshal(home)
+		config.Process.Args = append(config.Process.Args, "-c", "shell_environment_policy.set.HOME="+string(encoded))
+	}
 }

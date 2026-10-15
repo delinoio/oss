@@ -1360,11 +1360,11 @@ Targeted job cancellation after durable input acceptance now keeps the native cl
 
 ### Project requirements
 
-- DeliDev ordinary session tools reuse only the executing Worker’s gh configuration selector under `cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context`. Preserve private provider HOME, native permissions, protected execution/proxy exclusions and excluded discovery/login/title/inspection/Sidechat isolation. gh owns its files and OS credentials; DeliDev never reads, transfers, injects or cleans them. No RPC or migration.
+- DeliDev ordinary session tools reuse the executing Worker’s bounded ordinary-tool selectors under `cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context`. Preserve private provider HOME, native permissions, protected execution/proxy exclusions and excluded discovery/login/title/inspection/Sidechat isolation. gh owns its files and OS credentials; DeliDev never reads, transfers, injects or cleans them. No RPC or migration.
 
 ### cmds/delidev-cli constraints
 
-- Ordinary execution tool authentication follows `cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context`. Carry only the executing Worker’s typed `GH_CONFIG_DIR` selector after private environment reconstruction, including continuation and independent Fork. Keep discovery, login, title, inspection and Sidechat isolated. Never read, copy, transfer, inject or clean up gh credentials/configuration; preserve native permissions and protected execution/proxy exclusions. No RPC or migration.
+- Ordinary execution tool authentication follows `cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context`. Carry the executing Worker’s typed `GH_CONFIG_DIR` and platform selectors after private environment reconstruction, including continuation and independent Fork. Ordinary macOS Codex shells retain the original user HOME through their separate native shell policy. Keep discovery, login, title, inspection and Sidechat isolated. Never read, copy, transfer, inject or clean up gh credentials/configuration; preserve native permissions and protected execution/proxy exclusions. No RPC or migration.
 
 ### cmds/delidev-cli/internal/apiproxy constraints
 
@@ -2676,6 +2676,12 @@ resources and `0600` for other resources. Mode changes invalidate the proof.
 The feature permits ordinary Codex, Claude Code, OpenCode and Grok session tools to use the executing machine's existing gh login. The Worker resolves the configuration selector from its original process environment and cwd before native launch. Precedence is `GH_CONFIG_DIR`, `XDG_CONFIG_HOME/gh`, Windows `AppData/GitHub CLI`, then the original user home `.config/gh`. The final fallback follows gh's `os.UserHomeDir`: `HOME` on Unix and `USERPROFILE` on Windows. Relative configured paths bind to the original Worker cwd, never the session checkout or private runtime. Signed installed-controller delegation and update/rollback helpers retain the explicit `GH_CONFIG_DIR` selector through their existing environment allowlist. They retain the caller cwd and never forward `GH_TOKEN` or `GITHUB_TOKEN`. See the [official gh environment contract](https://cli.github.com/manual/gh_help_environment) and [gh directory resolver](https://github.com/cli/go-gh/blob/trunk/pkg/config/config.go).
 
 The internal `executionenv.Ordinary` context carries this selector and, on Linux only, the original bounded `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` selectors in memory. These non-secret session selectors let gh reach the existing user Secret Service after private HOME reconstruction. They never authorize bus/store creation, adoption or cleanup. Each adapter applies `GH_CONFIG_DIR` after rebuilding its private environment. Initial execution, supported continuation and independent Fork receive it; remote execution resolves only the remote Worker's context. Native provider HOME/configuration, execution/proxy credential exclusions, permissions, original process ownership, history and cleanup remain unchanged. This context grants no unsupported native continuation/Fork capability.
+
+On macOS, ordinary Codex shell tools also retain the original Worker's bounded
+absolute `HOME` through `shell_environment_policy.set.HOME`. This lets gh locate
+the user's existing login keychain. The native provider process keeps its private
+`HOME` and `CODEX_HOME`; auxiliary profiles receive no ordinary shell-home selector.
+No keychain file or credential is read or copied by DeliDev.
 
 `PrivateRuntimeEnvironment` remains isolated. Discovery, account login, auxiliary title generation, inspection and Sidechat receive no ordinary context. Codex independently excludes probe, subscription, model-observation, title and read-only Sidechat profiles even if a caller supplies a context. Grok applies the selector only to its actual API execution process, retaining separate isolated inspection processes.
 
