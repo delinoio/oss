@@ -623,13 +623,17 @@ fn token_ends_operand(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> b
 /// a statement, so the next token starts a new one whatever it is.
 ///
 /// This is a lexical guess from the previous token. A function or class
-/// expression body (`x = function () {}`) is treated as a block as well.
+/// expression body (`x = function () {}`) and an arrow function body
+/// (`() => {}`) are treated as blocks as well.
 fn opens_statement_block(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> bool {
     let Some(end) = previous_token_end(bytes, index, ignored) else {
         return true;
     };
     match token_ending_at(bytes, end, ignored) {
         TokenBefore::Punct(b';' | b'{' | b'}' | b')') | TokenBefore::Name => true,
+        // The body of a block-bodied arrow function (`=> {`) is always a
+        // block; a lone `>` is a comparison and takes an object literal.
+        TokenBefore::Punct(b'>') => end >= 2 && bytes[end - 2] == b'=',
         TokenBefore::Punct(b':') => colon_opens_block(bytes, end, ignored),
         TokenBefore::Keyword(word) => {
             matches!(word, "else" | "do" | "try" | "finally" | "catch" | "class")
@@ -2496,6 +2500,17 @@ mod tests {
             ("switch (a) { case \"s\": {", true),
             ("switch (a) { case b: {", true),
             ("switch (a) { case 1: x(); break; default: {", true),
+            ("const f = () => {", true),
+            ("const f=()=>{", true),
+            ("const f = async (a) => {", true),
+            ("const f = a => {", true),
+            ("x = a ? () => {", true),
+            ("f(() => {", true),
+            ("x = { run: () => {", true),
+            // A comparison `>` or `>=` takes an object literal.
+            ("x = a > {", false),
+            ("x = a >= {", false),
+            ("x = a >> {", false),
             // Object literals keep their reading.
             ("x = { a: {", false),
             ("x = c ? d : {", false),
@@ -2521,6 +2536,8 @@ mod tests {
         for source in [
             "label: { work(); }\n/process.env.FLAG&&run/.test(source)",
             "switch (a) { case 1: { work(); }\n/process.env.FLAG&&run/.test(s) }",
+            "const f=()=>{}\n/process.env.FLAG&&run/.test(source)",
+            "const f = async (a) => { work(); }\n/process.env.FLAG&&run/.test(source)",
         ] {
             let ranges = non_code_ranges(source);
             assert!(
@@ -3131,6 +3148,8 @@ y=/process.env.F/.test(z),process.env.G"#;
             "function f(){",
             "class A{m(){",
             "if(x){}else{",
+            "const f=()=>{",
+            "const f=async(a)=>{",
             "try{",
             "{",
         ] {
@@ -3154,7 +3173,6 @@ y=/process.env.F/.test(z),process.env.G"#;
             ("process.env.FLAG + {a:1}\n/abc/.test(x)&&run()", AND_GUARD),
             ("process.env.FLAG + [{a:1}]\n(x)&&run()", AND_GUARD),
             ("process.env.FLAG + f({a:1})\n(x)&&run()", AND_GUARD),
-            ("process.env.FLAG + x => {}\n(x)&&run()", AND_GUARD),
         ] {
             assert_eq!(flag_guard(code), expected, "{code:?}");
         }
