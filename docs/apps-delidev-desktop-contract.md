@@ -6008,8 +6008,9 @@ follow-up and queued editing) share one adapter, `useSkillCompletion`, over one
 native multiline textarea. The retained draft, the submitted payload and every
 skill binding offset are **canonical Markdown source text**. The textarea shows a
 **display projection** of that text in which valid inline HTTP(S) links collapse
-to their labels. The pure model lives in `prompt-markdown-links.ts` and the
-adapter-owned history in `prompt-edit-history.ts`; the Selected-skill contract
+to their labels. The pure model lives in `prompt-markdown-links.ts` (conversion, projection and
+edits), the single scanner in `prompt-markdown-scan.ts` and the adapter-owned
+history in `prompt-edit-history.ts`; the Selected-skill contract
 above is unchanged and independent (skills keep literal `$name` bytes, authority,
 counts and noninteractive appearance; links add navigation only through the
 platform modifier click below).
@@ -6029,13 +6030,47 @@ angle destinations, titles, images, `www.` text, incomplete or edited syntax)
 stays ordinary visible source. Fenced code, inline code, images, other inline
 links, autolinks and reference definitions are protected: bare URLs inside them
 are never converted. An image is protected as a whole, including links and bare
-URLs in its description; only a link label rejects a nested link, and a `](`
-inside code or after a backslash is ordinary label text. `!` starts an image only
-when it is not itself escaped (an even number of backslashes before it), so
-`\![label](URL)` is a literal bang followed by an ordinary link. At most 256 links
-collapse; the scan has a linear work budget (a label's nested-link test is
-answered from the single bracket pass, so no label is ever rescanned), and when
-it is exhausted nothing converts. No title is ever fetched.
+URLs in its description; only a link label rejects a nested link (an image inside
+a label is not a link), and a `](` inside code or after a backslash is ordinary
+label text. `!` starts an image only when it is not itself escaped (an even
+number of backslashes before it), so `\![label](URL)` is a literal bang followed
+by an ordinary link. Every construct is decided by the one **Precedence** table
+below; nothing outside that table protects or collapses text. At most 256 links collapse; the scan has a linear work budget (a label's
+nested-link test is answered from the single bracket pass, so no label is ever
+rescanned), and when it is exhausted nothing converts. No title is ever fetched.
+Block containers (block quotes, list items) and indented code blocks are not
+modeled: their text is scanned as ordinary paragraph text.
+
+**Precedence.** `prompt-markdown-scan.ts` reads the LF text once in two fixed
+stages. Stage 1 claims fenced code blocks line by line and splits the other
+lines into segments at blank lines (lines of only spaces and tabs) and fences.
+Stage 2 walks each segment left to right; the first construct that starts at a
+position claims its text, and claimed text is invisible to every later row. Stage
+3 resolves the recorded bracket pairs in source order. A construct never crosses
+a segment boundary, and a backslash makes the next character inert everywhere
+except inside code.
+
+| Row | Construct                 | Starts at                                                             | Ends at                                                                                                         | Yields to  | Effect                                                                                                                |
+| --- | ------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------- |
+| P1  | Fenced code block         | A line of up to three spaces and three or more backticks or tildes    | A line of the same character, at least as long, or the end of the draft                                         | none       | Protected; no definition, span or bracket inside it exists, and it interrupts a segment                               |
+| P2  | Reference definition      | A line start (up to three spaces or tabs) outside every earlier claim | The destination, or the title when a valid one follows; a rejected definition keeps its first destination token | P1, P3     | Protected as a whole, defines its label; no link, image or tag inside it is detected                                  |
+| P3  | Code span                 | A backtick run outside every earlier claim                            | The next run of exactly the same length in the segment; an unmatched run is literal                             | P1, P2     | Protected; backslashes are literal inside it, so a backtick after a backslash closes it                               |
+| P4  | Autolink and raw HTML tag | An unescaped `<` outside every earlier claim                          | The closing `>` of a valid autolink or tag                                                                      | P1, P2, P3 | Protected, attribute values included                                                                                  |
+| P5  | Image                     | An unescaped `!` directly before a bracket pair                       | The closing parenthesis of an inline destination, or the end of a defined reference                             | P1 to P4   | Consumed whole, inline or by reference: nothing inside its description is a link, image or convertible URL            |
+| P6  | Inline link               | A bracket pair directly followed by `(`                               | The closing parenthesis, after a destination and an optional title of up to 4,096 units                         | P1 to P5   | Protected; collapses only for a simple HTTP(S) destination and a label without a nested link, an image does not count |
+| P7  | Reference link            | A bracket pair that is not an inline link                             | The closing bracket of a full, collapsed or shortcut label that has a definition                                | P1 to P6   | Protected; the text of a reference link may still hold an inline link, which is detected                              |
+| P8  | Bare URL                  | A URL word that is standalone                                         | The end of the URL token                                                                                        | P1 to P7   | Converted to `[URL](URL)` only when it overlaps no claim                                                              |
+
+Each row has a `P..` test and each interaction below a test in
+`prompt-markdown-model.test.ts`; the interactions that the rows imply are: a definition line inside a fence or a code span
+defines nothing; a definition line that starts after a span closes on the same
+line is a definition; a definition protects the links and URLs in its destination
+and title; an image inside an inline link label does not make the label a nested
+link, but a link inside it does; a reference image is consumed like an inline
+image; a title is scanned to the same 4,096-unit limit as a definition title or an
+angle destination, and a longer one is abandoned. A reference model written from
+this table alone is compared with the scanner on seeded random drafts of Markdown
+metacharacters, so a case not named here is found by that test.
 
 **Reference definitions.** A link reference definition is protected as a whole:
 its label (which may span lines but never a blank line), its destination and its
@@ -6057,7 +6092,9 @@ case-insensitively with collapsed whitespace and hold no bracket, at most 999
 characters. A label with no definition is ordinary text, so URLs inside it
 convert. A bracket pair whose inline destination fails to parse is checked as a
 reference too. Raw HTML open and closing tags are protected, so attribute values
-never convert. A link nested inside a reference text keeps its own detection.
+never convert. A link nested inside a reference link's text keeps its own detection;
+a reference image is consumed whole like an inline image, so no link inside its
+description is detected.
 
 **Conversion.** Conversion reuses `findUrlTokens` and `validHttpUrl`, so
 punctuation and unbalanced-bracket trimming, credential and 2,048/1,000,000
@@ -6171,6 +6208,12 @@ is the textarea text. Offsets in the Bindings column are canonical.
 | R29 | Full, collapsed or shortcut reference link or image whose label has a definition, and raw HTML tags                                              | Unchanged: the whole reference (image bang included) or tag is protected, so a URL inside it stays plain text however it is entered; a label without a definition converts normally                         | Same as canonical                                                                             | Caret after the entered text                                                                                 | Typing or paste entry, no conversion entry                                                                                                                                                                     | Shifted                                                        |
 | R30 | Caret moved away and back to the end of a typing or deletion run (pointer, arrows, select-all, owner selection)                                  | Unchanged                                                                                                                                                                                                   | Same as canonical                                                                             | The moved selection is retained                                                                              | The next typed or deleted text is a new entry, not an extension of the earlier run                                                                                                                             | Unchanged                                                      |
 | R31 | Boundary events: blur, drag start, drag end, drop, undo, redo, a browser paste, drop, drag removal or replacement suggestion, an IME composition | The edit itself is unchanged                                                                                                                                                                                | Same as canonical                                                                             | Caret after the edit                                                                                         | Each boundary seals the entry before it; a browser paste, drop, drag removal or replacement is its own sealed entry; undo and redo seal the entry they expose; a composition is separate from typing around it | Shifted                                                        |
+| R32 | Reference image whose description holds an inline link, and a reference link whose text holds one                                                | Unchanged: the reference image is consumed whole (P5), so its inner link neither collapses nor converts; the reference link keeps its inner link (P7)                                                       | Image: same as canonical. Reference link: the inner link shows its label                      | Unchanged                                                                                                    | Typing next to it is an ordinary typing entry                                                                                                                                                                  | Unchanged                                                      |
+| R33 | Backslash directly before a backtick inside a code span                                                                                          | Unchanged: the backslash is literal in code (P3), so that backtick closes the span; a following span or URL is read from there                                                                              | Same as canonical                                                                             | Unchanged                                                                                                    | Typing or paste entry, no conversion entry inside a closed span                                                                                                                                                | Shifted                                                        |
+| R34 | Definition line inside a fenced block or an inline code span                                                                                     | Unchanged: nothing there defines a label (P1, P3), so a reference to it is plain text and a URL in that reference converts; the same line outside code defines it                                           | Same as canonical                                                                             | Caret after the entered text                                                                                 | One paste or conversion entry                                                                                                                                                                                  | Shifted                                                        |
+| R35 | Inline link or URL inside a definition's destination or title                                                                                    | Unchanged: the definition claims its text first (P2), so no link starts inside it and no URL there converts; a link after the definition ends is detected                                                   | Same as canonical inside the definition                                                       | Unchanged                                                                                                    | Unchanged                                                                                                                                                                                                      | Unchanged                                                      |
+| R36 | Image inside an inline link label                                                                                                                | Unchanged: the image does not make the label a nested link (P6), so the outer link is valid; a link inside the label still is one                                                                           | The link collapses to its label, which shows the image source                                 | A caret inside the label reveals the whole source and maps exactly                                           | Unchanged                                                                                                                                                                                                      | Unchanged                                                      |
+| R37 | URL inside an inline link title                                                                                                                  | Unchanged: the title is scanned up to 4,096 units (P6), so a URL inside it stays plain however it is entered; a longer title is abandoned and the URL converts                                              | Same as canonical                                                                             | Caret after the entered text                                                                                 | Typing or paste entry                                                                                                                                                                                          | Shifted                                                        |
 
 **Validation boundary.** jsdom fixtures prove the maps, the state table and event
 wiring. They do not establish real caret, drag-selection, IME, native undo menu,

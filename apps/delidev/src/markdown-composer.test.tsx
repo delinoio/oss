@@ -1606,6 +1606,134 @@ it("R31 other boundaries: IME composition is separate from the typing around it"
   expect(probe.canonical).toBe("");
 });
 
+// --- Syntax precedence (R32 to R37) -----------------------------------------
+
+const DOCS = "https://docs.test";
+
+// Typing one space right after the URL a row names converts nothing and adds
+// one typing entry; the row's text is asserted before and after.
+function typeSpaceAfter(input: HTMLTextAreaElement, url: string) {
+  const at = input.value.indexOf(url) + url.length;
+  select(input, at);
+  nativeEdit(
+    input,
+    `${input.value.slice(0, at)} ${input.value.slice(at)}`,
+    at + 1,
+  );
+}
+
+it("R32 reference image with a link in its description: the whole image is consumed, a reference link keeps its inner link", () => {
+  const image = `[logo]: image.png\n\n![see [docs](${DOCS})][logo]`;
+  const first = mount(image);
+  // Nothing collapses: the inner link belongs to the image description.
+  expect(scanMarkdown(image).links).toHaveLength(0);
+  expect(first.input.value).toBe(image);
+  select(first.input, image.length);
+  expect(first.input.selectionStart).toBe(image.length);
+  typeSpaceAfter(first.input, DOCS);
+  expect(probe.canonical).toBe(image.replace(DOCS, `${DOCS} `));
+  expect(probe.canonical).not.toContain(`[${DOCS}]`);
+  undo(first.input);
+  expect(probe.canonical).toBe(image);
+  first.view.unmount();
+  // An ordinary reference link still shows the link nested in its text.
+  const reference = `[docs]: /u\n\n[see [x](${DOCS}) y][docs]`;
+  const second = mount(reference);
+  expect(second.input.value).toBe("[docs]: /u\n\n[see x y][docs]");
+  select(second.input, 0);
+  expect(probe.canonical).toBe(reference);
+});
+
+it("R33 backslash in a code span: it is literal, so the next backtick closes the span", () => {
+  const draft = "`x\\` `" + DOCS + "`";
+  const { input, view } = mount(draft);
+  expect(input.value).toBe(draft);
+  // The second span holds the URL: it stays plain however it is entered.
+  typeSpaceAfter(input, DOCS);
+  expect(probe.canonical).toBe("`x\\` `" + DOCS + " `");
+  expect(probe.canonical).not.toContain("](");
+  undo(input);
+  expect(probe.canonical).toBe(draft);
+  view.unmount();
+  // After the closed span a pasted URL converts as usual.
+  const plain = mount("`x\\` ");
+  select(plain.input, plain.input.value.length);
+  paste(plain.input, DOCS);
+  expect(probe.canonical).toBe(`\`x\\\` [${DOCS}](${DOCS})`);
+});
+
+it("R34 definition inside code: a fenced or inline code line defines nothing", () => {
+  for (const head of [
+    "```\n[logo]: /img\n```\n\n![see ",
+    "~~~\n[logo]: /img\n~~~\n\n![see ",
+    "`a\n[logo]: /img`\n\n![see ",
+  ]) {
+    const { input, view } = mount(head);
+    select(input, input.value.length);
+    paste(input, `${DOCS} x][logo]`);
+    // No definition resolves the label, so the URL converts.
+    expect(probe.canonical).toBe(`${head}[${DOCS}](${DOCS}) x][logo]`);
+    undo(input);
+    expect(probe.canonical).toBe(head);
+    view.unmount();
+  }
+  // The same line outside code defines the label, so the URL stays plain.
+  const { input } = mount("[logo]: /img\n\n![see ");
+  select(input, input.value.length);
+  paste(input, `${DOCS} x][logo]`);
+  expect(probe.canonical).toBe(`[logo]: /img\n\n![see ${DOCS} x][logo]`);
+});
+
+it("R35 inline link inside a definition: its destination and title never form a link", () => {
+  for (const draft of [
+    `[a]: <x> "[b](${DOCS})"`,
+    `[a]: /x[b](${DOCS})`,
+    `[a]: /x\n  '[b](${DOCS}) t'`,
+  ]) {
+    const { input, view } = mount(draft);
+    expect(scanMarkdown(draft).links).toHaveLength(0);
+    expect(input.value).toBe(draft);
+    select(input, draft.length);
+    expect(input.selectionStart).toBe(draft.length);
+    view.unmount();
+  }
+  // A link after the definition ends is an ordinary link.
+  const after = mount(`[a]: /x\n\n[b](${DOCS})`);
+  expect(after.input.value).toBe("[a]: /x\n\nb");
+});
+
+it("R36 image inside a link label: the link still collapses and shows the image source", () => {
+  const draft = `[open ![logo](logo.png)](${DOCS})`;
+  const { input } = mount(draft);
+  expect(input.value).toBe("open ![logo](logo.png)");
+  expect(scanMarkdown(draft).links.map((link) => link.url)).toEqual([DOCS]);
+  // A caret inside the label reveals the whole source and maps exactly.
+  select(input, 3);
+  expect(probe.api.readCanonical().start).toBe(1 + 3);
+  expect(input.value).toBe(draft);
+  // A second link inside the label still rejects the outer one.
+  const nested = `[a [b](${DOCS}) ![i](i.png)](https://outer.test)`;
+  expect(scanMarkdown(nested).links.map((link) => link.url)).toEqual([DOCS]);
+});
+
+it("R37 long inline title: a title up to 4096 units is protected, a longer one is abandoned", () => {
+  const head = `[a](${DOCS} "`;
+  const long = "w ".repeat(400);
+  const { input, view } = mount(`${head}${long}`);
+  select(input, input.value.length);
+  paste(input, `${DOCS}")`);
+  // The URL lies inside the title: plain text, one paste entry.
+  expect(probe.canonical).toBe(`${head}${long}${DOCS}")`);
+  undo(input);
+  expect(probe.canonical).toBe(`${head}${long}`);
+  view.unmount();
+  const huge = `${"w".repeat(4200)} `;
+  const abandoned = mount(`${head}${huge}`);
+  select(abandoned.input, abandoned.input.value.length);
+  paste(abandoned.input, `${DOCS}")`);
+  expect(probe.canonical).toBe(`${head}${huge}[${DOCS}](${DOCS})")`);
+});
+
 // Seeded random walk over the whole state machine. After every operation the
 // field must show exactly the projection of the canonical text for the
 // canonical selection, selection maps must agree, and undoing every edit must
