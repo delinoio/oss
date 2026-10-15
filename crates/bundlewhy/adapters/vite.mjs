@@ -380,39 +380,61 @@ await runAdapter(async (request) => {
   await waitForProtectionAck();
 
   progress("building", `Running vite build with Vite ${vite.version}`);
-  try {
-    await vite.build(
-      vite.mergeConfig(userConfig, {
+  const customLogger = {
+    ...vite.createLogger("warn"),
+    warn(message) {
+      state.warnings.push(stripAnsi(String(message)).slice(0, 2000));
+    },
+    warnOnce(message) {
+      state.warnings.push(stripAnsi(String(message)).slice(0, 2000));
+    },
+  };
+  const collectionOverrides = {
+    mode: "production",
+    logLevel: "warn",
+    clearScreen: false,
+    customLogger,
+    build: {
+      outDir,
+      emptyOutDir: true,
+      sourcemap: true,
+      write: true,
+      watch: null,
+    },
+  };
+  // With a configuration file, let Vite load that file itself so plugins see
+  // the real `resolvedConfig.configFile` (React Router's Vite plugin rejects
+  // the build without it). The inline config then carries only bundlewhy's
+  // overrides, so the user's configuration is applied exactly once and the
+  // preliminary load above only informs root capture. Vite merges the inline
+  // plugins after the file's plugins, which keeps the collector last.
+  // Without a configuration file nothing can be loaded, so the config stays
+  // disabled.
+  const buildConfig = request.configFile
+    ? {
+        ...collectionOverrides,
+        root,
+        configFile: request.configFile,
+        plugins: [collectorPlugin(state)],
+      }
+    : vite.mergeConfig(userConfig, {
+        ...collectionOverrides,
         root: userConfig.root ?? request.projectRoot,
         configFile: false,
-        mode: "production",
-        logLevel: "warn",
-        clearScreen: false,
-        customLogger: {
-          ...vite.createLogger("warn"),
-          warn(message) {
-            state.warnings.push(stripAnsi(String(message)).slice(0, 2000));
-          },
-          warnOnce(message) {
-            state.warnings.push(stripAnsi(String(message)).slice(0, 2000));
-          },
-        },
-        build: {
-          outDir,
-          emptyOutDir: true,
-          sourcemap: true,
-          write: true,
-          watch: null,
-        },
         plugins: [collectorPlugin(state)],
-      }),
-    );
+      });
+  try {
+    await vite.build(buildConfig);
   } catch (error) {
     if (error instanceof AdapterError) throw error;
+    // Configuration evaluation errors were classified before the build. An
+    // error here comes from the build itself or from a plugin hook, and the
+    // diagnostic build differs from the native one, so do not claim that the
+    // project's own build is broken.
     throw new AdapterError(
       AdapterErrorCode.BuildFailed,
       `vite build failed: ${error?.message ?? error}`,
-      "Fix the build error, confirm `vite build` succeeds in the project, then start a new run.",
+      "Read the error above. If `vite build` also fails in the project, fix that error. If it succeeds, a plugin or option is incompatible with bundlewhy's diagnostic build, which forces the output directory, source maps and a post collector plugin. Then start a new run.",
     );
   }
 
