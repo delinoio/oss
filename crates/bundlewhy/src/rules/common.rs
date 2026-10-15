@@ -126,6 +126,75 @@ fn reads_process_env(text: &str, name: &str) -> bool {
     .is_ok_and(|pattern| pattern.is_match(text))
 }
 
+/// How a keyword-looking word behaves in the lexical scans of this module.
+///
+/// Reserved words can never be identifiers, so the word before a token is
+/// always the keyword. Contextual words (`of`, `yield`, `await`) are keywords
+/// only in some positions and valid callable identifiers elsewhere, such as
+/// `of(x)`; the scans cannot tell the positions apart without a parser.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum KeywordKind {
+    Reserved,
+    Contextual,
+}
+
+/// One row per word that precedes an expression. `regex_follows` is whether a
+/// `/` after the word starts a regular expression literal. `operand_follows` is
+/// whether a `(` after the word opens a parenthesized operand instead of a call
+/// argument list.
+struct ExpressionKeyword {
+    word: &'static str,
+    kind: KeywordKind,
+    regex_follows: bool,
+    operand_follows: bool,
+}
+
+const fn keyword(
+    word: &'static str,
+    kind: KeywordKind,
+    regex_follows: bool,
+    operand_follows: bool,
+) -> ExpressionKeyword {
+    ExpressionKeyword {
+        word,
+        kind,
+        regex_follows,
+        operand_follows,
+    }
+}
+
+const EXPRESSION_KEYWORDS: &[ExpressionKeyword] = &[
+    keyword("return", KeywordKind::Reserved, true, true),
+    keyword("throw", KeywordKind::Reserved, true, true),
+    keyword("void", KeywordKind::Reserved, true, true),
+    keyword("typeof", KeywordKind::Reserved, true, true),
+    keyword("delete", KeywordKind::Reserved, true, true),
+    keyword("case", KeywordKind::Reserved, true, true),
+    keyword("else", KeywordKind::Reserved, true, true),
+    keyword("do", KeywordKind::Reserved, true, true),
+    keyword("in", KeywordKind::Reserved, true, true),
+    keyword("instanceof", KeywordKind::Reserved, false, true),
+    // `new (x)` constructs `x` and `new x(...)` is a call, so a parenthesis
+    // after `new` never opens an operand that a chain can short-circuit.
+    keyword("new", KeywordKind::Reserved, true, false),
+    keyword("of", KeywordKind::Contextual, true, true),
+    keyword("yield", KeywordKind::Contextual, true, true),
+    keyword("await", KeywordKind::Contextual, false, true),
+];
+
+/// Whether `byte` can be part of an identifier. Non-ASCII bytes count so that a
+/// keyword is never matched inside a longer identifier.
+fn is_identifier_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$') || !byte.is_ascii()
+}
+
+/// Looks up the keyword row for a whole identifier-like `word`.
+fn expression_keyword(word: &[u8]) -> Option<&'static ExpressionKeyword> {
+    EXPRESSION_KEYWORDS
+        .iter()
+        .find(|entry| entry.word.as_bytes() == word)
+}
+
 /// Byte ranges of string literals, template literal text, comments and regular
 /// expression literals in JavaScript. Text there is never a property read.
 ///
@@ -144,19 +213,12 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
             None => true,
             Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
             Some(byte) if byte.is_ascii_alphabetic() => {
-                let head = &code[..start];
-                let trimmed = head.trim_end();
-                [
-                    "return", "typeof", "case", "do", "else", "in", "of", "void", "yield",
-                    "delete", "throw", "new",
-                ]
-                .iter()
-                .any(|keyword| {
-                    trimmed.ends_with(keyword)
-                        && !trimmed[..trimmed.len() - keyword.len()].ends_with(|character: char| {
-                            character.is_alphanumeric() || character == '_' || character == '$'
-                        })
-                })
+                let head = code[..start].trim_end().as_bytes();
+                let mut word_start = head.len();
+                while word_start > 0 && is_identifier_byte(head[word_start - 1]) {
+                    word_start -= 1;
+                }
+                expression_keyword(&head[word_start..]).is_some_and(|entry| entry.regex_follows)
             }
             _ => false,
         }
@@ -399,33 +461,21 @@ fn is_direct_optional_chain_base(
         // so the read is an argument rather than the chain base.
         if let Some(before) = skip_backward(open) {
             let byte = bytes[before];
-            let call_like = byte.is_ascii_alphanumeric()
-                || matches!(byte, b'_' | b'$' | b')' | b']' | b'.' | b'\'' | b'"' | b'`');
+            let call_like = is_identifier_byte(byte)
+                || matches!(byte, b')' | b']' | b'.' | b'\'' | b'"' | b'`');
             if call_like {
                 let mut word_start = before + 1;
-                while word_start > 0
-                    && (bytes[word_start - 1].is_ascii_alphanumeric()
-                        || matches!(bytes[word_start - 1], b'_' | b'$'))
-                {
+                while word_start > 0 && is_identifier_byte(bytes[word_start - 1]) {
                     word_start -= 1;
                 }
                 let preceded_by_member = word_start > 0 && bytes[word_start - 1] == b'.';
-                let keyword = matches!(
-                    &bytes[word_start..=before],
-                    b"return"
-                        | b"throw"
-                        | b"yield"
-                        | b"await"
-                        | b"void"
-                        | b"typeof"
-                        | b"delete"
-                        | b"case"
-                        | b"else"
-                        | b"do"
-                        | b"in"
-                        | b"of"
-                        | b"instanceof"
-                );
+                // A contextual word such as `of` may be a function name:
+                // `of(process.env.FLAG)?.x` calls `of`, so only reserved words
+                // make the parenthesis an operand.
+                let keyword =
+                    expression_keyword(&bytes[word_start..=before]).is_some_and(|entry| {
+                        entry.operand_follows && entry.kind == KeywordKind::Reserved
+                    });
                 if !keyword || preceded_by_member {
                     return false;
                 }
@@ -2342,6 +2392,69 @@ y=/process.env.F/.test(z),process.env.G"#;
             guard("process.env.FLAG??run?.()", "process.env.FLAG"),
             Some("the retained read controls a ?? fallback branch")
         );
+    }
+
+    #[test]
+    fn keyword_before_parenthesized_read_follows_the_keyword_table() {
+        let guard = |code: &str| {
+            let start = code.find("process.env.FLAG").unwrap();
+            env_guard(
+                code,
+                start,
+                start + "process.env.FLAG".len(),
+                &non_code_ranges(code),
+            )
+            .map(EnvGuard::evidence)
+        };
+        let chain = Some(EnvGuard::OptionalChain.evidence());
+        for entry in EXPRESSION_KEYWORDS {
+            let word = entry.word;
+            // Reserved words make the parenthesis an operand; contextual words
+            // may be function names, so the read is only an argument.
+            let operand = entry.operand_follows && entry.kind == KeywordKind::Reserved;
+            for template in [
+                "WORD(process.env.FLAG)?.x;",
+                "WORD (process.env.FLAG)?.x;",
+                "WORD/* c */(process.env.FLAG)?.x;",
+                "a=WORD\n(process.env.FLAG)?.x;",
+                "x;WORD(process.env.FLAG)?.x;",
+            ] {
+                let code = template.replace("WORD", word);
+                let expected = if operand { chain } else { None };
+                assert_eq!(guard(&code), expected, "{code}");
+            }
+            // A member name or a longer identifier is never the keyword.
+            for template in [
+                "obj.WORD(process.env.FLAG)?.x;",
+                "obj?.WORD(process.env.FLAG)?.x;",
+                "xWORD(process.env.FLAG)?.x;",
+                "WORDx(process.env.FLAG)?.x;",
+                "WORD_(process.env.FLAG)?.x;",
+                "$WORD(process.env.FLAG)?.x;",
+                "\u{e9}WORD(process.env.FLAG)?.x;",
+            ] {
+                let code = template.replace("WORD", word);
+                assert_eq!(guard(&code), None, "{code}");
+            }
+        }
+        // Pinned limit: a real `for ... of (read)?.x` header cannot be told
+        // from a call to a function named `of` without a parser, so the
+        // conservative reading is a call and no guard is reported.
+        assert_eq!(guard("for(const a of(process.env.FLAG)?.x){}"), None);
+        assert_eq!(guard("for(const a in(process.env.FLAG)?.x){}"), chain);
+    }
+
+    #[test]
+    fn regex_after_keyword_follows_the_keyword_table() {
+        for entry in EXPRESSION_KEYWORDS {
+            let code = format!("{} /process.env.FLAG/.test(x)", entry.word);
+            let start = code.find("process.env.FLAG").unwrap();
+            let ranges = non_code_ranges(&code);
+            assert_eq!(in_ranges(&ranges, start), entry.regex_follows, "{code}");
+        }
+        let code = "xreturn /process.env.FLAG/.test(x)";
+        let start = code.find("process.env.FLAG").unwrap();
+        assert!(!in_ranges(&non_code_ranges(code), start), "{code}");
     }
 
     #[test]
