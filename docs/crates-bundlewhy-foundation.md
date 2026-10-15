@@ -330,6 +330,7 @@ When a source map lacks `sourcesContent`, a safe live read may establish that a 
 | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Collected module with a resource path                                     | Its display path (project-relative or dependency display path)          |
 | Collected module without a resource path, or module that is not collected | `module-` plus the first 16 hex digits of the SHA-256 of its identifier |
+| Backing-file candidate path (absolute, possibly with a query or fragment) that has no display path | `module-` plus the first 16 hex digits of the SHA-256 of the candidate text |
 
 ## Build and Test
 

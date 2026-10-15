@@ -307,6 +307,13 @@ pub fn is_generated_asset_module(path: &str, snapshot: &str) -> bool {
     shape && is_asset_module_path(path)
 }
 
+/// Names a path in a log line without exposing it: `module-` plus the first 16
+/// hex digits of the SHA-256 of the text. Use it where only an absolute or
+/// query-bearing path is available and no display path exists.
+pub fn log_label(text: &str) -> String {
+    format!("module-{}", &sha256_hex(text.as_bytes())[..16])
+}
+
 /// Resolves the file that backs a module path for filesystem access. Bundlers
 /// append an import query (`a.js?raw`) or a fragment to the file path to name a
 /// derived module; the query is not part of the file name. The literal path
@@ -337,7 +344,7 @@ pub fn filesystem_path(path: &Path) -> PathBuf {
             Err(LiveFileFailure::Missing) => {}
             Err(failure) => {
                 tracing::debug!(
-                    candidate,
+                    candidate = %log_label(candidate),
                     ?failure,
                     "backing file candidate cannot be inspected; trying the next candidate"
                 );
@@ -2277,6 +2284,18 @@ mod tests {
             assert_eq!(probed, expected, "probe {name}");
             assert_eq!(read, expected, "read {name}");
         }
+    }
+
+    /// A log label never exposes the path or its query.
+    #[test]
+    fn log_label_hides_the_path_and_is_stable() {
+        let path = "/home/user/project/src/a.js?token=secret";
+        let label = log_label(path);
+        assert_eq!(label.len(), "module-".len() + 16);
+        assert!(label.starts_with("module-"));
+        assert!(!label.contains("secret") && !label.contains("home"));
+        assert_eq!(label, log_label(path));
+        assert_ne!(label, log_label("/home/user/project/src/b.js?token=secret"));
     }
 
     #[test]
