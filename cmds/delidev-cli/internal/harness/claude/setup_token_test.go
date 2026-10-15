@@ -304,7 +304,16 @@ func TestSetupTokenFailureModesNeverReleaseAToken(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer login.Close()
+			// An output-limit failure ends the pump before the supervisor confirms
+			// teardown, so Close can report an uncertain join while the supervisor is
+			// still releasing its process scope. Reconcile the owner so the scope is
+			// retired before TempDir removal runs.
+			defer func() {
+				_ = login.Close()
+				if err := process.ReconcileOwner(config.Process.Directory, config.Process.OwnerID); err != nil {
+					t.Errorf("process scope was not retired: %v", err)
+				}
+			}()
 			url := waitSetupTokenURL(t, login)
 			if mode == "foreign-url" || mode == "callback-url" {
 				if url != "" {

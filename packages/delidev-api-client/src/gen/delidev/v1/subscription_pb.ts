@@ -375,7 +375,7 @@ export type GetSubscriptionProgressResponse = Message<"delidev.v1.GetSubscriptio
   nativeDiagnostic?: NativeSubscriptionDiagnostic | undefined;
 
   /**
-   * Declared for Grok Build; no server path populates it yet.
+   * Safe metadata for the original Grok Build failure; absent on older servers.
    *
    * @generated from field: delidev.v1.GrokDiagnostic grok_diagnostic = 10;
    */

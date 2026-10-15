@@ -641,11 +641,41 @@ it("keeps selected Grok context provenance separate from native context observat
   }
 });
 
+it("shows None selected without routine explanatory prose when no additional instructions exist", () => {
+  const value = fixture();
+  const data = structuredClone(value.data);
+  const configuration = data.initial_execution.configuration as Record<
+    string,
+    unknown
+  >;
+  configuration.instructions = "";
+  configuration.templates = [];
+  render(
+    <ExecutionConfiguration
+      resource={{ ...value.resource, documentJson: encode(data) }}
+    />,
+  );
+  const region = screen.getByRole("region", {
+    name: "Applied DeliDev instructions",
+  });
+  expect(within(region).getByText("None selected")).toBeTruthy();
+  expect(
+    within(region).queryByLabelText("Combined applied instructions"),
+  ).toBeNull();
+  expect(screen.queryByText(/Read-only additional instructions/)).toBeNull();
+  expect(
+    screen.queryByText(/No additional DeliDev instructions were selected/),
+  ).toBeNull();
+  expect(region.querySelector("details, summary")).toBeNull();
+});
+
 it("shows the immutable ordered instructions as inert read-only text without native prompts", () => {
   const value = fixture();
   const { container } = render(
     <ExecutionConfiguration resource={value.resource} />,
   );
+  expect(screen.queryByText(/Read-only additional instructions/)).toBeNull();
+  expect(screen.queryByText("None selected")).toBeNull();
   expect(
     screen.queryByText("Execution configuration and instructions"),
   ).toBeNull();

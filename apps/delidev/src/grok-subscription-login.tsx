@@ -28,7 +28,12 @@ import {
   useCloseSettingsTask,
   useSettingsTaskVisible,
 } from "./settings-task-context";
+import { GrokDiagnosticNotice } from "./grok-diagnostic";
 import { subscriptionNameValid } from "./subscription-onboarding";
+import {
+  ProgressDisposition,
+  progressDisposition,
+} from "./subscription-progress";
 import {
   serviceAccount,
   subscriptionAliasDocument,
@@ -485,8 +490,18 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
         }
         // A canceled observation is handled exactly like the local cancellation
         // acknowledgement: the machine disposes the native binding and offers
-        // no further login action.
-        dispatch(p, grokPollEvent(stage, progress.canceled)!);
+        // no further login action. A refused Take the server keeps queued is
+        // provisional: polling and the original sign-in stay alive to adopt
+        // whatever comes next.
+        dispatch(
+          p,
+          grokPollEvent(
+            stage,
+            progress.canceled,
+            progressDisposition(progress.state, progress.grokDiagnostic) ===
+              ProgressDisposition.Provisional,
+          )!,
+        );
         update(p, { diagnostic: progress.grokDiagnostic });
         const observed = grokLoginPresentation(p.machine);
         // A settled, canceled or cancellation-acknowledged login never opens a
@@ -820,8 +835,6 @@ interface OnboardingProps {
   retry: () => void;
   leave: () => void;
 }
-const diagnosticVersion = (value: string) =>
-  value.length <= 64 && /^[a-zA-Z0-9.+_-]+$/.test(value);
 
 function GrokSubscriptionOnboarding(props: OnboardingProps) {
   useLocale();
@@ -848,15 +861,6 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
       nameInput.current?.focus({ preventScroll: true });
     }
   }, [visible, active, naming, locked]);
-  const d = v.diagnostic,
-    diagnostic =
-      d &&
-      !inFlight &&
-      !naming &&
-      (!d.detectedVersion || diagnosticVersion(d.detectedVersion)) &&
-      Object.values(FailureCode).includes(d.code as FailureCode)
-        ? d
-        : undefined;
   // Waiting guidance follows what really happened: the browser opened, only the
   // copyable link remains, or nothing is offered yet.
   const helpByKind: Record<GrokHelp, MessageKey | undefined> = {
@@ -972,20 +976,8 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
       ) : (
         <>
           {help ? <p>{copy(help)}</p> : null}
-          {diagnostic ? (
-            <dl className="subscription-onboarding-diagnostic">
-              <div>
-                <dt>{copy("grok-subscription.diagnostic.version")}</dt>
-                <dd>
-                  {diagnostic.detectedVersion ||
-                    copy("grok-subscription.diagnostic.notDetected")}
-                </dd>
-              </div>
-              <div>
-                <dt>{copy("grok-subscription.diagnostic.code")}</dt>
-                <dd>{diagnostic.code}</dd>
-              </div>
-            </dl>
+          {v.diagnostic ? (
+            <GrokDiagnosticNotice diagnostic={v.diagnostic} />
           ) : null}
           <SettingsTaskActions className="">
             {ui.openBrowser ? (

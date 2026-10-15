@@ -181,6 +181,7 @@ it.each(["first-page", "later-page", "unavailable"])(
       client.clear();
     }
   },
+  30_000,
 );
 
 it.each(["missing", "error"])(

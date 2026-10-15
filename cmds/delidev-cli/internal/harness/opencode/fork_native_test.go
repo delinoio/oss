@@ -167,7 +167,7 @@ func runNativeGeneralChatFork(t *testing.T, lost bool) {
 		claimed[c.Kind] = true
 		return nil
 	}
-	requests := ForkRequests{domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()}
+	requests := ForkRequests{domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), false}
 	var raw []byte
 	var ref CheckpointReference
 	if lost {

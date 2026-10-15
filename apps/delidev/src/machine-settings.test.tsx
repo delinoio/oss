@@ -526,3 +526,61 @@ it.each([
     expect(screen.getByText("Detected version: 0.1.0")).toBeTruthy();
   },
 );
+
+// The Worker row reads the closed Grok diagnostic stored on the installation
+// observation and shows the same safe message as Settings.
+it("shows the safe Grok diagnostic on the Worker installation row", async () => {
+  const reference = newRequestId();
+  renderInstallations([
+    {
+      harness: "grok-build",
+      state: "detected",
+      version: "1.0.52",
+      protocol_verified: false,
+      protocol: {
+        state: "unsupported",
+        grok_diagnostic: {
+          detected_version: "1.0.52",
+          supported_version: "1.0.46",
+          phase: "profile",
+          code: "unsupported",
+          message: "raw-native-sentinel /Users/private https://auth.x.ai",
+          guidance: "refresh_token person@example.com",
+          correlation_id: reference,
+        },
+      },
+    },
+    {
+      harness: "codex",
+      state: "detected",
+      version: "0.1.0",
+      protocol_verified: true,
+      protocol: { state: "verified" },
+    },
+  ]);
+  const text = await screen.findByText(
+    "Grok Build 1.0.52 did not complete profile validation. The native protocol or version is incompatible.",
+  );
+  const alert = text.closest('[role="alert"]')!.textContent!;
+  expect(alert).toContain("Supported version:1.0.46");
+  expect(alert).toContain("Error code:unsupported");
+  expect(alert).toContain(`Reference:${reference}`);
+  expect(alert).not.toMatch(/sentinel|\/Users|https?:|refresh_token|@example/);
+});
+
+it("falls back to the shared guidance for a malformed Grok diagnostic", async () => {
+  renderInstallations([
+    {
+      harness: "grok-build",
+      state: "detected",
+      version: "1.0.52",
+      protocol_verified: false,
+      protocol: {
+        state: "unsupported",
+        grok_diagnostic: { phase: "launch", code: "unsupported" },
+      },
+    },
+  ]);
+  expect(await screen.findByText("Detected version: 1.0.52")).toBeTruthy();
+  expect(screen.queryByText(/did not complete/)).toBeNull();
+});
