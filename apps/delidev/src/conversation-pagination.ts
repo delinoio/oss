@@ -38,7 +38,21 @@ export function validateConversationPage(
   }
 }
 
-/** Pagination retains identities/revisions and bounded tool owner/display projections outside its three payload pages.
+/** Resident-page and suspension retention for conversation chains. Only the
+ * mounted transcript opts in; every other kind keeps three pages and disposes
+ * its payloads on suspension. */
+export interface ConversationRetention {
+  residentPages?: number;
+  retainPayloadOnSuspend?: boolean;
+}
+/** Transcript chains keep up to twenty reached pages (1,000 resources at the default page size). */
+export const MESSAGE_RESIDENT_PAGES = 20;
+export const messageRetention: ConversationRetention = {
+  residentPages: MESSAGE_RESIDENT_PAGES,
+  retainPayloadOnSuspend: true,
+};
+
+/** Pagination retains identities/revisions and bounded tool owner/display projections outside its payload pages (three by default, `retention.residentPages` when configured).
  * `accepted` receives every accepted read's rows, including pages whose payload is evicted, so callers can keep compact metadata projections current.
  * Generated query caches are request-local and never retain evicted documents. */
 export function useConversationPages(
@@ -50,6 +64,7 @@ export function useConversationPages(
   interval?: number,
   accepted?: (rows: readonly Resource[]) => void,
   safeRow?: (row: Resource) => { harness?: SubagentHarness },
+  retention?: ConversationRetention,
 ) {
   // The callback is read through a ref so a changing closure never replaces
   // the reader, which would suspend and restart the chain.
@@ -114,6 +129,9 @@ export function useConversationPages(
     `${kind}:${sessionId}`,
     active,
     kind === EntityKind.QUEUE ? queueReader : resourceReader,
+    true,
+    retention?.retainPayloadOnSuspend ?? false,
+    retention?.residentPages,
   );
   usePaginationRefresh(
     ResourceQuery.listResources,

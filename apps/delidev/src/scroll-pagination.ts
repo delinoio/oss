@@ -82,10 +82,23 @@ export type PaginationReader<Row extends PaginationRow, Payload = never> = (
   signal: AbortSignal,
 ) => Promise<PaginationBatch<Row, Payload>>;
 
+/** Default number of full payload pages a chain keeps resident. */
+export const DEFAULT_RESIDENT_PAGES = 3;
+
+/** Normalizes a configured resident-page bound; invalid input uses the default. */
+export function residentPageBound(residentPages?: number): number {
+  return residentPages !== undefined &&
+    Number.isFinite(residentPages) &&
+    residentPages >= 1
+    ? Math.floor(residentPages)
+    : DEFAULT_RESIDENT_PAGES;
+}
+
 /**
  * True when every retained page token still has its payload resident. A
  * terminal continuation token proves traversal only: the chain keeps page
- * metadata for every reached page but at most three payload pages.
+ * metadata for every reached page but at most the configured resident-page
+ * bound (three by default) of payload pages.
  */
 export function pagesResident(query: {
   pages: readonly { token: string }[];
@@ -138,6 +151,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
   private protectedToken?: string;
   private retainedPayloadTokens: string[] = [];
   private settledReads = 0;
+  private readonly residentPages: number;
   // Failed refresh retains only its staged display projections. Full staged
   // responses are discarded; earlier refreshed payloads restore by exact token.
   private pendingRefresh?: { pages: PaginationPage<Row>[]; window: string[] };
@@ -147,6 +161,11 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
   // suspend/reset (scope, owner or generation change) clear it; a failed read
   // retains it for the next explicit recovery. There is no automatic retry.
   private queuedRefresh?: PaginationReader<Row, Payload>;
+  /** `residentPages` bounds the full payload pages kept after each accepted
+   * read, restore and refresh-window fallback. It defaults to three. */
+  constructor(residentPages?: number) {
+    this.residentPages = residentPageBound(residentPages);
+  }
   protect(token?: string) {
     this.protectedToken = token;
   }
@@ -304,7 +323,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
             ? previous.payloadPages.map((page) => page.token)
             : this.retainedPayloadTokens.length
               ? this.retainedPayloadTokens
-              : previous.pages.slice(-3).map((page) => page.token)),
+              : previous.pages.slice(-this.residentPages).map((page) => page.token)),
       );
       if (stage === ReadStage.Reload || stage === ReadStage.Initial)
         payloads.clear();
@@ -419,7 +438,8 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
           rawCount: batch.rawCount,
         };
         // Full domain payloads never enter retained page boundaries. Keep at
-        // most three reached pages around the latest requested visible page.
+        // most the configured resident-page bound of reached pages around the
+        // latest requested visible page.
         if (batch.payload && (!refreshing || refreshWindow.has(currentToken)))
           payloads.set(currentToken, batch.payload);
         if (!refreshing) {
@@ -434,16 +454,23 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
               distance: Math.abs(index - center),
             }))
             .filter(
-              (page) => page.token !== currentToken && payloads.has(page.token),
+              (page) =>
+                page.token !== currentToken &&
+                page.token !== this.protectedToken &&
+                payloads.has(page.token),
             )
             .sort((a, b) => a.distance - b.distance)
             .slice(
               0,
-              this.protectedToken !== undefined &&
-                this.protectedToken !== currentToken &&
-                payloads.has(this.protectedToken)
-                ? 1
-                : 2,
+              Math.max(
+                0,
+                this.residentPages -
+                  (this.protectedToken !== undefined &&
+                  this.protectedToken !== currentToken &&
+                  payloads.has(this.protectedToken)
+                    ? 2
+                    : 1),
+              ),
             )
             .map((page) => page.token);
           const keep = new Set([

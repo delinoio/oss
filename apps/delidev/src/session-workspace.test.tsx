@@ -2260,17 +2260,21 @@ it.each(refreshReads)(
     }
   },
 );
-/** Four single-row pages with a terminal last token leave three payload pages. */
+/** Four single-row pages with a terminal last token leave three payload pages;
+ * the transcript keeps up to twenty, so it needs twenty-one to evict one. */
 const evictedPageLabels = {
   transcript: "Load more Conversation pages",
   queue: "Load more Queue pages",
   interactions: "Load more Request pages",
 } as const;
 it.each(
-  (["transcript", "queue", "interactions"] as const).flatMap((read) => [
-    { read, pageCount: 4, hidden: false },
-    { read, pageCount: 3, hidden: true },
-  ]),
+  (["transcript", "queue", "interactions"] as const).flatMap((read) => {
+    const evicting = read === "transcript" ? 21 : 4;
+    return [
+      { read, pageCount: evicting, hidden: false },
+      { read, pageCount: evicting - 1, hidden: true },
+    ];
+  }),
 )(
   "startup Info hidden=$hidden for $read with $pageCount terminal pages",
   async ({ read, pageCount, hidden }) => {
@@ -4052,4 +4056,67 @@ it("a selection change before the deferred final-dismissal focus suppresses it",
   } finally {
     test.finish();
   }
+});
+
+it("retains loaded transcript bodies across a workspace tab switch without background reads", async () => {
+  const startup = initialResponseWaiting();
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, startup);
+  const pages = Array.from({ length: 4 }, (_, index) =>
+    create(ResourceSchema, {
+      id: newRequestId(),
+      sessionId: f.session.id,
+      kind: EntityKind.MESSAGE,
+      revision: 1n,
+      schemaVersion: 1,
+      documentJson: encode({
+        execution_id: startup.initial_execution.id,
+        input_id: startup.initial_execution.input_id,
+        native_thread_id: "thread",
+        native_turn_id: "turn",
+        role: "user",
+        state: "complete",
+        text: `Retained page ${index}`,
+        first_sequence: 1,
+        last_sequence: 1,
+      }),
+    }),
+  );
+  const messageReads = () =>
+    f.list.mock.calls.filter(
+      ([request]) => request.filter?.kind === EntityKind.MESSAGE,
+    ).length;
+  f.list.mockImplementation(async (request) => {
+    if (request.filter?.kind !== EntityKind.MESSAGE)
+      return { resources: [], nextPageToken: "" };
+    const index = Number(request.filter.pageToken || 0);
+    return {
+      resources: [pages[index]!],
+      nextPageToken: index < pages.length - 1 ? String(index + 1) : "",
+    };
+  });
+  render(f.view());
+  await screen.findByText("Retained page 0");
+  for (let index = 1; index < pages.length; index++) {
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Load more Conversation pages" }),
+    );
+    await screen.findByText(`Retained page ${index}`);
+  }
+  // Four pages exceed the default three-page window but fit the transcript's.
+  expect(
+    screen.queryByRole("button", { name: "Restore previously loaded items" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+  await screen.findByRole("tab", { name: "Files" });
+  const reads = messageReads();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(messageReads()).toBe(reads);
+  fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+  for (let index = 0; index < pages.length; index++)
+    expect(await screen.findByText(`Retained page ${index}`)).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Restore previously loaded items" }),
+  ).toBeNull();
+  expect(f.enqueue).not.toHaveBeenCalled();
 });

@@ -12,7 +12,12 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { useConversationPages } from "./conversation-pagination";
+import {
+  MESSAGE_RESIDENT_PAGES,
+  messageRetention,
+  useConversationPages,
+} from "./conversation-pagination";
+import { SessionActivityProvider } from "./session-activity";
 import { pagesResident } from "./scroll-pagination";
 
 it("bounds full transcript payloads and restores the exact reached forward request without caching documents", async () => {
@@ -459,3 +464,102 @@ it.each([EntityKind.MESSAGE, EntityKind.INTERACTION, EntityKind.QUEUE])(
     );
   },
 );
+
+it("retains up to twenty message pages across inactivity only for the opted-in transcript chain", async () => {
+  expect(messageRetention).toEqual({
+    residentPages: MESSAGE_RESIDENT_PAGES,
+    retainPayloadOnSuspend: true,
+  });
+  expect(MESSAGE_RESIDENT_PAGES).toBe(20);
+  const sessionId = newRequestId();
+  const records = Array.from({ length: 4 }, (_, index) =>
+    create(ResourceSchema, {
+      id: newRequestId(),
+      sessionId,
+      kind: EntityKind.MESSAGE,
+      revision: 1n,
+      documentJson: encode({ text: `Page ${index}` }),
+    }),
+  );
+  const read = vi.fn(async (request: { filter?: { pageToken: string } }) => {
+    const index = Number(request.filter?.pageToken || 0);
+    return {
+      resources: [records[index]],
+      nextPageToken: index < 3 ? String(index + 1) : "",
+    };
+  });
+  const transport = createRouterTransport((router) =>
+    router.service(ResourceService, { listResources: read }),
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  function View({ retained }: { retained: boolean }) {
+    const query = useConversationPages(
+      EntityKind.MESSAGE,
+      sessionId,
+      true,
+      50,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      retained ? messageRetention : undefined,
+    );
+    return (
+      <>
+        <output>
+          {query.rows.length}:{query.payloadPages.length}
+        </output>
+        <button disabled={Boolean(query.loading)} onClick={query.append}>
+          Append
+        </button>
+      </>
+    );
+  }
+  function Harness({
+    active,
+    retained,
+  }: {
+    active: boolean;
+    retained: boolean;
+  }) {
+    return (
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <SessionActivityProvider active={active}>
+            <View retained={retained} />
+          </SessionActivityProvider>
+        </QueryClientProvider>
+      </TransportProvider>
+    );
+  }
+  // Default chains keep three pages and dispose payloads while inactive.
+  const plain = render(<Harness active retained={false} />);
+  await screen.findByText("1:1");
+  for (let index = 2; index <= 4; index++) {
+    fireEvent.click(screen.getByRole("button", { name: "Append" }));
+    await screen.findByText(`${index}:${Math.min(index, 3)}`);
+  }
+  plain.rerender(<Harness active={false} retained={false} />);
+  await screen.findByText("4:0");
+  plain.unmount();
+  read.mockClear();
+  // The opted-in chain keeps all four pages while inactive and reads nothing.
+  const kept = render(<Harness active retained />);
+  await screen.findByText("1:1");
+  for (let index = 2; index <= 4; index++) {
+    fireEvent.click(screen.getByRole("button", { name: "Append" }));
+    await screen.findByText(`${index}:${index}`);
+  }
+  read.mockClear();
+  kept.rerender(<Harness active={false} retained />);
+  await screen.findByText("4:4");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(read).not.toHaveBeenCalled();
+  // Return refresh holds bodies visible until it settles atomically.
+  kept.rerender(<Harness active retained />);
+  expect(screen.getByText("4:4")).toBeTruthy();
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(4));
+  await screen.findByText("4:4");
+});
