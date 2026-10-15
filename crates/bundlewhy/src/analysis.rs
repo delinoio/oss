@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     chunks::{Chunk, measure},
-    collect::{Collection, ManglingSetting, MinifyOverride},
+    collect::{Collection, CompressionSetting, ManglingSetting, MinifyOverride},
     engine::BundlerChoice,
     error::{ErrorCode, problem},
     model::{
@@ -262,6 +262,18 @@ fn coverage(
                              uses {}.",
                             collection.minifier
                         ),
+                    )
+                }
+                // Other stages may run, but without the compress stage the
+                // minifier removes no dead code.
+                OptimizationCategory::DeadCodeElimination
+                    if collection.compress == CompressionSetting::Disabled =>
+                {
+                    (
+                        CoverageState::NotApplicable,
+                        "The build's final Rolldown output minify options disable the compress \
+                         stage, so the minifier does not remove dead code."
+                            .to_owned(),
                     )
                 }
                 OptimizationCategory::NameMangling
@@ -2909,6 +2921,53 @@ mod tests {
                 .contains("disabled in the selected configuration")
         );
         assert!(problem.recovery.contains("Enable minification"));
+    }
+
+    #[test]
+    fn a_disabled_compress_stage_removes_dead_code_coverage() {
+        let enabled = run_fixture(BundlerChoice::Vite, |_| {});
+        assert!(
+            enabled
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .any(|entry| entry.rule == "minifier/unresolved-env-condition")
+        );
+        let disabled = run_fixture(BundlerChoice::Vite, |collection| {
+            collection["compress"] = serde_json::json!("disabled");
+        });
+        let analysis = &disabled.output.analysis;
+        // The minifier still runs, so no minification problem is reported,
+        // but it removes no dead code and retained reads are expected.
+        assert!(
+            !analysis
+                .diagnostics
+                .iter()
+                .any(|entry| entry.rule == "minifier/unresolved-env-condition")
+        );
+        assert!(
+            !analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_MINIFICATION_DISABLED")
+        );
+        let dead_code = dead_code_coverage(analysis);
+        assert_eq!(dead_code.state, CoverageState::NotApplicable);
+        assert!(dead_code.note.contains("compress"));
+        // Other stages are not affected.
+        let mangling = analysis
+            .coverage
+            .iter()
+            .find(|entry| entry.category == OptimizationCategory::NameMangling)
+            .unwrap();
+        assert_eq!(mangling.state, CoverageState::Covered);
+        // An unknown or missing value keeps the compress stage enabled.
+        let collection: Collection = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            collection.compress,
+            crate::collect::CompressionSetting::Enabled
+        );
     }
 
     #[test]

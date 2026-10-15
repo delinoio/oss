@@ -162,6 +162,34 @@ export function resolveFinalizedMangleSetting(normalizedOptions) {
   return MangleSetting.Enabled;
 }
 
+/** Whether the Oxc minifier's compress stage runs, recorded in a collection. */
+export const CompressSetting = Object.freeze({
+  Enabled: "enabled",
+  Disabled: "disabled",
+});
+
+/**
+ * Resolves whether the compress stage, which removes dead code, runs from the
+ * normalized output options that Rolldown passes to `generateBundle`.
+ *
+ * Normalization fills the minifier defaults in and drops a disabled step, so
+ * an options object compresses only while its `compress` is still present. Any
+ * other `minify` value is decided by `resolveFinalizedMinifyKind`; this returns
+ * `undefined` for it and when the engine does not report a `minify` value.
+ */
+export function resolveFinalizedCompressSetting(normalizedOptions) {
+  if (normalizedOptions === null || typeof normalizedOptions !== "object") {
+    return undefined;
+  }
+  const minify = normalizedOptions.minify;
+  if (minify === null || typeof minify !== "object") return undefined;
+  return minify.compress === undefined ||
+    minify.compress === null ||
+    minify.compress === false
+    ? CompressSetting.Disabled
+    : CompressSetting.Enabled;
+}
+
 /** What the finalized output options say about the Oxc minifier. */
 export const FinalizedMinifyKind = Object.freeze({
   Enabled: "enabled",
@@ -442,6 +470,7 @@ function collectorPlugin(state) {
       // include every change that plugin `outputOptions` hooks made after
       // configResolved.
       state.finalizedMangle = resolveFinalizedMangleSetting(options);
+      state.finalizedCompress = resolveFinalizedCompressSetting(options);
       state.finalizedMinifyActive = resolveFinalizedMinifyActive(options);
       state.finalizedMinifyKind = resolveFinalizedMinifyKind(options);
       const modules = new Map();
@@ -558,6 +587,7 @@ await runAdapter(async (request) => {
     resolved: null,
     moduleSideEffectsOption: undefined,
     finalizedMangle: undefined,
+    finalizedCompress: undefined,
     finalizedMinifyActive: undefined,
     finalizedMinifyKind: undefined,
     collection: null,
@@ -758,6 +788,11 @@ await runAdapter(async (request) => {
     minifyEnabled,
     minifyOverride,
     mangle,
+    // Only an options object that the Oxc minifier runs can lack compression.
+    compress:
+      minifyEnabled && minifierName === "oxc"
+        ? (state.finalizedCompress ?? CompressSetting.Enabled)
+        : CompressSetting.Enabled,
     adapterId: ADAPTER_ID,
     adapterVersion: ADAPTER_VERSION,
     engineDetails: { rolldownVersion: vite.rolldownVersion },

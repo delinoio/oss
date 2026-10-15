@@ -9,7 +9,7 @@ use regex::Regex;
 
 use super::{Context, DiagnosticDraft, RuleId};
 use crate::{
-    collect::{CollectedModule, ManglingSetting, MinifyOverride},
+    collect::{CollectedModule, CompressionSetting, ManglingSetting, MinifyOverride},
     model::{Condition, ConditionOutcome, Evidence, EvidenceStatus},
 };
 
@@ -22,7 +22,11 @@ pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     }
     // Without a minifier, retained `process.env` reads are expected; the
     // confirmed minification-disabled finding explains them instead.
-    if context.collection.minify_enabled {
+    // Without the compress stage no dead code is removed either, so retained
+    // reads are expected then too.
+    if context.collection.minify_enabled
+        && context.collection.compress == CompressionSetting::Enabled
+    {
         unresolved_env_conditions(context, drafts);
     }
     minification_disabled(context, drafts);

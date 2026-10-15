@@ -17,6 +17,7 @@ import {
   resolveConfiguredMinifyKind,
   resolveEffectiveMinifier,
   resolveFinalizedMangleSetting,
+  resolveFinalizedCompressSetting,
   resolveFinalizedMinifyActive,
   resolveFinalizedMinifyKind,
   resolveMangleSetting,
@@ -699,6 +700,93 @@ test("Vite diagnostic records the effective output mangle setting", (t) => {
     );
     assert.equal(collection.minifyEnabled, true, name);
     assert.equal(collection.defaultMinifier, true, name);
+  }
+});
+
+test("finalized output options decide whether the compress stage runs", () => {
+  const normalized = (minify) => ({ minify });
+  assert.equal(resolveFinalizedCompressSetting(undefined), undefined);
+  assert.equal(resolveFinalizedCompressSetting(null), undefined);
+  assert.equal(resolveFinalizedCompressSetting({}), undefined);
+  // Only an options object can run the minifier without compression.
+  for (const minify of [true, false, "dce-only"]) {
+    assert.equal(
+      resolveFinalizedCompressSetting(normalized(minify)),
+      undefined,
+      String(minify),
+    );
+  }
+  for (const compress of [undefined, null, false]) {
+    assert.equal(
+      resolveFinalizedCompressSetting(normalized({ mangle: {}, compress })),
+      "disabled",
+      String(compress),
+    );
+  }
+  for (const compress of [true, {}, { sequences: false }]) {
+    assert.equal(
+      resolveFinalizedCompressSetting(normalized({ mangle: {}, compress })),
+      "enabled",
+    );
+  }
+});
+
+test("Vite diagnostic records whether the compress stage runs", (t) => {
+  const pluginSource = (minify) => `{
+    name: "test:output-options",
+    outputOptions(options) {
+      return { ...options, minify: ${minify} };
+    },
+  }`;
+  const cases = [
+    {
+      name: "default",
+      config: `build: { minify: "oxc" }`,
+      expected: "enabled",
+    },
+    {
+      name: "configured-without-compress",
+      config: `build: { minify: "oxc", rolldownOptions: { output: { minify: { compress: false, mangle: true, codegen: true } } } }`,
+      expected: "disabled",
+    },
+    {
+      name: "configured-with-compress",
+      config: `build: { minify: "oxc", rolldownOptions: { output: { minify: { compress: true, mangle: false } } } }`,
+      expected: "enabled",
+    },
+    {
+      name: "hook-removes-compress",
+      config: `build: { minify: "oxc" }, plugins: [${pluginSource("{ compress: false, mangle: true, codegen: true }")}]`,
+      expected: "disabled",
+    },
+    {
+      name: "build-minify-false-hook-object-without-compress",
+      config: `build: { minify: false }, plugins: [${pluginSource("{ compress: false, mangle: true, codegen: true }")}]`,
+      expected: "disabled",
+    },
+    {
+      name: "build-minify-false-hook-object-with-compress",
+      config: `build: { minify: false }, plugins: [${pluginSource("{ compress: true, mangle: true }")}]`,
+      expected: "enabled",
+    },
+    {
+      name: "build-minify-false",
+      config: `build: { minify: false }`,
+      expected: "enabled",
+    },
+    {
+      name: "terser-ignores-the-output-option",
+      config: `build: { minify: "terser", rolldownOptions: { output: { minify: { compress: false } } } }`,
+      expected: "enabled",
+    },
+  ];
+  for (const { name, config, expected } of cases) {
+    const { work, projectRoot } = makeProject(t);
+    writeEntry(projectRoot, "compress-entry");
+    const configFile = path.join(projectRoot, "vite.config.js");
+    fs.writeFileSync(configFile, `export default { ${config} };\n`);
+    const { collection } = runDiagnostic(work, projectRoot, configFile);
+    assert.equal(collection.compress, expected, name);
   }
 });
 

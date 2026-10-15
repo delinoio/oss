@@ -25,6 +25,10 @@ pub struct Collection {
     /// options after plugin hooks ran. Collections written before the field
     /// existed, and engines that do not report it (Rspack), assume mangling.
     pub mangle: ManglingSetting,
+    /// Whether the minifier's compress stage, which removes dead code, runs
+    /// for the analyzed output. Collections written before the field existed,
+    /// and engines that do not report it, assume it runs.
+    pub compress: CompressionSetting,
     pub adapter_id: String,
     pub adapter_version: String,
     pub overrides: Vec<String>,
@@ -96,6 +100,18 @@ impl MinifyOverride {
             ),
         }
     }
+}
+
+/// Whether the minifier's compress stage runs for the analyzed output.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CompressionSetting {
+    /// Compression runs, or the collection does not say otherwise.
+    #[default]
+    Enabled,
+    /// The final output `minify` options turn the compress stage off, so the
+    /// minifier does not remove dead code even though other stages run.
+    Disabled,
 }
 
 /// Whether the minifier mangles names for the analyzed output.
