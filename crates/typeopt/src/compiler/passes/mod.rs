@@ -28,7 +28,7 @@ mod method_devirtualization;
 mod primitive_operation_simplification;
 mod property;
 mod residual_dependency_removal;
-mod runtime_facts;
+pub(in crate::compiler) mod runtime_facts;
 mod signature_reduction;
 mod signature_support;
 mod type_directed_control_flow;
