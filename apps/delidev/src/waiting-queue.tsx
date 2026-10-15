@@ -38,6 +38,7 @@ export function WaitingQueue({
   saveDraft,
   readOnly,
   refreshHistory,
+  excludeInputIds,
 }: {
   sessionId: string;
   session?: Resource;
@@ -47,6 +48,8 @@ export function WaitingQueue({
   saveDraft: (id: string, value?: QueuedInputDraft) => void;
   readOnly: boolean;
   refreshHistory: () => void;
+  /** The original first input is presented as a sent message, not a queue row. */
+  excludeInputIds?: ReadonlySet<string>;
 }) {
   useLocale();
   const root = useRef<HTMLDivElement>(null);
@@ -204,21 +207,27 @@ export function WaitingQueue({
       beforeInputRevision: anchor?.revision ?? 0n,
     });
   };
+  // Excluded rows (the original input) are the first server rows. They stay
+  // part of the query but never receive controls or ordering targets.
+  const hidden = (id: string) => excludeInputIds?.has(id) ?? false;
+  const visibleRows = query.rows.filter((row) => !hidden(row.id));
+  const hiddenCount = query.rows.length - visibleRows.length;
   const movement = (row: Resource) => {
-    const index = query.rows.findIndex((item) => item.id === row.id),
-      previous = query.rows[index - 1],
-      next = query.rows[index + 1],
-      after = query.rows[index + 2];
+    const index = visibleRows.findIndex((item) => item.id === row.id),
+      previous = visibleRows[index - 1],
+      next = visibleRows[index + 1],
+      after = visibleRows[index + 2];
     return {
       disabled: locked,
       up: previous ? () => send(row.id, previous.id) : undefined,
       down:
-        index >= 0 && index + 1 < (query.rows[index]?.count ?? 0)
+        index >= 0 &&
+        index + 1 < (visibleRows[index]?.count ?? 0) - hiddenCount
           ? () => {
               if (next && (after || !query.nextPageToken))
                 send(row.id, after?.id ?? "");
               else {
-                const original = query.rows[index];
+                const original = visibleRows[index];
                 pendingDown.current = {
                   id: original.id,
                   revision: original.revision,
@@ -270,7 +279,7 @@ export function WaitingQueue({
       query.loading === ReadStage.Reload) &&
     !query.error &&
     !query.nextPageToken &&
-    !query.rows.length;
+    !visibleRows.length;
   return (
     <>
       <p className="sidebar-sr-only" role="status" aria-live="polite">
@@ -302,7 +311,9 @@ export function WaitingQueue({
           active={active}
         >
           {(payload) =>
-            payload.map((row) => (
+            payload
+              .filter((row) => !hidden(row.id))
+              .map((row) => (
               <div
                 key={row.id}
                 className={[

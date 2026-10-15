@@ -5116,6 +5116,27 @@ acceptance is not runner acceptance or Resume. Native MESSAGE resources remain
 the transcript authority; native input acceptance without a MESSAGE retains its
 explicit projected status.
 
+The original first input of a new Session or General Chat is created atomically
+with the session and is projected the same way, keyed by its input identity
+(`initial_execution.input_id`, the sequence-one queue input). After accepted
+creation, including while preparation is pending, it appears as exactly one
+ordinary right-aligned sent user bubble with the first prompt and ordered image
+attachments and no Queued, Sending, Pending or You label or badge; only a
+Rejected or unconfirmed-read state keeps its existing notice. Register it only
+from the creation response's input when its session ID, sequence one and the
+session's `initial_execution.input_id` agree; foreign or malformed evidence is
+rejected. After reload or navigation, reconstruct it solely from the verified
+sequence-one queue row. Startup progress renders below the bubble from the
+existing original-operation evidence; the original projection is never counted
+as a later follow-up and neither suppresses nor fabricates startup feedback.
+Exclude the original input from the legacy queue rows, the negotiated
+WaitingQueue and PendingQueueInputs; later queued inputs keep their controls. A
+user MESSAGE with the same `input_id` replaces the projection once in either
+ordering against the creation response; equal text under a different input ID
+is never deduplicated. Newer queue edits or removal win over stale receipts and
+a removed original keeps no content. Creating this projection makes no extra
+enqueue or Resume call.
+
 The authenticated connection owns these per-session projections across keyed
 view changes and same-identity reconnect. Replacement identities dispose them
 and fence late results. Keep the existing 1,000-record and 4 MiB retained prompt

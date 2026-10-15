@@ -66,7 +66,7 @@ function fixture() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const view = (revision = "1") => (
+  const view = (revision = "1", excludeInputIds?: ReadonlySet<string>) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>
@@ -79,6 +79,7 @@ function fixture() {
             saveDraft={() => {}}
             readOnly={false}
             refreshHistory={() => {}}
+            excludeInputIds={excludeInputIds}
           />
         </MutationIntents>
       </QueryClientProvider>
@@ -268,4 +269,19 @@ it("keeps the end drop inside the final row and sends one move to the end", asyn
   });
   fireEvent.dragEnd(handle);
   expect(view.container.querySelector(".queue-drop-end")).toBeNull();
+});
+
+it("omits the excluded original input while later waiting inputs keep their controls", async () => {
+  const f = fixture();
+  render(f.view("1", new Set([f.rows[0].id])));
+  await screen.findByText("Second");
+  expect(screen.queryByText("First")).toBeNull();
+  expect(screen.getByText("Third")).toBeDefined();
+});
+it("hides the waiting list when only the excluded original input is waiting", async () => {
+  const f = fixture();
+  f.replace([f.rows[0]]);
+  render(f.view("1", new Set([f.rows[0].id])));
+  await waitFor(() => expect(f.read).toHaveBeenCalled());
+  expect(screen.queryByText("First")).toBeNull();
 });

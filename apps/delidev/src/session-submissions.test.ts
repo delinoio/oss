@@ -201,3 +201,119 @@ it("keeps failed original observations unavailable until matching current or new
     prompt: "Current edit",
   });
 });
+
+function original(prompt = "First prompt") {
+  const sessionId = newRequestId(),
+    inputId = newRequestId();
+  const input = (
+    revision: bigint,
+    delivery = "queued",
+    text = prompt,
+    sequence = 1,
+    owner = sessionId,
+  ) =>
+    create(ResourceSchema, {
+      id: inputId,
+      sessionId: owner,
+      kind: EntityKind.QUEUE,
+      revision,
+      schemaVersion: 1,
+      documentJson: encode({
+        prompt: text,
+        mode: Mode.Execute,
+        delivery,
+        sequence,
+      }),
+    });
+  const native = create(ResourceSchema, {
+    id: newRequestId(),
+    sessionId,
+    kind: EntityKind.MESSAGE,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({
+      role: "user",
+      state: "complete",
+      input_id: inputId,
+      text: prompt,
+    }),
+  });
+  return { store: new SessionSubmissions(), sessionId, inputId, input, native };
+}
+it("registers only the verified first input and reconciles it once by input identity", () => {
+  const f = original();
+  expect(f.store.registerOriginal(f.sessionId, f.input(1n), f.inputId)).toBe(
+    true,
+  );
+  expect(f.store.registerOriginal(f.sessionId, f.input(1n), f.inputId)).toBe(
+    false,
+  );
+  expect(f.store.snapshot()).toHaveLength(1);
+  expect(f.store.snapshot()[0]).toMatchObject({
+    original: true,
+    prompt: "First prompt",
+    phase: SubmissionPhase.Queued,
+  });
+  f.store.observe(f.sessionId, [f.native]);
+  expect(f.store.snapshot()[0]).toMatchObject({ native: true, prompt: "" });
+});
+it("rejects foreign, malformed and non-first original evidence", () => {
+  const f = original();
+  expect(
+    f.store.registerOriginal(f.sessionId, f.input(1n, "queued", "x", 2)),
+  ).toBe(false);
+  expect(
+    f.store.registerOriginal(
+      f.sessionId,
+      f.input(1n, "queued", "x", 1, newRequestId()),
+    ),
+  ).toBe(false);
+  expect(f.store.registerOriginal(f.sessionId, f.input(1n), newRequestId())).toBe(
+    false,
+  );
+  expect(f.store.registerOriginal(f.sessionId, f.native)).toBe(false);
+  expect(f.store.registerOriginal(f.sessionId, undefined)).toBe(false);
+  expect(f.store.snapshot()).toHaveLength(0);
+});
+it("does not dedupe equal text under a different input identity", () => {
+  const f = original("Same text");
+  f.store.registerOriginal(f.sessionId, f.input(1n));
+  const other = create(ResourceSchema, {
+    ...f.native,
+    documentJson: encode({
+      role: "user",
+      state: "complete",
+      input_id: newRequestId(),
+      text: "Same text",
+    }),
+  });
+  f.store.observe(f.sessionId, [other]);
+  expect(f.store.snapshot()[0].native).toBe(false);
+});
+it("keeps edits and removals ahead of stale receipts and never resurrects removed content", () => {
+  const f = original();
+  f.store.registerOriginal(f.sessionId, f.input(1n));
+  f.store.observe(f.sessionId, [f.input(3n, "queued", "Edited prompt")]);
+  expect(f.store.snapshot()[0].prompt).toBe("Edited prompt");
+  f.store.registerOriginal(f.sessionId, f.input(1n));
+  expect(f.store.snapshot()[0].prompt).toBe("Edited prompt");
+  f.store.observe(f.sessionId, [f.input(4n, "removed", "Edited prompt")]);
+  expect(f.store.snapshot()[0]).toMatchObject({
+    phase: SubmissionPhase.Removed,
+    prompt: "",
+    attachmentCount: 0,
+  });
+  f.store.registerOriginal(f.sessionId, f.input(2n, "queued", "Stale"));
+  f.store.observe(f.sessionId, [f.input(3n, "queued", "Stale")]);
+  expect(f.store.snapshot()[0]).toMatchObject({
+    phase: SubmissionPhase.Removed,
+    prompt: "",
+  });
+});
+it("discards original projections when the store is disposed", () => {
+  const f = original();
+  f.store.registerOriginal(f.sessionId, f.input(1n));
+  f.store.dispose();
+  expect(f.store.snapshot()).toHaveLength(0);
+  expect(f.store.registerOriginal(f.sessionId, f.input(1n))).toBe(false);
+});
