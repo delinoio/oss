@@ -71,43 +71,43 @@ The branch-evidence scanner treats array literals, object literals, function bod
 
 The scanner decides what each `(`, `[` and `{` opens from the token that precedes it, using one table. A comment between the token and the opener is ignored.
 
-| Preceding token                                                                                                                                   | `(`            | `[`             | `{`            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | --------------- | -------------- |
-| Start of input, `;`, `{`, `=>`, `else`, `do`, a block's closing `}`, or the `)` that closes an `if`, `while`, `for` or `switch` head              | grouping       | array literal   | block          |
-| `if`, `while`, `for`, `switch`                                                                                                                    | statement head | array literal   | block          |
-| Value-preserving operator keyword (`return`, `await`, `yield`, `in`, `of`, `instanceof`, `case`, `throw`, `new`, `extends`, `default`)            | grouping       | array literal   | object literal |
-| Discarding operator keyword (`typeof`, `void`, `delete`)                                                                                          | discarded operand | array literal | object literal |
-| Other punctuation or operator, including spread `...`, postfix `++` and `--`, `/` as division, and template text that ends in `${`                | grouping       | array literal   | object literal |
-| Identifier, number, any other word, a property name (even one spelled like a keyword), `.`, `?.`, `function*`                                     | call arguments | computed member | block          |
-| `)` or `]` that ends an operand, an object literal's closing `}`                                                                                  | call arguments | computed member | block          |
-| String, template or regular expression literal (with or without flags)                                                                            | call arguments | computed member | block          |
+| Preceding token                                                                                                                        | `(`               | `[`             | `{`            |
+| -------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | --------------- | -------------- |
+| Start of input, `;`, `{`, `=>`, `else`, `do`, a block's closing `}`, or the `)` that closes an `if`, `while`, `for` or `switch` head   | grouping          | array literal   | block          |
+| `if`, `while`, `for`, `switch`                                                                                                         | statement head    | array literal   | block          |
+| Value-preserving operator keyword (`return`, `await`, `yield`, `in`, `of`, `instanceof`, `case`, `throw`, `new`, `extends`, `default`) | grouping          | array literal   | object literal |
+| Discarding operator keyword (`typeof`, `void`, `delete`)                                                                               | discarded operand | array literal   | object literal |
+| Other punctuation or operator, including spread `...`, postfix `++` and `--`, `/` as division, and template text that ends in `${`     | grouping          | array literal   | object literal |
+| Identifier, number, any other word, a property name (even one spelled like a keyword), `.`, `?.`, `function*`                          | call arguments    | computed member | block          |
+| `)` or `]` that ends an operand, an object literal's closing `}`                                                                       | call arguments    | computed member | block          |
+| String, template or regular expression literal (with or without flags)                                                                 | call arguments    | computed member | block          |
 
 Grouping parentheses and computed members keep the surrounding condition, so a read inside them can still control a following operator. Array literals, object literals, blocks, call arguments and discarded operands are value containers: when one closes, reads that are only values inside it are dropped, and a following `&&`, `||`, `??` or `?:` never becomes evidence for them. A branch operator inside a container still guards its own read. A `:` before `{` is treated as an object literal because a label or `case` block cannot be told apart without parsing.
 
 The next table lists how a read reaches a following `&&`, `||`, `??`, `?:` or statement condition. Each row is covered by one test row in `read_propagation_rows`.
 
-| Construct around the read                                                                                          | Following branch operator uses the read |
-| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| Unary `!`, `-`, `+`, `~`, `await`; binary comparison, arithmetic, `in`, `instanceof`; assignment value             | yes, the value derives from the read    |
-| Member, computed member, optional member or method call on the read itself (`read.length`, `read[0]`, `read.trim()`) | yes, the value derives from the read    |
-| The read as the key of a computed member (`a[read]`)                                                               | yes, the value derives from the read    |
-| Call, optional call or `new` argument list, spread argument                                                        | no, the argument is not the result      |
-| Array literal element                                                                                              | only the element selected below         |
-| Array literal followed by `[N]`, `?.[N]`, `.at(N)` or `?.at(N)` with `N` the decimal index of the element holding the read | yes, the access yields that element     |
-| Array literal followed by any other member, method, index or call, or an array with a spread before the element    | no                                      |
-| Object literal followed by `.key`, `?.key`, `["key"]` or `['key']` with `key` the last property holding the read   | yes, the access yields that property    |
-| Object literal followed by any other member, method or call, or a read in an earlier property                      | no                                      |
-| Operand of `typeof`, `void` or `delete`, parenthesized or not, up to the next token that cannot continue the operand (`&`, `\|`, `,`, `;`, `:`, `=`, `<`, `>`, `*`, `/`, `%`, `^`, `?`, a line break that ends the statement) | no, the result ignores the operand's value |
-| A branch operator inside a `typeof`, `void` or `delete` parenthesized operand                                      | yes, it guards its own read             |
-| Function object, class or method that is not invoked in place                                                      | no                                      |
-| `function` or arrow function invoked in place, `(function(){...})()`, `(function(){...}())`, `!function(){...}()`, `(()=>{...})()` or `(()=>expr)()`, with the read in a `return` expression or in the arrow body | yes, the call returns it                |
-| Invoked function whose read is not in a `return` expression, is returned before a comma, or follows a line break after `return` | no                                      |
-| Async function, async arrow, generator, method or a function passed as an argument                                | no, the call result is a promise, iterator or argument |
-| Sequence `(a, read)`; read after the last comma                                                                    | yes                                     |
-| Sequence `(read, a)`; read before a comma                                                                          | no                                      |
-| Conditional expression group `(c ? read : other)`                                                                  | yes, either branch can be the value     |
-| Conditional branch without a group (`c ? read : other && run()`)                                                   | no, the operator binds to `other`       |
-| Read in the test of `c ? a : b`                                                                                    | yes, the conditional is the guard       |
+| Construct around the read                                                                                                                                                                                                     | Following branch operator uses the read                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Unary `!`, `-`, `+`, `~`, `await`; binary comparison, arithmetic, `in`, `instanceof`; assignment value                                                                                                                        | yes, the value derives from the read                   |
+| Member, computed member, optional member or method call on the read itself (`read.length`, `read[0]`, `read.trim()`)                                                                                                          | yes, the value derives from the read                   |
+| The read as the key of a computed member (`a[read]`)                                                                                                                                                                          | yes, the value derives from the read                   |
+| Call, optional call or `new` argument list, spread argument                                                                                                                                                                   | no, the argument is not the result                     |
+| Array literal element                                                                                                                                                                                                         | only the element selected below                        |
+| Array literal followed by `[N]`, `?.[N]`, `.at(N)` or `?.at(N)` with `N` the decimal index of the element holding the read                                                                                                    | yes, the access yields that element                    |
+| Array literal followed by any other member, method, index or call, or an array with a spread before the element                                                                                                               | no                                                     |
+| Object literal followed by `.key`, `?.key`, `["key"]` or `['key']` with `key` the last property holding the read                                                                                                              | yes, the access yields that property                   |
+| Object literal followed by any other member, method or call, or a read in an earlier property                                                                                                                                 | no                                                     |
+| Operand of `typeof`, `void` or `delete`, parenthesized or not, up to the next token that cannot continue the operand (`&`, `\|`, `,`, `;`, `:`, `=`, `<`, `>`, `*`, `/`, `%`, `^`, `?`, a line break that ends the statement) | no, the result ignores the operand's value             |
+| A branch operator inside a `typeof`, `void` or `delete` parenthesized operand                                                                                                                                                 | yes, it guards its own read                            |
+| Function object, class or method that is not invoked in place                                                                                                                                                                 | no                                                     |
+| `function` or arrow function invoked in place, `(function(){...})()`, `(function(){...}())`, `!function(){...}()`, `(()=>{...})()` or `(()=>expr)()`, with the read in a `return` expression or in the arrow body             | yes, the call returns it                               |
+| Invoked function whose read is not in a `return` expression, is returned before a comma, or follows a line break after `return`                                                                                               | no                                                     |
+| Async function, async arrow, generator, method or a function passed as an argument                                                                                                                                            | no, the call result is a promise, iterator or argument |
+| Sequence `(a, read)`; read after the last comma                                                                                                                                                                               | yes                                                    |
+| Sequence `(read, a)`; read before a comma                                                                                                                                                                                     | no                                                     |
+| Conditional expression group `(c ? read : other)`                                                                                                                                                                             | yes, either branch can be the value                    |
+| Conditional branch without a group (`c ? read : other && run()`)                                                                                                                                                              | no, the operator binds to `other`                      |
+| Read in the test of `c ? a : b`                                                                                                                                                                                               | yes, the conditional is the guard                      |
 
 ### Known limits
 
@@ -117,7 +117,6 @@ The branch-evidence scanner is a token scanner. When a construct cannot be decid
 - An object property with a computed key, a getter or a spread.
 - An operand of `typeof`, `void` or `delete` that continues through a binary operator (`typeof a + read`); the read stays part of the discarded operand until a token that cannot continue it.
 - A function value invoked through `call`, `apply` or a variable, and a function returned by an invoked function.
-
 
 Vite's unresolved-environment detector confirms a generated `({}).NAME` against verified original source text. If a generated environment candidate maps to a source that is unreadable or has no build-time text snapshot, the candidate is skipped and dead-code elimination coverage is `PARTIAL` with a note that environment-variable findings may be missing. Other source gaps do not downgrade Vite dead-code coverage. Name-mangling coverage is partial when original source text is unverifiable for its direct-eval detector. Rspack's environment detector does not require that Vite-specific confirmation, so unreadable source text alone does not downgrade Rspack dead-code elimination coverage. Disabled minification remains `NOT_APPLICABLE`; a non-default minifier remains `UNAVAILABLE`.
 
