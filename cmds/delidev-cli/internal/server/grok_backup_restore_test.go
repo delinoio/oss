@@ -191,6 +191,9 @@ func TestGrokBackupRestoreQuarantinesAccountWithoutCredentialMaterialOrWorkerAut
 func TestGrokBackupRestoreRetainsUnsettledCleanupOwnerFields(t *testing.T) {
 	f := newGrokFixture(t)
 	f.login("synthetic-principal-1")
+	// A Worker lease may carry a logout only after the provider revoked the
+	// current generation.
+	f.markRevoked(t)
 	op := f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
 	if _, err := f.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT); err != nil {
 		t.Fatal(err)
