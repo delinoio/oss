@@ -43,6 +43,10 @@ func modelFixture(id json.RawMessage, method string, raw json.RawMessage, mode s
 		entry["model"] = "executable-two"
 	}
 	switch mode {
+	case "models-access-programs":
+		entry["availableAccessPrograms"] = nil
+	case "models-access-programs-object":
+		entry["availableAccessPrograms"] = map[string]any{"cyber": []string{"standard", "daybreakBlue"}}
 	case "models-cursor":
 		value := "page-two"
 		next = &value
@@ -62,7 +66,7 @@ func modelFixture(id json.RawMessage, method string, raw json.RawMessage, mode s
 }
 
 func TestNativeModelPagesAreAtomicBoundedAndAdvisory(t *testing.T) {
-	for _, mode := range []string{"models-valid", "models-cursor", "models-duplicate", "models-secret", "models-hidden", "models-oversized", "models-unknown"} {
+	for _, mode := range []string{"models-valid", "models-access-programs", "models-access-programs-object", "models-cursor", "models-duplicate", "models-secret", "models-hidden", "models-oversized", "models-unknown"} {
 		t.Run(mode, func(t *testing.T) {
 			config := fixtureConfig(t, mode)
 			config.ModelObservation = true
@@ -76,7 +80,7 @@ func TestNativeModelPagesAreAtomicBoundedAndAdvisory(t *testing.T) {
 			if closeErr := client.Close(); closeErr != nil {
 				t.Fatal(closeErr)
 			}
-			if mode == "models-valid" {
+			if mode == "models-valid" || mode == "models-access-programs" || mode == "models-access-programs-object" {
 				if err != nil || len(models) != 2 || models[0].ID == models[0].Model || models[1].Model != "executable-two" {
 					t.Fatalf("lost complete native identity: count=%d error=%v", len(models), err)
 				}

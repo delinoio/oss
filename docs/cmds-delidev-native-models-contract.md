@@ -75,7 +75,11 @@ neither PATH fallback nor a replacement installation supplies the original scope
 Return immutable bounded observations with their original scope identities,
 observation time, completion or sanitized failure, and the last successful
 observation for the selected scope. Preserve native picker `id` separately from
-executable `model`. Reasoning, modality and service-tier metadata are advisory;
+executable `model`. Codex `0.159.2` model entries may include nullable
+`availableAccessPrograms` metadata. The adapter accepts this known advisory
+field without using it to select an access program or grant model/account
+authority; other unknown entry fields still fail the closed response check.
+Reasoning, modality and service-tier metadata are advisory;
 listing cached, fallback or static native data cannot prove current account
 support, fresh entitlement, readiness or execution capability.
 

@@ -65,7 +65,10 @@ func (c *Client) readModelList(ctx context.Context, hidden bool) (diagnosticResu
 					Description string `json:"description"`
 				} `json:"serviceTiers"`
 				DefaultServiceTier *string `json:"defaultServiceTier"`
-				IsDefault          bool    `json:"isDefault"`
+				// Codex 0.159.2 adds advisory access-program metadata. It does not
+				// grant model or account authority to this adapter.
+				AvailableAccessPrograms json.RawMessage `json:"availableAccessPrograms"`
+				IsDefault               bool            `json:"isDefault"`
 			} `json:"data"`
 			NextCursor *string `json:"nextCursor"`
 		}
