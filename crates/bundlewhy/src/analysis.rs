@@ -13,7 +13,7 @@ use crate::{
         SourceFile,
     },
     rules::{self, Context},
-    sources::{SourceStore, classify},
+    sources::{SourceStore, classify, freshness_unverified_problem},
 };
 
 pub struct AnalysisInput<'a> {
@@ -422,19 +422,10 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     }
     // Freshness-unverified sources keep a usable build snapshot, so this
     // warning is informational and never makes the run partial.
-    if !context.sources.freshness_unverified.is_empty() {
-        problems.push(problem(
-            ErrorCode::SourceFreshnessUnverified,
-            ProblemSeverity::Warning,
-            format!(
-                "freshness of {} source file(s) could not be checked; analysis uses the build \
-                 snapshot",
-                context.sources.freshness_unverified.len()
-            ),
-            "The live files could not be read, so bundlewhy cannot tell whether they changed \
-             after the build. Results use the source text from the build's source maps.",
-        ));
-    }
+    problems.extend(freshness_unverified_problem(
+        context.sources.freshness_unverified.len(),
+        context.sources.existence_unverified.len(),
+    ));
     if !context.sources.unreadable.is_empty() {
         problems.push(problem(
             ErrorCode::SourceUnreadable,

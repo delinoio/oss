@@ -20,8 +20,9 @@ use crate::{
     },
     rules::export_usage::{MAX_EDGES_PER_PATH, MAX_PATHS},
     sources::{
-        LiveFileFailure, as_text, filesystem_path, is_binary_asset_path, is_generated_asset_module,
-        probe_entry, read_vetted_file, safe_project_relative, sha256_hex,
+        LiveFileFailure, as_text, filesystem_path, freshness_unverified_problem,
+        is_binary_asset_path, is_generated_asset_module, probe_entry, read_vetted_file,
+        safe_project_relative, sha256_hex,
     },
 };
 
@@ -656,6 +657,20 @@ fn is_unverifiable_asset(source: &SourceFile, live: &[u8]) -> bool {
     as_text(live).is_none() && is_binary_asset_path(&source.path)
 }
 
+/// True when the saved source keeps build snapshot text that the analysis
+/// uses, so the freshness warning may say so. Only a source with explicit build
+/// snapshot evidence qualifies, plus a text source saved before revision
+/// evidence was recorded (it is rechecked by hash, so it has stored text). An
+/// existence-only source without that evidence (an asset, a source whose
+/// `sourcesContent` was missing) has no build text to claim.
+fn has_snapshot_text(source: &SourceFile, existence_only: bool) -> bool {
+    match source.revision_evidence {
+        SourceRevisionEvidence::BuildSnapshot => true,
+        SourceRevisionEvidence::Unspecified => !existence_only,
+        SourceRevisionEvidence::Unavailable => false,
+    }
+}
+
 /// Marks sources whose current project file differs from the saved hash and
 /// reconciles the `BW_SOURCE_STALE` warning with the result.
 ///
@@ -688,7 +703,11 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
     else {
         return;
     };
-    let mut freshness_unverified = 0usize;
+    // Unverified sources are counted by what the warning may claim: sources
+    // with build snapshot text versus sources that only have an existence
+    // check.
+    let mut snapshot_unverified = 0usize;
+    let mut existence_unverified = 0usize;
     for source in &mut bundle.sources {
         // A source listed for existence only (an asset module, a binary file
         // or a derived module) keeps no comparable hash: only its removal
@@ -730,7 +749,11 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
                 Err(failure) if failure.is_removal() => true,
                 Err(failure) => {
                     tracing::warn!(path = %source.path, ?failure, "existence check failed on reopen; freshness is unverified");
-                    freshness_unverified += 1;
+                    if has_snapshot_text(source, true) {
+                        snapshot_unverified += 1;
+                    } else {
+                        existence_unverified += 1;
+                    }
                     false
                 }
             };
@@ -750,7 +773,11 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
                 // Present or not provably removed, but not readable: no change
                 // can be claimed, only that freshness cannot be checked.
                 tracing::warn!(path = %source.path, ?failure, "live read failed on reopen; freshness is unverified");
-                freshness_unverified += 1;
+                if has_snapshot_text(source, false) {
+                    snapshot_unverified += 1;
+                } else {
+                    existence_unverified += 1;
+                }
                 false
             }
         };
@@ -778,21 +805,17 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
         .analysis
         .problems
         .retain(|entry| entry.code != unverified_code);
-    if freshness_unverified > 0 {
-        bundle.analysis.problems.push(problem(
-            ErrorCode::SourceFreshnessUnverified,
-            ProblemSeverity::Warning,
-            format!(
-                "freshness of {freshness_unverified} source file(s) could not be checked; \
-                 analysis uses the build snapshot"
-            ),
-            "The live files could not be read, so bundlewhy cannot tell whether they changed \
-             after the build. Results use the source text from the build's source maps.",
+    bundle
+        .analysis
+        .problems
+        .extend(freshness_unverified_problem(
+            snapshot_unverified,
+            existence_unverified,
         ));
-    }
     tracing::debug!(
         stale,
-        freshness_unverified,
+        snapshot_unverified,
+        existence_unverified,
         "reconciled stale source warning"
     );
     if stale > 0 {
@@ -1980,7 +2003,7 @@ mod tests {
             (Backing::Directory, (false, 1), (false, 0)),
             (Backing::ParentIsFile, (false, 1), (false, 1)),
             #[cfg(unix)]
-            (Backing::DanglingSymlink, (true, 0), (false, 0)),
+            (Backing::DanglingSymlink, (true, 0), (true, 0)),
             #[cfg(unix)]
             (Backing::EscapingSymlink, (false, 1), (false, 0)),
             #[cfg(unix)]
@@ -2006,6 +2029,59 @@ mod tests {
                     "{label}"
                 );
             }
+        }
+    }
+
+    /// The reopen warning claims a build snapshot only for sources that keep
+    /// snapshot text; an existence-only source without it gets its own wording.
+    #[test]
+    fn reopen_warning_wording_follows_the_revision_evidence_of_each_source() {
+        // (evidence, existence-only, claims a build snapshot)
+        let table = [
+            (SourceRevisionEvidence::BuildSnapshot, false, true),
+            // A derived module keeps snapshot text but is checked for existence.
+            (SourceRevisionEvidence::BuildSnapshot, true, true),
+            (SourceRevisionEvidence::Unavailable, true, false),
+            (SourceRevisionEvidence::Unavailable, false, false),
+            // Saved before evidence was recorded.
+            (SourceRevisionEvidence::Unspecified, false, true),
+            (SourceRevisionEvidence::Unspecified, true, false),
+        ];
+        for (evidence, existence_only, claims_snapshot) in table {
+            let dir = tempfile::tempdir().unwrap();
+            let project = dir.path().join("project");
+            // The parent of the path is a regular file (not-a-directory error).
+            std::fs::create_dir_all(&project).unwrap();
+            std::fs::write(project.join("src"), "file").unwrap();
+            let mut saved = unverified_bundle(&project, "export const a = 1;");
+            saved.analysis.problems.clear();
+            saved.sources[0].revision_evidence = evidence;
+            if existence_only {
+                saved.project_relative.clear();
+                saved
+                    .existence_relative
+                    .insert("src-0123456789abcdef".to_owned(), "src/a.js".to_owned());
+            }
+            mark_stale(&mut saved);
+            let label = format!("{evidence:?} existence_only={existence_only}");
+            assert!(!saved.sources[0].stale, "{label}");
+            assert_eq!(
+                problem_count(&saved, "BW_SOURCE_FRESHNESS_UNVERIFIED"),
+                1,
+                "{label}"
+            );
+            let message = &saved
+                .analysis
+                .problems
+                .iter()
+                .find(|entry| entry.code == "BW_SOURCE_FRESHNESS_UNVERIFIED")
+                .unwrap()
+                .message;
+            assert_eq!(
+                message.contains("analysis uses the build snapshot"),
+                claims_snapshot,
+                "{label}: {message}"
+            );
         }
     }
 

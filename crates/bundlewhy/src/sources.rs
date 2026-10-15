@@ -7,7 +7,10 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
-use crate::model::{SourceFile, SourceOrigin, SourceRevisionEvidence};
+use crate::{
+    error::{ErrorCode, problem},
+    model::{Problem, ProblemSeverity, SourceFile, SourceOrigin, SourceRevisionEvidence},
+};
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
@@ -156,6 +159,11 @@ pub struct SourceStore {
     /// be read for a reason other than removal. The snapshot stays usable and
     /// the source is not stale: only its freshness is unverified.
     pub freshness_unverified: Vec<String>,
+    /// Display paths without a build snapshot (an imported asset, a generated
+    /// asset module) whose backing file could not be inspected for a reason
+    /// other than removal. Nothing was compared, so no build text is claimed:
+    /// only the existence of the file is unverified.
+    pub existence_unverified: Vec<String>,
     /// Test seam: live reads of these resolved paths fail with the given
     /// error kind instead of touching the filesystem.
     #[cfg(test)]
@@ -303,9 +311,16 @@ pub fn is_generated_asset_module(path: &str, snapshot: &str) -> bool {
 /// append an import query (`a.js?raw`) or a fragment to the file path to name a
 /// derived module; the query is not part of the file name. The literal path
 /// wins when it exists (a file name can contain `?` or `#`); otherwise the path
-/// without its query, then without its fragment, is used. When none exists the
-/// fragment-free path is returned so a restored file is looked up by its real
-/// name. The module identity keeps the literal path.
+/// without its query, then without its fragment, is used.
+///
+/// Every candidate is classified through [`probe_entry`]. Only a candidate that
+/// is positively found is selected. A candidate whose existence cannot be
+/// established (a transient permission or I/O failure) is never selected over
+/// a later one, and when no candidate is found the fragment-free path is
+/// returned, so a restored file is looked up by its real name. A file whose
+/// literal name contains `?` or `#` and whose existence cannot be established
+/// is therefore looked up by the query-free name (see the known limits of the
+/// bundlewhy foundation contract). The module identity keeps the literal path.
 pub fn filesystem_path(path: &Path) -> PathBuf {
     let text = path.to_string_lossy();
     if !text.contains(['?', '#']) {
@@ -317,16 +332,73 @@ pub fn filesystem_path(path: &Path) -> PathBuf {
         .map_or(without_query, |(file, _)| file);
     let candidates = [&*text, without_query, without_fragment];
     for candidate in candidates {
-        // Only a definitely missing candidate is skipped; when the entry
-        // cannot be inspected for another reason it may exist, so it is kept.
-        if !matches!(
-            probe_entry(Path::new(candidate)),
-            Err(LiveFileFailure::Missing)
-        ) {
-            return PathBuf::from(candidate);
+        match probe_entry(Path::new(candidate)) {
+            Ok(()) => return PathBuf::from(candidate),
+            Err(LiveFileFailure::Missing) => {}
+            Err(failure) => {
+                tracing::debug!(
+                    candidate,
+                    ?failure,
+                    "backing file candidate cannot be inspected; trying the next candidate"
+                );
+            }
         }
     }
     PathBuf::from(without_fragment)
+}
+
+/// Builds the single `BW_SOURCE_FRESHNESS_UNVERIFIED` warning for a run, on the
+/// first run and when a saved run is reopened.
+///
+/// `snapshot_backed` counts sources that keep build snapshot text and whose
+/// live file could not be read (the analysis uses that text). `existence_only`
+/// counts sources without build snapshot text (binary assets, generated asset
+/// modules) whose backing file could not be inspected. The wording claims a
+/// build snapshot only for the first group. Returns `None` when both counts are
+/// zero.
+pub fn freshness_unverified_problem(
+    snapshot_backed: usize,
+    existence_only: usize,
+) -> Option<Problem> {
+    let (message, recovery) = match (snapshot_backed, existence_only) {
+        (0, 0) => return None,
+        (snapshot_backed, 0) => (
+            format!(
+                "freshness of {snapshot_backed} source file(s) could not be checked; analysis \
+                 uses the build snapshot"
+            ),
+            "The live files could not be read, so bundlewhy cannot tell whether they changed \
+             after the build. Results use the source text from the build's source maps."
+                .to_owned(),
+        ),
+        (0, existence_only) => (
+            format!(
+                "existence of {existence_only} source file(s) without a build snapshot could not \
+                 be checked"
+            ),
+            "The live files could not be inspected, so bundlewhy cannot tell whether they were \
+             removed after the build. These sources have no build snapshot text; only their path \
+             is kept."
+                .to_owned(),
+        ),
+        (snapshot_backed, existence_only) => (
+            format!(
+                "freshness of {snapshot_backed} source file(s) could not be checked; analysis \
+                 uses the build snapshot. Existence of {existence_only} source file(s) without a \
+                 build snapshot could not be checked either"
+            ),
+            "The live files could not be read, so bundlewhy cannot tell whether they changed or \
+             were removed after the build. Results use the source text from the build's source \
+             maps where it exists; sources without a build snapshot keep only their path."
+                .to_owned(),
+        ),
+    };
+    Some(problem(
+        ErrorCode::SourceFreshnessUnverified,
+        ProblemSeverity::Warning,
+        message,
+        recovery,
+    ))
 }
 
 /// Why the live file behind a source could not be read. Every filesystem
@@ -367,9 +439,11 @@ impl LiveFileFailure {
     }
 }
 
-/// Checks that a path entry exists without following a final symlink.
+/// Checks that the file behind a path entry exists. A final symlink is
+/// followed, so a symlink whose target was removed is
+/// [`LiveFileFailure::Missing`] exactly as it is when the file is read.
 pub fn probe_entry(path: &Path) -> Result<(), LiveFileFailure> {
-    std::fs::symlink_metadata(path)
+    std::fs::metadata(path)
         .map(|_| ())
         .map_err(|error| LiveFileFailure::from_io(&error))
 }
@@ -523,22 +597,14 @@ impl SourceStore {
                 as_text(&bytes) != Some(snapshot.as_str()),
                 false,
             ),
-            (Some(_), LiveRead::Failed(LiveFileFailure::NotPermitted)) if stub => {
-                (None, sha256_hex(b""), false, true)
-            }
-            // A removed file is a change; any other read failure only means
+            // A removed file is a change; any other read failure, including a
+            // file that is not vetted for reading (`NotPermitted`), only means
             // that freshness could not be checked (`snapshot_failure_is_stale`).
             (Some(_), LiveRead::Failed(failure)) if stub => {
                 let stale = Self::snapshot_failure_is_stale(&classified.display, failure);
                 unverified_freshness |= !stale;
                 (None, sha256_hex(b""), stale, true)
             }
-            (Some(snapshot), LiveRead::Failed(LiveFileFailure::NotPermitted)) => (
-                Some(snapshot.clone()),
-                sha256_hex(snapshot.as_bytes()),
-                false,
-                derived,
-            ),
             (Some(snapshot), LiveRead::Failed(failure)) => {
                 let stale = Self::snapshot_failure_is_stale(&classified.display, failure);
                 unverified_freshness |= !stale;
@@ -571,8 +637,16 @@ impl SourceStore {
                 return None;
             }
         };
+        // A source with build snapshot text keeps that text for the analysis;
+        // any other source (a generated asset module) was never compared with
+        // text, so only its existence is unverified.
+        let snapshot_backed = snapshot.is_some() && !stub;
         if unverified_freshness {
-            self.freshness_unverified.push(classified.display.clone());
+            if snapshot_backed {
+                self.freshness_unverified.push(classified.display.clone());
+            } else {
+                self.existence_unverified.push(classified.display.clone());
+            }
         }
         if stale {
             tracing::debug!(path = %classified.display, "source changed after the build read it");
@@ -588,7 +662,7 @@ impl SourceStore {
             content: text.clone().unwrap_or_default(),
             content_included: verifiable,
             stale,
-            revision_evidence: if snapshot.is_some() && !stub {
+            revision_evidence: if snapshot_backed {
                 SourceRevisionEvidence::BuildSnapshot
             } else {
                 SourceRevisionEvidence::Unavailable
@@ -894,8 +968,12 @@ mod tests {
             .insert(normalize(&file), std::io::ErrorKind::PermissionDenied);
         assert!(store.add_file(dir.path(), &file).unwrap().1.is_none());
         assert!(store.changed_since_build.is_empty());
-        assert_eq!(store.freshness_unverified, vec!["logo.png".to_owned()]);
-        assert!(!store.into_files()[0].stale);
+        // The stub is not build text: only its existence is unverified.
+        assert!(store.freshness_unverified.is_empty());
+        assert_eq!(store.existence_unverified, vec!["logo.png".to_owned()]);
+        let file = store.into_files().pop().unwrap();
+        assert!(!file.stale);
+        assert_eq!(file.revision_evidence, SourceRevisionEvidence::Unavailable);
     }
 
     #[test]
@@ -2019,79 +2097,114 @@ mod tests {
     }
 
     /// First-run counterpart of the reopen table: the same filesystem setups
-    /// classify identically for a source with a build snapshot.
+    /// classify identically for a source with a build snapshot and for a
+    /// generated asset stub (which has no build text).
     #[test]
-    fn first_run_classifies_real_filesystem_failures_for_snapshot_sources() {
+    fn first_run_classifies_real_filesystem_failures_for_snapshot_and_stub_sources() {
         #[derive(Clone, Copy, Debug)]
         enum Setup {
             Removed,
             Directory,
             ParentIsFile,
+            /// A regular file larger than the live read limit.
+            Oversized,
             #[cfg(unix)]
             DanglingSymlink,
+            /// A symlink to a file outside the project root.
+            #[cfg(unix)]
+            EscapingSymlink,
             #[cfg(unix)]
             PermissionDenied,
         }
-        // (setup, stale, freshness unverified)
+        // (setup, stale, unverified)
         let table = [
             (Setup::Removed, true, false),
-            (Setup::Directory, false, false),
+            (Setup::Directory, false, true),
             (Setup::ParentIsFile, false, true),
+            (Setup::Oversized, false, true),
             #[cfg(unix)]
             (Setup::DanglingSymlink, true, false),
             #[cfg(unix)]
+            (Setup::EscapingSymlink, false, true),
+            #[cfg(unix)]
             (Setup::PermissionDenied, false, true),
         ];
-        for (setup, stale, unverified) in table {
-            let dir = tempfile::tempdir().unwrap();
-            let root = std::fs::canonicalize(dir.path()).unwrap();
-            let src = root.join("src");
-            std::fs::create_dir(&src).unwrap();
-            let file = src.join("a.js");
-            #[cfg(unix)]
-            let mut locked = false;
-            match setup {
-                Setup::Removed => {}
-                Setup::Directory => std::fs::create_dir(&file).unwrap(),
-                Setup::ParentIsFile => {
-                    std::fs::remove_dir(&src).unwrap();
-                    std::fs::write(&src, "file").unwrap();
-                }
+        for stub in [false, true] {
+            for (setup, stale, unverified) in table {
+                let dir = tempfile::tempdir().unwrap();
+                let root = std::fs::canonicalize(dir.path()).unwrap();
+                let project = root.join("project");
+                let src = project.join("src");
+                std::fs::create_dir_all(&src).unwrap();
+                // A generated asset module needs an asset path.
+                let file = src.join(if stub { "logo.png" } else { "a.js" });
                 #[cfg(unix)]
-                Setup::DanglingSymlink => {
-                    std::os::unix::fs::symlink(root.join("gone.js"), &file).unwrap();
-                }
-                #[cfg(unix)]
-                Setup::PermissionDenied => {
-                    std::fs::write(&file, "x").unwrap();
-                    if !test_support::deny_access(&src) {
-                        eprintln!("skipped {setup:?}: permissions cannot block this account");
-                        continue;
+                let mut locked = false;
+                match setup {
+                    Setup::Removed => {}
+                    Setup::Directory => std::fs::create_dir(&file).unwrap(),
+                    Setup::ParentIsFile => {
+                        std::fs::remove_dir(&src).unwrap();
+                        std::fs::write(&src, "file").unwrap();
                     }
-                    locked = true;
+                    Setup::Oversized => {
+                        let handle = std::fs::File::create(&file).unwrap();
+                        handle.set_len(MAX_SOURCE_BYTES + 1).unwrap();
+                    }
+                    #[cfg(unix)]
+                    Setup::DanglingSymlink => {
+                        std::os::unix::fs::symlink(project.join("gone.js"), &file).unwrap();
+                    }
+                    #[cfg(unix)]
+                    Setup::EscapingSymlink => {
+                        std::fs::write(root.join("outside.js"), "x").unwrap();
+                        std::os::unix::fs::symlink(root.join("outside.js"), &file).unwrap();
+                    }
+                    #[cfg(unix)]
+                    Setup::PermissionDenied => {
+                        std::fs::write(&file, "x").unwrap();
+                        if !test_support::deny_access(&src) {
+                            eprintln!("skipped {setup:?}: permissions cannot block this account");
+                            continue;
+                        }
+                        locked = true;
+                    }
                 }
+                let mut store = SourceStore::new(true);
+                let snapshot = if stub {
+                    "export default \"__VITE_ASSET__abc__\""
+                } else {
+                    "export const a = 1;"
+                };
+                store
+                    .snapshots
+                    .insert(normalize(&file), snapshot.to_owned());
+                let added = store.add_file(&project, &file);
+                #[cfg(unix)]
+                if locked {
+                    test_support::restore_access(&src);
+                }
+                let label = format!("{setup:?} stub={stub}");
+                assert!(added.is_some(), "{label}");
+                assert_eq!(
+                    store.changed_since_build.len(),
+                    usize::from(stale),
+                    "{label}"
+                );
+                // Snapshot text and stubs are reported separately, so the
+                // warning never claims build text for a stub.
+                let (snapshot_backed, existence_only) = (
+                    store.freshness_unverified.len(),
+                    store.existence_unverified.len(),
+                );
+                let expected = usize::from(unverified);
+                assert_eq!(
+                    (snapshot_backed, existence_only),
+                    if stub { (0, expected) } else { (expected, 0) },
+                    "{label}"
+                );
+                assert_eq!(store.into_files()[0].stale, stale, "{label}");
             }
-            let mut store = SourceStore::new(true);
-            store
-                .snapshots
-                .insert(normalize(&file), "export const a = 1;".to_owned());
-            let added = store.add_file(&root, &file);
-            #[cfg(unix)]
-            if locked {
-                test_support::restore_access(&src);
-            }
-            assert!(added.is_some(), "{setup:?}");
-            assert_eq!(
-                store.changed_since_build.len(),
-                usize::from(stale),
-                "{setup:?}"
-            );
-            assert_eq!(
-                store.freshness_unverified.len(),
-                usize::from(unverified),
-                "{setup:?}"
-            );
-            assert_eq!(store.into_files()[0].stale, stale, "{setup:?}");
         }
     }
 
@@ -2113,16 +2226,151 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
-    fn filesystem_path_keeps_a_candidate_that_cannot_be_ruled_out() {
+    fn probe_entry_follows_symlinks_like_a_read() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("blocker"), "file").unwrap();
-        // A literal path below a regular file is not definitely missing, so the
-        // literal name is kept rather than the query-free one.
-        let literal = dir.path().join("blocker/a.js?raw");
-        assert_eq!(filesystem_path(&literal), literal);
-        // A definitely missing literal falls back to the query-free path.
-        let missing = dir.path().join("a.js?raw");
-        assert_eq!(filesystem_path(&missing), dir.path().join("a.js"));
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(root.join("real.js"), "x").unwrap();
+        std::os::unix::fs::symlink(root.join("real.js"), root.join("inner.js")).unwrap();
+        std::os::unix::fs::symlink(root.join("gone.js"), root.join("dangling.js")).unwrap();
+        std::os::unix::fs::symlink(root.join("loop-b"), root.join("loop-a")).unwrap();
+        std::os::unix::fs::symlink(root.join("loop-a"), root.join("loop-b")).unwrap();
+        assert_eq!(probe_entry(&root.join("inner.js")), Ok(()));
+        // A symlink whose target was removed is missing, as it is for a read.
+        assert_eq!(
+            probe_entry(&root.join("dangling.js")),
+            Err(LiveFileFailure::Missing)
+        );
+        assert_eq!(
+            probe_entry(&root.join("dangling.js")),
+            read_vetted_file(&root.join("dangling.js"), |_| true, 16).map(|_| ())
+        );
+        // A loop is an I/O failure, not a removal.
+        assert!(!probe_entry(&root.join("loop-a")).unwrap_err().is_removal());
+    }
+
+    /// Candidate selection of `filesystem_path`, one cell per setup. A
+    /// candidate that cannot be inspected is never preferred over the
+    /// query-free path.
+    #[test]
+    fn filesystem_path_selects_the_backing_file_table() {
+        #[derive(Clone, Copy, Debug)]
+        enum Setup {
+            /// Only the literal name exists.
+            LiteralExists,
+            /// Only the query-free name exists.
+            QueryFreeExists,
+            /// Both exist: the literal wins.
+            BothExist,
+            /// Nothing exists.
+            NothingExists,
+            /// The parent is a regular file, so no candidate can be inspected.
+            UninspectableParent,
+            /// A dangling literal symlink with an existing query-free file.
+            DanglingLiteral,
+            /// Only the fragment-free name exists.
+            FragmentFreeExists,
+            /// No candidate can be inspected because the directory is locked.
+            #[cfg(unix)]
+            PermissionDenied,
+        }
+        // (setup, module file name, expected backing file name)
+        let table = [
+            (Setup::LiteralExists, "a.js?raw", "a.js?raw"),
+            (Setup::QueryFreeExists, "a.js?raw", "a.js"),
+            (Setup::BothExist, "a.js?raw", "a.js?raw"),
+            (Setup::NothingExists, "a.js?raw", "a.js"),
+            (Setup::UninspectableParent, "a.js?raw", "a.js"),
+            (Setup::DanglingLiteral, "a.js?raw", "a.js"),
+            (Setup::FragmentFreeExists, "a.js?raw#frag", "a.js"),
+            (Setup::NothingExists, "a.js#frag", "a.js"),
+            #[cfg(unix)]
+            (Setup::PermissionDenied, "a.js?raw", "a.js"),
+        ];
+        for (setup, module, expected) in table {
+            let dir = tempfile::tempdir().unwrap();
+            let root = std::fs::canonicalize(dir.path()).unwrap();
+            let parent = root.join("src");
+            #[cfg(unix)]
+            let mut locked = false;
+            match setup {
+                Setup::UninspectableParent => std::fs::write(&parent, "file").unwrap(),
+                other => {
+                    std::fs::create_dir(&parent).unwrap();
+                    match other {
+                        Setup::LiteralExists => std::fs::write(parent.join(module), "x").unwrap(),
+                        Setup::QueryFreeExists | Setup::FragmentFreeExists => {
+                            std::fs::write(parent.join("a.js"), "x").unwrap();
+                        }
+                        Setup::BothExist => {
+                            std::fs::write(parent.join(module), "x").unwrap();
+                            std::fs::write(parent.join("a.js"), "x").unwrap();
+                        }
+                        #[cfg(unix)]
+                        Setup::DanglingLiteral => {
+                            std::fs::write(parent.join("a.js"), "x").unwrap();
+                            std::os::unix::fs::symlink(root.join("gone.js"), parent.join(module))
+                                .unwrap();
+                        }
+                        #[cfg(not(unix))]
+                        Setup::DanglingLiteral => {
+                            std::fs::write(parent.join("a.js"), "x").unwrap();
+                        }
+                        #[cfg(unix)]
+                        Setup::PermissionDenied => {
+                            std::fs::write(parent.join("a.js"), "x").unwrap();
+                            if !test_support::deny_access(&parent) {
+                                eprintln!("skipped: permissions cannot block this account");
+                                continue;
+                            }
+                            locked = true;
+                        }
+                        Setup::NothingExists | Setup::UninspectableParent => {}
+                    }
+                }
+            }
+            let selected = filesystem_path(&parent.join(module));
+            #[cfg(unix)]
+            if locked {
+                test_support::restore_access(&parent);
+            }
+            assert_eq!(selected, parent.join(expected), "{setup:?} {module}");
+        }
+    }
+
+    #[test]
+    fn freshness_warning_claims_a_build_snapshot_only_for_snapshot_backed_sources() {
+        // (snapshot-backed, existence-only, claims a build snapshot, mentions
+        // existence)
+        let table = [
+            (0, 0, None),
+            (2, 0, Some((true, false))),
+            (0, 3, Some((false, true))),
+            (1, 2, Some((true, true))),
+        ];
+        for (snapshot_backed, existence_only, expected) in table {
+            let warning = freshness_unverified_problem(snapshot_backed, existence_only);
+            let label = format!("{snapshot_backed}/{existence_only}");
+            let Some((claims_snapshot, mentions_existence)) = expected else {
+                assert!(warning.is_none(), "{label}");
+                continue;
+            };
+            let warning = warning.unwrap();
+            assert_eq!(warning.code, "BW_SOURCE_FRESHNESS_UNVERIFIED", "{label}");
+            assert_eq!(
+                warning.message.contains("analysis uses the build snapshot"),
+                claims_snapshot,
+                "{label}: {}",
+                warning.message
+            );
+            assert_eq!(
+                warning.message.contains("existence of")
+                    || warning.message.contains("Existence of"),
+                mentions_existence,
+                "{label}: {}",
+                warning.message
+            );
+        }
     }
 }
