@@ -602,17 +602,29 @@ fn env_guards(
         .collect()
 }
 
+/// Returns the code before `index` with trailing whitespace and comments
+/// removed, so a control keyword separated from its `(` by comments is still
+/// the last token of the prefix.
+///
+/// A block comment must end exactly at the trimmed end. A line comment ends at
+/// its newline, so trimming whitespace may stop inside the comment (trailing
+/// spaces, a carriage return); the remainder after the trimmed end is then
+/// only whitespace that lies before `index`. String, template and regular
+/// expression ranges are never skipped.
 fn scope_prefix<'a>(code: &'a str, index: usize, ignored: &[(usize, usize)]) -> &'a str {
     let mut end = code[..index].trim_end().len();
     loop {
-        let Some(comment_index) = ignored
-            .partition_point(|(_, stop)| *stop <= end)
+        let Some(range_index) = ignored
+            .partition_point(|(start, _)| *start < end)
             .checked_sub(1)
         else {
             return &code[..end];
         };
-        let (start, stop) = ignored[comment_index];
-        if stop != end || !code[start..stop].starts_with("/*") {
+        let (start, stop) = ignored[range_index];
+        let comment = &code[start..stop];
+        let is_block_comment = comment.starts_with("/*") && stop == end;
+        let is_line_comment = comment.starts_with("//") && stop >= end && stop <= index;
+        if !is_block_comment && !is_line_comment {
             return &code[..end];
         }
         end = code[..start].trim_end().len();
@@ -2173,6 +2185,83 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(
             guard("if (process.env.VERSION\n) run()", "process.env.VERSION"),
             Some("the retained read is in an if condition")
+        );
+    }
+
+    #[test]
+    fn comments_between_a_keyword_and_its_condition_keep_the_guard() {
+        let guard = |code: &str, read: &str| {
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        let read = "process.env.FLAG";
+        let vite_read = "({}).FLAG";
+        for (keyword, body, evidence) in [
+            (
+                "if",
+                "{read}) run()",
+                "the retained read is in an if condition",
+            ),
+            (
+                "while",
+                "{read}) run()",
+                "the retained read is in a while condition",
+            ),
+            (
+                "switch",
+                "{read}) {default: run()}",
+                "the retained read is in a switch condition",
+            ),
+            (
+                "for",
+                ";{read};) run()",
+                "the retained read is in a for condition",
+            ),
+        ] {
+            for read in [read, vite_read] {
+                let body = body.replace("{read}", read);
+                let plain = format!("{keyword} ({body}");
+                assert_eq!(guard(&plain, read), Some(evidence), "{plain}");
+                for separator in [
+                    "/* c */",
+                    "/*!license*/\n",
+                    "// c\n",
+                    "// c\r\n",
+                    "//\n",
+                    "// c   \n",
+                    "// c \t\r\n",
+                    "// one\n// two\n",
+                    "// one\n/* two */ // three\n",
+                    "\n// c\n\n  ",
+                    "// if (x)\n",
+                ] {
+                    let code = format!("{keyword} {separator}({body}");
+                    assert_eq!(guard(&code, read), Some(evidence), "{code:?}");
+                    let code = format!("{keyword}{separator}({body}");
+                    assert_eq!(guard(&code, read), Some(evidence), "{code:?}");
+                }
+            }
+        }
+        for code in [
+            "run // c\n(process.env.FLAG)",
+            "run // c\r\n(process.env.FLAG)",
+            "obj.if // c\n(process.env.FLAG)",
+            "obj.while /* c */ (process.env.FLAG)",
+            "notif // c\n(process.env.FLAG)",
+            "if // c\n(process.env.FLAG, ready) run()",
+            "for // c\n(process.env.FLAG;;) work()",
+            "for // c\n(;;process.env.FLAG) work()",
+            "console.log // c\n(process.env.FLAG)",
+            "\"if\" // c\n(process.env.FLAG)",
+            "`if` // c\n(process.env.FLAG)",
+        ] {
+            assert_eq!(guard(code, "process.env.FLAG"), None, "{code:?}");
+        }
+        // A string ending in a keyword is not a keyword.
+        assert_eq!(
+            guard("x = 'if' // c\n(process.env.FLAG)", "process.env.FLAG"),
+            None
         );
     }
 
