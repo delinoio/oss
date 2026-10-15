@@ -40,6 +40,7 @@ type NativeServiceTier string
 type NativeSpeed string
 type CreditStatusKind string
 type CreditFailureReason string
+type NativeCostBasis string
 
 const (
 	MessageIteration    UsageIterationKind = "message"
@@ -53,6 +54,9 @@ const (
 	FastSpeed           NativeSpeed        = "fast"
 	CreditRedeemed      CreditStatusKind   = "redeemed"
 	CreditNotApplied    CreditStatusKind   = "not_applied"
+	ListCostBasis       NativeCostBasis    = "list"
+	ManagedCostBasis    NativeCostBasis    = "managed"
+	UnknownCostBasis    NativeCostBasis    = "unknown"
 )
 
 type CacheCreationUsage struct {
@@ -113,16 +117,18 @@ type UsageIteration struct {
 // calls outside the main loop. Its scope/reset boundary belongs to the owned
 // native runtime; repeated snapshots are not independent billable deltas.
 type NativeModelUsage struct {
-	Input          *int64     `json:"inputTokens"`
-	Output         *int64     `json:"outputTokens"`
-	CacheRead      *int64     `json:"cacheReadInputTokens"`
-	CacheWrite     *int64     `json:"cacheCreationInputTokens"`
-	WebSearch      *int64     `json:"webSearchRequests"`
-	CostUSD        *NativeUSD `json:"costUSD"`
-	ContextWindow  *int64     `json:"contextWindow"`
-	MaxOutput      *int64     `json:"maxOutputTokens"`
-	CanonicalModel *string    `json:"canonicalModel"`
-	Provider       *string    `json:"provider"`
+	Input          *int64           `json:"inputTokens"`
+	Output         *int64           `json:"outputTokens"`
+	Thinking       *int64           `json:"thinkingTokens,omitempty"`
+	CacheRead      *int64           `json:"cacheReadInputTokens"`
+	CacheWrite     *int64           `json:"cacheCreationInputTokens"`
+	WebSearch      *int64           `json:"webSearchRequests"`
+	CostUSD        *NativeUSD       `json:"costUSD"`
+	ContextWindow  *int64           `json:"contextWindow"`
+	MaxOutput      *int64           `json:"maxOutputTokens"`
+	CanonicalModel *string          `json:"canonicalModel"`
+	Provider       *string          `json:"provider"`
+	CostBasis      *NativeCostBasis `json:"costBasis,omitempty"`
 }
 
 type ResultUsage struct {
@@ -252,7 +258,7 @@ func (s *FallbackCreditStatus) UnmarshalJSON(raw []byte) error {
 func (u *NativeModelUsage) UnmarshalJSON(raw []byte) error {
 	type wire NativeModelUsage
 	var value wire
-	if decodeNativeObject(raw, &value) != nil || !nonnegativeCounts(value.Input, value.Output, value.CacheRead, value.CacheWrite, value.WebSearch) || (value.ContextWindow != nil && *value.ContextWindow <= 0) || (value.MaxOutput != nil && *value.MaxOutput <= 0) {
+	if decodeNativeObject(raw, &value) != nil || !nonnegativeCounts(value.Input, value.Output, value.Thinking, value.CacheRead, value.CacheWrite, value.WebSearch) || (value.ContextWindow != nil && *value.ContextWindow <= 0) || (value.MaxOutput != nil && *value.MaxOutput <= 0) || value.CostBasis != nil && !slices.Contains([]NativeCostBasis{ListCostBasis, ManagedCostBasis, UnknownCostBasis}, *value.CostBasis) {
 		return lifecycleUncertain()
 	}
 	for _, label := range []*string{value.CanonicalModel, value.Provider} {

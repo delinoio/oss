@@ -415,6 +415,12 @@ Ordinary tests use a private executable fixture only. Opt-in installed macOS tes
 
 ### Claude Code applied settings evidence
 
+Result `subagent_stats` accepts only its complete bounded native counter shape;
+these aggregates are discarded and cannot publish task lifecycle or cleanup.
+Native cumulative model usage preserves optional nonnegative `thinkingTokens`
+and the closed `costBasis` values `list`, `managed` and `unknown`. These remain
+native observations, with no inferred billing or replacement token totals.
+
 The result may report a nonnegative `result_index`, zero `queued_turn_count`,
 the same singleton `user_message_uuids`, and typed timing/resource observations.
 Timing phase maps have at most 32 bounded names and unsigned integer values;

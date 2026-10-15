@@ -241,6 +241,7 @@ func (b *ExecutionBinding) validateResult(raw []byte) (NativeResult, bool, error
 		TimeOrigin             *float64          `json:"time_origin_ms"`
 		ResultIndex            *uint64           `json:"result_index,omitempty"`
 		QueuedTurns            *uint64           `json:"queued_turn_count,omitempty"`
+		SubagentStats          json.RawMessage   `json:"subagent_stats,omitempty"`
 		Inputs                 json.RawMessage   `json:"user_message_uuids,omitempty"`
 		TimePhases             map[string]uint64 `json:"time_to_request_phases_ms,omitempty"`
 		ResumeKind             *string           `json:"turn_start_resume_kind,omitempty"`
@@ -272,6 +273,9 @@ func (b *ExecutionBinding) validateResult(raw []byte) (NativeResult, bool, error
 		return NativeResult{}, false, lifecycleUncertain()
 	}
 	if result.QueuedTurns != nil && *result.QueuedTurns != 0 {
+		return NativeResult{}, false, lifecycleUncertain()
+	}
+	if len(result.SubagentStats) != 0 && !validNativeSubagentStats(result.SubagentStats) {
 		return NativeResult{}, false, lifecycleUncertain()
 	}
 	if len(result.Inputs) != 0 {

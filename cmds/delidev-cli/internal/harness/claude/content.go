@@ -355,7 +355,12 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 		Input           json.RawMessage `json:"user_message_uuid,omitempty"`
 		Inputs          json.RawMessage `json:"user_message_uuids,omitempty"`
 	}
-	if decodeNativeObject(raw, &envelope) != nil || b.validateReplyInputStamp(envelope.Input, envelope.Inputs, envelope.Parent) != nil {
+	decoded := decodeNativeObject(raw, &envelope)
+	stamped := b.validateReplyInputStamp(envelope.Input, envelope.Inputs, envelope.Parent)
+	if decoded != nil || stamped != nil {
+		if b.logger != nil {
+			b.logger.Warn("claude_partial_envelope_rejected", "owner_id", b.owner, "schema_valid", decoded == nil, "input_stamp_valid", stamped == nil)
+		}
 		return nil, lifecycleUncertain()
 	}
 	if len(envelope.ThinkingDisplay) != 0 {
@@ -374,8 +379,8 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 		return nil, lifecycleUncertain()
 	}
 	defer func() {
-		if returned != nil && b.interrupt != nil && b.logger != nil {
-			b.logger.Warn("claude_stop_partial_validation_failed", "owner_id", b.owner, "message_start", kind == "message_start", "block_start", kind == "content_block_start", "block_delta", kind == "content_block_delta", "block_stop", kind == "content_block_stop", "message_delta", kind == "message_delta", "message_stop", kind == "message_stop")
+		if returned != nil && b.logger != nil {
+			b.logger.Warn("claude_partial_validation_failed", "owner_id", b.owner, "message_start", kind == "message_start", "block_start", kind == "content_block_start", "block_delta", kind == "content_block_delta", "block_stop", kind == "content_block_stop", "message_delta", kind == "message_delta", "message_stop", kind == "message_stop")
 		}
 	}()
 	active := b.content.active[parent]
@@ -389,6 +394,9 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 		}
 		message, err := decodeProviderMessage(start.Message)
 		if err != nil {
+			if b.logger != nil {
+				b.logger.Warn("claude_provider_message_rejected", "owner_id", b.owner, "fields_known", requireExactNativeKeys(start.Message, &providerMessage{}))
+			}
 			return nil, err
 		}
 		key := parent + "\x00" + message.ID
