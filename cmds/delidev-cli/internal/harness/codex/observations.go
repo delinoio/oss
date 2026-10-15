@@ -166,11 +166,12 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 		if c.managedTitle || c.sidechat != "" || c.modelObservation != "" {
 			return privateNative(native), nil
 		}
-		if _, configured := c.mcpStartupServers[params.Name]; !configured {
-			return privateNative(native), nil
-		}
+		// Native runtime connectors can report startup after config/read without
+		// appearing in its static mcp_servers table. A validated notification on
+		// this original thread is passive status only, never tool or auth proof.
 		if c.logger != nil {
-			c.logger.Info("Codex passive MCP startup observed", "owner_id", c.ownerID, "status", params.Status, "has_error", params.Error != nil)
+			_, configured := c.mcpStartupServers[params.Name]
+			c.logger.Info("Codex passive MCP startup observed", "owner_id", c.ownerID, "status", params.Status, "has_error", params.Error != nil, "statically_configured", configured)
 		}
 		return c.metadata(MCPStartupObserved), nil
 	case "model/verification", "model/safetyBuffering/updated", "turn/moderationMetadata", "model/rerouted":

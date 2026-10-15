@@ -413,6 +413,40 @@ export class SessionTabsStore {
     if (added.length)
       this.publish(id, { ...previous, tabs: [...previous.tabs, ...added] });
   }
+  /**
+   * Applies an authoritative removal-pending (unavailable) profile to every
+   * retained Session snapshot, including inactive Sessions that never poll.
+   * Only Page descriptors of exactly `profile` are removed, each through the
+   * `closePage` selection rule. Descriptors owned by the caller's operation
+   * (`owned`) or by an unsettled original Close in any Session or product
+   * window survive. Other profiles, non-Page tabs, ordering and unrelated
+   * selections are untouched. The reconciliation is store-only: it never
+   * sends a native operation, never selects a Session and is idempotent
+   * because Sessions without a removable descriptor publish nothing.
+   */
+  reconcileUnavailableProfile(
+    profile: string,
+    owned: ReadonlySet<string> = new Set(),
+  ) {
+    const removals = [...this.sessions.entries()].flatMap(([id, snapshot]) =>
+      snapshot.tabs.flatMap((tab) =>
+        tab.kind === SessionTabKind.Page &&
+        tab.profile === profile &&
+        !owned.has(tab.id) &&
+        !this.pendingCloses.has(this.pendingCloseKey(profile, tab.id))
+          ? [{ id, page: tab.id }]
+          : [],
+      ),
+    );
+    for (const { id, page } of removals) this.closePage(id, profile, page);
+    if (removals.length)
+      console.info("delidev.browser_unavailable_profile", {
+        phase: "retained_sessions_reconciled",
+        profile,
+        removed: removals.length,
+        sessions: new Set(removals.map(({ id }) => id)).size,
+      });
+  }
   position(id: string, number: number) {
     const tab = this.snapshot(id).tabs[number - 1];
     if (number >= 1 && number <= 9 && tab) this.select(id, sessionTabKey(tab));

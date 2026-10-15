@@ -426,7 +426,7 @@ func TestSetupTokenEnvironmentIsolation(t *testing.T) {
 }
 
 func TestManagedTokenExecutionEnvironmentAndInitialization(t *testing.T) {
-	for _, mode := range []string{"managed-token-valid", "managed-token-api-source", "managed-token-identity", "managed-token-wrong-source", "managed-token-no-source"} {
+	for _, mode := range []string{"managed-token-valid", "managed-token-api-source", "managed-token-identity", "managed-token-wrong-source", "managed-token-no-source", "managed-token-valid-descriptor-additions"} {
 		t.Run(mode, func(t *testing.T) {
 			config, logs := apiFixtureConfig(t, mode)
 			config.ManagedToken = []byte(managedTokenFixtureToken)
@@ -465,7 +465,7 @@ func TestManagedTokenExecutionEnvironmentAndInitialization(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			stream, err := OpenAPIStream(ctx, config)
-			if mode == "managed-token-valid" {
+			if strings.HasPrefix(mode, "managed-token-valid") {
 				if err != nil {
 					t.Fatal(err)
 				}

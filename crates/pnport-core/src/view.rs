@@ -71,7 +71,7 @@ impl View {
         // Runtime sessions already exist and must match native descriptor
         // spelling, including Darwin's /var alias. Data-only fixtures may
         // reserve a session path before creating it.
-        let session = fs::canonicalize(&session).unwrap_or(session);
+        let session = normalize(&fs::canonicalize(&session).unwrap_or(session));
         Self {
             graph,
             cache,
@@ -176,7 +176,10 @@ impl View {
             match fs::symlink_metadata(physical.join(&name)) {
                 Ok(metadata)
                     if (directory && metadata.is_dir())
-                        || (!directory && metadata.file_type().is_symlink()) => {}
+                        || (!directory && metadata.file_type().is_symlink())
+                        || (cfg!(windows)
+                            && physical.starts_with(self.session.join("views"))
+                            && metadata.is_dir()) => {}
                 Ok(_) => {
                     return Err(Error::new(
                         Code::PnportFilesystemConflict,

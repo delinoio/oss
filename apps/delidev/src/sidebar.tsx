@@ -43,6 +43,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { HarnessMark, knownHarness } from "./harness-mark";
 
 import { FailureCode } from "@delinoio/delidev-api-client";
 import { Workspace, workspaceNames } from "./documents";
@@ -570,6 +571,13 @@ function SessionRow({
         .map((state) => ` ${state}.`)
         .join(""),
     });
+  // Only ordinary conversations show a harness mark; Fork, Sidechat and
+  // Unknown rows always keep their relationship or fallback glyph.
+  const rowHarness =
+    row.conversationKind === ConversationKind.WorkSession ||
+    row.conversationKind === ConversationKind.GeneralChat
+      ? knownHarness(row.harness)
+      : undefined;
   const workspaceIcon =
     row.workspace === Workspace.Worktree
       ? "branch"
@@ -612,14 +620,18 @@ function SessionRow({
           )
         }
       >
-        <Icon
-          name={
-            conversationKindIcons[
-              row.conversationKind ?? ConversationKind.Unknown
-            ]
-          }
-          className="sidebar-workspace-icon"
-        />
+        {rowHarness ? (
+          <HarnessMark harness={rowHarness} className="sidebar-harness-mark" />
+        ) : (
+          <Icon
+            name={
+              conversationKindIcons[
+                row.conversationKind ?? ConversationKind.Unknown
+              ]
+            }
+            className="sidebar-workspace-icon"
+          />
+        )}
         <span
           className="sidebar-session-title"
           onDoubleClick={(event) => {

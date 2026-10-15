@@ -70,6 +70,17 @@ async function javascriptBuildProvenance(sourceRevision) {
   );
 }
 
+// Stable, key-ordered identity of a JavaScript build for equality checks.
+function snapshotJavaScriptProvenance(provenance) {
+  const files = Object.entries(provenance?.files ?? {}).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  return JSON.stringify({
+    sourceRevision: provenance?.sourceRevision ?? null,
+    files,
+  });
+}
+
 function maxRssBytes() {
   // libuv normalizes ru_maxrss to KiB, including on Windows.
   return process.resourceUsage().maxRSS * 1024;
@@ -287,17 +298,22 @@ async function lockedUfbxVersion() {
   );
 }
 
-export async function sourceStatus(destination) {
-  const relativeDestination = relative(root, destination);
+export async function sourceStatus(destination, repository = root) {
+  const relativeDestination = relative(repository, destination);
   const insideRepository =
     relativeDestination &&
     !isAbsolute(relativeDestination) &&
     relativeDestination !== ".." &&
     !relativeDestination.startsWith(`..${sep}`);
   const args = ["status", "--porcelain=v1", "--untracked-files=all", "--", "."];
+  // `top` anchors the pathspec to the repository root and `literal` disables
+  // glob matching, so names such as `[ab].json` or `*.json` exclude only the
+  // exact benchmark destination.
   if (insideRepository)
-    args.push(`:(exclude)${relativeDestination.split(sep).join("/")}`);
-  const { stdout } = await execFile("git", args, { cwd: root });
+    args.push(
+      `:(top,literal,exclude)${relativeDestination.split(sep).join("/")}`,
+    );
+  const { stdout } = await execFile("git", args, { cwd: repository });
   return stdout;
 }
 
@@ -319,6 +335,16 @@ export async function runBenchmark(output, options = {}) {
       options.nativeProvenance ?? nativeBuildProvenance(sourceRevision.trim());
     return typeof configured === "function" ? configured() : configured;
   };
+  const readJavaScriptProvenance = async () => {
+    const configured =
+      options.javascriptProvenance ??
+      javascriptBuildProvenance(sourceRevision.trim());
+    return typeof configured === "function" ? configured() : configured;
+  };
+  // Validate and snapshot JavaScript identity before any child loads dist.
+  const initialJavaScript = snapshotJavaScriptProvenance(
+    await readJavaScriptProvenance(),
+  );
   const initialNative = { ...(await readNativeProvenance()) };
   await mkdir(dirname(destination), { recursive: true });
   const owned = await mkdtemp(
@@ -384,8 +410,13 @@ export async function runBenchmark(output, options = {}) {
           : `ufbx ${ufbxVersion}`;
     }
     if (signal?.aborted) throw new Error("Scene benchmark cancelled.");
-    await (options.javascriptProvenance ??
-      javascriptBuildProvenance(sourceRevision.trim()));
+    const finalJavaScript = snapshotJavaScriptProvenance(
+      await readJavaScriptProvenance(),
+    );
+    if (finalJavaScript !== initialJavaScript)
+      throw new Error(
+        "React Forge JavaScript build changed during scene benchmark.",
+      );
     const native = await readNativeProvenance();
     if (
       native.nativeBuildProfile !== initialNative.nativeBuildProfile ||

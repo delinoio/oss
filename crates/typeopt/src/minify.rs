@@ -483,6 +483,20 @@ fn definitely_not_callable(expression: &Expr) -> bool {
     }
 }
 
+/// Whether a computed property key may name `toString` at runtime. Only string
+/// literals other than `toString`, numbers and bigints are known to be safe;
+/// every other expression (identifiers, templates, calls, `"toString"` itself)
+/// is treated as a possible `toString` read.
+fn computed_key_may_be_to_string(key: &Expr) -> bool {
+    !matches!(
+        key,
+        Expr::Lit(swc_core::ecma::ast::Lit::Str(value)) if value.value != "toString"
+    ) && !matches!(
+        key,
+        Expr::Lit(swc_core::ecma::ast::Lit::Num(_) | swc_core::ecma::ast::Lit::BigInt(_))
+    )
+}
+
 /// A source-text reflection boundary anywhere in the bundle can observe a
 /// callable defined in another chunk. Without a closed proof of the target,
 /// publication must keep every edited chunk's pre-minification text.
@@ -546,15 +560,8 @@ impl Visit for SourceReflection {
                 self.function_prototype = true;
             }
             MemberProp::Computed(computed) => {
-                let known_other_key = matches!(&*computed.expr,
-                    Expr::Lit(swc_core::ecma::ast::Lit::Str(value)) if value.value != "toString")
-                    || matches!(
-                        &*computed.expr,
-                        Expr::Lit(
-                            swc_core::ecma::ast::Lit::Num(_) | swc_core::ecma::ast::Lit::BigInt(_)
-                        )
-                    );
-                self.member_to_string |= !known_other_key && !definitely_not_callable(&member.obj);
+                self.member_to_string |= computed_key_may_be_to_string(&computed.expr)
+                    && !definitely_not_callable(&member.obj);
             }
             _ => {}
         }
@@ -566,6 +573,9 @@ impl Visit for SourceReflection {
             ObjectPatProp::KeyValue(key_value) => match &key_value.key {
                 PropName::Ident(name) => name.sym == "toString",
                 PropName::Str(value) => value.value == "toString",
+                // A pattern has no object expression to prove non-callable,
+                // so only a known non-`toString` literal key is safe.
+                PropName::Computed(computed) => computed_key_may_be_to_string(&computed.expr),
                 _ => false,
             },
             ObjectPatProp::Assign(assignment) => assignment.key.id.sym == "toString",
@@ -765,6 +775,20 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_reflection_covers_computed_pattern_keys() {
+        assert!(may_observe_function_source(
+            "const {[\"toString\"]: x} = f;"
+        ));
+        assert!(may_observe_function_source("const {[key]: x} = f;"));
+        assert!(may_observe_function_source("const {[`${a}`]: x} = f;"));
+        assert!(may_observe_function_source("const {toString: x} = f;"));
+        assert!(may_observe_function_source("const {\"toString\": x} = f;"));
+        assert!(!may_observe_function_source("const {[\"name\"]: x} = f;"));
+        assert!(!may_observe_function_source("const {[0]: x} = f;"));
+        assert!(!may_observe_function_source("const {[1n]: x} = f;"));
+    }
 
     #[test]
     fn minifies_and_maps_back_to_the_input() {
