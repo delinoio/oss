@@ -82,7 +82,11 @@ function select(input: HTMLTextAreaElement, start: number, end = start) {
 }
 function type(input: HTMLTextAreaElement, text: string) {
   fireEvent.change(input, {
-    target: { value: text, selectionStart: text.length, selectionEnd: text.length },
+    target: {
+      value: text,
+      selectionStart: text.length,
+      selectionEnd: text.length,
+    },
   });
 }
 
@@ -141,8 +145,12 @@ it("reveals the source for an interior caret and collapses when leaving", () => 
 });
 
 it("keeps invalid Markdown links as visible source", () => {
-  const input = view("[a](javascript:alert(1)) [b](https://user:pw@example.com)");
-  expect(input.value).toBe("[a](javascript:alert(1)) [b](https://user:pw@example.com)");
+  const input = view(
+    "[a](javascript:alert(1)) [b](https://user:pw@example.com)",
+  );
+  expect(input.value).toBe(
+    "[a](javascript:alert(1)) [b](https://user:pw@example.com)",
+  );
 });
 
 it("undoes and redoes a conversion together with its trigger", () => {

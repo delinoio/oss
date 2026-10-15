@@ -300,7 +300,8 @@ it("queues a pasted follow-up URL as canonical Markdown", async () => {
   );
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
   expect(
-    JSON.parse(new TextDecoder().decode(f.enqueue.mock.calls[0]![0].documentJson))
-      .prompt,
+    JSON.parse(
+      new TextDecoder().decode(f.enqueue.mock.calls[0]![0].documentJson),
+    ).prompt,
   ).toBe(`[${url}](${url})`);
 }, 10_000);

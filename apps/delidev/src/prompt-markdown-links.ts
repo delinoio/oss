@@ -255,7 +255,10 @@ export function convertBareUrls(
     const link = markdownLinkFor(token.url);
     result += text.slice(cursor, token.start) + link;
     cursor = token.end;
-    shifts.push({ at: token.end, delta: link.length - (token.end - token.start) });
+    shifts.push({
+      at: token.end,
+      delta: link.length - (token.end - token.start),
+    });
   }
   result += text.slice(cursor);
   return {
@@ -384,7 +387,8 @@ export function diffDisplay(
   )
     suffix += 1;
   let prefix = 0;
-  while (prefix < limit - suffix && before[prefix] === after[prefix]) prefix += 1;
+  while (prefix < limit - suffix && before[prefix] === after[prefix])
+    prefix += 1;
   return {
     start: prefix,
     end: before.length - suffix,

@@ -77,11 +77,13 @@ function historyAction(event: {
     : event.ctrlKey && !event.metaKey;
   if (!primary || event.altKey) return;
   const key = event.key.toLowerCase();
-  if (key === "z") return event.shiftKey ? HistoryAction.Redo : HistoryAction.Undo;
+  if (key === "z")
+    return event.shiftKey ? HistoryAction.Redo : HistoryAction.Undo;
   if (key === "y" && !mac && !event.shiftKey) return HistoryAction.Redo;
 }
 const selectionDirection = (input: HTMLTextAreaElement) =>
-  input.selectionDirection === "backward" || input.selectionDirection === "forward"
+  input.selectionDirection === "backward" ||
+  input.selectionDirection === "forward"
     ? input.selectionDirection
     : "none";
 
@@ -670,7 +672,11 @@ export function useSkillCompletion({
     setRevealed(
       composing.current && replaced
         ? shiftStarts(revealedRef.current, replaced, insertedLength)
-        : revealedStarts(scanMarkdown(next).links, selection.start, selection.end),
+        : revealedStarts(
+            scanMarkdown(next).links,
+            selection.start,
+            selection.end,
+          ),
     );
     pendingSelection.current = true;
     return true;
@@ -731,7 +737,8 @@ export function useSkillCompletion({
     if (!canEdit()) return;
     const edit = diffDisplay(layout.display, nextDisplay, position);
     const range = canonicalRangeForDisplay(layout, edit.start, edit.end);
-    let next = value.slice(0, range.start) + edit.inserted + value.slice(range.end);
+    let next =
+      value.slice(0, range.start) + edit.inserted + value.slice(range.end);
     // The reported caret decides where inside the inserted text it lands.
     let caretAt =
       range.start +
@@ -861,13 +868,19 @@ export function useSkillCompletion({
   const onCopy = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const range = selectedCanonical();
     if (!range || composing.current) return;
-    event.clipboardData.setData("text/plain", value.slice(range.start, range.end));
+    event.clipboardData.setData(
+      "text/plain",
+      value.slice(range.start, range.end),
+    );
     event.preventDefault();
   };
   const onCut = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const range = selectedCanonical();
     if (!range || composing.current || !canEdit()) return;
-    event.clipboardData.setData("text/plain", value.slice(range.start, range.end));
+    event.clipboardData.setData(
+      "text/plain",
+      value.slice(range.start, range.end),
+    );
     event.preventDefault();
     const next = value.slice(0, range.start) + value.slice(range.end);
     commit(
@@ -883,17 +896,29 @@ export function useSkillCompletion({
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const input = textarea.current;
     // Image paste ownership stays with the attachment input.
-    if (!input || !canEdit() || composing.current || event.clipboardData.files.length)
+    if (
+      !input ||
+      !canEdit() ||
+      composing.current ||
+      event.clipboardData.files.length
+    )
       return;
-    const pasted = event.clipboardData.getData("text/plain").replace(/\r\n?/gu, "\n");
+    const pasted = event.clipboardData
+      .getData("text/plain")
+      .replace(/\r\n?/gu, "\n");
     if (!/https?:\/\//iu.test(pasted)) return;
     const range = canonicalRangeForDisplay(
       layout,
       input.selectionStart,
       input.selectionEnd,
     );
-    const inserted = value.slice(0, range.start) + pasted + value.slice(range.end);
-    const conversion = convertBareUrls(inserted, range.start, range.start + pasted.length);
+    const inserted =
+      value.slice(0, range.start) + pasted + value.slice(range.end);
+    const conversion = convertBareUrls(
+      inserted,
+      range.start,
+      range.start + pasted.length,
+    );
     // Over the limit or nothing to convert: the native paste proceeds untouched.
     if (!conversion || promptBytes(conversion.text) > MAX_PROMPT_BYTES) return;
     event.preventDefault();
@@ -938,9 +963,7 @@ export function useSkillCompletion({
     const exact =
       !event.altKey &&
       !event.shiftKey &&
-      (mac
-        ? event.metaKey && !event.ctrlKey
-        : event.ctrlKey && !event.metaKey);
+      (mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey);
     if (!exact || input.selectionStart !== input.selectionEnd) return;
     // Without a native opener the link stays ordinary editable text.
     if (!externalLinksAvailable()) return;
@@ -1235,7 +1258,10 @@ export function useSkillCompletion({
 
 // Skill ranges inside or touching a collapsed link are not painted; the link
 // label owns that text. Other ranges move into display coordinates.
-function displayRanges(layout: PromptLayout, ranges: SkillToken[]): SkillToken[] {
+function displayRanges(
+  layout: PromptLayout,
+  ranges: SkillToken[],
+): SkillToken[] {
   return ranges.flatMap((range) =>
     layout.collapsed.some(
       (link) => range.start < link.end && range.end > link.start,

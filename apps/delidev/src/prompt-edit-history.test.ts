@@ -5,7 +5,11 @@ import { PromptEditHistory, PromptEditKind } from "./prompt-edit-history";
 const snap = (value: string) => ({
   value,
   bindings: [],
-  selection: { start: value.length, end: value.length, direction: "none" as const },
+  selection: {
+    start: value.length,
+    end: value.length,
+    direction: "none" as const,
+  },
 });
 
 it("coalesces typing and keeps discrete edits as separate steps", () => {

@@ -128,19 +128,35 @@ it("maps display edits and expands edits that cross a link boundary", () => {
   const link = layout.collapsed[0]!;
   expect(canonicalRangeForDisplay(layout, 0, 1)).toEqual({ start: 0, end: 1 });
   expect(
-    canonicalRangeForDisplay(layout, link.displayStart - 1, link.displayStart + 2),
+    canonicalRangeForDisplay(
+      layout,
+      link.displayStart - 1,
+      link.displayStart + 2,
+    ),
   ).toEqual({ start: link.start - 1, end: link.end });
   expect(
     canonicalRangeForDisplay(layout, link.displayStart, link.displayEnd),
   ).toEqual({ start: link.start, end: link.end });
   expect(
-    canonicalRangeForDisplay(layout, link.displayStart + 1, link.displayStart + 3),
+    canonicalRangeForDisplay(
+      layout,
+      link.displayStart + 1,
+      link.displayStart + 3,
+    ),
   ).toEqual({ start: link.labelStart + 1, end: link.labelStart + 3 });
 });
 
 it("resolves repeated characters with the reported caret", () => {
-  expect(diffDisplay("ab", "abb", 2)).toEqual({ start: 1, end: 1, inserted: "b" });
-  expect(diffDisplay("abc", "ac", 1)).toEqual({ start: 1, end: 2, inserted: "" });
+  expect(diffDisplay("ab", "abb", 2)).toEqual({
+    start: 1,
+    end: 1,
+    inserted: "b",
+  });
+  expect(diffDisplay("abc", "ac", 1)).toEqual({
+    start: 1,
+    end: 2,
+    inserted: "",
+  });
 });
 
 it("shifts retained link starts across a replacement", () => {

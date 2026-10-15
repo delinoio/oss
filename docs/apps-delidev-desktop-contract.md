@@ -6481,7 +6481,6 @@ Skill completion handles keys first. IME, modifiers, selections and pending or u
 
 API quota bars share the subscription percentage color rule: interpolate danger-text → warning-text at 0–50% and warning-text → success-text at 50–100%, using the displayed rounded integer and active semantic tokens. Accent, WebKit and Mozilla fills use one uniform color independent of freshness; text continues to distinguish retained and unavailable evidence. This presentation grants no quota recovery or account authority.
 
-
 ### Composer Markdown links
 
 All four composer placements (project creation, General Chat creation, session

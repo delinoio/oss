@@ -219,9 +219,9 @@ it.each([NewSessionKind.Session, NewSessionKind.GeneralChat])(
       clipboardData: { getData: () => url, files: [] },
     });
     expect(input.value).toBe(url);
-    expect(
-      document.querySelector(".prompt-markdown-link")?.textContent,
-    ).toBe(url);
+    expect(document.querySelector(".prompt-markdown-link")?.textContent).toBe(
+      url,
+    );
     input.setSelectionRange(5, 5);
     fireEvent.select(input);
     expect(input.value).toBe(`[${url}](${url})`);
