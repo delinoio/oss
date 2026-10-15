@@ -43,6 +43,16 @@ pub struct EngineSpec {
     pub adapter_file: &'static str,
 }
 
+impl EngineSpec {
+    /// Whether an installed engine version is the frozen matrix version. The
+    /// comparison is byte-exact, matching the adapter's own check: a version
+    /// with surrounding whitespace is never the matrix version. Every
+    /// support decision uses this one function.
+    pub fn is_matrix_version(&self, version: &str) -> bool {
+        version == self.version
+    }
+}
+
 pub const VITE: EngineSpec = EngineSpec {
     package: "vite",
     version: "8.3.4",
@@ -104,4 +114,27 @@ pub fn matrix_text() -> String {
          results.\n",
     );
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matrix_version_comparison_is_exact() {
+        for choice in ALL {
+            let spec = choice.spec();
+            assert!(spec.is_matrix_version(spec.version));
+            for other in [
+                format!(" {}", spec.version),
+                format!("{} ", spec.version),
+                format!("{}\n", spec.version),
+                format!("v{}", spec.version),
+                String::new(),
+                "unknown".to_owned(),
+            ] {
+                assert!(!spec.is_matrix_version(&other), "{other:?}");
+            }
+        }
+    }
 }

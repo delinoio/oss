@@ -106,7 +106,7 @@ pub fn context_root(collection: &Collection, selected_root: &Path) -> PathBuf {
 
 pub fn engine_identity(bundler: BundlerChoice, collection: &Collection) -> EngineIdentity {
     let spec = bundler.spec();
-    let support = if collection.bundler_version == spec.version {
+    let support = if spec.is_matrix_version(&collection.bundler_version) {
         EngineSupport::Supported
     } else {
         EngineSupport::UnsupportedSelected
@@ -490,15 +490,18 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             unreadable_sources,
             unverified_sources,
             vite_env_source_gaps,
-            (collection.bundler_version != input.bundler.spec().version)
-                .then(|| {
-                    format!(
-                        "{} {}",
-                        input.bundler.spec().package,
-                        input.bundler.spec().version
-                    )
-                })
-                .as_deref(),
+            (!input
+                .bundler
+                .spec()
+                .is_matrix_version(&collection.bundler_version))
+            .then(|| {
+                format!(
+                    "{} {}",
+                    input.bundler.spec().package,
+                    input.bundler.spec().version
+                )
+            })
+            .as_deref(),
         ),
         chunks: chunk_sizes,
         problems,
@@ -3058,5 +3061,33 @@ mod tests {
             !collection(vec![PRELOAD_HELPER, APP_MODULE], vec![helper, app])
                 .is_virtual_only_chunk("a.js")
         );
+    }
+
+    #[test]
+    fn collected_engine_support_uses_the_exact_matrix_version() {
+        for bundler in [BundlerChoice::Vite, BundlerChoice::Rspack] {
+            let spec = bundler.spec();
+            for (version, expected) in [
+                (spec.version.to_owned(), EngineSupport::Supported),
+                (
+                    format!(" {}", spec.version),
+                    EngineSupport::UnsupportedSelected,
+                ),
+                (
+                    format!("{} ", spec.version),
+                    EngineSupport::UnsupportedSelected,
+                ),
+                ("0.0.0".to_owned(), EngineSupport::UnsupportedSelected),
+            ] {
+                let collection = Collection {
+                    bundler_package: spec.package.to_owned(),
+                    bundler_version: version.clone(),
+                    ..Collection::default()
+                };
+                let identity = engine_identity(bundler, &collection);
+                assert_eq!(identity.support, expected, "{version:?}");
+                assert_eq!(identity.bundler_version, version);
+            }
+        }
     }
 }
