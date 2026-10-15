@@ -393,3 +393,23 @@ it("indexes the Tailscale destinations in English and Korean", async () => {
     ),
   ).toContain(SettingsSearchTarget.TailscaleDevices);
 });
+it("indexes Connections only as its category destination", async () => {
+  const connections = [
+    {
+      category: SettingsCategory.Diagnostics,
+      label: "Connections",
+      help: "Manage this computer and your saved servers.",
+    },
+  ];
+  expect(
+    matchSettings("connections", connections).map((row) => row.target),
+  ).toEqual([SettingsSearchTarget.Category]);
+  expect(matchSettings("current connection", connections)).toEqual([]);
+  expect(Object.values(SettingsSearchTarget)).not.toContain(
+    "current-connection",
+  );
+  await i18n.changeLanguage("ko");
+  expect(
+    matchSettings("현재 연결", [{ ...connections[0], label: "연결" }]),
+  ).toEqual([]);
+});

@@ -174,6 +174,7 @@ function Shell({
   appInformationSettings,
   runnerTailscale,
   connectionTarget,
+  connectionPageOpen = false,
   onConnectionHelp,
   readLocalWorker,
   controlLocalWorker,
@@ -193,6 +194,8 @@ function Shell({
   appInformationSettings?: ReactNode;
   runnerTailscale?: PublishRunnerTailscaleSlots;
   connectionTarget?: HTMLElement;
+  /** True while the local window's Connections page is mounted. */
+  connectionPageOpen?: boolean;
   onConnectionHelp?: (target: HTMLElement | undefined) => void;
   readLocalWorker?: ReadLocalWorkerProof;
 }) {
@@ -1029,6 +1032,7 @@ function Shell({
       <LocalConnectionPresentationProvider
         target={connectionTarget}
         inline={!connectionReady}
+        pageOpen={connectionPageOpen}
         onRequest={onConnectionHelp}
       >
         <RunnerRemediationProvider
@@ -1405,6 +1409,7 @@ export function App({
   appInformationSettings,
   runnerTailscale,
   connectionTarget,
+  connectionPageOpen = false,
   onConnectionHelp,
   connectionReady = true,
   connectionEpoch = 0,
@@ -1425,6 +1430,8 @@ export function App({
   appInformationSettings?: ReactNode;
   runnerTailscale?: PublishRunnerTailscaleSlots;
   connectionTarget?: HTMLElement;
+  /** True while the local window's Connections page is mounted. */
+  connectionPageOpen?: boolean;
   onConnectionHelp?: (target: HTMLElement | undefined) => void;
   connectionReady?: boolean;
   connectionEpoch?: number;
@@ -1479,6 +1486,7 @@ export function App({
                                   }
                                   runnerTailscale={runnerTailscale}
                                   connectionTarget={connectionTarget}
+                                  connectionPageOpen={connectionPageOpen}
                                   onConnectionHelp={onConnectionHelp}
                                   localServer={localServer}
                                   readLocalWorker={readLocalWorker}
