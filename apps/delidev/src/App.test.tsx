@@ -3951,6 +3951,49 @@ it("rechecks the original welcome status failure without creating or controlling
   expect(value.controls).not.toHaveBeenCalled();
 });
 
+it.each([
+  ["en", "Your sessions, in one place", "Select a retained session or start a new conversation."],
+  ["ko", "내 세션을 한곳에서", "유지된 세션을 선택하거나 새 대화를 시작하세요."],
+])(
+  "renders only the %s welcome heading when no session is selected",
+  async (locale, heading, removedSubtitle) => {
+    const value = fixture();
+    try {
+      await act(() => i18n.changeLanguage(locale));
+      render(<App transport={value.transport} />);
+      const title = await screen.findByRole("heading", { name: heading });
+      const welcome = title.closest("section.welcome")!;
+      expect(welcome.children).toHaveLength(1);
+      expect(welcome.querySelector("p")).toBeNull();
+      expect(screen.queryByText(removedSubtitle)).toBeNull();
+      expect(screen.queryByRole("button", { name: /retry/i })).toBeNull();
+    } finally {
+      await act(() => i18n.changeLanguage("en"));
+    }
+  },
+);
+
+it("keeps the welcome status failure and its retry action without a subtitle", async () => {
+  const value = fixture();
+  value.status.mockRejectedValueOnce(
+    new ConnectError("Fixture status failure", Code.PermissionDenied),
+  );
+  render(<App transport={value.transport} />);
+  const retry = await screen.findByRole("button", {
+    name: "Retry current read",
+  });
+  const welcome = retry.closest("section.welcome")!;
+  expect(
+    within(welcome).getByRole("heading", {
+      name: "Your sessions, in one place",
+    }),
+  ).toBeTruthy();
+  expect(welcome.querySelector(":scope > p")).toBeNull();
+  expect(
+    screen.queryByText("Select a retained session or start a new conversation."),
+  ).toBeNull();
+});
+
 it(
   "exposes the wide sidebar shortcut on the persistent main landmark",
   async () => {
