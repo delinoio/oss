@@ -630,9 +630,42 @@ fn opens_statement_block(bytes: &[u8], index: usize, ignored: &[(usize, usize)])
     };
     match token_ending_at(bytes, end, ignored) {
         TokenBefore::Punct(b';' | b'{' | b'}' | b')') | TokenBefore::Name => true,
+        TokenBefore::Punct(b':') => colon_opens_block(bytes, end, ignored),
         TokenBefore::Keyword(word) => {
             matches!(word, "else" | "do" | "try" | "finally" | "catch" | "class")
         }
+        _ => false,
+    }
+}
+
+/// True when the `:` that ends at `colon_end` belongs to a label or a `case`
+/// clause, so that a `{` after it opens a block. Any other `:` (property
+/// value, conditional branch, type annotation) is followed by an object
+/// literal. A label counts only after a statement boundary (`;`, `}` or the
+/// start of the text) and a `case` clause only for a single-token test, because
+/// a lexical scan cannot tell a label from a property name after `{`.
+fn colon_opens_block(bytes: &[u8], colon_end: usize, ignored: &[(usize, usize)]) -> bool {
+    let Some(label_end) = previous_token_end(bytes, colon_end - 1, ignored) else {
+        return false;
+    };
+    let token = token_ending_at(bytes, label_end, ignored);
+    let label_start = match token {
+        TokenBefore::Name | TokenBefore::Number => label_end - word_before(bytes, label_end).len(),
+        TokenBefore::Literal => {
+            let position = ignored.partition_point(|(start, _)| *start < label_end);
+            match position.checked_sub(1).and_then(|at| ignored.get(at)) {
+                Some(&(start, _)) => start,
+                None => return false,
+            }
+        }
+        _ => return false,
+    };
+    let Some(before_end) = previous_token_end(bytes, label_start, ignored) else {
+        return token == TokenBefore::Name;
+    };
+    match token_ending_at(bytes, before_end, ignored) {
+        TokenBefore::Keyword("case") => true,
+        TokenBefore::Punct(b';' | b'}') => token == TokenBefore::Name,
         _ => false,
     }
 }
@@ -2449,6 +2482,52 @@ mod tests {
         assert!(path_is_dependency("packages/a/node_modules/x/index.js"));
         assert!(path_is_dependency("../node_modules/x/index.js"));
         assert!(!path_is_dependency("src/node_modules_like/index.js"));
+    }
+
+    #[test]
+    fn blocks_after_labels_and_case_clauses_are_statement_blocks() {
+        // Each cell: source, whether the first `{` opens a statement block.
+        let cells: &[(&str, bool)] = &[
+            ("a;label: {", true),
+            ("label: {", true),
+            ("x();\nlabel: {", true),
+            ("if (a) { b }\nlabel: {", true),
+            ("switch (a) { case 1: {", true),
+            ("switch (a) { case \"s\": {", true),
+            ("switch (a) { case b: {", true),
+            ("switch (a) { case 1: x(); break; default: {", true),
+            // Object literals keep their reading.
+            ("x = { a: {", false),
+            ("x = c ? d : {", false),
+            ("f(a, b ? c : {", false),
+            ("x = { default: {", false),
+            ("x = { a: 1, b: {", false),
+            ("x = { 'a': {", false),
+            ("x = y.z ? w.v : {", false),
+        ];
+        for (source, expected) in cells {
+            let index = source.rfind('{').unwrap();
+            let ranges = non_code_ranges(&source[..index]);
+            assert_eq!(
+                opens_statement_block(source.as_bytes(), index, &ranges),
+                *expected,
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn regex_after_a_labeled_or_case_block_is_not_code() {
+        for source in [
+            "label: { work(); }\n/process.env.FLAG&&run/.test(source)",
+            "switch (a) { case 1: { work(); }\n/process.env.FLAG&&run/.test(s) }",
+        ] {
+            let ranges = non_code_ranges(source);
+            assert!(
+                in_ranges(&ranges, source.find("process.env").unwrap()),
+                "{source}"
+            );
+        }
     }
 
     #[test]
