@@ -6,12 +6,10 @@ A managed subscription account runs independent sessions concurrently through a
 durable account owner plus execution members instead of account-wide execution
 exclusivity. The managed Codex lane is negotiated by Worker
 `SHARED_SUBSCRIPTION_OWNER_V1 = 67` and the device-owned native Claude lane by
-Worker `CLAUDE_DEVICE_OWNED_MEMBERS_V1 = 68` (both reserved in the
-[protocol contract](protos-delidev-v1-contract.md)). Only capability 68 is
-advertised by the shipped Worker. Capability 67 is reserved and not advertised
-until the Codex Worker slice (tracked by issue 3466) lands, so the server's
-Codex shared-owner branch is inactive for the shipped Worker and managed Codex
-stays exclusive per account. Where a lane is negotiated, independent sessions that
+Worker `CLAUDE_DEVICE_OWNED_MEMBERS_V1 = 68` (both declared in the
+[protocol contract](protos-delidev-v1-contract.md)). The Worker advertises 67
+only after a server echo, verified managed Codex installation and parallel-session
+negotiation. An older server or Worker retains exclusive Codex execution. Where a lane is negotiated, independent sessions that
 use one account on its original Runner Device run concurrently, including more
 than four, with no session-count cap, setting or queue depth. Account lifecycle
 authority stays exclusive.
@@ -166,24 +164,38 @@ previous session's private history profile, resolved through the native profile
 registry. A foreign owner, history directory or
 digest fails closed.
 
-**Codex Worker activation (not yet implemented).** The server accepts and
-echoes Worker capability 67 and models members for the managed Codex lane, but no
-Worker advertises it yet, so managed Codex execution stays exclusive per account.
-Activation requires one account-scoped app-server and private authentication
-runtime that shares the native `AuthManager` across independently routed threads;
-completion of one thread must not rotate credentials or close a sibling; early
-workspace release requires exact `thread/closed` after `thread/unsubscribe` plus
-independently proven descendant closure, otherwise the member's workspace and
-cleanup stay retained until final owner containment; and the retained per-session
-history needs an explicit owner-home design before simultaneous threads can share
-one native home. These remain unimplemented and unvalidated.
+**Codex Worker activation.** A negotiated managed Codex owner launches one
+account-scoped app-server in a private `CODEX_HOME`; each execution owns a
+separate native thread, event route, publication journal and workspace lease.
+Only the owner captures refreshed authentication and reports an `OWNER` Finish.
+Earlier members report `MEMBER` Finish without authentication. A member releases
+its workspace only after its exact `thread/unsubscribe` and `thread/closed`,
+native descendant inventory and its own process-index reconciliation succeed.
+Missing proof retains the member workspace until the owner process and its
+descendants are contained. The owner reconciles its original process index before
+authentication removal and retained workspace cleanup. Unknown Finish outcomes
+retain their original request identifiers and block admission until settlement.
+Owner cleanup streams the complete accumulated account history with bounded
+memory to detect raw and encoded credential remnants. It does not apply the
+single-execution file-count or byte limits to that retained shared history;
+the existing singleton cleanup limits remain in force.
+Native owner loss fences every member and never replays input. Fresh checkpoints
+bind an account home and exact native thread-history digest; version 1 history is
+imported only after the original checkpoint and rollout are verified. Invalid or
+unreadable history remains recovery-required. Native modes with process-wide
+options (including image generation, sidechat, fork, revert and compaction) keep
+exclusive singleton execution until their independent shared-profile behavior is
+verified. Fixture and build checks do not establish real-account or native-platform
+acceptance.
 
 **Scope boundary.** The server-owned Claude setup-token lane (Worker capability
 41, `claude_credential = server-token`) is explicitly outside the owner/member
 model and stays exclusive: it delivers a static server-held token inside one
 protected Take response, which conflicts with the rule that no member receives
 authentication bytes. OpenCode Go keeps its independent key-backed relay. Grok
-Build is not activated. Mock and build evidence for this model is not real-account,
+Build is not activated; its bound credential bundle library and identity
+commitment are owned by [the Grok contract](cmds-delidev-grok-subscription-contract.md#grok-bundle)
+and grant no login or execution. Mock and build evidence for this model is not real-account,
 real-renewal or cross-platform acceptance; that acceptance is future work and is
 not performed.
 
@@ -209,12 +221,15 @@ The originating change established System `CLAUDE_SUBSCRIPTIONS_V1 = 38`, Worker
 `NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` and the complete protocol allocation
 closure on main at `8a698d04d51f9db3a041b909edf85a7811f09ff3` before feature
 implementation. The server advertises 38 for the existing SubscriptionService's
-Claude branch. An original Worker advertises 20 only after verifying installed
+Claude branch, which now serves only existing device-owned accounts' execution,
+machine-bound logout and operations accepted before the retirement; it never gates new sign-in. An original Worker advertises 20 only after verifying installed
 Claude Code at or above the pinned `2.1.236` SemVer baseline through an isolated empty profile and confirmed cleanup.
 A reserved number or ordinary installation observation never grants this lane.
 
-An owner or authorized paired client explicitly selects a local or remote
-Runner Device for login. `claude auth login --claudeai`, `auth status` and
+Fresh machine-bound Claude login (`LOGIN`) and reauthentication (`REFRESH`) are retired: `requestClaudeSubscription` rejects them, including requests from the CLI and other clients, with `Unsupported` and server-owned sign-in guidance before it creates an operation or changes account state. The rejection runs inside the `Store.Mutate` closure after the request-receipt check, so a request accepted before the retirement still replays through its original receipt, reconciles through progress, cancellation and original Worker cleanup, and admits no new operation. A machine-bound `LOGIN` or `REFRESH` for an existing server-token account is routed to the managed handler first, which returns the same `Unsupported` retirement result instead of a generic invalid-argument error and changes nothing. Machine-bound `LOGOUT` of an existing device-owned account, execution, deletion, progress, cancellation and Take/Finish/recovery paths are unchanged. Claude login for new accounts is the [server-owned setup-token flow](#server-owned-claude-setup-token-accounts) under System 67.
+
+For accounts and operations accepted before the retirement, an owner or authorized paired client selects the original
+Runner Device. `claude auth login --claudeai`, `auth status` and
 `auth logout` run on that Worker with an account-specific private
 `CLAUDE_CONFIG_DIR` and matching secure-storage directory. DeliDev reconstructs
 the native environment; personal profiles, imported/external tokens,
@@ -299,7 +314,7 @@ Follow the desktop, protocol, harness, storage and structure contracts.
 
 The feature implements dedicated Codex subscription login, refresh, execution and logout in `cmds/delidev-cli`, `protos/delidev/v1/subscription.proto` and the generated DeliDev clients. The server owns authorization, encrypted credentials, generations and exclusive account leases. An explicitly selected paired Worker owns execution processes and its private authentication files. The independently negotiated server login lane owns browser login, authentication refresh and logout without a Worker. The complete product requirements remain in [the feature's snapshot](cmds-delidev-requirements.md).
 
-Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens` and concurrent use of one managed Codex bundle are excluded. Claude follows its independently negotiated device-owned lane above. Desktop login controls and native-owner quota/reset-credit operations are implemented together in the subscription lifecycle feature PR. Full native recovery and real-account/platform acceptance remain separately identified; fixtures cannot establish them. This implementation does not complete the feature or claim a release.
+Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens` and concurrent use of one managed Codex bundle are excluded. Claude device-owned accounts follow their independently negotiated lane above for execution and logout; new Claude sign-in follows the server-owned lane under System 67. Desktop login controls and native-owner quota/reset-credit operations are implemented together in the subscription lifecycle feature PR. Full native recovery and real-account/platform acceptance remain separately identified; fixtures cannot establish them. This implementation does not complete the feature or claim a release.
 
 ## Runtime and Language
 
@@ -357,7 +372,7 @@ The pinned native login-completed envelope includes nullable `onboardingEntrypoi
 
 ## Server browser login and account naming
 
-System `SERVER_SUBSCRIPTION_LOGIN_V1 = 30` activates the shared reservations established on main by the originating change. It is independent of service-account inventory capability 17 and Worker capabilities. An authenticated owner or paired client can omit `machine_id` for ChatGPT login, authentication refresh or logout. The server must have the verified Codex 0.151.0 installation. No Worker registration, startup or selection is required. Claude requires the explicit Runner lane under capability 38; Grok remains unsupported. API authentication, execution selection and existing quota authority do not change.
+System `SERVER_SUBSCRIPTION_LOGIN_V1 = 30` activates the shared reservations established on main by the originating change. It is independent of service-account inventory capability 17 and Worker capabilities. An authenticated owner or paired client can omit `machine_id` for ChatGPT login, authentication refresh or logout. The server must have the verified Codex 0.151.0 installation. No Worker registration, startup or selection is required. Claude sign-in never uses the Runner lane: it is server-owned under System `CLAUDE_SERVER_LOGIN_V1 = 67`, and capability 38 remains only for legacy device-owned execution, machine-bound logout and operations accepted before the retirement; Grok remains unsupported. API authentication, execution selection and existing quota authority do not change.
 
 Go records the original actor, operation, server epoch, bounded lifetime, finish identity and closed progress state in optional server-owned `server_operation` metadata. Accepted request replay returns the original receipt without another native launch. Claiming requires the original queued pending operation and no Worker credential lease; `native_started` is an exclusive credential fence. An existing execution lease retains ownership while queued refresh/logout waits. Cancellation is serialized with final publication. Successful native completion, joined process closure, final-file comparison, private-runtime removal, vault staging and old-reference cleanup precede confirmed success. Uncertain cleanup and previous-epoch operations retain recovery ownership and cannot relaunch or redistribute credentials. Optional JSON metadata requires no database migration and does not alter migrations 26–30.
 
@@ -493,7 +508,7 @@ Settings Add account is an explicit event that creates a default service-named a
 
 - Subscription cleanup failures log only closed native-process/auth-file/runtime stage and reason enums, the original operation reference and bounded inventory counters/limits. Preserve the public recovery classification, auth-file comparison, original process joins, directory identity, symlink refusal and existing 2,048-file/64 MiB limits. Runtime diagnostics contain no paths, native output, file content or credentials; they cannot clear existing recovery fences.
 
-- Claude subscription business logic belongs in claude_subscriptions.go under System 38. Bind original owner/client operation and Worker/device/instance/lease, claim codes before memory retention and consumption before once-only release. Idle progress/code polling is read-only. Cancel/revocation/expiry wins before connection publication; wrong Runner fails before input consumption. Retain uncertain ownership and admit original cleanup-only recovery without login/code replay. No Claude bundles, credential files, raw identity, URL/code persistence or quota inference.
+- Claude subscription business logic belongs in claude_subscriptions.go under System 38, which serves existing device-owned accounts and operations accepted before the retirement of machine-bound LOGIN/REFRESH (new sign-in is server-owned under System 67 in claude_managed.go, and that lane reports the same typed `Unsupported` retirement result for a machine-bound LOGIN or REFRESH on an existing server-token account). Bind original owner/client operation and Worker/device/instance/lease, claim codes before memory retention and consumption before once-only release. Idle progress/code polling is read-only. Cancel/revocation/expiry wins before connection publication; wrong Runner fails before input consumption. Retain uncertain ownership and admit original cleanup-only recovery without login/code replay. No Claude bundles, credential files, raw identity, URL/code persistence or quota inference.
 
 - `desktop_credentials.go` owns read-only startup Keychain checking for app-owned macOS servers. Page current connected API accounts, resolve immutable selected profiles, skip keyless/disconnected/removal/subscription ownership, and read exact current references. OAuth reads bypass refresh/exchange/cleanup. Clear returned buffers even on failure, recheck original client authorization, retain original attempt on observation and join canceled native work before vault closure. Only explicit predecessor-bound Retry may replace terminal failure; never change account health/revisions/receipts or send provider HTTP. Follow the desktop/credential contracts.
 
@@ -541,7 +556,7 @@ Subscription lifecycle Take treats only Canceled with exact cause `subscription_
 
 ## Storage
 
-Optional server-owned `Account.subscription` JSON preserves historical account bytes when absent and adds no destructive schema migration. It retains only generation references, keyed identity commitments, pending-operation metadata, original actor and lease fences. Configuration writes cannot manufacture or change this state. Unresolved ownership prevents configuration deletion. Managed database restore also refuses pending, leased or recovery-required ownership. Restored subscription references remain disconnected and recovery-required; historical generations and claims remain evidence, while the external vault is unchanged and supplies no restored authority. Clear an allocated subscription state with no generation, identity, pending operation, lease or recovery fence; settled logout or failed login owns no external reference to quarantine.
+Optional server-owned `Account.subscription` JSON preserves historical account bytes when absent and adds no destructive schema migration. It retains only generation references, keyed identity commitments, pending-operation metadata, original actor and lease fences. Configuration writes cannot manufacture or change this state. Unresolved ownership prevents configuration deletion. Managed database restore also refuses pending, leased or recovery-required ownership. Restored subscription references remain disconnected and recovery-required; historical generations and claims remain evidence, while the external vault is unchanged and supplies no restored authority. Clear an allocated subscription state with no generation, identity, pending operation, lease or recovery fence; settled logout or failed login owns no external reference to quarantine. Grok accounts follow the same service-agnostic quarantine; their backup images carry no bundle material and restored cleanup ownership is retained unchanged (see the [Grok contract](cmds-delidev-grok-subscription-contract.md#grok-backup-and-restore)).
 
 The existing OS-backed [credential vault](cmds-delidev-credentials-contract.md) stores bundles with `account-login` purpose and immutable UUID-v7 references. Native plaintext exists only in the exclusive server or Worker private runtime; it is removed after owned process closure. Execution installs credential cleanup at the owned auth-file write boundary, before publisher setup and registration, for both current and predecessor runtime selections. Failures before native ownership remove and synchronize the original auth file; a failed native Open permits removal only when its process cleanup is independently confirmed. Uncertain native ownership retains the protected lease and cannot authorize optimistic deletion. Execution retains original history and checks its bounded remaining files for credential remnants. Worker journals contain only original claim/completion identities and cleanup outcomes, never bundle bytes or token digests. Temporary login presentation lives only in server memory.
 
@@ -943,9 +958,9 @@ Keep loading, unavailable/update, unknown, zero, positive and unlimited states d
 
 ## Server-owned Claude setup-token accounts
 
-System `CLAUDE_SERVER_LOGIN_V1 = 67` and `CLAUDE_MANAGED_EXECUTION_V1 = 68` and Worker `MANAGED_CLAUDE_EXECUTION_V1 = 41` are independent of capabilities 38, 20 and 30. A new Claude account whose first `RequestSubscription` omits the machine becomes `subscription.claude_credential = "server-token"`; device-owned accounts, ChatGPT and API flows are unchanged, and no existing profile is inspected, imported, migrated or converted. Reconnection is new-account-only: a connected, logged-out or device-owned account is never given a server credential, and the token is never replaced.
+System `CLAUDE_SERVER_LOGIN_V1 = 67` and `CLAUDE_MANAGED_EXECUTION_V1 = 68` and Worker `MANAGED_CLAUDE_EXECUTION_V1 = 41` are independent of capabilities 38, 20 and 30. A new Claude account whose first `RequestSubscription` omits the machine becomes `subscription.claude_credential = "server-token"`; device-owned accounts keep execution and machine-bound logout, ChatGPT and API flows are unchanged, and no existing profile is inspected, imported, migrated or converted. A machine-bound Claude `LOGIN` or `REFRESH` is rejected as unsupported, so a device-owned account can never sign in again. Reconnection is new-account-only: a connected, logged-out or device-owned account is never given a server credential, and the token is never replaced.
 
-The server runs the installed, verified Claude Code (SemVer precedence at or above the `2.1.236` baseline) `setup-token` on a PTY in a private runtime under `subscription-runtime/auth/<operation>` with an isolated environment. It requires exactly one distinct emitted token, bounds and privately retains the screen, and never exposes the token or approval code in the UI, logs, transcripts, resources, progress documents or ordinary RPC responses. Once the single-use approval code is delivered to that child, the server never polls for or redelivers it; the operation stays pending until the original child exits, is canceled or expires. Unknown, malformed, ambiguous or oversized output, a rejected code, a non-zero exit or uncertain cleanup cannot connect the account. The progress response reuses the existing fields: browser-code login method, original URL, generation, default name `Claude` and the closed native diagnostic.
+The server runs the installed, verified Claude Code (SemVer precedence at or above the `2.1.236` baseline) `setup-token` on a PTY in a private runtime under `subscription-runtime/auth/<operation>` with an isolated environment. It requires a joined successful native exit and exactly one distinct, fully validated emitted token. The final PTY capture need not contain the native success heading. The server bounds and privately retains the screen, and never exposes the token or approval code in the UI, logs, transcripts, resources, progress documents or ordinary RPC responses. Safe failure logs may record only closed parser conditions and counts, never native screen text or token bytes. Once the single-use approval code is delivered to that child, the server never polls for or redelivers it; the operation stays pending until the original child exits, is canceled or expires. Unknown, malformed, ambiguous or oversized output, a rejected code, a non-zero exit or uncertain cleanup cannot connect the account. The progress response reuses the existing fields: browser-code login method, original URL, generation, default name `Claude` and the closed native diagnostic.
 
 The token is sealed in a closed, versioned envelope bound to server, account and generation in the existing `AccountLogin` vault ownership and published through its staging receipts. Its keyed commitment proves possession of that credential and is not a human identity. A Worker advertising capability 41 receives the envelope only in the protected Take response of one exclusive original execution lease; a legacy-only Worker never does. A replayed Take receipt never redistributes it; when the exact original lease is still unfinished, the replay fences it as recovery-required so the original Worker can confirm cleanup, and a replay after joined cleanup changes nothing. The Worker sets `CLAUDE_CODE_OAUTH_TOKEN` only in the supervised Claude child, uses a fresh private configuration directory, never passes `--bare`, and clears its buffers after joined termination. Finish with joined cleanup releases the lease; unconfirmed cleanup, restart or lost ownership fences the account until the original Worker confirms cleanup. The Worker journals its claim before the Take request, so a response lost after the lease committed (or whose fields could not be persisted) leaves a pre-delivery journal with no generation or lease revision and no started execution; the original Worker's recovery accepts exactly that claim under the server lease's identity and generation, and any journal field that contradicts the lease, operation or instance still fails closed.
 
@@ -969,6 +984,11 @@ replays the request (see the
 [harness contract](cmds-delidev-harness-contract.md#legacy-access-only-quota-migration)).
 The Claude device-profile directory is registered in place and removed only by
 its logout.
+If native removal completes before the registry deletion is durable, original
+logout recovery may clear only the matching absent Claude auth registration
+after joined process cleanup. It does not reopen the deleted home or repeat
+native login or logout. A remaining, referenced or changed profile keeps the
+account cleanup pending.
 
 Explicit deletion of a server account removes every server-owned profile of that
 account (`auth`, `quota`, `credit`, `subscription_probe` with their native
@@ -984,4 +1004,4 @@ retired with the credential files, including during account deletion.
 
 Server-owned setup-token login, Runner subscription selection and the Worker lifecycle admit any verified Claude Code installation whose valid SemVer precedence is at or above the pinned `2.1.236` baseline, using `domain.HarnessVersionAllowed`. Admission only permits the real native protocol, settings, authentication and cleanup checks to run. The `claude auth` and `--version` verification compares the executable output with the observed installation version, never with the baseline constant. A malformed or lower version stays unsupported before any native launch.
 
-`NativeSubscriptionDiagnostic.detected_version` carries the observed executable version, including on the server login path, and `phase` carries the real failing native phase. `required_version` stays in the proto and Go validator as the pinned minimum baseline for wire compatibility; clients must not present it as an exact requirement. An authentication-status failure after successful version validation never advises installing a specific version. Server and Runner messages for unsupported installations do not name a fixed version.
+`NativeSubscriptionDiagnostic.detected_version` carries the observed executable version, including on the server login path, and `phase` carries the real failing native phase. A server login rejected during Claude protocol discovery reports Discovery, not Launch. `required_version` stays in the proto and Go validator as the pinned minimum baseline for wire compatibility; clients must not present it as an exact requirement. An authentication-status failure after successful version validation never advises installing a specific version. Server and Runner messages for unsupported installations do not name a fixed version.

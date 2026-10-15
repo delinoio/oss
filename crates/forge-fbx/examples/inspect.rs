@@ -26,7 +26,7 @@ fn main() {
                 .filter(|t| t.type_ == ufbx::TextureType::File)
                 .all(|t| !t.content.is_empty())
         );
-        report.push(serde_json::json!({"file":Path::new(&path).file_name().unwrap().to_string_lossy(),"meshes":scene.meshes.len(),"materials":scene.materials.len(),"textures":scene.textures.len(),"triangles":scene.meshes.iter().map(|m|m.num_triangles).sum::<usize>(),"metersPerUnit":scene.settings.unit_meters}));
+        report.push(serde_json::json!({"file":Path::new(&path).file_name().unwrap().to_string_lossy(),"meshes":scene.meshes.len(),"materials":scene.materials.len(),"textures":scene.textures.len(),"triangles":scene.meshes.iter().map(|m|m.num_triangles).sum::<usize>(),"vertices":scene.meshes.iter().map(|m|m.num_vertices).sum::<usize>(),"hasUvs":scene.meshes.iter().all(|m|m.vertex_uv.exists),"opacityTexture":scene.materials.iter().any(|m|m.fbx.transparency_factor.texture.is_some()),"metersPerUnit":scene.settings.unit_meters}));
     }
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
 }

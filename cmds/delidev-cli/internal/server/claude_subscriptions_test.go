@@ -7,10 +7,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -45,14 +47,57 @@ func newClaudeSubscriptionFixture(t *testing.T) *subscriptionFixture {
 	}
 	return f
 }
+
+// claudeStart admits one machine-bound Claude lifecycle operation. The public
+// RPC retired fresh machine-bound LOGIN and REFRESH, so those two actions seed
+// the state an earlier release accepted by running the retained admission under
+// the same receipt; LOGOUT still goes through the public RPC.
 func claudeStart(t *testing.T, f *subscriptionFixture, action pb.SubscriptionAction) *pb.RequestSubscriptionResponse {
 	t.Helper()
 	r, _ := f.record()
-	response, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: action}))
+	request := &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: action}
+	if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT {
+		response, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, request))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response.Msg
+	}
+	return claudeSeedLegacyRequest(t, f, request)
+}
+
+// claudeSeedLegacyRequest replays a pre-retirement LOGIN or REFRESH admission.
+func claudeSeedLegacyRequest(t *testing.T, f *subscriptionFixture, request *pb.RequestSubscriptionRequest) *pb.RequestSubscriptionResponse {
+	t.Helper()
+	response, err := claudeTryLegacyRequest(f, request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return response.Msg
+	return response
+}
+
+// claudeTryLegacyRequest is claudeSeedLegacyRequest that reports a denial.
+func claudeTryLegacyRequest(f *subscriptionFixture, request *pb.RequestSubscriptionRequest) (*pb.RequestSubscriptionResponse, error) {
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	unlock, err := f.service.lockAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	m := request.Mutation
+	input := claudeLifecycleInput{domain.ID(m.Id), domain.ID(request.MachineId), m.ExpectedRevision, subscriptionAction(request.Action), domain.Principal{Type: domain.OwnerDevice}}
+	requestID := domain.ID(m.RequestId)
+	result, err := f.service.Store.Mutate(ctx, requestID, claudeLifecycleOperation, input, func(tx *store.Tx) (any, error) {
+		return f.service.admitClaudeLifecycle(tx, input, requestID)
+	})
+	if err != nil {
+		return nil, err
+	}
+	record, err := f.service.accountRecord(ctx, input.Account)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.RequestSubscriptionResponse{Account: rpc.Resource(record), OperationId: m.RequestId, Replayed: result.Replayed}, nil
 }
 func claudeFixtureURL() string {
 	q := url.Values{"client_id": {"9d1c250a-e61b-44d9-88ed-5944d1962f5e"}, "response_type": {"code"}, "redirect_uri": {"https://platform.claude.com/oauth/code/callback"}, "scope": {"user:profile user:inference user:sessions:claude_code"}, "code_challenge": {strings.Repeat("a", 43)}, "code_challenge_method": {"S256"}, "state": {strings.Repeat("b", 32)}, "code": {"true"}}
@@ -250,7 +295,7 @@ func TestClaudeUnsupportedWorkerCannotCreateNativeOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, _ := f.record()
-	if _, err = f.client.RequestSubscription(ctx, subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN})); err == nil {
+	if _, err = claudeTryLegacyRequest(f, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN}); err == nil {
 		t.Fatal("old Codex-only Worker admitted Claude login")
 	}
 	_, a := f.record()
@@ -373,5 +418,70 @@ func TestClaudeSubscriptionInstallationUsesBaselineWithGenericErrors(t *testing.
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func claudeRunnerRequest(f *subscriptionFixture, r store.Record, action pb.SubscriptionAction, requestID domain.ID) (*pb.RequestSubscriptionResponse, error) {
+	response, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(requestID), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: action}))
+	if err != nil {
+		return nil, err
+	}
+	return response.Msg, nil
+}
+
+func TestClaudeRunnerLoginAndRefreshAreRejectedWithoutStateChange(t *testing.T) {
+	for _, action := range []pb.SubscriptionAction{pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH} {
+		t.Run(action.String(), func(t *testing.T) {
+			f := newClaudeSubscriptionFixture(t)
+			beforeRecord, before := f.record()
+			response, err := claudeRunnerRequest(f, beforeRecord, action, domain.NewID())
+			problem := domain.SafeError(rpc.ClientError(err))
+			if response != nil || problem.Code != domain.Unsupported || problem.Message == "" || problem.Guidance == "" {
+				t.Fatalf("fresh Runner %s was not rejected as unsupported with guidance: %+v", action, problem)
+			}
+			afterRecord, after := f.record()
+			if afterRecord.Revision != beforeRecord.Revision || !reflect.DeepEqual(before, after) {
+				t.Fatal("a rejected Runner request changed account state")
+			}
+		})
+	}
+}
+
+func TestClaudeCLIShapedRunnerLoginIsRejected(t *testing.T) {
+	// A CLI-shaped login that names an existing machine and omits the device
+	// code flag is rejected like any other fresh Runner login.
+	f := newClaudeSubscriptionFixture(t)
+	r, before := f.record()
+	_, err := claudeRunnerRequest(f, r, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, domain.NewID())
+	if domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
+		t.Fatalf("CLI-shaped Runner login was not rejected as unsupported: %v", err)
+	}
+	if _, after := f.record(); after.Subscription != nil && (after.Subscription.Pending != nil || after.Subscription.NativeOperation != nil || after.Subscription.NativeProfileID != "") || !reflect.DeepEqual(before.Subscription, after.Subscription) && before.Subscription != nil {
+		t.Fatal("a rejected Runner login created native ownership")
+	}
+}
+
+func TestClaudeAcceptedRunnerRequestReplaysThroughOriginalReceipt(t *testing.T) {
+	f := newClaudeSubscriptionFixture(t)
+	r, _ := f.record()
+	requestID := domain.NewID()
+	accepted := claudeSeedLegacyRequest(t, f, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(requestID), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN})
+	beforeRecord, before := f.record()
+	// The same request replays through its receipt instead of being rejected.
+	replay, err := claudeRunnerRequest(f, r, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, requestID)
+	if err != nil {
+		t.Fatalf("original accepted request did not replay: %v", err)
+	}
+	if !replay.Replayed || replay.OperationId != accepted.OperationId {
+		t.Fatalf("replay did not return the original operation: %+v", replay)
+	}
+	afterRecord, after := f.record()
+	if afterRecord.Revision != beforeRecord.Revision || !reflect.DeepEqual(before, after) || after.Subscription.Pending == nil || after.Subscription.Pending.ID != domain.ID(accepted.OperationId) {
+		t.Fatal("replay admitted a new operation or changed the original one")
+	}
+	// A different request ID is a fresh request and is rejected.
+	current, _ := f.record()
+	if _, err = claudeRunnerRequest(f, current, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, domain.NewID()); domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
+		t.Fatalf("a new Runner login request was not rejected: %v", err)
 	}
 }

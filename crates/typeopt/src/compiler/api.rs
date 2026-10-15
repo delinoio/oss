@@ -181,6 +181,10 @@ impl Node {
         })
     }
 
+    pub fn argument(self) -> Node {
+        Node::from(self.raw().as_import_type_node().argument)
+    }
+
     pub fn tag(self) -> Node {
         Node::from(self.raw().as_tagged_template_expression().tag)
     }
@@ -494,6 +498,28 @@ pub fn source_file_info(file: Node) -> SourceInfo {
     SourceInfo {
         file_name: file.raw().as_source_file().file_name().to_owned(),
     }
+}
+pub fn source_file_reference_targets(file: Node) -> Vec<String> {
+    let origin = file.raw().as_source_file_p();
+    file.raw()
+        .as_source_file()
+        .referenced_files()
+        .iter()
+        .chain(
+            file.raw()
+                .as_source_file()
+                .type_reference_directives()
+                .iter(),
+        )
+        .map(|reference| {
+            current()
+                .get_source_file_from_reference(origin, *reference)
+                .map_or_else(
+                    || reference.file_name.clone(),
+                    |target| target.file_name().to_owned(),
+                )
+        })
+        .collect()
 }
 pub fn source_file_text(file: Node) -> &'static str {
     file.raw().as_source_file().text()

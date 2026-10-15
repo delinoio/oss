@@ -34,10 +34,10 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
       - name: Validate closed release inputs
@@ -51,7 +51,7 @@ jobs:
           import { identity } from './scripts/release/linux-packages/model.mjs';
           identity({ project: process.env.RELEASE_PROJECT, version: process.env.RELEASE_VERSION, revision: process.env.RELEASE_REVISION, mode: process.env.RELEASE_MODE });
           JS
-      - uses: sigstore/cosign-installer@v4.1.1
+      - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
       - name: Build pinned repository tools
         run: docker build -f packaging/linux/Tools.Dockerfile -t delino-linux-package-tools .
       - name: Verify release and build disposable signed repositories
@@ -98,10 +98,10 @@ jobs:
             "almalinux:10",
           ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
       - uses: actions/download-artifact@v8
@@ -124,12 +124,12 @@ jobs:
       cancel-in-progress: false
       queue: max
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-node
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - uses: sigstore/cosign-installer@v4.1.1
+      - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
       - name: Build pinned repository tools
         run: docker build -f packaging/linux/Tools.Dockerfile -t delino-linux-package-tools .
       - name: Publish verified native repositories
@@ -180,10 +180,10 @@ jobs:
             "almalinux:10",
           ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
       - name: Install the exact public package

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"strings"
@@ -105,7 +106,7 @@ func decodeJSON(data []byte, target any) error {
 	if err := uniqueJSON(data); err != nil {
 		return err
 	}
-	d := json.NewDecoder(strings.NewReader(string(data)))
+	d := json.NewDecoder(bytes.NewReader(data))
 	d.DisallowUnknownFields()
 	if err := d.Decode(target); err != nil {
 		return Fail(InvalidArgument, "JSON input does not match the command schema.", "Check field names, types, and enum values.")
@@ -120,7 +121,7 @@ func decodeJSON(data []byte, target any) error {
 // Reject duplicate object keys before decoding into typed documents. Otherwise
 // different clients can disagree about which policy or credential field wins.
 func uniqueJSON(data []byte) error {
-	d := json.NewDecoder(strings.NewReader(string(data)))
+	d := json.NewDecoder(bytes.NewReader(data))
 	d.UseNumber()
 	var walk func(int) error
 	invalid := func() error {

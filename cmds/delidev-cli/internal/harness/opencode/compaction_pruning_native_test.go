@@ -19,19 +19,18 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestManualNativeOpenCodePruningAndPreservedTailRestoration(t *testing.T) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit isolated pinned OpenCode pruning fixture")
-	}
+	binary, version := nativetest.NativeOpenCodeExecutable(t)
 	requireNoManagedOpenCodeConfig(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	config := fixtureOwnedAPIConfig(t)
 	config.Probe.Process.Executable = binary
+	config.Probe.Version = version
 	config.ContextLimit, config.OutputLimit, config.Prune = 1_000_000, 1000, true
 	config.Settings.Agent, config.Settings.Permission = BuildAgent, []PermissionRule{{Permission: "read", Pattern: "*", Action: PermissionAllow}}
 	var logs bytes.Buffer

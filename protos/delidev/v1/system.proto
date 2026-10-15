@@ -62,6 +62,9 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1 = 102;
   // Pull request List/Search pages and workspace enrichment accept up to 50 items.
   SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1 = 103;
+  // Independently negotiated OpenCode General Chat Fork profile v2: completed plain
+  // timed reasoning parts are cloned with their messages. Requires capability 26.
+  SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1 = 104;
   SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1 = 90;
   SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1 = 93;
   SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1 = 89;
@@ -105,6 +108,10 @@ enum SystemCapability {
   // Server-owned access-only reset-credit consumption beside Execute, without a Runner.
   SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101;
   SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1 = 38;
+  // Declared Grok Build login and execution identifiers. They grant no authority
+  // and are not advertised until the owning feature activates them.
+  SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_LOGIN_V1 = 39;
+  SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_EXECUTION_V1 = 40;
   SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1 = 41;
   // Explicit DeleteConfiguration cleanup of a terminal original server ChatGPT
   // LOGOUT account whose only remaining blocker is protected credential cleanup.

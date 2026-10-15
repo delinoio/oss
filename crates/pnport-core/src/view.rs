@@ -345,7 +345,19 @@ impl View {
             VPath::Native(path) => self.native_backing(path),
             VPath::Virtual(info) => (normalize(&info.physical_base_path()), true),
             VPath::Zip(info) => {
-                let archive = normalize(&info.physical_base_path());
+                let mut archive = normalize(&info.physical_base_path());
+                let mut zip_path = PathBuf::from(&info.zip_path);
+                // The PnP parser stops at the first .zip component. A native
+                // directory with that suffix can precede the registered ZIP.
+                // Remove this scan when that parser can select the later ZIP.
+                if info.virtual_segments.is_none() && archive.is_dir() {
+                    if let Some((nested_archive, nested_path)) =
+                        self.nested_archive(&logical, &archive)
+                    {
+                        archive = nested_archive;
+                        zip_path = nested_path;
+                    }
+                }
                 // The .zip suffix also occurs on native directories and files.
                 // Extract only a graph-owned archive file; retain native lookup
                 // and mutation behavior for every other path.
@@ -370,7 +382,7 @@ impl View {
                     // native directory. Keep that physical backing path so
                     // directory fixtures and unplugged packages remain
                     // addressable without creating a cache lease.
-                    (archive.join(info.zip_path), true)
+                    (archive.join(zip_path), true)
                 } else {
                     if !self.leases.contains_key(&archive) {
                         let lease = self.cache.materialize_with_wait(&archive, wait)?;
@@ -389,7 +401,7 @@ impl View {
                         self.leases.insert(archive.clone(), lease);
                     }
                     let lease = &self.leases[&archive];
-                    (lease.content.join(info.zip_path), true)
+                    (lease.content.join(zip_path), true)
                 }
             }
         };
@@ -404,6 +416,26 @@ impl View {
                 PathKind::Native
             },
         })
+    }
+
+    fn nested_archive(&self, logical: &Path, native_zip_dir: &Path) -> Option<(PathBuf, PathBuf)> {
+        let suffix = logical.strip_prefix(native_zip_dir).ok()?;
+        let mut candidate = native_zip_dir.to_owned();
+        for part in suffix.components() {
+            candidate.push(part);
+            // Keep unpacked directories native; report missing registered
+            // archives through the normal cache error path.
+            if candidate
+                .extension()
+                .is_some_and(|extension| extension == "zip")
+                && self.graph.is_location_ancestor(&candidate)
+                && !candidate.is_dir()
+            {
+                let zip_path = logical.strip_prefix(&candidate).ok()?.to_owned();
+                return Some((candidate, zip_path));
+            }
+        }
+        None
     }
 
     fn native_backing(&self, path: PathBuf) -> (PathBuf, bool) {

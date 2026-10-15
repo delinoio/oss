@@ -3,12 +3,34 @@ import type { Transport } from "@connectrpc/connect";
 import type { QueryClient } from "@tanstack/react-query";
 import {
   EntityKind,
+  FailureCode,
   ResourceQuery,
+  clientFailure,
   newRequestId,
   supportsResourceSchema,
+  type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, resourceName } from "./documents";
 import { ConversationKind, conversationProvenance } from "./home-navigation";
+
+/**
+ * Provenance of a Session a mounted pane has loaded, under the same envelope
+ * checks route verification applies (kind, IDs, positive revision, supported
+ * schema). A resource that fails them, or whose metadata is malformed, is
+ * `ConversationKind.Unknown`: it is not a valid selection of any kind.
+ */
+export function loadedSessionProvenance(resource: Resource, id: string) {
+  const valid =
+    resource.id === id &&
+    resource.kind === EntityKind.SESSION &&
+    resource.sessionId === id &&
+    typeof resource.revision === "bigint" &&
+    resource.revision > 0n &&
+    supportsResourceSchema(resource);
+  return valid
+    ? conversationProvenance(resource, document(resource))
+    : { conversationKind: ConversationKind.Unknown };
+}
 
 /** Closed outcome of resolving which host a Search result opens under. */
 export enum SearchSessionRoute {
@@ -20,14 +42,81 @@ export enum SearchSessionRoute {
   Unavailable = "unavailable",
 }
 
-const unavailable = (id: string, reason: string): SearchSessionResolution => {
+const unavailable = (
+  id: string,
+  reason: string,
+  transient = false,
+): SearchSessionResolution => {
   // Structured, content-free diagnostics: only the opaque session ID and reason.
   console.warn("delidev.search.session_route_unavailable", {
     sessionId: id,
     reason,
   });
-  return { route: SearchSessionRoute.Unavailable };
+  return { route: SearchSessionRoute.Unavailable, transient };
 };
+
+/** How route restoration treats one failed read of a route selection. */
+export enum RouteFailureDisposition {
+  /**
+   * The server definitively rejected the selection (missing, denied, or an ID
+   * that is not a valid selection of this kind): clear it to the requested
+   * screen's list.
+   */
+  Clear = "clear",
+  /**
+   * The read may succeed on retry or says nothing about the selection: keep it
+   * so the mounted screen's own retry and error state applies.
+   */
+  Retain = "retain",
+}
+
+/**
+ * The single classification of every failure code a route-restoration read can
+ * return (GetResource, GetSchedule and GetInboxEntry), shared by every restored
+ * kind: Session, Sidechat, Inbox entry, Schedule and repository. The Settings
+ * category and Usage tab need no read. Typed as an exhaustive record so a new
+ * code cannot ship without an explicit decision.
+ *
+ * Transport-level outcomes arrive through `clientFailure`: gRPC
+ * `failed_precondition` is `RecoveryRequired`; `deadline_exceeded`, `internal`
+ * and unmapped transport errors are `ServerUnavailable`/`Internal`; a cancelled
+ * read is `Canceled`.
+ */
+export const routeFailureDispositions: Readonly<
+  Record<FailureCode, RouteFailureDisposition>
+> = {
+  // A syntactically valid ID of another entity kind (for example a Schedule ID
+  // supplied as a repository) is rejected as invalid, never retryable.
+  [FailureCode.InvalidArgument]: RouteFailureDisposition.Clear,
+  [FailureCode.NotFound]: RouteFailureDisposition.Clear,
+  [FailureCode.Unauthenticated]: RouteFailureDisposition.Clear,
+  [FailureCode.PermissionDenied]: RouteFailureDisposition.Clear,
+  [FailureCode.Conflict]: RouteFailureDisposition.Retain,
+  [FailureCode.Unavailable]: RouteFailureDisposition.Retain,
+  [FailureCode.ServerUnavailable]: RouteFailureDisposition.Retain,
+  [FailureCode.ConfirmationRequired]: RouteFailureDisposition.Retain,
+  [FailureCode.MissingInput]: RouteFailureDisposition.Retain,
+  [FailureCode.Unsupported]: RouteFailureDisposition.Retain,
+  [FailureCode.RecoveryRequired]: RouteFailureDisposition.Retain,
+  [FailureCode.BudgetReached]: RouteFailureDisposition.Retain,
+  [FailureCode.ResourceExhausted]: RouteFailureDisposition.Retain,
+  [FailureCode.CursorExpired]: RouteFailureDisposition.Retain,
+  [FailureCode.ProviderDisabled]: RouteFailureDisposition.Retain,
+  [FailureCode.Canceled]: RouteFailureDisposition.Retain,
+  [FailureCode.Internal]: RouteFailureDisposition.Retain,
+};
+
+/** Classifies one failed route-restoration read through the shared table. */
+export function routeFailureDisposition(
+  error: unknown,
+): RouteFailureDisposition {
+  return routeFailureDispositions[clientFailure(error).code];
+}
+
+/** A definitive rejection of the selection, as opposed to a retryable failure. */
+export function inaccessibleFailure(error: unknown): boolean {
+  return routeFailureDisposition(error) === RouteFailureDisposition.Clear;
+}
 
 /** Presentation state of one pending or failed Search-result opening. */
 export enum SearchOpenStatus {
@@ -38,7 +127,11 @@ export enum SearchOpenStatus {
 export type SearchSessionResolution =
   | { route: SearchSessionRoute.TopLevel }
   | { route: SearchSessionRoute.Sidechat; parent: string; name: string }
-  | { route: SearchSessionRoute.Unavailable };
+  /**
+   * `transient` marks a read failure that may succeed on retry. It is false for
+   * a missing, denied or malformed target, which is definitively unavailable.
+   */
+  | { route: SearchSessionRoute.Unavailable; transient?: boolean };
 
 /**
  * Reads the exact target through the existing bounded GetResource operation and
@@ -100,10 +193,11 @@ export async function resolveSearchSession(
       default:
         return unavailable(id, "malformed-parent-metadata");
     }
-  } catch {
+  } catch (error) {
     // A cancelled read belongs to a superseded opening: nothing to report.
-    if (signal?.aborted) return { route: SearchSessionRoute.Unavailable };
-    return unavailable(id, "read-failed");
+    if (signal?.aborted)
+      return { route: SearchSessionRoute.Unavailable, transient: true };
+    return unavailable(id, "read-failed", !inaccessibleFailure(error));
   } finally {
     signal?.removeEventListener("abort", abort);
   }

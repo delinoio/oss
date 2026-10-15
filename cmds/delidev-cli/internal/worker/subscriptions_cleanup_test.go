@@ -121,3 +121,62 @@ func TestManagedExecutionCleanupRetainsInventoryFencesAndSafeLogs(t *testing.T) 
 		})
 	}
 }
+
+func TestSharedCodexCleanupStreamsAccumulatedHistory(t *testing.T) {
+	bundle := workerSubscriptionBundle("first")
+	defer clear(bundle)
+	home := filepath.Join(t.TempDir(), "codex")
+	if err := security.PrivateDir(home); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.WriteAtomic(filepath.Join(home, "auth.json"), bundle); err != nil {
+		t.Fatal(err)
+	}
+	large, err := os.Create(filepath.Join(home, "rollout-large.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := large.Truncate(65<<20 + 1); err != nil {
+		_ = large.Close()
+		t.Fatal(err)
+	}
+	if err := large.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2049; i++ {
+		if err := os.WriteFile(filepath.Join(home, "rollout-"+strconv.Itoa(i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := cleanupSharedExecutionAuthentication(home, bundle, bundle); err != nil {
+		t.Fatal("normal shared history growth blocked authentication cleanup", err)
+	}
+	if _, err := os.Lstat(filepath.Join(home, "auth.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("transient authentication remained", err)
+	}
+}
+
+func TestSharedCodexCleanupFindsTokenAcrossStreamChunks(t *testing.T) {
+	bundle := workerSubscriptionBundle("first")
+	defer clear(bundle)
+	parsed, _, err := subscription.Parse(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(t.TempDir(), "codex")
+	if err := security.PrivateDir(home); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.WriteAtomic(filepath.Join(home, "auth.json"), bundle); err != nil {
+		t.Fatal(err)
+	}
+	content := append(bytes.Repeat([]byte("x"), (64<<10)-3), []byte(parsed.Tokens.Refresh)...)
+	if err := os.WriteFile(filepath.Join(home, "rollout.jsonl"), content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	err = cleanupSharedExecutionAuthentication(home, bundle, bundle)
+	var failure *executionAuthenticationFailure
+	if !errors.As(err, &failure) || failure.reason != executionAuthRemnant {
+		t.Fatal("split token was not detected", err)
+	}
+}

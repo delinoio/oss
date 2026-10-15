@@ -249,6 +249,13 @@ func InspectCheckpoint(ctx context.Context, home string, raw []byte, ref Checkpo
 	return nil
 }
 
+// InspectCheckpointMetadata is InspectCheckpoint without the file comparison,
+// for a checkpoint that a later run of the same persistent profile superseded.
+func InspectCheckpointMetadata(raw []byte, ref CheckpointReference, home string) error {
+	_, err := decodeCheckpoint(raw, ref, home)
+	return err
+}
+
 func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeCheckpoint, error) {
 	var value nativeCheckpoint
 	if len(raw) == 0 || len(raw) > maxCheckpointBytes || !checkpointDigest(ref.SHA256) || mutationDigest(raw) != ref.SHA256 || domain.UniqueIDs([]domain.ID{ref.OwnerID, ref.CreationRequestID, ref.InputRequestID}) != nil || !nativeID(ref.SessionID, "ses") || !nativeID(ref.InputID, "msg") || !nativeID(ref.PartID, "prt") || !checkpointDigest(ref.InputSHA256) || !checkpointDigest(ref.HistorySHA256) || domain.DecodeWithLimit(raw, &value, maxCheckpointBytes) != nil {

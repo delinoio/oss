@@ -225,6 +225,11 @@ it("retains only the previous complete summary on failed invalidation and retrie
     </TransportProvider>,
   );
   await screen.findByText("9,007,199,254,740,993");
+  // The routine incomplete-coverage paragraph is not part of default Info.
+  expect(screen.queryByText(/Known input and output subtotals/)).toBeNull();
+  expect(screen.queryByText(/Known responses only/)).toBeNull();
+  expect(screen.getByText("In")).toBeTruthy();
+  expect(screen.getByText("Out")).toBeTruthy();
   read.mockRejectedValueOnce(new Error("fixture refresh unavailable"));
   await act(async () => {
     await client.invalidateQueries();

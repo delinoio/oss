@@ -625,7 +625,7 @@ The owned process runs `--bare --print` with stream-json input/output and verbos
 
 Before launch, the adapter requires canonical private home/config/cache/data/state/temp directories, empty child state and the private root as cwd. It reconstructs the environment from owned paths and absolute system lookup entries, preserving only bounded Windows system lookup context when applicable. Caller-supplied provider credentials, OAuth tokens, shell/loader options and proxy settings are discarded. Automatic updates and nonessential traffic are disabled, and the model base URL is fixed to loopback as an additional guard against accidental remote traffic. No provider token is supplied.
 
-Claude Code `2.1.287` emits one `{type: "system", subtype: "ui_invalidate"}` startup frame before the initialize response. The probe accepts at most one such frame, only before the response, with exactly the optional `uuid` and `session_id` fields and no other key (a declared field must be a bounded text string; `null`, numbers and objects are refused); it is discarded as non-authoritative startup metadata. A second prelude, a prelude after the response, any other `system` subtype, an unknown field, a malformed or oversized frame, a foreign or duplicate response and trailing output fail with a typed refusal, and cleanup is still joined (RecoveryRequired when cleanup cannot be proved). The `2.1.287` control response may add `pending_permission_requests` and `pending_user_dialog_requests` as members of the inner control-response envelope next to `subtype`, `request_id` and `response` (the official SDK `ControlResponse` shape; each must be an empty array when declared, and the same names inside the initialize result are unknown fields). Its initialize result may add `analytics_disabled` (literal `true` when declared), `capabilities` (at most 64 unique bounded names, or a flat bounded object of boolean/text values), `feedback_mode` (`disabled` or `off`), `remote_control_available` and `remote_control_auto_connect_default` (explicit `false`), `session_state` (`idle`) and `user_output_styles_dir` (bounded private text). All control-response, initialize-result, account, descriptor and startup-frame keys must use their exact lowercase profile spelling: differently cased aliases are refused rather than matched case-insensitively. The same strict envelope decoder serves the probe and the API stream. Each addition is optional so earlier verified profiles keep passing, but a declared field with `null`, a wrong type, a non-empty pending list, a non-idle session, enabled feedback or enabled remote-control defaults is refused. These fields never grant account, tool or execution readiness; the no-token, first-party account, `dontAsk`, remote-control, fast-mode, catalog and cleanup checks stay authoritative. The same response validators serve the managed-token session initializer. Sanitized `2.1.287`-shaped fixtures cover the prelude and fields; installed-native and real-account validation are recorded separately and fixture results are not account-login acceptance.
+Claude Code `2.1.287` emits one `{type: "system", subtype: "ui_invalidate"}` startup frame before the initialize response. The probe accepts at most one such frame, only before the response, with optional `event: "ui.render"`, `uuid` and `session_id` fields and no other key (a declared field must be a bounded text string; `null`, numbers and objects are refused); it is discarded as non-authoritative startup metadata. A second prelude, a prelude after the response, any other `system` subtype, an unknown field, a malformed or oversized frame, a foreign or duplicate response and trailing output fail with a typed refusal, and cleanup is still joined (RecoveryRequired when cleanup cannot be proved). The `2.1.287` control response may add `pending_permission_requests` and `pending_user_dialog_requests` as members of the inner control-response envelope next to `subtype`, `request_id` and `response` (the official SDK `ControlResponse` shape; each must be an empty array when declared, and the same names inside the initialize result are unknown fields). Its initialize result may add `analytics_disabled` (literal `true` when declared), `capabilities` (at most 64 unique bounded names, or a flat bounded object of boolean/text values), `feedback_mode` (`disabled`, `off` or exactly `{kind: "disabled"}`), `remote_control_available` and `remote_control_auto_connect_default` (explicit `false`), `session_state` (`idle`) and `user_output_styles_dir` (bounded private text). All control-response, initialize-result, account, descriptor and startup-frame keys must use their exact lowercase profile spelling: differently cased aliases are refused rather than matched case-insensitively. The same strict envelope decoder serves the probe and the API stream. Each addition is optional so earlier verified profiles keep passing, but a declared field with `null`, a wrong type, a non-empty pending list, a non-idle session, enabled feedback or enabled remote-control defaults is refused. These fields never grant account, tool or execution readiness; the no-token, first-party account, `dontAsk`, remote-control, fast-mode, catalog and cleanup checks stay authoritative. The same response validators serve the managed-token session initializer. Sanitized `2.1.287`-shaped fixtures cover the prelude and fields. An isolated, unauthenticated native initialization confirmed the `ui.render` event and disabled feedback object; it does not establish account-login acceptance.
 
 Validation requires exactly one correlated success response, empty commands, an unauthenticated first-party account descriptor (`tokenSource: none`), `dontAsk`, explicitly disabled remote-control gates and the observed disabled fast-mode state. Typed agent/model/style descriptors must be bounded, unambiguous and structurally compatible. They are discarded after validation: native advertised model names, prices, capabilities and built-in agents never become selected-account catalog data or execution authority. Unknown fields, duplicate keys/responses, changed scope, malformed UTF-8, unsolicited control/events other than the single allowed startup frame, partial trailing output and mixed success/error responses fail explicitly. Native error text and stderr stay private and become only stable typed diagnostics.
 
@@ -635,23 +635,23 @@ Initialization has a ten-second deadline, a 1 MiB stdout frame bound and an inde
 
 ### Grok Build ACP initialization profile
 
-Grok Build `1.0.41` has a separate no-input discovery profile based on the [official headless ACP interface](https://docs.x.ai/build/cli/headless-scripting), [settings reference](https://docs.x.ai/build/settings/reference), [managed configuration contract](https://docs.x.ai/build/enterprise) and observed macOS arm64 native responses. `grok --no-auto-update --version` may append one parenthesized lowercase hexadecimal source hash of 7–40 characters; discovery validates that suffix and retains the semantic version. The suffix is not executable integrity or execution-readiness evidence.
+Grok Build at or above the `domain.GrokProtocolVersion` baseline (`1.0.41`) has a separate no-input discovery profile based on the [official headless ACP interface](https://docs.x.ai/build/cli/headless-scripting), [settings reference](https://docs.x.ai/build/settings/reference), [managed configuration contract](https://docs.x.ai/build/enterprise) and observed macOS arm64 native responses. `grok --no-auto-update --version` may append one parenthesized lowercase hexadecimal source hash of 7–40 characters; discovery validates that suffix and retains the semantic version. The suffix is not executable integrity or execution-readiness evidence.
 
 The adapter requires a fresh canonical owner-only runtime and reconstructs HOME, GROK_HOME, XDG and temporary paths. Only absolute executable lookup and Windows system lookup context survives. Provider keys, auth/config overlays, project agents, proxy settings, shell/loader options and log destinations are not inherited. Both the native update flag and `GROK_DISABLE_AUTOUPDATER` disable updates. Documented Claude/Cursor skill, rule, agent, MCP and hook scanners are disabled. Model/catalog endpoints point to loopback without credentials. These are discovery settings, not substitutions for a user's eventual native execution configuration.
 
-A private HOME cannot by itself exclude machine-managed settings. The owned read-only `inspect --json` command must first prove the selected version/cwd, no project root or instructions, empty native configuration layers, permissions, hooks, skills, plugins, marketplaces, MCP/LSP servers and no loaded remote settings. Only the three built-in agents and the exact disabled compatibility scanners are accepted. Managed policy or unrecognized configuration fails before ACP starts; the adapter neither bypasses nor edits that policy. Session-import advertisements remain separate and are never invoked against these empty homes. Inspection output and stderr are independently bounded to 64 KiB and never logged.
+A private HOME cannot by itself exclude machine-managed settings. The owned read-only `inspect --json` command must first prove the selected version/cwd, no project root or instructions, empty native configuration layers, permissions, hooks, skills, plugins, marketplaces, MCP/LSP servers and no loaded remote settings. Grok Build 1.0.52 adds an `experiments` inventory: the key is optional, so releases that omit it are unchanged, and when present it must be exactly an empty array. A populated array, `null`, an object or any other non-array value is unsupported, and no other unknown top-level key is tolerated. Only the three built-in agents and the exact disabled compatibility scanners are accepted. Managed policy or unrecognized configuration fails before ACP starts; the adapter neither bypasses nor edits that policy. Session-import advertisements remain separate and are never invoked against these empty homes. Inspection output and stderr are independently bounded to 64 KiB and never logged.
 
 The owned `agent stdio` process receives exactly one ACP JSON-RPC 2.0 `initialize` request with protocol version 1, an original UUID-v7 request identity, DeliDev client information and empty client capabilities. It sends no authentication, session creation/load, prompt, tool reply or model query. The response must correlate exactly and retain this profile's native version, private cwd, canonical native agent/instance identities, unauthenticated default, empty model/MCP observations and bounded typed capability/auth/command advertisements. Native filesystem, terminal, MCP, hook and session advertisements grant no DeliDev execution capability.
 
 The actual pinned binary additionally emits one `_x.ai/mcp/servers_updated` notification after initialize. Discovery requires this exact empty inventory before success, rejects an early/nonempty/duplicate inventory, and consumes no other event. Strict nested keys, required non-null scalars, UTF-8 and duplicate-key checks reject aliases, unknown extensions, foreign requests, mixed errors and trailing/partial output. Native hostname, agent identities, paths, model names, commands and error bodies are discarded after validation.
 
-Inspection and initialization share a ten-second deadline; ACP stdout frames are capped at 1 MiB with an independent 64 KiB stderr bound. Cancellation joins the writer, both drains and owned process cleanup. Cleanup uncertainty takes precedence and preserves the runtime. Generation-bound `machine discover --protocol` publishes only the protocol outcome, with capabilities still empty. Authentication, API/subscription session execution, typed events/interactions/usage, continuation and durable Worker publication remain required separate adapters. Ordinary tests use synthetic executables. Explicit `DELIDEV_NATIVE_GROK_EXECUTABLE=/absolute/native/grok` tests exercise only isolated non-inference inspection/initialization and cleanup; native OS/account evidence remains separately recorded.
+Inspection and initialization share a ten-second deadline; ACP stdout frames are capped at 1 MiB with an independent 64 KiB stderr bound. Cancellation joins the writer, both drains and owned process cleanup. Cleanup uncertainty takes precedence and preserves the runtime: the transport error becomes `recovery_required` and discovery aborts, while the typed Grok diagnostic keeps the first probe failure. Generation-bound `machine discover --protocol` publishes only the protocol outcome, with capabilities still empty. Authentication, API/subscription session execution, typed events/interactions/usage, continuation and durable Worker publication remain required separate adapters. Probe and discovery failures carry a typed `domain.GrokDiagnostic` (phase, stable code, installed and supported versions, no native text) as defined in the [Grok subscription contract](cmds-delidev-grok-subscription-contract.md#grok-diagnostics); discovery persists it on the failed `Installation.Protocol` observation. Ordinary tests use synthetic executables. Explicit `DELIDEV_NATIVE_GROK_EXECUTABLE=/absolute/native/grok` tests exercise only isolated non-inference inspection/initialization and cleanup; native OS/account evidence remains separately recorded.
 
 ### Grok Build private API initialization and original session creation
 
-The separate private API profile uses the same installed `1.0.41` binary and [official model configuration](https://docs.x.ai/build/settings/reference). It takes one accepted model/context limit, one paired server origin and one registered execution token, never an upstream account key. The generated TOML uses a fixed local model selector with the exact provider model as its value, `chat_completions`, the paired server's fixed `/api-proxy/v1` endpoint and an environment credential reference. Primary, session-summary, image-description and web-search selectors all name that model. This explicit auxiliary selection is necessary because the pinned default otherwise invokes a different built-in model for title generation. Allowed models remain a singleton; initial native inference retries are disabled. These native settings are not a translation between provider protocols or permission modes.
+The separate private API profile uses the same installed binary (at or above `domain.GrokProtocolVersion`, `1.0.41`) and [official model configuration](https://docs.x.ai/build/settings/reference). It takes one accepted model/context limit, one paired server origin and one registered execution token, never an upstream account key. The generated TOML uses a fixed local model selector with the exact provider model as its value, `chat_completions`, the paired server's fixed `/api-proxy/v1` endpoint and an environment credential reference. Primary, session-summary, image-description and web-search selectors all name that model. This explicit auxiliary selection is necessary because the pinned default otherwise invokes a different built-in model for title generation. Allowed models remain a singleton; initial native inference retries are disabled. These native settings are not a translation between provider protocols or permission modes.
 
-Startup reconstructs the private discovery environment and leaves native xAI/catalog defaults on uncredentialed closed loopback endpoints. It inspects the empty runtime before creating a new owner-only configuration file without replacement. Subsequent owned inspection must report exactly that one user layer and no managed policy, extensions or project configuration in either the runtime or the separate canonical non-Git workspace. A workspace cannot contain or be contained by private runtime state. Native environment-file loading is disabled. Only the scoped credential is added for the ACP process; no key or token enters TOML, claims, argv or logs. The original configuration is compared before initialization and after authentication. Native `1.0.41` adds `marketplace.default_skills_installs_purged = true` during initialization; the sole accepted rewrite is that exact marker with the complete original TOML semantics otherwise unchanged. It cannot enable another marketplace, alter a model or import settings.
+Startup reconstructs the private discovery environment and leaves native xAI/catalog defaults on uncredentialed closed loopback endpoints. It inspects the empty runtime before creating a new owner-only configuration file without replacement. Subsequent owned inspection must report exactly that one user layer and no managed policy, extensions or project configuration in either the runtime or the separate canonical non-Git workspace. A workspace cannot contain or be contained by private runtime state. Native environment-file loading is disabled. Only the scoped credential is added for the ACP process; no key or token enters TOML, claims, argv or logs. The original configuration is compared before initialization and after authentication. Native Grok Build at the `domain.GrokProtocolVersion` baseline (`1.0.41`) adds `marketplace.default_skills_installs_purged = true` during initialization; the sole accepted rewrite is that exact marker with the complete original TOML semantics otherwise unchanged. It cannot enable another marketplace, alter a model or import settings.
 
 The shared owned stdio transport now has an explicit JSON-RPC 2.0 profile for Grok. Requests, notifications and replies carry the version; inbound envelopes require exact keys/version and exclude Codex's separate timestamp extension. Native error bodies remain redacted, with the original numeric code only. The existing 1 MiB frame, bounded event/request tracking, original callback arrival, uncertain-delivery and joined process cleanup rules remain in force. Grok's stderr is independently discarded under a 64 KiB bound. The existing omitted-version Codex transport profile retains its behavior.
 
@@ -793,7 +793,7 @@ The native `SessionBinding` observation copies the already validated original cr
 
 Both publications use the existing durable outbox, current Worker/job revision and transactional server acceptance. A lost acknowledgment retains the exact event bytes/request ID and original native claim proof. Explicit replay compares both unchanged original claims and pending outbox metadata before retrying only that receipt. It does not call a native API, create a replacement coordinator from retained state, regenerate an input or claim completion. Failed/closed/changed original journals and changed pending records retain recovery. Session binding, input acceptance and receipt replay contain no original prompt, path, credential or native diagnostics. Late acceptance retains its own fact while preserving prior Stop, pause and recovery.
 
-The selected first-input profile admits only pinned `1.0.41`, exact API Chat Completions, default native permissions, unchanged model and separately selected Execute/Plan mode. Explicit effort, Plan instructions/templates, child/concurrency/review-model/tier overrides and unsupported native policies require additional adapters; they cannot be silently omitted. Account connection, restrictions, Worker/device and server-process authority are independently revalidated through the existing registered relay. These two binding event kinds alone do not authorize richer publication or dispatch. The separate text/response composition below extends publication; tool/interaction/terminal events, completion reports, ordinary dispatch and history/continuation still require their own adapters.
+The selected first-input profile admits only an installation at or above `domain.GrokProtocolVersion` (`1.0.41`) whose native validation succeeds, exact API Chat Completions, default native permissions, unchanged model and separately selected Execute/Plan mode. Explicit effort, Plan instructions/templates, child/concurrency/review-model/tier overrides and unsupported native policies require additional adapters; they cannot be silently omitted. Account connection, restrictions, Worker/device and server-process authority are independently revalidated through the existing registered relay. These two binding event kinds alone do not authorize richer publication or dispatch. The separate text/response composition below extends publication; tool/interaction/terminal events, completion reports, ordinary dispatch and history/continuation still require their own adapters.
 
 ### Grok original text and response publication
 
@@ -817,7 +817,7 @@ A lost terminal acknowledgment retains the exact original outbox receipt and six
 
 ### Grok first-text Worker runner and public dispatch
 
-The ordinary outbound Worker now composes the original first-text profile for a version-1 Execute assignment in an owned General Chat workspace. Public initial dispatch requires pinned `1.0.41` protocol discovery, the independently validated selected API account, Chat Completions, supported default settings and explicit context metadata. Execute instructions/templates use the exact additive profile below. Plan, additional options, repository workspaces and continuations remain rejected before the claim transaction commits; the original queued input and routing stay unchanged. Empty discovery execution-capability lists still describe discovery alone, not these independent dispatch checks.
+The ordinary outbound Worker now composes the original first-text profile for a version-1 Execute assignment in an owned General Chat workspace. Public initial dispatch requires protocol discovery of an installation at or above `domain.GrokProtocolVersion` (`1.0.41`), the independently validated selected API account, Chat Completions, supported default settings and explicit context metadata. Execute instructions/templates use the exact additive profile below. Plan, additional options, repository workspaces and continuations remain rejected before the claim transaction commits; the original queued input and routing stay unchanged. Empty discovery execution-capability lists still describe discovery alone, not these independent dispatch checks.
 
 Grok custom-model configuration requires a context window. `ExecutionConfiguration.grok_context` copies the selected model's `context_limit` and `metadata_source` as `{tokens, source}` at first dispatch, with bounds 1,024–1,000,000,000 and source `known` or `user-declared`. It is included in the existing immutable configuration digest and is independent of later model edits. An absent field preserves historical bytes/digests but cannot authorize this runner. No default is guessed for absent/unknown metadata. The original native session binding returns its independently checked context window; `observed.grok_context_tokens` must exactly match the snapshot. A declared window is not measured provider capacity, streamed token usage or an authentication result.
 
@@ -849,7 +849,7 @@ Lost content and terminal acknowledgments replay only the original receipt. `Tex
 
 ### Grok successful-text native closure
 
-Root-turn completion and final-summary arrival are insufficient grounds for immediately killing this pinned native process. Actual `1.0.41` exploration observed the original `last_turn_summary` event followed by missing summary fields on disk after immediate process termination. A test-only `session/load` additionally changes native resident/history metadata, so it is not a read-only flush mechanism. The separate successful-text closure controller follows the [native ACP close operation](https://agentclientprotocol.com/protocol/v1/session-setup) using its observed Grok-specific response.
+Root-turn completion and final-summary arrival are insufficient grounds for immediately killing this native process. Actual exploration of the `domain.GrokProtocolVersion` baseline (`1.0.41`) observed the original `last_turn_summary` event followed by missing summary fields on disk after immediate process termination. A test-only `session/load` additionally changes native resident/history metadata, so it is not a read-only flush mechanism. The separate successful-text closure controller follows the [native ACP close operation](https://agentclientprotocol.com/protocol/v1/session-setup) using its observed Grok-specific response.
 
 The controller retains the exact input request/prompt and any idle/last-summary events already consumed while awaiting the original prompt RPC. After successful root-turn publication, it consumes only the remaining exact idle and matching last-summary observations; unknown, repeated, foreign or active-work observations fail. No fixed sleep, stable-output heuristic or arbitrary post-terminal drain establishes this boundary. The original effective configuration must remain unchanged. The controller is single-use, and its claim context is canceled by caller cancellation or original native lifetime loss.
 
@@ -2325,7 +2325,7 @@ The private Worker observation channel now verifies an existing Local/Worktree s
 
 ### Grok public original tools, questions and Plan
 
-This composition extends the earlier public first-text boundary only for the already verified Grok Build `1.0.41` original-input profiles. Initial Execute and Plan use the same immutable API/General Chat assignment, explicit context metadata, original creation/input journal, relay and workspace owner. Initial Plan additionally performs its separately claimed native mode selection before input. Execute adapts to the original planning observer when its first supported tool arrives; it never resends or replaces the accepted prompt. Existing first-text successful history and Stop retain their own independent profiles. Repository workspaces, continuation, Steer, Plan instruction templates, unverified tools and complete the feature account/platform readiness remain separately gated.
+This composition extends the earlier public first-text boundary only for the already verified Grok Build original-input profiles at or above `domain.GrokProtocolVersion` (`1.0.41`). Initial Execute and Plan use the same immutable API/General Chat assignment, explicit context metadata, original creation/input journal, relay and workspace owner. Initial Plan additionally performs its separately claimed native mode selection before input. Execute adapts to the original planning observer when its first supported tool arrives; it never resends or replaces the accepted prompt. Existing first-text successful history and Stop retain their own independent profiles. Repository workspaces, continuation, Steer, Plan instruction templates, unverified tools and complete the feature account/platform readiness remain separately gated.
 
 Publish every original Read/Write, question and Plan observation in receipt order as an immutable `grok-tool-observed` event and `Message.grok_tool`. Preserve streamed argument fragments, original descriptors and namespaces, original request ID kind/arrival, pending/resolved stages, preview versus applied diffs, nullable question multi-select values, current native mode, Plan-file provenance and exact decimal uint64 metadata. Worker and server independently reduce the retained typed prefix through the existing native validators. The reducer has no native sender, filesystem reader or restoration capability. Limits are 4,096 observations, 4 MiB of reconstructed native payload, 512 KiB per public event, and the existing shared 128-tool/request/response bounds. Public stored journal reads also bound the complete serialized message aggregate to 8 MiB. Native paths and descriptors are inert retained content, never authority for I/O.
 
@@ -2438,7 +2438,11 @@ checkpoint roots and version-1 compatibility. Opt-in installed Windows tests use
 loopback providers for Build/Plan, FIFO, Stop/Resume and first/resumed lost-report
 recovery. A separately supplied canonical writable
 `DELIDEV_NATIVE_OPENCODE_WINDOWS_WORKSPACE_PARENT` on another local drive enables
-the native cross-drive Plan fixture. Neither deterministic tests nor
+the native cross-drive Plan fixture. All native OpenCode tests obtain the binary
+and its observed version through `nativetest.NativeOpenCodeExecutable`, which
+skips below `domain.OpenCodeProtocolVersion`; see the
+[native OpenCode testing runbook](cmds-delidev-opencode-native-testing.md).
+Neither deterministic tests nor
 cross-compilation establish installed Windows/account acceptance. See the
 independent issue evidence at the historical path `evidence/delidev/issue-1205/windows-root-validation.md` (the file is absent from this checkout).
 
@@ -2961,6 +2965,13 @@ rename therefore leaves an attributable plaintext remnant: the presence check
 entry with that name blocks without being removed, and the next credential write
 to the same target retires an earlier remnant before writing.
 
+For a validated existing credential parent, an empty attributed-temporary scan
+and an absent credential target each require a successful parent-directory sync
+before cleanup reports success. This includes retries after removal succeeded but
+the earlier sync failed. A sync failure retains the typed cleanup error and
+blocks server or Worker cleanup checkpoints. Missing, linked and non-directory
+parents retain their validation behavior; unrelated profile files remain intact.
+
 The transient executable copy of a native model observation is created by
 exactly one attempt (`O_EXCL`) and removed only after that operation's owned
 processes are joined; an unproven owner keeps the copy and the failure. A retry
@@ -2992,6 +3003,13 @@ verified legacy `runtimes/<id>` directory, which is registered in place: nothing
 is moved, merged or rewritten, and no native database is merged. A directory
 may be registered for one key only.
 
+One history identifier belongs to at most one managed or legacy profile in an
+owner registry. Rebinding it to the same profile is idempotent. A conflicting
+registration or record operation fails before publication and retains both
+profiles and their histories. Registry load rejects cross-profile duplicates as
+`registry_invalid` without rewriting the registry; history lookup and
+history-scoped deletion cannot choose an owner from ambiguous restored state.
+
 ### Deletion ownership
 
 A profile is deleted only by explicit session, account or storage deletion:
@@ -3007,6 +3025,17 @@ profile that is locked, referenced or unremovable makes the whole deletion retur
 an error (`profile_busy`, `referenced` or `delete_blocked`), so no caller proves a
 deletion while a matching profile remains. There is no age-based pruning.
 
+Managed-profile deletion checks the selected entry's owner record, private
+native home and exact directory object before removal. The recursive removal
+stays bound to that verified object. A missing or changed owner, missing native
+home or replacement directory leaves the directory and registry entry in
+recovery-required state. Verified legacy profiles keep their existing explicit
+deletion behavior. If Claude logout already removed its verified legacy auth
+directory but registry publication failed, original cleanup recovery uses its
+retained account, profile and joined-process claim to retire only that exact
+absent registration. It retains the cleanup fence for a referenced, locked,
+reappeared or mismatched profile, or for another registry publication failure.
+
 ### Legacy access-only quota migration
 
 A prior-epoch uncertain access-only quota or credit attempt whose per-operation
@@ -3014,13 +3043,15 @@ runtime was retained (original aliases, empty original process index, no auth or
 probe files, no live controller) is settled once, as failed, through an
 idempotent versioned migration receipt (`verified`, then `settled`). The proof
 requires the retained process index, a joined original owner, a bounded
-secret-remnant check (no credential file names, token fields or JWT-like
-content; links are counted but never followed) and unchanged account,
+secret-remnant check of every byte of each permitted regular file, within the
+existing cumulative 64 MiB limit (no credential file names, token fields or
+JWT-like content; links are counted but never followed), and unchanged account,
 connection, generation and operation identity. The directory and its helper
 links are left untouched. Only the eligible obsolete captured credential
 reference is retired, balances and timestamps are unchanged, and the old request
 is never replayed. Missing ownership, process, credential or vault proof, a
-changed identity or an unreadable receipt keeps the original fence. A later
+changed identity, an unreadable or size-changed retained file, an exceeded bound,
+or an unreadable receipt keeps the original fence. A later
 ordinary Refresh makes a new observation through the account's permanent quota
 profile.
 
@@ -3034,22 +3065,68 @@ Profile events use the structured fields `profile_id`, `owner`, `harness`,
 `referenced`, `deleted`, `delete_blocked`, `create_rolled_back`, `migration_verified`,
 `migration_settled`). Logs never contain secrets, native contents or paths.
 
-### OpenCode execution-family status
+### OpenCode execution family
 
 OpenCode discovery and protocol probes use the persistent accountless
-`discovery` profile. OpenCode execution, continuation, compaction and Fork still
-keep their immutable per-execution runtimes (`runtimes/<id>`), because their
-native checkpoints digest the complete runtime tree and copy the database
-forward into an empty, different runtime. Moving them to persistent profiles
-requires an in-place resume profile and a retained-configuration inspection
-verified against the pinned native; neither is part of the migrated paths. These
-runtimes remain legacy evidence: they are never auto-pruned, and session
-deletion still removes them with the session.
+`discovery` profile. OpenCode execution, continuation, compaction and Fork use
+persistent conversation profiles too: a first execution acquires the session's
+`conversation` profile, a continuation or compaction resumes the profile that
+retains the newest checkpoint, and a Fork child owns a `fork` profile. Every
+execution, action and Fork-runtime identifier of the history is bound to its
+profile, and the original history identifier of a continuation is bound as well.
+The per-operation `runtimes/<id>` directory is only the fresh operation journal.
+The profile root is the native runtime root (`<profile>/opencode`), so native
+state never mixes with the owner record.
+
+**In-place resume.** A native checkpoint digests the complete runtime tree, and
+resuming it no longer copies the database into a different runtime. When the
+runtime that retains the checkpoint is the runtime that runs next
+(`OpenResumedAPI` with the profile root as both), the harness runs this order:
+
+1. verify the retained files against the checkpoint (`InspectCheckpoint`) and the
+   effective settings against the checkpoint digest;
+2. durably record the once-only resume claim;
+3. rebuild the native snapshot repository from the verified self-contained
+   archive when the checkpoint carries snapshot evidence (the repository depends
+   on workspace objects that may have changed);
+4. retire only DeliDev's per-run files: `instructions.txt`,
+   `opencode/opencode.json`, the exported `snapshot-checkpoint` archive and the
+   `tmp` scratch contents. Native history, caches, logs and helper files stay;
+   links are refused, never followed;
+5. write the new instructions and workspace references and launch.
+
+A new native history in a persistent profile retires the same per-run files but
+never adopts retained history: a profile that still holds a native database
+refuses a new session. An unsent first-execution retry is the only exception:
+its abandoned session carries no history, so `ResetUnsentHistory` clears the
+`data/opencode` history directory (and the per-run files) before the retry.
+
+**Latest checkpoint only.** A run advances its profile, so only the newest
+checkpoint of a profile still matches its files; an older one stays readable as
+metadata evidence (`InspectCheckpointMetadata`, `InspectReplacementMetadata`,
+`InspectCompactionCheckpointInPlace`) but is no longer a resume or Fork source
+and fails closed when launch-time verification runs. A compaction action advances
+the profile, so the ordinary checkpoint it compacted is read as metadata. A
+failure after the in-place claim but before the native input is accepted leaves a
+profile that no longer matches its checkpoint; later continuations of that
+conversation fail closed with `recovery_required` and the user starts a new
+session. This is a known limitation of the in-place model; the old copy-forward
+model survived such failures at the cost of one runtime copy per turn.
+
+A Fork reads its source profile without changing it (the source checkpoint is
+verified again afterwards) and copies the history into the child's own profile.
+Legacy histories register in place: an execution or action identifier from before
+persistent profiles resolves to its verified `runtimes/<id>` directory, and a
+legacy Fork child resolves its `native` subdirectory. Continuations resolve the
+profile by the identifier that owns the newest checkpoint (the last compaction
+action when one ran, otherwise the checkpoint's execution), because legacy
+histories kept one runtime per turn. Legacy runtimes are never auto-pruned, and
+session deletion removes the session's profiles and journals with the session.
 
 ## Native version admission baselines
 
-Claude Code `2.1.236`, OpenCode `1.18.32` and Grok Build `1.0.41` are minimum SemVer baselines, not exact versions. `domain.HarnessVersionAllowed` (built on `domain.VersionAtLeast`) admits a version only when it is a valid bounded SemVer whose precedence is at or above the harness baseline. Prerelease versions follow standard SemVer precedence (`2.1.237-rc.1` is admitted and `2.1.236-rc.1` is not) and build metadata is ignored. Malformed and lower versions return `unsupported` from the explicit discovery probes before any native launch. Codex keeps `CodexVersionAllowed`.
+Claude Code `2.1.236`, OpenCode `1.18.32` and Grok Build `1.0.41` (`domain.GrokProtocolVersion`, the API and history baseline) are minimum SemVer baselines, not exact versions. Newer releases are never rejected by number alone; they are validated natively, and Grok Build 1.0.52 inspection is accepted when its optional `experiments` inventory is an empty array, which does not change these baselines. The separate subscription baseline `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) with `domain.GrokSubscriptionVersionAllowed` follows the same at-or-above rule, is not referenced by any capability, discovery or execution path, and is owned by `cmds-delidev-grok-subscription-contract.md`. `domain.HarnessVersionAllowed` (built on `domain.VersionAtLeast`) admits a version only when it is a valid bounded SemVer whose precedence is at or above the harness baseline. Prerelease versions follow standard SemVer precedence (`2.1.237-rc.1` is admitted and `2.1.236-rc.1` is not) and build metadata is ignored. Malformed and lower versions return `unsupported` from the explicit discovery probes before any native launch. Codex keeps `CodexVersionAllowed`.
 
 Admission never establishes protocol, account or execution readiness. An admitted installation still passes the harness's existing bounded native protocol, effective-settings, account, ownership and cleanup checks on the actual executable, and a changed method, field or setting fails with a typed native-validation error before any input or credential delivery with verified cleanup. Probe logs record the observed `installed_version` and the `baseline_version`. Direct version-4 execution keeps its version-independent admission and gains no numeric gate. Legacy execution, continuation and claim paths (versions 1 to 3) use the same `HarnessVersionAllowed` rule instead of exact equality. The pinned fixtures and installed-macOS evidence described in this contract remain evidence for the baseline only.
 
-Retained native records keep the observed executable version (`ExecutionPublisher.NativeVersion()`), which can be newer than the baseline. Every desktop validator of such a record (Claude, OpenCode and Grok interaction requests, Codex approvals, native usage observations and child records) must apply the same per-harness minimum-version rule through the single shared frontend predicate `harnessVersionAllowed` in `apps/delidev/src/harness-version.ts`, which mirrors `HarnessVersionAllowed` (and applies the Codex minimum `0.151.0`). A renderer validator must never compare a record version for equality with a baseline constant: that would present a newer admitted installation's question, permission request or usage as unavailable with no response controls. Unsupported-installation messages on the server, Worker and desktop (including `claudeSubscriptionInstallation` and the subagent and model-settings copy) must not name a fixed version.
+Retained native records keep the observed executable version (`ExecutionPublisher.NativeVersion()`), which can be newer than the baseline. Every desktop validator of such a record (Claude, OpenCode and Grok interaction requests, Codex approvals, native usage observations and child records) must apply the same per-harness minimum-version rule through the single shared frontend predicate `harnessVersionAllowed` in `apps/delidev/src/harness-version.ts`, which mirrors `HarnessVersionAllowed` (and applies the Codex minimum `0.151.0`). A renderer validator must never compare a record version for equality with a baseline constant: that would present a newer admitted installation's question, permission request or usage as unavailable with no response controls. Unsupported-installation messages on the server, Worker and desktop (including `claudeSubscriptionInstallation` and the subagent and model-settings copy) must not name a fixed version. The OpenCode discovery probe keeps one `domain.Unsupported` code for every profile mismatch but gives each cause its own remedy. Only the initial version admission (below the minimum, prerelease of it or malformed, checked before any process starts) tells the operator to update OpenCode on the Worker (for example `opencode upgrade`, or the package manager that installed it) and refresh discovery. A mismatch observed from an admitted or newer installation (health payload, global configuration, startup output or OpenAPI schema) must never prescribe an upgrade: it tells the operator to select a validated OpenCode version or correct its configuration, because a newer release can be the cause. No message or guidance contains baseline digits. Installation states that discovery reports as `incompatible` (relative explicit path, non-regular executable, Windows shell wrapper, unrunnable executable or unparseable version output) never carry a detected version, so they are never an outdated-version cause. The success-path `baseline_version` probe log field is operator telemetry and is unchanged. The desktop Settings installation observation applies the same minimum to a detected OpenCode version through `installationVersionAllowed` in `apps/delidev/src/harness-version.ts` (see the desktop contract); Codex and Grok keep protocol-only classification there.

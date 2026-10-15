@@ -105,7 +105,9 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind='machine' AND id IN (SELECT json_extract(CAST(body AS TEXT),'$.machine_id') FROM current_state.entities WHERE kind='network_route')",
 		// Worker files are not restored. Their database association must be
 		// explicitly paired again after startup, never implicitly reattached.
-		"UPDATE entities SET body=json_set(body,'$.revoked',json('true')) WHERE kind='device' AND json_extract(body,'$.type')='worker'",
+		// json_set yields TEXT; entity bodies are BLOB like every other write, so
+		// later record scans (for example account deletion) keep working.
+		"UPDATE entities SET body=CAST(json_set(body,'$.revoked',json('true')) AS BLOB) WHERE kind='device' AND json_extract(body,'$.type')='worker'",
 		"DELETE FROM entities WHERE id IN (SELECT id FROM tombstones) OR session_id IN (SELECT id FROM tombstones WHERE kind='session')",
 		"DELETE FROM entities WHERE kind='project_prompt_history' AND project_id NOT IN (SELECT id FROM entities WHERE kind='project')",
 		// Preserve original backup-removal jobs exactly for the independent

@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -20,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -56,10 +56,7 @@ func TestManualNativeOpenCodeWorkerRejectsChangedInput(t *testing.T) {
 
 func nativeOpenCodeWorkerFixture(t *testing.T, publishBindings, changedInput bool) {
 	t.Helper()
-	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if executable == "" {
-		t.Skip("explicit pinned native binary and private runtime required")
-	}
+	executable, version := nativetest.NativeOpenCodeExecutable(t)
 	modes := []domain.SessionMode{domain.ExecuteMode, domain.PlanMode}
 	if changedInput {
 		modes = modes[:1]
@@ -136,7 +133,7 @@ func nativeOpenCodeWorkerFixture(t *testing.T, publishBindings, changedInput boo
 			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 			defer cancel()
 			cfg := opencode.APIExecutionConfig{
-				Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(p.config.Root, "processes"), OwnerID: p.job, Executable: executable, Cwd: root, Env: env, Logger: logger}, Version: opencode.SupportedVersion, Home: filepath.Join(root, "opencode")},
+				Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(p.config.Root, "processes"), OwnerID: p.job, Executable: executable, Cwd: root, Env: env, Logger: logger}, Version: version, Home: filepath.Join(root, "opencode")},
 				Workspace: workspace, NativeRoot: filepath.VolumeName(workspace) + string(filepath.Separator), ServerOrigin: relay.URL, Token: authority.token,
 				Settings: settings.Session, Instructions: settings.Instructions, Rejection: settings.Rejection, Claim: journal.Claim,
 			}
