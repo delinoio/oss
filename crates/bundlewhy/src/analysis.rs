@@ -798,6 +798,10 @@ mod tests {
         FlagRead,
         /// Fifty columns before the flag read, leaving its own segment intact.
         BeforeFlagRead,
+        /// No segment starts on the flag's generated line at or before the
+        /// flag read, while an earlier generated line ends in a source-bearing
+        /// segment.
+        AfterEarlierLineMapping,
     }
 
     /// Rewrites the Vite index chunk map so one position lies in a segment
@@ -820,7 +824,13 @@ mod tests {
         let (gap_column, drop_existing) = match at {
             UnmappedAt::FlagRead => (column, true),
             UnmappedAt::BeforeFlagRead => (column - 50, false),
+            UnmappedAt::AfterEarlierLineMapping => (column, true),
         };
+        let earlier_line = matches!(at, UnmappedAt::AfterEarlierLineMapping);
+        assert!(
+            !earlier_line || line > 0,
+            "an earlier generated line must exist"
+        );
 
         let map_path = build.join(format!("{VITE_INDEX_CHUNK}.map"));
         let map = SourceMap::from_slice(&std::fs::read(&map_path).unwrap()).unwrap();
@@ -833,8 +843,15 @@ mod tests {
             builder.add_name(map.get_name(id).unwrap());
         }
         let mut inserted = false;
+        if earlier_line {
+            builder.add_raw(0, 0, 0, 0, Some(0), None, false);
+            inserted = true;
+        }
         for token in map.tokens() {
             let position = (token.get_dst_line(), token.get_dst_col());
+            if earlier_line && position.0 == line && position.1 <= gap_column {
+                continue;
+            }
             if !inserted && position >= (line, gap_column) {
                 builder.add_raw(line, gap_column, 0, 0, None, None, false);
                 inserted = true;
@@ -902,6 +919,19 @@ mod tests {
                     || entry.code == "BW_SOURCE_UNVERIFIED"
                     || entry.code == "BW_SOURCE_MAP_MISSING")
         );
+    }
+
+    #[test]
+    fn vite_candidate_is_not_covered_by_a_segment_from_an_earlier_line() {
+        let fixture = vite_with_unmapped_flag(None, UnmappedAt::AfterEarlierLineMapping, |_| {});
+        let analysis = &fixture.output.analysis;
+        // The earlier line's source-bearing segment must not attribute the
+        // candidate to that line's source.
+        assert!(!has_unresolved_env_diagnostic(analysis));
+        let coverage = dead_code_coverage(analysis);
+        assert_eq!(coverage.state, CoverageState::Partial);
+        assert!(coverage.note.contains("1 guarded environment candidate(s)"));
+        assert!(coverage.note.contains("no source mapping"));
     }
 
     #[test]

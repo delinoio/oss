@@ -172,10 +172,19 @@ impl Chunk {
         )
     }
 
+    /// Returns the segment that covers a generated position. A segment ends
+    /// at the end of its generated line, so a closest earlier token from a
+    /// previous line is not a mapping for this position.
+    fn token_at(&self, line: u32, column: u32) -> Option<sourcemap::Token<'_>> {
+        self.map
+            .as_ref()?
+            .lookup_token(line, column)
+            .filter(|token| token.get_dst_line() == line)
+    }
+
     /// Maps a generated position to (source path, zero-based line, column).
     pub fn original(&self, line: u32, column: u32) -> Option<(PathBuf, u32, u32)> {
-        let map = self.map.as_ref()?;
-        let token = map.lookup_token(line, column)?;
+        let token = self.token_at(line, column)?;
         let source = token.get_src_id();
         let path = self.map_sources.get(source as usize)?.clone()?;
         Some((path, token.get_src_line(), token.get_src_col()))
@@ -183,15 +192,16 @@ impl Chunk {
 
     /// True when the chunk has a usable source map but the segment covering
     /// the generated position carries no source: either no segment starts at
-    /// or before it, or the closest one is a generated-only segment. A segment
-    /// whose source is present but not a resolvable file (a bundler virtual
-    /// module or URL) is not a gap, and a chunk without a usable map is
-    /// reported through the missing-map path instead.
+    /// or before it on its generated line, or the closest one is a
+    /// generated-only segment. A segment on an earlier line never covers it.
+    /// A segment whose source is present but not a resolvable file (a bundler
+    /// virtual module or URL) is not a gap, and a chunk without a usable map
+    /// is reported through the missing-map path instead.
     pub fn lacks_source_mapping(&self, line: u32, column: u32) -> bool {
-        let Some(map) = self.map.as_ref() else {
+        if self.map.is_none() {
             return false;
-        };
-        map.lookup_token(line, column)
+        }
+        self.token_at(line, column)
             .is_none_or(|token| !token.has_source())
     }
 
@@ -444,6 +454,160 @@ mod tests {
         );
         assert!(chunk.map.is_none());
         assert!(!chunk.lacks_source_mapping(0, 0));
+    }
+
+    /// One generated position queried against a chunk and the expected result.
+    struct Probe {
+        line: u32,
+        column: u32,
+        /// File name of the original source, or `None` when nothing maps.
+        source: Option<&'static str>,
+    }
+
+    fn probe(line: u32, column: u32, source: Option<&'static str>) -> Probe {
+        Probe {
+            line,
+            column,
+            source,
+        }
+    }
+
+    #[test]
+    fn lookups_never_use_a_segment_from_an_earlier_generated_line() {
+        struct Case {
+            name: &'static str,
+            code: &'static str,
+            mappings: &'static str,
+            /// Text whose generated position must equal the first probe.
+            needle: Option<(&'static str, (u32, u32))>,
+            probes: Vec<Probe>,
+        }
+        let cases = vec![
+            Case {
+                name: "first line before its first segment",
+                code: "const a=1;",
+                mappings: "MAAA",
+                needle: None,
+                probes: vec![
+                    probe(0, 0, None),
+                    probe(0, 5, None),
+                    probe(0, 6, Some("a.js")),
+                    probe(0, 9, Some("a.js")),
+                ],
+            },
+            Case {
+                name: "empty line after a mapped line",
+                code: "const a=1;\n\nconst b=2;",
+                mappings: "AAAA;;MACA",
+                needle: None,
+                probes: vec![probe(0, 0, Some("a.js")), probe(1, 0, None)],
+            },
+            Case {
+                name: "line start before the first segment of a later line",
+                code: "const a=1;\n\nconst b=2;",
+                mappings: "AAAA;;MACA",
+                needle: Some(("const b", (2, 0))),
+                probes: vec![
+                    probe(2, 0, None),
+                    probe(2, 5, None),
+                    probe(2, 6, Some("a.js")),
+                    probe(2, 9, Some("a.js")),
+                ],
+            },
+            Case {
+                name: "columns beyond the last segment of a line",
+                code: "const a=1;\nconst b=2;",
+                mappings: "AAAA;MACA",
+                needle: None,
+                probes: vec![
+                    probe(0, 10, Some("a.js")),
+                    probe(0, 500, Some("a.js")),
+                    probe(1, 5, None),
+                    probe(1, 500, Some("a.js")),
+                ],
+            },
+            Case {
+                name: "last line and lines past the end without segments",
+                code: "const a=1;\nconst b=2;\nconst c=3;",
+                mappings: "AAAA;MACA",
+                needle: Some(("const c", (2, 0))),
+                probes: vec![
+                    probe(2, 0, None),
+                    probe(2, 9, None),
+                    probe(3, 0, None),
+                    probe(9, 4, None),
+                ],
+            },
+            Case {
+                name: "unsorted segments on one line",
+                code: "const a=1;const b=2;",
+                mappings: "MCAA,NDAA",
+                needle: None,
+                probes: vec![
+                    probe(0, 0, Some("a.js")),
+                    probe(0, 5, Some("a.js")),
+                    probe(0, 6, Some("b.js")),
+                ],
+            },
+            Case {
+                name: "CRLF belongs to the line it ends",
+                code: "const a=1;\r\nconst b=2;",
+                mappings: "AAAA;MACA",
+                needle: Some(("const b", (1, 0))),
+                probes: vec![
+                    probe(0, 10, Some("a.js")),
+                    probe(0, 11, Some("a.js")),
+                    probe(1, 0, None),
+                    probe(1, 6, Some("a.js")),
+                ],
+            },
+            Case {
+                name: "a lone CR does not start a generated line",
+                code: "const a=1;\rconst b=2;",
+                mappings: "AAAA",
+                needle: Some(("const b", (0, 11))),
+                probes: vec![probe(0, 11, Some("a.js")), probe(1, 0, None)],
+            },
+            Case {
+                name: "U+2028 does not start a generated line",
+                code: "const a='\u{2028}';const b=2;",
+                mappings: "AAAA",
+                needle: Some(("const b", (0, 12))),
+                probes: vec![probe(0, 12, Some("a.js")), probe(1, 0, None)],
+            },
+        ];
+        for case in cases {
+            let map = format!(
+                r#"{{"version":3,"sources":["a.js","b.js"],"names":[],"mappings":"{}"}}"#,
+                case.mappings
+            );
+            let (_dir, chunk) = chunk_with_map(case.code, &map);
+            assert!(chunk.map.is_some(), "{}", case.name);
+            if let Some((needle, expected)) = case.needle {
+                let offset = chunk.code.find(needle).unwrap();
+                assert_eq!(chunk.position(offset), expected, "{}", case.name);
+            }
+            for probe in case.probes {
+                let at = (probe.line, probe.column);
+                let original = chunk.original(probe.line, probe.column);
+                assert_eq!(
+                    original.as_ref().map(|(path, _, _)| path
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()),
+                    probe.source,
+                    "{}: original at {at:?}",
+                    case.name
+                );
+                assert_eq!(
+                    chunk.lacks_source_mapping(probe.line, probe.column),
+                    probe.source.is_none(),
+                    "{}: gap at {at:?}",
+                    case.name
+                );
+            }
+        }
     }
 
     #[test]
