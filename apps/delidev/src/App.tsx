@@ -77,6 +77,7 @@ import {
   type DestinationClick,
   DestinationWindowNotice,
   DestinationWindowProvider,
+  destinationSurface,
   useDestinationWindowController,
 } from "./destination-window";
 import { openDestinationWindow } from "./navigation-disposition";
@@ -807,7 +808,7 @@ function Shell({
   // A modified click opens the result in a new window on this connection. The
   // opening shares the Search status presentation and cancellation rules, but
   // never changes this window's selection, surface or drawer.
-  const openSearchResultInWindow = (id: string) =>
+  const openSearchResultInWindow = (id: string, surface: string) =>
     destinationWindow.run(async () => {
       supersedeSearchOpening();
       const token = searchIntent.current;
@@ -851,10 +852,10 @@ function Shell({
             : { surface: Surface.Sessions, session: id };
       }
       await openDestinationWindow(route);
-    });
+    }, surface);
   const openSearchResult = (id: string, event?: DestinationClick) => {
     if (event && destinationWindow.claim(event)) {
-      void openSearchResultInWindow(id);
+      void openSearchResultInWindow(id, destinationSurface(event));
       return;
     }
     userNavigated(NavigationIntentSource.SearchResult);

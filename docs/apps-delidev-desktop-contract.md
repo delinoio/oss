@@ -1632,7 +1632,19 @@ The Shell owns one controller (`useDestinationWindowController`). Descendants re
 | Failed      | native rejection or unknown error       | admits a new operation (the notice is cleared)                        | Pending, or Idle on dismiss          |
 | Unavailable | host is not Tauri (web preview, mobile) | not claimed: the control's handler runs                               | n/a                                  |
 
-Failure shows one localized `role="alert"` notice with a dismiss button through the existing notice treatment. It never navigates the current window, retries automatically, changes the selection, scroll, draft or drawer, or creates a resource. A Search result opening shares the existing pending/unavailable Search status: the original parent is resolved first, an unreadable result shows the existing alert, and no window opens.
+Failure shows one localized `role="alert"` notice with a dismiss button through the existing notice treatment. It never navigates the current window, retries automatically, changes the selection, scroll, draft or drawer, or creates a resource. The notice is presented by exactly one surface, the nearest registered surface that encloses the control that was clicked. A modal dialog makes the rest of the document inert, so a notice rendered only in the page would be neither readable nor dismissible for a control inside a dialog.
+
+| Caller context                                                                                 | Presenting surface                 | Lifetime of the notice                                             |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| Page content: Search results, Inbox, Schedules, Pull requests, Settings categories, Usage tabs | Shell main content                 | Until dismissed or the next operation starts                       |
+| Wide sidebar pane and rail (not modal)                                                         | Shell main content                 | As the page                                                        |
+| Compact sidebar drawer (modal dialog): Inbox, Search and Session rows                          | The drawer, at the top of its pane | As the page; closing the drawer moves a visible notice to the page |
+| Open More list (popover): Usage                                                                | The list, below its rows           | As the page; closing the list moves a visible notice to the page   |
+| Modal dialog: Fork dialog Open forked session                                                  | The dialog, below its heading      | As the page; closing the dialog moves a visible notice to the page |
+| Nested modal dialogs                                                                           | The innermost enclosing dialog     | As the modal dialog                                                |
+| Any surface that closed before the operation failed                                            | Shell main content                 | As the page                                                        |
+
+Surfaces register through one shared hook; the shared Modal registers every modal dialog it presents. A control outside every registered surface uses the page. A new caller context needs a row in this table and a presentation test before it ships. A Search result opening shares the existing pending/unavailable Search status: the original parent is resolved first, an unreadable result shows the existing alert, and no window opens.
 
 Destination window code paths log only phases, closed failure codes and closed reasons. They never log a route, an opaque Session, Sidechat or item ID, a title or connection data, including when the log site is shared with a current-window path.
 

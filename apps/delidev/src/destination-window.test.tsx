@@ -5,17 +5,20 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi, type Mock } from "vitest";
 import {
   DestinationWindowNotice,
   DestinationWindowProvider,
+  destinationSurface,
   useDestinationDispatch,
   useDestinationWindowController,
 } from "./destination-window";
 import { i18n, SupportedLanguage } from "./localization";
 import type { ProductRoute } from "./product-route";
 import { Surface } from "./surface";
+import { Modal } from "./ui";
 
 const native = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -290,4 +293,167 @@ it("does not update state after the Shell unmounts while an operation is pending
   view.unmount();
   await act(async () => fail("busy"));
   expect(error).not.toHaveBeenCalled();
+});
+
+// Failure presentation per caller context. A modal dialog makes the rest of the
+// document inert, so a failure from a control inside it is shown inside it.
+const failureText =
+  "The destination could not be opened in a new window. This window is unchanged.";
+
+function DestinationButton({ name }: { name: string }) {
+  const dispatch = useDestinationDispatch();
+  return (
+    <button
+      type="button"
+      onClick={(event) => dispatch(event, route, () => current())}
+    >
+      {name}
+    </button>
+  );
+}
+
+function Surfaces({
+  modal,
+  nested = false,
+}: {
+  modal: boolean;
+  nested?: boolean;
+}) {
+  const controller = useDestinationWindowController();
+  return (
+    <DestinationWindowProvider value={controller}>
+      <DestinationWindowNotice />
+      <DestinationButton name="Page destination" />
+      {modal ? (
+        <Modal title="Outer" close={() => {}}>
+          <DestinationButton name="Outer destination" />
+          {nested ? (
+            <Modal title="Inner" close={() => {}}>
+              <DestinationButton name="Inner destination" />
+            </Modal>
+          ) : null}
+        </Modal>
+      ) : null}
+    </DestinationWindowProvider>
+  );
+}
+
+const alertsIn = (root: HTMLElement) =>
+  [...root.querySelectorAll('[role="alert"]')].map(
+    (alert) => alert.textContent,
+  );
+
+it("presents a page control failure on the page, never inside an unrelated dialog", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  native.invoke.mockRejectedValueOnce("busy");
+  render(<Surfaces modal />);
+  await act(async () => {
+    fireEvent.click(
+      screen.getByRole("button", { name: "Page destination" }),
+      modified,
+    );
+  });
+  const alert = await screen.findByRole("alert");
+  expect(alert.closest("dialog")).toBeNull();
+  expect(alert.textContent).toBe(failureText);
+});
+
+it("presents a modal control failure inside its dialog and dismisses it there", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  native.invoke.mockRejectedValueOnce("permission-denied");
+  render(<Surfaces modal />);
+  const dialog = screen.getByRole("dialog", { name: "Outer" });
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Outer destination" }),
+      modified,
+    );
+  });
+  const alert = await screen.findByRole("alert");
+  expect(dialog.contains(alert)).toBe(true);
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Dismiss new window error" }),
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("presents a nested modal failure in the innermost dialog only", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  native.invoke.mockRejectedValueOnce("stopped");
+  render(<Surfaces modal nested />);
+  const outer = screen.getByRole("dialog", { name: "Outer" });
+  const inner = screen.getByRole("dialog", { name: "Inner" });
+  await act(async () => {
+    fireEvent.click(
+      within(inner).getByRole("button", { name: "Inner destination" }),
+      modified,
+    );
+  });
+  await screen.findByRole("alert");
+  expect(alertsIn(inner)).toEqual([failureText]);
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  // The nested dialog is the active modal; the outer one is inert behind it.
+  expect(inner.contains(screen.getByRole("alert"))).toBe(true);
+  expect(
+    outer.querySelectorAll(
+      ':scope > [role="alert"], :scope > div > [role="alert"]',
+    ),
+  ).toHaveLength(0);
+});
+
+it("moves a visible failure to the page when its dialog closes", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  native.invoke.mockRejectedValueOnce("busy");
+  const view = render(<Surfaces modal />);
+  const dialog = screen.getByRole("dialog", { name: "Outer" });
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Outer destination" }),
+      modified,
+    );
+  });
+  await screen.findByRole("alert");
+  expect(alertsIn(dialog)).toEqual([failureText]);
+  view.rerender(<Surfaces modal={false} />);
+  const alert = screen.getByRole("alert");
+  expect(alert.textContent).toBe(failureText);
+  expect(alert.closest("dialog")).toBeNull();
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+});
+
+it("presents a failure that arrives after its dialog closed on the page", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  let fail!: (reason: string) => void;
+  native.invoke.mockReturnValueOnce(
+    new Promise<void>((_, reject) => {
+      fail = reject;
+    }),
+  );
+  const view = render(<Surfaces modal />);
+  const dialog = screen.getByRole("dialog", { name: "Outer" });
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Outer destination" }),
+      modified,
+    );
+  });
+  view.rerender(<Surfaces modal={false} />);
+  await act(async () => fail("timed-out"));
+  const alert = await screen.findByRole("alert");
+  expect(alert.closest("dialog")).toBeNull();
+});
+
+it("resolves the page surface when the click has no enclosing registered surface", () => {
+  expect(
+    destinationSurface({
+      currentTarget: null,
+    } as unknown as Parameters<typeof destinationSurface>[0]),
+  ).toBe("page");
+  const orphan = document.createElement("button");
+  expect(
+    destinationSurface({
+      currentTarget: orphan,
+    } as unknown as Parameters<typeof destinationSurface>[0]),
+  ).toBe("page");
 });

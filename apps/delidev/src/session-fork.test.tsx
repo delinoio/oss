@@ -10,6 +10,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
@@ -694,9 +695,30 @@ it("retains exact fork retry and accepted job while navigation changes, publishi
   expect(screen.getByRole("button", { name: "Open forked session" })).toBe(
     openFork,
   );
+  // The dialog is modal, so a native rejection is presented inside it: the
+  // page behind it is inert and could not expose the notice or its dismissal.
+  destination.reject();
+  fireEvent.click(openFork, primaryClick);
+  const dialog = openFork.closest("dialog")!;
+  const notice = screen.getByText(
+    "The destination could not be opened in a new window. This window is unchanged.",
+  );
+  expect(notice.getAttribute("role")).toBe("alert");
+  expect(dialog.contains(notice)).toBe(true);
+  expect(
+    screen
+      .getAllByRole("alert")
+      .filter((alert) => alert.textContent === notice.textContent),
+  ).toHaveLength(1);
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Dismiss new window error" }),
+  );
+  expect(screen.queryByText(notice.textContent!)).toBeNull();
+  expect(open).not.toHaveBeenCalled();
+  destination.resolve();
   fireEvent.click(openFork);
   await waitFor(() => expect(open).toHaveBeenCalledWith(child.id));
-  expect(destination.opened).toHaveBeenCalledTimes(1);
+  expect(destination.opened).toHaveBeenCalledTimes(2);
   expect(fork).toHaveBeenCalledTimes(2);
 });
 

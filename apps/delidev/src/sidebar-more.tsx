@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { copy, useLocale } from "./localization";
-import { useDestinationDispatch } from "./destination-window";
+import {
+  useDestinationDispatch,
+  useDestinationSurface,
+} from "./destination-window";
 import { Surface } from "./surface";
 import {
   NavigationPreferenceNotice,
@@ -77,6 +80,9 @@ export function SidebarMore({
   const navigation = useNavigationPreference();
   const pinned = navigation.snapshot.usage_pinned;
   const [open, setOpen] = useState(false);
+  // The open list presents a destination window failure from its own control
+  // inside the list, next to the control that failed.
+  const destinationSurface = useDestinationSurface(open);
   const trigger = useRef<HTMLButtonElement>(null);
   const popup = useRef<HTMLDivElement>(null);
   const pin = useRef<HTMLButtonElement>(null);
@@ -159,6 +165,7 @@ export function SidebarMore({
         <div
           ref={popup}
           popover="manual"
+          {...destinationSurface.props}
           role="dialog"
           aria-label={copy("sidebar.more")}
           className="sidebar-more-popover"
@@ -239,6 +246,7 @@ export function SidebarMore({
               <Glyph name={MoreGlyph.Pin} filled={pinned} />
             </button>
           </div>
+          {destinationSurface.notice}
           <NavigationPreferenceNotice
             beforeReload={() => pin.current?.focus()}
           />

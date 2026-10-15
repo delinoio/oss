@@ -2885,3 +2885,105 @@ it("never opens a destination window from action controls", async () => {
   expect(value.newSession).toHaveBeenCalledOnce();
   expect(value.newProject).toHaveBeenCalledOnce();
 });
+
+// Failure presentation per caller context. A modal dialog makes everything
+// outside it inert, so a failure raised by a control inside the compact drawer
+// or the open More list is presented inside that surface; the wide pane is not
+// modal and keeps the page presentation.
+const stubViewport = (compact: boolean) =>
+  vi.stubGlobal("matchMedia", () => ({
+    matches: compact,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+const failureText =
+  "The destination could not be opened in a new window. This window is unchanged.";
+
+it("presents a failure from the compact drawer inside the modal drawer and moves it to the page when the drawer closes", async () => {
+  stubViewport(true);
+  const destination = fakeDestinationWindow();
+  destination.reject();
+  const value = mountSidebar({
+    ...emptyLists,
+    destination,
+    props: { drawerOpen: true },
+  });
+  const drawer = value.container.querySelector<HTMLElement>(
+    "dialog.sidebar-pane-dialog",
+  )!;
+  fireEvent.click(
+    await within(drawer).findByRole("button", { name: "Inbox" }),
+    primaryClick,
+  );
+  expect(destination.opened).toHaveBeenCalledOnce();
+  // The one alert is inside the drawer, which stays open and reachable.
+  const alerts = screen.getAllByRole("alert");
+  expect(alerts).toHaveLength(1);
+  expect(drawer.contains(alerts[0])).toBe(true);
+  expect(alerts[0].textContent).toBe(failureText);
+  expect(drawer.hasAttribute("open")).toBe(true);
+  // Dismissing from inside the drawer clears the failure.
+  fireEvent.click(
+    within(drawer).getByRole("button", { name: "Dismiss new window error" }),
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+  // A failure left behind when the drawer closes is shown by the page.
+  fireEvent.click(
+    within(drawer).getByRole("button", { name: "Search" }),
+    primaryClick,
+  );
+  expect(drawer.contains(screen.getByRole("alert"))).toBe(true);
+  value.setProps({ drawerOpen: false });
+  const moved = screen.getByRole("alert");
+  expect(drawer.contains(moved)).toBe(false);
+  expect(moved.textContent).toBe(failureText);
+});
+
+it("keeps the page presentation for a failure from the wide, non-modal pane", async () => {
+  stubViewport(false);
+  const destination = fakeDestinationWindow();
+  destination.reject();
+  const value = mountSidebar({ ...emptyLists, destination });
+  const pane = value.container.querySelector<HTMLElement>(
+    "dialog.sidebar-pane-dialog",
+  )!;
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Pull requests" }),
+    primaryClick,
+  );
+  const alert = screen.getByRole("alert");
+  expect(alert.textContent).toBe(failureText);
+  expect(pane.contains(alert)).toBe(false);
+});
+
+it("presents a failure from the open More list inside the list and moves it to the page when the list closes", async () => {
+  stubViewport(false);
+  const destination = fakeDestinationWindow();
+  destination.reject();
+  mountSidebar({ ...emptyLists, destination });
+  await screen.findByRole("button", { name: "Sessions" });
+  fireEvent.click(screen.getByRole("button", { name: "More" }));
+  const popover = screen.getByRole("dialog", { name: "More" });
+  fireEvent.click(
+    within(popover).getByRole("button", { name: "Usage" }),
+    primaryClick,
+  );
+  const alerts = screen.getAllByRole("alert");
+  expect(alerts).toHaveLength(1);
+  expect(popover.contains(alerts[0])).toBe(true);
+  expect(alerts[0].textContent).toBe(failureText);
+  // The list stays open and dismissing inside it does not close it.
+  fireEvent.click(
+    within(popover).getByRole("button", { name: "Dismiss new window error" }),
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("dialog", { name: "More" })).toBe(popover);
+  fireEvent.click(
+    within(popover).getByRole("button", { name: "Usage" }),
+    primaryClick,
+  );
+  fireEvent.keyDown(popover, { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
+  const moved = screen.getByRole("alert");
+  expect(moved.textContent).toBe(failureText);
+});

@@ -15,7 +15,10 @@ import {
 } from "./disclosure";
 import { SubscriptionRail } from "./subscription-rail";
 import { SidebarMore } from "./sidebar-more";
-import { useDestinationDispatch } from "./destination-window";
+import {
+  useDestinationDispatch,
+  useDestinationSurface,
+} from "./destination-window";
 import {
   NavigationPreferenceBoundary,
   useNavigationPreference,
@@ -1112,6 +1115,10 @@ function SidebarContent({
       typeof window.matchMedia === "function" &&
       window.matchMedia("(max-width: 759px)").matches,
   );
+  // The compact drawer is a modal dialog that makes the main content inert, so
+  // a destination window failure from a pane control is presented inside it.
+  // The wide pane is not modal and keeps the page presentation.
+  const destinationSurface = useDestinationSurface(compact && drawerOpen);
   const drawer = useRef<HTMLDialogElement>(null);
   const rail = useRef<HTMLElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -1722,6 +1729,7 @@ function SidebarContent({
           </nav>
           <dialog
             ref={drawer}
+            {...destinationSurface.props}
             role={compact ? "dialog" : "region"}
             className={`sidebar-pane-dialog${compact && drawerOpen ? " is-drawer" : ""}`}
             aria-label={
@@ -1738,6 +1746,7 @@ function SidebarContent({
             <div
               className={`sidebar-pane${sessionNavigation ? " is-home" : ""}`}
             >
+              {destinationSurface.notice}
               <header className="sidebar-header">
                 <h1>{copy("sidebar.delidev_44fcad")}</h1>
                 {sessionNavigation ? (
