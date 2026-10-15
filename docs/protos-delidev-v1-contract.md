@@ -41,6 +41,19 @@ expose the new enum. No public RPC, System capability, message field or SQLite
 migration is added. The [command contract](cmds-delidev-contract.md#parallel-session-dispatch)
 owns dispatch behavior.
 
+## Worker attach request identity
+
+The server binds `AttachWorkerRequest.request_id` to the exact request content,
+including the ordered `capabilities` list and the network fields. A negotiated
+attach therefore derives its request ID from the complete request, not from a
+hand-maintained profile of selected capabilities. The Worker keeps the same ID
+only while the whole request is identical across reconnects and rotates it when
+any capability is added, removed, reordered or duplicated, or when any other
+field changes. A server upgrade or rollback that changes the echoed capability
+support must never replay an earlier ID with different content, which the server
+rejects as a conflict. The `attachRequestIdentity` table and per-capability
+reconnect tests in `cmds/delidev-cli/internal/worker` own this rule.
+
 ## Branch prefix exact-quote negotiation
 
 Worker `BRANCH_PREFIX_EXACT_QUOTE_V1 = 65` is allocated and activated with
@@ -1399,6 +1412,18 @@ The allocation ledger retains the complete enum/message field closure and the Sk
 ## Image input declarations
 
 The feature owns `AttachmentService`, its closed image/transfer/upload declarations, System 45, Worker 25 and typed creation/enqueue/queued-edit attachment field 5. Follow the [image input contract](cmds-delidev-image-input-contract.md). The owner permits these declarations and complete activation in the same feature PR. Byte chunks remain bounded at 256 KiB outside generic resource and assignment JSON; old peers retain text-only behavior. No migration is added.
+
+System capability 105 and Worker capability 70 (`OPENCODE_IMAGE_INPUTS_V1`) are an
+independent pair that enables image attachments for OpenCode. They refine capability
+45/25, which every peer holding them must also hold, and never change what 45/25 mean.
+The server freezes the OpenCode image declaration and admits or dispatches OpenCode
+attachments only for a Runner Device that reports 70; a Worker that predates the pair
+keeps receiving text-only OpenCode assignments with no declaration. A Worker attachment
+that reports 70 without 25 is invalid peer state: AttachWorker rejects it as
+`InvalidArgument` before persistence and Machine validation never accepts it. The
+Worker advertises 70 only after the original server echoed it. No protobuf message
+field or migration is added; the generated Go and TypeScript enums are regenerated
+together.
 
 The image input allocation ledger includes every AttachmentService method with its exact request, response and streaming profile. Queued edits preserve original accepted references; explicit typed references must match the complete ordered original selection. Omission retains old-client text edits.
 

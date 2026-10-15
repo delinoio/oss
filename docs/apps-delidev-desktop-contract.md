@@ -2348,7 +2348,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - `entrance-motion.ts`/`.css` own the shared 160ms Y4 entrance primitive and replay-safe `useEntranceActivation` hook under `apps-delidev-desktop-contract.md#shared-restrained-entrance-motion-and-appearance`. Keep keyframes static, add no inline style or dependency, and let each Settings category opt in through the `entranceCategories` map (category to `EntranceTarget`) with its own contract text; see the Settings category entrance section.
 
-- Image composers follow `cmds-delidev-image-input-contract.md` and `apps-delidev-desktop-contract.md#image-inputs`. `image-input.ts` owns bounded original-byte validation and complete reference/receipt verification; `image-drafts.tsx` owns connection-identity drafts, exact staging/recovery and original Runner cleanup. Preserve independent first-message/General Chat/Session drafts across navigation, Settings and reconnect; dispose bytes/object URLs on identity change. Keep typed references separate from document JSON, require READY and matching ordered admission receipts, restage changed Runner/operation selections, and retain uncertain requests without edits. `image-attachments.tsx` owns ordered accessible previews and authenticated digest-verified history readback with explicit retry; queued edits retain immutable refs and image-bound Steer remains disabled. System 45/Worker 25 and the original execution harness are advisory frontend gates; native modality proof remains backend-owned. The isolated image browser fixture grants no native/account acceptance and must stay outside product bundles.
+- Image composers follow `cmds-delidev-image-input-contract.md` and `apps-delidev-desktop-contract.md#image-inputs`. `image-input.ts` owns bounded original-byte validation and complete reference/receipt verification; `image-drafts.tsx` owns connection-identity drafts, exact staging/recovery and original Runner cleanup. Preserve independent first-message/General Chat/Session drafts across navigation, Settings and reconnect; dispose bytes/object URLs on identity change. Keep typed references separate from document JSON, require READY and matching ordered admission receipts, restage changed Runner/operation selections, and retain uncertain requests without edits. `image-attachments.tsx` owns ordered accessible previews and authenticated digest-verified history readback with explicit retry; queued edits retain immutable refs and image-bound Steer remains disabled. System 45/Worker 25 and the original execution harness are advisory frontend gates; native modality proof remains backend-owned. `useImageRoute` admits Codex Agents and OpenCode Agents whose every source route model declares the `image` input modality and whose System and Runner Device report the independent OpenCode image pair (System 105 / Worker 70); queued follow-ups use the frozen execution harness plus `image_input_declared` for OpenCode, and Sidechat, Claude Code and Grok Build stay unsupported. The en/ko creation guidance states the OpenCode 384 KiB combined limit and its required message text. The isolated image browser fixture grants no native/account acceptance and must stay outside product bundles.
 
 - `runner-observation.ts` owns bounded closed presentation evidence, without changing the original Runner eligibility predicate. The shared Runner provider retains one exact machine controller across presenter close and same-identity readiness changes; full Settings inspection preserves Updates and network tools. Exact-machine pending or uncertain inspection retains consuming-flow gates. SessionTools likewise retains one original controller; the owning conversation failure exposes its eligible recovery action and original confirmation within the same session, including Info for constrained layouts. Account reads older than retained acknowledgments cannot enable fresh lifecycle actions, while original uncertain retries and durable cleanup retain their own authority.
 
@@ -5948,7 +5948,8 @@ cleanup on the original Runner. Pending or uncertain submission locks edits and
 replays only the exact original typed request and ordered references.
 
 Capability 45, Worker capability 25 and the supported original execution harness
-gate image submission. Text-only input retains its existing gates. Image-only
+gate image submission; OpenCode additionally requires System capability 105 and the
+selected Runner Device's Worker capability 70. Text-only input retains its existing gates. Image-only
 input is valid after all original transfers reach verified READY. Keep typed
 attachment references outside ordinary document JSON. Admission clears a draft
 only after the original receipt proves the full ordered references; an absent or
@@ -6140,8 +6141,9 @@ Creation attachment guidance opens only on plus hover or focus.
 Use one noninteractive role=tooltip with aria-describedby while shown, replacing
 this surface's native title. Show the exact English/Korean creation catalog copy:
 still PNG/JPEG/WebP, eight images per message, 10 MiB each, 40 MiB combined,
-40 million pixels each, supported Codex Agent Worker/model/Runner requirements
-and unsupported Claude Code/OpenCode/Grok Build image inputs. Static requirements
+40 million pixels each, supported Codex or OpenCode Agent Worker/model/Runner
+requirements, the OpenCode 384 KiB combined limit and required message text, and
+unsupported Claude Code/Grok Build image inputs. Static requirements
 never claim selection eligibility or enable reads, probes, uploads or mutations.
 Preserve hover across the trigger/content gap and focus; Escape dismisses without
 moving focus until fresh hover/focus entry. Disposal closes guidance. A disabled

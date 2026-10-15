@@ -179,7 +179,7 @@ func (c *OpenCodeBindingPublisher) readClaims() ([]opencode.SessionClaim, error)
 		return nil, openCodeClaimUncertain()
 	}
 	if len(claims) > 1 {
-		expected, err := opencode.TextInputClaimDigest(c.requested.Session, claims[1].MessageID, claims[1].PartID, c.publisher.input.Input.Prompt)
+		expected, err := opencode.InputClaimDigest(c.requested.Session, claims[1].MessageID, claims[1].PartID, c.publisher.input.Input.Prompt, openCodeClaimImages(c.publisher.input.Input.Attachments))
 		if err != nil || claims[1].BodyDigest != expected {
 			return nil, openCodeClaimUncertain()
 		}
