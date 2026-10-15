@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -49,9 +50,15 @@ func coalitionActive(id uint64) (uint64, error) {
 	return usage[0] - usage[1], nil
 }
 func bootIdentity() (string, error) { return unix.Sysctl("kern.bootsessionuuid") }
-func prepareScope(s *processScope, _ string) error {
+func prepareScope(s *processScope, _ string, session SessionContext) error {
 	s.Label = "io.delino.delidev.execution." + string(domain.NewID())
 	s.Domain = fmt.Sprintf("user/%d", os.Getuid())
+	if session == CurrentUserGUI {
+		gui := fmt.Sprintf("gui/%d", os.Getuid())
+		if err := launchctl("print", gui); err == nil {
+			s.Domain = gui
+		}
+	}
 	return nil
 }
 func launchctl(args ...string) error {
@@ -77,7 +84,11 @@ func launchScope(s processScope, dir, socket string) (func() error, error) {
 	for _, arg := range []string{executable, supervisorArgument, dir, socket} {
 		fmt.Fprintf(&b, "<string>%s</string>", text(arg))
 	}
-	b.WriteString(`</array><key>LimitLoadToSessionType</key><string>Background</string><key>RunAtLoad</key><true/><key>KeepAlive</key><false/><key>ExitTimeOut</key><integer>1</integer><key>AbandonProcessGroup</key><true/><key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin:/bin</string></dict></dict></plist>`)
+	sessionType := "Background"
+	if strings.HasPrefix(s.Domain, "gui/") {
+		sessionType = "Aqua"
+	}
+	fmt.Fprintf(&b, `</array><key>LimitLoadToSessionType</key><string>%s</string><key>RunAtLoad</key><true/><key>KeepAlive</key><false/><key>ExitTimeOut</key><integer>1</integer><key>AbandonProcessGroup</key><true/><key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin:/bin</string></dict></dict></plist>`, sessionType)
 	path := filepath.Join(dir, "supervisor.plist")
 	if err = security.WriteAtomic(path, b.Bytes()); err != nil {
 		return nil, err
