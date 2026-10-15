@@ -2,6 +2,7 @@ package runmoor
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"runtime"
@@ -219,7 +220,21 @@ func (b *ManagedImageBuilder) prepareWindowsDocker(ctx context.Context, c Config
 	if e = b.Store.Update(func(s *Snapshot) error { s.Artifacts[a.ID].Generated = true; return nil }); e != nil {
 		return p, e
 	}
-	committed, e := cli.ContainerCommit(ctx, created.ID, client.ContainerCommitOptions{Reference: artifactTag(a.ID), Config: &container.Config{User: "ContainerUser", Labels: labels}})
+	// Preserve the base's Windows PATH/runtime environment and image metadata.
+	// Only the disposable candidate's execution user and ownership labels change.
+	var commitConfig container.Config
+	raw, e := json.Marshal(info.Config)
+	if e != nil || json.Unmarshal(raw, &commitConfig) != nil {
+		return p, dockerProblem()
+	}
+	commitConfig.User = "ContainerUser"
+	if commitConfig.Labels == nil {
+		commitConfig.Labels = map[string]string{}
+	}
+	for key, value := range labels {
+		commitConfig.Labels[key] = value
+	}
+	committed, e := cli.ContainerCommit(ctx, created.ID, client.ContainerCommitOptions{Reference: artifactTag(a.ID), Config: &commitConfig})
 	if e != nil {
 		return p, dockerProblem()
 	}
