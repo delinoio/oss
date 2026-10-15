@@ -31,6 +31,7 @@ const MAX_URL_LENGTH = 2048;
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})[^\n]*(?:\n|$)/y;
 const AUTOLINK = /<[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*>/y;
 const ESCAPABLE = /\\([!-/:-@[-`{-~])/gu;
+const ESCAPED_CHAR = /^[!-/:-@[-`{-~]$/u;
 
 interface BracketShape extends TextRange {
   link?: MarkdownLink;
@@ -326,6 +327,11 @@ export function convertTypedUrl(
 export interface CollapsedLink extends MarkdownLink {
   displayStart: number;
   displayEnd: number;
+  /**
+   * Canonical offset, relative to `labelStart`, of every displayed label
+   * character plus the label end. Absent when the label has no escapes.
+   */
+  labelOffsets?: number[];
 }
 
 export interface PromptLayout {
@@ -337,6 +343,39 @@ export interface PromptLayout {
   toCanonical: (offset: number) => number;
   /** Collapsed link whose display range strictly contains the offset. */
   collapsedContaining: (displayOffset: number) => CollapsedLink | undefined;
+}
+
+/** Decodes label escapes; `offsets[i]` is the canonical start of display char i. */
+function decodeLabel(label: string): { text: string; offsets?: number[] } {
+  if (!label.includes("\\")) return { text: label };
+  let text = "";
+  const offsets: number[] = [];
+  for (let index = 0; index < label.length; ) {
+    offsets.push(index);
+    if (label[index] === "\\" && ESCAPED_CHAR.test(label[index + 1] ?? "")) {
+      text += label[index + 1];
+      index += 2;
+      continue;
+    }
+    text += label[index];
+    index += 1;
+  }
+  offsets.push(label.length);
+  return { text, offsets };
+}
+
+/** Display index of a canonical offset inside a label; mid-escape rounds down. */
+function labelDisplayIndex(link: CollapsedLink, relative: number): number {
+  const offsets = link.labelOffsets;
+  if (!offsets) return relative;
+  let low = 0,
+    high = offsets.length - 1;
+  while (low < high) {
+    const middle = (low + high + 1) >> 1;
+    if (offsets[middle]! <= relative) low = middle;
+    else high = middle - 1;
+  }
+  return low;
 }
 
 export function buildLayout(
@@ -352,13 +391,19 @@ export function buildLayout(
     if (open.has(link.start)) continue;
     display += canonical.slice(cursor, link.start);
     const displayStart = display.length;
-    display += canonical.slice(link.labelStart, link.labelEnd);
-    collapsed.push({ ...link, displayStart, displayEnd: display.length });
+    const label = decodeLabel(canonical.slice(link.labelStart, link.labelEnd));
+    display += label.text;
+    collapsed.push({
+      ...link,
+      displayStart,
+      displayEnd: display.length,
+      labelOffsets: label.offsets,
+    });
     cursor = link.end;
   }
   display += canonical.slice(cursor);
-  const hiddenOf = (link: MarkdownLink) =>
-    link.end - link.start - (link.labelEnd - link.labelStart);
+  const hiddenOf = (link: CollapsedLink) =>
+    link.end - link.start - (link.displayEnd - link.displayStart);
   return {
     canonical,
     display,
@@ -374,7 +419,9 @@ export function buildLayout(
         }
         if (offset <= link.labelStart) return link.displayStart;
         if (offset >= link.labelEnd) return link.displayEnd;
-        return link.displayStart + (offset - link.labelStart);
+        return (
+          link.displayStart + labelDisplayIndex(link, offset - link.labelStart)
+        );
       }
       return offset - hidden;
     },
@@ -386,7 +433,8 @@ export function buildLayout(
           hidden += hiddenOf(link);
           continue;
         }
-        return link.labelStart + (offset - link.displayStart);
+        const relative = offset - link.displayStart;
+        return link.labelStart + (link.labelOffsets?.[relative] ?? relative);
       }
       return offset + hidden;
     },

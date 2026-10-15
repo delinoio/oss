@@ -210,3 +210,38 @@ it("bounds scanning of unterminated and oversized link destinations", () => {
   expect(scan.links).toEqual([]);
   expect(scan.protectedRanges.length).toBeGreaterThan(0);
 });
+
+it("shows decoded label escapes and maps offsets across them", () => {
+  const url = "https://[::1]/a";
+  const canonical = `go ${markdownLinkFor(url)} now`;
+  expect(canonical).toContain("https://\\[::1\\]/a");
+  const layout = buildLayout(canonical);
+  expect(layout.display).toBe(`go ${url} now`);
+  const link = layout.collapsed[0]!;
+  expect(layout.display.slice(link.displayStart, link.displayEnd)).toBe(url);
+  const labelStart = link.labelStart;
+  for (
+    let display = link.displayStart + 1;
+    display < link.displayEnd;
+    display++
+  ) {
+    const canonicalOffset = layout.toCanonical(display);
+    expect(layout.toDisplay(canonicalOffset)).toBe(display);
+    expect(canonicalOffset).toBeGreaterThanOrEqual(labelStart);
+    expect(canonicalOffset).toBeLessThanOrEqual(link.labelEnd);
+  }
+  // Offsets after the link stay aligned after the hidden syntax.
+  expect(layout.toDisplay(canonical.length)).toBe(layout.display.length);
+  expect(layout.toCanonical(layout.display.length)).toBe(canonical.length);
+  // A position between a backslash and its escaped character rounds down.
+  const bracket = canonical.indexOf("\\[");
+  expect(layout.toDisplay(bracket + 1)).toBe(layout.toDisplay(bracket));
+  // Replacing one decoded character replaces its whole escape sequence.
+  const at = link.displayStart + "https://".length;
+  expect(canonicalRangeForDisplay(layout, at, at + 1)).toEqual({
+    start: bracket,
+    end: bracket + 2,
+  });
+  const revealed = buildLayout(canonical, [link.start]);
+  expect(revealed.display).toBe(canonical);
+});
