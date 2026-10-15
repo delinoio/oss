@@ -127,6 +127,7 @@ func TestManualNativeScriptedTextCompletion(t *testing.T) {
 	if _, err = s.SendInput(ctx, domain.NewID(), lifecycleFixtureText, ContinueSuccessfulRun); err != nil {
 		t.Fatal(err)
 	}
+	finished := false
 	for {
 		observation, err := s.Next(ctx)
 		if err != nil {
@@ -136,7 +137,17 @@ func TestManualNativeScriptedTextCompletion(t *testing.T) {
 			if observation.Result == nil || !observation.Result.Successful() {
 				t.Fatal("native scripted result did not succeed")
 			}
+			finished = true
+		}
+		if finished && observation.Run != nil && observation.Run.State == RunIdle {
 			break
 		}
+	}
+	closed, err := s.CloseForContinuation(ctx)
+	if err != nil {
+		t.Fatal("native completion history was not retained", err)
+	}
+	if _, _, err := closed.RetainCheckpoint(ctx); err != nil {
+		t.Fatal("native completion checkpoint was not retained", err)
 	}
 }
