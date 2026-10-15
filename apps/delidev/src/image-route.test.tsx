@@ -183,9 +183,7 @@ it("uses the frozen execution snapshot for queued follow-ups", async () => {
   expect(await ready(agent, { harness: "opencode", declared: false })).toBe(
     false,
   );
-  expect(await ready(agent, { harness: "codex", declared: false })).toBe(
-    false,
-  );
+  expect(await ready(agent, { harness: "codex", declared: false })).toBe(false);
   expect(await ready(agent, { harness: "codex", declared: true })).toBe(true);
   expect(await ready(agent, { harness: "claude-code", declared: true })).toBe(
     true,
