@@ -7,7 +7,10 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { normalizeCollectionRoot } from "../../../crates/bundlewhy/adapters/vite.mjs";
+import {
+  normalizeCollectionRoot,
+  normalizeViteModule,
+} from "../../../crates/bundlewhy/adapters/vite.mjs";
 import {
   ExportUsageReason,
   MAX_EXPORT_USAGE_EDGES,
@@ -21,7 +24,7 @@ function runAdapter(bundler, project, config, extra = {}, env = {}) {
   const work = fs.mkdtempSync(
     path.join(os.tmpdir(), "bundlewhy-adapter-test-"),
   );
-  const projectRoot = path.join(root, "fixtures", project);
+  const projectRoot = path.resolve(root, "fixtures", project);
   const request = {
     projectRoot,
     configFile: path.join(projectRoot, config),
@@ -330,6 +333,153 @@ test("vite configuration errors are configuration load failures", () => {
   const error = events.find((event) => event.event === "error");
   assert.equal(error.code, "BW_CONFIG_LOAD_FAILED");
   assert.match(error.message, /vite factory broke/);
+});
+
+// Builds a project whose `vite` package has Vite 5's dual entry shape: the
+// `import` condition points to an ESM entry with named exports and the
+// `require` condition (the one `require.resolve` selects) points to a CommonJS
+// entry that exposes the API only through its default export.
+function writeFakeViteProject({ cjsApi, version = "5.0.12" }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bundlewhy-fake-vite-"));
+  const vite = path.join(dir, "node_modules", "vite");
+  fs.mkdirSync(path.join(vite, "dist"), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "package.json"),
+    JSON.stringify({ type: "module" }),
+  );
+  fs.writeFileSync(
+    path.join(vite, "package.json"),
+    JSON.stringify({
+      name: "vite",
+      version,
+      exports: {
+        ".": { import: "./dist/index.js", require: "./index.cjs" },
+        "./package.json": "./package.json",
+      },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(vite, "dist/index.js"),
+    'export const version = "esm";\n',
+  );
+  fs.writeFileSync(
+    path.join(vite, "index.cjs"),
+    `const api = ${cjsApi};\nmodule.exports = api;\n`,
+  );
+  fs.writeFileSync(
+    path.join(dir, "vite.config.mjs"),
+    "export default {};\n",
+  );
+  return dir;
+}
+
+const FAKE_VITE_API_BODY = {
+  loadConfigFromFile:
+    'async () => { if (process.env.FAKE_VITE_CONFIG_FAILS) throw new Error("factory broke"); return { config: {} }; }',
+  build: 'async () => { throw new Error("fake vite build reached"); }',
+  mergeConfig: "(a, b) => ({ ...a, ...b })",
+  createLogger: "() => ({})",
+};
+
+function fakeViteApi(overrides = {}) {
+  const entries = { ...FAKE_VITE_API_BODY, ...overrides };
+  return `{ version: "5.0.12", ${Object.entries(entries)
+    .filter(([, value]) => value !== null)
+    .map(([name, value]) => `${name}: ${value}`)
+    .join(", ")} }`;
+}
+
+function runFakeVite(dir, extra = {}, env = {}) {
+  return runAdapter(
+    "vite",
+    dir,
+    "vite.config.mjs",
+    {
+      supportedVersion: "8.3.4",
+      allowUnsupportedEngine: true,
+      ...extra,
+    },
+    env,
+  );
+}
+
+test("normalizeViteModule prefers named exports and falls back to default", () => {
+  const named = () => "named";
+  const fallback = () => "default";
+  const complete = (fn) => ({
+    loadConfigFromFile: fn,
+    build: fn,
+    mergeConfig: fn,
+    createLogger: fn,
+    version: "1.0.0",
+  });
+  const mixed = normalizeViteModule({
+    ...complete(named),
+    default: complete(fallback),
+  });
+  assert.equal(mixed.missing.length, 0);
+  assert.equal(mixed.api.build, named);
+
+  const defaultOnly = normalizeViteModule({ default: complete(fallback) });
+  assert.equal(defaultOnly.missing.length, 0);
+  assert.equal(defaultOnly.api.build, fallback);
+  assert.equal(defaultOnly.api.version, "1.0.0");
+
+  const incomplete = normalizeViteModule({
+    default: { loadConfigFromFile: fallback, version: "5.0.0" },
+  });
+  assert.deepEqual(incomplete.missing, ["build", "mergeConfig", "createLogger"]);
+  assert.deepEqual(normalizeViteModule(undefined).missing.length, 4);
+});
+
+test("vite adapter normalizes a CommonJS entry that exposes the API under default", () => {
+  const dir = writeFakeViteProject({ cjsApi: fakeViteApi() });
+  const { status, events } = runFakeVite(dir);
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 1);
+  const error = events.find((event) => event.event === "error");
+  // The adapter got past loadConfigFromFile and reached vite.build.
+  assert.equal(error.code, "BW_BUILD_FAILED");
+  assert.match(error.message, /fake vite build reached/);
+});
+
+test("vite adapter reports a missing Vite API as a collection failure", () => {
+  const dir = writeFakeViteProject({
+    cjsApi: fakeViteApi({ loadConfigFromFile: null }),
+  });
+  const { status, events } = runFakeVite(dir);
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 1);
+  const error = events.find((event) => event.event === "error");
+  assert.equal(error.code, "BW_COLLECTION_FAILED");
+  assert.match(error.message, /Vite 5\.0\.12/);
+  assert.match(error.message, /loadConfigFromFile/);
+  assert.match(error.recovery, /vite@8\.3\.4/);
+  assert.match(error.recovery, /compatible/);
+  assert.doesNotMatch(error.recovery, /Fix the error in the Vite configuration/);
+});
+
+test("vite adapter does not report a missing build API as a build failure", () => {
+  const dir = writeFakeViteProject({
+    cjsApi: fakeViteApi({ build: null }),
+  });
+  const { status, events } = runFakeVite(dir, { configFile: null });
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 1);
+  const error = events.find((event) => event.event === "error");
+  assert.equal(error.code, "BW_COLLECTION_FAILED");
+  assert.match(error.message, /missing: build/);
+});
+
+test("vite configuration factories that throw stay configuration load failures", () => {
+  const dir = writeFakeViteProject({ cjsApi: fakeViteApi() });
+  const { status, events } = runFakeVite(dir, {}, { FAKE_VITE_CONFIG_FAILS: "1" });
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 1);
+  const error = events.find((event) => event.event === "error");
+  assert.equal(error.code, "BW_CONFIG_LOAD_FAILED");
+  assert.match(error.message, /factory broke/);
+  assert.match(error.recovery, /Fix the error in the Vite configuration/);
 });
 
 test("rspack adapter records providedExports in the configuration summary", () => {
