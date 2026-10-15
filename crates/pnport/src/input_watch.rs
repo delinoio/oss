@@ -19,6 +19,8 @@ struct Identity {
     created: Option<SystemTime>,
     #[cfg(unix)]
     unix: (u64, u64, i64, i64),
+    #[cfg(windows)]
+    windows: (u32, u64, i64),
 }
 
 impl Identity {
@@ -29,10 +31,41 @@ impl Identity {
         }
         #[cfg(unix)]
         use std::os::unix::fs::MetadataExt;
+        #[cfg(windows)]
+        let windows = {
+            use std::os::windows::io::AsRawHandle;
+
+            use windows_sys::Win32::Storage::FileSystem::{
+                FileBasicInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
+                BY_HANDLE_FILE_INFORMATION, FILE_BASIC_INFO,
+            };
+            let file = fs::File::open(path).map_err(|_| changed())?;
+            let mut identity = BY_HANDLE_FILE_INFORMATION::default();
+            let mut basic = FILE_BASIC_INFO::default();
+            if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut identity) } == 0
+                || unsafe {
+                    GetFileInformationByHandleEx(
+                        file.as_raw_handle(),
+                        FileBasicInfo,
+                        (&raw mut basic).cast(),
+                        std::mem::size_of_val(&basic) as u32,
+                    )
+                } == 0
+            {
+                return Err(changed());
+            }
+            (
+                identity.dwVolumeSerialNumber,
+                (u64::from(identity.nFileIndexHigh) << 32) | u64::from(identity.nFileIndexLow),
+                basic.ChangeTime,
+            )
+        };
         Ok(Self {
             length: metadata.len(),
             modified: metadata.modified().map_err(|_| changed())?,
             created: metadata.created().ok(),
+            #[cfg(windows)]
+            windows,
             // ctime catches same-size writes even if the writer restores mtime;
             // inode/device catch atomic replacements. Do not include atime.
             #[cfg(unix)]
@@ -132,11 +165,13 @@ mod tests {
         // reads, then change equal-length bytes and restore the original mtime.
         std::thread::sleep(std::time::Duration::from_millis(2));
         fs::write(&path, b"modified").unwrap();
-        fs::File::open(&path)
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
             .unwrap()
             .set_modified(modified)
             .unwrap();
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         assert_eq!(watch.poll().unwrap_err().code, Code::PnportGraphChanged);
     }
 

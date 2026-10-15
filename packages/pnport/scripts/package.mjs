@@ -27,7 +27,11 @@ import {
 } from "./common.mjs";
 
 const require = createRequire(import.meta.url);
-const { targets } = require("../src/platforms.cjs");
+const {
+  targets,
+  allTargets,
+  targetsForVersion,
+} = require("../src/platforms.cjs");
 const mainFiles = ["bin/pnport.cjs", "src/launcher.cjs", "src/platforms.cjs"];
 const identity = (bytes) =>
   `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
@@ -36,8 +40,8 @@ export const tarballName = (name, version) =>
   `${name.replace(/^@/u, "").replace("/", "-")}-${version}.tgz`;
 export const archiveName = (target) => `pnport-${target.suffix}.tar.gz`;
 export const packageNames = (version) =>
-  [...targets.map(({ name }) => name), "@delino/pnport"].map((name) =>
-    tarballName(name, version),
+  [...targetsForVersion(version).map(({ name }) => name), "@delino/pnport"].map(
+    (name) => tarballName(name, version),
   );
 
 // This closed ustar reader rejects links, duplicates, extensions, and traversal.
@@ -129,10 +133,15 @@ export function nativeArchive(target, binary, preload) {
     [companion(target), preload, 0o644],
     ["LICENSE", Buffer.from(sourceText("crates/pnport/LICENSE")), 0o644],
   ];
-  if (target.os !== "win32")
+  files.push([
+    "LICENSE.fspy",
+    Buffer.from(sourceText("crates/fspy/LICENSE")),
+    0o644,
+  ]);
+  if (target.os === "win32")
     files.push([
-      "LICENSE.fspy",
-      Buffer.from(sourceText("crates/fspy/LICENSE")),
+      "LICENSE.detours",
+      Buffer.from(sourceText("crates/fspy_detours_sys/detours/LICENSE")),
       0o644,
     ]);
   const parts = files.flatMap(([name, bytes, mode]) => [
@@ -186,7 +195,8 @@ function manifest(target, version, sourceRevision) {
       `bin/${companion(target)}`,
       "README.md",
       "LICENSE",
-      ...(target.os !== "win32" ? ["LICENSE.fspy"] : []),
+      "LICENSE.fspy",
+      ...(target.os === "win32" ? ["LICENSE.detours"] : []),
     ];
   else value.files = [...mainFiles, "README.md", "LICENSE"];
   return value;
@@ -198,7 +208,9 @@ export function inspectTarball(file, version, sourceRevision) {
   const actual = JSON.parse(
     entries.get("package.json")?.bytes.toString("utf8") ?? "null",
   );
-  const target = targets.find(({ name }) => name === actual?.name);
+  const target = targetsForVersion(version).find(
+    ({ name }) => name === actual?.name,
+  );
   ensure(target || actual?.name === "@delino/pnport", "Unknown pnport package");
   const expected = manifest(target, version, sourceRevision);
   ensure(
@@ -225,6 +237,11 @@ export function inspectTarball(file, version, sourceRevision) {
         preload.includes(Buffer.from("PNPORT_PRELOAD_0.1.0_FORMAT_3_READY")),
         "fspy companion ABI mismatch",
       );
+    if (target.os === "win32")
+      ensure(
+        preload.includes(Buffer.from("PNPORT_PRELOAD_0.1.0_FORMAT_1_READY")),
+        "Windows companion ABI mismatch",
+      );
   } else
     for (const name of mainFiles)
       ensure(
@@ -236,8 +253,9 @@ export function inspectTarball(file, version, sourceRevision) {
   for (const [name, source] of [
     ["LICENSE", "crates/pnport/LICENSE"],
     ["README.md", "packages/pnport/README.md"],
-    ...(target && target.os !== "win32"
-      ? [["LICENSE.fspy", "crates/fspy/LICENSE"]]
+    ...(target ? [["LICENSE.fspy", "crates/fspy/LICENSE"]] : []),
+    ...(target?.os === "win32"
+      ? [["LICENSE.detours", "crates/fspy_detours_sys/detours/LICENSE"]]
       : []),
   ])
     ensure(
@@ -264,7 +282,8 @@ export function inspectArchive(file, target, npmFile) {
     target.binary,
     companion(target),
     "LICENSE",
-    ...(target.os !== "win32" ? ["LICENSE.fspy"] : []),
+    "LICENSE.fspy",
+    ...(target.os === "win32" ? ["LICENSE.detours"] : []),
   ].sort();
   ensure(
     JSON.stringify([...archive.keys()].sort()) === JSON.stringify(names),
@@ -293,6 +312,7 @@ export function inspectArchive(file, target, npmFile) {
 
 export function verifySet(directory, sourceRevision = revision()) {
   const { version } = metadata();
+  const targets = targetsForVersion(version);
   const names = packageNames(version);
   const tarballs = path.join(directory, "tarballs");
   const archives = path.join(directory, "archives");
@@ -328,6 +348,7 @@ export function buildPackage({
   read = sourceText,
 }) {
   const { version } = metadata(read);
+  const targets = targetsForVersion(version);
   ensure(
     /^[a-f0-9]{40}$/u.test(sourceRevision),
     "Exact source revision required",
@@ -358,10 +379,15 @@ export function buildPackage({
     path.join(directory, "LICENSE"),
     sourceText("crates/pnport/LICENSE"),
   );
-  if (target && target.os !== "win32")
+  if (target)
     writeFileSync(
       path.join(directory, "LICENSE.fspy"),
       sourceText("crates/fspy/LICENSE"),
+    );
+  if (target?.os === "win32")
+    writeFileSync(
+      path.join(directory, "LICENSE.detours"),
+      sourceText("crates/fspy_detours_sys/detours/LICENSE"),
     );
   if (target) {
     for (const [name, input] of [
@@ -434,11 +460,37 @@ export function main() {
       output: { type: "string", default: path.join(packageRoot, "dist") },
     },
   });
-  ensure(positionals.length === 1, "Expected main, binary, or verify");
+  ensure(
+    positionals.length === 1,
+    "Expected main, binary, development, or verify",
+  );
   const [command] = positionals;
   if (command === "verify") event("verified", verifySet(values.output));
   else if (command === "main") buildPackage({ output: values.output });
-  else if (command === "binary") {
+  else if (command === "development") {
+    // A local source build can exercise deferred targets without inventing a
+    // Windows 0.1.x npm package or granting any publication/evidence authority.
+    const target = allTargets.find(({ rust }) => rust === values.target);
+    ensure(
+      target && target.os === process.platform && target.cpu === process.arch,
+      "Development archive requires its native host",
+    );
+    ensure(
+      values.binary && values.preload,
+      "Executable and companion are required",
+    );
+    const output = path.resolve(values.output, "development");
+    mkdirSync(output, { recursive: true });
+    writeFileSync(
+      path.join(output, archiveName(target)),
+      nativeArchive(
+        target,
+        readFileSync(values.binary),
+        readFileSync(values.preload),
+      ),
+    );
+    event("development_archive", { target: target.suffix });
+  } else if (command === "binary") {
     const target = targets.find(({ rust }) => rust === values.target);
     ensure(target, "Unsupported target");
     buildPackage({

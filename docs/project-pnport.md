@@ -59,6 +59,16 @@ native-before-launcher publication and immutable retry protection.
 
 ## Goal
 
+Windows 0.2.0 development now has a pnport-only Detours adapter, native PE
+admission, user-private cache/session ACLs and suspended process injection under
+a non-inherited kill-on-close job. The source registry retains four-target
+0.1.x releases and selects six targets for 0.2.0. Local Windows development
+archives do not create publishable 0.1.x Windows packages. This is an
+implementation boundary, not Windows release acceptance: complete native
+x64/arm64 conformance, minimum-OS evidence, native loading/watch/handle coverage
+and installed-consumer/installer/benchmark gates remain required. Published
+Windows support and PowerShell installation remain unavailable until acceptance.
+
 Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph without installing a project node_modules dependency tree. The feature defines the complete staged acceptance boundary: 0.1.0 ships macOS/glibc Linux first, and 0.2.0 adds Windows. The owner-authorized experimental npm next channel permits an exact reviewed `0.1.0-next.N` candidate for external testing, without completing stable acceptance; the original Windows requirements remain in scope.
 
 ## Project ID
