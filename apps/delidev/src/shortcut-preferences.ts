@@ -68,7 +68,7 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
     scopes: [ShortcutScope.Global],
     priority: 0,
     input: ShortcutInput.Allow,
-    defaults: [{ key: "n", primary: true, shift: true }],
+    defaults: [{ key: "n", primary: true }],
   },
   {
     id: ShortcutId.SessionFocus,
@@ -261,7 +261,6 @@ export const shortcutCatalog = [
 ];
 // Native menu bindings are read-only and never enter the seven override IDs.
 export enum NativeShortcutId {
-  NewWindow = "native-new-window",
   CloseTab = "fixed-close-tab",
   Quit = "native-quit",
   Hide = "native-hide",
@@ -273,12 +272,6 @@ export const fixedNativeShortcutCatalog: readonly {
   key: string;
   macOnly: boolean;
 }[] = [
-  {
-    id: NativeShortcutId.NewWindow,
-    label: "shortcuts.nativeNewWindow",
-    key: "n",
-    macOnly: false,
-  },
   {
     id: NativeShortcutId.CloseTab,
     label: "shortcuts.closeTab",
@@ -321,7 +314,7 @@ export function validShortcutChord(chord: unknown): chord is ShortcutChord {
   // Fixed product and native editing chords remain unavailable for rebinding.
   return value.shift
     ? !/^[vz]$/.test(value.key)
-    : !nativeReservedKeys.has(value.key) && !/^[bkn1-9acvxyz]$/.test(value.key);
+    : !nativeReservedKeys.has(value.key) && !/^[bk1-9acvxyz]$/.test(value.key);
 }
 /**
  * Read-only defaults that yield to existing editable chords. A policy lists the

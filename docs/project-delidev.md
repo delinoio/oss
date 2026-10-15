@@ -91,7 +91,7 @@ Repositories use required remote URLs with optional Local folder connections und
 - `protos/delidev/v1`: versioned Connect schema; `protos/gen/go/delidev/v1`: generated Go bindings.
 - `packages/delidev-api-client`: generated TypeScript client and bounded transport/synchronization helpers.
 
-The [desktop File menu](apps-delidev-desktop-contract.md#native-tray-and-menu-bar) opens a new product window with Command+N on macOS and Control+N on Windows/Linux through one native app-level handler. Close Window has no keyboard accelerator (Command/Control+W closes the active session tool tab in the renderer) and retains existing Local/Saved window ownership.
+The [desktop File menu](apps-delidev-desktop-contract.md#native-tray-and-menu-bar) opens a new product window by menu click only, with no keyboard accelerator, through one native app-level handler (Command+N on macOS and Control+N on Windows/Linux open the New session page in the current window). Close Window has no keyboard accelerator (Command/Control+W closes the active session tool tab in the renderer) and retains existing Local/Saved window ownership.
 
 New schedule creation adds frequency presets and a creation-only three-section layout under the [desktop contract](apps-delidev-desktop-contract.md#new-schedule-creation), while strict schedule definitions and server recurrence authority remain unchanged.
 
@@ -409,7 +409,7 @@ Project settings and server defaults follow the [project behavior contract](cmds
 
 - Codex Agent Worker Fast mode selection and original native diagnostics follow the catalog, desktop and diagnostics contracts for the feature. No allocation/migration or actual subscription acceptance is implied by fixture evidence.
 
-- The feature adds the System Keyboard shortcuts category after Appearance and a device-owned version-1 `shortcuts.json` preference. Native authorized product-window read/update/publication uses expected revisions and atomic replacement; `ShortcutPreferenceProvider` stays above connections. Seven existing actions support explicit save/discard/default/disable, with one committed binding source for dispatch/help/ARIA. Preserve fixed editing/newline/Escape and K/N/W/1–9 reservations; keep preferences outside server backups/portable transfer and uncertainty recovery read-only. See the desktop and localization contracts.
+- The feature adds the System Keyboard shortcuts category after Appearance and a device-owned version-1 `shortcuts.json` preference. Native authorized product-window read/update/publication uses expected revisions and atomic replacement; `ShortcutPreferenceProvider` stays above connections. Seven existing actions support explicit save/discard/default/disable, with one committed binding source for dispatch/help/ARIA. Preserve fixed editing/newline/Escape and the reserved chords defined by the [desktop shortcut chord table](apps-delidev-desktop-contract.md#device-local-shortcut-preferences) (unshifted Command/Control+N is the editable New session default); keep preferences outside server backups/portable transfer and uncertainty recovery read-only. See the desktop and localization contracts.
 
 - New Project can open independently scoped existing repository registration in either Home or Settings. The desktop contract owns modal/draft lifetime, confirmed-identity catalog resolution and read-only retry; existing repository/native/Connect authority remains unchanged.
 

@@ -89,6 +89,28 @@ it("resolves exact local primary modifiers and logical question marks", () => {
   expect(
     bindingKeys({ key: "n", primary: true, shift: true }, ShortcutPlatform.Mac),
   ).toEqual(["⌘", "⇧", "N"]);
+  const newSession = globalShortcutBindings[ShortcutId.NewSession][0];
+  expect(bindingKeys(newSession, ShortcutPlatform.Mac)).toEqual(["⌘", "N"]);
+  expect(bindingKeys(newSession, ShortcutPlatform.Other)).toEqual([
+    "Ctrl",
+    "N",
+  ]);
+  expect(bindingAria(newSession, ShortcutPlatform.Mac)).toBe("Meta+N");
+  expect(bindingAria(newSession, ShortcutPlatform.Other)).toBe("Control+N");
+  expect(
+    bindingMatches(
+      new KeyboardEvent("keydown", { key: "n", ctrlKey: true }),
+      newSession,
+      ShortcutPlatform.Other,
+    ),
+  ).toBe(true);
+  expect(
+    bindingMatches(
+      new KeyboardEvent("keydown", { key: "n", ctrlKey: true, shiftKey: true }),
+      newSession,
+      ShortcutPlatform.Other,
+    ),
+  ).toBe(false);
   expect(bindingAria({ key: "Enter", primary: true }, platform)).toBe(
     "Control+Enter",
   );
