@@ -30,9 +30,74 @@ type nativeCheckpointFork struct {
 	ClonedHistories  []HistoryObservation  `json:"cloned_histories"`
 	Identities       []ForkMessageIdentity `json:"identities"`
 	SelectionPending bool                  `json:"selection_pending"`
+	// Reasoning records OpenCode General Chat Fork profile v2. It is omitted
+	// for profile v1, so every retained v1 checkpoint keeps its exact bytes.
+	Reasoning bool `json:"reasoning,omitempty"`
 }
 
-func forkSourceProfile(c nativeCheckpoint) error {
+// forkPartKindAllowed is the closed per-part allow-list shared by the source
+// profile, the post-fork comparison and persisted child checkpoints. Reasoning
+// belongs to profile v2 only.
+func forkPartKindAllowed(kind PartKind, reasoning bool) bool {
+	switch kind {
+	case TextPartKind, StepStartPartKind, StepFinishPartKind:
+		return true
+	case ReasoningPartKind:
+		return reasoning
+	default:
+		return false
+	}
+}
+
+// forkSourcePart applies the exact per-part field profile to one decoded native
+// source part. Reasoning must be plain, non-synthetic, visible and timed with a
+// finished end; any private metadata or missing timing is not cloneable.
+func forkSourcePart(p NativePart, reasoning bool) error {
+	switch p.Kind {
+	case TextPartKind:
+		if p.Text == nil || p.Text.Synthetic != nil || p.Text.Ignored != nil || p.Text.Metadata != nil {
+			return incompatible()
+		}
+	case ReasoningPartKind:
+		if !reasoning || p.Text == nil || p.Text.Metadata != nil || p.Text.Synthetic != nil || p.Text.Ignored != nil || p.Text.Timing == nil || p.Text.Timing.End == nil {
+			return incompatible()
+		}
+	case StepStartPartKind, StepFinishPartKind:
+		if p.Step == nil || p.Step.Snapshot != nil {
+			return incompatible()
+		}
+	default:
+		return incompatible()
+	}
+	return nil
+}
+
+// checkForkSourceParts rejects an ineligible native source history before the
+// first native Fork mutation can create a child session.
+func checkForkSourceParts(source []json.RawMessage, reasoning bool) error {
+	for _, raw := range source {
+		fields, err := shape(raw, []string{"info", "parts"}, nil)
+		if err != nil {
+			return err
+		}
+		var parts []json.RawMessage
+		if domain.Decode(fields["parts"], &parts) != nil || parts == nil {
+			return sessionUncertain()
+		}
+		for _, rawPart := range parts {
+			p, err := decodeNativePart(rawPart)
+			if err != nil {
+				return err
+			}
+			if err := forkSourcePart(p, reasoning); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func forkSourceProfile(c nativeCheckpoint, reasoning bool) error {
 	if c.Version != 1 || c.Fork != nil || !checkpointGlobalRoot(c) || c.Project != "global" || c.Reference.RequiresResume || c.Stop != nil || c.Context != nil || c.Tools != nil || c.Snapshot != nil || c.ProjectAdoption != nil || len(c.References) != 0 || !validCheckpointLineage(c) {
 		return incompatible()
 	}
@@ -42,9 +107,7 @@ func forkSourceProfile(c nativeCheckpoint) error {
 		}
 		for _, m := range h.Messages {
 			for _, p := range m.Parts {
-				switch p.Kind {
-				case TextPartKind, StepStartPartKind, StepFinishPartKind:
-				default:
+				if !forkPartKindAllowed(p.Kind, reasoning) {
 					return incompatible()
 				}
 			}
@@ -56,7 +119,7 @@ func forkSourceProfile(c nativeCheckpoint) error {
 // Compare every native byte through the closed typed decoders. Only child-local
 // identity fields and the assistant's mapped parent may differ. Text, timing,
 // usage/model/settings and historical paths are all independently preserved.
-func compareForkHistory(source, child []json.RawMessage, sourceID, childID string) ([]ForkMessageIdentity, []HistoryMessage, error) {
+func compareForkHistory(source, child []json.RawMessage, sourceID, childID string, reasoning bool) ([]ForkMessageIdentity, []HistoryMessage, error) {
 	if !nativeID(sourceID, "ses") || !nativeID(childID, "ses") || sourceID == childID || len(source) < 2 || len(source) != len(child) || len(source) > maxObservedMessages {
 		return nil, nil, sessionUncertain()
 	}
@@ -148,21 +211,8 @@ func compareForkHistory(source, child []json.RawMessage, sourceID, childID strin
 			if count > maxObservedParts {
 				return nil, nil, eventBound()
 			}
-			switch a.Kind {
-			case TextPartKind:
-				if a.Text == nil || a.Text.Synthetic != nil || a.Text.Ignored != nil || a.Text.Metadata != nil {
-					return nil, nil, incompatible()
-				}
-			case StepStartPartKind:
-				if a.Step == nil || a.Step.Snapshot != nil {
-					return nil, nil, incompatible()
-				}
-			case StepFinishPartKind:
-				if a.Step == nil || a.Step.Snapshot != nil {
-					return nil, nil, incompatible()
-				}
-			default:
-				return nil, nil, incompatible()
+			if err := forkSourcePart(a, reasoning); err != nil {
+				return nil, nil, err
 			}
 			old, _ := object(rawPart)
 			next, _ := object(bp[i])
@@ -281,9 +331,7 @@ func validCheckpointFork(c nativeCheckpoint) bool {
 				}
 				all[pair.Source], all[pair.Child] = true, true
 				parts++
-				switch a.Kind {
-				case TextPartKind, StepStartPartKind, StepFinishPartKind:
-				default:
+				if !forkPartKindAllowed(a.Kind, p.Reasoning) {
 					return false
 				}
 			}

@@ -25,7 +25,7 @@ func (c *Client) selectedSkillInputs(ctx context.Context, input domain.SessionIn
 	for _, s := range selected {
 		roots = append(roots, filepath.Dir(s.Path))
 	}
-	result, e := c.wire.Call(ctx, domain.NewID(), "skills/extraRoots/set", struct {
+	result, e := c.call(ctx, domain.NewID(), "skills/extraRoots/set", struct {
 		ExtraRoots []string `json:"extraRoots"`
 	}{roots})
 	if e != nil {
@@ -35,7 +35,7 @@ func (c *Client) selectedSkillInputs(ctx context.Context, input domain.SessionIn
 	if domain.Decode(result.Result, &empty) != nil {
 		return nil, incompatible()
 	}
-	listed, e := c.wire.Call(ctx, domain.NewID(), "skills/list", struct {
+	listed, e := c.call(ctx, domain.NewID(), "skills/list", struct {
 		Cwds        []string `json:"cwds"`
 		ForceReload bool     `json:"forceReload"`
 	}{[]string{c.execution.settings.Cwd}, true})

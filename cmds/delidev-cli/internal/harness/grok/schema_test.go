@@ -150,8 +150,25 @@ func TestInitializeRejectsForeignOrUninspectedFacts(t *testing.T) {
 	}
 }
 
+// Grok Build 1.0.52 reports an empty experiments inventory. Older releases omit
+// the key, and no other unknown key is tolerated.
+func TestInspectionAcceptsOptionalEmptyExperiments(t *testing.T) {
+	if err := validateInspection(inspectionFixture, "/private/fixture"); err != nil {
+		t.Fatalf("baseline inspection without experiments rejected: %v", err)
+	}
+	report := fixtureObject(inspectionFixture)
+	report["experiments"] = []any{}
+	raw, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateInspection(raw, "/private/fixture"); err != nil {
+		t.Fatalf("empty experiments inventory rejected: %v", err)
+	}
+}
+
 func TestInspectionRejectsInheritedState(t *testing.T) {
-	for _, change := range []string{"version", "cwd", "project", "instructions", "mcp", "plugins", "skills", "hooks", "lsp", "config", "managed", "loaded", "skipped", "login", "remote", "compat", "agent", "unknown", "null", "trailing"} {
+	for _, change := range []string{"version", "cwd", "project", "instructions", "mcp", "plugins", "skills", "hooks", "lsp", "config", "managed", "loaded", "skipped", "login", "remote", "compat", "agent", "unknown", "null", "trailing", "experiments-entry", "experiments-null", "experiments-object", "experiments-string", "future-thing"} {
 		t.Run(change, func(t *testing.T) {
 			report := fixtureObject(inspectionFixture)
 			switch change {
@@ -189,6 +206,16 @@ func TestInspectionRejectsInheritedState(t *testing.T) {
 				report["future"] = true
 			case "null":
 				report["projectTrusted"] = nil
+			case "experiments-entry":
+				report["experiments"] = []any{"foreign"}
+			case "experiments-null":
+				report["experiments"] = nil
+			case "experiments-object":
+				report["experiments"] = map[string]any{}
+			case "experiments-string":
+				report["experiments"] = "none"
+			case "future-thing":
+				report["futureThing"] = []any{}
 			}
 			raw, _ := json.Marshal(report)
 			if change == "trailing" {

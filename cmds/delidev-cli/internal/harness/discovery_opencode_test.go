@@ -11,12 +11,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 )
 
@@ -69,7 +71,11 @@ func init() {
 	os.Exit(0)
 }
 
-func discoverOpenCode(t *testing.T, binary string) {
+// discoverOpenCode runs discovery against binary and expects the installation
+// to report wantVersion, which must itself satisfy the minimum-version
+// admission rule. The in-process fake reports the baseline; a real binary
+// reports whatever admitted version is installed.
+func discoverOpenCode(t *testing.T, binary, wantVersion string) {
 	t.Helper()
 	input := allMissing(t)
 	input.VerifyProtocol = true
@@ -86,7 +92,7 @@ func discoverOpenCode(t *testing.T, binary string) {
 		t.Fatal(err)
 	}
 	i := output.Installations[2]
-	if i.Harness != domain.OpenCode || i.Version != domain.OpenCodeProtocolVersion || !i.ProtocolVerified || i.Protocol == nil || i.Protocol.State != domain.ProtocolVerified || i.Protocol.Problem != nil || len(i.Capabilities) != 0 {
+	if i.Harness != domain.OpenCode || !domain.HarnessVersionAllowed(domain.OpenCode, i.Version) || i.Version != wantVersion || !i.ProtocolVerified || i.Protocol == nil || i.Protocol.State != domain.ProtocolVerified || i.Protocol.Problem != nil || len(i.Capabilities) != 0 {
 		t.Fatalf("OpenCode discovery: state=%s version=%s protocol=%+v; logs: %s", i.State, i.Version, i.Protocol, logs.String())
 	}
 	if err := process.ReconcileOwner(filepath.Join(root, "processes"), owner); err != nil {
@@ -106,15 +112,86 @@ func TestDiscoveryVerifiesOpenCodeWithoutExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	discoverOpenCode(t, executable)
+	discoverOpenCode(t, executable, domain.OpenCodeProtocolVersion)
 }
+
+// openCodeVersionWrapperScript is a fixed script: it contains no dynamic value.
+// The reported version and the real executable live in sibling data files that
+// the script reads as data, so no path, version or environment value is ever
+// interpolated into shell source. The --version branch mirrors the pinned
+// binary, which creates its config directory even for version output.
+const openCodeVersionWrapperScript = `#!/bin/sh
+here=$(dirname "$0")
+if [ "$1" = "--version" ]; then
+	mkdir -p "$HOME/config/opencode"
+	cat "$here/version"
+	exit 0
+fi
+IFS= read -r target < "$here/target"
+exec "$target" "$@"
+`
+
+// writeOpenCodeVersionWrapper creates an executable "opencode" in dir that
+// reports version for --version and otherwise delegates to target.
+func writeOpenCodeVersionWrapper(t *testing.T, dir, version, target string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{"version": version + "\n", "target": target + "\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wrapper := filepath.Join(dir, "opencode")
+	if err := os.WriteFile(wrapper, []byte(openCodeVersionWrapperScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return wrapper
+}
+
+// TestDiscoveryAdmitsNewerOpenCodeVersion proves that a binary above the
+// baseline is admitted and reported with its own observed version. The wrapper
+// only rewrites the --version line; the protocol behavior is the in-process fake.
+// The hostile case places the wrapper and its target under paths full of shell
+// metacharacters; any interpolation of those paths would break or run them.
+func TestDiscoveryAdmitsNewerOpenCodeVersion(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell wrapper executables are not available on Windows")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const newer = "1.18.33"
+	for _, test := range []struct{ name, directory string }{
+		{"plain", "wrapper"},
+		{"hostile-path", "it's \"quoted\" $(touch pwned) `touch pwned` ; * \\ done"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, test.directory)
+			target := executable
+			if test.name == "hostile-path" {
+				target = filepath.Join(dir, "target's $(touch pwned) `touch pwned`")
+				if err := os.MkdirAll(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(executable, target); err != nil {
+					t.Skipf("symlinks are unavailable: %v", err)
+				}
+			}
+			discoverOpenCode(t, writeOpenCodeVersionWrapper(t, dir, newer, target), newer)
+			for _, marker := range []string{filepath.Join(root, "pwned"), filepath.Join(dir, "pwned"), "pwned"} {
+				if _, err := os.Stat(marker); err == nil {
+					t.Fatalf("shell metacharacters in a path were executed: %s", marker)
+				}
+			}
+		})
+	}
+}
+
 func TestManualNativeOpenCodeDiscovery(t *testing.T) {
-	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if executable == "" {
-		t.Skip("explicit private OpenCode discovery")
-	}
-	if !filepath.IsAbs(executable) {
-		t.Fatal("select an absolute native executable")
-	}
-	discoverOpenCode(t, executable)
+	executable, version := nativetest.NativeOpenCodeExecutable(t)
+	discoverOpenCode(t, executable, version)
 }

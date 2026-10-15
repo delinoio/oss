@@ -20,6 +20,7 @@ Application developers on desktop browsers. English only. Mobile-specific layout
 - Three columns at widths of at least 1280px; narrower windows switch between the list and the details.
 - States: loading progress with cancellation, empty results, no coverage, unavailable analysis, partial or cancelled or failed runs, problems with codes and recovery instructions, and invalid results. "No findings in covered categories" is distinct from "no analysis coverage".
 - Sizes show raw, gzip and Brotli bytes per chunk and mapped source bytes only where attribution is supported. The UI never shows estimated or potential savings.
+- Completed elapsed time uses the post-result-write duration in live, saved and exported modes. Saved bundles without completion timing use the duration stored in their result bundle.
 - Accessibility: keyboard operation, visible focus, labelled controls, status labels with text and icons rather than color alone, live regions for progress, and modal dialogs that trap focus, close with Esc and return focus.
 
 ## Storage

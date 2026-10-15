@@ -207,8 +207,7 @@ pub(crate) fn launch(
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let mut child = spawn_retrying_text_file_busy(&mut command)
-        .map_err(|_| NativeFailure::BrowserLaunchFailed)?;
+    let mut child = spawn_retrying_text_file_busy(&mut command, stopped)?;
     let until = Instant::now() + INSTALLED_GRACE;
     loop {
         match child.try_wait() {
@@ -244,25 +243,48 @@ pub(crate) fn launch(
 /// Every other error is returned immediately. Remove this when launches no
 /// longer target freshly written executables (only tests do today).
 #[cfg(target_os = "linux")]
-fn spawn_retrying_text_file_busy(command: &mut Command) -> std::io::Result<std::process::Child> {
+fn spawn_retrying_text_file_busy(
+    command: &mut Command,
+    stopped: &AtomicBool,
+) -> Result<std::process::Child, NativeFailure> {
+    spawn_retrying_text_file_busy_with(stopped, || command.spawn(), thread::sleep)
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_retrying_text_file_busy_with<T>(
+    stopped: &AtomicBool,
+    mut spawn: impl FnMut() -> std::io::Result<T>,
+    mut sleep: impl FnMut(Duration),
+) -> Result<T, NativeFailure> {
     // ETXTBSY is 26 on every Linux architecture.
     const TEXT_FILE_BUSY: i32 = 26;
     let mut attempts = 0u64;
     loop {
-        match command.spawn() {
+        // A failed exec did not launch a browser. Recheck shutdown after each
+        // backoff before another attempt can start one.
+        if stopped.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        match spawn() {
             Err(error) if error.raw_os_error() == Some(TEXT_FILE_BUSY) && attempts < 20 => {
                 attempts += 1;
-                thread::sleep(Duration::from_millis(5 * attempts));
+                sleep(Duration::from_millis(5 * attempts));
             }
-            result => return result,
+            Ok(child) => return Ok(child),
+            Err(_) => return Err(NativeFailure::BrowserLaunchFailed),
         }
     }
 }
 
 /// Other platforms do not report ETXTBSY for this race; spawn once.
 #[cfg(not(target_os = "linux"))]
-fn spawn_retrying_text_file_busy(command: &mut Command) -> std::io::Result<std::process::Child> {
-    command.spawn()
+fn spawn_retrying_text_file_busy(
+    command: &mut Command,
+    _stopped: &AtomicBool,
+) -> Result<std::process::Child, NativeFailure> {
+    command
+        .spawn()
+        .map_err(|_| NativeFailure::BrowserLaunchFailed)
 }
 
 #[cfg(all(test, unix))]
@@ -442,5 +464,84 @@ mod tests {
             fs::read_to_string(&count).unwrap(),
             "https://localhost.example/x\n"
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn shutdown_during_text_file_busy_backoff_prevents_retry_spawn() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("ran");
+        let program = script(dir.path(), &format!("echo x >> '{}'", marker.display()));
+        let mut writer = Some(fs::OpenOptions::new().write(true).open(&program).unwrap());
+        let stopped = AtomicBool::new(false);
+        let mut command = Command::new(&program);
+        let mut backoffs = 0;
+
+        let result = spawn_retrying_text_file_busy_with(
+            &stopped,
+            || command.spawn(),
+            |delay| {
+                backoffs += 1;
+                stopped.store(true, Ordering::Release);
+                drop(writer.take());
+                thread::sleep(delay);
+            },
+        );
+
+        assert_eq!(backoffs, 1);
+        assert!(matches!(result, Err(NativeFailure::Stopped)));
+        assert!(!marker.exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn text_file_busy_retry_launches_once_after_writer_closes() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("ran");
+        let program = script(dir.path(), &format!("echo x >> '{}'", marker.display()));
+        let mut writer = Some(fs::OpenOptions::new().write(true).open(&program).unwrap());
+        let stopped = AtomicBool::new(false);
+        let mut command = Command::new(&program);
+        let mut backoffs = 0;
+
+        let mut child = spawn_retrying_text_file_busy_with(
+            &stopped,
+            || command.spawn(),
+            |delay| {
+                backoffs += 1;
+                drop(writer.take());
+                thread::sleep(delay);
+            },
+        )
+        .unwrap();
+
+        assert_eq!(backoffs, 1);
+        assert!(child.wait().unwrap().success());
+        assert_eq!(fs::read_to_string(marker).unwrap(), "x\n");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn retry_helper_keeps_immediate_stop_and_other_spawn_error_distinct() {
+        let stopped = AtomicBool::new(true);
+        let result = spawn_retrying_text_file_busy_with(
+            &stopped,
+            || -> std::io::Result<()> { panic!("spawn after shutdown") },
+            |_| panic!("backoff after shutdown"),
+        );
+        assert!(matches!(result, Err(NativeFailure::Stopped)));
+
+        stopped.store(false, Ordering::Release);
+        let mut attempts = 0;
+        let result = spawn_retrying_text_file_busy_with(
+            &stopped,
+            || -> std::io::Result<()> {
+                attempts += 1;
+                Err(std::io::ErrorKind::PermissionDenied.into())
+            },
+            |_| panic!("backoff after non-ETXTBSY error"),
+        );
+        assert_eq!(attempts, 1);
+        assert!(matches!(result, Err(NativeFailure::BrowserLaunchFailed)));
     }
 }

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -26,6 +28,17 @@ import (
 )
 
 const managedFixtureToken = "sk-ant-oat01-ServerFixtureTokenABCDEFGHIJKLMNOP0123456789_-"
+
+func TestManagedClaudeLoginReportsProtocolDiscoveryPhase(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.service.claudeSetupOpen = func(context.Context, nativeScope, domain.ID, *slog.Logger) (managedClaudeLogin, string, error) {
+		return nil, "2.1.287", managedClaudeDiscoveryError{domain.Fail(domain.Unsupported, "The installed Claude Code protocol is unavailable.", "Refresh native discovery on the server.")}
+	}
+	_, started, cleanup, version, phase, err := f.service.runManagedClaudeLogin(context.Background(), domain.NewID(), domain.ServerSubscriptionOperation{ID: domain.NewID()})
+	if started || !cleanup || version != "2.1.287" || phase != domain.NativeSubscriptionDiscovery || domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatalf("discovery failure = started %t cleanup %t version %q phase %v code %s", started, cleanup, version, phase, domain.SafeError(err).Code)
+	}
+}
 
 func managedFixtureURL() string {
 	return strings.Replace(claudeFixtureURL(), "user%3Aprofile+user%3Ainference+user%3Asessions%3Aclaude_code", "user%3Ainference", 1)
@@ -373,15 +386,38 @@ func TestManagedClaudeRequestAuthorizationAndNewAccountOnly(t *testing.T) {
 	if !a.Subscription.ManagedClaude() {
 		t.Fatal("the new account did not select the server-token mode")
 	}
-	// A device-owned account keeps its own flow and is never converted.
+	// A machine-bound request is retired: it is rejected and never converts the
+	// account to server-owned or creates a Runner-owned operation.
 	device := newClaudeSubscriptionFixture(t)
 	dr, _ := device.record()
-	if _, err := device.client.RequestSubscription(context.Background(), subscriptionRequest(device.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(dr.ID), ExpectedRevision: dr.Revision}, MachineId: string(device.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN})); err != nil {
-		t.Fatal(err)
+	_, err := device.client.RequestSubscription(context.Background(), subscriptionRequest(device.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(dr.ID), ExpectedRevision: dr.Revision}, MachineId: string(device.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN}))
+	if domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
+		t.Fatalf("the Runner login was not rejected as unsupported: %v", err)
 	}
-	_, da := device.record()
-	if da.Subscription.ManagedClaude() || da.Subscription.NativeOperation == nil {
-		t.Fatal("the device-owned flow was converted")
+	if _, da := device.record(); da.Subscription != nil && (da.Subscription.ManagedClaude() || da.Subscription.NativeOperation != nil) {
+		t.Fatal("the rejected Runner login changed the account")
+	}
+}
+
+// TestManagedClaudeRunnerBoundSignInIsRetiredBeforeManagedRouting covers an
+// existing server-token account: routing sends it to the managed handler first,
+// which must report the same typed retirement result as the Runner lane.
+func TestManagedClaudeRunnerBoundSignInIsRetiredBeforeManagedRouting(t *testing.T) {
+	for _, action := range []pb.SubscriptionAction{pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH} {
+		t.Run(action.String(), func(t *testing.T) {
+			f := newManagedClaudeFixture(t)
+			f.connect()
+			beforeRecord, before := f.record()
+			_, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(beforeRecord.ID), ExpectedRevision: beforeRecord.Revision}, MachineId: string(f.input.MachineID), Action: action}))
+			problem := domain.SafeError(rpc.ClientError(err))
+			if problem.Code != domain.Unsupported || problem.Message == "" || problem.Guidance == "" {
+				t.Fatalf("machine-bound %s on a server-token account was not rejected as unsupported with guidance: %+v", action, problem)
+			}
+			afterRecord, after := f.record()
+			if afterRecord.Revision != beforeRecord.Revision || !reflect.DeepEqual(before.Subscription, after.Subscription) {
+				t.Fatal("a rejected machine-bound request changed the server-token account")
+			}
+		})
 	}
 }
 

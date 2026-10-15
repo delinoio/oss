@@ -15,13 +15,15 @@ use crate::{
     error::{BwError, BwResult, ErrorCode, problem},
     model::{Analysis, ProblemSeverity, RunStatus, SCHEMA_VERSION, SourceFile},
     sources::{
-        as_text, is_binary_asset_path, is_generated_asset_module, safe_project_relative, sha256_hex,
+        as_text, filesystem_path, is_binary_asset_path, is_generated_asset_module,
+        safe_project_relative, sha256_hex,
     },
 };
 
 pub const BUNDLE_FILE: &str = "analysis.json";
 pub const INCOMPLETE_MARKER: &str = "INCOMPLETE";
 pub const SUMMARY_FILE: &str = "run-summary.json";
+pub const COMPLETION_FILE: &str = "completion.json";
 const MAX_SUMMARY_BYTES: u64 = 64 * 1024;
 #[cfg(not(test))]
 const MAX_BUNDLE_BYTES: u64 = 512 * 1024 * 1024;
@@ -48,6 +50,17 @@ pub struct ResultBundle {
     /// checks that the file still exists.
     #[serde(default)]
     pub existence_relative: BTreeMap<String, String>,
+}
+
+/// A small record written after the result bundle and summary are committed.
+/// Its write is outside the measured interval to avoid a self-referential
+/// duration, while the main result persistence is inside that interval.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Completion {
+    run_id: String,
+    duration_ms: u32,
+    finished_at: String,
 }
 
 /// Keeps a result within the loader's size limit. When source content makes
@@ -107,6 +120,8 @@ pub fn save(run_dir: &Path, bundle: &ResultBundle) -> BwResult<()> {
     // the old one first, commit the bundle, then publish the new summary.
     let summary_path = run_dir.join(SUMMARY_FILE);
     let _ = std::fs::remove_file(&summary_path);
+    // A replacement bundle must not retain timing for the previous contents.
+    let _ = std::fs::remove_file(run_dir.join(COMPLETION_FILE));
     let temporary = run_dir.join(format!("{BUNDLE_FILE}.tmp"));
     // std::fs::rename replaces an existing destination on every supported
     // platform, including Windows (MoveFileExW with replacement).
@@ -138,6 +153,47 @@ pub fn save(run_dir: &Path, bundle: &ResultBundle) -> BwResult<()> {
         tracing::warn!(%error, "run summary could not be written; listings will read the bundle");
         let _ = std::fs::remove_file(&summary_temporary);
         let _ = std::fs::remove_file(&summary_path);
+    }
+    Ok(())
+}
+
+pub fn save_completion(
+    run_dir: &Path,
+    run_id: &str,
+    duration_ms: u32,
+    finished_at: &str,
+) -> BwResult<()> {
+    use std::io::Write;
+
+    let completion = Completion {
+        run_id: run_id.to_owned(),
+        duration_ms,
+        finished_at: finished_at.to_owned(),
+    };
+    let bytes = serde_json::to_vec(&completion).map_err(|error| {
+        BwError::new(
+            ErrorCode::ResultInvalid,
+            format!("Could not serialize completion timing: {error}"),
+            "Report this as a bug.",
+        )
+    })?;
+    let temporary = run_dir.join(format!("{COMPLETION_FILE}.tmp"));
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .and_then(|mut file| file.write_all(&bytes))
+        .and_then(|()| std::fs::rename(&temporary, run_dir.join(COMPLETION_FILE)));
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(BwError::new(
+            ErrorCode::OutputDirInvalid,
+            format!(
+                "Could not write {}: {error}",
+                run_dir.join(COMPLETION_FILE).display()
+            ),
+            "Check that the output directory is writable and has free space.",
+        ));
     }
     Ok(())
 }
@@ -278,6 +334,12 @@ pub fn read_summary_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
         &mut std::io::Read::take(open_no_follow(path)?, MAX_SUMMARY_BYTES + 1),
         &mut bytes,
     )?;
+    if bytes.len() as u64 > MAX_SUMMARY_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "metadata file is too large",
+        ));
+    }
     Ok(bytes)
 }
 
@@ -334,6 +396,27 @@ pub fn load(run_dir: &Path) -> BwResult<ResultBundle> {
         ))
     })?;
     let mut bundle = parse(&bytes)?;
+    let completion_path = run_dir.join(COMPLETION_FILE);
+    match std::fs::symlink_metadata(&completion_path) {
+        Ok(_) => {
+            let bytes = read_summary_bytes(&completion_path)
+                .map_err(|error| invalid(format!("completion.json is invalid: {error}")))?;
+            let completion: Completion = serde_json::from_slice(&bytes)
+                .map_err(|error| invalid(format!("completion.json is invalid: {error}")))?;
+            if completion.run_id != bundle.analysis.run_id
+                || completion.duration_ms < bundle.analysis.duration_ms
+                || chrono::DateTime::parse_from_rfc3339(&completion.finished_at).is_err()
+            {
+                return Err(invalid("completion.json does not match the result bundle"));
+            }
+            bundle.analysis.duration_ms = completion.duration_ms;
+            bundle.analysis.finished_at = completion.finished_at;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // Bundles saved before completion.json use analysis.json timing.
+        }
+        Err(error) => return Err(invalid(format!("completion.json is inaccessible: {error}"))),
+    }
     let status = normalized_status(bundle.analysis.status, run_dir);
     if bundle.analysis.status == RunStatus::Running {
         bundle.analysis.problems.push(problem(
@@ -458,6 +541,23 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
         let Some(relative) = safe_project_relative(path) else {
             continue;
         };
+        // Older schema-1 bundles stored the module path rather than the
+        // backing file in projectRelative. Resolve it with the same literal
+        // filename precedence as a new analysis, then validate the selected
+        // path again before reading it.
+        let backing = if existence_only {
+            canonical_root.join(&relative)
+        } else {
+            filesystem_path(&canonical_root.join(&relative))
+        };
+        let Some(relative) = backing
+            .strip_prefix(&canonical_root)
+            .ok()
+            .and_then(|path| path.to_str())
+            .and_then(safe_project_relative)
+        else {
+            continue;
+        };
         // A file that cannot be verified (too large, special, outside the
         // root) is not reported stale; only a removed file or a hash mismatch
         // is.
@@ -527,6 +627,48 @@ mod tests {
             project_relative: BTreeMap::new(),
             existence_relative: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn completed_at_legacy_bundle_uses_embedded_duration() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut legacy = bundle();
+        legacy.analysis.duration_ms = 123;
+        legacy.analysis.finished_at = "2026-10-14T09:00:00Z".to_owned();
+        save(dir.path(), &legacy).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded.analysis.duration_ms, 123);
+        assert_eq!(loaded.analysis.finished_at, legacy.analysis.finished_at);
+    }
+
+    #[test]
+    fn completed_at_rejects_timing_for_another_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let saved = bundle();
+        save(dir.path(), &saved).unwrap();
+        save_completion(
+            dir.path(),
+            &uuid::Uuid::now_v7().to_string(),
+            123,
+            "2026-10-14T09:00:00Z",
+        )
+        .unwrap();
+        assert_eq!(load(dir.path()).unwrap_err().code, ErrorCode::ResultInvalid);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn completed_at_rejects_symlinked_timing_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        save(dir.path(), &bundle()).unwrap();
+        std::fs::write(outside.path().join(COMPLETION_FILE), "{}").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join(COMPLETION_FILE),
+            dir.path().join(COMPLETION_FILE),
+        )
+        .unwrap();
+        assert_eq!(load(dir.path()).unwrap_err().code, ErrorCode::ResultInvalid);
     }
 
     #[test]
@@ -646,6 +788,162 @@ mod tests {
             .project_relative
             .insert("src-0123456789abcdef".to_owned(), "src/a.js".to_owned());
         saved
+    }
+
+    #[test]
+    fn legacy_source_query_asset_reopens_without_false_stale_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        let asset = project.join("src/icon.svg");
+        std::fs::write(&asset, "<svg/>").unwrap();
+
+        let mut saved = stale_fixture(dir.path(), "source");
+        saved.sources[0].path = "src/icon.svg?raw".to_owned();
+        saved.sources[0].content = "export default \"<svg/>\"".to_owned();
+        saved.sources[0].content_included = true;
+        saved.sources[0].sha256 = sha256_hex(saved.sources[0].content.as_bytes());
+        saved.sources[0].stale = true;
+        saved.analysis.sources[0] = saved.sources[0].summary();
+        saved
+            .project_relative
+            .insert(saved.sources[0].id.clone(), "src/icon.svg?raw".to_owned());
+        save(dir.path(), &saved).unwrap();
+
+        for _ in 0..2 {
+            let loaded = load(dir.path()).unwrap();
+            assert_eq!(loaded.project_relative, saved.project_relative);
+            assert!(!loaded.sources[0].stale);
+            assert!(!loaded.analysis.sources[0].stale);
+            assert_eq!(stale_count(&loaded), 0);
+        }
+
+        std::fs::remove_file(&asset).unwrap();
+        let removed = load(dir.path()).unwrap();
+        assert!(removed.sources[0].stale && removed.analysis.sources[0].stale);
+        assert_eq!(stale_count(&removed), 1);
+
+        std::fs::write(&asset, "<svg changed/>").unwrap();
+        let restored = load(dir.path()).unwrap();
+        assert!(!restored.sources[0].stale && !restored.analysis.sources[0].stale);
+        assert_eq!(stale_count(&restored), 0);
+    }
+
+    #[test]
+    fn legacy_source_literal_paths_win_and_text_still_uses_its_hash() {
+        // Windows cannot create a literal filename containing `?`.
+        let suffixes: &[&str] = if cfg!(windows) {
+            &["#component"]
+        } else {
+            &["?raw", "#component"]
+        };
+        for suffix in suffixes {
+            let dir = tempfile::tempdir().unwrap();
+            let mut saved = stale_fixture(dir.path(), "original");
+            let relative = format!("src/a.js{suffix}");
+            saved.sources[0].path = relative.clone();
+            saved.sources[0].content = "original".to_owned();
+            saved.sources[0].content_included = true;
+            saved.analysis.sources[0] = saved.sources[0].summary();
+            saved
+                .project_relative
+                .insert(saved.sources[0].id.clone(), relative.clone());
+            save(dir.path(), &saved).unwrap();
+
+            let literal = dir.path().join("project").join(&relative);
+            std::fs::write(&literal, "different").unwrap();
+            let loaded = load(dir.path()).unwrap();
+            assert!(loaded.sources[0].stale, "{relative}");
+            assert_eq!(stale_count(&loaded), 1);
+
+            std::fs::remove_file(&literal).unwrap();
+            let loaded = load(dir.path()).unwrap();
+            assert!(!loaded.sources[0].stale, "{relative}");
+            assert_eq!(stale_count(&loaded), 0);
+
+            std::fs::write(dir.path().join("project/src/a.js"), "changed").unwrap();
+            let loaded = load(dir.path()).unwrap();
+            assert!(loaded.sources[0].stale, "{relative}");
+            assert_eq!(stale_count(&loaded), 1);
+        }
+    }
+
+    #[test]
+    fn legacy_source_query_keeps_saved_path_safety_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut saved = stale_fixture(dir.path(), "original");
+        let project = dir.path().join("project");
+        let backing = project.join("src/a.js");
+        saved.sources[0].path = "src/a.js?raw".to_owned();
+        saved
+            .project_relative
+            .insert(saved.sources[0].id.clone(), "src/a.js?raw".to_owned());
+
+        // A directory and an oversized regular file both exist, but neither
+        // can be read or treated as a source change.
+        std::fs::remove_file(&backing).unwrap();
+        std::fs::create_dir(&backing).unwrap();
+        mark_stale(&mut saved);
+        assert!(!saved.sources[0].stale);
+        std::fs::remove_dir(&backing).unwrap();
+        std::fs::write(&backing, vec![b'x'; (MAX_STALE_CHECK_BYTES + 1) as usize]).unwrap();
+        mark_stale(&mut saved);
+        assert!(!saved.sources[0].stale);
+
+        #[cfg(unix)]
+        {
+            std::fs::remove_file(&backing).unwrap();
+            let outside = dir.path().join("outside.js");
+            std::fs::write(&outside, "different").unwrap();
+            std::os::unix::fs::symlink(&outside, &backing).unwrap();
+            mark_stale(&mut saved);
+            assert!(!saved.sources[0].stale);
+        }
+
+        saved.project_relative.insert(
+            saved.sources[0].id.clone(),
+            "src/../../outside.js?raw".to_owned(),
+        );
+        assert_eq!(
+            parse(&serde_json::to_vec(&saved).unwrap())
+                .unwrap_err()
+                .code,
+            ErrorCode::ResultInvalid
+        );
+    }
+
+    #[test]
+    fn legacy_source_missing_fragment_clears_after_restoration() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        let module = project.join("src/a.js#component");
+        let mut store = crate::sources::SourceStore::new(true);
+        store.snapshots.insert(
+            crate::sources::normalize(&module),
+            "export const a = 1;".to_owned(),
+        );
+        store.add_file(&project, &module).unwrap();
+        let mut saved = bundle();
+        saved.project_root = project.to_string_lossy().into_owned();
+        saved.project_relative = store.project_relative.clone();
+        saved.sources = store.into_files();
+        saved.analysis.sources = saved.sources.iter().map(SourceFile::summary).collect();
+        assert_eq!(
+            saved.project_relative.get(&saved.sources[0].id),
+            Some(&"src/a.js".to_owned())
+        );
+        assert_eq!(saved.sources[0].path, "src/a.js#component");
+        save(dir.path(), &saved).unwrap();
+
+        let missing = load(dir.path()).unwrap();
+        assert!(missing.sources[0].stale);
+        assert_eq!(stale_count(&missing), 1);
+
+        std::fs::write(project.join("src/a.js"), "export const a = 1;").unwrap();
+        let restored = load(dir.path()).unwrap();
+        assert!(!restored.sources[0].stale && !restored.analysis.sources[0].stale);
+        assert_eq!(stale_count(&restored), 0);
     }
 
     #[test]

@@ -31,6 +31,9 @@ enum Value {
 
 pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
     match op.kind {
+        OperationKind::Analyze | OperationKind::AnalyzeQuality => {
+            unreachable!("analysis is scene-only")
+        }
         OperationKind::Generate => {
             let mut document: forge_xlsx::Workbook = forge_tree_doc::parse(op.model.as_bytes())?;
             forge_xlsx::validate(&document)?;

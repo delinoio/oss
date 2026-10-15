@@ -152,7 +152,36 @@ try {
             const reads = await page.evaluate(
               () => window.__codexReasoningFixture.reads,
             );
-            assert.equal(await reasoning.locator("pre").count(), 4);
+            assert.equal(
+              await reasoning.locator(".codex-reasoning-text").count(),
+              1,
+            );
+            assert.equal(
+              await reasoning
+                .locator(
+                  ".codex-reasoning-body section, .codex-reasoning-body h4, .codex-reasoning-body small, .codex-reasoning-body pre",
+                )
+                .count(),
+              0,
+            );
+            assert.equal(
+              await reasoning.locator(".codex-reasoning-text").textContent(),
+              "Streamed content",
+            );
+            const bodyMetrics = await reasoning
+              .locator(".codex-reasoning-text")
+              .evaluate((node) => {
+                const css = getComputedStyle(node);
+                return {
+                  fontSize: parseFloat(css.fontSize),
+                  lineHeight:
+                    parseFloat(css.lineHeight) / parseFloat(css.fontSize),
+                  overflow: node.scrollWidth > node.clientWidth,
+                };
+              });
+            assert(bodyMetrics.fontSize >= 13 && bodyMetrics.fontSize <= 14);
+            assert(Math.abs(bodyMetrics.lineHeight - 1.45) < 0.02);
+            assert.equal(bodyMetrics.overflow, false);
             assert.equal(
               await reasoning.locator("script, a, button").count(),
               0,
@@ -183,8 +212,10 @@ try {
             );
             await page.waitForFunction(
               () =>
-                document.querySelectorAll(".codex-reasoning section").length ===
-                3,
+                document.querySelectorAll(".codex-reasoning-text").length ===
+                  1 &&
+                document.querySelector(".codex-reasoning-text").textContent ===
+                  "Final original content",
             );
             const beforeToggleReads = await page.evaluate(
               () => window.__codexReasoningFixture.reads,

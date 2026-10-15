@@ -1841,7 +1841,7 @@ fn minify_chunk(name: &str, text: &str) -> (String, Option<sourcemap::SourceMap>
         return (text.to_owned(), None);
     };
     let before = crate::minify::compressed(&code);
-    let after = crate::minify::compressed(&minified.code);
+    let after = minified.compressed;
     if !crate::minify::better(before, after) {
         tracing::debug!(
             chunk = name,

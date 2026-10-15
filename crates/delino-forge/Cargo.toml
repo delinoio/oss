@@ -28,4 +28,4 @@ process-wrap = { version = "10.0.1", features = ["tokio1"] }
 windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }

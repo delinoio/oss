@@ -181,7 +181,7 @@ func (r PrepareRequest) validateStructure() error {
 	if r.ForkProfile == CodexSidechatReferenceV1 || r.SidechatSource != nil {
 		return validateSidechatPreparation(r)
 	}
-	if r.ForkProfile != "" && (r.ForkProfile != OpenCodeGeneralChatForkV1 || r.Type != domain.GeneralChat || r.ForkSourceID == "" || r.ForkSourcePath == "" || len(r.Repositories) != 0) {
+	if r.ForkProfile != "" && (!r.ForkProfile.OpenCodeGeneralChat() || r.Type != domain.GeneralChat || r.ForkSourceID == "" || r.ForkSourcePath == "" || len(r.Repositories) != 0) {
 		return ResultUncertain()
 	}
 	if r.ForkSourceID != "" && (r.ForkSourceID.Validate() != nil || r.ForkSourceID == r.SessionID) {

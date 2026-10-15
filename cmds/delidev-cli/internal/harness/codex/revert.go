@@ -86,7 +86,7 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 	// Remember only the existing durable owner; the supplement cannot confirm
 	// its response, history, checkpoint or cleanup.
 	state.revertAction = action
-	response, err := c.wire.Call(ctx, action, "thread/revert", struct {
+	response, err := c.call(ctx, action, "thread/revert", struct {
 		Thread domain.ID `json:"threadId"`
 		Before domain.ID `json:"beforeTurnId"`
 	}{c.thread, before})
@@ -257,7 +257,7 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 	if err != nil || !slices.EqualFunc(history, intent.ExpectedHistory, equivalentForkJSON) {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
-	reply, err := c.wire.Call(ctx, domain.NewID(), "thread/read", struct {
+	reply, err := c.call(ctx, domain.NewID(), "thread/read", struct {
 		Thread domain.ID `json:"threadId"`
 		Turns  bool      `json:"includeTurns"`
 	}{c.thread, false})

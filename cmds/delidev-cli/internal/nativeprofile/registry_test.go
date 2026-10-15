@@ -350,6 +350,120 @@ func TestHistoryIdentifiersKeepTheOriginalAndEvictOldestLater(t *testing.T) {
 	}
 }
 
+func TestHistoryOwnershipRejectsConflictingBindings(t *testing.T) {
+	r, _ := workerRegistry(t, testRoot(t), nil)
+	ctx := context.Background()
+	account := domain.NewID()
+	firstKey := conversationKey(account, domain.NewID())
+	secondKey := conversationKey(account, domain.NewID())
+	for _, key := range []Key{firstKey, secondKey} {
+		lease, err := r.Acquire(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lease.Close()
+	}
+	history := domain.NewID()
+	if err := r.RecordHistory(ctx, firstKey, history); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(r.registryPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.RecordHistory(ctx, secondKey, history); err == nil {
+		t.Fatal("a second managed profile accepted the same history")
+	}
+	if err := r.RecordHistory(ctx, firstKey, history); err != nil {
+		t.Fatal("same-owner binding was not idempotent", err)
+	}
+	if after, err := os.ReadFile(r.registryPath()); err != nil || !bytes.Equal(before, after) {
+		t.Fatal("conflicting or repeated binding rewrote the registry", err)
+	}
+	if found, ok, err := r.History(ctx, history); err != nil || !ok || found.Key.Conversation != firstKey.Conversation {
+		t.Fatal("history changed owner", err)
+	}
+	legacy := filepath.Join(r.config.Root, "runtimes", string(domain.NewID()))
+	if err := os.MkdirAll(legacy, 0700); err != nil {
+		t.Fatal(err)
+	}
+	relative, _ := filepath.Rel(r.config.Root, legacy)
+	if _, err := r.RegisterLegacy(ctx, conversationKey(account, domain.NewID()), filepath.ToSlash(relative), history); err == nil {
+		t.Fatal("a legacy profile accepted managed history")
+	}
+	if _, err := os.Stat(legacy); err != nil {
+		t.Fatal("conflicting registration moved the legacy directory", err)
+	}
+	legacyHistory := domain.NewID()
+	firstLegacy := filepath.Join(r.config.Root, "runtimes", string(domain.NewID()))
+	secondLegacy := filepath.Join(r.config.Root, "runtimes", string(domain.NewID()))
+	for _, path := range []string{firstLegacy, secondLegacy} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	firstRelative, _ := filepath.Rel(r.config.Root, firstLegacy)
+	secondRelative, _ := filepath.Rel(r.config.Root, secondLegacy)
+	if _, err := r.RegisterLegacy(ctx, conversationKey(account, domain.NewID()), filepath.ToSlash(firstRelative), legacyHistory); err != nil {
+		t.Fatal(err)
+	}
+	before, _ = os.ReadFile(r.registryPath())
+	if _, err := r.RegisterLegacy(ctx, conversationKey(account, domain.NewID()), filepath.ToSlash(secondRelative), legacyHistory); err == nil {
+		t.Fatal("a second legacy profile accepted the same history")
+	}
+	if after, err := os.ReadFile(r.registryPath()); err != nil || !bytes.Equal(before, after) {
+		t.Fatal("conflicting legacy registration rewrote the registry", err)
+	}
+	for _, path := range []string{firstLegacy, secondLegacy} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatal("conflicting legacy registration moved or removed a directory", err)
+		}
+	}
+	if n, err := r.Delete(ctx, DeleteScope{History: history}); err != nil || n != 1 {
+		t.Fatalf("unique history deletion changed scope: n=%d err=%v", n, err)
+	}
+	if _, ok, err := r.Lookup(ctx, secondKey); err != nil || !ok {
+		t.Fatal("history deletion removed another conversation", err)
+	}
+}
+
+func TestLoadRejectsDuplicateHistoryWithoutMutation(t *testing.T) {
+	r, _ := workerRegistry(t, testRoot(t), nil)
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		lease, err := r.Acquire(ctx, conversationKey(domain.NewID(), domain.NewID()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		lease.Close()
+	}
+	file, err := r.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := domain.NewID()
+	file.Profiles[0].Histories = []domain.ID{history}
+	file.Profiles[1].Histories = []domain.ID{history}
+	writeRawRegistry(t, r, file.Profiles)
+	before, _ := os.ReadFile(r.registryPath())
+	if _, _, err := r.History(ctx, history); err == nil {
+		t.Fatal("ambiguous history was resolved")
+	} else if reason, ok := Reasoned(err); !ok || reason != ReasonRegistryInvalid {
+		t.Fatal("ambiguous history did not report registry invalid", err)
+	}
+	if _, err := r.Delete(ctx, DeleteScope{History: history}); err == nil {
+		t.Fatal("ambiguous history was deleted")
+	}
+	if after, err := os.ReadFile(r.registryPath()); err != nil || !bytes.Equal(before, after) {
+		t.Fatal("invalid registry was rewritten", err)
+	}
+	for _, e := range file.Profiles {
+		if _, err := os.Stat(r.pathOf(e)); err != nil {
+			t.Fatal("an ambiguous owner was removed", err)
+		}
+	}
+}
+
 func writeRawRegistry(t *testing.T, r *Registry, profiles []entry) {
 	t.Helper()
 	if err := r.prepare(); err != nil {
@@ -425,6 +539,161 @@ func TestDeleteReportsAnUnremovableMatch(t *testing.T) {
 	}
 	if found, _ := r.Exists(ctx, DeleteScope{Conversation: key.Conversation}); !found {
 		t.Fatal("the entry was dropped while its directory remained")
+	}
+}
+
+func TestDeleteVerifiesManagedOwnerBeforeRemoval(t *testing.T) {
+	for _, scenario := range []string{"missing-owner", "mismatched-owner", "incompatible-owner", "missing-home", "replacement"} {
+		t.Run(scenario, func(t *testing.T) {
+			r, _ := workerRegistry(t, testRoot(t), nil)
+			ctx := context.Background()
+			key := conversationKey(domain.NewID(), domain.NewID())
+			lease, err := r.Acquire(ctx, key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := filepath.Dir(lease.Root)
+			lease.Close()
+			owner := filepath.Join(root, "owner.json")
+			switch scenario {
+			case "missing-owner":
+				err = os.Remove(owner)
+			case "mismatched-owner":
+				raw, _ := json.Marshal(ownerRecord{Version: Version, ID: domain.NewID(), Key: key})
+				err = os.WriteFile(owner, raw, 0600)
+			case "incompatible-owner":
+				raw, _ := json.Marshal(ownerRecord{Version: Version + 1, ID: lease.ID, Key: key})
+				err = os.WriteFile(owner, raw, 0600)
+			case "missing-home":
+				err = os.RemoveAll(lease.Root)
+			case "replacement":
+				if err = os.RemoveAll(root); err == nil {
+					err = os.Mkdir(root, 0700)
+				}
+				if err == nil {
+					err = os.WriteFile(filepath.Join(root, "sentinel"), []byte("foreign"), 0600)
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n, err := r.Delete(ctx, DeleteScope{Conversation: key.Conversation}); err == nil || n != 0 {
+				t.Fatalf("unsafe deletion: n=%d err=%v", n, err)
+			}
+			if found, err := r.Exists(ctx, DeleteScope{Conversation: key.Conversation}); err != nil || !found {
+				t.Fatal("failed deletion dropped its registry entry", err)
+			}
+			if scenario == "replacement" {
+				if raw, err := os.ReadFile(filepath.Join(root, "sentinel")); err != nil || string(raw) != "foreign" {
+					t.Fatal("replacement contents were removed", err)
+				}
+			}
+		})
+	}
+}
+
+func TestDeleteKeepsPathReplacementAfterOwnerVerification(t *testing.T) {
+	r, _ := workerRegistry(t, testRoot(t), nil)
+	ctx := context.Background()
+	key := conversationKey(domain.NewID(), domain.NewID())
+	lease, err := r.Acquire(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Dir(lease.Root)
+	lease.Close()
+	moved := root + "-original"
+	removeProfileAfterVerifyHook = func() {
+		if err := os.Rename(root, moved); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(root, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "sentinel"), []byte("foreign"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { removeProfileAfterVerifyHook = nil })
+	if n, err := r.Delete(ctx, DeleteScope{Conversation: key.Conversation}); err == nil || n != 0 {
+		t.Fatalf("path replacement was deleted: n=%d err=%v", n, err)
+	}
+	for _, path := range []string{filepath.Join(root, "sentinel"), filepath.Join(moved, "owner.json")} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatal("the replacement or original object was removed", err)
+		}
+	}
+	if found, err := r.Exists(ctx, DeleteScope{Conversation: key.Conversation}); err != nil || !found {
+		t.Fatal("failed deletion dropped its registry entry", err)
+	}
+}
+
+func TestDeleteRemovedClaudeProfileRetriesRegistryPublication(t *testing.T) {
+	r, _ := workerRegistry(t, testRoot(t), nil)
+	ctx := context.Background()
+	account, profile := domain.NewID(), domain.NewID()
+	key := Key{Harness: domain.ClaudeCode, Purpose: PurposeAuth, Account: account}
+	relative := filepath.ToSlash(filepath.Join("native-claude", string(r.config.Server), string(account), string(profile)))
+	root := filepath.Join(r.config.Root, filepath.FromSlash(relative))
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	registered, err := r.RegisterLegacy(ctx, key, relative)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelated := Key{Harness: domain.ClaudeCode, Purpose: PurposeQuota, Account: domain.NewID()}
+	other, err := r.Acquire(ctx, unrelated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.Close()
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	held, err := security.TryLock(r.lockPath(registered.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.DeleteRemovedClaudeProfile(ctx, key, relative); err == nil {
+		t.Fatal("an active profile was cleared")
+	}
+	if err := held.Close(); err != nil {
+		t.Fatal(err)
+	}
+	originalWrite := writeRegistryFile
+	writeRegistryFile = func(string, []byte) error { return errors.New("injected registry publication failure") }
+	if err := r.DeleteRemovedClaudeProfile(ctx, key, relative); err == nil {
+		t.Fatal("registry failure was reported as cleanup success")
+	}
+	writeRegistryFile = originalWrite
+	t.Cleanup(func() { writeRegistryFile = originalWrite })
+	if found, err := r.Exists(ctx, DeleteScope{Account: account, Purpose: PurposeAuth, Harness: domain.ClaudeCode}); err != nil || !found {
+		t.Fatal("failed publication dropped the original entry", err)
+	}
+	if err := r.DeleteRemovedClaudeProfile(ctx, key, relative); err != nil {
+		t.Fatal("original registry-only cleanup did not recover", err)
+	}
+	if err := r.DeleteRemovedClaudeProfile(ctx, key, relative); err != nil {
+		t.Fatal("repeated cleanup was not idempotent", err)
+	}
+	if found, err := r.Exists(ctx, DeleteScope{Account: account, Purpose: PurposeAuth, Harness: domain.ClaudeCode}); err != nil || found {
+		t.Fatal("original entry remains after retry", err)
+	}
+	if _, ok, err := r.Lookup(ctx, unrelated); err != nil || !ok {
+		t.Fatal("unrelated profile was removed", err)
+	}
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "sentinel"), []byte("foreign"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.DeleteRemovedClaudeProfile(ctx, key, relative); err == nil {
+		t.Fatal("a reappeared directory was accepted")
+	}
+	if raw, err := os.ReadFile(filepath.Join(root, "sentinel")); err != nil || string(raw) != "foreign" {
+		t.Fatal("the reappeared directory was changed", err)
 	}
 }
 

@@ -19,6 +19,7 @@
 //! initialize or are assigned to, and unused parameters (`.length`).
 use std::io::Write as _;
 
+use rustc_hash::FxHashSet;
 use swc_core::{
     atoms::Atom,
     common::{
@@ -29,7 +30,7 @@ use swc_core::{
     ecma::{
         ast::{
             AssignExpr, AssignPat, AssignTarget, CallExpr, Callee, EsVersion, Expr, ExprOrSpread,
-            ExprStmt, Ident, MemberExpr, MemberProp, ModuleItem, ObjectPatProp, Pat, Program,
+            ExprStmt, Id, Ident, MemberExpr, MemberProp, ModuleItem, ObjectPatProp, Pat, Program,
             PropName, SimpleAssignTarget, Stmt, VarDeclarator,
         },
         codegen::{
@@ -41,7 +42,12 @@ use swc_core::{
             option::{ExtraOptions, MangleOptions, MinifyOptions, terser::TerserCompressorOptions},
         },
         parser::{EsSyntax, Syntax, parse_file_as_module},
-        transforms::base::{fixer::fixer, resolver},
+        transforms::base::{
+            fixer::fixer,
+            hygiene::Config as HygieneConfig,
+            rename::{Renamer, renamer},
+            resolver,
+        },
         visit::{Visit, VisitMut, VisitMutWith, VisitWith},
     },
 };
@@ -51,7 +57,45 @@ use swc_core::{
 /// `(p = function () {}) => p`). Renaming such a binding would change the
 /// function's or class's `.name`, so the mangler keeps them.
 #[derive(Default)]
-struct InferredNames(Vec<Atom>);
+struct InferredNames(Vec<Id>);
+
+impl InferredNames {
+    /// Sorted and deduplicated, for binary search.
+    fn names(&self) -> Vec<Atom> {
+        let mut names: Vec<Atom> = self.0.iter().map(|(name, _)| name.clone()).collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+}
+
+/// SWC's hygiene renamer, except that bindings whose names functions or
+/// classes infer keep their names; whatever collides with them is renamed
+/// instead.
+struct InferredHygiene {
+    inferred: FxHashSet<Id>,
+}
+
+impl Renamer for InferredHygiene {
+    type Target = Atom;
+
+    const MANGLE: bool = false;
+    const RESET_N: bool = true;
+
+    fn new_name_for(&self, orig: &Id, n: &mut usize) -> Atom {
+        let name = if *n == 0 {
+            orig.0.clone()
+        } else {
+            format!("{}{}", orig.0, n).into()
+        };
+        *n += 1;
+        name
+    }
+
+    fn preserve_name(&self, orig: &Id) -> bool {
+        self.inferred.contains(orig)
+    }
+}
 
 fn anonymous_callable(expression: &Expr) -> bool {
     match expression {
@@ -280,7 +324,7 @@ impl Visit for InferredNames {
         if let (Pat::Ident(binding), Some(init)) = (&declarator.name, &declarator.init)
             && anonymous_callable(init)
         {
-            self.0.push(binding.id.sym.clone());
+            self.0.push(binding.id.to_id());
         }
     }
 
@@ -289,7 +333,7 @@ impl Visit for InferredNames {
         if let AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) = &assignment.left
             && anonymous_callable(&assignment.right)
         {
-            self.0.push(binding.id.sym.clone());
+            self.0.push(binding.id.to_id());
         }
     }
 
@@ -298,7 +342,7 @@ impl Visit for InferredNames {
         if let Pat::Ident(binding) = &*pattern.left
             && anonymous_callable(&pattern.right)
         {
-            self.0.push(binding.id.sym.clone());
+            self.0.push(binding.id.to_id());
         }
     }
 }
@@ -307,6 +351,8 @@ impl Visit for InferredNames {
 pub(crate) struct Minified {
     pub code: String,
     pub map: sourcemap::SourceMap,
+    /// Compressed sizes of `code`.
+    pub compressed: Compressed,
 }
 
 /// Compressed sizes that decide whether a minified chunk is kept.
@@ -436,7 +482,7 @@ impl Visit for SourceReflection {
 pub(crate) fn minify_module(code: &str) -> Option<Minified> {
     let cm: Lrc<SourceMap> = Default::default();
     let file = cm.new_source_file(Lrc::new(FileName::Anon), code.to_owned());
-    GLOBALS.set(&Globals::new(), || {
+    let (code, map) = GLOBALS.set(&Globals::new(), || {
         let unresolved = Mark::new();
         let top_level = Mark::new();
         let comments = SingleThreadedComments::default();
@@ -450,6 +496,7 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
         )
         .ok()?;
         if !errors.is_empty() {
+            tracing::debug!(errors = errors.len(), "minify skipped: parse errors");
             return None;
         }
         let mut program = Program::Module(module);
@@ -468,18 +515,21 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
             notices.sort_by_key(|comment| comment.span.lo);
             notices
         };
-        let mut inferred = InferredNames::default();
-        program.visit_with(&mut inferred);
         if code.contains(KEEP) {
+            tracing::debug!("minify skipped: input contains a reserved helper name");
             return None;
         }
         program.visit_mut_with(&mut InsertKeepCalls);
         program.visit_mut_with(&mut resolver(unresolved, top_level, false));
+        let mut inferred = InferredNames::default();
+        program.visit_with(&mut inferred);
+        let reserved = inferred.names();
         // The compressor defaults of SWC's terser-compatible options, as
         // `@swc/core` applies them, for a module, keeping observable names
-        // and parameter counts.
+        // and parameter counts. Hoisting properties into variables would
+        // rename the functions that object literal keys name.
         let compressor: TerserCompressorOptions = serde_json::from_str(
-            r#"{"module":true,"toplevel":true,"keep_fnames":true,"keep_classnames":true,"keep_fargs":true}"#,
+            r#"{"module":true,"toplevel":true,"keep_fnames":true,"keep_classnames":true,"keep_fargs":true,"hoist_props":false}"#,
         )
         .ok()?;
         let options = MinifyOptions {
@@ -488,7 +538,7 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
                 top_level: Some(true),
                 keep_fn_names: true,
                 keep_class_names: true,
-                reserved: inferred.0,
+                reserved: reserved.clone(),
                 ..Default::default()
             }),
             ..Default::default()
@@ -509,6 +559,37 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
         let mut leftover = CountKeepCalls::default();
         program.visit_with(&mut leftover);
         if leftover.0 > 0 {
+            tracing::debug!(
+                calls = leftover.0,
+                "minify skipped: name-keeping calls remain"
+            );
+            return None;
+        }
+        // The compressor can move references next to a binding of the same
+        // name with another syntax context, for example into the head of a
+        // `for (let e of …)` loop, which evaluates in the scope of `e`. The
+        // mangler leaves names visible to `eval` or `with` alone, so the
+        // hygiene pass renames whatever still collides, as `@swc/core` does
+        // after optimizing.
+        program.visit_mut_with(&mut renamer(
+            HygieneConfig {
+                keep_class_names: true,
+                top_level_mark: top_level,
+                ..Default::default()
+            },
+            InferredHygiene {
+                inferred: inferred.0.iter().cloned().collect(),
+            },
+        ));
+        // A binding that names its function or class must keep its name.
+        let mut kept = InferredNames::default();
+        program.visit_with(&mut kept);
+        if let Some(name) = kept
+            .names()
+            .into_iter()
+            .find(|name| reserved.binary_search(name).is_err())
+        {
+            tracing::debug!(%name, "minify skipped: an inferred name would change");
             return None;
         }
         program.visit_mut_with(&mut fixer(Some(&comments)));
@@ -570,6 +651,7 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
             }
             (code, mappings) = emit(&comments)?;
             if missing.iter().any(|notice| !code.contains(notice.text.as_ref())) {
+                tracing::debug!("minify skipped: legal notices would be lost");
                 return None;
             }
         }
@@ -582,7 +664,16 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
         .to_writer(&mut json)
         .ok()?;
         let map = sourcemap::SourceMap::from_slice(&json).ok()?;
-        Some(Minified { code, map })
+        Some((code, map))
+    })?;
+    // Measured after the SWC program, comments and mappings are dropped, so
+    // the compressors do not add to their peak memory.
+    drop(file);
+    drop(cm);
+    Some(Minified {
+        compressed: compressed(&code),
+        code,
+        map,
     })
 }
 
@@ -641,11 +732,42 @@ assignedFunction = function () { return 3; };
 const withDefault = (callback = () => 4) => callback.name;
 function withUnusedParameters(first, second, third) { return first; }
 const handler = (event, unusedContext) => event;
+const codec = { decode: (value) => value + 1, encode: (value) => value - 1 };
 console.log(
   namedFunction.name, NamedClass.name, new NamedClass().constructor.name,
   inferredArrow.name, inferredClass.name, assignedFunction.name, withDefault(),
   withUnusedParameters.length, handler.length, withUnusedParameters(5), handler(6),
+  codec.decode.name, codec.decode(1), codec.encode(1),
 );
+export {};
+"#;
+        let minified = minify_module(input).unwrap();
+        assert_eq!(
+            run_module(&minified.code),
+            run_module(input),
+            "{}",
+            minified.code
+        );
+    }
+
+    /// The compressor moves the constructor's statements into the head of
+    /// `for (let e of …)`, where `e` names the loop binding; the parameter
+    /// `e` keeps its name because a function infers the name `e`.
+    #[test]
+    fn keeps_loop_heads_apart_from_their_bindings() {
+        let input = r#"
+const e = () => 1;
+function f(component) { return { alpha: component, beta: 2 }; }
+function h(read) { console.log(read()); }
+class Vo {
+  #t;
+  constructor(e) {
+    this.#t = f(e.component);
+    for (let e of Object.keys(this.#t)) h(() => e);
+  }
+}
+new Vo({ component: 1 });
+console.log(e.name);
 export {};
 "#;
         let minified = minify_module(input).unwrap();

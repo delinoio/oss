@@ -22,20 +22,32 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestManualNativeOpenCodeCheckpointProcessReplacement(t *testing.T) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit private pinned OpenCode process replacement fixture")
-	}
+	binary, _ := nativetest.NativeOpenCodeExecutable(t)
 	for _, mode := range []string{"build", "plan", "failed", "stopped", "build-plan-build", "plan-build-plan"} {
 		t.Run(mode, func(t *testing.T) { nativeCheckpointReplacement(t, binary, mode) })
 	}
 }
 
+func TestManualNativeOpenCodeCheckpointInPlaceResume(t *testing.T) {
+	binary, _ := nativetest.NativeOpenCodeExecutable(t)
+	for _, mode := range []string{"build", "plan", "failed", "stopped", "build-plan-build", "plan-build-plan"} {
+		t.Run(mode, func(t *testing.T) { nativeCheckpointReplacementMode(t, binary, mode, true) })
+	}
+}
+
 func nativeCheckpointReplacement(t *testing.T, binary string, mode string, project ...nativeCheckpointWorkspace) {
+	t.Helper()
+	nativeCheckpointReplacementMode(t, binary, mode, false, project...)
+}
+
+// nativeCheckpointReplacementMode resumes each turn in a fresh runtime copy, or
+// with inPlace in the one persistent runtime that retained the history.
+func nativeCheckpointReplacementMode(t *testing.T, binary string, mode string, inPlace bool, project ...nativeCheckpointWorkspace) {
 	t.Helper()
 	requireNoManagedOpenCodeConfig(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -145,11 +157,17 @@ func nativeCheckpointReplacement(t *testing.T, binary string, mode string, proje
 		config := fixtureOwnedAPIConfig(t)
 		config.Probe.Process.Logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
 		config.Probe.Process.Executable = binary
+		_, config.Probe.Version = nativetest.NativeOpenCodeExecutable(t)
 		config.ServerOrigin, config.Token = provider.URL, tokens[turn]
 		config.Settings.Agent, config.Settings.Permission = agentAt(turn), []PermissionRule{}
 		config.Instructions = "Private immutable additive checkpoint instruction."
 		if turn > 0 {
 			config.Workspace, config.NativeRoot, config.Root = original.Workspace, original.NativeRoot, original.Root
+			if inPlace {
+				owner := config.Probe.Process.OwnerID
+				config.Probe = original.Probe
+				config.Probe.Process.OwnerID = owner
+			}
 		} else {
 			if len(project) == 1 && project[0] != checkpointGeneralChat {
 				prepareNativeCheckpointGit(t, &config, project[0])
@@ -241,7 +259,13 @@ func nativeCheckpointReplacement(t *testing.T, binary string, mode string, proje
 		if err != nil {
 			t.Fatal("replacement history or cleanup failed", turn, err)
 		}
-		if turn > 0 && InspectCheckpoint(ctx, home, prior, ref) != nil {
+		if turn > 0 && inPlace {
+			// The persistent profile advanced, so only the latest checkpoint
+			// can still be verified against its files.
+			if InspectCheckpoint(ctx, home, prior, ref) == nil {
+				t.Fatal("in-place resume left the superseded checkpoint verifiable")
+			}
+		} else if turn > 0 && InspectCheckpoint(ctx, home, prior, ref) != nil {
 			t.Fatal("replacement modified original closed files")
 		}
 		raw, current, err := api.RetainCheckpoint(ctx)

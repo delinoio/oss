@@ -22,7 +22,7 @@ func forkCheckpointCapacity() error {
 // original histories and identity proof, and conservatively retains every source
 // file descriptor even though replacement copies only SQLite. Placeholder bytes
 // reserve the declared encoded bounds; they never become native identities.
-func checkForkCheckpointCapacity(source nativeCheckpoint) error {
+func checkForkCheckpointCapacity(source nativeCheckpoint, reasoning bool) error {
 	histories := checkpointHistories(source)
 	cloned := make([]HistoryObservation, len(histories))
 	identities := []ForkMessageIdentity{}
@@ -60,7 +60,7 @@ func checkForkCheckpointCapacity(source nativeCheckpoint) error {
 	ref.SHA256, ref.SessionID, ref.InputID, ref.PartID, ref.HistorySHA256 = "", sessionID, messageID, partID, digest
 	sourceReference := source.Reference
 	sourceReference.SHA256 = digest
-	proof := &nativeCheckpointFork{Version: 1, RequestID: domain.NewID(), SourceReference: sourceReference, SourceWorkspace: source.Workspace, SourceHistories: histories, ClonedHistories: cloned, Identities: identities, SelectionPending: true}
+	proof := &nativeCheckpointFork{Version: 1, RequestID: domain.NewID(), SourceReference: sourceReference, SourceWorkspace: source.Workspace, SourceHistories: histories, ClonedHistories: cloned, Identities: identities, SelectionPending: true, Reasoning: reasoning}
 	value := nativeCheckpoint{Version: 1, NativeVersion: strings.Repeat("v", 64), Reference: ref, RuntimeHome: path, Workspace: path, NativeRoot: "/", Project: "global", Slug: strings.Repeat("\x01", 256), Created: 9007199254740991, SettingsSHA256: digest, CredentialSHA256: digest, History: cloned[len(cloned)-1], Files: files, Fork: proof}
 	if len(cloned) > 1 {
 		value.Previous, value.PredecessorSHA256 = cloned[:len(cloned)-1], digest

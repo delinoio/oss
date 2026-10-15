@@ -1,4 +1,5 @@
 import { ErrorCode, type Format, type Stage } from "./types.js";
+import type { SceneBudgetViolation } from "./scene/session.js";
 
 // tsx isolates task imports in a module namespace. A session returned by that
 // namespace must retain its typed errors across the CLI's module boundary.
@@ -23,6 +24,7 @@ export class ForgeError extends Error {
       revision?: number;
       location?: string;
       published?: boolean;
+      sceneBudget?: SceneBudgetViolation;
     } = {},
     cause?: unknown,
   ) {

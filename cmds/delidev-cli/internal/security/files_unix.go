@@ -20,7 +20,11 @@ func checkPrivate(_ string, info os.FileInfo) error {
 	}
 	return nil
 }
-func replaceFile(from, to string) error { return os.Rename(from, to) }
+
+// checkPrivateHandle applies the owner-only contract to an open file's own
+// metadata; it never consults a path.
+func checkPrivateHandle(_ *os.File, info os.FileInfo) error { return checkPrivate("", info) }
+func replaceFile(from, to string) error                     { return os.Rename(from, to) }
 func syncDirectory(path string) error {
 	f, err := os.Open(path)
 	if err != nil {
