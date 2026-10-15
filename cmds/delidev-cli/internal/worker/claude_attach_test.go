@@ -10,12 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -212,7 +214,7 @@ func TestClaudeCleanupInstallationPrefersRetainedJournalEvidence(t *testing.T) {
 		{"legacy journal with unverified inventory", Config{attachedMachine: resource(domain.Installation{Harness: domain.ClaudeCode, State: domain.InstallationDetected, ResolvedPath: "/current/claude", Version: domain.ClaudeProtocolVersion})}, managedSubscriptionJournal{}, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := claudeCleanupInstallation(tc.config, tc.journal)
+			got, err := claudeCleanupInstallation(context.Background(), tc.config, tc.journal)
 			if tc.invalid {
 				if err == nil || domain.SafeError(err).Code != domain.SafeError(subscription.Invalid()).Code {
 					t.Fatal("missing or ambiguous original evidence did not fail closed", err)
@@ -224,4 +226,94 @@ func TestClaudeCleanupInstallationPrefersRetainedJournalEvidence(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClaudeInstallationAdmissionCoversInspectedAndDirectStartupIdentities(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	for _, tc := range []struct {
+		name         string
+		installation domain.Installation
+		want         bool
+	}{
+		{"inspected baseline", domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: "/claude", Version: domain.ClaudeProtocolVersion}, true},
+		{"inspected newer", domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: "/claude", Version: "9.9.9"}, true},
+		{"inspected newer with digest", domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: "/claude", Version: "9.9.9", ExecutableSHA256: digest}, true},
+		{"inspected below baseline", domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: "/claude", Version: "0.0.1", ExecutableSHA256: digest}, false},
+		{"inspected malformed", domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: "/claude", Version: "not-a-version"}, false},
+		{"direct startup path and digest", domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: "/claude", ExecutableSHA256: digest}, true},
+		{"direct startup without digest", domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: "/claude"}, false},
+		{"direct startup malformed digest", domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: "/claude", ExecutableSHA256: "ABC"}, false},
+		{"direct startup without path", domain.Installation{Harness: domain.ClaudeCode, ExecutableSHA256: digest}, false},
+		{"another harness", domain.Installation{Harness: domain.Codex, ResolvedPath: "/claude", ExecutableSHA256: digest}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := claudeInstallationAdmitted(tc.installation); got != tc.want {
+				t.Fatalf("admitted = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestClaudeCleanupInstallationRechecksRetainedExecutableDigest(t *testing.T) {
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "claude")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := harness.InspectExecutable(context.Background(), executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := strings.Repeat("0", 64)
+	retained := func(version, sum string) managedSubscriptionJournal {
+		return managedSubscriptionJournal{Installation: &domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: executable, Version: version, ExecutableSHA256: sum}}
+	}
+	for _, tc := range []struct {
+		name    string
+		journal managedSubscriptionJournal
+		mutate  func()
+		changed bool
+	}{
+		{"matching direct-startup digest", retained("", digest), func() {}, false},
+		{"matching inspected digest", retained(domain.ClaudeProtocolVersion, digest), func() {}, false},
+		{"inspected without retained digest", retained(domain.ClaudeProtocolVersion, ""), func() { _ = os.WriteFile(executable, []byte("#!/bin/sh\nexit 1\n"), 0o700) }, false},
+		{"mismatching retained digest", retained("", other), func() {}, true},
+		{"replaced in place after the operation", retained("", digest), func() { _ = os.WriteFile(executable, []byte("#!/bin/sh\nexit 2\n"), 0o700) }, true},
+		{"removed after the operation", retained("", digest), func() { _ = os.Remove(executable) }, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			tc.mutate()
+			got, err := claudeCleanupInstallation(context.Background(), Config{}, tc.journal)
+			if tc.changed {
+				if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+					t.Fatal("changed executable was not rejected before cleanup", err)
+				}
+				return
+			}
+			if err != nil || got.ResolvedPath != executable {
+				t.Fatal("unchanged executable was rejected", err)
+			}
+		})
+	}
+	t.Run("legacy journal inventory digest is rechecked too", func(t *testing.T) {
+		if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		inventory := func(sum string) Config {
+			raw, err := json.Marshal(domain.Machine{Name: "fixture", OS: "darwin", Architecture: "arm64", Version: "1", Installations: []domain.Installation{{Harness: domain.ClaudeCode, State: domain.InstallationDetected, ResolvedPath: executable, Version: domain.ClaudeProtocolVersion, ProtocolVerified: true, ExecutableSHA256: sum, Protocol: &domain.ProtocolObservation{State: domain.ProtocolVerified}}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return Config{attachedMachine: &pb.Resource{DocumentJson: raw}}
+		}
+		if _, err := claudeCleanupInstallation(context.Background(), inventory(digest), managedSubscriptionJournal{}); err != nil {
+			t.Fatal("matching inventory digest rejected", err)
+		}
+		if _, err := claudeCleanupInstallation(context.Background(), inventory(other), managedSubscriptionJournal{}); err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatal("mismatching inventory digest was accepted", err)
+		}
+	})
 }

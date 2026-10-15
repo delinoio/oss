@@ -20,6 +20,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -115,7 +116,10 @@ type nativeClaudeLifecycleFixture struct {
 	submission                          domain.ID
 	takes, codeTakes                    int
 	cancel, loseFinish                  bool
-	finishes                            []*pb.FinishSubscriptionRequest
+	// failedExecution accepts the unsuccessful Finish of an execution whose
+	// profile could not open; it still has no cleanup claim to verify.
+	failedExecution bool
+	finishes        []*pb.FinishSubscriptionRequest
 }
 
 func (f *nativeClaudeLifecycleFixture) TakeSubscription(_ context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (*connect.Response[pb.TakeSubscriptionResponse], error) {
@@ -161,7 +165,7 @@ func (f *nativeClaudeLifecycleFixture) FinishSubscription(_ context.Context, req
 	f.finishes = append(f.finishes, proto.Clone(req.Msg).(*pb.FinishSubscriptionRequest))
 	raw, err := security.ReadPrivate(filepath.Join(f.config.Root, "managed-auth", string(f.lease)+".json"), 16<<10)
 	var claim managedSubscriptionJournal
-	if err != nil || domain.Decode(raw, &claim) != nil || claim.State != managedClosed || len(req.Msg.Bundle) != 0 || req.Msg.RefreshConfirmed || !req.Msg.CleanupConfirmed {
+	if !f.failedExecution && (err != nil || domain.Decode(raw, &claim) != nil || claim.State != managedClosed || len(req.Msg.Bundle) != 0 || req.Msg.RefreshConfirmed || !req.Msg.CleanupConfirmed) {
 		f.t.Error("completion did not retain its metadata-only original cleanup claim")
 	}
 	profile, _ := claudeProfileRoot(f.config.Root, f.credential, f.account, f.profile)
@@ -292,6 +296,49 @@ func TestNativeClaudeWorkerLoginCancelAndOriginalRecovery(t *testing.T) {
 				locked = true
 				if f.takes != 2 || len(f.finishes) != 2 || f.finishes[1].NativeIdentity == nil || f.finishes[1].NativeIdentity.IdentityCommitment != finish.NativeIdentity.IdentityCommitment || f.finishes[1].LeaseId == finish.LeaseId {
 					t.Fatal("execution replaced the pinned native identity")
+				}
+				// The version-4 direct-startup identity carries a digest and no version.
+				// It opens the same device-owned profile, and its original executable
+				// evidence is durable even when the profile later fails to open.
+				digest, err := harness.InspectExecutable(ctx, executable)
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.mu.Unlock()
+				locked = false
+				directStartup := domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: executable, ExecutableSHA256: digest}
+				direct, _, completeDirect, err := beginClaudeSubscriptionExecution(ctx, f.config, domain.NewID(), domain.ExecutionJobInput{AccountID: f.account, Installation: directStartup})
+				if err != nil || direct == nil {
+					t.Fatal("version-4 direct-startup identity could not acquire the device-owned profile", err)
+				}
+				if err = completeDirect(true); err != nil {
+					t.Fatal(err)
+				}
+				f.mu.Lock()
+				directLease := f.lease
+				f.mu.Unlock()
+				f.mu.Lock()
+				f.failedExecution = true
+				f.mu.Unlock()
+				missing := domain.Installation{Harness: domain.ClaudeCode, Version: domain.ClaudeProtocolVersion, ResolvedPath: filepath.Join(root, "missing-claude")}
+				if _, _, _, err = beginClaudeSubscriptionExecution(ctx, f.config, domain.NewID(), domain.ExecutionJobInput{AccountID: f.account, Installation: missing}); err == nil {
+					t.Fatal("unavailable executable opened the profile")
+				}
+				f.mu.Lock()
+				locked = true
+				retained := func(lease domain.ID) *domain.Installation {
+					raw, err := security.ReadPrivate(filepath.Join(root, "managed-auth", string(lease)+".json"), 16<<10)
+					var journal managedSubscriptionJournal
+					if err != nil || domain.Decode(raw, &journal) != nil {
+						t.Fatal("execution journal missing", err)
+					}
+					return journal.Installation
+				}
+				if got := retained(f.lease); got == nil || got.ResolvedPath != missing.ResolvedPath {
+					t.Fatal("original executable was not retained before the profile opened", got)
+				}
+				if got := retained(directLease); got == nil || got.Version != "" || got.ExecutableSHA256 != digest || got.ResolvedPath != executable {
+					t.Fatal("direct-startup executable identity was not retained", got)
 				}
 				owned, err = openClaudeProfile(f.config, f.credential, f.account, f.profile, f.installation, domain.NewID(), false)
 				if err != nil {

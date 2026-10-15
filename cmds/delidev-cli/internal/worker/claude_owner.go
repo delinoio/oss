@@ -317,11 +317,15 @@ func (g *claudeAccountGate) found(ctx context.Context, config Config, input doma
 		}
 		return nil, nil, nil, problem
 	}
-	profile, err := openClaudeProfile(config, connection.Credential, input.AccountID, domain.ID(lease.response.NativeProfileId), input.Installation, domain.ID(lease.response.LeaseId), false)
+	// Retain the original executable before the profile opens (see runClaudeAccount).
+	var profile *nativeClaudeProfile
+	err := lease.retainClaudeInstallation(input.Installation)
+	if err == nil {
+		profile, err = openClaudeProfile(config, connection.Credential, input.AccountID, domain.ID(lease.response.NativeProfileId), input.Installation, domain.ID(lease.response.LeaseId), false)
+	}
 	if err == nil {
 		if err = security.PrivateDir(filepath.Join(config.Root, "processes", lease.response.LeaseId)); err == nil {
 			lease.journal.NativeStarted = true
-			lease.journal.Installation = &input.Installation
 			err = writeJSON(lease.journalPath, lease.journal)
 		}
 	}

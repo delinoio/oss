@@ -87,11 +87,21 @@ The Worker advertises `native-claude-subscriptions-v1` and
 never inspects installation inventory, never launches a Claude child and never
 runs a version or auth-status probe, and each capability change rotates the
 attach request identity. Executable and protocol validation happen in the
-original execution process before input delivery. Historical device-owned
-Claude cleanup reuses the original installation retained in the operation's
-private journal; only journals written before that field existed fall back to
-the single fully verified entry of the current attach inventory, and ambiguous
-or missing evidence fails closed as invalid.
+original execution process before input delivery. A version-4 device-owned
+Claude execution opens its native profile with the direct-startup identity
+(resolved path and executable digest, no version): one admission rule accepts
+either an inspected installation at or above the baseline or that digest-pinned
+identity, and the original process's `--version` output only has to be bounded
+metadata, never a numeric gate. Login keeps requiring an inspected version.
+Every device-owned Claude operation durably records the exact installation in its
+private journal before the native profile is created or touched, so only
+journals written before that field existed lack it. Historical device-owned
+cleanup reuses that retained installation; only such legacy journals fall back
+to the single fully verified entry of the current attach inventory, and
+ambiguous or missing evidence fails closed as invalid. Before cleanup launches
+the executable with access to the original profile, it re-inspects the file and
+compares any retained digest; a mismatch or an unreadable file fails closed as
+recovery-required.
 Workers lacking the new capability receive no new execution assignment; clients receive an
 update requirement rather than an instruction to run manual inspection.
 
