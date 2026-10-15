@@ -66,6 +66,16 @@ type entry struct {
 	Refs      []Reference `json:"refs,omitempty"`
 }
 
+// violatesRegisteredOnly reports whether the entry breaks the invariant of a
+// registered-only purpose: such an entry exists only as a legacy directory
+// registered in place and never holds a conversation history. Registration
+// enforces it when the entry is created and every registry load enforces it
+// again, so a restored registry cannot smuggle in an entry that Acquire would
+// then lock as an ordinary profile.
+func (e entry) violatesRegisteredOnly() bool {
+	return e.Key.Purpose.RegisteredOnly() && (e.Origin != OriginLegacy || len(e.Histories) > 0)
+}
+
 type registryFile struct {
 	Version  int     `json:"version"`
 	Profiles []entry `json:"profiles"`
@@ -219,7 +229,7 @@ func (r *Registry) load() (registryFile, error) {
 	for _, e := range file.Profiles {
 		// Every stored key must belong to this owner root: a restored or reused
 		// root under another server or Worker identity is invalid as a whole.
-		if e.ID.Validate() != nil || e.Key.Validate() != nil || e.Key.Owner != r.config.Owner || e.Key.Server != r.config.Server || e.Key.Machine != r.config.Machine || (e.Origin == OriginLegacy && !validLegacyPath(e.Path)) || seenID[e.ID] || seenKey[e.Key.String()] || len(e.Histories) > maxHistories || (e.Origin != OriginManaged && e.Origin != OriginLegacy) || (e.Origin == OriginLegacy) == (e.Path == "") {
+		if e.ID.Validate() != nil || e.Key.Validate() != nil || e.Key.Owner != r.config.Owner || e.Key.Server != r.config.Server || e.Key.Machine != r.config.Machine || (e.Origin == OriginLegacy && !validLegacyPath(e.Path)) || seenID[e.ID] || seenKey[e.Key.String()] || len(e.Histories) > maxHistories || (e.Origin != OriginManaged && e.Origin != OriginLegacy) || (e.Origin == OriginLegacy) == (e.Path == "") || e.violatesRegisteredOnly() {
 			return registryFile{}, Failure(domain.RecoveryRequired, ReasonRegistryInvalid, "The native profile registry is invalid.", "Restore the registry from a trusted backup without deleting profile directories.")
 		}
 		seenID[e.ID], seenKey[e.Key.String()] = true, true
@@ -556,6 +566,9 @@ func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string,
 		if h.Validate() != nil {
 			return Info{}, invalidKey()
 		}
+	}
+	if key.Purpose.RegisteredOnly() && len(histories) > 0 {
+		return Info{}, invalidKey()
 	}
 	var result Info
 	err = r.withRegistry(ctx, func(file *registryFile) (bool, error) {

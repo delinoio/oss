@@ -2963,6 +2963,22 @@ registry. Only in-place registration creates its entry. Acquiring an unregistere
 creates no managed profile directory or registry entry, while acquiring an entry
 that was already registered in place locks it normally.
 
+A registered-only entry exists only as a legacy directory registered in place and
+never holds a conversation history. Registration and every registry load enforce
+both facts, so a restored registry cannot hold a managed `shared_owner` entry,
+even with an intact managed directory and owner record, or one with histories.
+Such a registry is invalid as a whole (`registry_invalid`), is never rewritten,
+and fails every entry point before any lock is taken:
+
+| Entry shape in the registry                  | `Lookup`, `Peek`, `Acquire`, `RegisterLegacy` |
+| -------------------------------------------- | --------------------------------------------- |
+| legacy origin, no histories                  | valid                                         |
+| managed origin (directory and owner intact)  | `registry_invalid`                            |
+| legacy origin holding a conversation history | `registry_invalid`                            |
+
+`RegisterLegacy` of a registered-only key with histories is rejected as an
+invalid key before anything is written.
+
 Checkpoint readers verify the home through a read-only registry lookup that
 takes no lock and creates no file or directory, so it also works on a
 read-only Worker root:
