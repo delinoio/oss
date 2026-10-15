@@ -41,12 +41,11 @@ func TestExecutionJobBudgetRejectsReportedCombination(t *testing.T) {
 	if err := f.requireBudget(t, reported, prompt); domain.SafeError(err).Code != domain.ResourceExhausted {
 		t.Fatal("100 maximum-URL repositories with a maximum prompt were admitted", err)
 	}
-	// The same project remains dispatchable with a short prompt or one repository.
-	if err := f.requireBudget(t, reported, domain.SessionInput{Prompt: "short", Mode: domain.ExecuteMode}); domain.SafeError(err).Code != domain.ResourceExhausted {
-		// 100 maximum URLs alone are about 840 KiB, which stays below the limit.
-		if err != nil {
-			t.Fatal("maximum URLs with a short prompt were rejected", err)
-		}
+	// Maximum URLs occur in both the preparation and manifest data. A smaller
+	// project remains dispatchable with a short prompt.
+	shortPrompt := budgetFixtureRequest(f, 70, budgetFixtureURL(4028))
+	if err := f.requireBudget(t, shortPrompt, domain.SessionInput{Prompt: "short", Mode: domain.ExecuteMode}); err != nil {
+		t.Fatal("70 maximum URLs with a short prompt were rejected", err)
 	}
 	single := budgetFixtureRequest(f, 1, budgetFixtureURL(4028))
 	if err := f.requireBudget(t, single, prompt); err != nil {
