@@ -320,7 +320,7 @@ func TestNativeClaudeExecutionDoesNotInjectRelayAuthentication(t *testing.T) {
 }
 
 func TestNativeClaudeSubscriptionStreamValidatesOwnedProfileBeforeInput(t *testing.T) {
-	for _, mode := range []string{"native-subscription-valid", "native-subscription-api-source", "native-subscription-foreign-provider"} {
+	for _, mode := range []string{"native-subscription-valid", "native-subscription-api-source", "native-subscription-foreign-provider", "native-subscription-valid-descriptor-additions"} {
 		t.Run(mode, func(t *testing.T) {
 			config, logs := apiFixtureConfig(t, mode)
 			profile := filepath.Join(config.Process.Cwd, "owned-profile", "claude")
@@ -334,7 +334,7 @@ func TestNativeClaudeSubscriptionStreamValidatesOwnedProfileBeforeInput(t *testi
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			stream, err := OpenAPIStream(ctx, config)
-			if mode == "native-subscription-valid" {
+			if strings.HasPrefix(mode, "native-subscription-valid") {
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -140,6 +141,9 @@ func init() {
 			time.Sleep(time.Second)
 		}
 	}
+	if strings.HasSuffix(mode, "descriptor-additions") {
+		addDescriptorAdditions(result)
+	}
 	_, _ = os.Stdout.Write(fixtureResponse(request.ID, result))
 	if scanner.Scan() {
 		var settingsRequest struct {
@@ -176,6 +180,30 @@ func init() {
 	os.Exit(0)
 }
 
+// addDescriptorAdditions mirrors Claude Code 2.1.287 (44 command descriptors
+// carrying builtin:true) and adds unused members of every JSON type to command,
+// agent and model descriptor objects.
+func addDescriptorAdditions(result map[string]any) {
+	extras := func(descriptor map[string]any) {
+		descriptor["builtin"] = true
+		descriptor["futureString"] = "private-descriptor-sentinel"
+		descriptor["futureNull"] = nil
+		descriptor["futureNumber"] = 1.5
+		descriptor["futureArray"] = []any{"a", map[string]any{"b": []any{nil}}}
+		descriptor["futureObject"] = map[string]any{"nested": map[string]any{"deep": false}}
+	}
+	commands := result["commands"].([]any)
+	for i := 0; i < 43; i++ {
+		commands = append(commands, map[string]any{"name": fmt.Sprintf("builtin-%d", i), "description": "Built-in command", "argumentHint": ""})
+	}
+	for _, command := range commands {
+		extras(command.(map[string]any))
+	}
+	result["commands"] = commands
+	extras(result["agents"].([]any)[0].(map[string]any))
+	extras(result["models"].([]any)[0].(map[string]any))
+}
+
 func apiFixtureConfig(t *testing.T, mode string) (APIStreamConfig, *bytes.Buffer) {
 	t.Helper()
 	cfg, logs := fixtureConfig(t, "api-"+mode)
@@ -189,7 +217,7 @@ func apiFixtureConfig(t *testing.T, mode string) (APIStreamConfig, *bytes.Buffer
 }
 
 func TestAPIStreamRebuildsPrivateRuntimeAndValidatesNativeAuthority(t *testing.T) {
-	for _, mode := range []string{"valid", "permission", "authority", "subscription", "no-token-source", "bare-commands", "remote", "timeout", "settings-effort", "settings-model", "settings-sources", "settings-advisor", "settings-ultracode", "settings-missing"} {
+	for _, mode := range []string{"valid", "permission", "authority", "subscription", "no-token-source", "bare-commands", "remote", "timeout", "settings-effort", "settings-model", "settings-sources", "settings-advisor", "settings-ultracode", "settings-missing", "descriptor-additions"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg, logs := apiFixtureConfig(t, mode)
 			duration := 5 * time.Second
@@ -199,7 +227,7 @@ func TestAPIStreamRebuildsPrivateRuntimeAndValidatesNativeAuthority(t *testing.T
 			ctx, cancel := context.WithTimeout(context.Background(), duration)
 			defer cancel()
 			s, err := OpenAPIStream(ctx, cfg)
-			if mode == "valid" {
+			if mode == "valid" || mode == "descriptor-additions" {
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -232,7 +260,7 @@ func TestAPIStreamRebuildsPrivateRuntimeAndValidatesNativeAuthority(t *testing.T
 }
 
 func TestFullNativeCommandProfileRejectsAmbiguousOrUnboundedDescriptors(t *testing.T) {
-	for _, change := range []string{"valid", "absent", "empty", "missing-compact", "duplicate-name", "duplicate-alias", "cross-command-alias", "unknown-field", "blank-description", "long-description", "long-hint", "too-many", "too-many-aliases"} {
+	for _, change := range []string{"valid", "absent", "empty", "missing-compact", "duplicate-name", "duplicate-alias", "cross-command-alias", "blank-description", "long-description", "long-hint", "too-many", "too-many-aliases"} {
 		t.Run(change, func(t *testing.T) {
 			result := fixtureResult()
 			result["account"].(map[string]any)["tokenSource"] = "ANTHROPIC_AUTH_TOKEN"
@@ -252,8 +280,6 @@ func TestFullNativeCommandProfileRejectsAmbiguousOrUnboundedDescriptors(t *testi
 				command["aliases"] = []string{"summarize", "summarize"}
 			case "cross-command-alias":
 				commands = append(commands, map[string]any{"name": "summarize", "description": "Other command", "argumentHint": ""})
-			case "unknown-field":
-				command["privilege"] = "unsupported"
 			case "blank-description":
 				command["description"] = ""
 			case "long-description":
