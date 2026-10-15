@@ -1300,25 +1300,10 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         })
         .collect();
     let mut bodies: Vec<(usize, usize)> = function_bodies.iter().map(|(_, body)| *body).collect();
-    // TypeScript `namespace N {}` and `module N {}` bodies own their `var`
-    // declarations just like function bodies. String-named ambient modules
-    // and member accesses such as `module.exports` do not match this shape.
-    let namespace =
-        Regex::new(r"\b(?:namespace|module)\s+[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\{")
-            .expect("static regex");
-    for found in namespace.find_iter(&code) {
-        let preceding = code[..found.start()]
-            .bytes()
-            .next_back()
-            .filter(|byte| *byte == b'.' || *byte == b'$');
-        if preceding.is_some() {
-            continue;
-        }
-        let open = found.end() - 1;
-        if let Some(body) = blocks.iter().find(|(start, _)| *start == open) {
-            bodies.push(*body);
-        }
-    }
+    // TypeScript `namespace` and `module` bodies own their `var` declarations
+    // just like function bodies.
+    let namespaces = namespace_bodies(source, &code, ignored, &blocks);
+    bodies.extend(namespaces.iter().map(|namespace| namespace.body));
     let mut scopes = Vec::new();
     // Parameter lists followed by a body: `(...) {` or `(...) =>`.
     let parameters = Regex::new(r"\(([^()]*)\)\s*(?:=>|\{)").expect("static regex");
@@ -1439,8 +1424,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
     // are scoped like their ASCII counterparts. ZWNJ and ZWJ are permitted
     // after the first identifier character by the ECMAScript grammar.
     let single_arrow =
-        Regex::new(r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*\s*=>\s*\{")
-            .expect("static regex");
+        Regex::new(&format!(r"{UNICODE_IDENTIFIER}\s*=>\s*\{{")).expect("static regex");
     for found in single_arrow.find_iter(&code) {
         let open = found.end() - 1;
         if let Some(body) = blocks.iter().find(|(start, _)| *start == open) {
@@ -1469,8 +1453,152 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             _ => enclosing(found.start()),
         };
         scopes.push(scope);
+        // An exported member is visible in every declaration that merges into
+        // the same namespace symbol; other declarations stay local to their
+        // own body.
+        if exported_declaration(&code, found.start())
+            && let Some(namespace) = namespaces
+                .iter()
+                .find(|namespace| namespace.body == enclosing(found.start()))
+        {
+            scopes.extend(
+                namespaces
+                    .iter()
+                    .filter(|merged| merged.key == namespace.key)
+                    .map(|merged| merged.body),
+            );
+        }
     }
     scopes
+}
+
+/// ECMAScript identifier syntax: Unicode `ID_Start` or `$`/`_`, then
+/// `ID_Continue`, `$`, `_`, ZWNJ or ZWJ.
+const UNICODE_IDENTIFIER: &str =
+    r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*";
+
+/// Words that can follow `module`/`namespace` in expressions such as
+/// `module in {}`; they are never namespace names.
+const NON_NAMESPACE_WORDS: [&str; 3] = ["in", "instanceof", "of"];
+
+/// A TypeScript `namespace`/`module` declaration body. Declarations with the
+/// same `key` merge into one symbol and share its exported members.
+struct NamespaceBody {
+    key: String,
+    body: (usize, usize),
+}
+
+/// Finds TypeScript namespace and module bodies, including dotted names,
+/// nested declarations, Unicode names and quoted ambient module names.
+///
+/// The keyword and the name must share a line, as in TypeScript's grammar, so
+/// automatic semicolon insertion keeps `module\nN\n{}` an ordinary block.
+/// Keys follow the textual qualified name; an exported nested declaration
+/// extends the key of its enclosing namespace, while any other nested
+/// declaration gets a block-local key because it cannot merge with outer
+/// declarations.
+fn namespace_bodies(
+    source: &str,
+    code: &str,
+    ignored: &[(usize, usize)],
+    blocks: &[(usize, usize)],
+) -> Vec<NamespaceBody> {
+    let keyword = Regex::new(r"\b(namespace|module)").expect("static regex");
+    let path = Regex::new(&format!(
+        r"^({UNICODE_IDENTIFIER}(?:\s*\.\s*{UNICODE_IDENTIFIER})*)\s*\{{"
+    ))
+    .expect("static regex");
+    let mut namespaces: Vec<NamespaceBody> = Vec::new();
+    for found in keyword.find_iter(code) {
+        let kind = found.as_str();
+        // Literals are masked in `code`, so measure the same-line gap in the
+        // original source.
+        let gap = source[found.end()..]
+            .find(|character: char| {
+                !character.is_whitespace()
+                    || matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+            })
+            .unwrap_or(0);
+        if gap == 0 {
+            continue;
+        }
+        let cursor = found.end() + gap;
+        // Member accesses such as `module.exports` or `a.namespace` are not
+        // declarations.
+        let preceding = code[..found.start()]
+            .bytes()
+            .rev()
+            .find(|byte| !byte.is_ascii_whitespace());
+        if matches!(preceding, Some(b'.' | b'$')) {
+            continue;
+        }
+        let rest = &code[cursor..];
+        let (name, open) = if let Some(captures) = path.captures(rest)
+            && let (Some(name), Some(all)) = (captures.get(1), captures.get(0))
+        {
+            let name: String = name
+                .as_str()
+                .split('.')
+                .map(str::trim)
+                .collect::<Vec<_>>()
+                .join(".");
+            if NON_NAMESPACE_WORDS.contains(&name.as_str()) {
+                continue;
+            }
+            (name, cursor + all.end() - 1)
+        } else if kind == "module"
+            && matches!(source.as_bytes().get(cursor), Some(b'"' | b'\''))
+            && let Some(&(_, end)) = ignored.iter().find(|(start, _)| *start == cursor)
+            && let Some(offset) = code[end..].find(|character: char| !character.is_whitespace())
+            && code.as_bytes().get(end + offset) == Some(&b'{')
+        {
+            // `declare module "pkg" {}`: the literal is masked in `code`.
+            (
+                format!("'{}'", &source[cursor + 1..end.saturating_sub(1)]),
+                end + offset,
+            )
+        } else {
+            continue;
+        };
+        let Some(body) = blocks.iter().find(|(start, _)| *start == open).copied() else {
+            continue;
+        };
+        let parent = blocks
+            .iter()
+            .filter(|(start, end)| *start < found.start() && found.start() < *end)
+            .min_by_key(|(start, end)| end - start);
+        let key = match parent {
+            None => name,
+            // Only an exported nested namespace is a member of its parent
+            // symbol; any other nested declaration merges only inside its
+            // own enclosing body.
+            Some(parent) => match namespaces.iter().find(|outer| outer.body == *parent) {
+                Some(outer) if exported_declaration(code, found.start()) => {
+                    format!("{}.{name}", outer.key)
+                }
+                _ => format!("@{}.{name}", parent.0),
+            },
+        };
+        namespaces.push(NamespaceBody { key, body });
+    }
+    namespaces
+}
+
+/// Whether the declaration starting at `start` is directly preceded by
+/// `export` (optionally followed by `declare`).
+fn exported_declaration(code: &str, start: usize) -> bool {
+    let word_boundary = |before: &str| {
+        before.chars().next_back().is_none_or(|character| {
+            !(character.is_alphanumeric() || character == '_' || character == '$')
+        })
+    };
+    let mut prefix = code[..start].trim_end();
+    if let Some(before) = prefix.strip_suffix("declare")
+        && word_boundary(before)
+    {
+        prefix = before.trim_end();
+    }
+    prefix.strip_suffix("export").is_some_and(word_boundary)
 }
 
 /// Finds a block-bodied function or arrow body after a parameter list.
@@ -2383,6 +2511,169 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(
             direct_eval_line("{ var namespace = 1; } { var eval = helper; } eval(code);"),
             None
+        );
+    }
+
+    #[test]
+    fn namespace_var_eval_scope_table() {
+        // (source, expected direct-eval position). `None` means every call is
+        // shadowed by a binding; `Some` is the first unshadowed call.
+        let cases: &[(&str, Option<(u32, u32)>)] = &[
+            // Quoted ambient module names.
+            (
+                "declare module \"pkg\" { export var eval: any }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "declare module 'pkg' { var eval: any }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "declare module \"pkg\" { var eval: any; eval(code); }",
+                None,
+            ),
+            (
+                "module \"a{b\" { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            // Unicode namespace names.
+            (
+                "namespace \u{3a9} { var eval = helper }\neval(code);",
+                Some((1, 0)),
+            ),
+            ("namespace \u{3a9} { var eval = helper; eval(code); }", None),
+            (
+                "namespace \u{3a9}.\u{3bb}x { var eval = helper }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "module caf\u{e9} { var eval = helper }\neval(code);",
+                Some((1, 0)),
+            ),
+            // The keyword and the name share a line; otherwise automatic
+            // semicolon insertion leaves an ordinary block.
+            ("module\nN\n{ var eval = helper; }\neval(code);", None),
+            ("namespace\nN\n{ var eval = helper; }\neval(code);", None),
+            ("module\n\"pkg\"\n{ var eval = helper; }\neval(code);", None),
+            (
+                "module N\n{ var eval = helper; }\neval(code);",
+                Some((2, 0)),
+            ),
+            (
+                "namespace N.\nM\n{ var eval = helper; }\neval(code);",
+                Some((3, 0)),
+            ),
+            // Words that follow the keywords in expressions are not names.
+            (
+                "module in { a: 1 }; { var eval = helper; } eval(code);",
+                None,
+            ),
+            // Exported members are shared by merged declarations.
+            (
+                "namespace N { export var eval = helper; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { eval(code); }\nnamespace N { export var eval = helper; }",
+                None,
+            ),
+            (
+                "module N { export let eval = helper; }\nmodule N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export const eval = helper; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export function eval() {} }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { export declare var eval: any; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare module \"pkg\" { export var eval: any }\ndeclare module 'pkg' { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "namespace A.B { export var eval = helper; }\nnamespace A { export namespace B { \
+                 eval(code); } }",
+                None,
+            ),
+            // The merge never reaches outside the merged declarations.
+            (
+                "namespace N { export var eval = helper; }\nnamespace N { }\neval(code);",
+                Some((2, 0)),
+            ),
+            (
+                "namespace N { export var eval = helper; }\nnamespace M { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare module \"a\" { export var eval: any }\ndeclare module \"b\" { \
+                 eval(code); }",
+                Some((1, 21)),
+            ),
+            (
+                "namespace N { export var eval = helper; }\nfunction f() { namespace N { \
+                 eval(code); } }",
+                Some((1, 29)),
+            ),
+            // Non-exported bindings stay local to their own declaration.
+            (
+                "namespace N { var eval = helper; }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "namespace N { let eval = helper; }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "namespace N { export namespace M { export var eval = helper; } }\nnamespace N { \
+                 export namespace M { eval(code); } }",
+                None,
+            ),
+            // A nested namespace that is not exported is a separate symbol in
+            // each outer declaration.
+            (
+                "namespace N { namespace M { export var eval = helper; } }\nnamespace N { \
+                 namespace M { eval(code); } }",
+                Some((1, 28)),
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(direct_eval_line(source), *expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn namespace_scan_known_limits_are_pinned() {
+        // The scan has no parser: merged declarations are matched by their
+        // written qualified name, so a merge through an alias or a class or
+        // function with the same name is not followed, and the exported
+        // binding stays in its own declaration.
+        assert_eq!(
+            direct_eval_line(
+                "namespace N { export var eval = helper; }\nnamespace N\n.M { eval(code); }"
+            ),
+            Some((2, 5))
+        );
+        // Constructs without a recognized shape keep the program-wide `var`
+        // boundary, which suppresses calls elsewhere in the source.
+        assert_eq!(
+            direct_eval_line("declare global { var eval: any }\neval(code);"),
+            None
+        );
+        // Escapes in module names are compared as written.
+        assert_eq!(
+            direct_eval_line(
+                "declare module \"p\\x6bg\" { export var eval: any }\ndeclare module \"pkg\" { \
+                 eval(code); }"
+            ),
+            Some((1, 23))
         );
     }
 
