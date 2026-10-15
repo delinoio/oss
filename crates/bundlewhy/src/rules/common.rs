@@ -3356,6 +3356,13 @@ y=/process.env.F/.test(z),process.env.G"#;
         ("/* (eval)(c) */ run();", 0),
         ("run('eval(c)', \"(eval)(c)\", `eval(c)`);", 0),
         ("const re = /eval(c)/;", 0),
+        // Escaped identifiers spell the same name.
+        ("\\u0065val(c);", 1),
+        ("ev\\u0061l(c);", 1),
+        ("(\\u0065val)(c);", 1),
+        ("\\u{65}val(c);", 1),
+        ("obj.\\u0065val(c);", 0),
+        ("(0, \\u0065val)(c);", 0),
         // Scope: a binding named `eval` makes its calls ordinary.
         ("function f(eval) { (eval)(c); eval(c); }", 0),
         ("function f(eval) { return eval(c); } eval(d);", 1),
@@ -3367,7 +3374,8 @@ y=/process.env.F/.test(z),process.env.G"#;
             let offsets = direct_eval_offsets(form);
             assert_eq!(offsets.len(), *expected, "offsets for {form}");
             for offset in &offsets {
-                assert!(form[*offset..].starts_with("eval"), "{form}: {offset}");
+                // The token is `eval` or an escaped spelling of it.
+                assert!(form[*offset..].starts_with(['e', '\\']), "{form}: {offset}");
             }
             let emitted = EmittedChunk::plain(&format!("const longLocalName = 1;\n{form}"));
             for engine_reports_eval in [true, false] {
@@ -3416,6 +3424,29 @@ y=/process.env.F/.test(z),process.env.G"#;
         let offsets = direct_eval_offsets(source);
         assert_eq!(offsets, vec![0, source.rfind("eval(d)").unwrap()]);
         assert_eq!(direct_eval_line(source), Some((0, 0)));
+    }
+
+    #[test]
+    fn escaped_identifiers_decode_before_eval_is_classified() {
+        let cases: [(&str, Vec<usize>); 10] = [
+            (r"\u0065val(code);", vec![0]),
+            (r"ev\u0061l(code);", vec![0]),
+            (r"\u{65}val(code);", vec![0]),
+            (r"\u{000065}\u{76}al(code);", vec![0]),
+            (r"x = (\u0065val)(code);", vec![5]),
+            // Member accesses and other names are not calls. A binding spelled
+            // with an escape does not shadow `eval` (a documented limit), so
+            // the call after it stays reported.
+            (r"object.\u0065val(code);", vec![]),
+            (r"\u0065valuate(code);", vec![]),
+            (r"function run(\u0065val) { return eval(code); }", vec![33]),
+            // A malformed escape is not an identifier.
+            (r"\u00zval(code); \u006(code);", vec![]),
+            (r"s = '\u0065val(code)'; \u0065val(next);", vec![23]),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(direct_eval_offsets(source), expected, "{source}");
+        }
     }
 
     #[test]

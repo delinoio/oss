@@ -134,6 +134,51 @@ fn is_identifier_part(character: char) -> bool {
         || character == '\u{200D}'
 }
 
+/// Decodes the `\uXXXX` or `\u{X...}` identifier escape at the start of
+/// `rest` and returns the character with the escape length in bytes.
+fn identifier_escape(rest: &str) -> Option<(char, usize)> {
+    let digits = rest.strip_prefix("\\u")?;
+    let (hex, length) = if let Some(braced) = digits.strip_prefix('{') {
+        let end = braced.find('}')?;
+        (&braced[..end], 3 + end + 1)
+    } else {
+        (digits.get(..4)?, 6)
+    };
+    if hex.is_empty() || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let character = char::from_u32(u32::from_str_radix(hex, 16).ok()?)?;
+    Some((character, length))
+}
+
+/// Scans an identifier at the start of `rest`, including `\u` escapes, which
+/// ECMAScript allows in any identifier position. Returns the byte length and
+/// the decoded name, or `None` when `rest` does not start an identifier.
+fn scan_identifier(rest: &str) -> Option<(usize, String)> {
+    let mut name = String::new();
+    let mut length = 0usize;
+    while length < rest.len() {
+        let tail = &rest[length..];
+        let (character, width) = if let Some(escaped) = identifier_escape(tail) {
+            escaped
+        } else {
+            let character = tail.chars().next()?;
+            (character, character.len_utf8())
+        };
+        let accepted = if name.is_empty() {
+            is_identifier_start(character)
+        } else {
+            is_identifier_part(character)
+        };
+        if !accepted {
+            break;
+        }
+        name.push(character);
+        length += width;
+    }
+    (length > 0).then_some((length, name))
+}
+
 fn tokenize<'a>(source: &'a str, ignored: &[(usize, usize)]) -> Vec<Token<'a>> {
     let mut tokens = Vec::new();
     let mut index = 0usize;
@@ -191,11 +236,13 @@ fn tokenize<'a>(source: &'a str, ignored: &[(usize, usize)]) -> Vec<Token<'a>> {
             index += character.len_utf8();
             continue;
         }
-        let (kind, length) = if is_identifier_start(character) {
-            let length = rest
-                .char_indices()
-                .find(|(_, next)| !is_identifier_part(*next))
-                .map_or(rest.len(), |(offset, _)| offset);
+        // An identifier whose escapes decode to `eval` (`\u0065val`) is the
+        // same binding as `eval`; it is reported under the decoded spelling.
+        let mut spelling = None;
+        let (kind, length) = if let Some((length, name)) = scan_identifier(rest) {
+            if name == "eval" && rest[..length].contains('\\') {
+                spelling = Some("eval");
+            }
             let after_dot = tokens
                 .last()
                 .is_some_and(|last: &Token<'_>| last.is_punct(".") || last.is_punct("?."));
@@ -241,7 +288,7 @@ fn tokenize<'a>(source: &'a str, ignored: &[(usize, usize)]) -> Vec<Token<'a>> {
         };
         tokens.push(Token {
             kind,
-            text: &rest[..length],
+            text: spelling.unwrap_or(&rest[..length]),
             start: index,
             line_break_before: line_break,
             template: TemplateEdge::None,
