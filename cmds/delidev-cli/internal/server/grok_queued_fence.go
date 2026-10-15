@@ -113,3 +113,28 @@ func (s *Service) reconcileGrokQueuedFence(parent context.Context, id, operation
 	s.logger.Log(ctx, slog.LevelInfo, "grok_queued_fence_reconciled", "phase", grokLogPhaseCleanup, "operation_id", operation, "correlation_id", operation, "step", grokStepCleanup, "action", current.Subscription.ServerOperation.Action)
 	return nil
 }
+
+// grokHealthAfterExecuteRecovery is the health an account returns to when the
+// original Worker's recovery Finish releases a fenced execution lease. A logout
+// accepted while the lease ran keeps readiness revoked until a logout settles
+// (pending, or settled as failed without sending anything); a refresh accepted
+// while the lease ran returns the health it was admitted under, pending or
+// settled as failed by a restart. An operation that predates the lease says
+// nothing about it.
+func grokHealthAfterExecuteRecovery(a domain.Account, lease domain.SubscriptionLease) domain.AccountHealth {
+	st := a.Subscription
+	if a.GrokLoggingOut() {
+		return domain.AccountRevoked
+	}
+	o := st.ServerOperation
+	if o == nil || !o.StartedAt.After(lease.StartedAt) {
+		return domain.AccountReady
+	}
+	switch {
+	case o.Action == domain.SubscriptionLogout && o.State == domain.SubscriptionFailed:
+		return domain.AccountRevoked
+	case o.Action == domain.SubscriptionRefresh && (o.State == domain.SubscriptionFailed || st.Pending != nil && st.Pending.ID == o.ID):
+		return grokHealthAfterQueuedFence(*o)
+	}
+	return domain.AccountReady
+}

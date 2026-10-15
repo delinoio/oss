@@ -766,14 +766,10 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 				if recovery {
 					state.RecoveryRequired = false
 					if a.Health == domain.AccountFailed && a.Connection != nil {
-						a.Health = domain.AccountReady
-						if o := state.ServerOperation; a.GrokLoggingOut() || o != nil && o.Action == domain.SubscriptionLogout && o.State == domain.SubscriptionFailed {
-							// A logout accepted while the lease ran keeps the account
-							// revoked until a logout settles (a pending one, or one that
-							// failed after the restart settled it without sending
-							// anything); the fence only hid that health.
-							a.Health = domain.AccountRevoked
-						}
+						// The fence only hid the health the account had: an operation
+						// accepted while the lease ran (a pending logout, a logout that
+						// failed after the restart settled it, or a refresh) decides it.
+						a.Health = grokHealthAfterExecuteRecovery(a, *lease)
 					}
 				}
 				if state.Pending != nil && state.Pending.ID == lease.OperationID {
