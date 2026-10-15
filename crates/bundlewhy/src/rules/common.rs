@@ -532,6 +532,11 @@ const OPERAND_KEYWORDS: &[&str] = &[
     "const",
 ];
 
+/// Keywords whose operand must start on the same line: a line terminator right
+/// after them ends the statement through automatic semicolon insertion, so a
+/// `{` on a later line opens a block instead of an object literal.
+const RESTRICTED_PRODUCTION_KEYWORDS: &[&str] = &["return", "yield"];
+
 /// The token that ends at a given position, as seen by every lookup of the
 /// env-condition scan. Keeping the classification in one place means that
 /// regular expression detection, automatic semicolon insertion and scope
@@ -637,6 +642,8 @@ fn opens_statement_block(bytes: &[u8], index: usize, ignored: &[(usize, usize)])
         TokenBefore::Punct(b':') => colon_opens_block(bytes, end, ignored),
         TokenBefore::Keyword(word) => {
             matches!(word, "else" | "do" | "try" | "finally" | "catch" | "class")
+                || (RESTRICTED_PRODUCTION_KEYWORDS.contains(&word)
+                    && skip_trivia(bytes, end, ignored).crossed_terminator)
         }
         _ => false,
     }
@@ -2737,6 +2744,28 @@ y=/process.env.F/.test(z),process.env.G"#;
             guard("if (process.env.VERSION\n) run()", "process.env.VERSION"),
             Some("the retained read is in an if condition")
         );
+    }
+
+    #[test]
+    fn restricted_keyword_line_break_makes_a_following_brace_a_block() {
+        let in_code =
+            |code: &str| !in_ranges(&non_code_ranges(code), code.find("process").unwrap());
+        // `return` and `yield` end at a line terminator, so `{}` is a block and
+        // the slash after it starts a regular expression.
+        for keyword in RESTRICTED_PRODUCTION_KEYWORDS {
+            for trivia in ["\n", "\r\n", "\u{2028}", " /* a\nb */ ", " // c\n"] {
+                let code = format!(
+                    "function f(){{{keyword}{trivia}{{}}\n/process.env.FLAG&&run/.test(s)}}"
+                );
+                assert!(!in_code(&code), "{code:?}");
+            }
+            // On the same line the braces are an object literal operand, so the
+            // slash divides.
+            for trivia in [" ", "/* a */", "\t"] {
+                let code = format!("function f(){{{keyword}{trivia}{{}}/process.env.FLAG/2}}");
+                assert!(in_code(&code), "{code:?}");
+            }
+        }
     }
 
     #[test]
