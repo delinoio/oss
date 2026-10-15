@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import { load } from "js-yaml";
-import { nativeMatrix } from "../../packages/pnport/scripts/native-matrix.mjs";
+import {
+  nativeMatrix,
+  developmentMatrix,
+  nativeMatrixForVersion,
+} from "../../packages/pnport/scripts/native-matrix.mjs";
 import { Event, matricesForEvent } from "../ci/plan.mjs";
 
 const require = createRequire(import.meta.url);
@@ -13,7 +17,7 @@ const read = (file) =>
 const ci = load(read(".github/workflows/CI.yml"));
 const release = load(read(".github/workflows/release-pnport.yml"));
 
-test("CI uses Linux hosts while exact-tag release retains all four package-owned hosts", () => {
+test("CI includes Windows development hosts while 0.1.x release retains four hosts", () => {
   assert.deepEqual(
     targets.map(({ suffix }) => suffix),
     ["darwin-x64", "darwin-arm64", "linux-x64-gnu", "linux-arm64-gnu"],
@@ -28,8 +32,8 @@ test("CI uses Linux hosts while exact-tag release retains all four package-owned
   );
   for (const event of Object.values(Event))
     assert.deepEqual(matricesForEvent(event).pnportMatrix, {
-      include: nativeMatrix.include.filter((row) =>
-        row.suffix.startsWith("linux-"),
+      include: developmentMatrix.include.filter(
+        (row) => !row.runner.startsWith("macos"),
       ),
     });
   assert.equal(
@@ -101,6 +105,33 @@ test("Windows installer rejects requests before network, file, or process side e
     "& $executable",
   ])
     assert.ok(gate < source.indexOf(effect), effect);
+  assert.match(source, /LICENSE\.fspy/u);
+  assert.match(source, /LICENSE\.detours/u);
+  assert.match(source, /Windows packages require pnport 0\.2\.0 or newer/u);
+});
+
+test("Windows source gates use native hosts and installed archives without publication authority", () => {
+  assert.equal(nativeMatrixForVersion("0.1.2").include.length, 4);
+  assert.equal(nativeMatrixForVersion("0.2.0").include.length, 6);
+  assert.deepEqual(
+    developmentMatrix.include
+      .filter(({ suffix }) => suffix.startsWith("win32-"))
+      .map(({ runner }) => runner),
+    ["windows-2022", "windows-11-arm"],
+  );
+  const job = ci.jobs["pnport-native"];
+  const step = job.steps.find(
+    ({ name }) =>
+      name === "Verify Windows source and installed development archive",
+  );
+  assert.equal(step.if, "runner.os == 'Windows'");
+  assert.equal(step.shell, "pwsh");
+  const script = read("scripts/ci/pnport-windows.ps1");
+  assert.match(script, /OSArchitecture/u);
+  assert.match(script, /PNPORT_TEST_BINARY/u);
+  assert.match(script, /development-only/u);
+  assert.match(script, /LICENSE\.detours/u);
+  assert.doesNotMatch(script, /--test-threads=1|evidence\.mjs|publish\.mjs/u);
 });
 
 test("native CI and candidates require repeated benchmarks and publish only numeric results", () => {
@@ -128,7 +159,8 @@ test("native CI and candidates require repeated benchmarks and publish only nume
     assert(
       !benchmark.continueOnError &&
         !benchmark["continue-on-error"] &&
-        !benchmark.if,
+        benchmark.if ===
+          (workflow === ci ? "runner.os != 'Windows'" : undefined),
     );
     const upload = job.steps[benchmarkIndex + 1];
     assert.equal(
@@ -166,7 +198,9 @@ test("native CI and candidates verify process and filesystem conformance against
         );
       }
       assert(
-        !job.steps[lifecycle]["continue-on-error"] && !job.steps[lifecycle].if,
+        !job.steps[lifecycle]["continue-on-error"] &&
+          job.steps[lifecycle].if ===
+            (workflow === ci ? "runner.os != 'Windows'" : undefined),
       );
       assert(
         lifecycle <
