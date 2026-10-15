@@ -292,28 +292,55 @@ fn match_brackets(tokens: &[Token<'_>]) -> Vec<usize> {
     const TEMPLATE: u8 = b'$';
     let mut close = vec![usize::MAX; tokens.len()];
     let mut stack: Vec<(usize, u8)> = Vec::new();
-    let mut close_top = |stack: &mut Vec<(usize, u8)>, kind: u8, at: usize| {
-        if let Some(position) = stack.iter().rposition(|(_, open)| *open == kind) {
-            close[stack[position].0] = at;
-            stack.truncate(position);
+    // Openers of each kind on the stack. A closer with no opener of its kind
+    // is ignored in constant time; otherwise the search pops every entry it
+    // passes, so the whole scan stays linear for any malformed input.
+    let mut open = [0usize; 4];
+    let slot = |kind: u8| match kind {
+        b'(' => 0,
+        b'[' => 1,
+        b'{' => 2,
+        _ => 3,
+    };
+    let close_top = |close: &mut [usize],
+                     stack: &mut Vec<(usize, u8)>,
+                     open: &mut [usize; 4],
+                     kind: u8,
+                     at: usize| {
+        if open[slot(kind)] == 0 {
+            return;
+        }
+        while let Some((opener, top)) = stack.pop() {
+            open[slot(top)] -= 1;
+            if top == kind {
+                close[opener] = at;
+                break;
+            }
         }
     };
     for (at, token) in tokens.iter().enumerate() {
+        let mut open_kind = None;
         match token.kind {
             TokenKind::Punct => match token.text {
-                "(" | "[" | "{" => stack.push((at, token.text.as_bytes()[0])),
-                ")" => close_top(&mut stack, b'(', at),
-                "]" => close_top(&mut stack, b'[', at),
-                "}" => close_top(&mut stack, b'{', at),
+                "(" | "[" | "{" => open_kind = Some(token.text.as_bytes()[0]),
+                ")" => close_top(&mut close, &mut stack, &mut open, b'(', at),
+                "]" => close_top(&mut close, &mut stack, &mut open, b'[', at),
+                "}" => close_top(&mut close, &mut stack, &mut open, b'{', at),
                 _ => {}
             },
-            TokenKind::Template(TemplatePart::Head) => stack.push((at, TEMPLATE)),
+            TokenKind::Template(TemplatePart::Head) => open_kind = Some(TEMPLATE),
             TokenKind::Template(TemplatePart::Middle) => {
-                close_top(&mut stack, TEMPLATE, at);
-                stack.push((at, TEMPLATE));
+                close_top(&mut close, &mut stack, &mut open, TEMPLATE, at);
+                open_kind = Some(TEMPLATE);
             }
-            TokenKind::Template(TemplatePart::Tail) => close_top(&mut stack, TEMPLATE, at),
+            TokenKind::Template(TemplatePart::Tail) => {
+                close_top(&mut close, &mut stack, &mut open, TEMPLATE, at);
+            }
             _ => {}
+        }
+        if let Some(kind) = open_kind {
+            stack.push((at, kind));
+            open[slot(kind)] += 1;
         }
     }
     close
@@ -4252,6 +4279,60 @@ mod tests {
         );
         let brace = tokens.iter().position(|token| token.text == "{").unwrap();
         assert_eq!(text(close[brace]), "}");
+    }
+
+    /// A closer matches the nearest opener of its own kind and discards the
+    /// openers above it; a closer with no opener of its kind is ignored.
+    #[test]
+    fn mismatched_brackets_pair_by_kind() {
+        // (code, token index of each opener -> token index of its closer)
+        type Pairs = &'static [(usize, Option<usize>)];
+        let rows: &[(&str, Pairs)] = &[
+            ("(]", &[(0, None)]),
+            ("[)", &[(0, None)]),
+            ("{)", &[(0, None)]),
+            ("([)]", &[(0, Some(2)), (1, None)]),
+            ("{[(}", &[(0, Some(3)), (1, None), (2, None)]),
+            ("(((]]]", &[(0, None), (1, None), (2, None)]),
+            ("(()]", &[(0, None), (1, Some(2))]),
+            ("(a)]", &[(0, Some(2))]),
+        ];
+        for &(code, expected) in rows {
+            let tokens = tokenize(code, &non_code_ranges(code));
+            let close = match_brackets(&tokens);
+            for &(opener, closer) in expected {
+                assert_eq!(
+                    close[opener],
+                    closer.unwrap_or(usize::MAX),
+                    "{code}: opener {opener}"
+                );
+            }
+        }
+    }
+
+    /// Closers that never match must not rescan the stack: every pairing of
+    /// opener and closer kinds stays linear.
+    #[test]
+    fn mismatched_brackets_are_matched_in_linear_time() {
+        let started = std::time::Instant::now();
+        for (open, close) in [
+            ("(", "]"),
+            ("(", "}"),
+            ("[", ")"),
+            ("{", ")"),
+            ("{", "]"),
+            ("`${", ")"),
+        ] {
+            let code = format!("{}x{}", open.repeat(200_000), close.repeat(200_000));
+            let tokens = tokenize(&code, &non_code_ranges(&code));
+            let close = match_brackets(&tokens);
+            assert_eq!(close.len(), tokens.len());
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "bracket matching took {:?}",
+            started.elapsed()
+        );
     }
 
     /// Deep, long and malformed input must neither overflow the stack of a
