@@ -1547,7 +1547,8 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
                 };
                 (name.sym == "workbox"
                     && matches!(&*member.obj, Expr::Ident(root)
-                        if matches!(root.sym.as_ref(), "self" | "globalThis" | "window")))
+                        if matches!(root.sym.as_ref(), "self" | "globalThis" | "window")
+                            && root.ctxt == unresolved_ctxt))
                     || (name.sym == "precaching"
                         && is_workbox_receiver(
                             &member.obj,

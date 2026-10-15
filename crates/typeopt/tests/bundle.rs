@@ -3361,6 +3361,30 @@ fn ignores_local_workbox_receiver_with_empty_revision() {
 }
 
 #[test]
+fn ignores_shadowed_global_workbox_receiver_roots() {
+    for root in ["self", "globalThis", "window"] {
+        let sw = format!(
+            "function run({root}){{{root}.workbox.precacheAndRoute([{{url:\"app.js\",revision:\"\"\
+             }}]);}}"
+        );
+        let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+        chunks.push(("sw.js", sw.as_str()));
+        chunks.push(("app.js", "console.log(\"app\");"));
+        let temp = bundle(&chunks);
+        let output = run_typeopt(temp.path(), &[]);
+        assert!(
+            output.status.success(),
+            "{root}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            out(temp.path(), "sw.js").contains("revision:\"\""),
+            "{root}"
+        );
+    }
+}
+
+#[test]
 fn keeps_pinned_and_hashed_precache_manifests() {
     let sw = r#"self.workbox.precacheAndRoute([{url:"index.html",revision:"old"}]);"#;
     for (name, options) in [
