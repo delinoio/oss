@@ -109,6 +109,8 @@ func (c *Client) managedCall(ctx context.Context, method string, input any, outp
 
 func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned error) {
 	defer c.recordFailure(ctx, domain.CodexProfile, &returned)
+	// A failed fresh read must not preserve an earlier workspace's inventory.
+	c.mcpStartupServers = nil
 	var result struct {
 		Config  map[string]json.RawMessage `json:"config"`
 		Origins json.RawMessage            `json:"origins"`
@@ -160,7 +162,38 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 			return incompatible()
 		}
 	}
+	servers, err := configuredMCPStartupServers(result.Config["mcp_servers"])
+	if err != nil {
+		return err
+	}
+	c.mcpStartupServers = servers
 	return nil
+}
+
+// Retain names only from the effective native configuration for this workspace.
+// Transport, environment and credential descriptors stay private and are discarded.
+func configuredMCPStartupServers(raw json.RawMessage) (map[string]struct{}, error) {
+	servers := make(map[string]struct{})
+	if len(raw) == 0 || string(raw) == "null" {
+		return servers, nil
+	}
+	var configured map[string]map[string]json.RawMessage
+	if domain.Decode(raw, &configured) != nil || configured == nil || len(configured) > 1024 {
+		return nil, incompatible()
+	}
+	for name, config := range configured {
+		if domain.Text(name, "native MCP server", 1024, true) != nil || config == nil {
+			return nil, incompatible()
+		}
+		enabled := true
+		if value, present := config["enabled"]; present && (string(value) == "null" || json.Unmarshal(value, &enabled) != nil) {
+			return nil, incompatible()
+		}
+		if enabled {
+			servers[name] = struct{}{}
+		}
+	}
+	return servers, nil
 }
 
 func (c *Client) StartManagedLogin(ctx context.Context, device bool) (diagnosticResult ManagedLoginProgress, returned error) {
