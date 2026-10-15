@@ -3886,6 +3886,31 @@ export { reflected };"#,
 }
 
 #[test]
+fn observable_function_source_computed_pattern_key() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const {["toString"]:readSource}=reflected;
+console.log(describe(make(3)),describe(make(7)));
+console.log(readSource.call(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_dynamic_pattern_key() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const key=["to","String"].join("");
+const {[key]:readSource}=reflected;
+console.log(describe(make(3)),describe(make(7)));
+console.log(readSource.call(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
 fn observable_function_source_string_coercion() {
     check_observable_function_source(
         r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
