@@ -409,6 +409,10 @@ struct ScanScope {
     pending_reads: Vec<usize>,
     conditional_pending: Vec<usize>,
     arrow_expression: bool,
+    /// True for a `{` scope that holds object-literal or class members, where
+    /// a keyword followed by `(` declares a method instead of starting a
+    /// control statement.
+    members: bool,
 }
 
 fn env_guards(
@@ -430,6 +434,7 @@ fn env_guards(
         pending_reads: Vec::new(),
         conditional_pending: Vec::new(),
         arrow_expression: false,
+        members: false,
     }];
     let mut current_scope = 0;
     let mut next_start = 0;
@@ -492,6 +497,7 @@ fn env_guards(
                     index,
                     bytes[index],
                     scopes[current_scope].context,
+                    scopes[current_scope].members,
                     ignored,
                 );
                 scopes.push(ScanScope {
@@ -501,6 +507,7 @@ fn env_guards(
                     pending_reads: Vec::new(),
                     conditional_pending: Vec::new(),
                     arrow_expression: false,
+                    members: bytes[index] == b'{' && brace_holds_members(code, index, ignored),
                 });
                 current_scope = scopes.len() - 1;
             }
@@ -589,6 +596,7 @@ fn env_guards(
                         pending_reads: Vec::new(),
                         conditional_pending: Vec::new(),
                         arrow_expression: true,
+                        members: false,
                     });
                     current_scope = scopes.len() - 1;
                 }
@@ -725,13 +733,17 @@ fn is_identifier_part(character: char) -> bool {
 /// keyword.
 ///
 /// Rejected: an identifier that merely ends in the keyword (`notif`, `$if`,
-/// `éif`), and a property, method or private name written after a member
-/// access, even when whitespace or comments separate the dot from the name
-/// (`obj.if`, `obj?.while`, `obj. /* c */ for`, `this.#if`).
+/// `éif`, `a\u{301}if`); a property, method or private name written after a
+/// member access, even when whitespace or comments separate the dot from the
+/// name (`obj.if`, `obj?.while`, `obj. /* c */ for`, `this.#if`); and a method
+/// declaration. A keyword is a method name after a comma or `*` (`{a, if(){}}`,
+/// `*if(){}`), and, inside object-literal or class members (`members`), as the
+/// first token of a member or after `get`, `set`, `static` or `async`.
 fn ends_with_control_keyword(
     code: &str,
     prefix: &str,
     keyword: &str,
+    members: bool,
     ignored: &[(usize, usize)],
 ) -> bool {
     if !prefix.ends_with(keyword) {
@@ -740,8 +752,101 @@ fn ends_with_control_keyword(
     let start = prefix.len() - keyword.len();
     match code[..start].chars().next_back() {
         Some(character) if is_identifier_part(character) || character == '#' => false,
-        _ => !strip_comments_for_prefix(code, start, ignored).ends_with('.'),
+        _ => {
+            let before = strip_comments_for_prefix(code, start, ignored);
+            match before.chars().next_back() {
+                Some('.' | ',' | '*') => false,
+                Some('{' | '}' | ';') => !members,
+                Some(character) if members && is_identifier_part(character) => {
+                    !matches!(trailing_word(before), "get" | "set" | "static" | "async")
+                }
+                _ => true,
+            }
+        }
     }
+}
+
+/// The identifier-like word at the end of `text`, or an empty string.
+fn trailing_word(text: &str) -> &str {
+    let start = text
+        .rfind(|character: char| !is_identifier_part(character))
+        .map_or(0, |index| {
+            index + text[index..].chars().next().map_or(1, char::len_utf8)
+        });
+    &text[start..]
+}
+
+/// Whether the `{` at `open` starts an object literal or a class body, whose
+/// members may be named like control keywords, instead of a statement block.
+///
+/// Decided from the code before the brace, comments removed:
+/// - blocks follow `)`, `;`, `{`, `}`, `=>`, a statement keyword (`else`,
+///   `try`, `do`, `finally`, `static`) or the start of the code;
+/// - an object literal follows an operator, an opener, a comma, a colon that is
+///   not a `case` label, or an expression keyword such as `return`;
+/// - a class body follows a heading that contains `class`, even when the
+///   heritage is a call expression (`class A extends mix(B) {`).
+///
+/// This is a lexical guess, not a parse. A brace that cannot be classified is
+/// treated as holding members, which keeps its keyword-named calls unguarded.
+fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, usize)]) -> bool {
+    let prefix = strip_comments_for_prefix(code, open, ignored);
+    if prefix.ends_with("=>") {
+        return false;
+    }
+    let Some(last) = prefix.chars().next_back() else {
+        return false;
+    };
+    match last {
+        ')' => class_heading_precedes(code, prefix.len(), ignored),
+        ';' | '{' | '}' => false,
+        ':' => !is_case_label(prefix),
+        _ if is_identifier_part(last) => match trailing_word(prefix) {
+            "else" | "try" | "do" | "finally" | "static" => false,
+            "return" | "typeof" | "case" | "void" | "yield" | "throw" | "new" | "in" | "of"
+            | "delete" | "await" | "instanceof" | "default" => true,
+            _ => class_heading_precedes(code, prefix.len(), ignored),
+        },
+        _ => true,
+    }
+}
+
+/// Whether the statement head that ends at `end` contains the `class` keyword
+/// outside nested parentheses or brackets. The scan walks backwards and stops
+/// at the previous `;`, `{` or `}`, or at an unbalanced opener.
+fn class_heading_precedes(code: &str, end: usize, ignored: &[(usize, usize)]) -> bool {
+    let mut depth = 0usize;
+    // End offset of the identifier-like word being read backwards.
+    let mut word_end: Option<usize> = None;
+    let is_class = |word_start: usize, word_end: usize| {
+        &code[word_start..word_end] == "class" && !code[..word_start].ends_with(['.', '#'])
+    };
+    for (position, character) in code[..end].char_indices().rev() {
+        let width = character.len_utf8();
+        if !in_ranges(ignored, position) && is_identifier_part(character) {
+            word_end.get_or_insert(position + width);
+            continue;
+        }
+        if let Some(finish) = word_end.take()
+            && depth == 0
+            && is_class(position + width, finish)
+        {
+            return true;
+        }
+        if in_ranges(ignored, position) {
+            continue;
+        }
+        match character {
+            ')' | ']' => depth += 1,
+            '(' | '[' => match depth.checked_sub(1) {
+                Some(next) => depth = next,
+                None => return false,
+            },
+            '{' | '}' | ';' if depth == 0 => return false,
+            _ => {}
+        }
+    }
+    word_end.is_some_and(|finish| depth == 0 && is_class(0, finish))
 }
 
 fn scope_context(
@@ -749,6 +854,7 @@ fn scope_context(
     index: usize,
     opener: u8,
     parent: ScopeContext,
+    members: bool,
     ignored: &[(usize, usize)],
 ) -> ScopeContext {
     let prefix = strip_comments_for_prefix(code, index, ignored);
@@ -768,7 +874,7 @@ fn scope_context(
     if opener != b'(' {
         return ScopeContext::Invalid;
     }
-    if ends_with_control_keyword(code, prefix, "for", ignored) {
+    if ends_with_control_keyword(code, prefix, "for", members, ignored) {
         return ScopeContext::For(ForClause::Initializer);
     }
     for (keyword, guard) in [
@@ -776,7 +882,7 @@ fn scope_context(
         ("while", EnvGuard::While),
         ("switch", EnvGuard::Switch),
     ] {
-        if ends_with_control_keyword(code, prefix, keyword, ignored) {
+        if ends_with_control_keyword(code, prefix, keyword, members, ignored) {
             return ScopeContext::Guard(guard);
         }
     }
@@ -2642,6 +2748,107 @@ y=/process.env.F/.test(z),process.env.G"#;
                 assert_eq!(keyword_guard(&code, read), None, "{code:?}");
             }
         }
+    }
+
+    #[test]
+    fn keyword_named_methods_are_never_guards() {
+        let read = "process.env.FLAG";
+        for terminator in LINE_TERMINATORS {
+            for (keyword, _) in CONTROL_KEYWORDS {
+                for gap in ["", " ", " /* c */ ", " // c\n", " // c\r"] {
+                    let gap = format!("{gap}{terminator}");
+                    let call = format!("{keyword}{gap}(a={read}){{}}");
+                    for member in [
+                        // Object literals in every expression position.
+                        format!("const o={{{call}}}"),
+                        format!("o={{a:1,{call}}}"),
+                        format!("o={{a(){{}}{call}}}"),
+                        format!("f({{{call}}})"),
+                        format!("return {{{call}}}"),
+                        format!("[{{{call}}}]"),
+                        format!("x=y?{{{call}}}:z"),
+                        format!("o={{get {call}}}"),
+                        format!("o={{set {call}}}"),
+                        format!("o={{async {call}}}"),
+                        format!("o={{*{call}}}"),
+                        format!("o={{async *{call}}}"),
+                        // Class bodies, including call-expression heritage.
+                        format!("class A{{{call}}}"),
+                        format!("class A extends B{{{call}}}"),
+                        format!("class A extends mix(B, {{x: 1}}){{{call}}}"),
+                        format!("x=class{{{call}}}"),
+                        format!("class A{{x=1;{call}}}"),
+                        format!("class A{{m(){{}}{call}}}"),
+                        format!("class A{{static {call}}}"),
+                        format!("class A{{static async {call}}}"),
+                        format!("class A{{#p=1;{call}}}"),
+                    ] {
+                        assert_eq!(keyword_guard(&member, read), None, "{member:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn keywords_in_statement_blocks_stay_guards() {
+        let read = "process.env.FLAG";
+        for (keyword, evidence) in CONTROL_KEYWORDS {
+            let arguments = keyword_arguments(keyword, read);
+            for gap in ["", " ", " /* c */ ", " // c\n"] {
+                let statement = format!("{keyword}{gap}({arguments}");
+                for code in [
+                    format!("function f(){{{statement}}}"),
+                    format!("function f(a){{x();{statement}}}"),
+                    format!("if(x){{{statement}}}"),
+                    format!("if(x){{}}else{{{statement}}}"),
+                    format!("try{{{statement}}}finally{{{statement}}}"),
+                    format!("do{{{statement}}}while(y)"),
+                    format!("const f=()=>{{{statement}}}"),
+                    format!("const f=x=>{{{statement}}}"),
+                    format!("class A{{m(){{{statement}}}}}"),
+                    format!("class A{{static{{{statement}}}}}"),
+                    format!("class A extends mix(B){{m(){{{statement}}}}}"),
+                    format!("o={{m(){{{statement}}}}}"),
+                    format!("o={{get v(){{{statement}}}}}"),
+                    format!("switch(a){{case 1:{{{statement}}}}}"),
+                    format!("switch(a){{default:{{{statement}}}}}"),
+                    format!("x=1;{{{statement}}}"),
+                    format!("{{}}{{{statement}}}"),
+                    format!("o={{a:function(){{{statement}}}}}"),
+                ] {
+                    assert_eq!(keyword_guard(&code, read), Some(evidence), "{code:?}");
+                }
+            }
+        }
+    }
+
+    /// Known limit: a labeled block cannot be told from an object literal
+    /// without a parser, so a keyword that starts it is treated as a method
+    /// name and the read is reported as unguarded rather than guarded.
+    #[test]
+    fn labeled_blocks_are_treated_as_member_lists() {
+        let read = "process.env.FLAG";
+        for (keyword, _) in CONTROL_KEYWORDS {
+            let arguments = keyword_arguments(keyword, read);
+            let code = format!("outer:{{{keyword}({arguments}}}");
+            assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+        }
+    }
+
+    /// Known limits: identifier escapes are not decoded, and source snippets
+    /// split lines on LF and CRLF only.
+    #[test]
+    fn undecidable_lexical_cases_stay_conservative() {
+        let read = "process.env.FLAG";
+        for code in [
+            format!("\\u0069f ({read}) run()"),
+            format!("i\\u0066 ({read}) run()"),
+        ] {
+            assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+        }
+        let (start, text) = crate::chunks::snippet_lines("a\u{2028}b\rc\nd", 1);
+        assert_eq!((start, text.as_str()), (1, "a\u{2028}b\rc\nd"));
     }
 
     #[test]
