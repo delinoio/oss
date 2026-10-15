@@ -2729,8 +2729,13 @@ mod tests {
         name: &'static str,
         /// Import query of the candidate module's identifier.
         module_query: Option<&'static str>,
+        /// Fragment of the candidate module's identifier.
+        module_fragment: Option<&'static str>,
         /// A second, not reported module that shares the candidate's file.
         sibling: bool,
+        /// Identifier suffix of that sibling; `None` keeps the default (the
+        /// plain identifier for a derived candidate, `?sibling` otherwise).
+        sibling_suffix: Option<&'static str>,
         /// Source-map `sources` entries (project-relative, may carry a query).
         sources: &'static [&'static str],
         mappings: &'static str,
@@ -2741,12 +2746,18 @@ mod tests {
     fn vite_side_effect_retained_final_emission_cells() {
         const QUERIED: &str = "src/effects/register.js?vue&type=style";
         const OTHER_QUERY: &str = "src/effects/register.js?other";
+        const FRAGMENT_NONE: &str = "src/effects/register.js?raw";
+        const FRAGMENT_ONE: &str = "src/effects/register.js?raw#one";
+        const FRAGMENT_TWO: &str = "src/effects/register.js?raw#two";
+        const REGISTER_FRAGMENT_ONE: &str = "src/effects/register.js#one";
         const MAIN: &str = "src/main.js";
         let cells = [
             EmissionCell {
                 name: "plain module, plain map source",
                 module_query: None,
+                module_fragment: None,
                 sibling: false,
+                sibling_suffix: None,
                 sources: &[REGISTER_SOURCE],
                 mappings: "AAAA",
                 expected: Expected::Emitted,
@@ -2754,7 +2765,9 @@ mod tests {
             EmissionCell {
                 name: "queried module, map source repeats the query",
                 module_query: Some("vue&type=style"),
+                module_fragment: None,
                 sibling: false,
+                sibling_suffix: None,
                 sources: &[QUERIED],
                 mappings: "AAAA",
                 expected: Expected::Emitted,
@@ -2762,7 +2775,9 @@ mod tests {
             EmissionCell {
                 name: "queried module, map omits the query",
                 module_query: Some("vue&type=style"),
+                module_fragment: None,
                 sibling: false,
+                sibling_suffix: None,
                 sources: &[REGISTER_SOURCE],
                 mappings: "AAAA",
                 expected: Expected::Unverified,
@@ -2770,7 +2785,9 @@ mod tests {
             EmissionCell {
                 name: "plain module, map source carries a query",
                 module_query: None,
+                module_fragment: None,
                 sibling: false,
+                sibling_suffix: None,
                 sources: &[QUERIED],
                 mappings: "AAAA",
                 expected: Expected::Unverified,
@@ -2778,7 +2795,9 @@ mod tests {
             EmissionCell {
                 name: "queried module, map source carries another query",
                 module_query: Some("vue&type=style"),
+                module_fragment: None,
                 sibling: false,
+                sibling_suffix: None,
                 sources: &[OTHER_QUERY],
                 mappings: "AAAA",
                 expected: Expected::Unverified,
@@ -2786,7 +2805,9 @@ mod tests {
             EmissionCell {
                 name: "plain module shares its file, map omits the query",
                 module_query: None,
+                module_fragment: None,
                 sibling: true,
+                sibling_suffix: None,
                 sources: &[REGISTER_SOURCE],
                 mappings: "AAAA",
                 expected: Expected::Unverified,
@@ -2794,15 +2815,90 @@ mod tests {
             EmissionCell {
                 name: "queried module shares its file, map repeats the query",
                 module_query: Some("vue&type=style"),
+                module_fragment: None,
                 sibling: true,
+                sibling_suffix: None,
                 sources: &[QUERIED],
                 mappings: "AAAA",
                 expected: Expected::Emitted,
             },
             EmissionCell {
+                name: "fragment module, map source repeats the fragment",
+                module_query: Some("raw"),
+                module_fragment: Some("one"),
+                sibling: false,
+                sibling_suffix: None,
+                sources: &[FRAGMENT_ONE],
+                mappings: "AAAA",
+                expected: Expected::Emitted,
+            },
+            EmissionCell {
+                name: "fragment module shares file and query, map repeats the fragment",
+                module_query: Some("raw"),
+                module_fragment: Some("one"),
+                sibling: true,
+                sibling_suffix: Some("?raw#two"),
+                sources: &[FRAGMENT_ONE],
+                mappings: "AAAA",
+                expected: Expected::Emitted,
+            },
+            EmissionCell {
+                name: "fragment module shares file and query, map names the sibling fragment",
+                module_query: Some("raw"),
+                module_fragment: Some("one"),
+                sibling: true,
+                sibling_suffix: Some("?raw#two"),
+                sources: &[FRAGMENT_TWO],
+                mappings: "AAAA",
+                expected: Expected::Unverified,
+            },
+            EmissionCell {
+                name: "fragment module, map omits the fragment",
+                module_query: Some("raw"),
+                module_fragment: Some("one"),
+                sibling: false,
+                sibling_suffix: None,
+                sources: &[FRAGMENT_NONE],
+                mappings: "AAAA",
+                expected: Expected::Unverified,
+            },
+            EmissionCell {
+                name: "queried module shares its query with a fragment module, map omits the \
+                       fragment",
+                module_query: Some("raw"),
+                module_fragment: None,
+                sibling: true,
+                sibling_suffix: Some("?raw#two"),
+                sources: &[FRAGMENT_NONE],
+                mappings: "AAAA",
+                expected: Expected::Unverified,
+            },
+            EmissionCell {
+                name: "fragment-only module, map repeats the fragment",
+                module_query: None,
+                module_fragment: Some("one"),
+                sibling: false,
+                sibling_suffix: None,
+                sources: &[REGISTER_FRAGMENT_ONE],
+                mappings: "AAAA",
+                expected: Expected::Emitted,
+            },
+            EmissionCell {
+                name: "plain module, map source carries a fragment",
+                module_query: None,
+                module_fragment: None,
+                sibling: false,
+                sibling_suffix: None,
+                sources: &[REGISTER_FRAGMENT_ONE],
+                mappings: "AAAA",
+                expected: Expected::Unverified,
+            },
+            EmissionCell {
                 name: "file listed without a generated segment",
                 module_query: None,
+                module_fragment: None,
                 sibling: false,
+                sibling_suffix: None,
                 sources: &[REGISTER_SOURCE, MAIN],
                 mappings: "ACAA",
                 expected: Expected::Absent,
@@ -2810,7 +2906,9 @@ mod tests {
             EmissionCell {
                 name: "file missing from a fully mapped map",
                 module_query: None,
+                module_fragment: None,
                 sibling: false,
+                sibling_suffix: None,
                 sources: &[MAIN],
                 mappings: "AAAA",
                 expected: Expected::Absent,
@@ -2818,7 +2916,9 @@ mod tests {
             EmissionCell {
                 name: "file missing and generated bytes without a source mapping",
                 module_query: None,
+                module_fragment: None,
                 sibling: false,
+                sibling_suffix: None,
                 sources: &[MAIN],
                 mappings: "AAAA,E",
                 expected: Expected::Unverified,
@@ -2826,7 +2926,9 @@ mod tests {
             EmissionCell {
                 name: "file listed without a segment and unmapped generated bytes",
                 module_query: None,
+                module_fragment: None,
                 sibling: false,
+                sibling_suffix: None,
                 sources: &[REGISTER_SOURCE, MAIN],
                 mappings: "ACAA,E",
                 expected: Expected::Unverified,
@@ -2850,19 +2952,25 @@ mod tests {
                         .find(|module| module["id"] == base.as_str())
                         .unwrap()
                         .clone();
-                    let sibling_id = if cell.module_query.is_some() {
-                        base.clone()
-                    } else {
-                        format!("{base}?sibling")
+                    let sibling_id = match cell.sibling_suffix {
+                        Some(suffix) => format!("{base}{suffix}"),
+                        None if cell.module_query.is_some() => base.clone(),
+                        None => format!("{base}?sibling"),
                     };
                     sibling["id"] = sibling_id.into();
                     sibling["included"] = false.into();
                     value["modules"].as_array_mut().unwrap().push(sibling);
                 }
-                if let Some(query) = cell.module_query {
+                if cell.module_query.is_some() || cell.module_fragment.is_some() {
                     // Rename only the candidate, not a sibling that keeps the
                     // plain identifier.
-                    let renamed = format!("{base}?{query}");
+                    let renamed = format!(
+                        "{base}{}{}",
+                        cell.module_query
+                            .map_or_else(String::new, |query| format!("?{query}")),
+                        cell.module_fragment
+                            .map_or_else(String::new, |fragment| format!("#{fragment}")),
+                    );
                     let modules = value["modules"].as_array_mut().unwrap();
                     let position = modules
                         .iter()

@@ -643,11 +643,7 @@ fn vite_browser_external_kind(
     if !module.is_virtual || module.path.is_some() {
         return None;
     }
-    let rest = module
-        .id
-        .strip_prefix('\0')
-        .unwrap_or(&module.id)
-        .strip_prefix(BROWSER_EXTERNAL_ID)?;
+    let rest = crate::sources::strip_nul_prefix(&module.id).strip_prefix(BROWSER_EXTERNAL_ID)?;
     if rest.is_empty() {
         Some(BrowserExternalKind::Unspecified)
     } else if rest.strip_prefix(':').is_some_and(|name| !name.is_empty()) {
