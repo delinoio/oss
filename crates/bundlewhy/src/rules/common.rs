@@ -1181,6 +1181,21 @@ fn declared_names(source: &str) -> Vec<String> {
     names
 }
 
+/// Reports whether the declaration that starts at `rest` (the text after
+/// `const`, `let` or `var`) binds `name` in any of its declarators.
+fn declaration_binds(rest: &str, name: &str) -> bool {
+    let mut names = Vec::new();
+    for declarator in split_top_level(declaration_text(rest), b',') {
+        // Drop a TypeScript annotation and a definite-assignment `!`, as
+        // `declared_names` does; pattern-internal pairs stay intact.
+        let target = split_top_level(binding_target(declarator), b':')[0]
+            .trim()
+            .trim_end_matches('!');
+        collect_binding_names(target, &mut names);
+    }
+    names.iter().any(|bound| bound == name)
+}
+
 /// Parameter bindings of function declarations/expressions and arrow
 /// functions, including destructured, defaulted, rest and TypeScript-annotated
 /// parameters. Direct eval can read parameters by name too.
@@ -1600,11 +1615,27 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             bodies.push((open, *close));
         }
     }
-    let declaration = Regex::new(r"\b(const|let|var|function)\s+eval\b").expect("static regex");
+    // A declaration binds `eval` as a plain name, in a destructuring pattern
+    // (`const { eval } = helpers`) or as a later declarator
+    // (`let helper, eval = fn`).
+    let declaration = Regex::new(r"\b(const|let|var|function)\s+").expect("static regex");
     for captures in declaration.captures_iter(&code) {
         let (Some(found), Some(kind)) = (captures.get(0), captures.get(1)) else {
             continue;
         };
+        let rest = &code[found.end()..];
+        let binds_eval = if kind.as_str() == "function" {
+            rest.strip_prefix("eval").is_some_and(|after| {
+                !after.starts_with(|character: char| {
+                    character.is_alphanumeric() || character == '_' || character == '$'
+                })
+            })
+        } else {
+            declaration_binds(rest, "eval")
+        };
+        if !binds_eval {
+            continue;
+        }
         let scope = match kind.as_str() {
             "var" => bodies
                 .iter()
@@ -4367,6 +4398,71 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert!(direct_eval_line(source).is_some());
         let source = "function run(): () => { ok: boolean } { var eval = helper; } eval(code);";
         assert!(direct_eval_line(source).is_some());
+    }
+
+    #[test]
+    fn eval_bindings_in_patterns_and_later_declarators_shadow_the_call() {
+        // (source, text of each call that stays direct; every text is unique)
+        let cases: Vec<(&str, Vec<&str>)> = vec![
+            ("const { eval } = helpers; eval(code);", vec![]),
+            ("let { eval } = helpers; eval(code);", vec![]),
+            ("var { eval } = helpers; eval(code);", vec![]),
+            ("const { run, eval } = helpers; eval(code);", vec![]),
+            ("const { run: eval } = helpers; eval(code);", vec![]),
+            ("const { run: { eval } } = helpers; eval(code);", vec![]),
+            ("const [eval] = helpers; eval(code);", vec![]),
+            ("const [first, ...eval] = helpers; eval(code);", vec![]),
+            ("const { ...eval } = helpers; eval(code);", vec![]),
+            ("const { eval = fallback } = helpers; eval(code);", vec![]),
+            ("let helper, eval = fn; eval(code);", vec![]),
+            ("let helper = make(1, 2), eval = fn; eval(code);", vec![]),
+            ("let a = 1,\n  eval = fn;\neval(code);", vec![]),
+            ("var a, { eval } = helpers; eval(code);", vec![]),
+            ("let eval; eval(code);", vec![]),
+            ("let eval: Evaluator = fn; eval(code);", vec![]),
+            ("let a: number, eval: Evaluator = fn; eval(code);", vec![]),
+            // A block-scoped binding ends with its block.
+            (
+                "{ let a, eval = fn; eval(x); } eval(code);",
+                vec!["eval(code)"],
+            ),
+            (
+                "{ const { eval } = helpers; eval(x); } eval(code);",
+                vec!["eval(code)"],
+            ),
+            // Names that are not bindings do not shadow.
+            (
+                "const { eval: renamed } = helpers; eval(code);",
+                vec!["eval(code)"],
+            ),
+            (
+                "const { run = eval } = helpers; eval(code);",
+                vec!["eval(code)"],
+            ),
+            ("const o = { eval: 1 }; eval(code);", vec!["eval(code)"]),
+            ("const o = { eval }; eval(code);", vec!["eval(code)"]),
+            (
+                "let a = eval(one), b = 2; eval(code);",
+                vec!["eval(one)", "eval(code)"],
+            ),
+            ("let a = [eval], b = 2; eval(code);", vec!["eval(code)"]),
+            (
+                "const { evaluate } = helpers; eval(code);",
+                vec!["eval(code)"],
+            ),
+            ("const x = f(eval);\neval(code);", vec!["eval(code)"]),
+            (
+                "const s = 'let a, eval = 1'; eval(code);",
+                vec!["eval(code)"],
+            ),
+        ];
+        for (source, calls) in cases {
+            let expected: Vec<usize> = calls
+                .iter()
+                .map(|needle| source.find(needle).unwrap())
+                .collect();
+            assert_eq!(direct_eval_offsets(source), expected, "{source}");
+        }
     }
 
     #[test]
