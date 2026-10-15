@@ -443,3 +443,25 @@ func TestSubscriptionRecoveryCrashReplayKeepsCaptureAndRepairsVaultCleanup(t *te
 		t.Fatal("the replayed recovery did not retire the old references", live)
 	}
 }
+
+func TestSubscriptionRecoveryCapturesSurvivingFileOnceUnderTheFence(t *testing.T) {
+	f := newSubscriptionFixture(t)
+	lease, _, original := f.fencedExecute(nil)
+	defer clear(original)
+	surviving := subscriptionTestBundle("fixture-account", "second", time.Now().UTC())
+	defer clear(surviving)
+	captured, err := f.syncCapture(lease, surviving)
+	if err != nil {
+		t.Fatal("the original Worker could not capture its surviving file under the fence", err)
+	}
+	if _, err := f.syncCapture(lease, surviving); err == nil {
+		t.Fatal("a retained capture was replaced after the lease was lost")
+	}
+	response, err := f.recoverCall(f.recoverRequest(lease, captured.CaptureId, pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_SETTLED, pb.SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED, string(domain.NewID())))
+	if err != nil || response.Replayed {
+		t.Fatal("a legacy lease with a surviving file did not recover", err)
+	}
+	if _, account := f.record(); account.Health != domain.AccountReady || account.Subscription.Lease != nil {
+		t.Fatal("legacy recovery did not restore readiness")
+	}
+}

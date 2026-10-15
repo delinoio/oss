@@ -17,6 +17,19 @@ directory is the secure-storage namespace. Backup, deletion and Doctor treat the
 whole owner/member set as live ownership. See the
 [subscription contract](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members).
 
+ChatGPT execution recovery (issue 3992) adds only non-secret optional fields.
+Worker `managed-auth/<lease>.json` journals gain `native_home` (the canonical
+retained native home), `capture_request`/`capture_confirmed` (the durable
+protected-capture identity and its acknowledgement), `recovery_request` (the
+durable recovery identity, distinct from `finish`) and `recovered`; journals
+written before the lane omit them and are never guessed from the filesystem. The
+account document gains optional `subscription.recovery_capture` (capture
+identity, lease, generation, identity commitment, `usable`, sync time) and the
+closed `subscription.recovery_reason`; no SQLite migration is needed. The capture
+bytes live only in the server credential vault under an `AccountLogin` reference
+whose identity is the capture request. See the
+[subscription contract](cmds-delidev-subscription-contract.md#chatgpt-execution-authentication-recovery).
+
 ## Frozen live checkout layout
 
 Workspace request/result history retains optional immutable `directory_name` under the [workspace contract](cmds-delidev-workspace-contract.md#frozen-repository-checkout-names). Omission preserves version-1 UUID layout and bytes. Capture maps each original live repository root into its UUID-indexed snapshot root; Git administration remains independently stored under that repository UUID. Restore maps the exact snapshot UUID root back to the frozen live name. Complete inventory comparisons translate only these original top-level roots and retain deterministic directory traversal order. Native inode claims, bounded anchored copying, symlink preservation, synchronized no-replace publication, joined cleanup and root confinement remain unchanged.

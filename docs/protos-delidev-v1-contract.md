@@ -1,5 +1,27 @@
 # DeliDev v1 Connect contract
 
+## ChatGPT execution recovery lane
+
+Issue 3992 activates Worker `MANAGED_CODEX_RECOVERY_V1 = 72` and three Worker-only
+`SubscriptionService` methods, all recorded in `allocations.json` under issue 3992:
+`SyncSubscriptionRecoveryCapture` (`mutation` 1, `lease_id` 2, `machine_id` 3,
+`instance_id` 4, `generation_id` 5, `bundle` 6; response `capture_id` 1, `replayed` 2),
+`ReadSubscriptionRecoveryCapture` (`account_id` 1, `lease_id` 2, `machine_id` 3,
+`instance_id` 4, `capture_id` 5; response `bundle` 1) and `RecoverSubscription`
+(`mutation` 1, `lease_id` 2, `machine_id` 3, `instance_id` 4, `generation_id` 5,
+`capture_id` 6, `outcome` 7, `blocked_reason` 8; response `account` 1, `replayed` 2)
+with the new enums `SubscriptionRecoveryOutcome` (`SETTLED = 1`, `BLOCKED = 2`)
+and `SubscriptionRecoveryBlockedReason` (`CREDENTIAL_PROOF_UNAVAILABLE = 1`,
+`CLEANUP_UNCONFIRMED = 2`, `OWNERSHIP_UNPROVEN = 3`). The server echoes 72 in
+`AttachWorkerResponse.supported_worker_capabilities`; a Worker reports it only
+after the echo. The methods are on the Worker-credential allowlist, owner and
+client credentials are refused, and each one requires the machine record to hold
+the capability. Behavior, authorization and settlement are owned by the
+[subscription contract](cmds-delidev-subscription-contract.md#chatgpt-execution-authentication-recovery).
+No SQLite migration is added: the capture metadata and diagnostic are an additive
+account JSON extension (`subscription.recovery_capture`, `subscription.recovery_reason`)
+that appears only for a negotiated lane.
+
 ## Shared subscription owner reservation
 
 The protocol reserves, with no behavior of their own, Worker `SHARED_SUBSCRIPTION_OWNER_V1 = 67`, Worker

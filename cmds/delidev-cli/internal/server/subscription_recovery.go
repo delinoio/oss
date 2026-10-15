@@ -32,12 +32,22 @@ import (
 // None of them grants readiness, quota access or authentication to a new
 // execution, and none rewrites the original Take or Finish receipts.
 
+// recoveryFence selects which side of the recovery fence a lane method accepts.
+type recoveryFence int
+
+const (
+	// recoveryLive requires the live, unfenced lease of the current instance.
+	recoveryLive recoveryFence = iota
+	// recoveryFenced requires the recovery fence; the lease's original instance
+	// may have been replaced by the current instance of the same original Worker.
+	recoveryFenced
+	// recoveryAnyFence accepts either state; the instance binding follows the state.
+	recoveryAnyFence
+)
+
 // subscriptionRecoveryLeaseView resolves and authorizes the exact Execute lease
-// of a ChatGPT account for the recovery lane. With fenced the account must carry
-// the recovery fence, and the lease's original instance may have been replaced by
-// the current instance of the same original Worker device. Without it the lease
-// must still belong to the live current instance of this server epoch.
-func (s *Service) subscriptionRecoveryLeaseView(ctx context.Context, tx *store.Tx, account, lease, machine, instance domain.ID, fenced bool) (store.Record, domain.Account, error) {
+// of a ChatGPT account for the recovery lane.
+func (s *Service) subscriptionRecoveryLeaseView(ctx context.Context, tx *store.Tx, account, lease, machine, instance domain.ID, fence recoveryFence) (store.Record, domain.Account, error) {
 	if err := tx.Authorize(); err != nil {
 		return store.Record{}, domain.Account{}, err
 	}
@@ -51,7 +61,8 @@ func (s *Service) subscriptionRecoveryLeaseView(ctx context.Context, tx *store.T
 	}
 	l := state.Lease
 	actor, _ := domain.PrincipalFrom(ctx)
-	if actor.Type != domain.WorkerDevice || actor.DeviceID != l.DeviceID || l.MachineID != machine || l.ID != lease || l.Action != domain.SubscriptionExecute || state.RecoveryRequired != fenced {
+	fenced := state.RecoveryRequired
+	if actor.Type != domain.WorkerDevice || actor.DeviceID != l.DeviceID || l.MachineID != machine || l.ID != lease || l.Action != domain.SubscriptionExecute || fence == recoveryLive && fenced || fence == recoveryFenced && !fenced {
 		return r, a, subscriptionDenied()
 	}
 	if !fenced && (l.InstanceID != instance || l.Epoch != s.subscriptionServerEpoch()) {
@@ -77,6 +88,8 @@ type subscriptionCaptureInput struct {
 }
 
 // SyncSubscriptionRecoveryCapture implements the pre-deletion protected capture.
+// The original Worker also uses it, once, under the fence to capture a surviving
+// transient authentication file of a legacy lease that never synchronized one.
 func (s *Service) SyncSubscriptionRecoveryCapture(ctx context.Context, req *connect.Request[pb.SyncSubscriptionRecoveryCaptureRequest]) (*connect.Response[pb.SyncSubscriptionRecoveryCaptureResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	msg := req.Msg
@@ -117,12 +130,17 @@ func (s *Service) SyncSubscriptionRecoveryCapture(ctx context.Context, req *conn
 	var usable bool
 	var settled string
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
-		_, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, false)
+		_, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, recoveryAnyFence)
 		if err != nil {
 			return err
 		}
 		state := a.Subscription
 		if state.Lease.Revision != input.Revision || state.Generation != input.Generation || state.Lease.Generation != input.Generation || a.Connection == nil {
+			return subscriptionDenied()
+		}
+		// Under the fence the original Worker may capture a surviving transient
+		// file once; a retained capture is never replaced after the lease was lost.
+		if state.RecoveryRequired && state.RecoveryCapture != nil {
 			return subscriptionDenied()
 		}
 		settled = state.IdentityCommitment
@@ -148,12 +166,12 @@ func (s *Service) SyncSubscriptionRecoveryCapture(ctx context.Context, req *conn
 	}
 	var previous domain.ID
 	result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.recovery-capture", input, func(tx *store.Tx) (any, error) {
-		r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, false)
+		r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, recoveryAnyFence)
 		if err != nil {
 			return nil, err
 		}
 		state := a.Subscription
-		if state.Lease.Revision != input.Revision || state.Generation != input.Generation || state.IdentityCommitment != settled {
+		if state.Lease.Revision != input.Revision || state.Generation != input.Generation || state.IdentityCommitment != settled || state.RecoveryRequired && state.RecoveryCapture != nil {
 			return nil, subscriptionDenied()
 		}
 		if state.RecoveryCapture != nil && state.RecoveryCapture.ID != domain.ID(m.RequestId) {
@@ -198,7 +216,7 @@ func (s *Service) ReadSubscriptionRecoveryCapture(ctx context.Context, req *conn
 	}
 	defer unlock()
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
-		_, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, account, lease, machine, instance, true)
+		_, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, account, lease, machine, instance, recoveryFenced)
 		if err != nil {
 			return err
 		}
@@ -301,7 +319,7 @@ func (s *Service) RecoverSubscription(ctx context.Context, req *connect.Request[
 		var original domain.Account
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
 			var err error
-			_, original, err = s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, true)
+			_, original, err = s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, recoveryFenced)
 			if err == nil && (original.Subscription.Lease.Revision != input.Revision || original.Subscription.Generation != input.Generation || original.Subscription.Lease.Generation != input.Generation) {
 				err = subscriptionDenied()
 			}
@@ -314,7 +332,7 @@ func (s *Service) RecoverSubscription(ctx context.Context, req *connect.Request[
 		if msg.Outcome == pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_BLOCKED {
 			reason := subscriptionRecoveryReason(msg.BlockedReason)
 			result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.recover", input, func(tx *store.Tx) (any, error) {
-				r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, true)
+				r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, recoveryFenced)
 				if err != nil {
 					return nil, err
 				}
@@ -367,7 +385,7 @@ func (s *Service) RecoverSubscription(ctx context.Context, req *connect.Request[
 			return nil, rpc.Error(err, c)
 		}
 		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.recover", input, func(tx *store.Tx) (any, error) {
-			r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, true)
+			r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, recoveryFenced)
 			if err != nil {
 				return nil, err
 			}

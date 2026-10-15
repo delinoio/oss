@@ -199,6 +199,102 @@ and grant no login or execution. Mock and build evidence for this model is not r
 real-renewal or cross-platform acceptance; that acceptance is future work and is
 not performed.
 
+## ChatGPT execution authentication recovery
+
+Issue 3992. A managed ChatGPT (Codex) Execute lease whose Worker reports
+`CleanupConfirmed=false`, or whose Worker connection is lost, carries
+`recovery_required=true` and keeps its lease and old generation denied. The
+original Worker device reconciles that fence automatically through a
+Worker-only recovery lane negotiated by Worker `MANAGED_CODEX_RECOVERY_V1 = 72`
+(see the [protocol contract](protos-delidev-v1-contract.md#chatgpt-execution-recovery-lane)).
+The Worker advertises 72 only after the original server echoes it and a verified
+managed Codex lane exists. Older peers keep the existing fence: the server
+offers a fenced ChatGPT Execute lease through `WatchSubscription` only to the
+exact original Runner whose machine record holds the capability. There is no new
+screen, CLI retry, automatic login or execution credential grant.
+
+**Protected capture.** A negotiated Worker records the retained native home in the
+lease's private `managed-auth/<lease>.json` journal (`native_home`, a non-secret
+path) before it writes the transient `auth.json`. After the native tree was
+joined and the latest bundle was validated, and before `auth.json` is deleted, it
+calls `SyncSubscriptionRecoveryCapture`. The server stores the bundle in the
+vault as an unreadable reference (`AccountLogin` purpose, request ID as
+identity) that Take never reads, binds it in the account JSON
+(`subscription.recovery_capture`: identity, lease, settled generation, identity
+commitment, `usable`, sync time; no secret) and keeps it protected from unrelated
+reference cleanup. `usable` means the bundle is the unchanged copy or a
+validated refreshed successor of the settled generation for the same immutable
+identity. A superseded capture is retired after its replacement commits. Secret
+bytes never enter SQLite, journals, jobs, ordinary RPCs or logs. If the capture
+cannot be confirmed the Worker keeps `auth.json`, reports cleanup unconfirmed
+and the lease is fenced with the file as the surviving proof. A server that does
+not support the lane (`Unimplemented`/`unsupported`) keeps the historical
+cleanup. A successful ordinary Finish releases the lease and retires the capture.
+
+**Reconciliation.** For each fenced lease the Worker (one in-flight reconciliation
+per account inside the existing four-account lane bound, serialized with the
+in-process account gate so concurrent active ownership is never reconciled)
+validates the original journal against the lease (account, operation, instance,
+generation, revision, action), validates the journaled home (canonical private
+directory in the Worker root; the account history home for a shared owner), joins
+the original process owners through the process owner index (the native owner,
+which must have its index, and every member's process scope; a missing native
+index is never proof) and obtains the latest bundle: the retained server capture
+via `ReadSubscriptionRecoveryCapture`, or, for a lease that never synchronized
+one, the surviving transient file, which is captured first under the fence so it
+is durable before deletion. A surviving file that is not the captured bundle is
+uncertain evidence and is neither trusted nor deleted. It removes the matching
+`auth.json` and scans the retained history completely with the streaming scanner
+for the latest tokens (raw and Base64, across chunk boundaries); pending
+entries, special files, remnants, a changed root identity and cancellation fail
+closed and no history, session, cache or helper link is ever deleted. The
+original generation is superseded by the latest bundle, so only the latest
+tokens are needles after a restart (the original tokens are not retained).
+
+**Settlement.** The Worker persists a recovery request ID (`recovery_request`)
+before the first settle and reuses it across Worker restarts and replacement
+instances. It is distinct from the original Take and Finish request IDs; those
+requests and their receipts are never re-run, reused or rewritten. `RecoverSubscription`
+(`SETTLED`) is authorized only for the stable original machine and device, the
+exact lease and settled generation, the lease revision and a current instance of
+that Worker (the lease's original instance may be replaced); another Worker,
+revoked device, replaced generation, restored connection or a live (unfenced)
+lease is refused. With a `usable` capture whose identity and refresh lineage the
+server re-verifies, the server publishes the captured bundle as exactly one
+immutable generation named by the recovery request, releases the lease and every
+member, clears the fence and returns the account to ready (a revoked or queued
+operation keeps its state), then retires the old generation and capture. When
+cleanup is proven but the credential is not usable, the server deletes every
+protected reference first (and refuses while an access-only quota or credit
+reader still holds one), then settles the account disconnected so only the
+existing explicit login applies. A vault failure leaves the fence in place or
+the committed state with a retry: the same recovery request replays and finishes
+the reference retirement. Insufficient proof never clears the fence.
+
+**Blocked diagnostics.** Missing, foreign or insufficient proof is published as the
+closed `subscription.recovery_reason` through the existing account observation
+(`BLOCKED` outcome): `credential-proof-unavailable` (a legacy journal with no
+recorded home, or no surviving capture or file: no receipt is fabricated),
+`cleanup-unconfirmed` (remnants, pending/special files, uncertain file evidence)
+or `ownership-unproven` (missing or foreign journal, home or process index, or a
+definite server refusal). A blocked account is not retried until its original
+obligation (lease, generation or capture) changes or the Worker reconnects.
+
+**Pacing.** Transient failures (transport, vault, filesystem, cancellation) retry
+after 1, 2, 4, 8, 16 and then 30 seconds per account. Shutdown cancels and joins
+every attempt. A settled obligation that the stream still offers is not
+repeated before 30 seconds.
+
+**Logging.** `codex_recovery_attempt`, `codex_recovery_phase`
+(`validate-journal`, `process-owners`, `credential-proof`,
+`retained-history-scan`, `settle`), `codex_recovery_result`
+(`settled`/`blocked`/`retry`/`canceled`, closed `blocked_reason`, `retry_delay_ms`),
+`codex_recovery_capture_synced`/`unconfirmed`/`unsupported` and the server's
+`subscription_recovery_*` events use opaque identifiers and counts only.
+
+Fixture, mock and build evidence is not real-account or cross-platform acceptance;
+that acceptance is not performed.
+
 ## Direct execution startup
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) removes manual installation inspection and separate execution probes from new negotiated assignments. Initialize the actual selected process and validate its protocol, credential mode and settings before input. Optional observed version metadata cannot grant or deny execution by numeric comparison. Existing protected generation, original account lease, server-owned OAuth and credential write-back/cleanup remain required; readiness never grants login, account refresh or credential ownership.

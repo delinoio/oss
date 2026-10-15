@@ -145,6 +145,14 @@ func (g *codexAccountGate) acquireForFinish() {
 
 func (g *codexAccountGate) release() { <-g.slot }
 
+// clearFence forgets the local uncertainty once the server settled the fenced
+// lease through the recovery lane, so the account accepts new work again.
+func (g *codexAccountGate) clearFence() {
+	g.mu.Lock()
+	g.uncertain = false
+	g.mu.Unlock()
+}
+
 func (g *codexAccountGate) fence() {
 	g.mu.Lock()
 	g.uncertain = true
@@ -371,7 +379,9 @@ func (o *codexSharedOwner) retire(last *codexSharedMember) error {
 		if o.home != "" && !o.nativeUncertain {
 			if o.runtime != nil {
 				if nativeJoined && clean {
-					if err := cleanupExecutionAuthentication(o.home, o.latest, o.initial); err != nil {
+					if err := withFreshClient(o.config, o.lease, func() error {
+						return cleanupCapturedExecutionAuthentication(o.config, o.lease, o.home, o.latest, o.initial)
+					}); err != nil {
 						clean = false
 					}
 				} else {
@@ -379,7 +389,12 @@ func (o *codexSharedOwner) retire(last *codexSharedMember) error {
 				}
 			} else {
 				if clean {
-					removed, err := cleanupPreNativeAuthentication(o.home, o.initial, false)
+					var removed bool
+					err := withFreshClient(o.config, o.lease, func() error {
+						var cleanupErr error
+						removed, cleanupErr = cleanupCapturedPreNativeAuthentication(o.config, o.lease, o.home, o.initial, false)
+						return cleanupErr
+					})
 					clean = removed && err == nil
 				}
 			}

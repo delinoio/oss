@@ -48,7 +48,10 @@ type managedSubscriptionLease struct {
 	journal     managedSubscriptionJournal
 	// grokHome is the Grok home bound at materialization; Grok Finish retires the
 	// credential only in that directory.
-	grokHome subscription.GrokHome
+	grokHome subscription.GrokHome // recoveryCapture is true when the Execute lease negotiated the ChatGPT
+	// recovery lane, so the latest validated bundle is captured in the server
+	// vault before the transient auth.json is deleted.
+	recoveryCapture bool
 }
 
 type managedJournalState string
@@ -83,6 +86,20 @@ type managedSubscriptionJournal struct {
 	// logged out the canonical profile. A shared owner never infers this from any
 	// member's per-session Cleanup or NativeIdentity flags.
 	OwnerProfileCleaned bool `json:"owner_profile_cleaned,omitempty"`
+	// NativeHome is the canonical retained native home that received the
+	// transient auth.json of this Execute lease (non-secret path). Journals written
+	// before the ChatGPT recovery lane omit it and are never guessed.
+	NativeHome string `json:"native_home,omitempty"`
+	// CaptureRequest is the durable request identity of the protected capture sync
+	// and CaptureConfirmed records that the server acknowledged it. Neither carries
+	// secret bytes.
+	CaptureRequest   domain.ID `json:"capture_request,omitempty"`
+	CaptureConfirmed bool      `json:"capture_confirmed,omitempty"`
+	// RecoveryRequest is the durable identity of the recovery settle. It is
+	// distinct from Finish, the failed Finish request, and from Take.
+	RecoveryRequest domain.ID `json:"recovery_request,omitempty"`
+	// Recovered marks a recovery acknowledged by the server.
+	Recovered bool `json:"recovered,omitempty"`
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {
@@ -229,7 +246,7 @@ func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client 
 		clear(response.Msg.Bundle)
 		return nil, release, &managedExecutionUncertain{subscription.Invalid()}
 	}
-	return &managedSubscriptionLease{paidCredits: config.paidCredits, logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, release, nil
+	return &managedSubscriptionLease{paidCredits: config.paidCredits, logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim, recoveryCapture: config.codexRecovery && action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE}, release, nil
 }
 
 func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, success bool) error {
@@ -296,6 +313,9 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 	var mu sync.Mutex
 	active := map[domain.ID]bool{}
 	failures := make(chan error, 1)
+	// recovery paces the automatic ChatGPT Execute reconciliation per account. A
+	// reconnection creates a new schedule, which reconsiders blocked accounts.
+	recovery := newCodexRecoverySchedule(nil)
 	defer func() {
 		cancel()
 		wg.Wait()
@@ -311,12 +331,25 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			continue
 		}
 		var account domain.Account
-		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) {
+		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil {
+			return subscription.Invalid()
+		}
+		// A negotiated Worker reconciles its own fenced ChatGPT Execute lease.
+		// Without the negotiation the server never offers it.
+		chatGPTRecovery := config.codexRecovery && codexRecoveryEligible(account)
+		if account.Subscription.Pending == nil && account.Subscription.Observation == nil && !chatGPTRecovery && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) {
 			return subscription.Invalid()
 		}
 		var op domain.SubscriptionOperation
 		var observation *domain.SubscriptionObservationOperation
-		if account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil {
+		if chatGPTRecovery {
+			// One reconciliation per account runs inside the shared four-account
+			// bound; a paced or blocked account is skipped without a retry loop.
+			if !recovery.ready(domain.ID(r.Id), codexRecoveryKey(account.Subscription)) {
+				continue
+			}
+			op = domain.SubscriptionOperation{ID: account.Subscription.Lease.OperationID}
+		} else if account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil {
 			op = domain.SubscriptionOperation{ID: account.Subscription.Lease.OperationID}
 		} else if account.Subscription.Observation != nil && account.Subscription.Observation.Phase == domain.SubscriptionObservationQueued {
 			observation = account.Subscription.Observation
@@ -338,6 +371,11 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			defer wg.Done()
 			defer func() { mu.Lock(); delete(active, op.ID); mu.Unlock() }()
 			run := func() error {
+				if chatGPTRecovery {
+					// Outcomes are paced by the schedule and never close the lane.
+					runCodexRecoveryAttempt(ctx, config, client, credential, instance, domain.ID(r.Id), account, recovery)
+					return nil
+				}
 				if observation != nil && account.Subscription.Lease != nil {
 					handled, err := config.observations.run(ctx, domain.ID(r.Id), *observation)
 					if !handled {
@@ -603,6 +641,7 @@ const (
 	executionAuthPending    executionAuthenticationReason = "pending-file"
 	executionAuthSpecial    executionAuthenticationReason = "non-regular-file"
 	executionAuthCanceled   executionAuthenticationReason = "canceled"
+	executionAuthCapture    executionAuthenticationReason = "capture-unconfirmed"
 	executionAuthRemnant    executionAuthenticationReason = "credential-remnant"
 )
 

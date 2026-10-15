@@ -232,7 +232,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		if !managedStarted {
 			// A joined tree with failed helper retirement still authorizes the
 			// independent authentication cleanup but keeps the lease retained.
-			managedClosed, _ = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
+			managedClosed, _ = cleanupCapturedPreNativeAuthentication(config, managed, nativeHome, managed.response.Bundle, managedHelperRetained)
 			if managedClosed {
 				latest = bytes.Clone(managed.response.Bundle)
 				managedUnused = true
@@ -269,7 +269,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		if err := validateManagedAuthenticationHome(nativeHome, manifest.WorkspaceRoots()); err != nil {
 			return nil, err
 		}
-		if subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle) != nil {
+		if managed.writeExecutionAuthentication(nativeHome) != nil {
 			return nil, subscription.Invalid()
 		}
 	}
@@ -369,13 +369,13 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 			if managed != nil && len(failures) == 0 {
 				var e error
 				if !managedStarted {
-					_, e = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
+					_, e = cleanupCapturedPreNativeAuthentication(config, managed, nativeHome, managed.response.Bundle, managedHelperRetained)
 					if e == nil && !managedHelperRetained {
 						latest = bytes.Clone(managed.response.Bundle)
 						managedUnused = true
 					}
 				} else {
-					e = cleanupExecutionAuthentication(nativeHome, latest, managed.response.Bundle)
+					e = cleanupCapturedExecutionAuthentication(config, managed, nativeHome, latest, managed.response.Bundle)
 				}
 				if e != nil {
 					failures = append(failures, e)

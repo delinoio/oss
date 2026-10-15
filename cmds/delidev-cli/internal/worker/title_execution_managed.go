@@ -75,7 +75,7 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 			defer closeManagedRPC()
 		}
 		if managed != nil && managedPreNative {
-			managedCleanup, _ = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
+			managedCleanup, _ = cleanupCapturedPreNativeAuthentication(config, managed, nativeHome, managed.response.Bundle, managedHelperRetained)
 			if managedCleanup {
 				managedLatest = bytes.Clone(managed.response.Bundle)
 				managedUnused = true
@@ -137,7 +137,7 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 	// Install pre-native cleanup before the atomic write: even a synchronization
 	// error may leave the owned plaintext file committed.
 	managedPreNative = true
-	if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
+	if err := managed.writeExecutionAuthentication(nativeHome); err != nil {
 		return nil, subscription.Invalid()
 	}
 	nativeConfig := codex.Config{
@@ -169,7 +169,7 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 			return errors.Join(nativeErr, helperErr)
 		}
 		closed = true
-		authErr := cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle)
+		authErr := cleanupCapturedExecutionAuthentication(config, managed, nativeHome, managedLatest, managed.response.Bundle)
 		managedCleanup = helperErr == nil && authErr == nil
 		logExecutionAuthenticationCleanup(config.Logger, jobID, authErr)
 		if helperErr != nil {
