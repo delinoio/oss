@@ -848,16 +848,24 @@ enum ChunkSearch {
 /// so such an entry makes the search incomplete instead of becoming an edge.
 /// An entry that names no emitted chunk is an external leaf and cannot hold the
 /// target.
+///
+/// `cancelled` is polled before each chunk is expanded. A cancelled search
+/// returns an incomplete `NotFound`, which the caller discards together with
+/// the rest of the cancelled run.
 fn search_static_closure(
     chunks: &BTreeMap<&str, &crate::collect::CollectedChunk>,
     requester_chunk: &str,
     targets: &BTreeSet<&str>,
+    cancelled: &dyn Fn() -> bool,
 ) -> ChunkSearch {
     let mut parents: BTreeMap<&str, &str> = BTreeMap::new();
     let mut seen: BTreeSet<&str> = BTreeSet::from([requester_chunk]);
     let mut queue: VecDeque<&str> = VecDeque::from([requester_chunk]);
     let mut complete = true;
     while let Some(current) = queue.pop_front() {
+        if cancelled() {
+            return ChunkSearch::NotFound { complete: false };
+        }
         if targets.contains(current) {
             let mut path = vec![current.to_owned()];
             let mut cursor = current;
@@ -937,10 +945,13 @@ fn required_target_sets<'a>(
 /// makes the importer `Unknown`, and only a complete graph without a route
 /// yields `SeparateChunk`. `module_chunks` are all chunks that print the
 /// module; see [`required_target_sets`] for the copies of one module.
+/// `cancelled` is polled before every requesting chunk and inside each search;
+/// a cancelled classification is `Unknown` and is discarded with the run.
 fn classify_requester(
     chunks: &BTreeMap<&str, &crate::collect::CollectedChunk>,
     requester_chunks: &[&str],
     module_chunks: &BTreeSet<&str>,
+    cancelled: &dyn Fn() -> bool,
 ) -> RequesterOutcome {
     if requester_chunks.is_empty() || module_chunks.is_empty() {
         return RequesterOutcome::Unknown;
@@ -948,6 +959,9 @@ fn classify_requester(
     let mut routes = Vec::new();
     let mut complete = true;
     for chunk in requester_chunks {
+        if cancelled() {
+            return RequesterOutcome::Unknown;
+        }
         let Some(target_sets) = required_target_sets(chunks, chunk, module_chunks) else {
             complete = false;
             continue;
@@ -955,7 +969,7 @@ fn classify_requester(
         let mut found: Option<Vec<String>> = None;
         let mut reached_all = true;
         for targets in &target_sets {
-            match search_static_closure(chunks, chunk, targets) {
+            match search_static_closure(chunks, chunk, targets, cancelled) {
                 ChunkSearch::Found(chunk_path) => {
                     found.get_or_insert(chunk_path);
                 }
@@ -1005,13 +1019,17 @@ fn classify_dynamic_requesters(
         .collect();
     let module_chunks: BTreeSet<&str> = module.chunks.iter().map(String::as_str).collect();
     let mut classification = RequesterClassification::default();
+    let cancelled = || context.is_cancelled();
     for importer_id in &module.dynamic_importers {
+        if cancelled() {
+            break;
+        }
         let requester_chunks: Vec<&str> = context
             .modules
             .get(importer_id.as_str())
             .map(|importer| importer.chunks.iter().map(String::as_str).collect())
             .unwrap_or_default();
-        match classify_requester(&chunks, &requester_chunks, &module_chunks) {
+        match classify_requester(&chunks, &requester_chunks, &module_chunks, &cancelled) {
             RequesterOutcome::Proven(routes) => classification.proven.push(RequesterProof {
                 importer: importer_id.clone(),
                 routes,
@@ -1077,7 +1095,13 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
             separate_chunk,
             unknown,
         } = if !module.importers.is_empty() && !module.dynamic_importers.is_empty() {
-            classify_dynamic_requesters(context, module)
+            let classification = classify_dynamic_requesters(context, module);
+            // A cancelled traversal yields a partial classification: stop
+            // before it is turned into a finding.
+            if context.is_cancelled() {
+                return;
+            }
+            classification
         } else {
             RequesterClassification::default()
         };
@@ -2048,7 +2072,7 @@ mod ineffective_dynamic_import_tests {
                 .collect();
             let targets: BTreeSet<&str> = cell.targets.iter().copied().collect();
             assert_eq!(
-                classify_requester(&chunks, cell.requesters, &targets),
+                classify_requester(&chunks, cell.requesters, &targets, &|| false),
                 cell.expected,
                 "{}",
                 cell.name
@@ -2228,6 +2252,55 @@ mod ineffective_dynamic_import_tests {
             ..Collection::default()
         };
         assert!(run(&collection).is_empty());
+    }
+
+    /// The traversal polls the signal before expanding each chunk, so a dense
+    /// chunk graph cannot hold up cancellation until the module loop resumes.
+    #[test]
+    fn chunk_graph_traversal_stops_when_the_run_is_cancelled() {
+        const CHAIN: usize = 50;
+        let graph: Vec<CollectedChunk> = (0..CHAIN)
+            .map(|index| {
+                let next = format!("c{}.js", index + 1);
+                chunk(&format!("c{index}.js"), Some(&[next.as_str()]))
+            })
+            .chain(std::iter::once(chunk(&format!("c{CHAIN}.js"), Some(&[]))))
+            .collect();
+        let chunks: BTreeMap<&str, &CollectedChunk> = graph
+            .iter()
+            .map(|chunk| (chunk.file.as_str(), chunk))
+            .collect();
+        let final_chunk = format!("c{CHAIN}.js");
+        let targets: BTreeSet<&str> = BTreeSet::from([final_chunk.as_str()]);
+        // (poll that first reports cancellation, expected polls, route found)
+        for (cancel_at, expected_polls, found) in [
+            (0usize, 1usize, false),
+            (10, 11, false),
+            (usize::MAX, CHAIN + 1, true),
+        ] {
+            let polls = std::sync::atomic::AtomicUsize::new(0);
+            let cancelled = || polls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= cancel_at;
+            let search = search_static_closure(&chunks, "c0.js", &targets, &cancelled);
+            assert_eq!(
+                polls.load(std::sync::atomic::Ordering::SeqCst),
+                expected_polls,
+                "cancel_at={cancel_at}"
+            );
+            assert_eq!(
+                matches!(search, ChunkSearch::Found(_)),
+                found,
+                "cancel_at={cancel_at}"
+            );
+            if !found {
+                assert_eq!(search, ChunkSearch::NotFound { complete: false });
+            }
+        }
+        // A cancelled classification never becomes a proof or a separate chunk.
+        let cancelled = || true;
+        assert_eq!(
+            classify_requester(&chunks, &["c0.js"], &targets, &cancelled),
+            RequesterOutcome::Unknown
+        );
     }
 
     #[test]
