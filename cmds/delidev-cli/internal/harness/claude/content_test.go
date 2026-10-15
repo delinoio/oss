@@ -423,3 +423,39 @@ func TestNativeEmptyInputTransformationsDoNotChangeHistory(t *testing.T) {
 		})
 	}
 }
+
+func TestAssistantThinkingDurationRequiresDeclaredPositiveInteger(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		value    any
+		accepted bool
+	}{
+		{"omitted", nil, true}, {"positive", 1, true}, {"maximum", json.Number("18446744073709551615"), true},
+		{"null", json.RawMessage(`null`), false}, {"zero", 0, false}, {"negative", -1, false}, {"fraction", 1.5, false}, {"string", "1", false},
+		{"overflow", json.Number("18446744073709551616"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := contentFixture(t)
+			contentStart(t, b, "", "msg_duration")
+			lifecycleObserve(t, b, contentPartial(t, b, "", map[string]any{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": ""}}))
+			lifecycleObserve(t, b, contentPartial(t, b, "", map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": "Original answer."}}))
+			event := contentCompleted(t, b, "", "msg_duration", map[string]any{"type": "text", "text": "Original answer."})
+			if tc.name != "omitted" {
+				event = lifecycleChange(t, event, "thinking_duration_ms", tc.value)
+			}
+			observation, err := b.Observe(event)
+			if tc.accepted {
+				if err != nil || observation.Kind != ContentObserved || len(observation.Content) != 1 || observation.Content[0].Kind != ContentCompleted || b.finished {
+					t.Fatal("valid optional duration changed content lifecycle", err)
+				}
+			} else {
+				if err == nil || b.problem == nil || b.finished {
+					t.Fatal("malformed duration escaped recovery")
+				}
+				if _, retryErr := b.Observe(contentCompleted(t, b, "", "msg_duration", map[string]any{"type": "text", "text": "Original answer."})); retryErr == nil {
+					t.Fatal("invalid duration did not latch recovery")
+				}
+			}
+		})
+	}
+}

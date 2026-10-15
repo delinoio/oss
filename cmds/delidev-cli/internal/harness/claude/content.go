@@ -718,13 +718,20 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		Aborted          json.RawMessage        `json:"aborted"`
 		Input            json.RawMessage        `json:"user_message_uuid,omitempty"`
 		Inputs           json.RawMessage        `json:"user_message_uuids,omitempty"`
-		ThinkingDuration *uint64                `json:"thinking_duration_ms,omitempty"`
+		ThinkingDuration json.RawMessage        `json:"thinking_duration_ms,omitempty"`
 	}
-	if decodeNativeObject(raw, &envelope) != nil || b.validateReplyInputStamp(envelope.Input, envelope.Inputs, envelope.Parent) != nil || envelope.ThinkingDuration != nil && *envelope.ThinkingDuration == 0 {
+	if decodeNativeObject(raw, &envelope) != nil || b.validateReplyInputStamp(envelope.Input, envelope.Inputs, envelope.Parent) != nil {
 		if b.interrupt != nil && b.logger != nil {
 			b.logger.Warn("claude_stop_assistant_envelope_invalid", "owner_id", b.owner)
 		}
 		return nil, lifecycleUncertain()
+	}
+	if len(envelope.ThinkingDuration) != 0 {
+		// A declared duration must be positive; explicit null is not omission.
+		var duration *uint64
+		if json.Unmarshal(envelope.ThinkingDuration, &duration) != nil || duration == nil || *duration == 0 {
+			return nil, lifecycleUncertain()
+		}
 	}
 	parent, err := b.contentParent(envelope.Parent)
 	if err != nil {

@@ -446,7 +446,9 @@ Live partial and complete assistant replies may stamp `user_message_uuid` and
 and, when supplied, a singleton list containing that same input; foreign,
 batched, child or list-only stamps fail. Stamps never replace replay-based input
 acceptance. Bounded `thinking_display` and positive `thinking_duration_ms` are
-presentation metadata only. Automatic interrupted-turn `resume_reason` remains
+presentation metadata only. A declared thinking duration must be a positive
+unsigned integer; null, zero, negative, fractional and nonnumeric values fail.
+Omission remains compatible. Automatic interrupted-turn `resume_reason` remains
 unsupported under the disabled automatic-resume profile.
 
 The lifecycle's required boolean `product_feedback_disabled` reports the
