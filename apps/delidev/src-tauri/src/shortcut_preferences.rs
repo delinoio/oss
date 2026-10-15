@@ -508,6 +508,65 @@ mod tests {
             assert_eq!(valid(&case.overrides), case.valid, "{}", case.name);
         }
     }
+    fn contract_cells(contract: &str, label: &str) -> Vec<String> {
+        let rows: Vec<Vec<String>> = contract
+            .lines()
+            .filter(|line| line.starts_with('|'))
+            .map(|line| line.split('|').map(|cell| cell.trim().to_owned()).collect())
+            .filter(|cells: &Vec<String>| cells.get(1).is_some_and(|cell| cell == label))
+            .collect();
+        assert_eq!(rows.len(), 1, "{label}");
+        rows[0].clone()
+    }
+    fn contract_row(contract: &str, label: &str) -> Vec<String> {
+        contract_cells(contract, label)[2]
+            .split('`')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_owned)
+            .collect()
+    }
+    // The desktop contract owns the shortcut chord table; the renderer suite
+    // checks the same table against its validator and the localized help text.
+    #[test]
+    fn native_validator_matches_the_contract_shortcut_chord_table() {
+        let contract = include_str!("../../../../docs/apps-delidev-desktop-contract.md");
+        let plain = contract_row(contract, "Reserved unshifted primary keys");
+        let shifted = contract_row(contract, "Reserved Shift primary keys");
+        let default = contract_row(contract, "Editable New session default");
+        assert!(!plain.is_empty() && !shifted.is_empty());
+        assert_eq!(default, ["N"]);
+        for key in ('a'..='z').chain('0'..='9') {
+            let key = key.to_string();
+            for (shift, reserved) in [(false, &plain), (true, &shifted)] {
+                assert_eq!(
+                    chord_valid(&ShortcutChord {
+                        key: key.clone(),
+                        shift
+                    }),
+                    !reserved.contains(&key),
+                    "{key}/{shift}"
+                );
+            }
+        }
+        assert!(!plain.iter().any(|key| key == "n"));
+        // The default chord is the unshifted table key: a Help binding on it
+        // overlaps, while the same key with Shift does not.
+        let key = default[0].to_lowercase();
+        assert!(!valid(&BTreeMap::from([(
+            ShortcutAction::Help,
+            binding(&key, false)
+        )])));
+        assert!(valid(&BTreeMap::from([(
+            ShortcutAction::Help,
+            binding(&key, true)
+        )])));
+        assert_eq!(
+            contract_cells(contract, "Native New Window accelerator")[2],
+            "none"
+        );
+        assert_eq!(NEW_WINDOW_MENU_ACCELERATOR, None);
+    }
     #[test]
     fn defaults_restart_and_stale_revision_preserve_original_map() {
         let dir = tempfile::tempdir().unwrap();

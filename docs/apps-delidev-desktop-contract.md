@@ -697,10 +697,9 @@ NewSessionFocus, NewSessionSend and SearchFocus support one primary chord,
 optional Shift and an ASCII letter/digit or Enter, or an explicit disabled
 override. An absent override selects the original default. SessionSend retains fixed unmodified Enter when its primary chord is changed or disabled; show this fixed binding alongside its editable Settings row. SessionNewline is read-only native Shift+Enter. Skill completion accepts a selectable suggestion before send dispatch. The original form/enqueue admission, IME/229/repeat/handled/target/modal/native fences and pending/uncertain request locks remain authoritative. Native newline,
 Search Enter, panel Escape, generic modal Escape, Tab and editing retain their
-original behavior; NewSessionSend always retains guarded plain Enter. Primary+K,
-primary+W,
-primary+Q/H/M (native Quit/Hide/Minimize) and primary+1–9 remain fixed reservations. Native editing
-chords cannot be assigned. Unshifted primary+N is the editable New session default (Command+N on macOS, Control+N on Windows/Linux) and is not a native reservation or alias: native File > New Window has no accelerator, Shift+N is not an additional default alias, and the Keyboard Help and Settings native/fixed list has no New Window row. The renderer and the native validator treat N like any other editable chord: capturing unshifted N for Help overlaps the New session default and is rejected, while Help Shift+N is accepted. Saved overrides keep their meaning without migration or rewriting of `shortcuts.json`: an explicit Shift+N New session binding stays authoritative and unshifted N does not bypass it, a disabled override disables the action, and every stored document that was valid before this default change stays valid. Installations without a New session override receive unshifted N. An unshifted N override of a higher-priority screen action takes precedence over the New session default under the existing cross-priority dispatch rule. The renderer and native chord validators share one fixture table of accepted and rejected chords and override maps. The former New Window primary+T chord is editable; no native T alias remains, and the read-only Open tool and Open Files defaults yield to their T and E overrides. No palette, window action or tab action is added.
+original behavior; NewSessionSend always retains guarded plain Enter. The reserved,
+editable and default primary chords are defined once in the shortcut chord table
+below; native editing chords cannot be assigned. Unshifted primary+N is the editable New session default (Command+N on macOS, Control+N on Windows/Linux) and is not a native reservation or alias: native File > New Window has no accelerator, Shift+N is not an additional default alias, and the Keyboard Help and Settings native/fixed list has no New Window row. The renderer and the native validator treat N like any other editable chord: capturing unshifted N for Help overlaps the New session default and is rejected, while Help Shift+N is accepted. Saved overrides keep their meaning without migration or rewriting of `shortcuts.json`: an explicit Shift+N New session binding stays authoritative and unshifted N does not bypass it, a disabled override disables the action, and every stored document that was valid before this default change stays valid. Installations without a New session override receive unshifted N. An unshifted N override of a higher-priority screen action takes precedence over the New session default under the existing cross-priority dispatch rule. The renderer and native chord validators share one fixture table of accepted and rejected chords and override maps. The former New Window primary+T chord is editable; no native T alias remains, and the read-only Open tool and Open Files defaults yield to their T and E overrides. No palette, window action or tab action is added.
 
 Capture becomes active only after original-product-window native admission and
 an acknowledged native-loop replacement of the exact original app menu with an
@@ -759,6 +758,27 @@ environments expose persistence-unavailable and never use Web Storage. Preferenc
 survive restart and server changes and remain excluded from server backups and
 portable configuration. Logs contain only stable operation/problem/action/revision
 metadata, never captured keys, chords, text or native content.
+
+**Shortcut chord table.** This table is the single definition of the reserved,
+editable and default primary chords. The renderer validator, the native validator,
+the English/Korean fixed-shortcut help text, the shared chord fixture and every
+other document must match it; the table-sync tests in the renderer and native
+suites fail when any of them disagree. Primary means Command on macOS and Control
+on Windows/Linux. Update this table first when a chord changes.
+
+| Row                                   | Value                                                                               |
+| ------------------------------------- | ----------------------------------------------------------------------------------- |
+| Reserved unshifted primary keys       | `a` `b` `c` `h` `k` `m` `q` `v` `w` `x` `y` `z` `1` `2` `3` `4` `5` `6` `7` `8` `9` |
+| Reserved Shift primary keys           | `v` `z`                                                                             |
+| Keys named in the fixed shortcut help | `K` `W` `Q` `H` `M` `1–9`                                                           |
+| Editable New session default          | `N`                                                                                 |
+| Native New Window accelerator         | none                                                                                |
+| Shift+N New session                   | explicit saved override only, never a default alias                                 |
+
+Every other ASCII letter, digit or Enter, with or without Shift, is editable.
+Reserved keys are product or native chords: K command menu, W close session tab,
+B sidebar, Q/H/M native Quit/Hide/Minimize, 1–9 tab positions and A/C/V/X/Y/Z
+native editing; Shift+V and Shift+Z are native editing as well.
 
 English/Korean fixtures cover capture, draft isolation, dispatch/help/ARIA,
 conflicts, publication/recovery, keyboard and compact/effective-reflow layouts.
