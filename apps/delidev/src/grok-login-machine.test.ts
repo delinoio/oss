@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   GrokHelp,
+  GrokLifetimeTrigger,
   GrokLoginEvent,
   GrokLoginPhase,
   GrokLoginStage,
@@ -12,6 +13,8 @@ import {
   GrokProblemRule,
   GrokRetry,
   GrokRetryRule,
+  grokLifetimeCells,
+  grokLifetimeTriggers,
   grokLoginCell,
   grokLoginEvents,
   grokLoginPhases,
@@ -421,6 +424,15 @@ const eventTriggers: Record<GrokLoginEvent, string> = {
   [E.NameUncertain]: "The account alias save has an uncertain outcome",
   [E.Dispose]: "The task is left, Settings closes or the controller unmounts",
 };
+const lifetimeTriggers: Record<GrokLifetimeTrigger, string> = {
+  [GrokLifetimeTrigger.Leave]:
+    "The user leaves the task (Back or a saved name)",
+  [GrokLifetimeTrigger.Inactive]: "The Settings category stops being active",
+  [GrokLifetimeTrigger.SettingsClosed]:
+    "The Settings opening that owns the controller is aborted",
+  [GrokLifetimeTrigger.AuthorityChanged]:
+    "The native control the login was created under is replaced (another server is selected), or the controller unmounts",
+};
 const yes = (value: boolean) => (value ? "yes" : "-");
 const ruleText = (rule: GrokProblemRule, key?: string): string => {
   const name = key ? `\`${shortKey(key)}\`` : "";
@@ -532,6 +544,19 @@ function renderTables(): string {
       `| \`${shortKey(key)}\` | ${[...setBy.get(key)!].map((e) => `\`${e}\``).join(", ")} | ${holders.length ? `only after ${holders.map((e) => `\`${e}\``).join(", ")}` : "never"} |`,
     );
   }
+  out.push(
+    "",
+    "#### Controller lifetime",
+    "",
+    "Every trigger disposes the pending login (display, timer and callback authority only, never an accepted server operation), releases it and clears the view, so no screen, paused inventory polling or inert action outlives the authority it was created under. A login is never carried to another server: the next Add account starts a new one under the new native control.",
+    "",
+    "| Trigger | When | Pending login | View | Parent notified |",
+    "| ------- | ---- | ------------- | ---- | --------------- |",
+  );
+  for (const trigger of grokLifetimeTriggers)
+    out.push(
+      `| \`${trigger}\` | ${lifetimeTriggers[trigger]} | disposed and released | cleared | ${yes(grokLifetimeCells[trigger].notifyParent)} |`,
+    );
   out.push("", end);
   return out.join("\n");
 }
@@ -550,6 +575,22 @@ const squeeze = (text: string) =>
         : line,
     )
     .join("\n");
+
+describe("controller lifetime table", () => {
+  it("has exactly one cell per trigger", () => {
+    expect(Object.keys(grokLifetimeCells).sort()).toEqual(
+      [...grokLifetimeTriggers].sort(),
+    );
+    for (const trigger of grokLifetimeTriggers)
+      expect(grokLifetimeCells[trigger].trigger).toBe(trigger);
+  });
+  it("notifies the parent only when the user leaves", () => {
+    for (const trigger of grokLifetimeTriggers)
+      expect(grokLifetimeCells[trigger].notifyParent).toBe(
+        trigger === GrokLifetimeTrigger.Leave,
+      );
+  });
+});
 
 describe("contract document", () => {
   it("renders the transition tables of the Grok subscription contract", () => {

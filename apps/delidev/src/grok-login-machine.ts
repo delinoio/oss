@@ -442,6 +442,47 @@ const entries: Entry[] = [
   },
 ];
 
+// The ways the controller's lifetime ends. Every trigger disposes the pending
+// login (display, timer and callback authority only, never an accepted server
+// operation), releases it and clears the view, so no screen outlives the
+// authority it was created under. Only the user leaving also tells the parent,
+// because only that path can have created an account the inventory must show.
+export enum GrokLifetimeTrigger {
+  // The user leaves the task (Back or a saved name).
+  Leave = "leave",
+  // The Settings category stops being active.
+  Inactive = "inactive",
+  // The Settings opening that owns the controller is aborted.
+  SettingsClosed = "settings-closed",
+  // The native control the login was created under is replaced, or the
+  // controller unmounts (the same effect cleanup).
+  AuthorityChanged = "authority-changed",
+}
+export interface GrokLifetimeCell {
+  trigger: GrokLifetimeTrigger;
+  notifyParent: boolean;
+}
+export const grokLifetimeCells: Record<GrokLifetimeTrigger, GrokLifetimeCell> =
+  {
+    [GrokLifetimeTrigger.Leave]: {
+      trigger: GrokLifetimeTrigger.Leave,
+      notifyParent: true,
+    },
+    [GrokLifetimeTrigger.Inactive]: {
+      trigger: GrokLifetimeTrigger.Inactive,
+      notifyParent: false,
+    },
+    [GrokLifetimeTrigger.SettingsClosed]: {
+      trigger: GrokLifetimeTrigger.SettingsClosed,
+      notifyParent: false,
+    },
+    [GrokLifetimeTrigger.AuthorityChanged]: {
+      trigger: GrokLifetimeTrigger.AuthorityChanged,
+      notifyParent: false,
+    },
+  };
+export const grokLifetimeTriggers = Object.values(GrokLifetimeTrigger);
+
 export const grokLoginPhases = Object.values(GrokLoginPhase);
 export const grokLoginEvents = Object.values(GrokLoginEvent);
 

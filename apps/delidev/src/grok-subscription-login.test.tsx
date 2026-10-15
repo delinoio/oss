@@ -31,6 +31,7 @@ import {
 import { OAuthNativeAction, OAuthNativeProvider } from "./account-oauth";
 import { document, encode } from "./documents";
 import { safeGrokDiagnostic } from "./grok-diagnostic";
+import { GrokLifetimeTrigger, grokLifetimeCells } from "./grok-login-machine";
 import { grokLoginURL } from "./grok-subscription-login";
 import { copy, i18n, SupportedLanguage } from "./localization";
 import { SettingsLifetime } from "./settings-lifetime";
@@ -168,8 +169,10 @@ function fixture(url = loginURL) {
     defaultOptions: { queries: { retry: false } },
   });
   const changed = vi.fn();
+  let active = true;
+  let settings: { dispose: (client: QueryClient) => void } | undefined;
   function Body() {
-    const flow = useSubscriptionLogin(true, changed);
+    const flow = useSubscriptionLogin(active, changed);
     return (
       <>
         {flow.body ?? (
@@ -180,12 +183,17 @@ function fixture(url = loginURL) {
       </>
     );
   }
-  const view = () => (
+  const view = (control: typeof native = native) => (
     <StrictMode>
       <TransportProvider transport={transport}>
         <QueryClientProvider client={client}>
-          <OAuthNativeProvider control={native}>
-            <SettingsLifetime>{() => <Body />}</SettingsLifetime>
+          <OAuthNativeProvider control={control}>
+            <SettingsLifetime>
+              {(opening) => {
+                settings = opening;
+                return <Body />;
+              }}
+            </SettingsLifetime>
           </OAuthNativeProvider>
         </QueryClientProvider>
       </TransportProvider>
@@ -203,6 +211,10 @@ function fixture(url = loginURL) {
     client,
     changed,
     generation,
+    setActive: (value: boolean) => {
+      active = value;
+    },
+    closeSettings: () => settings?.dispose(client),
     current: () => current,
     setState: (value: State, grok?: ReturnType<typeof refusal>) => {
       state = value;
@@ -444,6 +456,75 @@ it("Back keeps the accepted operation and disposes the native binding", async ()
   expect(f.cancel).not.toHaveBeenCalled();
   expect(f.changed).toHaveBeenCalled();
 });
+
+// Controller lifetime cells (trigger x outcome). Every trigger disposes the
+// native binding, leaves the accepted operation alone and removes the screen;
+// only the user leaving tells the parent.
+//
+//   trigger            screen   native Dispose   cancel   parent notified
+//   leave              cleared  yes              no       yes
+//   inactive           cleared  yes              no       no
+//   settings-closed    cleared  yes              no       no
+//   authority-changed  cleared  yes              no       no
+it.each([
+  [GrokLifetimeTrigger.Leave, true],
+  [GrokLifetimeTrigger.Inactive, false],
+  [GrokLifetimeTrigger.SettingsClosed, false],
+  [GrokLifetimeTrigger.AuthorityChanged, false],
+] as const)(
+  "clears the Grok view when the lifetime ends by %s",
+  async (trigger, notified) => {
+    expect(grokLifetimeCells[trigger].notifyParent).toBe(notified);
+    const f = fixture();
+    const other = vi.fn(f.native.getMockImplementation()!);
+    const rendered = await start(f);
+    const disposed = () => actions(f, OAuthNativeAction.Dispose).length;
+    const before = disposed();
+    f.changed.mockClear();
+    if (trigger === GrokLifetimeTrigger.Leave)
+      fireEvent.click(
+        screen.getByRole("button", { name: copy("grok-subscription.back") }),
+      );
+    else if (trigger === GrokLifetimeTrigger.Inactive) {
+      f.setActive(false);
+      rendered.rerender(f.view());
+    } else if (trigger === GrokLifetimeTrigger.SettingsClosed)
+      act(() => f.closeSettings());
+    else rendered.rerender(f.view(other));
+    // The stale screen is gone: its actions never remain inert on screen.
+    await screen.findByRole("button", { name: "Start Grok" });
+    expect(
+      screen.queryByRole("button", {
+        name: copy("grok-subscription.openBrowser"),
+      }),
+    ).toBeNull();
+    expect(disposed()).toBeGreaterThan(before);
+    // The old control received the Dispose; the replacement was never used.
+    expect(other).not.toHaveBeenCalled();
+    expect(f.cancel).not.toHaveBeenCalled();
+    expect(f.changed).toHaveBeenCalledTimes(notified ? 1 : 0);
+  },
+  20000,
+);
+
+it("starts a new login under a replaced native control after the authority changed", async () => {
+  const f = fixture();
+  const other = vi.fn(f.native.getMockImplementation()!);
+  const rendered = await start(f);
+  rendered.rerender(f.view(other));
+  fireEvent.click(await screen.findByRole("button", { name: "Start Grok" }));
+  await screen.findByRole(
+    "button",
+    { name: copy("grok-subscription.openBrowser") },
+    { timeout: 3000 },
+  );
+  expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(1);
+  expect(
+    other.mock.calls.filter(
+      (call) => call[1] === OAuthNativeAction.GrokSubscriptionOpen,
+    ),
+  ).toHaveLength(1);
+}, 20000);
 
 it("advances to naming only after verified success, prefilling and focusing the name", async () => {
   const f = fixture();

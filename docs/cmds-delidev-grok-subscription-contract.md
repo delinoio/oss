@@ -119,6 +119,7 @@ Rules the table enforces:
 - A refused Take the server keeps queued (`unsupported` together with a Grok diagnostic, classified by `progressDisposition`) is provisional: `poll-refusal-provisional` leaves the phase, the retained request and the native binding unchanged and only recovers the polling notice, so Cancel stays available and the next response is adopted. A later `preparing` or `waiting` response clears the diagnostic notice, `succeeded` names the account and every other response settles. `unsupported` without a Grok diagnostic is final (`poll-unsupported`).
 - A success, terminal state or observed cancellation drops any retained request. Success, every terminal state and cancellation dispose the native binding and clear the original link.
 - Stage, help text and action visibility are derived from the phase alone; the controller keeps only the exact retained closure, the original link and the one-shot native flags.
+- The controller's lifetime ends only through the triggers of the [controller lifetime table](#controller-lifetime): each one disposes the pending login and clears the view, so a screen never outlives the native control (and therefore the selected server) it was created under.
 
 <!-- grok-login-machine:begin -->
 
@@ -433,6 +434,17 @@ No event changes this phase.
 | `requestFailed`      | `start-refused`                                                       | never                         |
 | `requestUnconfirmed` | `start-uncertain`                                                     | only after `start-uncertain`  |
 | `statusUnconfirmed`  | `poll-error`                                                          | never                         |
+
+#### Controller lifetime
+
+Every trigger disposes the pending login (display, timer and callback authority only, never an accepted server operation), releases it and clears the view, so no screen, paused inventory polling or inert action outlives the authority it was created under. A login is never carried to another server: the next Add account starts a new one under the new native control.
+
+| Trigger             | When                                                                                                                | Pending login         | View    | Parent notified |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------- | ------- | --------------- |
+| `leave`             | The user leaves the task (Back or a saved name)                                                                     | disposed and released | cleared | yes             |
+| `inactive`          | The Settings category stops being active                                                                            | disposed and released | cleared | -               |
+| `settings-closed`   | The Settings opening that owns the controller is aborted                                                            | disposed and released | cleared | -               |
+| `authority-changed` | The native control the login was created under is replaced (another server is selected), or the controller unmounts | disposed and released | cleared | -               |
 
 <!-- grok-login-machine:end -->
 

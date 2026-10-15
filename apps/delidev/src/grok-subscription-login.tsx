@@ -41,10 +41,12 @@ import {
 import {
   GrokHelp,
   GrokLoginEvent,
+  GrokLifetimeTrigger,
   GrokLoginStage,
   GrokNameField,
   GrokNativeBinding,
   GrokRetry,
+  grokLifetimeCells,
   grokLoginPresentation,
   grokPollEvent,
   grokRetryOutcomes,
@@ -264,30 +266,27 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     apply(p, GrokLoginEvent.Dispose);
     p.retry = undefined;
   };
-  const leave = () => {
+  // Ends the controller's lifetime for one trigger. Each trigger disposes the
+  // pending login and clears the view, so no screen outlives its authority; the
+  // lifetime table decides whether the parent is told.
+  const release = (trigger: GrokLifetimeTrigger) => {
     const p = pending.current;
     if (p) dispose(p);
     pending.current = undefined;
     setView(undefined);
-    changed();
+    if (grokLifetimeCells[trigger].notifyParent) changed();
   };
+  const leave = () => release(GrokLifetimeTrigger.Leave);
   useEffect(() => {
-    const close = () => {
-      if (pending.current) dispose(pending.current);
-      pending.current = undefined;
-    };
+    const close = () => release(GrokLifetimeTrigger.SettingsClosed);
     opening?.controller.signal.addEventListener("abort", close, { once: true });
     return () => {
       opening?.controller.signal.removeEventListener("abort", close);
-      close();
+      release(GrokLifetimeTrigger.AuthorityChanged);
     };
   }, [opening, native]);
   useEffect(() => {
-    if (!active && pending.current) {
-      dispose(pending.current);
-      pending.current = undefined;
-      setView(undefined);
-    }
+    if (!active && pending.current) release(GrokLifetimeTrigger.Inactive);
   }, [active]);
 
   const fresh = async (p: Pending) => {
