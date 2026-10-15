@@ -129,6 +129,22 @@ func prepareGrokFinish(home subscription.GrokHome, server, account, generation d
 	return out
 }
 
+// confirmGrokHomeCredentialFree verifies the bound home, retires every credential
+// entry in it (auth.json, its lock file and attributed temporaries) and reports
+// whether the home is provably credential-free: the path still names the held
+// directory before and after, the retirement was confirmed and no credential
+// entry remains. It is the cleanup proof for a lease whose Worker never
+// materialized a credential itself, because a file that already existed in the
+// bound home (a crashed earlier run, another writer) is a plaintext credential
+// the lease must not be released over.
+func confirmGrokHomeCredentialFree(home subscription.GrokHome) bool {
+	if home.Verify() != nil || home.RetireAuthFile() != nil {
+		return false
+	}
+	present, err := home.AuthFilePresent()
+	return err == nil && !present && home.Verify() == nil
+}
+
 // finishGrok settles one Grok lease: it prepares the outcome from the native
 // file and reports it through the generic protected Finish. refresh is true only
 // for a refresh whose native process already exited.
@@ -149,8 +165,9 @@ func (l *managedSubscriptionLease) finishGrok(original subscription.GrokBundle, 
 }
 
 // finishGrokExecution settles one Grok execute lease. attempted records whether
-// the Worker began to materialize the credential: when it did not, no file was
-// ever written and the cleanup is confirmed by construction. Otherwise the
+// the Worker began to materialize the credential: when it did not, this Worker
+// wrote no file, and the cleanup is confirmed only after the bound home is proven
+// credential-free (confirmGrokHomeCredentialFree). Otherwise the
 // native file is read once (sealing a native refresh when the process was
 // joined and kept the original identity) and retired through the bound home.
 // An unjoined native process never confirms cleanup, because it could still
@@ -163,7 +180,14 @@ func (l *managedSubscriptionLease) finishGrokExecution(original subscription.Gro
 		_ = l.grokHome.Close()
 		l.grokHome = subscription.GrokHome{}
 	}()
+	// Without an attempt this Worker wrote no credential, but the bound home may
+	// still hold one (it existed before the Take or appeared since: the profile
+	// probe then refused the run before the credential callback). Cleanup is
+	// confirmed only for a home proven credential-free.
 	outcome := grokFinishOutcome{Cleanup: true}
+	if !attempted {
+		outcome.Cleanup = confirmGrokHomeCredentialFree(l.grokHome)
+	}
 	if attempted {
 		outcome = prepareGrokFinish(l.grokHome, l.credential.ServerID, l.account, l.finishID, l.journal.Action, original, joined)
 		if !joined {

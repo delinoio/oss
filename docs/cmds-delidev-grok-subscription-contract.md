@@ -1540,7 +1540,13 @@ blocks) is unchanged.
   identity returns the sealed credential, an unjoined process, a foreign
   identity, an unreadable file or an unconfirmed removal never confirms cleanup
   or returns a bundle. An execution that failed before the harness asked for the
-  credential reports cleanup confirmed by construction. A Finish whose response
+  credential wrote no file itself, but its bound home may still hold one (it
+  existed before the Take or appeared since, which the profile probe then
+  refuses), so cleanup is confirmed only after the home is proven
+  credential-free (`confirmGrokHomeCredentialFree`): the credential entries are
+  retired through the bound home, none remains and the path still names the held
+  directory. The home is also made credential-free before the Take; a leftover
+  that cannot be proven retired is refused before any lease exists. A Finish whose response
   is lost (a timeout or a dropped connection) leaves the lease possibly held, so
   it is reported as managed execution uncertainty, not as an ordinary failed job:
   the primary lane closes and ownership is reconciled, including for a failure
@@ -1661,6 +1667,19 @@ refresh of the current epoch that is still queued. Its reconcile
 current one, clears the fence only after that removal is confirmed, and is retried
 by the scanner with bounded backoff; a lease, a claim or a restart-fenced
 operation is never reconciled this way.
+
+### Credential-free home of an execute lease
+
+A lease is never released over a plaintext credential this Worker did not account
+for. The bound private home is made credential-free before the Take, and an
+execution that never materialized a credential confirms cleanup only after the
+home is proven credential-free again.
+
+| Credential entry in the bound home                  | Before the Take            | Finish after an execution that never materialized | Test                                                                                                                                                                   |
+| --------------------------------------------------- | -------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| absent                                              | the Take proceeds          | cleanup confirmed                                 | `TestGrokExecutionThatNeverMaterializedConfirmsNothingWasWritten`                                                                                                      |
+| regular file (leftover, or appeared after the Take) | retired, the Take proceeds | retired, cleanup confirmed                        | `TestGrokExecutionRetiresALeftoverCredentialBeforeTheTake`, `TestGrokExecutionThatNeverMaterializedRetiresACredentialThatAppearedInTheHome`                            |
+| entry that cannot be retired                        | refused, no lease          | cleanup not confirmed, the lease stays fenced     | `TestGrokExecutionRefusesAHomeWhoseLeftoverCredentialCannotBeRetiredBeforeTheTake`, `TestGrokExecutionThatNeverMaterializedDoesNotConfirmAnUnretirableCredentialEntry` |
 
 ### Executable identity of a lease
 

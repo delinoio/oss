@@ -135,6 +135,20 @@ func beginGrokSubscriptionExecution(ctx context.Context, config Config, owner do
 		_ = home.Close()
 		return nil, domain.Fail(domain.Unavailable, "The Grok private home cannot be identified.", "Repair the Worker's native home directory and retry.")
 	}
+	// The home must be credential-free before the server is asked for the lease.
+	// A leftover auth.json (a crashed earlier run, another writer) is retired
+	// here; a home whose leftover cannot be proven retired is refused before any
+	// lease exists, so no Finish can later release a lease over a plaintext file.
+	if present, err := home.AuthFilePresent(); err != nil || present {
+		retired := confirmGrokHomeCredentialFree(home)
+		if config.Logger != nil {
+			config.Logger.WarnContext(ctx, "grok_subscription_execution_leftover_credential", "phase", "EXECUTION", "step", "home", "retired", retired)
+		}
+		if !retired {
+			_ = home.Close()
+			return nil, domain.Fail(domain.Unavailable, "The Grok private home holds a credential that could not be retired.", "Repair the Worker's native home directory and retry.")
+		}
+	}
 	client, closeHTTP, err := subscriptionRPC(ctx, config, connection.Credential)
 	if err != nil {
 		_ = home.Close()
