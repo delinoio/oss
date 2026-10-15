@@ -434,6 +434,12 @@ only; Sessions Home and every selection-free screen write no selection, so a sta
 selection is never restored. Unrelated query parameters, the path and the `#main`
 skip-link hash are preserved.
 
+Native product-window admission checks the original local origin, entry-document
+path, registered window and role after a route update. A same-document query is
+allowed because it does not select a different document or grant native authority.
+This includes preserved unrelated query parameters. Foreign origins, other paths
+and URL credentials remain denied.
+
 `Shell` in `App.tsx` mirrors committed in-app navigation and selection into the
 query with `history.replaceState` (never `pushState`), so Back/Forward gain no
 entries; a throttled or failing write is logged (`delidev.product_route.write_failed`)
