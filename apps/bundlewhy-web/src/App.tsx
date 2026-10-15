@@ -30,9 +30,11 @@ import {
   CoverageState,
   EngineSupport,
   EvidenceStatus,
+  LocationKind,
   OptimizationCategory,
   ReportMode,
   RunStatus,
+  SourceRevisionEvidence,
   type Analysis,
   type ChunkSize,
   type CodeSnippet,
@@ -471,7 +473,16 @@ export function AnalysisView({
                 </button>
               ) : null}
               {selected ? (
-                <DiagnosticDetails diagnostic={selected} />
+                <DiagnosticDetails
+                  diagnostic={selected}
+                  sourceRevisionEvidence={
+                    selected.location?.sourceId
+                      ? analysis.sources.find(
+                          (source) => source.id === selected.location?.sourceId,
+                        )?.revisionEvidence
+                      : undefined
+                  }
+                />
               ) : (
                 <p className="muted empty-details">
                   Select a diagnostic to see why the optimization was not
@@ -968,9 +979,18 @@ function EmptyList({
 /* Diagnostic details                                                  */
 /* ------------------------------------------------------------------ */
 
-export function DiagnosticDetails({ diagnostic }: { diagnostic: Diagnostic }) {
+export function DiagnosticDetails({
+  diagnostic,
+  sourceRevisionEvidence,
+}: {
+  diagnostic: Diagnostic;
+  sourceRevisionEvidence?: SourceRevisionEvidence;
+}) {
   const [sourceOpen, setSourceOpen] = useState(false);
   const sourceId = diagnostic.location?.sourceId;
+  const showSnippet =
+    diagnostic.snippet?.kind !== LocationKind.ORIGINAL ||
+    sourceRevisionEvidence === SourceRevisionEvidence.BUILD_SNAPSHOT;
   return (
     <article className="details" aria-labelledby="details-title">
       <h2 id="details-title">{diagnostic.title}</h2>
@@ -1050,7 +1070,7 @@ export function DiagnosticDetails({ diagnostic }: { diagnostic: Diagnostic }) {
       </DetailSection>
 
       <DetailSection title="Code">
-        {diagnostic.snippet ? (
+        {diagnostic.snippet && showSnippet ? (
           <Snippet snippet={diagnostic.snippet} />
         ) : (
           <p className="muted">No code snippet is available.</p>
@@ -1223,19 +1243,40 @@ function SourceDialog({
         <>
           <p className="muted">
             {sourceOriginLabel(file.origin)}
-            {file.sha256 ? ` · SHA-256 ${file.sha256.slice(0, 12)}…` : ""}
+            {file.revisionEvidence === SourceRevisionEvidence.BUILD_SNAPSHOT &&
+            file.sha256
+              ? ` · Build SHA-256 ${file.sha256.slice(0, 12)}…`
+              : ""}
           </p>
+          {file.revisionEvidence !== SourceRevisionEvidence.BUILD_SNAPSHOT ? (
+            <div className="banner banner-warning" role="note">
+              <strong>
+                <span aria-hidden="true">⚠ </span>Build source revision
+                unavailable
+              </strong>
+              <p>
+                {file.revisionEvidence === SourceRevisionEvidence.UNAVAILABLE
+                  ? "This report has no verified build-time text for this source. Live file text is not shown as analyzed code."
+                  : "This report does not record whether source text came from the build."}
+              </p>
+            </div>
+          ) : null}
           {file.stale ? (
             <div className="banner banner-warning" role="note">
               <strong>
                 <span aria-hidden="true">⚠ </span>Source changed since analysis
               </strong>
               <p>
-                The current file differs from the version that was analyzed.
+                {file.revisionEvidence === SourceRevisionEvidence.BUILD_SNAPSHOT
+                  ? "The current file differs from the version that was analyzed."
+                  : file.revisionEvidence === SourceRevisionEvidence.UNSPECIFIED
+                    ? "The current source file differs from or was removed since this analysis."
+                    : "The source file could not be read; it may have been removed since this analysis."}
               </p>
             </div>
           ) : null}
-          {file.contentIncluded ? (
+          {file.contentIncluded &&
+          file.revisionEvidence === SourceRevisionEvidence.BUILD_SNAPSHOT ? (
             <pre className="code source-view">
               <code>
                 {file.content.split("\n").map((line, index) => (
@@ -1249,7 +1290,10 @@ function SourceDialog({
             </pre>
           ) : (
             <p className="empty">
-              Source content was not included in this report.
+              {file.revisionEvidence === SourceRevisionEvidence.UNAVAILABLE ||
+              file.contentIncluded
+                ? "Verified build source content is unavailable."
+                : "Source content was not included in this report."}
             </p>
           )}
         </>

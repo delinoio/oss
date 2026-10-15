@@ -217,6 +217,12 @@ Confirmed deletion, tombstone/browser obligations, the existing configuration re
 
 ## Native Claude subscriptions
 
+Live native `rate_limit_event` notifications are bounded, identity-checked
+private observations. The Worker consumes them without publishing account quota,
+changing account readiness, granting paid-credit or fallback authority, accepting
+input or completing a turn. Original native result and cleanup proofs remain
+required. This does not activate Claude quota or reset-credit support.
+
 The originating change established System `CLAUDE_SUBSCRIPTIONS_V1 = 38`, Worker
 `NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` and the complete protocol allocation
 closure on main at `8a698d04d51f9db3a041b909edf85a7811f09ff3` before feature
@@ -517,6 +523,13 @@ Settings Add account is an explicit event that creates a default service-named a
 - Server quota V2 follows the feature and `cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota-v2--issue-1854`: record and activate System 50 in the complete feature PR, preserving 18/46/49. Omitted-machine manual/batch/maintenance quota uses a separate server access-token-only native profile even during Execute. Refuse token refresh, retain captured protected references through rotation until confirmed native cleanup and checked exact obsolete-reference retirement before terminal publication, and keep quota cleanup uncertainty independent of execution leases. Preserve explicit Worker/reset-credit semantics, lifecycle/deletion/restore fences and joined shutdown; no RPC, Worker allocation or migration. Real native/account/remote/platform acceptance is owner-assigned and nonblocking for this batch.
 
 - Server subscription maintenance initializes the shared vault and reads the exact original `AccountLogin` generation under `accountGate`, sharing API account synchronization and cancellation. Release the gate before native work; retain retryable open failures and the original operation/cleanup owner. Follow the credential contract. When the gate wait or vault read fails because the operation context was canceled or reached its deadline while the parent server context is live, the pre-native absence proof (no auth home, no process owner, probe index cleanup) runs under a fresh bounded 30-second owner context instead of the ended operation context. A verified proof confirms cleanup so the original operation settles as Canceled or Expired without recovery; a failed proof or retained native evidence keeps recovery required. No opener or login retry runs, and finish still joins cleanup to the original operation and generation.
+
+Worker subscription RPCs allow up to one minute for response headers so a first
+protected credential read can finish native code validation or OS authentication.
+The original caller context still cancels the request earlier. This bounded wait
+does not retry uncertain credential delivery or replace the original lease.
+Managed Claude delivery logs read start, completion, duration and success without
+credential contents.
 
 A fresh subscription lifecycle Take may return Canceled with exact cause `subscription_take_not_admitted` only inside its rolled-back admission transaction after original account/Worker/instance/installation/update fences when the queued original is absent, replaced or canceled. Replay, claimed/recovery state, wrong action/machine and post-commit errors never carry this proof. No lease, bundle or native authority is granted. Claude rejects a stale queued replacement claim after original current-Worker/update/revision and recovery fences, before lease contention and replacement-owned action/phase/profile/machine checks. Keep matching-operation profile/machine validation and the original canceled retired-profile proof; never adopt or cancel the replacement.
 
@@ -1006,6 +1019,14 @@ target-attributed temporary files of an interrupted credential write
 retired with the credential files, including during account deletion.
 
 ## Claude native version admission and diagnostics
+
+Native `auth status --json` may include the optional `analyticsDisabled`,
+`projectsDirectory` and `configDirectory` presentation fields. The adapter accepts
+only a boolean analytics value and string directories when declared; explicit
+null values fail for both authenticated and disconnected status. Omitted fields
+remain compatible. The adapter discards these fields and preserves all first-party
+subscription and disconnected-profile checks. These fields grant no credential,
+profile or execution authority; unknown fields remain unsupported.
 
 Server-owned setup-token login, Runner subscription selection and the Worker lifecycle admit any verified Claude Code installation whose valid SemVer precedence is at or above the pinned `2.1.236` baseline, using `domain.HarnessVersionAllowed`. Admission only permits the real native protocol, settings, authentication and cleanup checks to run. The `claude auth` and `--version` verification compares the executable output with the observed installation version, never with the baseline constant. A malformed or lower version stays unsupported before any native launch.
 

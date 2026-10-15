@@ -206,11 +206,34 @@ func VerifyAuthVersion(ctx context.Context, config AuthConfig) error {
 	return nil
 }
 func ReadAuthStatus(ctx context.Context, config AuthConfig) (AuthStatus, error) {
-	var status AuthStatus
+	// Newer native versions report local presentation metadata alongside auth.
+	// Accept these declared fields without retaining paths or treating them as
+	// authentication evidence; unknown fields still fail strict decoding.
+	var response struct {
+		AuthStatus
+		AnalyticsDisabled json.RawMessage `json:"analyticsDisabled,omitempty"`
+		ProjectsDirectory json.RawMessage `json:"projectsDirectory,omitempty"`
+		ConfigDirectory   json.RawMessage `json:"configDirectory,omitempty"`
+	}
 	raw, err := authCommand(ctx, config, "auth", "status", "--json")
 	defer clear(raw)
-	if domain.Decode(raw, &status) != nil || status.APIProvider != "firstParty" {
+	decodeErr := domain.Decode(raw, &response)
+	status := response.AuthStatus
+	if decodeErr != nil || status.APIProvider != "firstParty" {
 		return status, authProblem()
+	}
+	// Omission remains compatible with older native versions. A declared null
+	// must not become absence and confirm authentication or logout completion.
+	if len(response.AnalyticsDisabled) != 0 && !bytes.Equal(bytes.TrimSpace(response.AnalyticsDisabled), []byte("true")) && !bytes.Equal(bytes.TrimSpace(response.AnalyticsDisabled), []byte("false")) {
+		return status, authProblem()
+	}
+	for _, rawPath := range []json.RawMessage{response.ProjectsDirectory, response.ConfigDirectory} {
+		if len(rawPath) != 0 {
+			var path *string
+			if json.Unmarshal(rawPath, &path) != nil || path == nil {
+				return status, authProblem()
+			}
+		}
 	}
 	if err != nil {
 		var exit interface{ ExitCode() int }

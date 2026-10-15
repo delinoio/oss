@@ -17,7 +17,9 @@ import {
   ReportMode,
   RunStatus,
   SourceFileSchema,
+  SourceFileSummarySchema,
   SourceOrigin,
+  SourceRevisionEvidence,
   type Analysis,
 } from "./gen/bundlewhy/v1/bundlewhy_pb";
 
@@ -194,6 +196,14 @@ export function fixtureAnalysis(
       },
     ],
     problems: [],
+    sources: [
+      create(SourceFileSummarySchema, {
+        id: "src-1",
+        path: "src/main.ts",
+        origin: SourceOrigin.PROJECT,
+        revisionEvidence: SourceRevisionEvidence.BUILD_SNAPSHOT,
+      }),
+    ],
     ...overrides,
   });
 }
@@ -208,6 +218,7 @@ export function fixtureSource() {
       "// header\nimport { render } from './render';\nimport _ from 'lodash';\nrender(_);",
     contentIncluded: true,
     stale: true,
+    revisionEvidence: SourceRevisionEvidence.BUILD_SNAPSHOT,
   });
 }
 

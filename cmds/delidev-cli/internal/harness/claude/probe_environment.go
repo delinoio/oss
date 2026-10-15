@@ -85,6 +85,7 @@ func nativeEnvironment(config ProbeConfig) ([]string, error) {
 		"TMPDIR=" + filepath.Join(root, "tmp"), "TMP=" + filepath.Join(root, "tmp"), "TEMP=" + filepath.Join(root, "tmp"),
 		"CLAUDE_CONFIG_DIR=" + home, "ANTHROPIC_BASE_URL=http://127.0.0.1:1",
 		"CI=1", "NO_COLOR=1", "DISABLE_AUTOUPDATER=1", "DISABLE_UPDATES=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
+		"DISABLE_FEEDBACK_COMMAND=1", "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1",
 	}
 	if runtime.GOOS == "windows" {
 		for _, pair := range [][2]string{{"SystemRoot", "SYSTEMROOT"}, {"WINDIR", "WINDIR"}} {

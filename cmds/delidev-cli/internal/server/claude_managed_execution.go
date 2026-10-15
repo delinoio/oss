@@ -146,7 +146,10 @@ func (s *Service) takeManagedClaude(ctx context.Context, req *connect.Request[pb
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	credentialReadStarted := time.Now()
+	s.logger.InfoContext(ctx, "claude_managed_credential_read_started", "account_id", input.Account, "lease_id", input.Lease)
 	envelope, err := vault.Get(ctx, credentials.Ref{Owner: input.Account, ID: generation, Purpose: credentials.AccountLogin})
+	s.logger.InfoContext(ctx, "claude_managed_credential_read_finished", "account_id", input.Account, "lease_id", input.Lease, "duration_ms", time.Since(credentialReadStarted).Milliseconds(), "succeeded", err == nil)
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}

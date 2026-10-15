@@ -27,6 +27,8 @@ import {
   RunStage,
   RunStatus,
   SourceFileSchema,
+  SourceFileSummarySchema,
+  SourceRevisionEvidence,
   type Analysis,
 } from "./gen/bundlewhy/v1/bundlewhy_pb";
 import { TransportMode } from "./transport";
@@ -157,6 +159,26 @@ describe("analysis layout", () => {
     ).toEqual(["src/main.ts", "node_modules/lodash/lodash.js"]);
     expect(within(details).getByText("Safety conditions")).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/saving/i);
+  });
+
+  it("hides original snippets when a legacy source has no provenance", async () => {
+    const analysis = fixtureAnalysis({
+      sources: [
+        create(SourceFileSummarySchema, {
+          id: "src-1",
+          path: "src/main.ts",
+          revisionEvidence: SourceRevisionEvidence.UNSPECIFIED,
+        }),
+      ],
+    });
+    await renderAnalysis(analysis);
+    const details = screen.getByRole("region", { name: "Diagnostic details" });
+    expect(
+      within(details).getByText("No code snippet is available."),
+    ).toBeTruthy();
+    expect(
+      within(details).queryByText("import { render } from './render';"),
+    ).toBeNull();
   });
 
   it("selects another diagnostic by click and arrow keys", async () => {
@@ -327,6 +349,94 @@ describe("source viewer", () => {
         "Source content was not included in this report.",
       ),
     ).toBeTruthy();
+  });
+
+  it("describes legacy stale source state accurately", async () => {
+    const source = create(SourceFileSchema, {
+      ...fixtureSource(),
+      revisionEvidence: SourceRevisionEvidence.UNSPECIFIED,
+      stale: true,
+      sha256: "legacy-hash",
+    });
+    await renderAnalysis(fixtureAnalysis(), {
+      getSourceFile: () => ({ source }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "View full source" }));
+    const dialog = await screen.findByRole("dialog", { name: "src/main.ts" });
+    expect(
+      within(dialog).getByText(
+        "The current source file differs from or was removed since this analysis.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(dialog).queryByText(
+        "The source file was removed since this analysis.",
+      ),
+    ).toBeNull();
+  });
+
+  it("labels source text without a build snapshot as unverified", async () => {
+    const source = create(SourceFileSchema, {
+      ...fixtureSource(),
+      sha256: "",
+      content: "",
+      contentIncluded: false,
+      stale: false,
+      revisionEvidence: SourceRevisionEvidence.UNAVAILABLE,
+    });
+    await renderAnalysis(fixtureAnalysis(), {
+      getSourceFile: () => ({ source }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "View full source" }));
+    const dialog = await screen.findByRole("dialog", { name: "src/main.ts" });
+    expect(
+      within(dialog).getByText("Build source revision unavailable"),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText("Verified build source content is unavailable."),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText("// header")).toBeNull();
+  });
+
+  it("does not render content marked unavailable as analyzed source", async () => {
+    const source = create(SourceFileSchema, {
+      ...fixtureSource(),
+      contentIncluded: true,
+      revisionEvidence: SourceRevisionEvidence.UNAVAILABLE,
+    });
+    await renderAnalysis(fixtureAnalysis(), {
+      getSourceFile: () => ({ source }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "View full source" }));
+    const dialog = await screen.findByRole("dialog", { name: "src/main.ts" });
+    expect(
+      within(dialog).getByText("Verified build source content is unavailable."),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText("// header")).toBeNull();
+  });
+
+  it("describes unavailable stale source without assuming removal", async () => {
+    const source = create(SourceFileSchema, {
+      ...fixtureSource(),
+      content: "",
+      contentIncluded: false,
+      revisionEvidence: SourceRevisionEvidence.UNAVAILABLE,
+    });
+    await renderAnalysis(fixtureAnalysis(), {
+      getSourceFile: () => ({ source }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "View full source" }));
+    const dialog = await screen.findByRole("dialog", { name: "src/main.ts" });
+    expect(
+      within(dialog).getByText(
+        "The source file could not be read; it may have been removed since this analysis.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(dialog).queryByText(
+        "The source file was removed since this analysis.",
+      ),
+    ).toBeNull();
   });
 });
 

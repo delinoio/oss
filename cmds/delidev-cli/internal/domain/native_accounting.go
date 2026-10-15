@@ -42,7 +42,7 @@ func (u NativeAccountingUnit) Validate() error {
 	}
 	if u.Kind == OpenCodeStep {
 		// OpenCode Go has service identity and no API Provider. Keep this
-		// exception closed to Go; other native input families retain API identity.
+		// source family closed to Go; Claude has its separate service identity gate.
 		if o.SubscriptionService == "" {
 			if o.ProviderID.Validate() != nil {
 				return invalidObservation()
@@ -55,7 +55,16 @@ func (u NativeAccountingUnit) Validate() error {
 		}
 		return nil
 	}
-	if o.ProviderID.Validate() != nil || o.SubscriptionService != "" || u.OpenCode != nil || u.Kind != ClaudeMainLoopInput || o.Harness != ClaudeCode || (o.Version != "" && !ValidNativeVersionMetadata(o.Version)) || o.Sequence == 0 || NativeIdentity(o.ThreadID).Validate(ClaudeCode, NativeThreadIdentity) != nil || NativeIdentity(o.TurnID).Validate(ClaudeCode, NativeTurnIdentity) != nil || o.Usage.Source != ClaudeInputResultUsage || o.Usage.Validate() != nil {
+	// Claude subscription inputs keep their original service identity instead
+	// of acquiring a synthetic API Provider. Other service families stay closed.
+	if o.SubscriptionService == "" {
+		if o.ProviderID.Validate() != nil {
+			return invalidClaudeUsage()
+		}
+	} else if o.SubscriptionService != SubscriptionClaude || o.ProviderID != "" {
+		return invalidClaudeUsage()
+	}
+	if u.OpenCode != nil || u.Kind != ClaudeMainLoopInput || o.Harness != ClaudeCode || (o.Version != "" && !ValidNativeVersionMetadata(o.Version)) || o.Sequence == 0 || NativeIdentity(o.ThreadID).Validate(ClaudeCode, NativeThreadIdentity) != nil || NativeIdentity(o.TurnID).Validate(ClaudeCode, NativeTurnIdentity) != nil || o.Usage.Source != ClaudeInputResultUsage || o.Usage.Validate() != nil {
 		return invalidClaudeUsage()
 	}
 	return nil

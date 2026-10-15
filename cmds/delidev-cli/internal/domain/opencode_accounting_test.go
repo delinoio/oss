@@ -32,8 +32,8 @@ func TestOpenCodeAccountingSourceIdentity(t *testing.T) {
 	}
 	claude := nativeUnitFixture()
 	claude.Observation.ProviderID = ""
-	claude.Observation.SubscriptionService = SubscriptionClaude
-	claude.Observation.ModelID = (ModelIdentity{SubscriptionService: SubscriptionClaude, NativeID: "fixture"}).Key()
+	claude.Observation.SubscriptionService = SubscriptionOpenCodeGo
+	claude.Observation.ModelID = (ModelIdentity{SubscriptionService: SubscriptionOpenCodeGo, NativeID: "fixture"}).Key()
 	if claude.Validate() == nil {
 		t.Fatal("OpenCode Go exception expanded to Claude accounting")
 	}

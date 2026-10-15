@@ -368,3 +368,94 @@ func TestClaudeNonExecutionMetadataRequiresExactFailedOriginalTool(t *testing.T)
 		})
 	}
 }
+
+func TestNativeReplyStampsPreserveOriginalInputAuthority(t *testing.T) {
+	for _, name := range []string{"single", "list", "foreign", "batch", "list-only", "null", "display-type", "resume"} {
+		t.Run(name, func(t *testing.T) {
+			b := contentFixture(t)
+			event := contentPartial(t, b, "", map[string]any{"type": "message_start", "message": contentMessage("msg_stamped")})
+			event = lifecycleChange(t, event, "user_message_uuid", b.input)
+			event = lifecycleChange(t, event, "thinking_display", "summarized")
+			switch name {
+			case "list":
+				event = lifecycleChange(t, event, "user_message_uuids", []domain.ID{b.input})
+			case "foreign":
+				event = lifecycleChange(t, event, "user_message_uuid", domain.NewID())
+			case "batch":
+				event = lifecycleChange(t, event, "user_message_uuids", []domain.ID{domain.NewID(), b.input})
+			case "list-only":
+				event = lifecycleChange(t, event, "user_message_uuid", nil)
+				event = lifecycleChange(t, event, "user_message_uuids", []domain.ID{b.input})
+			case "null":
+				event = lifecycleChange(t, event, "user_message_uuids", []domain.ID{})
+			case "display-type":
+				event = lifecycleChange(t, event, "thinking_display", true)
+			case "resume":
+				event = lifecycleChange(t, event, "resume_reason", "interrupted_turn")
+			}
+			_, err := b.Observe(event)
+			if (err == nil) != (name == "single" || name == "list") {
+				t.Fatalf("unexpected stamped response result: %v", err)
+			}
+		})
+	}
+}
+
+func TestNativeEmptyInputTransformationsDoNotChangeHistory(t *testing.T) {
+	for _, name := range []string{"empty", "null", "nonempty", "object"} {
+		t.Run(name, func(t *testing.T) {
+			message := contentMessage("msg_transformations")
+			switch name {
+			case "empty":
+				message["input_transformations"] = []any{}
+			case "null":
+				message["input_transformations"] = nil
+			case "nonempty":
+				message["input_transformations"] = []any{map[string]any{"type": "thinking_dropped", "path": "messages.0.content.0", "reason": "model_binding_mismatch"}}
+			case "object":
+				message["input_transformations"] = map[string]any{}
+			}
+			raw, _ := json.Marshal(message)
+			_, err := decodeProviderMessage(raw)
+			if (err == nil) != (name == "empty" || name == "null") {
+				t.Fatalf("unexpected transformation acceptance: %v", err)
+			}
+		})
+	}
+}
+
+func TestAssistantThinkingDurationRequiresDeclaredPositiveInteger(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		value    any
+		accepted bool
+	}{
+		{"omitted", nil, true}, {"positive", 1, true}, {"maximum", json.Number("18446744073709551615"), true},
+		{"null", json.RawMessage(`null`), false}, {"zero", 0, false}, {"negative", -1, false}, {"fraction", 1.5, false}, {"string", "1", false},
+		{"overflow", json.Number("18446744073709551616"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := contentFixture(t)
+			contentStart(t, b, "", "msg_duration")
+			lifecycleObserve(t, b, contentPartial(t, b, "", map[string]any{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": ""}}))
+			lifecycleObserve(t, b, contentPartial(t, b, "", map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": "Original answer."}}))
+			event := contentCompleted(t, b, "", "msg_duration", map[string]any{"type": "text", "text": "Original answer."})
+			if tc.name != "omitted" {
+				event = lifecycleChange(t, event, "thinking_duration_ms", tc.value)
+			}
+			observation, err := b.Observe(event)
+			if tc.accepted {
+				if err != nil || observation.Kind != ContentObserved || len(observation.Content) != 1 || observation.Content[0].Kind != ContentCompleted || b.finished {
+					t.Fatal("valid optional duration changed content lifecycle", err)
+				}
+			} else {
+				if err == nil || b.problem == nil || b.finished {
+					t.Fatal("malformed duration escaped recovery")
+				}
+				if _, retryErr := b.Observe(contentCompleted(t, b, "", "msg_duration", map[string]any{"type": "text", "text": "Original answer."})); retryErr == nil {
+					t.Fatal("invalid duration did not latch recovery")
+				}
+			}
+		})
+	}
+}

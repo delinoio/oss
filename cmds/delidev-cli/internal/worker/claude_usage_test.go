@@ -109,3 +109,17 @@ func TestClaudeUsageRejectsForeignOrUnpublishedSources(t *testing.T) {
 		})
 	}
 }
+
+func TestClaudeUsageConversionRetainsCounterSchemaWithNewNativeMetadata(t *testing.T) {
+	input, output, thinking := int64(3), int64(5), int64(2)
+	basis := claude.ManagedCostBasis
+	native := claude.ResultUsage{Models: map[string]claude.NativeModelUsage{"fixture": {Input: &input, Output: &output, Thinking: &thinking, CostBasis: &basis}}}
+	var published domain.ClaudeResultUsage
+	if err := convertClaudeUsage(native, &published); err != nil {
+		t.Fatal("new native metadata blocked original counters", err)
+	}
+	value := published.Models["fixture"]
+	if value.Input == nil || string(*value.Input) != "3" || value.Output == nil || string(*value.Output) != "5" {
+		t.Fatal("native counters changed at publication")
+	}
+}

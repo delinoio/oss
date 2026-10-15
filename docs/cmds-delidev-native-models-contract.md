@@ -11,12 +11,17 @@ and CLI ownership remains under `cmds/delidev-cli`, with authenticated Connect i
 `protos/delidev/v1`, generated clients in `packages/delidev-api-client` and desktop
 controls in `apps/delidev`.
 
-Initially support installed Codex `0.151.0` only. Native observations remain
-separate from the implemented [provider HTTP catalog](cmds-delidev-catalog-contract.md).
-Discovery never automatically registers canonical models. Other harnesses or
-versions, background refresh, provider HTTP discovery changes, execution
-verification, quota discovery, login implementation and external credential
-import are outside this issue.
+Native observations use the closed Codex `model/list` profile originally
+captured at `0.151.0`, including the `0.159.2` access-program metadata extension
+specified below. Codex version metadata follows the admission rules in the
+[harness contract](cmds-delidev-harness-contract.md); there is no exact-version
+pin. Every actual native response must satisfy the bounded protocol profile,
+independently of its reported version. Native observations remain separate from
+the implemented [provider HTTP catalog](cmds-delidev-catalog-contract.md).
+Discovery never automatically registers canonical models. Other harnesses,
+background refresh, provider HTTP discovery changes, execution verification,
+quota discovery, login implementation and external credential import are outside
+this issue.
 
 ## Runtime and Language
 
@@ -75,7 +80,14 @@ neither PATH fallback nor a replacement installation supplies the original scope
 Return immutable bounded observations with their original scope identities,
 observation time, completion or sanitized failure, and the last successful
 observation for the selected scope. Preserve native picker `id` separately from
-executable `model`. Reasoning, modality and service-tier metadata are advisory;
+executable `model`. Codex `0.159.2` model entries may include nullable
+`availableAccessPrograms` metadata. The adapter accepts this known advisory
+field only as null or an object with a required `cyber` array containing
+`standard`, `daybreakBlue` or `daybreakRed`. Missing/null arrays, unknown members,
+wrong types and unknown program values reject the complete observation. This
+metadata cannot select an access program or grant model/account authority; other
+unknown entry fields still fail the closed response check.
+Reasoning, modality and service-tier metadata are advisory;
 listing cached, fallback or static native data cannot prove current account
 support, fresh entitlement, readiness or execution capability.
 
@@ -172,8 +184,11 @@ endpoints. Distinguish acceptance, native observation, cleanup and publication.
 
 Changes require allocation/structure checks, the protocol validation/generation-
 freshness pipeline, Go race tests and vet, desktop tests and opt-in isolated native
-tests (`DELIDEV_NATIVE_MODEL_EXECUTABLE` selects the installed 0.151.0 binary),
-with the following issue acceptance scenarios:
+tests (`DELIDEV_NATIVE_MODEL_EXECUTABLE` selects the actual installed Codex
+binary). The original fixture profile is `0.151.0`; the `0.159.2` compatibility
+profile additionally covers nullable and populated access-program metadata and
+rejection of malformed nested values. Record the actual executable version
+separately from fixture coverage, with the following issue acceptance scenarios:
 
 1. Collect a multi-page API fixture and assert exact scope identities, no
    credentials, provider calls or inference, and unchanged catalog/readiness.

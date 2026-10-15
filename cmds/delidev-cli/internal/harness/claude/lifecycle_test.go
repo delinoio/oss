@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,6 +21,55 @@ func lifecycleFixture(t *testing.T) (*ExecutionBinding, APIStreamConfig) {
 		t.Fatal(err)
 	}
 	return binding, config
+}
+
+func TestNativeSubscriptionInitializationBindsAuthAndBuiltinMetadata(t *testing.T) {
+	for _, name := range []string{"managed", "device", "api", "foreign-source", "foreign-plugin", "plugin-path", "plugin-source", "duplicate-plugin", "invalid-effort", "invalid-socket", "changed-view"} {
+		t.Run(name, func(t *testing.T) {
+			_, cfg := lifecycleFixture(t)
+			if name == "device" {
+				cfg.Subscription = &NativeSubscriptionProfile{Home: cfg.Home}
+			} else if name != "api" {
+				cfg.ManagedToken = []byte(managedTokenFixtureToken)
+			}
+			b, err := BindExecution(cfg, domain.NewID(), lifecycleFixtureText)
+			if err != nil {
+				t.Fatal(err)
+			}
+			event := lifecycleInit(t, b)
+			event = lifecycleChange(t, event, "product_feedback_disabled", false)
+			source := "none"
+			if name == "api" || name == "foreign-source" {
+				source = "ANTHROPIC_API_KEY"
+			}
+			event = lifecycleChange(t, event, "apiKeySource", source)
+			plugins := []any{map[string]any{"name": "cc-plugin-agents-md", "path": "builtin", "source": "cc-plugin-agents-md@builtin"}, map[string]any{"name": "cc-plugin-plugin-authoring", "path": "builtin", "source": "cc-plugin-plugin-authoring@builtin"}}
+			event = lifecycleChange(t, event, "messaging_socket_path", filepath.Join(filepath.Dir(cfg.Home), "fixture.sock"))
+			event = lifecycleChange(t, event, "per_turn_effort_active", true)
+			event = lifecycleChange(t, event, "view_mode", "default")
+			switch name {
+			case "foreign-plugin":
+				plugins[0].(map[string]any)["name"] = "foreign-plugin"
+			case "plugin-path":
+				plugins[0].(map[string]any)["path"] = "/foreign/plugin"
+			case "plugin-source":
+				plugins[0].(map[string]any)["source"] = "foreign-source"
+			case "duplicate-plugin":
+				plugins[1] = plugins[0]
+			case "invalid-effort":
+				event = lifecycleChange(t, event, "per_turn_effort_active", "true")
+			case "invalid-socket":
+				event = lifecycleChange(t, event, "messaging_socket_path", "relative.sock")
+			case "changed-view":
+				event = lifecycleChange(t, event, "view_mode", "foreign")
+			}
+			event = lifecycleChange(t, event, "plugins", plugins)
+			err = b.validateSystemInit(event.Body)
+			if (err == nil) != (name == "managed" || name == "device" || name == "api") {
+				t.Fatalf("unexpected initialization result: %v", err)
+			}
+		})
+	}
 }
 
 func lifecycleMessage(t *testing.T, b *ExecutionBinding, kind string, fields map[string]any) StreamEvent {
@@ -308,6 +358,38 @@ func TestExecutionBindingRejectsInvalidIdentityWithoutRetainingContents(t *testi
 			}
 			if _, err := BindExecution(cfg, input, text); err == nil {
 				t.Fatal("invalid original execution binding accepted")
+			}
+		})
+	}
+}
+
+func TestNativeResultMetadataPreservesSingleInputCompletion(t *testing.T) {
+	for _, name := range []string{"metadata", "foreign-input", "queued-turn", "negative-timing", "oversized-phases", "resume"} {
+		t.Run(name, func(t *testing.T) {
+			b := contentFixture(t)
+			event := lifecycleResult(t, b, Completed, false)
+			for key, value := range map[string]any{"result_index": 0, "queued_turn_count": 0, "user_message_uuids": []domain.ID{b.input}, "time_to_request_phases_ms": map[string]uint64{"system_prompt": 2}, "process_turn_index": 0, "time_to_request_cpu_ms": 1, "first_content_frame_ms": 3, "frame_received_wall_ms": 123.5, "turn_start_resume_kind": "none"} {
+				event = lifecycleChange(t, event, key, value)
+			}
+			switch name {
+			case "foreign-input":
+				event = lifecycleChange(t, event, "user_message_uuids", []domain.ID{domain.NewID()})
+			case "queued-turn":
+				event = lifecycleChange(t, event, "queued_turn_count", 1)
+			case "negative-timing":
+				event = lifecycleChange(t, event, "frame_received_wall_ms", -1)
+			case "oversized-phases":
+				phases := map[string]uint64{}
+				for i := 0; i < 33; i++ {
+					phases[fmt.Sprintf("phase%d", i)] = 0
+				}
+				event = lifecycleChange(t, event, "time_to_request_phases_ms", phases)
+			case "resume":
+				event = lifecycleChange(t, event, "resume_reason", "interrupted_turn")
+			}
+			_, correlated, err := b.validateResult(event.Body)
+			if (err == nil) != (name == "metadata") || err == nil && !correlated {
+				t.Fatalf("unexpected completion metadata result: %v", err)
 			}
 		})
 	}
