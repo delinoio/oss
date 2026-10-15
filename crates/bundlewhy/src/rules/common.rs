@@ -1763,7 +1763,7 @@ fn statement_extent(
         let word = word_at(cursor);
         let after_word = skip_space(cursor + word.len());
         match word {
-            "if" | "while" | "for" | "with" => {
+            "if" | "while" | "for" | "with" | "switch" => {
                 let mut head = after_word;
                 if word == "for" && word_at(head) == "await" {
                     head = skip_space(head + "await".len());
@@ -1784,6 +1784,46 @@ fn statement_extent(
                     }
                     return (end, next);
                 }
+            }
+            "try" => {
+                let (mut end, mut next) = statement_extent(
+                    code,
+                    bytes,
+                    cursor + "try".len(),
+                    parens,
+                    block_close,
+                    depth + 1,
+                );
+                for clause in ["catch", "finally"] {
+                    let tail = skip_space(next);
+                    if word_at(tail) != clause {
+                        continue;
+                    }
+                    let mut body = skip_space(tail + clause.len());
+                    // `catch (error)` has a binding; `catch {` does not.
+                    if let Some(close) = head_close(body) {
+                        body = skip_space(close + 1);
+                    }
+                    (end, next) =
+                        statement_extent(code, bytes, body, parens, block_close, depth + 1);
+                }
+                return (end, next);
+            }
+            // A label (`outer: for (...) {}`) applies to the statement after it.
+            label
+                if !label.is_empty()
+                    && !label.starts_with(|character: char| character.is_ascii_digit())
+                    && bytes.get(cursor + label.len()) == Some(&b':')
+                    && bytes.get(cursor + label.len() + 1) != Some(&b':') =>
+            {
+                return statement_extent(
+                    code,
+                    bytes,
+                    cursor + label.len() + 1,
+                    parens,
+                    block_close,
+                    depth + 1,
+                );
             }
             "do" => {
                 let (end, next) = statement_extent(
@@ -4026,6 +4066,38 @@ y=/process.env.F/.test(z),process.env.G"#;
             ),
             (
                 "for (let eval = 1;;) if (a) if (b) { eval(x); } else { eval(y); } eval(code);",
+                Some("eval(code)"),
+            ),
+            // A switch, try and labeled statement is a whole statement too.
+            (
+                "for (let eval = fn;;) switch (x) { case 0: prep(); case 1: eval(code2); } \
+                 eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = fn;;) switch (x) {\n case 0:\n prep();\n case 1:\n \
+                 eval(code2);\n}\neval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = fn;;) try { eval(a); } catch (e) { eval(b); } eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = fn;;) try { eval(a); } catch { eval(b); } finally { eval(c); } \
+                 eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = fn;;) try { eval(a); } finally { eval(c); }\neval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = fn;;) outer: while (a) { prep();\n eval(x); } eval(code);",
+                Some("eval(code)"),
+            ),
+            (
+                "for (let eval = fn;;) a: b: if (x) { prep();\n eval(x); } eval(code);",
                 Some("eval(code)"),
             ),
             // A name that only starts with a statement keyword is a simple
