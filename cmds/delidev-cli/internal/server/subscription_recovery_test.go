@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -620,4 +622,34 @@ func TestWatchWindowRotatesOverEveryCandidate(t *testing.T) {
 			t.Fatal("a candidate was starved", len(seen))
 		}
 	})
+}
+
+func TestSubscriptionRecoveryBlockedReportNeverOpensTheVault(t *testing.T) {
+	f := newSubscriptionFixture(t)
+	lease, capture, original := f.fencedExecute(nil)
+	defer clear(original)
+	// The credential store is unavailable: a non-secret diagnostic must still land.
+	f.service.accountSecrets = nil
+	vaultPath := filepath.Join(f.service.Store.Root(), "secrets")
+	if err := os.RemoveAll(vaultPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(vaultPath, []byte("not a vault"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.secrets(); err == nil {
+		t.Fatal("the fixture vault is unexpectedly available")
+	}
+	blocked := f.recoverRequest(lease, capture, pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_BLOCKED, pb.SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CLEANUP_UNCONFIRMED, string(domain.NewID()))
+	if _, err := f.recoverCall(blocked); err != nil {
+		t.Fatal("a blocked report needed the credential store", err)
+	}
+	if _, account := f.record(); account.Subscription.RecoveryReason != domain.RecoveryCleanupUnconfirmed || !account.Subscription.RecoveryRequired {
+		t.Fatal("the blocked diagnostic was not persisted", account.Subscription)
+	}
+	// A settlement still needs the store and is refused without changing the fence.
+	settle := f.recoverRequest(lease, string(domain.NewID()), pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_SETTLED, pb.SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED, string(domain.NewID()))
+	if _, err := f.recoverCall(settle); err == nil {
+		t.Fatal("a settlement succeeded without the credential store")
+	}
 }

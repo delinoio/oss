@@ -321,9 +321,14 @@ func (s *Service) RecoverSubscription(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	vault, err := s.secrets()
-	if err != nil {
-		return nil, rpc.Error(err, c)
+	// A BLOCKED report persists a non-secret diagnostic and never reads or deletes
+	// credentials, so only a settlement opens the vault.
+	var vault accountSecrets
+	if msg.Outcome == pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_SETTLED {
+		vault, err = s.secrets()
+		if err != nil {
+			return nil, rpc.Error(err, c)
+		}
 	}
 	if !replayed {
 		var original domain.Account
