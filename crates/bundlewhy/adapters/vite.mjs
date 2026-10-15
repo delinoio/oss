@@ -98,6 +98,7 @@ function collectorPlugin(state) {
         config.root,
         config.resolve?.preserveSymlinks === true,
       );
+      emit({ event: "protection", root: state.root });
       const treeshakeOption =
         config.build.rolldownOptions?.treeshake ??
         config.build.rollupOptions?.treeshake;

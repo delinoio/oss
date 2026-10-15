@@ -53,7 +53,12 @@ pub fn effective_root(collection: &Collection, selected_root: &Path) -> PathBuf 
     if collection.bundler != "vite" {
         return selected_root.to_path_buf();
     }
-    context_root(collection, selected_root)
+    let configured_root = context_root(collection, selected_root);
+    if configured_root.starts_with(selected_root) {
+        selected_root.to_path_buf()
+    } else {
+        configured_root
+    }
 }
 
 /// Returns the bundler context used to resolve source-map paths. This remains
@@ -776,6 +781,37 @@ mod tests {
         assert_eq!(
             context_root(&collection, &selected_root),
             PathBuf::from("/workspace/config")
+        );
+    }
+
+    #[test]
+    fn nested_vite_root_keeps_selected_project_ownership() {
+        let selected_root = PathBuf::from("/workspace/project");
+        let collection = Collection {
+            bundler: "vite".to_owned(),
+            context: Some("web".to_owned()),
+            ..Collection::default()
+        };
+
+        assert_eq!(effective_root(&collection, &selected_root), selected_root);
+        assert_eq!(
+            context_root(&collection, &selected_root),
+            PathBuf::from("/workspace/project/web")
+        );
+    }
+
+    #[test]
+    fn external_vite_root_owns_sources() {
+        let selected_root = PathBuf::from("/workspace/project");
+        let collection = Collection {
+            bundler: "vite".to_owned(),
+            context: Some("/workspace/web".to_owned()),
+            ..Collection::default()
+        };
+
+        assert_eq!(
+            effective_root(&collection, &selected_root),
+            PathBuf::from("/workspace/web")
         );
     }
 

@@ -70,6 +70,9 @@ enum AdapterEvent {
         package: String,
         version: String,
     },
+    Protection {
+        root: String,
+    },
     Error {
         code: String,
         message: String,
@@ -261,13 +264,15 @@ async fn check_node_version(node: &Path) -> BwResult<()> {
 }
 
 /// Runs the adapter and returns its collection. `on_progress` receives stage
-/// updates.
+/// updates and `on_protection` receives the resolved project root before the
+/// build starts.
 pub async fn run(
     run_dir: &Path,
     selection: &Selection,
     options: &AdapterOptions,
     cancel: Arc<CancelSignal>,
     mut on_progress: impl FnMut(RunStage, String),
+    mut on_protection: impl FnMut(PathBuf),
 ) -> BwResult<Collection> {
     let adapter_dir = run_dir.join("adapter");
     write_adapter_files(&adapter_dir)?;
@@ -368,6 +373,10 @@ pub async fn run(
             }
             Ok(AdapterEvent::Engine { package, version }) => {
                 tracing::info!(%package, %version, "engine detected");
+            }
+            Ok(AdapterEvent::Protection { root }) => {
+                tracing::debug!(%root, "adapter resolved project root");
+                on_protection(PathBuf::from(root));
             }
             Ok(AdapterEvent::Error {
                 code,
@@ -582,6 +591,7 @@ exit 0
             &options,
             Arc::new(CancelSignal::default()),
             |_, _| {},
+            |_| {},
         );
         let collection = tokio::time::timeout(Duration::from_secs(10), task)
             .await
@@ -674,10 +684,17 @@ wait
         let cancel = Arc::new(CancelSignal::default());
         let trigger = cancel.clone();
         let mut stages = Vec::new();
-        let task = run(dir.path(), &selection, &options, cancel, |stage, _| {
-            stages.push(stage);
-            trigger.cancel();
-        });
+        let task = run(
+            dir.path(),
+            &selection,
+            &options,
+            cancel,
+            |stage, _| {
+                stages.push(stage);
+                trigger.cancel();
+            },
+            |_| {},
+        );
         let error = tokio::time::timeout(Duration::from_secs(10), task)
             .await
             .unwrap()

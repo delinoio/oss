@@ -67,13 +67,21 @@ fn ancestor_lockfiles(project_root: &Path) -> Vec<PathBuf> {
     candidates
 }
 
-fn protected_files(selection: &Selection) -> BTreeMap<PathBuf, Option<String>> {
+fn protected_files_with_root(
+    selection: &Selection,
+    resolved_root: Option<&Path>,
+) -> BTreeMap<PathBuf, Option<String>> {
     let mut files: Vec<PathBuf> = LOCKFILES
         .iter()
         .map(|name| selection.project_root.join(name))
         .collect();
     files.extend(ancestor_lockfiles(&selection.project_root));
     files.push(selection.project_root.join("package.json"));
+    if let Some(root) = resolved_root.filter(|root| *root != selection.project_root) {
+        files.extend(LOCKFILES.iter().map(|name| root.join(name)));
+        files.extend(ancestor_lockfiles(root));
+        files.push(root.join("package.json"));
+    }
     if let Some(config) = &selection.config_file {
         files.push(config.clone());
     }
@@ -84,6 +92,24 @@ fn protected_files(selection: &Selection) -> BTreeMap<PathBuf, Option<String>> {
             (path, digest)
         })
         .collect()
+}
+
+fn protected_files(selection: &Selection) -> BTreeMap<PathBuf, Option<String>> {
+    protected_files_with_root(selection, None)
+}
+
+fn project_name_at(root: &Path, fallback: &str) -> String {
+    std::fs::read(root.join("package.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|manifest| {
+            manifest
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| fallback.to_owned())
 }
 
 fn prepare_out_dir(out_dir: &Path) -> BwResult<PathBuf> {
@@ -234,7 +260,8 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
         }
     });
 
-    let protected_before = protected_files(&selection);
+    let mut resolved_root = None;
+    let mut protected_before = protected_files(&selection);
     let adapter_options = AdapterOptions {
         config_name: options.config_name.clone(),
         allow_unsupported_engine: options.allow_unsupported_engine,
@@ -244,23 +271,33 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
     let mut current_stage = RunStage::Detecting;
     let progress_state = state.clone();
     let progress_log = log.clone();
-    let result = adapter::run(&run_dir, &selection, &adapter_options, cancel.clone(), |stage, message| {
-        if stage != current_stage && stage != RunStage::Unspecified {
-            progress_log.event(
-                "stage",
-                json!({ "stage": current_stage.as_str(), "durationMs": stage_started.elapsed().as_millis() as u64 }),
-            );
-            current_stage = stage;
-            stage_started = Instant::now();
-        }
-        print_line(&format!("  [{}] {message}", stage.as_str()));
-        progress_state.update(|served| {
-            if stage != RunStage::Unspecified {
-                served.progress.stage = stage;
+    let result = adapter::run(
+        &run_dir,
+        &selection,
+        &adapter_options,
+        cancel.clone(),
+        |stage, message| {
+            if stage != current_stage && stage != RunStage::Unspecified {
+                progress_log.event(
+                    "stage",
+                    json!({ "stage": current_stage.as_str(), "durationMs": stage_started.elapsed().as_millis() as u64 }),
+                );
+                current_stage = stage;
+                stage_started = Instant::now();
             }
-            served.progress.message = message.clone();
-        });
-    })
+            print_line(&format!("  [{}] {message}", stage.as_str()));
+            progress_state.update(|served| {
+                if stage != RunStage::Unspecified {
+                    served.progress.stage = stage;
+                }
+                served.progress.message = message.clone();
+            });
+        },
+        |root| {
+            resolved_root = Some(root);
+            protected_before = protected_files_with_root(&selection, resolved_root.as_deref());
+        },
+    )
     .await;
     log.event("stage", json!({ "stage": current_stage.as_str(), "durationMs": stage_started.elapsed().as_millis() as u64 }));
 
@@ -320,7 +357,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             let output = analysis::analyze(&AnalysisInput {
                 run_id: run_id.clone(),
                 project_root: effective_root.clone(),
-                project_name: selection.project_name.clone(),
+                project_name: project_name_at(&effective_root, &selection.project_name),
                 bundler: selection.bundler,
                 collection: &collection,
                 build_dir: run_dir.join("build"),
@@ -388,7 +425,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
         );
     }
 
-    let protected_after = protected_files(&selection);
+    let protected_after = protected_files_with_root(&selection, resolved_root.as_deref());
     let modified: Vec<String> = protected_before
         .iter()
         .filter(|(path, digest)| protected_after.get(*path) != Some(digest))
@@ -879,6 +916,40 @@ mod tests {
             with_repository_lockfile,
             protected_files(&selection),
             "a project lockfile created during the run must be detected"
+        );
+    }
+
+    #[test]
+    fn resolved_external_root_files_are_protected() {
+        let dir = tempfile::tempdir().unwrap();
+        let repository = dir.path().join("repo");
+        let project = repository.join("packages/app");
+        let external = dir.path().join("web");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        let selection = Selection {
+            project_root: project,
+            project_name: "app".to_owned(),
+            bundler: BundlerChoice::Vite,
+            config_file: None,
+        };
+
+        std::fs::write(
+            external.join("package.json"),
+            r#"{"name":"web-app","private":true}"#,
+        )
+        .unwrap();
+        let before = protected_files_with_root(&selection, Some(&external));
+        std::fs::write(external.join("pnpm-lock.yaml"), "lockfileVersion: 9").unwrap();
+        let after = protected_files_with_root(&selection, Some(&external));
+
+        assert_ne!(
+            before, after,
+            "external root lockfile changes must be detected"
+        );
+        assert_eq!(
+            project_name_at(&external, &selection.project_name),
+            "web-app"
         );
     }
 }
