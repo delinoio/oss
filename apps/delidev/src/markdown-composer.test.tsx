@@ -1590,12 +1590,17 @@ it("R31 other boundaries: native paste, drop, drag removal and replacement are t
   expect(probe.canonical).toBe("");
 });
 
-it("R31 other boundaries: IME composition is separate from the typing around it", () => {
+// A keystroke never arrives in the task of `compositionend`; only the final
+// composition text may, so typing after a composition crosses a task boundary.
+const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+it("R31 other boundaries: IME composition is separate from the typing around it", async () => {
   const { input } = mount("");
   nativeEdit(input, "a", 1);
   fireEvent.compositionStart(input);
   nativeEdit(input, "a한", 2);
   fireEvent.compositionEnd(input);
+  await nextTask();
   nativeEdit(input, "a한b", 3);
   expect(probe.canonical).toBe("a한b");
   undo(input);
@@ -1606,7 +1611,7 @@ it("R31 other boundaries: IME composition is separate from the typing around it"
   expect(probe.canonical).toBe("");
 });
 
-// --- Syntax precedence (R32 to R37) -----------------------------------------
+// --- Syntax precedence (R32 to R37) and the late composition input (R38) -----
 
 const DOCS = "https://docs.test";
 
@@ -1732,6 +1737,50 @@ it("R37 long inline title: a title up to 4096 units is protected, a longer one i
   select(abandoned.input, abandoned.input.value.length);
   paste(abandoned.input, `${DOCS}")`);
   expect(probe.canonical).toBe(`${head}${huge}[${DOCS}](${DOCS})")`);
+});
+
+it("R38 late composition input: the final text amends the composition entry", () => {
+  const { input } = mount("");
+  nativeEdit(input, "a", 1);
+  fireEvent.compositionStart(input);
+  nativeEdit(input, "aㅎ", 2);
+  fireEvent.compositionEnd(input);
+  // WebKit order: the final text arrives after `compositionend`.
+  nativeEdit(input, "a한", 2);
+  expect(probe.canonical).toBe("a한");
+  expect(input.selectionStart).toBe(2);
+  undo(input);
+  expect(probe.canonical).toBe("a");
+  undo(input);
+  expect(probe.canonical).toBe("");
+  redo(input);
+  redo(input);
+  expect(probe.canonical).toBe("a한");
+  // A composition whose text arrives only after the end is still one entry,
+  // and a URL word in it converts inside that entry.
+  cleanup();
+  const again = mount("go ");
+  select(again.input, 3);
+  fireEvent.compositionStart(again.input);
+  fireEvent.compositionEnd(again.input);
+  nativeEdit(again.input, "go https://a.test/x ", 20);
+  expect(probe.canonical).toBe("go [https://a.test/x](https://a.test/x) ");
+  undo(again.input);
+  expect(probe.canonical).toBe("go ");
+  expect(probe.api.readCanonical().start).toBe(3);
+});
+
+it("R38 late composition input: it ends with the task, so later typing is its own entry", async () => {
+  const { input } = mount("");
+  fireEvent.compositionStart(input);
+  nativeEdit(input, "한", 1);
+  fireEvent.compositionEnd(input);
+  await nextTask();
+  nativeEdit(input, "한b", 2);
+  undo(input);
+  expect(probe.canonical).toBe("한");
+  undo(input);
+  expect(probe.canonical).toBe("");
 });
 
 // Seeded random walk over the whole state machine. After every operation the

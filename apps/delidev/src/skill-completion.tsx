@@ -427,6 +427,11 @@ export function useSkillCompletion({
   const compositionProjection = useRef<MarkdownProjection | undefined>(
     undefined,
   );
+  // `lateComposition` marks the window in which the final text of the session
+  // that just ended may still arrive as a separate `input` (WebKit delivers
+  // `compositionend` first). That input belongs to the composition: it amends
+  // the composition's history entry instead of recording typing. The window
+  // ends at the late input, the end of the task or any other genuine boundary.
   const compositionSession = useRef(0),
     compositionAnchor = useRef(0),
     lateComposition = useRef(false);
@@ -883,12 +888,20 @@ export function useSkillCompletion({
       nativeType !== undefined &&
       SEPARATE_INPUT_TYPES.has(nativeType);
     if (separate) history.seal();
+    // The final text of the composition that just ended, delivered after
+    // `compositionend`, is part of that composition and never ordinary typing.
+    const late =
+      !composingNow &&
+      !separate &&
+      lateComposition.current &&
+      edit.inserted !== "";
+    if (late) lateComposition.current = false;
     // A typed space or newline completes the URL before it. Text committed by
     // an IME is processed once composition has ended, never during it.
     let converted: string | undefined;
     if (!composingNow) {
       const typed = edit.inserted.length === 1 && isUrlDelimiter(edit.inserted);
-      if (typed || (lateComposition.current && edit.inserted)) {
+      if (typed || late) {
         const result = convertDelimitedWords(
           plain,
           edit.start,
@@ -902,7 +915,7 @@ export function useSkillCompletion({
       kindFor: (text) =>
         text !== plain
           ? EditKind.Conversion
-          : composingNow
+          : composingNow || late
             ? EditKind.Composition
             : edit.inserted
               ? EditKind.Typing
@@ -914,10 +927,12 @@ export function useSkillCompletion({
       seal:
         !composingNow &&
         (separate ||
+          late ||
           converted !== undefined ||
           /\s/u.test(edit.inserted) ||
           /\s/u.test(value.slice(edit.start, edit.end))),
-      session: composingNow ? compositionSession.current : undefined,
+      session: composingNow || late ? compositionSession.current : undefined,
+      amend: late ? compositionSession.current : undefined,
       apply: !composingNow,
     });
     if (!accepted || !composingNow) return;
@@ -1027,6 +1042,7 @@ export function useSkillCompletion({
     return undefined;
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    lateComposition.current = false;
     // Undo and redo are adapter-owned: native history cannot follow link
     // reveal and collapse because programmatic value writes discard it.
     if (
@@ -1145,6 +1161,7 @@ export function useSkillCompletion({
     // run of typing never continues across them even when the caret returns to
     // the same place.
     const boundary = () => {
+      lateComposition.current = false;
       if (!composing.current) history.seal();
     };
     field.addEventListener("beforeinput", listener);
@@ -1285,7 +1302,10 @@ export function useSkillCompletion({
       if (!canEdit()) return;
       // A genuine selection move ends the current typing or deletion run, so
       // returning to the same place and typing again is a new undo step.
-      if (!composing.current && userMovedSelection()) history.seal();
+      if (!composing.current && userMovedSelection()) {
+        lateComposition.current = false;
+        history.seal();
+      }
       updateSelection(readSelection());
     },
     onCompositionStart: () => {
