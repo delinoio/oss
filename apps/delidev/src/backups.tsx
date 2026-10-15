@@ -49,7 +49,11 @@ import {
   useConnectPaginationReader,
   usePaginationRefresh,
 } from "./scroll-pagination-query";
-import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
+import {
+  ScrollContinuation,
+  resolveScrollRoot,
+  useScrollRoot,
+} from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import "./tab-strip.css";
 import "./backups.css";
@@ -536,8 +540,18 @@ export function Backups({ active }: { active: boolean }) {
             inspected={setInspected}
             canDelete={trackedDeletions.length < maxTrackedJobs}
             close={() => {
+              const scrollRoot = resolveScrollRoot(content.current);
+              const scrollTop = scrollRoot?.scrollTop;
               returnInspectionFocus.current = true;
               setSelected("");
+              // Closing reactivates the inventory and can trigger its payload
+              // anchor correction. Restore the original Backups position after
+              // that close commit; remove this when the shared anchor no longer
+              // adjusts a single unchanged page on dialog dismissal.
+              if (scrollRoot && scrollTop !== undefined)
+                requestAnimationFrame(() => {
+                  if (scrollRoot.isConnected) scrollRoot.scrollTop = scrollTop;
+                });
             }}
             deleted={(job) => {
               if (job)
