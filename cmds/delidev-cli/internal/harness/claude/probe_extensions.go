@@ -29,6 +29,7 @@ const (
 type probePrelude struct {
 	Type      string          `json:"type"`
 	Subtype   string          `json:"subtype"`
+	Event     json.RawMessage `json:"event,omitempty"`
 	UUID      json.RawMessage `json:"uuid"`
 	SessionID json.RawMessage `json:"session_id"`
 }
@@ -151,6 +152,12 @@ func validateProbePrelude(raw []byte) error {
 	if !requireExactNativeKeys(raw, &prelude) || domain.Decode(raw, &prelude) != nil || prelude.Type != probePreludeType || prelude.Subtype != probePreludeSubtype {
 		return incompatible()
 	}
+	if len(prelude.Event) != 0 {
+		var event string
+		if json.Unmarshal(prelude.Event, &event) != nil || event != "ui.render" {
+			return incompatible()
+		}
+	}
 	for _, value := range []json.RawMessage{prelude.UUID, prelude.SessionID} {
 		if len(value) == 0 {
 			continue
@@ -178,8 +185,7 @@ func validateInitializeExtensions(result initializeResult) error {
 		}
 	}
 	if len(result.FeedbackMode) != 0 {
-		var mode string
-		if json.Unmarshal(result.FeedbackMode, &mode) != nil || mode != "disabled" && mode != "off" {
+		if !validProbeFeedbackMode(result.FeedbackMode) {
 			return incompatible()
 		}
 	}
@@ -199,6 +205,19 @@ func validateInitializeExtensions(result initializeResult) error {
 		return incompatible()
 	}
 	return nil
+}
+
+// validProbeFeedbackMode accepts the earlier text profile and the verified
+// disabled object profile. Neither value grants feedback or execution authority.
+func validProbeFeedbackMode(raw json.RawMessage) bool {
+	var mode string
+	if json.Unmarshal(raw, &mode) == nil {
+		return mode == "disabled" || mode == "off"
+	}
+	var descriptor struct {
+		Kind string `json:"kind"`
+	}
+	return requireExactNativeKeys(raw, &descriptor) && domain.Decode(raw, &descriptor) == nil && descriptor.Kind == "disabled"
 }
 
 // validProbeCapabilities admits a bounded list of unique descriptor names or a

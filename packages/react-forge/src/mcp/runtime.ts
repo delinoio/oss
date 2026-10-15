@@ -232,8 +232,38 @@ export class SessionRuntime {
       case Operation.Execute:
         return this.execute(input as Input<Operation.Execute>, signal, record);
       case Operation.Inspect: {
-        const { view, offset, limit, nodeId, kind } =
+        const { view, offset, limit, nodeId, kind, revision, geometryQuality } =
           input as Input<Operation.Inspect>;
+        if (view === InspectionView.SceneAnalysis) {
+          if (!(session instanceof SceneSession))
+            throw new ForgeError(
+              ErrorCode.UnsupportedEdit,
+              "Scene analysis requires a GLB or FBX session.",
+            );
+          const report = await session.analyze({
+            revision,
+            signal,
+            geometryQuality,
+          });
+          const meshes = report.meshes.slice(offset, offset + limit);
+          const pageGeometry = new Set(meshes.map((mesh) => mesh.geometryId));
+          return {
+            ...this.metadata(record),
+            ...report,
+            meshes,
+            ...(report.geometryQuality
+              ? {
+                  geometryQuality: report.geometryQuality.filter((quality) =>
+                    pageGeometry.has(quality.geometryId),
+                  ),
+                }
+              : {}),
+            total: report.meshes.length,
+            truncated: offset + limit < report.meshes.length,
+            nextOffset:
+              offset + limit < report.meshes.length ? offset + limit : null,
+          };
+        }
         if (view === InspectionView.Receipt) {
           this.figma(session);
           return { ...this.metadata(record), receipt: session.receipt ?? null };

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 package server
 
 import (
@@ -18,11 +19,7 @@ import (
 
 // Bounds of the retained-runtime secret-remnant check. The check reads only
 // regular files that are not links and never follows a link.
-const (
-	remnantMaxDepth     = 16
-	remnantMaxFileBytes = 64 << 10
-	remnantMaxTotal     = 8 << 20
-)
+const remnantMaxDepth = 16
 
 var (
 	remnantJWT     = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.`)
@@ -87,7 +84,7 @@ func scanRetainedRuntime(path string) error {
 				if total > subscription.RuntimeByteLimit {
 					return subscriptionDenied()
 				}
-				if err := scanRemnantFile(child); err != nil {
+				if err := scanRemnantFile(child, info); err != nil {
 					return err
 				}
 			default:
@@ -99,17 +96,42 @@ func scanRetainedRuntime(path string) error {
 	return walk(path, 0)
 }
 
-func scanRemnantFile(path string) error {
+func scanRemnantFile(path string, original os.FileInfo) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return subscriptionDenied()
 	}
 	defer file.Close()
-	buffer, err := io.ReadAll(io.LimitReader(file, remnantMaxFileBytes))
-	if err != nil {
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(original, opened) || opened.Size() != original.Size() {
 		return subscriptionDenied()
 	}
+	if err := scanRemnantReader(file, original.Size()); err != nil {
+		return err
+	}
+	finished, err := file.Stat()
+	if err != nil || !os.SameFile(original, finished) || finished.Size() != original.Size() {
+		return subscriptionDenied()
+	}
+	current, err := os.Lstat(path)
+	if err != nil || !current.Mode().IsRegular() || !os.SameFile(original, current) || current.Size() != original.Size() {
+		return subscriptionDenied()
+	}
+	return nil
+}
+
+// Read one byte beyond the observed size so a growing file cannot be accepted
+// as a complete scan. The enclosing walk has already charged this entire file
+// against the cumulative runtime limit.
+func scanRemnantReader(reader io.Reader, size int64) error {
+	if size < 0 || size > subscription.RuntimeByteLimit {
+		return subscriptionDenied()
+	}
+	buffer, err := io.ReadAll(io.LimitReader(reader, size+1))
 	defer clear(buffer)
+	if err != nil || int64(len(buffer)) != size {
+		return subscriptionDenied()
+	}
 	for _, marker := range remnantMarkers {
 		if bytes.Contains(buffer, marker) {
 			return subscriptionDenied()

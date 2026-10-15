@@ -51,6 +51,38 @@ func claudeProfileRoot(root string, credential Credential, account, profile doma
 	}
 	return filepath.Join(root, "native-claude", string(credential.ServerID), string(account), string(profile)), nil
 }
+
+// recoverRemovedClaudeProfile clears only the original Claude auth registration
+// after the owning operation's journal and joined processes prove cleanup
+// authority. It never opens a native home or starts another native operation.
+func recoverRemovedClaudeProfile(ctx context.Context, config Config, credential Credential, account, profile domain.ID) error {
+	root, err := claudeProfileRoot(config.Root, credential, account, profile)
+	if err != nil {
+		return err
+	}
+	lock, err := security.TryLock(root + ".lock")
+	if err != nil {
+		return domain.SafeError(err)
+	}
+	defer lock.Close()
+	profiles, err := nativeProfiles(config, credential.MachineID)
+	if err != nil {
+		return err
+	}
+	relative := filepath.ToSlash(filepath.Join("native-claude", string(credential.ServerID), string(account), string(profile)))
+	key := nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeAuth, Account: account}
+	if err := profiles.DeleteRemovedClaudeProfile(ctx, key, relative); err != nil {
+		return err
+	}
+	remaining, err := profiles.Exists(ctx, nativeprofile.DeleteScope{Account: account, Purpose: nativeprofile.PurposeAuth, Harness: domain.ClaudeCode})
+	if err != nil {
+		return err
+	}
+	if remaining {
+		return subscription.Invalid()
+	}
+	return nil
+}
 func openClaudeProfile(config Config, credential Credential, account, profile domain.ID, installation domain.Installation, owner domain.ID, create bool) (*nativeClaudeProfile, error) {
 	root, err := claudeProfileRoot(config.Root, credential, account, profile)
 	if err != nil {
@@ -632,7 +664,14 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 		}
 		_, statErr := os.Lstat(root)
 		noNative := !original.Shared && !journal.NativeStarted && original.Action == domain.SubscriptionLogin && errors.Is(statErr, os.ErrNotExist)
-		if !noNative {
+		originalCleanupAction := (original.Action == domain.SubscriptionLogout && journal.Action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT) ||
+			(original.Shared && original.Action == domain.SubscriptionExecute && journal.Action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
+		removedOriginal := errors.Is(statErr, os.ErrNotExist) && journal.NativeStarted && journal.NativeProfileID == state.NativeProfileID && originalCleanupAction
+		if removedOriginal {
+			if err := recoverRemovedClaudeProfile(ctx, config, credential, accountID, state.NativeProfileID); err != nil {
+				return err
+			}
+		} else if !noNative {
 			if config.nativeClaudeInstallation == nil {
 				return subscription.Invalid()
 			}

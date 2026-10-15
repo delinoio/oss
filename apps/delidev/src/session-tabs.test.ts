@@ -665,3 +665,51 @@ describe("automatic Sidechat publication", () => {
     expect(store.automaticSidechat("child")).toBe(false);
   });
 });
+
+describe("provisional Sidechat descriptors", () => {
+  const placeholder = {
+    kind: SessionTabKind.Sidechat as const,
+    id: "child",
+    name: "Session unavailable",
+    provisional: true,
+  };
+  const names = (store: SessionTabsStore) =>
+    store
+      .snapshot("parent")
+      .tabs.flatMap((tab) =>
+        tab.kind === SessionTabKind.Sidechat ? [tab.name] : [],
+      );
+  it("takes the verified name without changing order or selection", () => {
+    const store = new SessionTabsStore();
+    store.open("parent", placeholder);
+    expect(store.provisionalSidechat("parent", "child")).toBe(true);
+    store.settleSidechat("parent", "child", "Verified");
+    expect(names(store)).toEqual(["Verified"]);
+    expect(store.snapshot("parent").selected).toBe(
+      sessionTabKey({ ...placeholder, name: "" }),
+    );
+    expect(store.provisionalSidechat("parent", "child")).toBe(false);
+    expect(store.sidechats("parent")[0]).toEqual({
+      kind: SessionTabKind.Sidechat,
+      id: "child",
+      name: "Verified",
+    });
+  });
+  it("never renames or discards a verified descriptor", () => {
+    const store = new SessionTabsStore();
+    store.open("parent", { ...placeholder, provisional: undefined, name: "A" });
+    store.settleSidechat("parent", "child", "B");
+    store.discardProvisionalSidechat("parent", "child");
+    expect(names(store)).toEqual(["A"]);
+    expect(store.parent("child")).toBe("parent");
+  });
+  it("removes a discarded placeholder tab and its ownership", () => {
+    const store = new SessionTabsStore();
+    store.open("parent", placeholder);
+    store.discardProvisionalSidechat("parent", "child");
+    expect(names(store)).toEqual([]);
+    expect(store.sidechats("parent")).toEqual([]);
+    expect(store.parent("child")).toBeUndefined();
+    expect(store.snapshot("parent").selected).toBe(SessionTabKind.Conversation);
+  });
+});

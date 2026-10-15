@@ -728,6 +728,36 @@ mod tests {
             )
             .is_some()
         );
+        let register = find(
+            diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .unwrap();
+        // Rolldown reports no retention reason, so the cause is inferred.
+        assert_eq!(register.status, EvidenceStatus::Inferred);
+        assert!(!register.summary.contains("must run"));
+        assert!(
+            register
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .direction
+                .contains("\"sideEffects\"")
+        );
+        assert!(
+            !register
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .safety
+                .is_empty()
+        );
+        assert_eq!(
+            declared_free_outcome(register),
+            ConditionOutcome::Unmet,
+            "an undeclared module is not declared side-effect free"
+        );
         assert_absent(
             diagnostics,
             "vite/side-effect-retained",
@@ -785,6 +815,11 @@ mod tests {
         assert!(env.title.contains("BUNDLEWHY_FIXTURE_FLAG"));
         assert_eq!(env.location.as_ref().unwrap().path, "src/main.js");
         assert!(env.generated_location.is_some());
+        assert!(env.summary.contains("retains a branch guarded by"));
+        assert!(env.conditions.iter().any(|condition| {
+            condition.outcome == ConditionOutcome::Met
+                && condition.detail.contains("&& short-circuit branch")
+        }));
         assert!(
             !diagnostics
                 .iter()
@@ -978,6 +1013,199 @@ mod tests {
         );
     }
 
+    /// Rewrites the Vite fixture so that `target_id` names a wrapped CommonJS
+    /// module with the given virtual/path facts, importing from the entry.
+    fn vite_cjs_variant(id: &'static str, path: Option<&'static str>, is_virtual: bool) -> Fixture {
+        run_fixture(BundlerChoice::Vite, move |value| {
+            let mut template = value["modules"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|module| {
+                    module["id"]
+                        .as_str()
+                        .is_some_and(|id| id.ends_with("src/legacy/cjs.cjs"))
+                })
+                .unwrap()
+                .clone();
+            template["id"] = serde_json::json!(id);
+            template["path"] = serde_json::json!(path);
+            template["virtual"] = serde_json::json!(is_virtual);
+            value["modules"].as_array_mut().unwrap().push(template);
+        })
+    }
+
+    fn action(diagnostic: &Diagnostic) -> &crate::model::CorrectiveAction {
+        diagnostic.corrective_action.as_ref().unwrap()
+    }
+
+    fn generated_placeholder_diagnostic<'a>(fixture: &'a Fixture, module: &str) -> &'a Diagnostic {
+        find(
+            &fixture.output.analysis.diagnostics,
+            "vite/commonjs-wrapped",
+            module,
+        )
+        .unwrap_or_else(|| panic!("missing vite/commonjs-wrapped for {module}"))
+    }
+
+    /// Words that name a specific Node built-in; guidance for a placeholder
+    /// whose original specifier is unknown must not use them.
+    fn names_specific_builtin(text: &str) -> bool {
+        text.split(|c: char| !c.is_alphanumeric() && c != '_')
+            .any(|word| matches!(word, "fs" | "os" | "crypto" | "net" | "child_process"))
+    }
+
+    fn assert_generated_placeholder_common(diagnostic: &Diagnostic, id: &str) {
+        assert_eq!(diagnostic.status, EvidenceStatus::Confirmed, "{id}");
+        assert!(
+            diagnostic
+                .evidence
+                .iter()
+                .all(|evidence| evidence.status == EvidenceStatus::Confirmed),
+            "{id}"
+        );
+        assert!(diagnostic.summary.contains("generates"), "{id}");
+        assert!(diagnostic.summary.contains("must not be edited"), "{id}");
+        assert!(
+            action(diagnostic).direction.contains("dependency path"),
+            "{id}"
+        );
+        assert!(action(diagnostic).direction.contains("server-only"), "{id}");
+        assert!(
+            !action(diagnostic)
+                .direction
+                .contains("ECMAScript module build"),
+            "{id}"
+        );
+        assert!(!action(diagnostic).direction.contains("ESM"), "{id}");
+        assert!(action(diagnostic).safety.contains("Do not edit"), "{id}");
+        assert!(!action(diagnostic).safety.contains("ESM build"), "{id}");
+        assert!(
+            !names_specific_builtin(&action(diagnostic).direction),
+            "{id}"
+        );
+    }
+
+    #[test]
+    fn vite_browser_external_with_builtin_suffix_gets_node_builtin_guidance() {
+        for id in [
+            "\u{0}__vite-browser-external:fs",
+            "__vite-browser-external:path",
+        ] {
+            let fixture = vite_cjs_variant(id, None, true);
+            let diagnostic =
+                generated_placeholder_diagnostic(&fixture, id.trim_start_matches('\0'));
+            assert_generated_placeholder_common(diagnostic, id);
+            assert!(diagnostic.summary.contains("Node built-in"), "{id}");
+            assert!(
+                action(diagnostic).direction.contains("Node built-in"),
+                "{id}"
+            );
+            assert!(action(diagnostic).direction.contains("polyfill"), "{id}");
+            assert!(
+                diagnostic
+                    .evidence
+                    .iter()
+                    .any(|evidence| evidence.detail.contains("built-in suffix")),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn vite_bare_browser_external_keeps_guidance_generic() {
+        // The bare id is also produced for a dependency file that its
+        // `browser` field maps to `false`, so it must not be called a built-in.
+        for id in ["__vite-browser-external", "\u{0}__vite-browser-external"] {
+            let fixture = vite_cjs_variant(id, None, true);
+            let diagnostic =
+                generated_placeholder_diagnostic(&fixture, id.trim_start_matches('\0'));
+            assert_generated_placeholder_common(diagnostic, id);
+            let direction = &action(diagnostic).direction;
+            assert!(direction.contains("browser field"), "{id}");
+            assert!(!direction.contains("polyfill"), "{id}");
+            assert!(!direction.contains("alias"), "{id}");
+            assert!(
+                !diagnostic.summary.contains("generates for a Node built-in"),
+                "{id}"
+            );
+            assert!(
+                !diagnostic.summary.contains("for a Node built-in imported"),
+                "{id}"
+            );
+            assert!(
+                !action(diagnostic).safety.contains("built-in"),
+                "{id}: the safety text must not assume a Node built-in"
+            );
+            assert!(
+                diagnostic
+                    .evidence
+                    .iter()
+                    .all(|evidence| { !evidence.detail.contains("generates for a Node built-in") }),
+                "{id}"
+            );
+            assert!(
+                diagnostic
+                    .evidence
+                    .iter()
+                    .any(|evidence| evidence.detail.contains("does not show whether")),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn vite_commonjs_guidance_stays_for_other_modules() {
+        // An ordinary file-backed module keeps the ESM-conversion advice.
+        let fixture = run_fixture(BundlerChoice::Vite, |_| {});
+        let ordinary = generated_placeholder_diagnostic(&fixture, "src/legacy/cjs.cjs");
+        assert!(
+            action(ordinary)
+                .direction
+                .contains("ECMAScript module build")
+        );
+        assert!(action(ordinary).safety.contains("ESM build"));
+
+        // A virtual CommonJS module with another id is not the placeholder.
+        let other = vite_cjs_variant("\u{0}virtual:other-cjs", None, true);
+        let diagnostic = generated_placeholder_diagnostic(&other, "virtual:other-cjs");
+        assert!(
+            action(diagnostic)
+                .direction
+                .contains("ECMAScript module build")
+        );
+        assert!(action(diagnostic).safety.contains("ESM build"));
+
+        // Ids that only share the placeholder prefix are not placeholders.
+        for id in ["__vite-browser-external:", "__vite-browser-externalish"] {
+            let lookalike = vite_cjs_variant(id, None, true);
+            let diagnostic = generated_placeholder_diagnostic(&lookalike, id);
+            assert!(
+                action(diagnostic)
+                    .direction
+                    .contains("ECMAScript module build"),
+                "{id}"
+            );
+            assert!(action(diagnostic).safety.contains("ESM build"), "{id}");
+        }
+
+        // A file-backed module that merely resembles the id keeps the advice.
+        let backed = vite_cjs_variant(
+            "__vite-browser-external",
+            Some("/__bundlewhy_project__/src/legacy/cjs.cjs"),
+            false,
+        );
+        assert!(
+            backed
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .filter(|d| d.rule == "vite/commonjs-wrapped")
+                .all(|d| action(d).direction.contains("ECMAScript module build"))
+        );
+    }
+
     #[test]
     fn vite_disabled_tree_shaking_is_not_reported_as_covered() {
         let fixture = run_fixture(BundlerChoice::Vite, |value| {
@@ -1068,6 +1296,286 @@ mod tests {
         }
     }
 
+    fn declared_free_outcome(diagnostic: &Diagnostic) -> ConditionOutcome {
+        diagnostic
+            .conditions
+            .iter()
+            .find(|condition| condition.description == "The module is declared side-effect free")
+            .expect("declared side-effect free condition")
+            .outcome
+    }
+
+    fn retained_register(
+        module_side_effects: &str,
+        treeshake_side_effects: &str,
+        package_side_effects: Option<&str>,
+    ) -> Diagnostic {
+        let module_side_effects = module_side_effects.to_owned();
+        let treeshake_side_effects = treeshake_side_effects.to_owned();
+        let package_side_effects = package_side_effects.map(str::to_owned);
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["id"]
+                    .as_str()
+                    .is_some_and(|id| id.ends_with("src/effects/register.js"))
+                {
+                    module["moduleSideEffects"] = serde_json::json!(module_side_effects);
+                    module["treeshakeSideEffects"] = serde_json::json!(treeshake_side_effects);
+                    module["packageSideEffects"] = serde_json::json!(package_side_effects);
+                }
+            }
+        });
+        find(
+            &fixture.output.analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .expect("register.js stays reported")
+        .clone()
+    }
+
+    fn direction(diagnostic: &Diagnostic) -> &str {
+        &diagnostic.corrective_action.as_ref().unwrap().direction
+    }
+
+    fn has_inferred_effect_evidence(diagnostic: &Diagnostic) -> bool {
+        diagnostic.evidence.iter().any(|evidence| {
+            evidence.status == EvidenceStatus::Inferred
+                && evidence.detail.contains("top-level side effects")
+        })
+    }
+
+    #[test]
+    fn vite_side_effect_retained_honors_free_declarations() {
+        for (module, option, package) in [
+            ("false", "null", None),
+            // A hook value takes precedence over the option and the package.
+            ("false", "true", Some("true")),
+            ("false", "null", Some("false")),
+            ("false", "null", Some("[array of 2]")),
+            // Without a hook value or a package declaration the option decides.
+            ("null", "false", None),
+            ("undefined", "false", None),
+        ] {
+            let finding = retained_register(module, option, package);
+            assert_eq!(
+                declared_free_outcome(&finding),
+                ConditionOutcome::Met,
+                "{module} / {option} / {package:?}"
+            );
+            assert_eq!(finding.status, EvidenceStatus::Inferred);
+            assert!(
+                !direction(&finding).contains("declare the package side-effect free"),
+                "{}",
+                direction(&finding)
+            );
+            assert!(
+                direction(&finding).contains("already declared side-effect free"),
+                "{}",
+                direction(&finding)
+            );
+            // An effective `false` lets Rolldown discard a module that has
+            // effects, so retained effects are not inferred for it.
+            assert!(
+                !finding.summary.contains("may contain top-level code"),
+                "{}",
+                finding.summary
+            );
+            assert!(
+                finding.summary.contains("another use of the module"),
+                "{}",
+                finding.summary
+            );
+            assert!(
+                !has_inferred_effect_evidence(&finding),
+                "{:?}",
+                finding.evidence
+            );
+            assert!(
+                finding
+                    .evidence
+                    .iter()
+                    .any(|evidence| evidence.status == EvidenceStatus::Inferred
+                        && evidence.detail.contains("remaining use")),
+                "{:?}",
+                finding.evidence
+            );
+            assert!(
+                !finding
+                    .corrective_action
+                    .as_ref()
+                    .unwrap()
+                    .safety
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_reports_explicit_effect_declarations() {
+        for (module, option, package) in [
+            ("no-treeshake", "null", None),
+            // A hook value takes precedence over the option and the package.
+            ("no-treeshake", "false", Some("false")),
+            ("no-treeshake", "null", Some("false")),
+            // The option decides when no hook value is set and the package
+            // declares nothing.
+            ("null", "true", None),
+        ] {
+            let finding = retained_register(module, option, package);
+            assert_eq!(
+                declared_free_outcome(&finding),
+                ConditionOutcome::Unmet,
+                "{module} / {option} / {package:?}"
+            );
+            assert_eq!(finding.status, EvidenceStatus::Confirmed);
+            assert!(finding.summary.contains("declares side effects"));
+            assert!(!direction(&finding).contains("declare the package side-effect free"));
+            assert!(!has_inferred_effect_evidence(&finding));
+            assert!(
+                !finding
+                    .corrective_action
+                    .as_ref()
+                    .unwrap()
+                    .safety
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_analyzes_hook_true_and_names_the_plugin() {
+        // `true` from a JavaScript hook asks for Rolldown's analysis and skips
+        // both the option and the package, whatever they say. The package
+        // declaration is not the source of this value, so the guidance never
+        // asks to edit it.
+        for (module, option, package) in [
+            ("true", "false", Some("false")),
+            ("true", "true", Some("true")),
+            ("true", "false", Some("[array of 2]")),
+            ("true", "true", None),
+            ("true", "null", None),
+        ] {
+            let finding = retained_register(module, option, package);
+            let case = format!("{module} / {option} / {package:?}");
+            assert_eq!(
+                declared_free_outcome(&finding),
+                ConditionOutcome::Unmet,
+                "{case}"
+            );
+            assert_eq!(finding.status, EvidenceStatus::Inferred, "{case}");
+            assert!(has_inferred_effect_evidence(&finding), "{case}");
+            assert!(!direction(&finding).contains("will not help"), "{case}");
+            assert!(
+                direction(&finding).contains("stop the plugin"),
+                "{}",
+                direction(&finding)
+            );
+            assert!(!direction(&finding).contains("narrowing"), "{case}");
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_is_unknown_for_unmatched_values() {
+        let list = retained_register("null", "null", Some("[array of 2]"));
+        assert_eq!(declared_free_outcome(&list), ConditionOutcome::Unknown);
+        assert_eq!(list.status, EvidenceStatus::Inferred);
+        // A retained file is most likely covered by the list; the guidance
+        // never asks to add a declaration for it.
+        assert!(direction(&list).contains("most likely covered"));
+        assert!(direction(&list).contains("narrow or remove that entry"));
+        assert!(!direction(&list).contains("add the declaration"));
+        assert!(has_inferred_effect_evidence(&list));
+
+        // A configured function cannot be evaluated.
+        let option = retained_register("null", "[function]", None);
+        assert_eq!(declared_free_outcome(&option), ConditionOutcome::Unknown);
+        assert!(
+            direction(&option).contains("build.rolldownOptions.treeshake.moduleSideEffects"),
+            "{}",
+            direction(&option)
+        );
+        assert!(!direction(&option).contains("covered"));
+
+        // A declared package may have given the module a value that outranks
+        // the option and is not collected, whatever the declaration is and
+        // whatever the option says.
+        for (option, package) in [
+            ("null", "false"),
+            ("null", "true"),
+            ("false", "true"),
+            ("true", "false"),
+            ("[function]", "[array of 2]"),
+            ("[array of 2]", "true"),
+        ] {
+            let finding = retained_register("null", option, Some(package));
+            assert_eq!(
+                declared_free_outcome(&finding),
+                ConditionOutcome::Unknown,
+                "{option} / {package}"
+            );
+            assert_eq!(finding.status, EvidenceStatus::Inferred);
+            assert!(direction(&finding).contains("most likely covered"));
+            assert!(!direction(&finding).contains("add the declaration"));
+        }
+
+        let hook = retained_register("[function]", "null", Some("true"));
+        assert_eq!(declared_free_outcome(&hook), ConditionOutcome::Unknown);
+        assert!(direction(&hook).contains("plugin"));
+        assert!(!direction(&hook).contains("covered"));
+        for finding in [&list, &option, &hook] {
+            assert!(
+                !finding
+                    .corrective_action
+                    .as_ref()
+                    .unwrap()
+                    .safety
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_id_ignores_the_declaration() {
+        let ids: Vec<String> = [
+            ("null", "null", None),
+            ("false", "null", None),
+            ("true", "null", Some("false")),
+            ("null", "false", Some("true")),
+            ("null", "false", None),
+            ("null", "null", Some("[array of 2]")),
+        ]
+        .into_iter()
+        .map(|(module, option, package)| retained_register(module, option, package).id)
+        .collect();
+        assert!(ids.iter().all(|id| id == &ids[0]), "{ids:?}");
+    }
+
+    #[test]
+    fn vite_side_effect_retained_keeps_provenance_and_paths() {
+        let finding = retained_register("null", "null", None);
+        assert_eq!(
+            finding.evidence[0].provenance,
+            "rolldown module info (getModuleInfo)"
+        );
+        assert_eq!(
+            finding.evidence[1].provenance,
+            "rolldown rendered chunk modules"
+        );
+        assert_eq!(finding.evidence[0].status, EvidenceStatus::Confirmed);
+        assert_eq!(finding.evidence[1].status, EvidenceStatus::Confirmed);
+        assert!(
+            finding
+                .evidence
+                .iter()
+                .any(|evidence| evidence.status == EvidenceStatus::Inferred)
+        );
+        assert_eq!(
+            finding.dependency_paths[0].modules,
+            vec!["index.html", "src/main.js", "src/effects/register.js"]
+        );
+    }
+
     #[test]
     fn vite_export_less_side_effect_modules_are_reported() {
         let fixture = run_fixture(BundlerChoice::Vite, |value| {
@@ -1080,13 +1588,27 @@ mod tests {
                 }
             }
         });
+        let finding = find(
+            &fixture.output.analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .unwrap();
         assert!(
-            find(
-                &fixture.output.analysis.diagnostics,
-                "vite/side-effect-retained",
-                "src/effects/register.js"
-            )
-            .is_some()
+            !finding
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .direction
+                .is_empty()
+        );
+        assert!(
+            !finding
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .safety
+                .is_empty()
         );
     }
 
@@ -1162,6 +1684,81 @@ mod tests {
                         && diagnostic.title.contains("BUNDLEWHY_FIXTURE_FLAG")
                 )
         );
+    }
+
+    #[test]
+    fn data_only_env_reads_do_not_produce_a_branch_diagnostic() {
+        for bundler in [BundlerChoice::Vite, BundlerChoice::Rspack] {
+            let fixture = run_fixture_patched(
+                bundler,
+                true,
+                |_| {},
+                |build, _| {
+                    let (file, guard, read) = match bundler {
+                        BundlerChoice::Vite => (
+                            "assets/index-BHjrzQLH.js",
+                            "({}).BUNDLEWHY_FIXTURE_FLAG===`on`&&console.log(`flag branch`)",
+                            "({}).BUNDLEWHY_FIXTURE_FLAG",
+                        ),
+                        BundlerChoice::Rspack => (
+                            "main.js",
+                            "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag \
+                             branch\")",
+                            "process.env.BUNDLEWHY_FIXTURE_FLAG",
+                        ),
+                    };
+                    let path = build.join(file);
+                    let code = std::fs::read_to_string(&path).unwrap();
+                    assert!(code.contains(guard));
+                    let replacement = match bundler {
+                        // Keep the Vite read at the same generated offset so
+                        // its source mapping still points at the edited read.
+                        BundlerChoice::Vite => format!("{read};console.log(`flag branch`)"),
+                        BundlerChoice::Rspack => format!("console.log({read})"),
+                    };
+                    std::fs::write(&path, code.replace(guard, &replacement)).unwrap();
+                    if bundler == BundlerChoice::Vite {
+                        let map_path = build.join(format!("{file}.map"));
+                        let mut map: serde_json::Value =
+                            serde_json::from_str(&std::fs::read_to_string(&map_path).unwrap())
+                                .unwrap();
+                        let source_index = map["sources"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .position(|source| source.as_str().unwrap().ends_with("/src/main.js"))
+                            .unwrap();
+                        let source = map["sourcesContent"][source_index].as_str().unwrap();
+                        let branch = "if (process.env.BUNDLEWHY_FIXTURE_FLAG === \"on\") {\n  \
+                                      console.log(\"flag branch\");\n}";
+                        assert!(source.contains(branch));
+                        map["sourcesContent"][source_index] = serde_json::json!(source.replace(
+                            branch,
+                            "console.log(process.env.BUNDLEWHY_FIXTURE_FLAG);\nconsole.log(\"flag \
+                             branch\");\n// data-only read",
+                        ));
+                        std::fs::write(map_path, serde_json::to_vec(&map).unwrap()).unwrap();
+                    }
+                },
+            );
+            if bundler == BundlerChoice::Vite {
+                assert!(fixture.output.sources.iter().any(|source| {
+                    source.path == "src/main.js"
+                        && source
+                            .content
+                            .contains("console.log(process.env.BUNDLEWHY_FIXTURE_FLAG);")
+                }));
+            }
+            assert!(
+                !fixture
+                    .output
+                    .analysis
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| { diagnostic.rule == "minifier/unresolved-env-condition" }),
+                "{bundler:?} reported a branch for a data-only read"
+            );
+        }
     }
 
     #[test]

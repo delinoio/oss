@@ -465,7 +465,7 @@ func (c *Client) callTurnLocked(ctx context.Context, op turnOperation, params an
 			c.logger.InfoContext(ctx, "Codex native turn transport result", "owner_id", c.ownerID, "request_id", op.RequestID, "operation", op.Action, "code", code)
 		}
 	}()
-	response, err := c.wire.Call(ctx, op.RequestID, string(op.Action), params)
+	response, err := c.call(ctx, op.RequestID, string(op.Action), params)
 	if err == nil && response.ErrorCode != nil {
 		err = nativeTurnError(op.Action, *response.ErrorCode)
 	}

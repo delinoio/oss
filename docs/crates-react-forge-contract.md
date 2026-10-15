@@ -169,6 +169,8 @@ Imported DOCX targets retain a source flow width in points. Body mounts use thei
 
 ## Static 3D extension
 
+The scene engine owns bounded endpoint-only simplification of static geometry. The native adapter runs it on a cancellable worker and returns bytes and truthful counts; it does not execute JavaScript. The scene contract owns the exact metric, topology guards, scratch bound and unreleased interface.
+
 The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
 
 ## Sprite Engine Extension

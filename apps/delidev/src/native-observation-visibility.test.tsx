@@ -359,9 +359,9 @@ describe("transcript token and time observation toggles", () => {
   // `.session-information-section`, outside `.transcript` and
   // `.execution-configuration`.
   it.each([
-    ["codex", "Latest native-reported context tokens"],
-    ["opencode", "Current context tokens"],
-    ["claude-code", "Current context tokens"],
+    ["codex", "Context used"],
+    ["opencode", "Context used"],
+    ["claude-code", "Context used"],
   ])("Session Context token rows for %s", async (harness, label) => {
     const sessionId = newRequestId();
     const executionId = newRequestId();
@@ -466,8 +466,8 @@ describe("transcript token and time observation toggles", () => {
       </TransportProvider>,
     );
     const rowOf = (text: RegExp) =>
-      [...view.container.querySelectorAll("p, dt, dd")].find((item) =>
-        text.test(item.textContent ?? ""),
+      [...view.container.querySelectorAll("p, dt, dd, .context-metric")].find(
+        (item) => text.test(item.textContent ?? ""),
       ) as HTMLElement | undefined;
     const labelPattern = new RegExp(label, "i");
     for (const tokens of [true, false]) {

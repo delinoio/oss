@@ -59,6 +59,21 @@ func validateDirectory(path string, info os.FileInfo) error {
 	return checkPrivate(path, info)
 }
 
+// CheckPrivateDirHandle verifies that an already-open directory is a real,
+// owner-only directory using the handle's own metadata and ACL. Unlike
+// CheckPrivateDir it cannot be redirected by a later path replacement, so a
+// caller that keeps the handle can make validation and use one anchored step.
+func CheckPrivateDirHandle(dir *os.File) error {
+	info, err := dir.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return domain.Fail(domain.PermissionDenied, "The data scope is not a real directory.", "Choose a private directory without a symlink at its root.")
+	}
+	return checkPrivateHandle(dir, info)
+}
+
 func RegularPrivate(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {

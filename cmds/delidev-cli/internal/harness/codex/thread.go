@@ -378,7 +378,7 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		}
 		c.logger.InfoContext(ctx, "Codex native thread operation", "owner_id", c.ownerID, "request_id", requestID, "operation", method, "stage", "native-thread-binding", "options", (domain.ExecutionConfiguration{Effort: settings.Effort, Options: settings.Options}).SelectedNativeOptionNames(), "code", code)
 	}()
-	response, err := c.wire.Call(ctx, requestID, string(method), params)
+	response, err := c.call(ctx, requestID, string(method), params)
 	if err != nil {
 		if domain.SafeError(err).Code == domain.RecoveryRequired {
 			c.problem = threadUncertain()
@@ -428,6 +428,14 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		return result, c.problem
 	}
 	c.execution = newExecutionState(*thread, *effective)
+	if c.sharedEvents != nil {
+		queue, bindErr := c.sharedEvents.bind(c.thread)
+		if bindErr != nil {
+			c.problem = threadUncertain()
+			return result, c.problem
+		}
+		c.sharedQueue = queue
+	}
 	// Binding an idle retained thread does not establish its last accepted
 	// input or completion. A fresh process must verify the retained checkpoint
 	// before it can send an ordinary input or mutate an existing turn.
@@ -460,7 +468,7 @@ func (c *Client) readThreadLocked(ctx context.Context, requestID, threadID domai
 	if c.thread != "" && threadID != c.thread {
 		return threadWire{}, domain.Fail(domain.PermissionDenied, "The native thread belongs to another connection scope.", "Inspect only the retained native thread for this execution.")
 	}
-	response, err := c.wire.Call(ctx, requestID, string(readThread), struct {
+	response, err := c.call(ctx, requestID, string(readThread), struct {
 		ThreadID     domain.ID `json:"threadId"`
 		IncludeTurns bool      `json:"includeTurns"`
 	}{threadID, false})

@@ -4,6 +4,7 @@ package claude
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -265,6 +266,7 @@ func parseSetupTokenScreen(raw []byte) setupTokenScreen {
 type SetupTokenLogin struct {
 	handle    *process.Handle
 	output    *setupTokenOutput
+	logger    *slog.Logger
 	mu        sync.Mutex
 	submitted bool
 	taken     bool
@@ -298,7 +300,7 @@ func StartSetupToken(ctx context.Context, config SetupTokenConfig) (*SetupTokenL
 		}
 		return nil, err
 	}
-	return &SetupTokenLogin{handle: h, output: output}, nil
+	return &SetupTokenLogin{handle: h, output: output, logger: config.Process.Logger}, nil
 }
 
 // Progress returns the original authorization address once complete.
@@ -358,10 +360,10 @@ func (l *SetupTokenLogin) Wait() error {
 	return nil
 }
 
-// Token returns the one emitted token after a successful exit. It succeeds at
-// most once, requires the completion marker and exactly one distinct token, and
-// requires a prior successful Wait, and leaves clearing the returned bytes to
-// the caller.
+// Token returns the one emitted token after a successful exit. The native
+// success heading is not a reliable part of the final PTY capture, so the
+// joined zero exit and one valid token are the completion proof. It succeeds
+// at most once and leaves clearing the returned bytes to the caller.
 func (l *SetupTokenLogin) Token() ([]byte, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -376,7 +378,18 @@ func (l *SetupTokenLogin) Token() ([]byte, error) {
 	// Re-parse with a delimiter so a token at the final byte is complete once
 	// the child has exited.
 	screen := parseSetupTokenScreen(append(data, '\n'))
-	if screen.Problem != nil || screen.Failed || !screen.Completed || len(screen.Token) == 0 {
+	if screen.Problem != nil || screen.Failed || len(screen.Token) == 0 {
+		if l.logger != nil {
+			plain := sanitizeSetupTokenScreen(data)
+			l.logger.Warn("claude_setup_token_output_rejected",
+				"output_limited", failed,
+				"completion_marker", screen.Completed,
+				"failure_marker", screen.Failed,
+				"parser_problem", screen.Problem != nil,
+				"token_candidates", len(setupTokenCandidate.FindAll(plain, -1)),
+				"token_like", bytes.Contains(plain, []byte("sk-ant-")))
+			clear(plain)
+		}
 		clear(screen.Token)
 		return nil, setupTokenProblem()
 	}

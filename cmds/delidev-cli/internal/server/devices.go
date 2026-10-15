@@ -343,7 +343,7 @@ func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[pb.Revo
 			return nil, err
 		}
 		if device.Type == domain.ClientDevice {
-			if err := cancelQueuedSubscriptionInitiator(tx, record.ID); err != nil {
+			if err := cancelQueuedSubscriptionInitiator(tx, record.ID, s.subscriptionServerEpoch()); err != nil {
 				return nil, err
 			}
 		}

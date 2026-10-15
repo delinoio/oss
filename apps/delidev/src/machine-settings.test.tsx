@@ -4,7 +4,13 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   EntityKind,
@@ -15,7 +21,11 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { useMachineSettingsController } from "./machine-settings";
+import {
+  MachineSettingsView,
+  installationCauseCopyKey,
+  useMachineSettingsController,
+} from "./machine-settings";
 import { MutationIntents } from "./mutation";
 
 const earlier = "2026-10-09T00:00:00Z";
@@ -354,4 +364,223 @@ it("retains the accepted observation while the same connection replaces its tran
   expect(value.result.current.data.installations).toMatchObject([
     { explicit_path: "/replacement/codex" },
   ]);
+});
+
+it.each([
+  // [harness, cause, detectedVersion, key]
+  [
+    "opencode",
+    "version",
+    "1.18.20",
+    "machine-settings.opencode.excluded.version",
+  ],
+  ["opencode", "version", undefined, "machine-settings.excluded.version"],
+  [
+    "opencode",
+    "protocolUnsupported",
+    "1.18.33",
+    "machine-settings.opencode.excluded.protocolUnsupported",
+  ],
+  ["opencode", "missing", undefined, "machine-settings.excluded.missing"],
+  [
+    "opencode",
+    "protocolFailed",
+    "1.18.33",
+    "machine-settings.excluded.protocolFailed",
+  ],
+  ["claude-code", "version", undefined, "claude-subscription.excluded.version"],
+  ["codex", "version", undefined, "machine-settings.excluded.version"],
+  [
+    "codex",
+    "protocolUnsupported",
+    "0.151.0",
+    "machine-settings.excluded.protocolUnsupported",
+  ],
+  ["grok-build", "version", undefined, "machine-settings.excluded.version"],
+] as const)(
+  "selects installation copy for %s cause %s (detected %s)",
+  (harness, cause, detectedVersion, key) => {
+    expect(installationCauseCopyKey(harness, cause, detectedVersion)).toBe(key);
+  },
+);
+
+it("keeps OpenCode guidance free of numeric baselines and scopes the update instruction to old versions", async () => {
+  for (const locale of ["en", "ko"]) {
+    const messages = (await import(`./locales/${locale}/machine-settings.json`))
+      .default as Record<string, string>;
+    const outdated = messages["machine-settings.opencode.excluded.version"];
+    const mismatch =
+      messages["machine-settings.opencode.excluded.protocolUnsupported"];
+    expect(outdated).toContain("opencode upgrade");
+    // A profile mismatch of an admitted version must not ask for an update.
+    expect(mismatch).not.toContain("opencode upgrade");
+    expect(mismatch).not.toMatch(/update|업데이트|upgrade/i);
+    for (const message of [outdated, mismatch])
+      expect(message).not.toMatch(/\d+\.\d+/);
+  }
+});
+
+function Observed({ resource }: { resource: Resource }) {
+  const controller = useMachineSettingsController(resource, true);
+  return (
+    <MachineSettingsView controller={controller} active close={() => {}} />
+  );
+}
+
+function renderInstallations(installations: unknown[]) {
+  const resource = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.MACHINE,
+    schemaVersion: 1,
+    revision: 7n,
+    documentJson: encode({
+      name: "Runner",
+      last_seen: earlier,
+      installations,
+    }),
+  });
+  const transport = createRouterTransport((router) => {
+    router.service(ResourceService, {
+      getResource: async () => ({ resource }),
+    });
+  });
+  return render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={new QueryClient()}>
+        <MutationIntents>
+          <Observed resource={resource} />
+        </MutationIntents>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+}
+
+// Record shapes mirror the Go discovery output. Every `incompatible` state
+// (relative explicit path, non-regular or unrunnable executable, Windows shell
+// wrapper, unparseable version response) carries no version; only a detected
+// version under the minimum is an outdated OpenCode.
+it.each([
+  {
+    name: "an under-baseline detected version",
+    record: {
+      state: "detected",
+      version: "1.18.20",
+      protocol_verified: false,
+      protocol: { state: "unsupported" },
+    },
+    detected: "Detected version: 1.18.20",
+    guidance: /Update OpenCode on this Runner/,
+    asksForUpdate: true,
+  },
+  {
+    name: "an incompatible installation without a version",
+    record: { state: "incompatible" },
+    detected: undefined,
+    guidance: /did not provide a supported version/,
+    asksForUpdate: false,
+  },
+  {
+    name: "a protocol profile mismatch at an admitted version",
+    record: {
+      state: "detected",
+      version: "1.18.33",
+      protocol_verified: false,
+      protocol: { state: "unsupported" },
+    },
+    detected: "Detected version: 1.18.33",
+    guidance: /does not match the native protocol profile/,
+    asksForUpdate: false,
+  },
+  {
+    name: "a failed protocol validation at a newer version",
+    record: {
+      state: "detected",
+      version: "1.19.0",
+      protocol_verified: false,
+      protocol: { state: "failed" },
+    },
+    detected: "Detected version: 1.19.0",
+    guidance: /Native protocol verification failed/,
+    asksForUpdate: false,
+  },
+])(
+  "renders the OpenCode guidance for $name",
+  async ({ record, detected, guidance, asksForUpdate }) => {
+    renderInstallations([
+      { harness: "opencode", ...record },
+      {
+        harness: "codex",
+        state: "detected",
+        version: "0.1.0",
+        protocol_verified: true,
+        protocol: { state: "verified" },
+      },
+    ]);
+    expect(await screen.findByText(guidance)).toBeTruthy();
+    if (detected) expect(screen.getByText(detected)).toBeTruthy();
+    // Only an under-baseline version asks for an OpenCode update.
+    expect(Boolean(screen.queryByText(/Update OpenCode on this Runner/))).toBe(
+      asksForUpdate,
+    );
+    // Codex keeps protocol-only classification and the verified message.
+    expect(screen.getByText("Detected version: 0.1.0")).toBeTruthy();
+  },
+);
+
+// The Worker row reads the closed Grok diagnostic stored on the installation
+// observation and shows the same safe message as Settings.
+it("shows the safe Grok diagnostic on the Worker installation row", async () => {
+  const reference = newRequestId();
+  renderInstallations([
+    {
+      harness: "grok-build",
+      state: "detected",
+      version: "1.0.52",
+      protocol_verified: false,
+      protocol: {
+        state: "unsupported",
+        grok_diagnostic: {
+          detected_version: "1.0.52",
+          supported_version: "1.0.46",
+          phase: "profile",
+          code: "unsupported",
+          message: "raw-native-sentinel /Users/private https://auth.x.ai",
+          guidance: "refresh_token person@example.com",
+          correlation_id: reference,
+        },
+      },
+    },
+    {
+      harness: "codex",
+      state: "detected",
+      version: "0.1.0",
+      protocol_verified: true,
+      protocol: { state: "verified" },
+    },
+  ]);
+  const text = await screen.findByText(
+    "Grok Build 1.0.52 did not complete profile validation. The native protocol or version is incompatible.",
+  );
+  const alert = text.closest('[role="alert"]')!.textContent!;
+  expect(alert).toContain("Supported version:1.0.46");
+  expect(alert).toContain("Error code:unsupported");
+  expect(alert).toContain(`Reference:${reference}`);
+  expect(alert).not.toMatch(/sentinel|\/Users|https?:|refresh_token|@example/);
+});
+
+it("falls back to the shared guidance for a malformed Grok diagnostic", async () => {
+  renderInstallations([
+    {
+      harness: "grok-build",
+      state: "detected",
+      version: "1.0.52",
+      protocol_verified: false,
+      protocol: {
+        state: "unsupported",
+        grok_diagnostic: { phase: "launch", code: "unsupported" },
+      },
+    },
+  ]);
+  expect(await screen.findByText("Detected version: 1.0.52")).toBeTruthy();
+  expect(screen.queryByText(/did not complete/)).toBeNull();
 });

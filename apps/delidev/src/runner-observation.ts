@@ -29,6 +29,43 @@ export interface RunnerObservation {
   cause?: RunnerExclusion;
   detectedVersion?: string;
 }
+/**
+ * Closed remedy taxonomy for an OpenCode installation problem. It is derived
+ * once from the installation observation and selects the localized guidance.
+ * Only `BelowBaseline` is fixed by updating OpenCode.
+ */
+export enum OpenCodeInstallationCause {
+  /** A detected version under the minimum; the observation carries it. */
+  BelowBaseline = "below-baseline",
+  /**
+   * Discovery reported `incompatible` without a detected version: a relative
+   * explicit path, a non-regular or unrunnable executable, a Windows shell
+   * wrapper or an unparseable version response. Updating cannot fix the path.
+   */
+  InvalidInstallation = "invalid-installation",
+  /** An admitted or newer version whose native protocol profile mismatched. */
+  ProtocolProfileMismatch = "protocol-profile-mismatch",
+  /** Every other exclusion keeps the shared guidance. */
+  Other = "other",
+}
+export function openCodeInstallationCause(
+  cause: RunnerExclusion,
+  detectedVersion: string | undefined,
+): OpenCodeInstallationCause {
+  switch (cause) {
+    case "version":
+      // `installationObservation` attaches `detectedVersion` to a version
+      // cause only when the version predicate rejected a detected version.
+      return detectedVersion === undefined
+        ? OpenCodeInstallationCause.InvalidInstallation
+        : OpenCodeInstallationCause.BelowBaseline;
+    case "protocolUnsupported":
+      // The version predicate runs first, so this is an admitted version.
+      return OpenCodeInstallationCause.ProtocolProfileMismatch;
+    default:
+      return OpenCodeInstallationCause.Other;
+  }
+}
 export function validRunnerObservation(
   resource?: Resource,
 ): resource is Resource {

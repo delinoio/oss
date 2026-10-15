@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -136,6 +137,37 @@ func TestIndependentForkInventoryCommonReflogAndObjects(t *testing.T) {
 		t.Fatal("parent removal lost independent native history")
 	}
 }
+
+func TestPrepareForkGitInventoryReusesSnapshotConfigProof(t *testing.T) {
+	input := forkInventoryFixtureInputWith(t, false, retainedConfigSetup)
+	inventory, err := inspectForkGitInventory(context.Background(), input.git, input.selected, newForkCopyBudget(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inventory.bindRemote(input.spec)
+	snapshot := &ForkSnapshot{copies: []forkCopy{{source: input.selected, git: true, gitInventory: &inventory}}}
+	prepared, copy, err := input.m.prepareForkGitInventory(context.Background(), input.git, input.spec, &input.manifest, func() error { return nil }, newForkCopyBudget(1), snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if copy == nil || prepared.Path == "" || copy.gitInventory == nil {
+		t.Fatal("preparation did not return an independent Git inventory")
+	}
+	for _, records := range [][2][]string{
+		{inventory.configProof.config.records, copy.gitInventory.configProof.config.records},
+		{inventory.configProof.worktree.records, copy.gitInventory.configProof.worktree.records},
+	} {
+		if len(records[0]) == 0 || len(records[0]) != len(records[1]) {
+			t.Fatalf("retained config proof changed shape: %d, %d", len(records[0]), len(records[1]))
+		}
+		for index := range records[0] {
+			if unsafe.StringData(records[0][index]) != unsafe.StringData(records[1][index]) {
+				t.Fatal("preparation parsed a second retained config proof")
+			}
+		}
+	}
+}
+
 func TestIndependentForkInventoryLinkedAdministration(t *testing.T) {
 	_, source, child, proof, lost := forkInventoryCopyFixture(t, true)
 	target := child.PrimaryPath
