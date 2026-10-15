@@ -635,7 +635,7 @@ impl<'a> Scanner<'a> {
     /// | class body, outside a field initializer             | declaration   |
     /// | type body at a member start                         | signature     |
     /// | object literal member start, then `{` or `:`        | declaration   |
-    /// | object literal member start, then `,` or `}`        | signature     |
+    /// | object literal member start, then anything else     | direct call   |
     /// | statement start, then `{` on the same line or `:`   | declaration   |
     /// | anywhere else                                       | direct call   |
     fn classify_eval(&self, index: usize) -> EvalSiteKind {
@@ -662,9 +662,6 @@ impl<'a> Scanner<'a> {
                 match self.token_after_parameters(index) {
                     Some(next) if next.is_punct("{") || next.is_punct(":") => {
                         EvalSiteKind::Declaration
-                    }
-                    Some(next) if next.is_punct(",") || next.is_punct("}") => {
-                        EvalSiteKind::Signature
                     }
                     _ => EvalSiteKind::DirectCall,
                 }
@@ -1252,6 +1249,7 @@ mod tests {
                 &[CALL],
             ),
             ("const view = <div class>{eval(code)}</div>;", &[CALL]),
+            ("const view = <div title={eval(code)} />;", &[CALL]),
             ("const view = <div class />;\neval(code);", &[CALL]),
             (
                 "const view = <div class id=\"a\">{eval(code)}</div>;",
@@ -1579,6 +1577,8 @@ mod tests {
             ("const o = { [eval(key)]: 1 };", &[CALL]),
             ("const o = { a: eval(code)\n};", &[CALL]),
             ("const o = { ...eval(code) };", &[CALL]),
+            ("const o = { eval(value), a: 1 };", &[CALL]),
+            ("const o = { a: 1, eval(value) };", &[CALL]),
             ("const o = { run() { return eval(code); } };", &[CALL]),
             ("const s = `${eval(code)}`;", &[CALL]),
             ("const s = `a${eval(code)}b${eval(other)}c`;", &[CALL, CALL]),
