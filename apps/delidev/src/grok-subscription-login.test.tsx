@@ -1432,7 +1432,9 @@ it("keeps polling a provisional refusal, keeps Cancel and adopts the same operat
     {},
     { timeout: 3000 },
   );
-  expect((input as HTMLInputElement).value).toBe("grok.fixture@example.invalid");
+  expect((input as HTMLInputElement).value).toBe(
+    "grok.fixture@example.invalid",
+  );
   expect(screen.queryByText(refusalMessage())).toBeNull();
   for (const [request] of f.progress.mock.calls)
     expect(request).toMatchObject({ operationId: operation });

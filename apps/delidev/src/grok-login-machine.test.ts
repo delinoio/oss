@@ -282,7 +282,10 @@ describe("table invariants", () => {
     }
     // The refusal keeps the original sign-in cancelable and adopts the next
     // response like any other poll.
-    const preparing: GrokLoginState = { phase: P.Preparing, retry: GrokRetry.None };
+    const preparing: GrokLoginState = {
+      phase: P.Preparing,
+      retry: GrokRetry.None,
+    };
     const refused = transition(preparing, E.PollRefusalProvisional);
     expect(refused).toEqual(preparing);
     expect(grokLoginPresentation(refused).cancel).toBe(true);
