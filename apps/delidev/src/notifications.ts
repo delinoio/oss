@@ -153,6 +153,8 @@ export class NotificationPump {
       this.note(PresentationPhase.NotificationCandidateInvalid, true);
       return;
     }
+    // A valid page ends an earlier invalid-page failure.
+    this.note(PresentationPhase.NotificationCandidateInvalid, false);
     this.pending = values.map((v) => ({ ...v }));
     void this.drain();
   }
@@ -162,18 +164,20 @@ export class NotificationPump {
     this.abort.abort();
     void this.scope?.then((scope) => this.bridge.end(scope)).catch(() => {});
   }
+  // Each phase is one operation of the drain: a failure reports that phase at
+  // the moment it is known, a success reports its recovery, and an operation
+  // that was not attempted reports nothing. Phases never recover each other.
   private async drain() {
     if (this.running) return;
     this.running = true;
-    // The scope phase reports its own failures; the generic pump phase covers
-    // only the remaining claim, presentation and report work.
+    // The phase of the operation in flight, for an unexpected rejection.
     let phase = PresentationPhase.NotificationScopeBegin;
     try {
       this.prepare();
       const scope = await this.scope;
       if (!scope || !isEntityId(scope))
         throw new Error("Native presentation scope is unavailable.");
-      phase = PresentationPhase.NotificationPump;
+      this.note(PresentationPhase.NotificationScopeBegin, false);
       while (!this.closed && this.pending) {
         const batch = this.pending;
         this.pending = undefined;
@@ -181,6 +185,7 @@ export class NotificationPump {
           accepted = false;
         for (const candidate of batch) {
           if (this.closed) return;
+          phase = PresentationPhase.NotificationPump;
           const requestId = newRequestId();
           let claim;
           try {
@@ -200,7 +205,10 @@ export class NotificationPump {
           }
           accepted = true;
           if (this.closed) return;
-          if (!claim.mayPresent) continue;
+          if (!claim.mayPresent) {
+            this.note(PresentationPhase.NotificationPump, false);
+            continue;
+          }
           const current = claim.delivery?.candidate;
           if (
             claim.replayed ||
@@ -217,6 +225,7 @@ export class NotificationPump {
             throw new Error(
               "Original notification claim could not be verified.",
             );
+          this.note(PresentationPhase.NotificationPump, false);
           let result: NativeNotificationResult;
           try {
             result = await this.bridge.present(scope, {
@@ -230,9 +239,14 @@ export class NotificationPump {
           if (this.closed) return;
           if (!Object.values(NativeNotificationResult).includes(result))
             result = NativeNotificationResult.Uncertain;
-          if (result !== NativeNotificationResult.Submitted) failed = true;
+          // The display outcome is known here, so it is reported before the
+          // report RPC that may still reject.
+          const displayed = result === NativeNotificationResult.Submitted;
+          this.note(PresentationPhase.NotificationPresent, !displayed);
+          if (!displayed) failed = true;
           // Reporting is metadata only. Failure never retries native display;
           // the durable server claim retains uncertainty after this view exits.
+          phase = PresentationPhase.NotificationReport;
           await this.service.reportNotification(
             {
               inboxId: candidate.inboxId,
@@ -242,12 +256,10 @@ export class NotificationPump {
             },
             { signal: this.abort.signal, timeoutMs: 10000 },
           );
+          this.note(PresentationPhase.NotificationReport, false);
           if (failed) break;
         }
-        if (!this.closed) {
-          this.note(PresentationPhase.NotificationPresent, failed);
-          if (accepted && !failed) this.changed();
-        }
+        if (!this.closed && accepted && !failed) this.changed();
       }
     } catch {
       if (!this.closed) {

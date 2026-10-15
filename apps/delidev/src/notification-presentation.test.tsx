@@ -8,7 +8,8 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   InboxService,
   NotificationKind,
@@ -32,6 +33,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => native.desktop,
   invoke: native.invoke,
 }));
+afterEach(() => vi.restoreAllMocks());
 beforeEach(() => {
   native.invoke.mockReset();
   native.desktop = true;
@@ -534,3 +536,108 @@ it.each([
     view.unmount();
   },
 );
+
+// Lifetime and recovery cells of the notification rows in the diagnostics table
+// of the desktop contract, observed through the mounted component.
+const outcomes = (spy: { mock: { calls: unknown[][] } }) =>
+  spy.mock.calls
+    .filter(([name]) => name === "delidev.presentation.outcome")
+    .map(([, record]) => record);
+function mountPresentation(strict = false) {
+  const transport = createRouterTransport((router) =>
+    router.service(InboxService, {
+      listNotificationCandidates: () => ({ candidates: [] }),
+    }),
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const body = (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <NotificationPresentation />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  return {
+    client,
+    view: render(strict ? <StrictMode>{body}</StrictMode> : body),
+  };
+}
+it("reports no late scope failure after the connection unmounted while begin was pending", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  let reject!: (error: Error) => void;
+  native.invoke.mockImplementation(async (command) => {
+    if (command === "notification_permission")
+      return { permission: "service-available", problem: "none" };
+    if (command === "begin_notifications")
+      return new Promise((_, fail) => {
+        reject = fail;
+      });
+    return undefined;
+  });
+  const { view } = mountPresentation();
+  await waitFor(() =>
+    expect(native.invoke).toHaveBeenCalledWith("begin_notifications"),
+  );
+  view.unmount();
+  await act(async () => reject(new Error("private native detail")));
+  expect(outcomes(warn)).toEqual([]);
+});
+it("reports one scope failure per mounted connection under Strict Mode replay", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  native.invoke.mockImplementation(async (command) => {
+    if (command === "notification_permission")
+      return { permission: "service-available", problem: "none" };
+    if (command === "begin_notifications") throw new Error("begin failed");
+    return undefined;
+  });
+  const { view } = mountPresentation(true);
+  await waitFor(() => expect(outcomes(warn)).toHaveLength(1));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(outcomes(warn)).toEqual([
+    {
+      phase: PresentationPhase.NotificationScopeBegin,
+      outcome: PresentationOutcome.Failed,
+    },
+  ]);
+  view.unmount();
+});
+it("records one readiness warning and one recovery when a later read succeeds", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  let failing = true;
+  native.invoke.mockImplementation(async (command) => {
+    if (command === "notification_permission") {
+      if (failing) throw new Error("read failed");
+      return { permission: "denied", problem: "none" };
+    }
+    return undefined;
+  });
+  const { view, client } = mountPresentation();
+  await waitFor(() => expect(outcomes(warn)).toHaveLength(1));
+  expect(outcomes(info)).toEqual([]);
+  // A repeated failing read adds no record.
+  await act(async () => {
+    await client.refetchQueries({
+      queryKey: ["native-notification-readiness"],
+    });
+  });
+  expect(outcomes(warn)).toHaveLength(1);
+  failing = false;
+  await act(async () => {
+    await client.refetchQueries({
+      queryKey: ["native-notification-readiness"],
+    });
+  });
+  await waitFor(() => expect(outcomes(info)).toHaveLength(1));
+  expect(outcomes(info)).toEqual([
+    {
+      phase: PresentationPhase.NotificationReadiness,
+      outcome: PresentationOutcome.Recovered,
+    },
+  ]);
+  view.unmount();
+});

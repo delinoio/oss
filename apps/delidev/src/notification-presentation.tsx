@@ -46,14 +46,6 @@ function useReadiness(active = true) {
   });
 }
 
-// A completed presentation batch proves that these earlier pump failures ended.
-const pumpPhases = [
-  PresentationPhase.NotificationScopeBegin,
-  PresentationPhase.NotificationCandidateInvalid,
-  PresentationPhase.NotificationPresent,
-  PresentationPhase.NotificationPump,
-] as const;
-
 export function NotificationPresentation() {
   const enabled = isTauri();
   const transport = useTransport();
@@ -98,10 +90,7 @@ export function NotificationPresentation() {
         present: (scope, notice) =>
           invoke("present_notification", { scope, notice }),
       },
-      (failed, phase) => {
-        if (failed) failures.failed(phase);
-        else pumpPhases.forEach((value) => failures.recovered(value));
-      },
+      (failed, phase) => failures.report(phase, failed),
       () => {
         void candidates.refetch();
       },
