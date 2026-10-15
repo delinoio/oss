@@ -1311,6 +1311,9 @@ export function useSkillCompletion({
     onCompositionStart: () => {
       if (!canEdit()) return;
       composing.current = true;
+      // A composition ends the typing run before it, even when the session is
+      // canceled without any `input` event and so records no entry of its own.
+      history.seal();
       compositionProjection.current = projectionRef.current;
       compositionSession.current += 1;
       compositionAnchor.current = selectionRef.current.start;

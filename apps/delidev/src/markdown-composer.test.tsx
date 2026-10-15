@@ -1783,6 +1783,25 @@ it("R38 late composition input: it ends with the task, so later typing is its ow
   expect(probe.canonical).toBe("");
 });
 
+it("R39 canceled composition: typing on either side stays separate undo steps", async () => {
+  const { input } = mount("");
+  nativeEdit(input, "a", 1);
+  // An IME session that never produces an `input` event records no entry of
+  // its own, yet it still ends the typing run before it.
+  fireEvent.compositionStart(input);
+  fireEvent.compositionEnd(input);
+  await nextTask();
+  nativeEdit(input, "ab", 2);
+  expect(probe.canonical).toBe("ab");
+  undo(input);
+  expect(probe.canonical).toBe("a");
+  undo(input);
+  expect(probe.canonical).toBe("");
+  redo(input);
+  redo(input);
+  expect(probe.canonical).toBe("ab");
+});
+
 // Seeded random walk over the whole state machine. After every operation the
 // field must show exactly the projection of the canonical text for the
 // canonical selection, selection maps must agree, and undoing every edit must
