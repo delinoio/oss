@@ -572,21 +572,21 @@ Ownership and serialization:
 
 Entry state table (evaluated under the lock after process reconciliation; "uncertain" is the recovery-required result, with no cache path changed):
 
-| Cell | Observed entry | Action | Result |
-| --- | --- | --- | --- |
-| S0 | No entry directory, an empty one, or only an interrupted journal write's temporary file, and no journal | Journal `filling`, create staging, clone, verify, rename to `store`, journal `published` | Miss; entry published |
-| S1 | No journal but other content; or an undecodable journal, other identity, unknown version or unknown state | None | Uncertain |
-| S2 | `filling`; neither staging nor store exists | Start a new fill | Miss |
-| S3 | `filling`; staging exists, store absent, recorded identity matches | Remove that staging by identity, start a new fill | Miss |
-| S4 | `filling`; staging or store exists without a recorded identity, or staging identity differs | None | Uncertain |
-| S5 | `filling`; store exists, staging absent, recorded identity matches (rename finished, journal lagged) | Treat as `unverified` (S11/S12) | Hit after full check, or rebuild |
-| S6 | `filling`; staging and store both exist | None | Uncertain |
-| S7 | `published`; store identity matches and the cheap check (bare repository, readable refs) passes | Optional update when automatic fetch is enabled | Hit |
-| S8 | `published`; store directory is absent | Start a new fill (nothing exists to preserve) | Miss |
-| S9 | `published`, `unverified` or a lagging `filling` (S5); store identity differs from the journal | None | Uncertain |
-| S10 | `published`; identity matches but the cheap check fails with a definite Git rejection | Remove store by identity, start a new fill | Miss (rebuild) |
-| S11 | `unverified`; identity matches and the full connectivity check passes | Journal `published` | Hit |
-| S12 | `unverified`; identity matches but the full check definitely fails | Remove store by identity, start a new fill | Miss (rebuild) |
+| Cell | Observed entry                                                                                            | Action                                                                                   | Result                           |
+| ---- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------- |
+| S0   | No entry directory, an empty one, or only an interrupted journal write's temporary file, and no journal   | Journal `filling`, create staging, clone, verify, rename to `store`, journal `published` | Miss; entry published            |
+| S1   | No journal but other content; or an undecodable journal, other identity, unknown version or unknown state | None                                                                                     | Uncertain                        |
+| S2   | `filling`; neither staging nor store exists                                                               | Start a new fill                                                                         | Miss                             |
+| S3   | `filling`; staging exists, store absent, recorded identity matches                                        | Remove that staging by identity, start a new fill                                        | Miss                             |
+| S4   | `filling`; staging or store exists without a recorded identity, or staging identity differs               | None                                                                                     | Uncertain                        |
+| S5   | `filling`; store exists, staging absent, recorded identity matches (rename finished, journal lagged)      | Treat as `unverified` (S11/S12)                                                          | Hit after full check, or rebuild |
+| S6   | `filling`; staging and store both exist                                                                   | None                                                                                     | Uncertain                        |
+| S7   | `published`; store identity matches and the cheap check (bare repository, readable refs) passes           | Optional update when automatic fetch is enabled                                          | Hit                              |
+| S8   | `published`; store directory is absent                                                                    | Start a new fill (nothing exists to preserve)                                            | Miss                             |
+| S9   | `published`, `unverified` or a lagging `filling` (S5); store identity differs from the journal            | None                                                                                     | Uncertain                        |
+| S10  | `published`; identity matches but the cheap check fails with a definite Git rejection                     | Remove store by identity, start a new fill                                               | Miss (rebuild)                   |
+| S11  | `unverified`; identity matches and the full connectivity check passes                                     | Journal `published`                                                                      | Hit                              |
+| S12  | `unverified`; identity matches but the full check definitely fails                                        | Remove store by identity, start a new fill                                               | Miss (rebuild)                   |
 
 Further cells: a failed, canceled or timed-out first fill removes its own staging by recorded identity and its journal, so a partial entry is never reusable; if that removal is unproven the journal stays `filling` (S3/S4). Cancellation, timeout, launch failure or unproven process cleanup during a check never counts as corruption and never authorizes a rebuild. An update first journals `unverified`, then fetches `+refs/heads/*:refs/heads/*` from the pinned URL; success journals `published`, an ordinary non-zero Git exit also journals `published` and the failure is only logged, and cancellation, timeout or unproven cleanup leaves `unverified` and fails the preparation. A failed copy from the store journals `unverified` so the next user runs the full check. A rename that fails is a failed fill. A rename that succeeds followed by a failed journal write leaves S5. Two concurrent first uses serialize on the lock: the second observes S7 and performs no remote clone.
 
