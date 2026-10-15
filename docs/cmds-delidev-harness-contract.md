@@ -223,21 +223,22 @@ keep this status separate from tool execution and authentication. API profiles,
 unscoped/foreign observations, OAuth completions, MCP event
 streams and tool calls retain their existing private adapter boundaries.
 Ordinary managed ChatGPT project executions also consume root-bound passive
-startup status for project-configured MCP servers using the same closed schema.
+startup status for project-configured and runtime-added MCP servers using the same
+closed schema.
 Before binding Start or Resume, the workspace's successful native `config/read`
 retains only enabled names from `mcp_servers` (at most 1,024 entries, bounded
-nonempty names and object descriptors). Disabled and absent entries grant no
-startup-status authority. Malformed or duplicate configuration fails validation;
-a failed fresh read discards any earlier inventory. Each external startup name
-must match that original member's verified workspace inventory exactly. Unknown
-names retain the private unsupported boundary; another member's inventory cannot
-authorize them. Project isolation (see "Codex project and MCP isolation")
-runs after that read and requires the bound thread's effective inventory to be
-empty, so an ordinary thread that reaches input never has a configured server
-whose startup status could arrive; the retained names only describe the
-pre-isolation workspace read and grant no tool authority.
+nonempty names and object descriptors). Malformed or duplicate configuration fails
+validation; a failed fresh read discards any earlier inventory. Native runtime
+connectors can report names absent from that static table. A validated original
+root notification supplies passive status only, independently of table membership;
+the table does not grant tool or authentication authority. Another member's
+inventory cannot authorize foreign-thread observations.
+Project isolation (see "Codex project and MCP isolation") runs after that read
+and requires the bound thread's effective inventory to be empty. The retained
+names describe the pre-isolation workspace read and grant no tool authority.
+
 The adapter discards server names and diagnostics and logs only the closed status,
-owner identity and error presence. These observations do not publish product
+owner identity, error presence and static-inventory membership. These observations do not publish product
 events, complete a turn, change account health or grant tool authority. API,
 isolated title, Sidechat and model-observation profiles retain their separate
 boundaries, as do unscoped and foreign-thread observations. External MCP tool
@@ -369,12 +370,12 @@ Each frame/request/response is capped at 1 MiB, except for the image-observation
 
 #### Native event queue limits
 
-Every `nativewire` connection selects one fixed profile when it starts. The profile alone decides the frame, queued-byte and queued-event-count bounds; callers cannot override them and no public RPC, protocol or proto field exposes them. Codex fragments one response into many small notifications while the Worker publishes each event durably before it reads the next, so the Codex profiles queue up to 4,096 undelivered events. The explicit JSON-RPC profile used by Grok keeps 128.
+Every `nativewire` connection selects one fixed profile when it starts. The profile alone decides the frame, queued-byte and queued-event-count bounds; callers cannot override them and no public RPC, protocol or proto field exposes them. Codex fragments one response into many small notifications while the Worker publishes each event durably before it reads the next, so the Codex profiles queue up to 65,536 undelivered events during parallel child activity and durable publication. The explicit JSON-RPC profile used by Grok keeps 128.
 
 | Profile   | Starter                  | Max frame | Max queued bytes | Max queued events |
 | --------- | ------------------------ | --------- | ---------------- | ----------------- |
-| `codex`   | `Start`                  | 1 MiB     | 8 MiB            | 4,096             |
-| `image`   | `StartImageObservations` | 16 MiB    | 32 MiB           | 4,096             |
+| `codex`   | `Start`                  | 1 MiB     | 32 MiB           | 65,536            |
+| `image`   | `StartImageObservations` | 16 MiB    | 64 MiB           | 65,536            |
 | `jsonrpc` | `StartJSONRPC`           | 1 MiB     | 8 MiB            | 128               |
 
 The channel capacity is the event-count bound, so allocation and admission cannot disagree. The pending-request bound (128), the incoming-interaction bound (128) and the remembered-request-identity bound (4,096) are not profile specific and are unchanged. The stdout reader is the only sender and never blocks: a full queue fails the connection instead of waiting, so native replies share that reader without stalling behind a slow consumer.
@@ -396,7 +397,7 @@ Server requests and late responses use the same queue and the same rows, so near
 
 Exhaustion writes exactly one structured `native_limit_exceeded` warning with the fields `limit_kind` (`event_count`, `event_bytes` or `frame_bytes`), `profile`, `observed` and `maximum`. The record never contains frame bodies, prompts, credentials or native text, and the diagnostic stderr overflow keeps its separate error without this record.
 
-Memory bound: a connection retains at most `N * sizeof(Event)` bytes of event descriptors plus at most `B` bytes of queued payload, because the queued-byte bound limits the sum of all frame sizes regardless of event count. `sizeof(Event)` is 144 bytes on 64-bit targets such as darwin/arm64 (verify per architecture rather than assuming it; a test logs the measured value and caps the descriptor reservation at 1 MiB on 64-bit targets). The Codex profiles therefore reserve about 576 KiB of descriptors (18 KiB for the 128-event profile) in addition to their unchanged 8 MiB (`codex`) or 32 MiB (`image`) payload budget. A larger count is still a finite allowance: it does not promise acceptance of arbitrarily fragmented streams, and the queued-byte and frame bounds still apply independently below the count ceiling. The shared-account fan-out queues of the Codex shared runtime keep their own smaller per-member bounds.
+Memory bound: a connection retains at most `N * sizeof(Event)` bytes of event descriptors plus at most `B` bytes of queued payload, because the queued-byte bound limits the sum of all frame sizes regardless of event count. `sizeof(Event)` is 144 bytes on 64-bit targets such as darwin/arm64 (verify per architecture rather than assuming it; a test logs the measured value and caps the descriptor reservation at 10 MiB on 64-bit targets). The Codex profiles therefore reserve about 9 MiB of descriptors in addition to their 32 MiB (`codex`) or 64 MiB (`image`) payload budget. The 128-event `jsonrpc` profile reserves about 18 KiB of descriptors and retains its 8 MiB payload budget. A larger count is still a finite allowance: it does not promise acceptance of arbitrarily fragmented streams, and the queued-byte and frame bounds still apply independently below the count ceiling. The shared-account fan-out queues of the Codex shared runtime keep their own smaller per-member bounds.
 
 Callers allocate and durably record UUID-v7 operation identities before side-effecting sends. The transport never retries and rejects reuse of a sent identity. Cancellation before a write does not consume the identity. A missing acknowledgment after transmission is recoverable uncertainty; late definitive responses retain their original request identity for reconciliation. Response delivery serialized with timeout wins when already observed. Blocked writes terminate the owned scope instead of leaving an unbounded writer or authorizing another send. Raw native error messages/data never escape the adapter transport; only their numeric classification is retained.
 
@@ -1570,11 +1571,11 @@ Targeted job cancellation after durable input acceptance now keeps the native cl
 
 ### Project requirements
 
-- DeliDev ordinary session tools reuse only the executing Worker’s gh configuration selector under `cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context`. Preserve private provider HOME, native permissions, protected execution/proxy exclusions and excluded discovery/login/title/inspection/Sidechat isolation. gh owns its files and OS credentials; DeliDev never reads, transfers, injects or cleans them. No RPC or migration.
+- DeliDev ordinary session tools reuse the executing Worker’s bounded ordinary-tool selectors under `cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context`. Preserve private provider HOME, native permissions, protected execution/proxy exclusions and excluded discovery/login/title/inspection/Sidechat isolation. gh owns its files and OS credentials; DeliDev never reads, transfers, injects or cleans them. No RPC or migration.
 
 ### cmds/delidev-cli constraints
 
-- Ordinary execution tool authentication follows `cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context`. Carry only the executing Worker’s typed `GH_CONFIG_DIR` selector after private environment reconstruction, including continuation and independent Fork. Keep discovery, login, title, inspection and Sidechat isolated. Never read, copy, transfer, inject or clean up gh credentials/configuration; preserve native permissions and protected execution/proxy exclusions. No RPC or migration.
+- Ordinary execution tool authentication follows `cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context`. Carry the executing Worker’s typed `GH_CONFIG_DIR` and platform selectors after private environment reconstruction, including continuation and independent Fork. Ordinary macOS Codex shells retain the original user HOME through their separate native shell policy. Keep discovery, login, title, inspection and Sidechat isolated. Never read, copy, transfer, inject or clean up gh credentials/configuration; preserve native permissions and protected execution/proxy exclusions. No RPC or migration.
 
 ### cmds/delidev-cli/internal/apiproxy constraints
 
@@ -2885,7 +2886,13 @@ resources and `0600` for other resources. Mode changes invalidate the proof.
 
 The feature permits ordinary Codex, Claude Code, OpenCode and Grok session tools to use the executing machine's existing gh login. The Worker resolves the configuration selector from its original process environment and cwd before native launch. Precedence is `GH_CONFIG_DIR`, `XDG_CONFIG_HOME/gh`, Windows `AppData/GitHub CLI`, then the original user home `.config/gh`. The final fallback follows gh's `os.UserHomeDir`: `HOME` on Unix and `USERPROFILE` on Windows. Relative configured paths bind to the original Worker cwd, never the session checkout or private runtime. Signed installed-controller delegation and update/rollback helpers retain the explicit `GH_CONFIG_DIR` selector through their existing environment allowlist. They retain the caller cwd and never forward `GH_TOKEN` or `GITHUB_TOKEN`. See the [official gh environment contract](https://cli.github.com/manual/gh_help_environment) and [gh directory resolver](https://github.com/cli/go-gh/blob/trunk/pkg/config/config.go).
 
-The internal `executionenv.Ordinary` context carries this selector and, on Linux only, the original bounded `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` selectors in memory. These non-secret session selectors let gh reach the existing user Secret Service after private HOME reconstruction. They never authorize bus/store creation, adoption or cleanup. Each adapter applies `GH_CONFIG_DIR` after rebuilding its private environment. Ordinary Claude execution on macOS additionally selects the current user's available GUI login context through a typed process option so native gh children can reach that login's Keychain. Headless execution retains its background context; excluded profiles retain the zero ordinary context. This changes neither private provider HOME nor credential ownership. Initial execution, supported continuation and independent Fork receive it; remote execution resolves only the remote Worker's context. Native provider HOME/configuration, execution/proxy credential exclusions, permissions, original process ownership, history and cleanup remain unchanged. This context grants no unsupported native continuation/Fork capability.
+The internal `executionenv.Ordinary` context carries this selector and, on Linux only, the original bounded `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` selectors in memory. These non-secret session selectors let gh reach the existing user Secret Service after private HOME reconstruction. They never authorize bus/store creation, adoption or cleanup. Each adapter applies `GH_CONFIG_DIR` after rebuilding its private environment. Ordinary Codex and Claude execution on macOS additionally select the current user's available GUI login context through a typed process option so native gh children can reach that login's Keychain. Headless execution retains its background context; excluded profiles retain the zero ordinary context. This changes neither private provider HOME nor credential ownership. Initial execution, supported continuation and independent Fork receive it; remote execution resolves only the remote Worker's context. Native provider HOME/configuration, execution/proxy credential exclusions, permissions, original process ownership, history and cleanup remain unchanged. This context grants no unsupported native continuation/Fork capability.
+
+On macOS, ordinary Codex shell tools also retain the original Worker's bounded
+absolute `HOME` through `shell_environment_policy.set.HOME`. This lets gh locate
+the user's existing login keychain. The native provider process keeps its private
+`HOME` and `CODEX_HOME`; auxiliary profiles receive no ordinary shell-home selector.
+No keychain file or credential is read or copied by DeliDev.
 
 `PrivateRuntimeEnvironment` remains isolated. Discovery, account login, auxiliary title generation, inspection and Sidechat receive no ordinary context. Codex independently excludes probe, subscription, model-observation, title and read-only Sidechat profiles even if a caller supplies a context. Grok applies the selector only to its actual API execution process, retaining separate isolated inspection processes.
 
