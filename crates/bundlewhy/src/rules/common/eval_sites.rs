@@ -329,6 +329,10 @@ const OPERATOR_KEYWORDS: &[&str] = &[
     "throw",
 ];
 
+/// Words, besides the operator keywords, after which a `(` groups an
+/// expression instead of opening an argument list.
+const GROUPING_KEYWORDS: &[&str] = &["return", "void", "default"];
+
 /// Words that precede an object literal in expression position.
 const OBJECT_LITERAL_KEYWORDS: &[&str] = &[
     "return",
@@ -863,7 +867,9 @@ impl<'a> Scanner<'a> {
     /// group an expression; after a name, `)` or `]` it would be an argument
     /// list (`run(eval)(code)` calls the result of `run`), and after `if`,
     /// `while`, `for`, `switch`, `with`, `catch`, `function` or `new` it
-    /// belongs to a header or a construction.
+    /// belongs to a header or a construction. After the `)` that ends an `if`,
+    /// `while`, `for` or `with` head it groups the first expression of the
+    /// statement body (`if (ready) (eval)(code)`).
     fn is_parenthesized_call(&self, index: usize) -> bool {
         let closing = self.tokens[index + 1..]
             .iter()
@@ -887,10 +893,45 @@ impl<'a> Scanner<'a> {
         if self.top().in_type() {
             return false;
         }
-        let before = (index - closing)
-            .checked_sub(1)
-            .map(|position| self.tokens[position]);
-        before.is_none_or(|token| opens_grouping(&token))
+        let Some(before) = (index - closing).checked_sub(1) else {
+            return true;
+        };
+        let token = self.tokens[before];
+        opens_grouping(&token) || (token.is_punct(")") && self.closes_statement_head(before))
+    }
+
+    /// Reports whether the `)` at `close` ends the parenthesized head of an
+    /// `if`, `while`, `for`, `for await` or `with` statement. The statement
+    /// body follows it, so a `(` after it groups an expression.
+    fn closes_statement_head(&self, close: usize) -> bool {
+        let mut depth = 0usize;
+        let mut open = None;
+        for position in (0..=close).rev() {
+            let token = &self.tokens[position];
+            if token.is_punct(")") {
+                depth += 1;
+            } else if token.is_punct("(") {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    open = Some(position);
+                    break;
+                }
+            }
+        }
+        let Some(open) = open.and_then(|open| open.checked_sub(1)) else {
+            return false;
+        };
+        let keyword = &self.tokens[open];
+        if keyword.kind != TokenKind::Word {
+            return false;
+        }
+        match keyword.text {
+            "if" | "while" | "for" | "with" => true,
+            "await" => open
+                .checked_sub(1)
+                .is_some_and(|before| self.tokens[before].is_word("for")),
+            _ => false,
+        }
     }
 
     /// The token after the parenthesis list that opens at `index + 1`.
@@ -1461,7 +1502,7 @@ fn opens_grouping(token: &Token<'_>) -> bool {
         TokenKind::Value => matches!(token.template, TemplateEdge::Open | TemplateEdge::Middle),
         TokenKind::Private | TokenKind::Property => false,
         TokenKind::Word => {
-            matches!(token.text, "return" | "void")
+            GROUPING_KEYWORDS.contains(&token.text)
                 || (OPERATOR_KEYWORDS.contains(&token.text) && token.text != "new")
         }
         TokenKind::Punct => !matches!(token.text, ")" | "]" | "++" | "--" | "." | "?."),
@@ -2369,6 +2410,29 @@ mod tests {
             ("(eval)(...args);", &[CALL]),
             ("(eval)(code); (eval)(other);", &[CALL, CALL]),
             ("(eval)(code); eval(other);", &[CALL, CALL]),
+            // The first expression of a statement body, after a statement
+            // head or a keyword that starts an expression.
+            ("if (ready) (eval)(code);", &[CALL]),
+            (
+                "if (ready) (eval)(code); else (eval)(other);",
+                &[CALL, CALL],
+            ),
+            ("if (a) { } else (eval)(code);", &[CALL]),
+            ("while (more()) (eval)(code);", &[CALL]),
+            ("for (;;) (eval)(code);", &[CALL]),
+            ("for (const k of keys) (eval)(code);", &[CALL]),
+            ("for (k in keys) (eval)(code);", &[CALL]),
+            ("for await (const k of keys) (eval)(code);", &[CALL]),
+            ("with (scope) (eval)(code);", &[CALL]),
+            ("if (a) if (b) (eval)(code);", &[CALL]),
+            ("if (f(a, (b))) (eval)(code);", &[CALL]),
+            ("if/* c */(ready)/* c */(eval)(code);", &[CALL]),
+            ("do (eval)(code); while (ready);", &[CALL]),
+            ("throw (eval)(code);", &[CALL]),
+            ("case 1: (eval)(code);", &[CALL]),
+            ("export default (eval)(code);", &[CALL]),
+            ("yield (eval)(code);", &[CALL]),
+            ("x = a in (eval)(code);", &[CALL]),
             // A comma expression yields a value, so the call is indirect.
             ("(0, eval)(code);", &[]),
             ("(eval, 0)(code);", &[]),
@@ -2383,6 +2447,17 @@ mod tests {
             ("run(eval)(code);", &[]),
             ("run\n(eval)(code);", &[]),
             ("run()(eval)(code);", &[]),
+            // A `)` that does not end a statement head is an argument list.
+            ("run(a)(eval)(code);", &[]),
+            ("fn(if)(eval)(code);", &[]),
+            ("obj.if (ready)(eval)(code);", &[]),
+            ("obj.while (ready)(eval)(code);", &[]),
+            ("obj.for (ready)(eval)(code);", &[]),
+            ("ifReady (ready)(eval)(code);", &[]),
+            ("fn(a)(b)(eval)(code);", &[]),
+            ("catch (ready)(eval)(code);", &[]),
+            ("switch (ready)(eval)(code);", &[]),
+            ("function f(ready)(eval)(code) {}", &[]),
             ("items[0](eval)(code);", &[]),
             ("a?.(eval)(code);", &[]),
             ("new (eval)(code);", &[]),

@@ -3598,6 +3598,13 @@ y=/process.env.F/.test(z),process.env.G"#;
         ("export const r = (c) => (eval)(c);", 1),
         ("run((eval)(c));", 1),
         ("(eval)(c); eval(d);", 2),
+        // A statement body or an expression keyword groups the callee.
+        ("if (ready) (eval)(c);", 1),
+        ("while (more) (eval)(c);", 1),
+        ("for (;;) (eval)(c);", 1),
+        ("do (eval)(c); while (x);", 1),
+        ("throw (eval)(c);", 1),
+        ("if (ready) run(a)(eval)(c);", 0),
         // A comma expression yields a value, so these calls are indirect.
         ("(0, eval)(c);", 0),
         ("(0,eval)(c);", 0),
