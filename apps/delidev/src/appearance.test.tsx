@@ -19,6 +19,7 @@ import {
   type AppearanceBridge,
   type AppearanceSnapshot,
 } from "./appearance";
+import { danger, expectTone, neutral } from "./test-action-tone";
 
 function deferred<T>() {
   let resolve!: (value: T) => void, reject!: (error: unknown) => void;
@@ -1409,6 +1410,52 @@ test("readiness stays false until the initial read settles, including a failed r
   expect(screen.getByTestId("ready").textContent).toBe("false");
   await act(async () => rejected.reject(new Error("unavailable")));
   expect(screen.getByTestId("ready").textContent).toBe("true");
+});
+
+test("custom theme deletion opener and confirmation are Danger while Cancel, Edit and Export stay neutral", async () => {
+  const { defaultPreferences, palettes } =
+    await import("./appearance-preferences");
+  scheme(false);
+  const value = fixture();
+  const custom = {
+    version: 1 as const,
+    id: "019abcde-1234-7123-8123-123456789abc",
+    name: "Deletable theme",
+    ...structuredClone(palettes.dracula),
+  };
+  const preferences = { ...defaultPreferences(), custom_themes: [custom] };
+  vi.mocked(value.bridge.read).mockResolvedValue({
+    revision: 1,
+    theme: Theme.System,
+    problem: null,
+    preferences,
+  });
+  vi.mocked(value.bridge.update).mockImplementation(
+    async (theme, revision, next) => ({
+      theme,
+      revision: revision + 1,
+      problem: null,
+      preferences: next,
+    }),
+  );
+  render(
+    <AppearanceProvider bridge={value.bridge}>
+      <AppearanceSettings />
+    </AppearanceProvider>,
+  );
+  const opener = await screen.findByRole("button", { name: "Delete theme" });
+  expectTone(opener, danger);
+  expectTone(
+    screen.getByRole("button", { name: "Edit custom theme" }),
+    neutral,
+  );
+  expectTone(screen.getByRole("button", { name: "Export theme" }), neutral);
+  await waitFor(() => expect(opener.matches(":disabled")).toBe(false));
+  fireEvent.click(opener);
+  expect(value.bridge.update).not.toHaveBeenCalled();
+  const dialog = within(screen.getByRole("dialog"));
+  expectTone(dialog.getByRole("button", { name: "Confirm deletion" }), danger);
+  expectTone(dialog.getByRole("button", { name: "Cancel" }), neutral);
 });
 
 test.each(Object.values(AppearanceProblem))(

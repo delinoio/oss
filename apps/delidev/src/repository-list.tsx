@@ -7,6 +7,7 @@ import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
+  SettingsActionTone,
 } from "./settings-action";
 import { useId } from "react";
 import {
@@ -91,6 +92,7 @@ export function RepositoryRow({
             {copy("settings.edit_464c4f")}
           </SettingsActionButton>
           <SettingsActionButton
+            tone={SettingsActionTone.Danger}
             icon={SettingsActionIcon.Delete}
             presentation={SettingsActionPresentation.Icon}
             targetId={row.id}

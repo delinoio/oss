@@ -5,6 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   EntityKind,
   ResourceSchema,
@@ -31,6 +32,7 @@ function fixture(
     sidechat?: boolean;
     supported?: boolean;
     recoveryState?: "failed" | "canceled";
+    stored?: boolean;
   } = {},
 ) {
   const session = create(ResourceSchema, {
@@ -108,6 +110,15 @@ function fixture(
       created_at: "2026-10-04T00:00:00Z",
     }),
   });
+  if (options.stored)
+    current = {
+      ...session,
+      documentJson: encode({
+        name: "Original session",
+        workspace: "general-chat",
+        storage: { state: "stored", snapshot_id: snapshot.id },
+      }),
+    };
   const deletion = create(SessionDeletionJobSchema, {
     id: newRequestId(),
     sessionId: session.id,
@@ -664,3 +675,176 @@ it.each(["queued", "claimed", "succeeded", "failed", "canceled"])(
     }
   },
 );
+
+async function ready(name: string) {
+  await open();
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name }) as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+  return screen.getByRole("button", { name });
+}
+it("marks permanent session deletion, its confirmation and original retry Danger while Cancel stays untoned", async () => {
+  const f = fixture();
+  render(f.view(true));
+  const opener = await ready("Permanently delete session");
+  expectTone(opener, danger);
+  fireEvent.click(opener);
+  expectTone(
+    screen.getByRole("button", { name: "Confirm permanent session deletion" }),
+    danger,
+  );
+  expectTone(
+    screen.getByRole("button", { name: "Cancel deletion confirmation" }),
+    null,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm permanent session deletion" }),
+  );
+  expectTone(
+    await screen.findByRole("button", {
+      name: "Retry the same permanent deletion request",
+    }),
+    danger,
+  );
+});
+it("marks only the snapshot DELETE branch Danger and keeps inspect and its Cancel untoned", async () => {
+  const f = fixture();
+  render(f.view(true));
+  await ready("Preview workspace usage");
+  const inspect = await screen.findByRole("button", {
+    name: "Inspect snapshot",
+  });
+  expectTone(inspect, null);
+  const remove = await screen.findByRole("button", {
+    name: "Permanently delete snapshot",
+  });
+  expectTone(remove, danger);
+  expect(
+    screen.queryByRole("button", { name: "Restore workspace" }),
+  ).toBeNull();
+  await waitFor(() =>
+    expect((remove as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(remove);
+  expectTone(
+    screen.getByRole("button", { name: "Confirm selected storage action" }),
+    danger,
+  );
+  expectTone(
+    screen.getByRole("button", { name: "Cancel storage confirmation" }),
+    null,
+  );
+  expect(f.request).not.toHaveBeenCalled();
+});
+it("keeps snapshot restore and its confirmation non-destructive", async () => {
+  const f = fixture({ stored: true });
+  render(f.view(true));
+  await open();
+  const restore = await screen.findByRole("button", {
+    name: "Restore workspace",
+  });
+  expectTone(restore, null);
+  expect(
+    screen.queryByRole("button", { name: "Permanently delete snapshot" }),
+  ).toBeNull();
+  await waitFor(() =>
+    expect((restore as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(restore);
+  expectTone(
+    screen.getByRole("button", { name: "Confirm selected storage action" }),
+    neutral,
+  );
+  expect(f.request).not.toHaveBeenCalled();
+});
+it("keeps preview and cleanup confirmations and the storage request retry neutral", async () => {
+  const f = fixture();
+  render(f.view(true));
+  const preview = await ready("Preview workspace usage");
+  expectTone(preview, null);
+  fireEvent.click(preview);
+  expectTone(
+    screen.getByRole("button", { name: "Confirm selected storage action" }),
+    neutral,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm selected storage action" }),
+  );
+  expectTone(
+    await screen.findByRole("button", {
+      name: "Retry the same storage request",
+    }),
+    neutral,
+  );
+});
+it("marks the retry of a lost snapshot DELETE request Danger", async () => {
+  const f = fixture();
+  render(f.view(true));
+  await ready("Preview workspace usage");
+  const remove = await screen.findByRole("button", {
+    name: "Permanently delete snapshot",
+  });
+  await waitFor(() =>
+    expect((remove as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(remove);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm selected storage action" }),
+  );
+  expectTone(
+    await screen.findByRole("button", {
+      name: "Retry the same storage request",
+    }),
+    danger,
+  );
+  expect(f.requests[0]).toMatchObject({
+    action: WorkspaceStorageAction.DELETE,
+  });
+});
+
+it.each([
+  ["Create workspace snapshot", {}],
+  ["Inspect snapshot", {}],
+  [
+    "Reconcile original storage operation",
+    { recoveryState: "failed" as const },
+  ],
+])("keeps the %s confirmation neutral", async (name, options) => {
+  const f = fixture(options);
+  render(f.view(true));
+  await open();
+  const opener = await screen.findByRole("button", { name });
+  await waitFor(() =>
+    expect((opener as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(opener);
+  expectTone(
+    screen.getByRole("button", { name: "Confirm selected storage action" }),
+    neutral,
+  );
+  expect(f.request).not.toHaveBeenCalled();
+});
+
+it("keeps the Store and clean workspace confirmation neutral after an exact preview", async () => {
+  const f = fixture();
+  render(f.view(true));
+  fireEvent.click(await ready("Preview workspace usage"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm selected storage action" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Retry the same storage request",
+    }),
+  );
+  await screen.findByText(/9,007,199,254,740,993 bytes/);
+  const cleanup = await ready("Store and clean workspace");
+  expectTone(cleanup, null);
+  fireEvent.click(cleanup);
+  expectTone(
+    screen.getByRole("button", { name: "Confirm selected storage action" }),
+    neutral,
+  );
+});

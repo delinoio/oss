@@ -2,7 +2,11 @@
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
+import {
+  SettingsActionButton,
+  SettingsActionIcon,
+  SettingsActionTone,
+} from "./settings-action";
 import {
   SettingsTaskDialog,
   SettingsTaskScope,
@@ -447,6 +451,7 @@ function SSHSetupTask({
               ) : null}
               {data.credential_removed !== true ? (
                 <SettingsActionButton
+                  tone={SettingsActionTone.Danger}
                   icon={SettingsActionIcon.Delete}
                   disabled={blocked}
                   onClick={() => void cancel.send({ mutation: mutation() })}

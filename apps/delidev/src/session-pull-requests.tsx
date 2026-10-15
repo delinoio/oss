@@ -20,6 +20,7 @@ import {
   visiblePageIds,
 } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
+import { SettingsActionTone, actionTone } from "./settings-action";
 import {
   useCallback,
   useEffect,
@@ -147,7 +148,11 @@ function PendingUnlink({
       {!valid ? (
         <p role="alert">{copy("session-pull-requests.inline.a4c646bacf")}</p>
       ) : remove.uncertain ? (
-        <button disabled={remove.busy} onClick={remove.retry}>
+        <button
+          {...actionTone(SettingsActionTone.Danger)}
+          disabled={remove.busy}
+          onClick={remove.retry}
+        >
           {copy("session-pull-requests.retryOriginalPrUnlink_29e215")}
         </button>
       ) : null}
@@ -354,6 +359,7 @@ function LinkRow({
         }}
       />
       <button
+        {...actionTone(SettingsActionTone.Danger)}
         disabled={remove.busy || remove.uncertain}
         onClick={() =>
           void remove.send({

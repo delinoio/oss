@@ -5,6 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone } from "./test-action-tone";
 import {
   DeleteLocalReviewCommentRequestSchema,
   EntityKind,
@@ -660,4 +661,23 @@ it("clears normally acknowledged deletion without retaining recovery on reopenin
     screen.queryByRole("button", { name: "Retry original comment deletion" }),
   ).toBeNull();
   expect(f.remove).toHaveBeenCalledTimes(1);
+});
+
+it("marks comment deletion and its original retry Danger while Edit stays untoned", async () => {
+  const f = fixture();
+  f.remove.mockImplementationOnce(async () => {
+    f.eraseComment();
+    throw new ConnectError("Response lost", Code.Unavailable);
+  });
+  render(<f.View />);
+  const opener = await screen.findByRole("button", { name: "Delete comment" });
+  expectTone(opener, danger);
+  expectTone(screen.getByRole("button", { name: "Edit comment" }), null);
+  fireEvent.click(opener);
+  expectTone(
+    await screen.findByRole("button", {
+      name: "Retry original comment deletion",
+    }),
+    danger,
+  );
 });

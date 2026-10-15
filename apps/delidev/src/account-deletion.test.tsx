@@ -13,6 +13,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   BrowserService,
   ConfigurationService,
@@ -1566,4 +1567,74 @@ it("dismisses the cleanup dialog through the task close button and Escape", asyn
     expect(value.remove).not.toHaveBeenCalled();
     view.unmount();
   }
+});
+
+it("marks the disconnect-and-delete confirmation Danger and keeps Keep account neutral", () => {
+  const value = fixture();
+  render(<value.Harness />);
+  expectTone(screen.getByRole("button", { name: confirmLabel }), danger);
+  expectTone(screen.getByRole("button", { name: "Keep account" }), neutral);
+});
+
+it("marks the failed-login cleanup confirmation Danger and keeps Keep account neutral", async () => {
+  const value = fixture(false, "chatgpt", "terminal-logout");
+  render(<value.Harness />);
+  expectTone(await screen.findByRole("button", { name: cleanupLabel }), danger);
+  expectTone(screen.getByRole("button", { name: "Keep account" }), neutral);
+});
+
+it("marks only the retry of the same deletion Danger", async () => {
+  const value = fixture();
+  value.remove.mockRejectedValueOnce(
+    new ConnectError("lost deletion", Code.Unavailable),
+  );
+  await start(value);
+  value.complete();
+  await tick();
+  expectTone(
+    await screen.findByRole("button", { name: "Retry the same deletion" }),
+    danger,
+  );
+});
+
+it("marks the failed-login retry of the same deletion Danger", async () => {
+  const value = fixture(false, "chatgpt", true);
+  value.remove.mockRejectedValueOnce(
+    new ConnectError("Response unavailable.", Code.Unavailable),
+  );
+  render(<value.Harness />);
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  expectTone(
+    await screen.findByRole("button", { name: "Retry the same deletion" }),
+    danger,
+  );
+});
+
+it("keeps the original logout retry neutral", async () => {
+  const value = fixture();
+  value.logout.mockImplementationOnce(async (request) => {
+    value.accept(request);
+    throw new ConnectError("lost response", Code.Unavailable);
+  });
+  render(<value.Harness />);
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  expectTone(
+    await screen.findByRole("button", {
+      name: "Retry original logout request",
+    }),
+    neutral,
+  );
+});
+
+it("keeps the original status-check retry neutral", async () => {
+  const value = fixture();
+  value.progress.mockRejectedValueOnce(
+    new ConnectError("lost status", Code.Unavailable),
+  );
+  await start(value);
+  value.complete();
+  expectTone(
+    await screen.findByRole("button", { name: "Retry original status check" }),
+    neutral,
+  );
 });

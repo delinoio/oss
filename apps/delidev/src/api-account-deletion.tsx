@@ -4,7 +4,11 @@ import {
   productDiagnostic,
   productResourceName,
 } from "./product-identity-labels";
-import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
+import {
+  SettingsActionButton,
+  SettingsActionIcon,
+  SettingsActionTone,
+} from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -483,6 +487,7 @@ export function ApiAccountDeletion({
               {copy("account-deletion.api.keepEntry")}
             </SettingsTaskDismissButton>
             <SettingsActionButton
+              tone={SettingsActionTone.Danger}
               icon={SettingsActionIcon.Delete}
               className="api-account-deletion-confirm"
               disabled={!active || !apiEntry(confirmed)}
@@ -542,6 +547,11 @@ export function ApiAccountDeletion({
             </SettingsTaskDismissButton>
             {view.stage === Stage.Paused ? (
               <SettingsActionButton
+                tone={
+                  pending.current?.retry === Retry.Delete
+                    ? SettingsActionTone.Danger
+                    : SettingsActionTone.Default
+                }
                 icon={SettingsActionIcon.Retry}
                 disabled={!active || pending.current?.busy}
                 onClick={

@@ -230,6 +230,10 @@ desktop/real-account/platform acceptance in pull requests, issues and CI runs.
 
 - Fresh authenticated main-desktop Worker relaunch recovery uses newly recorded immutable original-controller generation/registration/canonical-scope/desktop-client/PID/kernel-birth evidence, synchronized before admission and rechecked under final Go arbitration. Uncertain legacy/unknown proof remains blocked; same-process Stop, pending admission, updater/service and borrowed lifetimes retain their owners. Controller exit never proves native cleanup or authorizes replay/Resume. Follow the [desktop](apps-delidev-desktop-contract.md#automatic-main-window-local-worker-management), [CLI](cmds-delidev-contract.md#main-desktop-automatic-worker-management) and [process](cmds-delidev-process-contract.md#original-worker-controller-observation) contracts.
 
+## Destructive action presentation invariant
+
+Desktop and mobile buttons that delete persisted data, reset persisted settings or revoke authorization render the semantic marker `data-action-tone="danger"` with outlined danger-colored text, icon and border (transparent background, pale danger hover). Only the destructive branch of a shared confirmation is marked, the tone is derived from existing action state and never from icons or visible text, and no behavior, confirmation, geometry, label or accessibility name changes. The desktop client owns the closed `SettingsActionTone` catalog and the surface table in the [desktop contract](apps-delidev-desktop-contract.md#destructive-action-tone); the mobile client owns an app-local equivalent in the [mobile contract](apps-delidev-mobile-contract.md) and shares no runtime code.
+
 ## Diagnostic resource-kind invariant
 
 Generic diagnostic consumers must accept the complete closed stored resource-kind inventory, including child-agent and session-forward records, without interpreting retained counts as execution readiness.

@@ -4,7 +4,11 @@ import {
   PresentationKind,
   productResourceName,
 } from "./product-identity-labels";
-import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
+import {
+  SettingsActionButton,
+  SettingsActionIcon,
+  SettingsActionTone,
+} from "./settings-action";
 import {
   DisclosureButton,
   DisclosureContent,
@@ -298,6 +302,7 @@ export function DeviceRow({
           </DisclosureButton>
           {value.revoked === false && !self ? (
             <SettingsActionButton
+              tone={SettingsActionTone.Danger}
               icon={SettingsActionIcon.Delete}
               type="button"
               className="paired-device-revoke"
@@ -503,6 +508,7 @@ export function DeviceRevocation({
       />
       <SettingsTaskActions className="">
         <SettingsActionButton
+          tone={SettingsActionTone.Danger}
           icon={SettingsActionIcon.Confirm}
           className="paired-device-revoke"
           disabled={self || blocked || stale || unavailable}
@@ -521,6 +527,7 @@ export function DeviceRevocation({
         </SettingsActionButton>
         {mutation.uncertain && !self ? (
           <SettingsActionButton
+            tone={SettingsActionTone.Danger}
             icon={SettingsActionIcon.Retry}
             disabled={mutation.busy}
             onClick={mutation.retry}

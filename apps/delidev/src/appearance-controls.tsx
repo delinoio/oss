@@ -29,7 +29,11 @@ import {
   type CustomTheme,
   type ThemeFile,
 } from "./appearance-preferences";
-import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
+import {
+  SettingsActionButton,
+  SettingsActionIcon,
+  SettingsActionTone,
+} from "./settings-action";
 const label = (key: string) => copy(`appearance.v2.${key}` as MessageKey);
 // The editor draft carries its UUIDv7 id, so it validates with the identity
 // shape; the strict no-ID shape belongs to theme file import and export.
@@ -426,6 +430,7 @@ export function AppearanceControls({
                 {label("export")}
               </SettingsActionButton>
               <SettingsActionButton
+                tone={SettingsActionTone.Danger}
                 icon={SettingsActionIcon.Delete}
                 targetName={theme.name}
                 onClick={() =>
@@ -564,6 +569,7 @@ export function AppearanceControls({
             {label("cancel")}
           </SettingsActionButton>
           <SettingsActionButton
+            tone={SettingsActionTone.Danger}
             icon={SettingsActionIcon.Confirm}
             disabled={blocked || removal.revision !== snapshot.revision}
             onClick={() => {

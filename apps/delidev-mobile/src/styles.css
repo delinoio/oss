@@ -7,6 +7,8 @@
   --line: #d7dde5;
   --accent: #0969da;
   --focus: #0969da;
+  --danger-text: #b42332;
+  --danger-background: #fff3f4;
   font-family:
     system-ui,
     -apple-system,
@@ -23,6 +25,8 @@
     --line: #384351;
     --accent: #7ab5ff;
     --focus: #7ab5ff;
+    --danger-text: #ffb6bf;
+    --danger-background: #392127;
   }
 }
 :root[data-theme="dark"] {
@@ -33,6 +37,8 @@
   --line: #384351;
   --accent: #7ab5ff;
   --focus: #7ab5ff;
+  --danger-text: #ffb6bf;
+  --danger-background: #392127;
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -66,6 +72,17 @@ button {
 button:disabled {
   opacity: 0.55;
   cursor: default;
+}
+/* Danger tone marks buttons that forget or revoke persisted authorization. It is
+   a semantic marker, never derived from visible text. Attenuation, focus outline
+   and native disabled semantics keep their original rules. */
+:root button[data-action-tone="danger"] {
+  color: var(--danger-text);
+  background: transparent;
+  border-color: var(--danger-text);
+}
+:root button[data-action-tone="danger"]:hover:not(:disabled) {
+  background: var(--danger-background);
 }
 button:focus-visible,
 input:focus-visible,

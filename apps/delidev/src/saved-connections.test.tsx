@@ -6,6 +6,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import { LocalWorkerAction, LocalWorkerState } from "./local-worker-controls";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import {
@@ -766,4 +767,62 @@ it("keeps the initial fallback Add form available without a prior task", async (
   expect(bodyHidden(screen.getByLabelText("Connection name"))).toBe(false);
   expect(screen.queryByRole("button", { name: /^Continue/ })).toBeNull();
   expect(value.pair).not.toHaveBeenCalled();
+});
+
+it("marks the saved connection removal opener, confirmation and retry Danger while Keep and Show removed stay neutral", async () => {
+  const value = fixture();
+  value.remove.mockRejectedValueOnce("timed-out");
+  render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  const opener = await screen.findByRole("button", {
+    name: "Remove Saved server",
+  });
+  expectTone(opener, danger);
+  expectTone(
+    screen.getByRole("button", { name: "Show removed connections" }),
+    neutral,
+  );
+  fireEvent.click(opener);
+  expect(value.remove).not.toHaveBeenCalled();
+  const confirm = screen.getByRole("button", {
+    name: "Confirm connection removal",
+  });
+  expectTone(confirm, danger);
+  expectTone(screen.getByRole("button", { name: "Keep connection" }), neutral);
+  fireEvent.click(confirm);
+  await screen.findByText(/operation has not been confirmed/);
+  expectTone(
+    screen.getByRole("button", { name: "Retry original connection removal" }),
+    danger,
+  );
+  expectTone(
+    screen.getByRole("button", { name: "Inspect removal state later" }),
+    neutral,
+  );
+});
+
+it("marks the Removing-state retry opener Danger because it retries the retained deletion", async () => {
+  const value = fixture();
+  value.list.mockResolvedValue([
+    {
+      ...value.profile,
+      state: SavedConnectionState.Removing,
+      revision: 2,
+      removal: { request_id: newRequestId(), expected_revision: 1 },
+    },
+  ]);
+  render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  const opener = await screen.findByRole("button", {
+    name: "Retry removal of Saved server",
+  });
+  expectTone(opener, danger);
+  expect(value.remove).not.toHaveBeenCalled();
+  fireEvent.click(opener);
+  expectTone(
+    screen.getByRole("button", { name: "Retry original connection removal" }),
+    danger,
+  );
+  expectTone(
+    screen.getByRole("button", { name: "Inspect removal state later" }),
+    neutral,
+  );
 });

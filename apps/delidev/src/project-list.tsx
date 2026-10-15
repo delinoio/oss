@@ -7,6 +7,7 @@ import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
+  SettingsActionTone,
 } from "./settings-action";
 import { DisclosureButton, DisclosureDensity } from "./disclosure";
 import { useId, useState } from "react";
@@ -99,6 +100,7 @@ function ProjectRow({
             {copy("settings.edit_464c4f")}
           </SettingsActionButton>
           <SettingsActionButton
+            tone={SettingsActionTone.Danger}
             icon={SettingsActionIcon.Delete}
             presentation={SettingsActionPresentation.Icon}
             targetId={row.id}

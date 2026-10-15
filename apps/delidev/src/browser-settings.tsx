@@ -11,7 +11,11 @@ import {
   type BrowserChoices,
   type BrowserInventoryEntry,
 } from "./browser-preference-controller";
-import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
+import {
+  SettingsActionButton,
+  SettingsActionIcon,
+  SettingsActionTone,
+} from "./settings-action";
 import "./browser-settings.css";
 
 export enum BrowserSlot {
@@ -265,6 +269,7 @@ export function BrowserSettings({ active = true }: { active?: boolean }) {
           ) : null}
           {resettable ? (
             <SettingsActionButton
+              tone={SettingsActionTone.Danger}
               icon={SettingsActionIcon.Delete}
               type="button"
               disabled={busy}

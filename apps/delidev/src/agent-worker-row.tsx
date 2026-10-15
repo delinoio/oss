@@ -8,6 +8,7 @@ import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
+  SettingsActionTone,
 } from "./settings-action";
 import {
   DisclosureButton,
@@ -215,6 +216,7 @@ export function AgentWorkerRow({
           {copy("settings.previewRouting_02d4d9")}
         </SettingsActionButton>
         <SettingsActionButton
+          tone={SettingsActionTone.Danger}
           icon={SettingsActionIcon.Delete}
           presentation={SettingsActionPresentation.Icon}
           targetId={row.id}

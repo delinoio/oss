@@ -3,6 +3,7 @@ import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
+  SettingsActionTone,
 } from "./settings-action";
 import {
   ownedMessage,
@@ -608,6 +609,7 @@ export function SavedConnections({
                             })}
                           </SettingsActionButton>
                           <SettingsActionButton
+                            tone={SettingsActionTone.Danger}
                             icon={SettingsActionIcon.Delete}
                             disabled={
                               busy || Boolean(attempt || edit || removal)
@@ -629,6 +631,7 @@ export function SavedConnections({
                     </>
                   ) : (
                     <SettingsActionButton
+                      tone={SettingsActionTone.Danger}
                       icon={SettingsActionIcon.Retry}
                       disabled={busy || Boolean(attempt || edit || removal)}
                       onClick={(event) => {
@@ -756,6 +759,7 @@ export function SavedConnections({
               </p>
             ) : null}
             <SettingsActionButton
+              tone={SettingsActionTone.Danger}
               icon={SettingsActionIcon.Retry}
               disabled={busy || staleRemoval}
               onClick={() => void remove()}

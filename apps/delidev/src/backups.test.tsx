@@ -14,6 +14,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   SystemService,
   BackupCreationState,
@@ -1205,4 +1206,43 @@ it("keeps duplicate-metadata backup labels and deletion proof bound to original 
     },
     sha256: "b".repeat(64),
   });
+});
+
+it("marks backup deletion opener, confirmation and every retry Danger while Recheck and Keep stay neutral", async () => {
+  const f = fixture();
+  f.remove.mockRejectedValueOnce(
+    new ConnectError("Acknowledgement lost", Code.Unavailable),
+  );
+  render(f.view());
+  fireEvent.click(
+    await screen.findByRole("button", { name: `Inspect Backup · 1` }),
+  );
+  expectTone(
+    await screen.findByRole("button", { name: "Recheck selected backup" }),
+    neutral,
+  );
+  const opener = await screen.findByRole("button", {
+    name: "Delete selected backup…",
+  });
+  expectTone(opener, danger);
+  fireEvent.click(opener);
+  const button = await screen.findByRole("button", {
+    name: "Permanently delete selected backup",
+  });
+  expectTone(button, danger);
+  expectTone(screen.getByRole("button", { name: "Keep backup" }), neutral);
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: `I confirm permanent deletion of Backup · 1`,
+    }),
+  );
+  fireEvent.click(button);
+  await screen.findAllByRole("button", {
+    name: "Retry the same backup deletion",
+  });
+  const retries = screen.getAllByRole("button", {
+    name: "Retry the same backup deletion",
+  });
+  expect(retries.length).toBeGreaterThanOrEqual(1);
+  for (const retry of retries) expectTone(retry, danger);
 });
