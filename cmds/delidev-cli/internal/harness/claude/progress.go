@@ -150,15 +150,25 @@ func (b *ExecutionBinding) observeProgress(event StreamEvent) (observation *Nati
 		}
 		if header.Subtype == "thinking_tokens" {
 			var value struct {
-				Type    string    `json:"type"`
-				Session domain.ID `json:"session_id"`
-				UUID    string    `json:"uuid"`
-				Subtype string    `json:"subtype"`
-				Tokens  *uint64   `json:"estimated_tokens"`
-				Delta   *uint64   `json:"estimated_tokens_delta"`
+				Type    string          `json:"type"`
+				Session domain.ID       `json:"session_id"`
+				UUID    string          `json:"uuid"`
+				Subtype string          `json:"subtype"`
+				Tokens  *uint64         `json:"estimated_tokens"`
+				Delta   *uint64         `json:"estimated_tokens_delta"`
+				InputID json.RawMessage `json:"user_message_uuid"`
 			}
 			if !b.accepted || decodeNativeObject(event.Body, &value) != nil || value.Tokens == nil || value.Delta == nil {
 				return nil, lifecycleUncertain()
+			}
+			// Newer native frames optionally attribute estimates to the original
+			// user input. Validate that attribution without treating progress as
+			// input acceptance or inventing an identity for legacy frames.
+			if len(value.InputID) != 0 {
+				var input domain.ID
+				if json.Unmarshal(value.InputID, &input) != nil || input != b.input {
+					return nil, lifecycleUncertain()
+				}
 			}
 			return &NativeProgressObservation{Kind: ThinkingTokensEstimated, Thinking: &NativeThinkingEstimate{Tokens: *value.Tokens, Delta: *value.Delta}}, nil
 		}
