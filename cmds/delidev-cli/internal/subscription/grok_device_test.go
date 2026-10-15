@@ -431,6 +431,64 @@ func TestGrokDeviceResponsesRejectRepeatedMembers(t *testing.T) {
 	})
 }
 
+// Member names are case-sensitive in every device answer: a differently cased
+// spelling of a member the client reads is an alias, never the member, so it can
+// neither stand in for a pending/denied answer nor sit beside a valid
+// authorization member.
+func TestGrokDeviceResponsesRequireExactMemberNames(t *testing.T) {
+	t.Run("poll answer", func(t *testing.T) {
+		for _, body := range []string{
+			`{"ERROR":"authorization_pending"}`,
+			`{"Error":"slow_down"}`,
+			`{"ERROR":"access_denied"}`,
+			`{"error":"authorization_pending","Error_Description":"wait"}`,
+			`{"error":"expired_token","Access_Token":"x"}`,
+		} {
+			idp := grokidp.New(t)
+			client, endpoints := deviceFixture(t, idp)
+			grant, err := client.RequestDeviceAuthorization(context.Background(), endpoints)
+			if err != nil {
+				t.Fatal(err)
+			}
+			idp.TokenStatus, idp.TokenBody = http.StatusBadRequest, body
+			_, _, err = client.PollDeviceToken(context.Background(), endpoints, grant.DeviceCode)
+			if reason, ok := subscription.GrokOAuthFailure(err); !ok || reason != subscription.GrokReasonTokenUncertain {
+				t.Fatalf("a poll answer %s was not uncertain: %v", body, err)
+			}
+			grant.Clear()
+		}
+	})
+	t.Run("authorization", func(t *testing.T) {
+		const control = `"device_code":"abc","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","verification_uri_complete":"https://accounts.x.ai/d?user_code=ABCD-1234","expires_in":60,"interval":5`
+		for name, body := range map[string]string{
+			"only an upper-case device_code":         `{"DEVICE_CODE":"abc","user_code":"ABCD-1234","verification_uri":"https://accounts.x.ai/d","expires_in":60}`,
+			"an upper-case alias beside device_code": `{` + control + `,"DEVICE_CODE":"other"}`,
+			"a capitalized user_code alias":          `{` + control + `,"User_Code":"WXYZ-9999"}`,
+			"a verification_uri alias":               `{` + control + `,"Verification_URI":"https://accounts.x.ai/other"}`,
+			"a verification_uri_complete alias":      `{` + control + `,"VERIFICATION_URI_COMPLETE":"https://accounts.x.ai/other"}`,
+			"an expires_in alias":                    `{` + control + `,"Expires_In":1}`,
+			"an interval alias":                      `{` + control + `,"INTERVAL":1}`,
+		} {
+			t.Run(name, func(t *testing.T) {
+				idp := grokidp.New(t)
+				idp.DeviceBody = body
+				client, endpoints := deviceFixture(t, idp)
+				if _, err := client.RequestDeviceAuthorization(context.Background(), endpoints); err == nil {
+					t.Fatalf("a device authorization with %s was accepted", name)
+				}
+			})
+		}
+		idp := grokidp.New(t)
+		idp.DeviceBody = `{` + control + `,"unrelated":1}`
+		client, endpoints := deviceFixture(t, idp)
+		grant, err := client.RequestDeviceAuthorization(context.Background(), endpoints)
+		if err != nil {
+			t.Fatalf("the control authorization was refused: %v", err)
+		}
+		grant.Clear()
+	})
+}
+
 // The device code is validated on its decoded value, not on one particular JSON
 // encoding: a legal escape of a printable character is accepted, anything that
 // decodes to a forbidden byte is not.

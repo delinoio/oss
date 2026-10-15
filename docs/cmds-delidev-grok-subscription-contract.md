@@ -238,7 +238,10 @@ id with the other method is a conflict.
   once and each value short printable text, and the complete URI must carry a
   `user_code` equal to the user code, which is preserved with the safe
   parameters), a positive `expires_in` (at most 24 hours) and an optional
-  `interval` of 1 to 60 seconds (default 5). The complete URL is preferred. Any
+  `interval` of 1 to 60 seconds (default 5). Member names are case-sensitive: a
+  name that equals one of these members only when case is ignored is an alias
+  and refuses the whole response, as in the
+  [token endpoint response table](#token-endpoint-response-table). The complete URL is preferred. Any
   other response ends the login as failed (`Unavailable`) before anything is
   claimed. The real provider's scopes, `interval`, `expires_in` and error bodies
   were never captured: these values are RFC 8628 defaults and the browser
