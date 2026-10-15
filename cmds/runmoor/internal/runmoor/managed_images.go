@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -29,6 +30,9 @@ func artifactDirectory(c Config, id string) string {
 	return filepath.Join(c.Storage.Data, "runner-artifacts", id)
 }
 func managedPathValid(p string) bool {
+	if runtime.GOOS == "windows" {
+		return validWindowsRunnerPath(p)
+	}
 	return validRunnerPath(p) && filepath.Clean(p) == p && p != "/" && strings.Count(p, "/") >= 2
 }
 func (b *ManagedImageBuilder) Prepare(ctx context.Context, c Config, p Pool, a RunnerArtifact, r RunnerRelease) (Pool, error) {
@@ -45,6 +49,9 @@ func (b *ManagedImageBuilder) Prepare(ctx context.Context, c Config, p Pool, a R
 		return p, problem(ErrConfig, "Automatic installation requires a dedicated clean runner directory.", "Use the default runner_path or another dedicated absolute directory.")
 	}
 	if p.Backend == Docker {
+		if runtime.GOOS == "windows" {
+			return b.prepareWindowsDocker(ctx, c, p, a, r)
+		}
 		return b.prepareDocker(ctx, c, p, a, r)
 	}
 	return b.prepareTart(ctx, c, p, a, r)

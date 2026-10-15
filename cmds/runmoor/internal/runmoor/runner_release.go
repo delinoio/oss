@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -123,7 +124,11 @@ func runnerArchiveAsset(release RunnerRelease, backend Backend, arch string) (Ru
 	if arch == "amd64" {
 		arch = "x64"
 	}
-	name := "actions-runner-" + osName + "-" + arch + "-" + release.Version() + ".tar.gz"
+	extension := ".tar.gz"
+	if runtime.GOOS == "windows" && backend != Tart {
+		osName, extension = "win", ".zip"
+	}
+	name := "actions-runner-" + osName + "-" + arch + "-" + release.Version() + extension
 	for _, asset := range release.Assets {
 		if asset.Name != name {
 			continue
@@ -202,7 +207,7 @@ func validatedRunnerTar(ctx context.Context, archive string, output string) erro
 		return err
 	}
 	defer out.Close()
-	if err = repackRunnerTar(ctx, in, out); err != nil {
+	if err = repackRunnerArchive(ctx, in, out); err != nil {
 		os.Remove(output)
 		return err
 	}

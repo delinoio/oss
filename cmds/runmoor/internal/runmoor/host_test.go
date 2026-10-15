@@ -191,7 +191,7 @@ func TestHostConfigurationClosedPlatformAndFields(t *testing.T) {
 			requireCode(t, err, ErrConfig)
 		})
 	}
-	name, labels, err := initialPoolLabels(Host, "arm64")
+	name, labels, err := initialPoolLabelsForOS(Host, "arm64", "darwin")
 	if err != nil || name != "macos-host" || !slices.Equal(labels, []string{"runmoor-macos-host", "macOS", "ARM64"}) {
 		t.Fatal(name, labels, err)
 	}
@@ -528,7 +528,13 @@ func TestHostEnvironmentAllowlist(t *testing.T) {
 	t.Setenv("TMPDIR", "/personal/temp")
 	t.Setenv("ARBITRARY_SECRET", "secret-management-value")
 	env := hostEnvironment(execution)
-	for _, want := range []string{"PATH=/fixture/tools:/usr/bin", "DEVELOPER_DIR=/fixture/Xcode.app/Contents/Developer", "HOME=" + filepath.Join(execution, "home"), "TMPDIR=" + filepath.Join(execution, "tmp"), "TMP=" + filepath.Join(execution, "tmp"), "TEMP=" + filepath.Join(execution, "tmp")} {
+	wants := []string{"PATH=/fixture/tools:/usr/bin", "HOME=" + filepath.Join(execution, "home"), "TMPDIR=" + filepath.Join(execution, "tmp"), "TMP=" + filepath.Join(execution, "tmp"), "TEMP=" + filepath.Join(execution, "tmp")}
+	if runtime.GOOS != "windows" {
+		wants = append(wants, "DEVELOPER_DIR=/fixture/Xcode.app/Contents/Developer")
+	} else {
+		wants = slices.DeleteFunc(wants, func(s string) bool { return strings.HasPrefix(s, "TMPDIR=") })
+	}
+	for _, want := range wants {
 		if !slices.Contains(env, want) {
 			t.Fatal("missing environment", want)
 		}

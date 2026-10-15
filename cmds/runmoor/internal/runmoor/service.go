@@ -179,6 +179,9 @@ func requireSystemdActiveIdentity(ctx context.Context, exec CommandExecutor, def
 }
 
 func Service(ctx context.Context, action, path string, c Config, exec CommandExecutor) error {
+	if runtime.GOOS == "windows" {
+		return windowsServiceOperation(ctx, action, path, c, exec)
+	}
 	return serviceWithManagerAdapter(ctx, action, path, c, exec, newServiceReloader(os.Stderr))
 }
 

@@ -133,7 +133,7 @@ func (h *HostDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 			return hostOwnership()
 		}
 	}
-	if err = root.Symlink("../work", "runner/_work"); err != nil {
+	if err = prepareHostWorkspace(root); err != nil {
 		return hostOwnership()
 	}
 	if err = publish(r.Handle); err != nil {
@@ -420,7 +420,7 @@ func (b *ManagedImageBuilder) prepareHost(ctx context.Context, c Config, p Pool,
 		return p, hostOwnership()
 	}
 	defer validated.Close()
-	if err = repackRunnerTar(ctx, archive, validated); err != nil {
+	if err = repackRunnerArchive(ctx, archive, validated); err != nil {
 		return p, err
 	}
 	b.log("runner_archive_verified", a)

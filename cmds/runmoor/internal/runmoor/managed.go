@@ -3,6 +3,7 @@ package runmoor
 import (
 	"context"
 	"net/http"
+	"runtime"
 	"sort"
 	"time"
 )
@@ -404,7 +405,7 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 			return
 		}
 	}
-	artifact := RunnerArtifact{ID: newID(), Pool: name, Backend: desired.Backend, Phase: ArtifactPreparing, Resources: desired.Resources, Reserved: true, CreatedAt: nowUTC()}
+	artifact := RunnerArtifact{OS: runtime.GOOS, ID: newID(), Pool: name, Backend: desired.Backend, Phase: ArtifactPreparing, Resources: desired.Resources, Reserved: true, CreatedAt: nowUTC()}
 	if err := m.Store.Update(func(v *Snapshot) error {
 		q := v.Managed[name]
 		if q == nil || q.DesiredHash != hash || q.Paused || v.Paused || v.Stopping || ctx.Err() != nil {

@@ -40,7 +40,7 @@ type Manager struct {
 
 func NewManager(store *Store, path string, l *slog.Logger) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
-	m := &Manager{Store: store, ConfigPath: path, Log: l, RemoteFactory: NewGitHub, Drivers: defaultDriver, Images: &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}, Power: &PowerManager{}, workers: map[string]context.CancelFunc{}, poolLoops: map[string]context.CancelFunc{}, poolLocks: map[string]*sync.Mutex{}, remotes: map[string]Remote{}, remoteKeys: map[string]string{}, ctx: ctx, cancel: cancel}
+	m := &Manager{Store: store, ConfigPath: path, Log: l, RemoteFactory: NewGitHub, Drivers: defaultDriver, Images: &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}, Power: newPowerController(), workers: map[string]context.CancelFunc{}, poolLoops: map[string]context.CancelFunc{}, poolLocks: map[string]*sync.Mutex{}, remotes: map[string]Remote{}, remoteKeys: map[string]string{}, ctx: ctx, cancel: cancel}
 	m.Drivers = func(kind Backend) (Driver, error) {
 		d, err := defaultDriver(kind)
 		if h, ok := d.(*HostDriver); ok {

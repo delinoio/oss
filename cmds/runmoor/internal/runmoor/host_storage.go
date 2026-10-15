@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -25,6 +26,7 @@ const (
 // These journals are private SQLite state, never public status or diagnostics.
 // The marker binds creation intent to a particular opened directory, not a name.
 type HostDirectory struct {
+	OS               string            `json:"execution_os,omitempty"`
 	RemovalCommitted bool              `json:"removal_committed,omitempty"`
 	ID               string            `json:"id"`
 	Kind             HostDirectoryKind `json:"kind"`
@@ -79,7 +81,7 @@ func openHostDirectory(c Config, d HostDirectory, installation string, removing 
 // Copied identities are accepted only by drained startup recovery. Runtime
 // execution and cleanup continue to require the exact opened inode identity.
 func openHostDirectoryIdentity(c Config, d HostDirectory, installation string, removing, copied bool) (*os.Root, error) {
-	if !validHostDirectory(d, installation) {
+	if !validHostDirectory(d, installation) || d.OS != "" && d.OS != runtime.GOOS || runtime.GOOS == "windows" && d.OS != "windows" {
 		return nil, hostOwnership()
 	}
 	path := hostDirectoryPath(c, d)
@@ -88,7 +90,7 @@ func openHostDirectoryIdentity(c Config, d HostDirectory, installation string, r
 	}
 	// Checking every ancestor also rejects a replaced storage root. The opened
 	// root stays anchored during reads and removal if a later rename occurs.
-	for p := path; p != "/" && p != "."; p = filepath.Dir(p) {
+	for p := path; p != filepath.Dir(p) && p != "."; p = filepath.Dir(p) {
 		info, err := os.Lstat(p)
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return nil, hostOwnership()
@@ -104,7 +106,7 @@ func openHostDirectoryIdentity(c Config, d HostDirectory, installation string, r
 func verifyHostDirectoryRoot(root *os.Root, d HostDirectory, installation string, copied bool) (*os.Root, error) {
 	fail := func() (*os.Root, error) { root.Close(); return nil, hostOwnership() }
 	info, err := root.Stat(".")
-	if err != nil || !hostPrivateInfo(info, true) || !copied && d.Identity != "" && hostFileIdentity(info) != d.Identity {
+	if err != nil || !hostPrivateInfo(info, true) || !copied && d.Identity != "" && hostRootIdentity(root, info) != d.Identity {
 		return fail()
 	}
 	b, err := hostRootRead(root, hostOwnerFile, 4096)
@@ -115,10 +117,10 @@ func verifyHostDirectoryRoot(root *os.Root, d HostDirectory, installation string
 			return root, nil
 		}
 	}
-	if err != nil || json.Unmarshal(b, &marker) != nil || marker.ID != d.ID || marker.Token != d.Token || marker.Installation != installation || marker.Kind != d.Kind {
+	if err != nil || json.Unmarshal(b, &marker) != nil || marker.ID != d.ID || marker.Token != d.Token || marker.Installation != installation || marker.Kind != d.Kind || marker.OS != d.OS {
 		return fail()
 	}
-	if marker.Identity != hostFileIdentity(info) && (!copied || d.Identity == "" || marker.Identity != d.Identity) {
+	if marker.Identity != hostRootIdentity(root, info) && (!copied || d.Identity == "" || marker.Identity != d.Identity) {
 		return fail()
 	}
 	if copied && (d.Kind != HostDistribution || d.RemovalCommitted || d.Identity == "" || marker.Digest != "" && marker.Digest != d.Digest || marker.Version != "" && marker.Version != d.Version) {
@@ -189,7 +191,7 @@ func rebindHostDistributions(ctx context.Context, store *Store, c Config) error 
 			if err != nil {
 				return hostOwnership()
 			}
-			identity := hostFileIdentity(info)
+			identity := hostRootIdentity(root, info)
 			if identity == d.Identity {
 				return nil
 			}
@@ -234,7 +236,7 @@ func createHostDirectory(ctx context.Context, store *Store, c Config, id string,
 		root, err := openHostDirectory(c, *d, s.Installation, false)
 		return *d, root, err
 	}
-	d := HostDirectory{ID: id, Kind: kind, Token: newID(), Installation: s.Installation}
+	d := HostDirectory{OS: runtime.GOOS, ID: id, Kind: kind, Token: newID(), Installation: s.Installation}
 	if err := privateDir(hostParent(c, kind)); err != nil {
 		return d, nil, err
 	}
@@ -267,7 +269,7 @@ func createHostDirectory(ctx context.Context, store *Store, c Config, id string,
 		root.Close()
 		return d, nil, hostOwnership()
 	}
-	d.Identity = hostFileIdentity(info)
+	d.Identity = hostRootIdentity(root, info)
 	body, _ := json.Marshal(d)
 	if err = hostRootWriteExclusive(root, hostOwnerFile, body); err == nil {
 		err = syncPrivateDir(hostDirectoryPath(c, d))
@@ -314,6 +316,9 @@ func hostRootWrite(root *os.Root, name string, value any) error {
 		return err
 	}
 	defer f.Close()
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	return f.Sync()
 }
 
@@ -424,7 +429,7 @@ func removeHostDirectory(ctx context.Context, store *Store, c Config, d HostDire
 		if statErr != nil || store == nil {
 			return hostOwnership()
 		}
-		d.Identity = hostFileIdentity(info)
+		d.Identity = hostRootIdentity(root, info)
 		if err = store.Update(func(v *Snapshot) error {
 			record := v.HostDirectories[d.ID]
 			if record == nil || record.Token != d.Token {
@@ -453,7 +458,7 @@ func removeHostDirectory(ctx context.Context, store *Store, c Config, d HostDire
 		}
 	}
 	info, err := parent.Lstat(staged)
-	if err != nil || hostFileIdentity(info) != d.Identity {
+	if err != nil || hostRootIdentity(root, info) != d.Identity {
 		return hostOwnership()
 	}
 	if !d.RemovalCommitted {
@@ -626,6 +631,9 @@ func copyHostRunner(ctx context.Context, source, destination *os.Root) error {
 	})
 }
 func hostEnvironment(path string) []string {
+	if runtime.GOOS == "windows" {
+		return append(windowsEnvironment(), "USERPROFILE="+filepath.Join(path, "home"), "HOME="+filepath.Join(path, "home"), "TEMP="+filepath.Join(path, "tmp"), "TMP="+filepath.Join(path, "tmp"), "RUNNER_LOG_TO_STDOUT=0")
+	}
 	env := []string{"LANG=C", "LC_ALL=C", "HOME=" + filepath.Join(path, "home"), "TMPDIR=" + filepath.Join(path, "tmp"), "TMP=" + filepath.Join(path, "tmp"), "TEMP=" + filepath.Join(path, "tmp"), "RUNNER_MANUALLY_TRAP_SIG=1", "RUNNER_LOG_TO_STDOUT=0"}
 	if value, ok := os.LookupEnv("PATH"); ok {
 		env = append(env, "PATH="+value)

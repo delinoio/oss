@@ -165,21 +165,6 @@ func hostReadExecOutcome(file *os.File) hostExecFailure {
 	return reason
 }
 
-func hostWorkerAdmission(ctx context.Context, in HostBootstrap) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	s, err := ReadSnapshot(Config{Storage: in.Storage})
-	if err != nil {
-		return err
-	}
-	r := s.Runners[in.Directory.ID]
-	if r == nil || r.Forced || r.Phase != Preparing || s.HostExecutions[r.ID] == nil || s.Installation != in.Directory.Installation || s.HostDirectories[r.ID] == nil || *s.HostDirectories[r.ID] != in.Directory {
-		return staleUpdate()
-	}
-	return nil
-}
-
 func hostExecute(action string) int {
 	mode := hostExecMode(action)
 	if mode != hostExecVersion && mode != hostExecWorker {

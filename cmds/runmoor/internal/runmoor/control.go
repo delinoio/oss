@@ -7,8 +7,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
 	"time"
 )
@@ -110,21 +108,8 @@ func poolDiagnostic(p *PoolState) *Problem {
 }
 func (m *Manager) ServeControl() (*http.Server, error) {
 	c := m.Store.View().Config
-	path := filepath.Join(c.Storage.State, "control.sock")
-	if st, e := os.Lstat(path); e == nil {
-		if st.Mode()&os.ModeSocket == 0 {
-			return nil, problem(ErrPermission, "Control socket path contains another kind of file.", "Preserve the file and choose a clean state directory.")
-		}
-		if e = os.Remove(path); e != nil {
-			return nil, e
-		}
-	}
-	listener, e := net.Listen("unix", path)
+	listener, e := listenControl(c)
 	if e != nil {
-		return nil, problem(ErrControl, "Cannot listen on the private control socket.", "Check state path permissions and Unix socket length.")
-	}
-	if e = os.Chmod(path, 0600); e != nil {
-		listener.Close()
 		return nil, e
 	}
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, MaxHeaderBytes: 8192, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -230,13 +215,11 @@ func sendControlPeer(ctx context.Context, c Config, req ControlRequest, expected
 func sendControlIdentity(ctx context.Context, c Config, req ControlRequest, expectedPID int, expectedStart string, inspectPeer bool) (ControlResponse, int, error) {
 	var out ControlResponse
 	peerPID := 0
-	path := filepath.Join(c.Storage.State, "control.sock")
-	st, e := os.Lstat(path)
-	if e != nil || st.Mode()&os.ModeSocket == 0 || st.Mode().Perm()&0077 != 0 {
-		return out, peerPID, problem(ErrControl, "The private manager socket is unavailable.", "Start 'runmoor run' or the installed user service.")
+	if e := checkControlEndpoint(c); e != nil {
+		return out, peerPID, e
 	}
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		conn, err := (&net.Dialer{}).DialContext(ctx, "unix", path)
+		conn, err := dialControl(ctx, c)
 		if err == nil && inspectPeer {
 			peerPID, err = controlPeerPID(conn)
 			if err == nil && expectedPID != 0 && peerPID != expectedPID {

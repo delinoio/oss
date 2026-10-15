@@ -77,6 +77,7 @@ type ManagedRecovery struct {
 	BaselineTartExecutable string     `json:"baseline_tart_executable"`
 }
 type RunnerArtifact struct {
+	OS              string        `json:"execution_os,omitempty"`
 	ID              string        `json:"id"`
 	Pool            string        `json:"pool"`
 	Backend         Backend       `json:"backend"`

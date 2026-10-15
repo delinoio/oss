@@ -108,6 +108,9 @@ func (p *PowerManager) release() {
 }
 func (p *PowerManager) Release() { p.mu.Lock(); defer p.mu.Unlock(); p.release() }
 func platformCheck(ctx context.Context) error {
+	if runtime.GOOS == "windows" {
+		return windowsPlatform(ctx)
+	}
 	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
 		return problem(ErrPlatform, "Unsupported host CPU architecture.", "Use Ubuntu amd64/arm64 or macOS arm64.")
 	}

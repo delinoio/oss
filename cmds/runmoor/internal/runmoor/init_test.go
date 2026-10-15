@@ -22,7 +22,7 @@ func TestInitialPoolLabels(t *testing.T) {
 		{Tart, "arm64", "macos", []string{"runmoor-macos", "macOS", "ARM64"}},
 	} {
 		t.Run(string(tc.backend)+"/"+tc.arch, func(t *testing.T) {
-			name, labels, err := initialPoolLabels(tc.backend, tc.arch)
+			name, labels, err := initialPoolLabelsForOS(tc.backend, tc.arch, "darwin")
 			if err != nil || name != tc.name || !slices.Equal(labels, tc.labels) {
 				t.Fatalf("pool labels: name=%q labels=%v error=%v", name, labels, err)
 			}

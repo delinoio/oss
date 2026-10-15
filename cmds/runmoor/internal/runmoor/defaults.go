@@ -58,6 +58,9 @@ func validImageSource(s ImageSource) bool {
 	return validID(s.From) || safeName.MatchString(s.From) || (filepath.IsAbs(s.From) && strings.HasSuffix(s.From, ".tvm")) || (strings.HasPrefix(s.From, "oci://") && strings.Contains(strings.TrimPrefix(s.From, "oci://"), "/"))
 }
 func resolveDefaults(c Config, capacity Resources) (Config, error) {
+	return resolveDefaultsForPlatform(c, capacity, runtime.GOOS, runtime.GOARCH)
+}
+func resolveDefaultsForPlatform(c Config, capacity Resources, goos, arch string) (Config, error) {
 	auto := c.Automatic
 	if auto["host.cpu"] {
 		c.Host.CPU = capacity.CPU
@@ -77,7 +80,7 @@ func resolveDefaults(c Config, capacity Resources) (Config, error) {
 	for i := range c.Pools {
 		p := &c.Pools[i]
 		if auto[poolDefaultKey(p.Name, "arch")] {
-			p.Arch = runtime.GOARCH
+			p.Arch = arch
 		}
 		available := Resources{c.Host.CPU, c.Host.MemoryMiB}
 		if p.Backend == Docker && validResources(c.DockerBudget) {
@@ -125,7 +128,10 @@ func resolveDefaults(c Config, capacity Resources) (Config, error) {
 			c.Host.MaxRunners = 2
 		}
 	}
-	return NormalizeConfig(c)
+	if goos == runtime.GOOS && arch == runtime.GOARCH {
+		return NormalizeConfig(c)
+	}
+	return normalizeConfig(c, goos, arch)
 }
 
 // Docker capacity is a second ceiling, not a replacement for the host ceiling.

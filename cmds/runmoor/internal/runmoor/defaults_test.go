@@ -22,7 +22,10 @@ func decodeDefaults(t *testing.T, body string, capacity Resources) (Config, erro
 		t.Fatal(err)
 	}
 	markAutomatic(&c, fields)
-	return resolveDefaults(c, capacity)
+	if strings.Contains(body, `mode = "dind"`) && runtime.GOOS == "windows" {
+		return resolveDefaultsForPlatform(c, capacity, "linux", runtime.GOARCH)
+	}
+	return resolveFixtureDefaults(c, capacity)
 }
 
 const minimalConfig = `schema_version = 1
@@ -70,7 +73,7 @@ func TestDockerDefaultsRespectIndependentCeiling(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.DockerBudget = Resources{3, 6144}
-	c, err = resolveDefaults(c, Resources{16, 32768})
+	c, err = resolveFixtureDefaults(c, Resources{16, 32768})
 	if err != nil || c.Host.CPU != 16 || c.Pools[0].MaxRunners != 1 {
 		t.Fatalf("engine ceiling: %+v %v", c, err)
 	}
@@ -166,7 +169,7 @@ daemon_resources = {cpu = 2, memory_mib = 2048}
 		t.Fatal(err)
 	}
 	c.DockerBudget = Resources{32, 524288}
-	c, err = resolveDefaults(c, Resources{32, 524288})
+	c, err = resolveFixtureDefaults(c, Resources{32, 524288})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +231,7 @@ daemon_image = "docker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 			c, err := decodeDefaults(t, body, tc.host)
 			if err == nil && validResources(tc.engine) {
 				c.DockerBudget = tc.engine
-				c, err = resolveDefaults(c, tc.host)
+				c, err = resolveFixtureDefaults(c, tc.host)
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -241,4 +244,15 @@ daemon_image = "docker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 	}
 	_, err := decodeDefaults(t, body, Resources{1, 1536})
 	requireCode(t, err, ErrCapacity)
+}
+
+func resolveFixtureDefaults(c Config, capacity Resources) (Config, error) {
+	if runtime.GOOS == "windows" {
+		for _, p := range c.Pools {
+			if p.Mode == DinD {
+				return resolveDefaultsForPlatform(c, capacity, "linux", runtime.GOARCH)
+			}
+		}
+	}
+	return resolveDefaults(c, capacity)
 }

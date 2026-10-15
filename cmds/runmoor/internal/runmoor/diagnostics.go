@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -165,6 +166,9 @@ func scrubName(s string) string {
 	return "invalid"
 }
 func minimalEnv() []string {
+	if runtime.GOOS == "windows" {
+		return windowsEnvironment()
+	}
 	v := []string{"PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin", "LANG=C", "LC_ALL=C"}
 	if h, e := os.UserHomeDir(); e == nil {
 		v = append(v, "HOME="+h)

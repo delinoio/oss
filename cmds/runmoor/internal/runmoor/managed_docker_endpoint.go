@@ -2,7 +2,7 @@ package runmoor
 
 import (
 	"context"
-	"strings"
+	"runtime"
 )
 
 func hasDockerArtifacts(s Snapshot) bool {
@@ -19,7 +19,7 @@ func dockerArtifactOwnership() error {
 }
 
 func validArtifactDockerEndpoint(endpoint string) bool {
-	return strings.HasPrefix(endpoint, "unix:///") && !strings.ContainsAny(endpoint, "\x00\n\r")
+	return validLocalDockerEndpoint(endpoint, runtime.GOOS)
 }
 
 // The pin is private snapshot state, not an authored selector or status field.

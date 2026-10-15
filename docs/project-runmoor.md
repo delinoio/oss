@@ -27,7 +27,7 @@ Runmoor manages disposable, single-job GitHub Actions runners on one developer o
 - Documentation validation preserves the credential and private-path publication safeguards previously applied by public-docs, while retaining public configuration placeholders and user-facing storage guidance. The operations guide also documents the installed service configuration-path requirement and mismatch recovery. See `docs/apps-runmoor-docs-foundation.md`.
 - The shared site selector is present on every Runmoor page. After the consolidated publication is verified, operators decommission the former standalone hosting and DNS configuration without adding redirects.
 - `pnpm --filter public-docs dev` serves the Runmoor section on the consolidated loopback server at `127.0.0.1:46302` and does not require the DevHud team environment.
-- Platforms: macOS 14+ Apple Silicon; Ubuntu 22.04+ amd64/arm64. Host and execution CPU architectures must match. Windows, Intel Macs, emulation, GHES, Kubernetes, cloud/remote Docker, and multi-computer management are excluded.
+- Platforms: macOS 14+ Apple Silicon; Ubuntu 22.04+ amd64/arm64. Host and execution CPU architectures must match. Intel Macs, emulation, GHES, Kubernetes, cloud/remote Docker, and multi-computer management are excluded.
 - The manager runs on the host. Host execution is explicit, macOS 14+ arm64-only and restricted to trusted workflows. No reusable completed runners, public webhook server, dashboard, remote control API, telemetry, Prometheus, plugin API, or Runmoor binary auto-update service exists. Runner images have manager-owned automatic updates. Explicit `reload` may advance an older owned launchd/systemd manager to the already installed CLI while preserving independent executions; it never downloads Runmoor releases, downgrades a manager or starts a stopped service. This service reload behavior is unreleased.
 - A verified previous service manager restart during pending replacement loads only the journal installation's committed requested configuration and preserves Stop/pauses. Candidate TOML remains subject to a later validated reload; only replacement startup returns a journal retirement handle, while the initiating CLI keeps its completion authority. Foreground and no-journal explicit Start retain their existing boundary.
 - Linux systemd service actions preserve only caller-supplied `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS` for `systemctl --user`; unrelated subprocesses keep their minimal environment.
@@ -51,7 +51,7 @@ Runmoor manages disposable, single-job GitHub Actions runners on one developer o
 - Image mutations run through the manager, which owns the setup VM lifetime and sleep inhibition; initial image preparation can run with no pools or connections. Automatic sealing rejects known invalid dedicated directories before VM metadata inspection, reservation or boot. Manual exact-version sealing retains its basic path rules, and accepted path strings remain unchanged.
 - Interactive Tart initialization can create a new image from a host-supported Apple IPSW under a temporary manager, wait for operator guest setup, verify Guest Agent readiness after a headless reboot, seal it and publish a new final configuration. Interrupted setup resumes only its journaled owned image; noninteractive and prepared-source routes remain available.
 - Requested runner versions may follow latest stable releases; effective execution images remain digest-pinned or immutable sealed revisions. Automatic preparation preserves operator sources, old execution generations and pause/stop decisions. The host accepts stable Tart 2.x.x releases with complete SemVer triplets; Guest Agent remains pinned to 0.14.2. Runmoor never bundles Tart or redistributes macOS/Xcode images. External Tart and Guest Agent version-specific licenses remain separate from Runmoor's license.
-- Release identity is `runmoor@v<MAJOR.MINOR.PATCH>`, starting at `0.1.0`. Only darwin-arm64, linux-amd64, and linux-arm64 binary archives are published through the stable release channel, with checksums and Sigstore verification material. Homebrew distributes the same verified darwin-arm64 archive through `delinoio/tap/runmoor`, starting with `0.1.3`, on macOS 14+ Apple Silicon only. It does not install Tart or register a service.
+- Release identity is `runmoor@v<MAJOR.MINOR.PATCH>`, starting at `0.1.0`. Published releases currently provide darwin-arm64, linux-amd64, and linux-arm64 binary archives through the stable release channel, with checksums and Sigstore verification material. Homebrew distributes the same verified darwin-arm64 archive through `delinoio/tap/runmoor`, starting with `0.1.3`, on macOS 14+ Apple Silicon only. It does not install Tart or register a service.
 - Publication discovers an existing draft through paginated release listings and pins its numeric ID through the final download, complete signed-asset verification and publication. Published or conflicting releases are never overwritten; an uncertain publication result requires remote inspection before recovery.
 - The implementation task explicitly omits live GitHub verification and local real Tart execution. The feature also excludes actual host execution, unsigned Xcode builds and live GitHub jobs. Automated mocks, local Docker validation, and opt-in Tart tests must not be described as full GitHub/Tart certification.
 
@@ -75,3 +75,49 @@ Instruction-file updates in this requirement apply only to changes in developmen
 ## Native Linux packages
 
 Follow `docs/repository-linux-packages-contract.md` for APT/DNF release publication, supported systems, signatures, and recovery. Runmoor uses stable and package installation never registers or starts a service.
+
+## Windows 11 x64
+
+Windows support is unreleased. It includes native Windows host runners and local
+Docker Windows container runners, plus login-triggered background operation.
+Windows Server, ARM64, Linux containers on Windows and Windows DinD are excluded.
+Docker requires Windows 11 Pro/Enterprise, Hyper-V and Containers enabled, Docker
+Desktop in Windows containers mode, and Server Core LTSC 2022 x64 images. Windows
+container executions use Hyper-V isolation. Operators install and license Docker,
+Windows images and build tools themselves; Runmoor does not enable OS features or
+switch Docker modes.
+
+Windows uses the existing host/docker backends and plain mode. Generated labels
+are runmoor-windows-host or runmoor-windows, Windows and x64, in addition to the
+scale-set name. Existing labels remain unchanged. Defaults are separate config,
+state and data directories under the current user's local application-data
+Runmoor directory. Explicit absolute paths remain supported. TOML uses literal
+strings for Windows paths. The Docker selector accepts local named pipes only;
+remote engines and Unix sockets are rejected on Windows.
+
+Private storage uses current-user SID ACLs, nonblocking native file locks and
+handle-derived volume/file identities. Reparse points are rejected; ambiguous
+ownership retains reservations and recovery records. Control uses a local
+current-user named pipe with server process identity verification. No TCP control
+endpoint is added. Native workers belong to a kill-on-close Job Object held by an
+independent supervisor. Manager replacement retains supervisors, worker lifetimes,
+job deadlines and pause/stop decisions. Official win-x64 ZIPs are hash-verified and
+normalized into bounded archives; traversal, alternate streams, links, reserved
+Windows names and case-colliding entries are rejected.
+
+Service commands manage a least-privilege InteractiveToken scheduled task for the
+current user. Login starts it; logout is not supported as a continued-execution
+boundary. No password is stored and no SCM service is installed. Task principal,
+trigger, invocation and critical settings are verified before management. Reload
+journals task replacement, verifies the old process generation, preserves committed
+configuration and independent jobs, then validates candidate configuration. External
+conflicts fail closed. Task Scheduler has no conditional compare-and-replace API;
+checks immediately precede updates but cannot make external writers atomic.
+
+New archives include runmoor-windows-amd64.zip with runmoor.exe, README.md and
+LICENSE, SHA256SUMS and Sigstore bundles. Preserve historical three-platform
+Homebrew releases without requiring retroactive Windows assets. New Windows
+support is not a claim about previously published releases. Fixture, build,
+packaging, native Windows, Docker Windows and live GitHub evidence must be recorded
+separately. GitHub container jobs, service containers and Docker container actions
+remain Linux-only even when the runner itself runs inside a Windows container.

@@ -32,6 +32,9 @@ func dockerEndpoint(ctx context.Context, c Config) (string, error) {
 		endpoint = os.Getenv("DOCKER_HOST")
 	}
 	if endpoint == "" {
+		if runtime.GOOS == "windows" {
+			return "npipe:////./pipe/docker_engine", nil
+		}
 		args := []string{"context", "inspect", "--format", "{{json .Endpoints.docker.Host}}"}
 		if v := os.Getenv("DOCKER_CONTEXT"); v != "" {
 			args = append(args, v)
@@ -49,7 +52,7 @@ func dockerEndpoint(ctx context.Context, c Config) (string, error) {
 			return "", dockerProblem()
 		}
 	}
-	if !strings.HasPrefix(endpoint, "unix:///") || strings.ContainsAny(endpoint, "\x00\n\r") {
+	if !validLocalDockerEndpoint(endpoint, runtime.GOOS) {
 		return "", problem(ErrDependency, "Remote Docker endpoints are unsupported.", "Select a local Unix-socket Docker engine; TCP, SSH and emulated engines are not supported.")
 	}
 	return endpoint, nil
@@ -82,8 +85,13 @@ func (d *DockerDriver) Validate(ctx context.Context, c Config, p Pool, s Snapsho
 	if arch == "x86_64" {
 		arch = "amd64"
 	}
-	if info.Info.OSType != "linux" || arch != runtime.GOARCH || arch != p.Arch {
+	if info.Info.OSType != dockerExecutionOS() || arch != runtime.GOARCH || arch != p.Arch {
 		return problem(ErrPlatform, "Docker must run native-architecture Linux containers.", "Select a matching local Linux engine without CPU emulation.")
+	}
+	if runtime.GOOS == "windows" {
+		if e := validateWindowsDockerHost(ctx); e != nil {
+			return e
+		}
 	}
 	budget := Resources{c.Host.CPU, c.Host.MemoryMiB}
 	if validResources(c.DockerBudget) {
@@ -107,7 +115,7 @@ func (d *DockerDriver) Validate(ctx context.Context, c Config, p Pool, s Snapsho
 		if e != nil {
 			return problem(ErrImage, "A pinned Docker image is not available locally.", "Pull the exact configured digest with Docker, then run doctor and resume.")
 		}
-		if im.Os != "linux" || im.Architecture != p.Arch {
+		if im.Os != dockerExecutionOS() || im.Architecture != p.Arch {
 			return problem(ErrImage, "A pinned image has the wrong platform.", "Select a Linux image digest for the host's native architecture.")
 		}
 	}
@@ -138,6 +146,9 @@ func mountsFor(p Pool, r Runner) []mount.Mount {
 	return v
 }
 func (d *DockerDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s Snapshot, jit string, publish func(Handle) error) error {
+	if runtime.GOOS == "windows" {
+		return d.prepareWindows(ctx, c, p, r, s, jit, publish)
+	}
 	if e := d.Validate(ctx, c, p, s); e != nil {
 		return e
 	}

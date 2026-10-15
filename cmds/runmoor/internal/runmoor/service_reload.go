@@ -470,6 +470,9 @@ func (r *serviceReloader) retire(j *serviceReloadJournal) error {
 }
 
 func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (result error) {
+	if runtime.GOOS == "windows" && r.Platform == "windows" {
+		return windowsReloadOperation(ctx, path, c)
+	}
 	if j, err := readUninstallJournal(r.Unit); err != nil || j != nil {
 		return uninstallFailure()
 	}
@@ -1010,6 +1013,9 @@ func waitServiceReloadHandoff(ctx context.Context, journal, token string) int {
 // state. Only the replacement receives authority to retire the handoff journal;
 // foreground runs beside an interrupted journal retain normal Start behavior.
 func (r *serviceReloader) startup(ctx context.Context, path string, c Config) (Config, bool, *serviceReloadJournal, error) {
+	if runtime.GOOS == "windows" && r.Platform == "windows" {
+		return windowsStartupOperation(ctx, path, c)
+	}
 	j, err := readReloadJournal(r.Unit)
 	if err != nil {
 		return c, false, nil, err

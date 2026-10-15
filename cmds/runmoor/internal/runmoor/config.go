@@ -103,6 +103,14 @@ func immutableDockerImage(ref string) bool {
 var versionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 func xdg(name, suffix string) string {
+	if runtime.GOOS == "windows" {
+		base, err := os.UserCacheDir()
+		if err != nil {
+			return ""
+		}
+		leaf := map[string]string{"XDG_CONFIG_HOME": "config", "XDG_STATE_HOME": "state", "XDG_DATA_HOME": "data"}[name]
+		return filepath.Join(base, "Runmoor", leaf)
+	}
 	if v := os.Getenv(name); filepath.IsAbs(v) {
 		return filepath.Join(v, "runmoor")
 	}
@@ -169,7 +177,7 @@ func normalizeConfig(c Config, hostOS, hostArch string) (Config, error) {
 	}
 	c.Storage.State = filepath.Clean(c.Storage.State)
 	c.Storage.Data = filepath.Clean(c.Storage.Data)
-	if len(filepath.Join(c.Storage.State, "control.sock")) > 100 {
+	if hostOS != "windows" && len(filepath.Join(c.Storage.State, "control.sock")) > 100 {
 		return fail("The control socket path exceeds the portable Unix socket limit; choose a shorter state path.")
 	}
 	if c.Timeouts.DockerPreparation == "" {
@@ -207,7 +215,7 @@ func normalizeConfig(c Config, hostOS, hostArch string) (Config, error) {
 	if c.TartExecutable == "" {
 		c.TartExecutable = "tart"
 	}
-	if c.DockerSocket != "" && (!strings.HasPrefix(c.DockerSocket, "unix:///") || strings.ContainsAny(c.DockerSocket, "\x00\n\r")) {
+	if c.DockerSocket != "" && !validLocalDockerEndpoint(c.DockerSocket, hostOS) {
 		return fail("Docker must use a local unix:/// socket; remote engines are unsupported.")
 	}
 	if c.Host.MaxRunners <= 0 || c.Host.MaxRunners > 10000 || c.Host.CPU <= 0 || c.Host.CPU > 100000 || c.Host.MemoryMiB <= 0 || c.Host.MemoryMiB > 1<<40 || c.Host.MinFreeDiskMiB <= 0 || c.Host.MinFreeDiskMiB > 1<<40 {
@@ -283,19 +291,25 @@ func normalizeConfig(c Config, hostOS, hostArch string) (Config, error) {
 		if p.Backend == Tart && (hostOS != "darwin" || p.Arch != "arm64" || p.Mode != Plain) {
 			return fail("Tart requires macOS arm64 and plain execution mode.")
 		}
-		if p.Backend == Host && (hostOS != "darwin" || p.Arch != "arm64") {
+		if p.Backend == Host && !(hostOS == "darwin" && p.Arch == "arm64" || hostOS == "windows" && p.Arch == "amd64") {
 			return c, problem(ErrPlatform, "Host execution requires macOS 14+ Apple Silicon.", "Select Docker on Ubuntu or use a supported Mac.")
 		}
 		if p.Backend == Host && (p.Mode != Plain || p.Image != "" || p.ImageSource != nil || p.RunnerPath != "") {
 			return fail("Host pools require plain mode and Runmoor-owned paths; image, image_source and runner_path are incompatible.")
 		}
+		if hostOS == "windows" && (hostArch != "amd64" || p.Mode != Plain) {
+			return fail("Windows requires x64 and plain execution mode; DinD is unsupported.")
+		}
 		if p.Backend != Host && p.RunnerPath == "" {
 			p.RunnerPath = "/home/runner"
+			if hostOS == "windows" {
+				p.RunnerPath = `C:\actions-runner`
+			}
 			if p.Backend == Tart {
 				p.RunnerPath = "/Users/runner/actions-runner"
 			}
 		}
-		if p.Backend != Host && !validRunnerPath(p.RunnerPath) {
+		if p.Backend != Host && !validPoolRunnerPath(p.RunnerPath, hostOS) {
 			return fail("runner_path must be an absolute clean guest path.")
 		}
 		if p.RunnerVersion == "" {

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -85,7 +86,7 @@ func OpenStore(c Config) (*Store, error) {
 		return fail(err)
 	}
 	f.Close()
-	uri := url.URL{Scheme: "file", Path: path}
+	uri := url.URL{Scheme: "file", Path: sqliteURLPath(path)}
 	db, err := sql.Open("sqlite", uri.String())
 	if err != nil {
 		return fail(problem(ErrState, "Cannot open SQLite state.", "Check state directory permissions and free space."))
@@ -357,7 +358,7 @@ func ReadSnapshot(c Config) (Snapshot, error) {
 		return s, err
 	}
 	f.Close()
-	uri := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
+	uri := url.URL{Scheme: "file", Path: sqliteURLPath(path), RawQuery: "mode=ro"}
 	db, err := sql.Open("sqlite", uri.String())
 	if err != nil {
 		return s, problem(ErrState, "Cannot read state.", "Inspect manager status.")
@@ -375,4 +376,11 @@ func ReadSnapshot(c Config) (Snapshot, error) {
 		s.Requested = s.Config
 	}
 	return s, nil
+}
+
+func sqliteURLPath(path string) string {
+	if runtime.GOOS == "windows" {
+		return "/" + filepath.ToSlash(path)
+	}
+	return path
 }

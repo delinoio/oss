@@ -31,6 +31,19 @@ type InitOptions struct {
 }
 
 func initialPoolLabels(backend Backend, arch string) (string, []string, error) {
+	return initialPoolLabelsForOS(backend, arch, runtime.GOOS)
+}
+func initialPoolLabelsForOS(backend Backend, arch, goos string) (string, []string, error) {
+	if goos == "windows" {
+		if arch != "amd64" || (backend != Host && backend != Docker) {
+			return "", nil, problem(ErrPlatform, "Windows requires x64 host or Docker execution.", "Choose host or docker on Windows 11 x64.")
+		}
+		name := "windows"
+		if backend == Host {
+			name += "-host"
+		}
+		return name, []string{"runmoor-" + name, "Windows", "x64"}, nil
+	}
 	name, platformLabel := "linux", "linux"
 	switch backend {
 	case Docker:
@@ -93,6 +106,9 @@ func initializeWithContext(ctx context.Context, path string, opts InitOptions, i
 	var err error
 	if opts.Backend == "" {
 		opts.Backend = string(Docker)
+		if runtime.GOOS == "windows" {
+			opts.Backend = string(Host)
+		}
 		if runtime.GOOS == "darwin" {
 			opts.Backend = string(Tart)
 		}
