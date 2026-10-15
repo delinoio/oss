@@ -85,6 +85,9 @@ type ProtocolObservation struct {
 	State      ProtocolState    `json:"state"`
 	Problem    *Error           `json:"problem,omitempty"`
 	Diagnostic *CodexDiagnostic `json:"diagnostic,omitempty"`
+	// GrokDiagnostic is retained only for a Grok Build installation whose native
+	// validation did not succeed. Codex keeps Diagnostic.
+	GrokDiagnostic *GrokDiagnostic `json:"grok_diagnostic,omitempty"`
 }
 
 func ProtocolFor(harness Harness) NativeProtocol {
@@ -124,7 +127,7 @@ func (i *Installation) validateProtocol(requested bool) error {
 	switch i.Protocol.State {
 	case ProtocolVerified:
 		supported := ValidNativeVersionMetadata(i.Version) && ProtocolFor(i.Harness) != ""
-		if !supported || !i.ProtocolVerified || i.Protocol.Problem != nil || i.Protocol.Diagnostic != nil {
+		if !supported || !i.ProtocolVerified || i.Protocol.Problem != nil || i.Protocol.Diagnostic != nil || i.Protocol.GrokDiagnostic != nil {
 			return Fail(InvalidArgument, "The reported native profile is not validated.", "Use a supported protocol profile; version detection alone cannot grant capabilities.")
 		}
 	case ProtocolFailed, ProtocolUnsupported:
@@ -136,6 +139,11 @@ func (i *Installation) validateProtocol(requested bool) error {
 	}
 	if d := i.Protocol.Diagnostic; d != nil {
 		if i.Harness != Codex || d.Validate() != nil || d.DetectedVersion != i.Version || i.Protocol.State == ProtocolVerified {
+			return Fail(InvalidArgument, "Invalid native failure attribution.", "Refresh discovery without raw error metadata.")
+		}
+	}
+	if d := i.Protocol.GrokDiagnostic; d != nil {
+		if i.Harness != GrokBuild || d.Validate() != nil || d.DetectedVersion != i.Version || i.Protocol.State == ProtocolVerified {
 			return Fail(InvalidArgument, "Invalid native failure attribution.", "Refresh discovery without raw error metadata.")
 		}
 	}

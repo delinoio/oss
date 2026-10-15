@@ -114,6 +114,9 @@ export enum GrokLoginEvent {
   PollCanceled = "poll-canceled",
   PollExpired = "poll-expired",
   PollUnsupported = "poll-unsupported",
+  // A refused Take the server keeps queued: a later claim can still supersede
+  // it, so it settles nothing.
+  PollRefusalProvisional = "poll-refusal-provisional",
   PollRecovery = "poll-recovery",
   PollFailed = "poll-failed",
   PollSucceeded = "poll-succeeded",
@@ -313,6 +316,12 @@ const entries: Entry[] = [
   terminalPoll(E.PollCanceled, P.Canceled),
   terminalPoll(E.PollExpired, P.Expired),
   terminalPoll(E.PollUnsupported, P.Unsupported),
+  {
+    event: E.PollRefusalProvisional,
+    from: observable,
+    problem: GrokProblemRule.ClearStatusOnly,
+    retry: GrokRetryRule.Keep,
+  },
   terminalPoll(E.PollRecovery, P.Recovery),
   terminalPoll(E.PollFailed, P.Failed),
   terminalPoll(E.PollSucceeded, P.Naming),
@@ -924,7 +933,11 @@ export function grokLoginPresentation(
 export function grokPollEvent(
   stage: GrokLoginStage,
   canceled: boolean,
+  provisional = false,
 ): GrokLoginEvent | undefined {
+  // Only an `unsupported` response can be provisional.
+  if (provisional && stage === GrokLoginStage.Unsupported)
+    return E.PollRefusalProvisional;
   switch (stage) {
     case GrokLoginStage.Preparing:
       return canceled ? E.PollPreparingCanceled : E.PollPreparing;

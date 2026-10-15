@@ -78,6 +78,10 @@ func init() {
 		switch mode {
 		case "inspect-managed":
 			report["permissions"].(map[string]any)["managedSettingsExists"] = true
+		case "inspect-experiments":
+			// Grok Build 1.0.52 reports an experiments inventory; a populated one
+			// is outside the validated profile.
+			report["experiments"] = []any{"foreign"}
 		case "inspect-hooks":
 			report["hooks"] = []any{map[string]any{"command": "private-hook-sentinel"}}
 		case "inspect-overflow":
@@ -87,6 +91,9 @@ func init() {
 			_, _ = os.Stderr.Write(bytes.Repeat([]byte{'e'}, maxProbeStderr+1))
 		case "inspect-exit":
 			os.Exit(2)
+		case "inspect-timeout":
+			// Never report: the caller's deadline must end the inspection.
+			time.Sleep(time.Minute)
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(report)
 		os.Exit(0)

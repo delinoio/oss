@@ -41,7 +41,10 @@ import {
   SessionTabKind,
   sessionTabKey,
 } from "./session-tabs";
-import { useOpenCodeForkProfile } from "./opencode-fork-profile";
+import {
+  useOpenCodeForkProfile,
+  useOpenCodeForkReasoningSupport,
+} from "./opencode-fork-profile";
 
 const Context = createContext<
   ((source: Resource, purpose?: ForkPurpose) => void) | undefined
@@ -143,6 +146,10 @@ export function SessionForkAction({
     : status.data?.capabilities.includes(
         SystemCapability.CODEX_SESSION_FORK_V1,
       );
+  const reasoning = useOpenCodeForkReasoningSupport(
+    source,
+    active && Boolean(show) && openCode && Boolean(forkSupported),
+  );
   const profile = useOpenCodeForkProfile(
     source,
     active &&
@@ -151,6 +158,7 @@ export function SessionForkAction({
       openCode &&
       Boolean(settled(source)) &&
       Boolean(forkSupported),
+    reasoning,
   );
   const managed =
     sourceHarness(source) === "codex" &&
@@ -378,9 +386,14 @@ export function SessionForkProvider({
       },
     },
   );
+  const reasoning = useOpenCodeForkReasoningSupport(
+    source,
+    visible && Boolean(source) && sourceHarness(source!) === "opencode" && !job,
+  );
   const profile = useOpenCodeForkProfile(
     source,
     visible && Boolean(source) && sourceHarness(source!) === "opencode" && !job,
+    reasoning,
   );
   const stale = Boolean(
     source &&

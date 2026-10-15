@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 )
 
 // ForkOrigin is a retained boundary, never an executable copy of source input.
@@ -12,6 +13,7 @@ import (
 type ForkOrigin struct {
 	OpenCodeCreationProof     *OpenCodeForkCreationProof `json:"opencode_creation_proof,omitempty"`
 	OpenCodeCreationRequestID ID                         `json:"opencode_creation_request_id,omitempty"`
+	OpenCodeProfile           OpenCodeForkProfile        `json:"opencode_profile,omitempty"`
 	Startup                   *ExecutionStartupSelection `json:"startup,omitempty"`
 	SidechatParentSnapshot    *InitialExecution          `json:"sidechat_parent_snapshot,omitempty"`
 	SourceSessionID           ID                         `json:"source_session_id"`
@@ -145,10 +147,13 @@ type ForkExecution struct {
 	NativeTurnID     NativeIdentity `json:"native_turn_id"`
 	CheckpointDigest string         `json:"checkpoint_digest"`
 	HistoryRequestID ID             `json:"history_request_id"`
+	// OpenCodeProfile repeats the child's immutable copy profile so the Worker
+	// can compare it with its private checkpoint. Empty means profile v1.
+	OpenCodeProfile OpenCodeForkProfile `json:"opencode_profile,omitempty"`
 }
 
 func (f ForkExecution) Validate(i ExecutionJobInput) error {
-	if (i.Configuration.Harness != Codex && i.Configuration.Harness != OpenCode) || i.Configuration.Harness == OpenCode && i.Input.Mode != ExecuteMode || UniqueIDs([]ID{f.JobID, f.RuntimeID, f.HistoryRequestID, i.SessionID, i.ExecutionID, i.InputID, i.ThreadRequestID, i.TurnRequestID}) != nil || f.NativeThreadID.Validate(i.Configuration.Harness, NativeThreadIdentity) != nil || f.NativeTurnID.Validate(i.Configuration.Harness, NativeTurnIdentity) != nil || !canonicalDigest(f.CheckpointDigest) {
+	if (i.Configuration.Harness != Codex && i.Configuration.Harness != OpenCode) || i.Configuration.Harness == OpenCode && i.Input.Mode != ExecuteMode || UniqueIDs([]ID{f.JobID, f.RuntimeID, f.HistoryRequestID, i.SessionID, i.ExecutionID, i.InputID, i.ThreadRequestID, i.TurnRequestID}) != nil || f.NativeThreadID.Validate(i.Configuration.Harness, NativeThreadIdentity) != nil || f.NativeTurnID.Validate(i.Configuration.Harness, NativeTurnIdentity) != nil || !canonicalDigest(f.CheckpointDigest) || !f.OpenCodeProfile.Valid() || f.OpenCodeProfile != OpenCodeForkProfileV1 && i.Configuration.Harness != OpenCode {
 		return Fail(RecoveryRequired, "The first fork continuation lacks its original boundary.", "Retain the accepted fork job and Worker-private checkpoint.")
 	}
 	return nil
@@ -198,6 +203,9 @@ func (f ForkOrigin) Validate() error {
 	if f.OpenCodeCreationRequestID != "" && (harness != OpenCode || f.OpenCodeCreationRequestID.Validate() != nil || UniqueIDs([]ID{f.OpenCodeCreationRequestID, f.JobID, f.RuntimeID, f.SourceSessionID, f.SourceExecutionID}) != nil) {
 		return Fail(RecoveryRequired, "The child lost its original OpenCode creation identity.", "Preserve the child-owned Fork seed and checkpoint.")
 	}
+	if !f.OpenCodeProfile.Valid() || f.OpenCodeProfile != OpenCodeForkProfileV1 && (harness != OpenCode || f.OpenCodeCreationRequestID == "") {
+		return Fail(RecoveryRequired, "The child lost its original OpenCode copy profile.", "Preserve the child-owned Fork seed and checkpoint.")
+	}
 	if f.OpenCodeCreationProof != nil && (harness != OpenCode || f.OpenCodeCreationRequestID == "" || f.OpenCodeCreationProof.ChildSessionID.Validate() != nil || !f.VerifyOpenCodeCreation(f.OpenCodeCreationProof.ChildSessionID)) {
 		return Fail(RecoveryRequired, "The child lost its original OpenCode creation proof.", "Preserve the immutable verified child publication.")
 	}
@@ -209,17 +217,69 @@ func (f ForkOrigin) Validate() error {
 	return nil
 }
 
+// OpenCodeGeneralChatForkReasoningV1 independently negotiates fork profile
+// opencode-general-chat-v2 (completed plain timed reasoning parts). It never
+// replaces OpenCodeGeneralChatForkV1, which every v2 peer must also hold.
+const OpenCodeGeneralChatForkReasoningV1 WorkerCapability = "opencode-general-chat-fork-reasoning-v1"
+
+// OpenCodeForkReasoningPaired reports whether a Worker capability set keeps the
+// reasoning capability bound to the base OpenCode Fork capability. A set without
+// the reasoning capability is trivially paired.
+func OpenCodeForkReasoningPaired(capabilities []WorkerCapability) bool {
+	return !slices.Contains(capabilities, OpenCodeGeneralChatForkReasoningV1) || slices.Contains(capabilities, OpenCodeGeneralChatForkV1)
+}
+
+// OpenCodeForkReasoningSupported reports whether a Worker can execute and verify
+// profile v2 Fork history: it must hold both the base and the reasoning pair.
+func OpenCodeForkReasoningSupported(capabilities []WorkerCapability) bool {
+	return slices.Contains(capabilities, OpenCodeGeneralChatForkV1) && slices.Contains(capabilities, OpenCodeGeneralChatForkReasoningV1)
+}
+
+// OpenCodeForkReasoningRequired reports whether executing input for session needs
+// the profile v2 capabilities. The retained session profile is authoritative so
+// every later continuation of a v2 child stays bound to them after the first
+// turn clears the one-shot fork input.
+func OpenCodeForkReasoningRequired(session Session, input ExecutionJobInput) bool {
+	if input.Configuration.Harness != OpenCode {
+		return false
+	}
+	return input.Fork != nil && input.Fork.OpenCodeProfile.Reasoning() || session.Fork != nil && session.Fork.OpenCodeProfile.Reasoning()
+}
+
+// OpenCodeForkProfile names the closed OpenCode General Chat copy profile the
+// server selected for one Fork. The zero value is profile v1, so jobs, receipts
+// and checkpoints persisted before profile v2 keep their exact bytes.
+type OpenCodeForkProfile string
+
+const (
+	// OpenCodeForkProfileV1 is the plain text/step profile (omitted on the wire).
+	OpenCodeForkProfileV1 OpenCodeForkProfile = ""
+	// OpenCodeForkProfileV2 additionally clones completed plain timed reasoning.
+	OpenCodeForkProfileV2 OpenCodeForkProfile = "opencode-general-chat-v2"
+)
+
+func (p OpenCodeForkProfile) Valid() bool {
+	return p == OpenCodeForkProfileV1 || p == OpenCodeForkProfileV2
+}
+
+// Reasoning reports whether the profile clones reasoning history.
+func (p OpenCodeForkProfile) Reasoning() bool { return p == OpenCodeForkProfileV2 }
+
 // All native operation identities are frozen before Worker preparation. None
 // grants inference authority or permission to repeat an uncertain mutation.
 type OpenCodeForkRequests struct {
-	Restore      ID `json:"restore"`
-	Fork         ID `json:"fork"`
-	Move         ID `json:"move"`
-	Mark         ID `json:"mark"`
-	DeleteSource ID `json:"delete_source"`
+	Restore      ID                  `json:"restore"`
+	Fork         ID                  `json:"fork"`
+	Move         ID                  `json:"move"`
+	Mark         ID                  `json:"mark"`
+	DeleteSource ID                  `json:"delete_source"`
+	Profile      OpenCodeForkProfile `json:"profile,omitempty"`
 }
 
 func (r OpenCodeForkRequests) Validate() error {
+	if !r.Profile.Valid() {
+		return Fail(Unsupported, "OpenCode Fork requires a known copy profile.", "Keep the original session; update the server and Runner Device together.")
+	}
 	return UniqueIDs([]ID{r.Restore, r.Fork, r.Move, r.Mark, r.DeleteSource})
 }
 func (f ForkOrigin) ChildTurn() NativeIdentity {

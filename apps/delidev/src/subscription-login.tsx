@@ -29,6 +29,7 @@ import {
   subscriptionServiceNames,
   type Resource,
   type CodexDiagnostic,
+  type GrokDiagnostic,
 } from "@delinoio/delidev-api-client";
 import { OAuthNativeAction, useOAuthNativeControl } from "./account-oauth";
 import { useSettingsOpening } from "./settings-lifetime";
@@ -42,6 +43,11 @@ import {
   SubscriptionOnboardingStage as Stage,
   subscriptionNameValid,
 } from "./subscription-onboarding";
+import {
+  ProgressDisposition,
+  drivesBrowserLogin,
+  progressDisposition,
+} from "./subscription-progress";
 
 interface View {
   service: SubscriptionServiceId;
@@ -51,6 +57,7 @@ interface View {
   busy: boolean;
   problem?: string | OwnedMessage;
   diagnostic?: CodexDiagnostic;
+  grokDiagnostic?: GrokDiagnostic;
   browserReady: boolean;
 }
 interface Pending {
@@ -67,6 +74,8 @@ interface Pending {
   busy: boolean;
   named: boolean;
   terminal: boolean;
+  // The last response was a provisional refusal that a later claim can replace.
+  provisional: boolean;
   retry?: () => Promise<void>;
 }
 function browserURL(value: string) {
@@ -251,6 +260,7 @@ export function useSubscriptionLogin(
       busy: false,
       named: false,
       terminal: false,
+      provisional: false,
     };
     pending.current = p;
     setView({
@@ -348,7 +358,14 @@ export function useSubscriptionLogin(
         });
         if (!live(p)) return;
         const stage = stages[progress.state];
-        if (!stage) throw new Error("Unsupported login state");
+        const disposition = progressDisposition(
+          progress.state,
+          progress.grokDiagnostic,
+        );
+        if (!stage || !disposition) throw new Error("Unsupported login state");
+        // A provisional refusal is replaced by whatever the server reports next,
+        // so its leftovers must not outlive the response that supersedes it.
+        const superseded = p.provisional;
         if (stage === Stage.Naming) {
           if (!isEntityId(progress.generation))
             throw new Error("Invalid login generation");
@@ -370,20 +387,32 @@ export function useSubscriptionLogin(
           const suggested = subscriptionNameValid(progress.suggestedName)
             ? progress.suggestedName
             : subscriptionServiceNames[p.service];
+          p.provisional = false;
           update(p, {
             stage,
             name: suggested,
             suggested: Boolean(progress.suggestedName),
+            diagnostic: undefined,
+            grokDiagnostic: undefined,
+            ...(superseded ? { problem: undefined } : {}),
           });
           changed();
           return;
         }
-        const terminal = ![Stage.Preparing, Stage.Waiting].includes(stage);
+        const terminal = disposition === ProgressDisposition.Terminal;
+        const provisional = disposition === ProgressDisposition.Provisional;
+        p.provisional = provisional;
         update(p, {
           stage,
           diagnostic: progress.diagnostic,
-          ...(terminal ? { problem: undefined } : {}),
+          grokDiagnostic: progress.grokDiagnostic,
+          ...(terminal || provisional || superseded
+            ? { problem: undefined }
+            : {}),
         });
+        // A provisional refusal keeps the operation queued on the server, so
+        // polling and the original sign-in stay alive to adopt a later claim.
+        if (provisional) return;
         if (terminal) {
           p.terminal = true;
           p.url = "";
@@ -392,6 +421,8 @@ export function useSubscriptionLogin(
           );
         }
         if (stage !== Stage.Waiting || progress.canceled) return;
+        // Only the browser sign-in has an authorization URL and callback.
+        if (!drivesBrowserLogin(p.service)) return;
         if (
           progress.userCode ||
           !browserURL(progress.url) ||
@@ -638,11 +669,26 @@ export function useSubscriptionLogin(
           operationId: original.operation,
         });
         if (!live(original)) return;
-        if (!stages[progress.state])
+        const disposition = progressDisposition(
+          progress.state,
+          progress.grokDiagnostic,
+        );
+        if (!stages[progress.state] || !disposition)
           throw new Error("Unsupported original login status");
         await account(original);
+        // Polling owns every state change of a provisional refusal: Inspect
+        // refreshes the diagnostics of the state on screen only, and a different
+        // state is adopted by the next poll together with its own diagnostics.
+        const adoptedByPolling =
+          original.provisional &&
+          disposition !== ProgressDisposition.Provisional;
         update(original, {
-          diagnostic: progress.diagnostic,
+          ...(adoptedByPolling
+            ? {}
+            : {
+                diagnostic: progress.diagnostic,
+                grokDiagnostic: progress.grokDiagnostic,
+              }),
           problem: ownedMessage("subscription-onboarding.inline.inspected"),
         });
       } catch {
@@ -667,6 +713,7 @@ export function useSubscriptionLogin(
         busy={view.busy}
         problem={resolveMessage(view.problem)}
         diagnostic={view.diagnostic}
+        grokDiagnostic={view.grokDiagnostic}
         inspect={p?.operation ? inspect : undefined}
         canReopen={view.stage === Stage.Waiting && view.browserReady}
         canCancel={

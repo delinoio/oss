@@ -34,6 +34,15 @@ export function validInstallationVersion(value: unknown): value is string {
   );
 }
 
+/**
+ * Mirrors golang.org/x/mod/semver.IsValid for a version without the leading
+ * "v": no leading zeros in numeric components or numeric prerelease
+ * identifiers and no empty prerelease or build identifiers.
+ */
+export function validSemVer(value: unknown): value is string {
+  return typeof value === "string" && strictSemVer.test(value);
+}
+
 function parts(value: string) {
   const match = strictSemVer.exec(value);
   if (!match) return undefined;

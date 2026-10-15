@@ -357,6 +357,46 @@ describe("table invariants", () => {
         false,
       );
   });
+  it("treats a provisional refusal as a status read that settles nothing", () => {
+    for (const method of methods)
+      for (const phase of grokLoginPhases) {
+        const cell = grokLoginCell(phase, E.PollRefusalProvisional);
+        const base: GrokLoginState = { method, phase, retry: GrokRetry.None };
+        if (!cell || (cell.method && cell.method !== method)) {
+          // Settled, unobservable and not yet started phases ignore it.
+          expect(transition(base, E.PollRefusalProvisional)).toEqual(base);
+          continue;
+        }
+        expect(grokLoginPresentation(base).settled).toBe(false);
+        // The phase, the native binding and any retained request stay as they
+        // were; only the polling notice recovers.
+        expect(cell.to).toBe(phase);
+        expect(cell.retry).toBe(GrokRetryRule.Keep);
+        expect(cell.problem).toBe(GrokProblemRule.ClearStatusOnly);
+        for (const kind of retryKinds) {
+          const state: GrokLoginState = {
+            ...base,
+            retry: kind,
+            problem: retryHomes[kind].problem as GrokLoginState["problem"],
+          };
+          if (retryHomes[kind].phases.includes(phase))
+            expect(transition(state, E.PollRefusalProvisional)).toEqual(state);
+        }
+      }
+    // The refusal keeps the original sign-in cancelable and adopts the next
+    // response like any other poll.
+    for (const method of methods) {
+      const preparing = initialGrokLoginState(true, method);
+      const queued = transition(preparing, E.StartAccepted);
+      expect(queued.phase).toBe(P.Preparing);
+      const refused = transition(queued, E.PollRefusalProvisional);
+      expect(refused).toEqual(queued);
+      expect(grokLoginPresentation(refused).cancel).toBe(true);
+      expect(transition(refused, E.PollFailed).phase).toBe(P.Failed);
+      expect(transition(refused, E.PollSucceeded).phase).toBe(P.Naming);
+      expect(transition(refused, E.PollUnsupported).phase).toBe(P.Unsupported);
+    }
+  });
   it("marks Disposed as absorbing", () => {
     for (const event of grokLoginEvents)
       expect(
@@ -408,6 +448,18 @@ describe("table invariants", () => {
     expect(grokPollEvent(GrokLoginStage.Preparing, true)).toBe(
       E.PollPreparingCanceled,
     );
+    // Only an unsupported response can be a provisional refusal.
+    expect(grokPollEvent(GrokLoginStage.Unsupported, false, true)).toBe(
+      E.PollRefusalProvisional,
+    );
+    expect(grokPollEvent(GrokLoginStage.Unsupported, false, false)).toBe(
+      E.PollUnsupported,
+    );
+    for (const stage of Object.values(GrokLoginStage))
+      if (stage !== GrokLoginStage.Unsupported)
+        expect(grokPollEvent(stage, false, true)).toBe(
+          grokPollEvent(stage, false),
+        );
   });
 });
 
@@ -446,7 +498,10 @@ const eventTriggers: Record<GrokLoginEvent, string> = {
     "A status read reports waiting with the canceled flag (another client or a lost cancel response)",
   [E.PollCanceled]: "A status read reports the canceled state",
   [E.PollExpired]: "A status read reports the expired state",
-  [E.PollUnsupported]: "A status read reports the unsupported state",
+  [E.PollUnsupported]:
+    "A status read reports the unsupported state without a Grok diagnostic",
+  [E.PollRefusalProvisional]:
+    "A status read reports the unsupported state together with a Grok diagnostic: a refused Take the server keeps queued",
   [E.PollRecovery]: "A status read reports recovery required",
   [E.PollFailed]: "A status read reports the failed state",
   [E.PollSucceeded]:

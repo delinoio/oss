@@ -18,6 +18,8 @@ import {
   EntityKind,
   ErrorDetailSchema,
   FailureCode,
+  GrokDiagnosticPhase,
+  GrokDiagnosticSchema,
   ResourceSchema,
   ResourceService,
   SubscriptionLoginState as State,
@@ -29,6 +31,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { OAuthNativeAction, OAuthNativeProvider } from "./account-oauth";
 import { document, encode } from "./documents";
+import { safeGrokDiagnostic } from "./grok-diagnostic";
 import {
   grokDeviceVerification,
   grokLoginURL,
@@ -78,6 +81,21 @@ function typedFailure(code: Code, failure: FailureCode) {
   ]);
 }
 
+function refusal() {
+  return create(GrokDiagnosticSchema, {
+    detectedVersion: "1.0.43",
+    supportedVersion: "1.0.46",
+    phase: GrokDiagnosticPhase.VERSION,
+    code: "unsupported",
+    message: "Grok Build 1.0.43 did not complete version validation.",
+    correlationId: newRequestId(),
+  });
+}
+
+// The screen rebuilds the explanation from the closed phase and code, so the
+// fixture's own message text never reaches it.
+const refusalMessage = () => safeGrokDiagnostic(refusal())!.message;
+
 function fixture(url = loginURL) {
   let current = create(ResourceSchema, {
     id: newRequestId(),
@@ -93,6 +111,7 @@ function fixture(url = loginURL) {
   let state = State.WAITING,
     userCode = "",
     canceled = false,
+    diagnostic: ReturnType<typeof refusal> | undefined,
     operation = "",
     suggested = "grok.fixture@example.invalid",
     successOperation = "";
@@ -122,14 +141,27 @@ function fixture(url = loginURL) {
     });
     return { account: current, operationId: operation };
   });
-  const progress = vi.fn(() => ({
+  const progress = vi.fn(
+    (
+      _request: { operationId: string },
+    ): {
+      state: State;
+      url: string;
+      userCode: string;
+      suggestedName: string;
+      generation: string;
+      canceled: boolean;
+      grokDiagnostic?: ReturnType<typeof refusal>;
+    } => ({
     state,
     url: state === State.WAITING ? url : "",
     userCode: state === State.WAITING ? userCode : "",
     suggestedName: suggested,
     generation,
     canceled,
-  }));
+    grokDiagnostic: diagnostic,
+  }),
+  );
   const cancel = vi.fn((_request: { mutation?: { requestId: string } }) => ({
     account: current,
   }));
@@ -209,8 +241,9 @@ function fixture(url = loginURL) {
     changed,
     generation,
     current: () => current,
-    setState: (value: State) => {
+    setState: (value: State, grok?: ReturnType<typeof refusal>) => {
       state = value;
+      diagnostic = grok;
     },
     setUserCode: (value: string) => {
       userCode = value;
@@ -1406,6 +1439,106 @@ it("drops a retained cancel request once the login succeeded so the name can be 
   await screen.findByRole("button", { name: "Start Grok" });
   expect(f.save).toHaveBeenCalledTimes(2);
 });
+
+const stops = async (f: ReturnType<typeof fixture>) => {
+  const before = f.progress.mock.calls.length;
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+  });
+  expect(f.progress.mock.calls.length).toBe(before);
+};
+it("keeps polling a provisional refusal, keeps Cancel and adopts the same operation's success", async () => {
+  const f = fixture();
+  await start(f);
+  const operation = f.login.mock.calls[0][0].mutation.requestId;
+  f.setState(State.UNSUPPORTED, refusal());
+  await screen.findByText(refusalMessage(), {}, { timeout: 3000 });
+  // Nothing about the sign-in is disposed or ended by the refusal.
+  expect(actions(f, OAuthNativeAction.Dispose)).toHaveLength(0);
+  expect(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  ).toBeTruthy();
+  const refused = f.progress.mock.calls.length;
+  await waitFor(
+    () => expect(f.progress.mock.calls.length).toBeGreaterThan(refused + 1),
+    { timeout: 4000 },
+  );
+  f.setState(State.PREPARING);
+  await waitFor(() => expect(screen.queryByText(refusalMessage())).toBeNull(), {
+    timeout: 3000,
+  });
+  f.success();
+  const input = await screen.findByLabelText(
+    copy("grok-subscription.accountName"),
+    {},
+    { timeout: 3000 },
+  );
+  expect((input as HTMLInputElement).value).toBe(
+    "grok.fixture@example.invalid",
+  );
+  expect(screen.queryByText(refusalMessage())).toBeNull();
+  for (const [request] of f.progress.mock.calls)
+    expect(request).toMatchObject({ operationId: operation });
+  expect(f.login).toHaveBeenCalledTimes(1);
+  expect(f.cancel).not.toHaveBeenCalled();
+  expect(f.forward).not.toHaveBeenCalled();
+}, 20000);
+it("settles a provisional refusal into a terminal failure with its diagnostic and stops polling", async () => {
+  const f = fixture();
+  await start(f);
+  f.setState(State.UNSUPPORTED, refusal());
+  await screen.findByText(refusalMessage(), {}, { timeout: 3000 });
+  f.setState(State.FAILED, refusal());
+  await screen.findByText(
+    copy("grok-subscription.status.failed"),
+    {},
+    { timeout: 3000 },
+  );
+  expect(screen.getByText(refusalMessage())).toBeTruthy();
+  await waitFor(
+    () => expect(actions(f, OAuthNativeAction.Dispose)).toHaveLength(1),
+    { timeout: 3000 },
+  );
+  await stops(f);
+}, 20000);
+it("ends a provisional refusal that a cancellation superseded without a diagnostic", async () => {
+  const f = fixture();
+  await start(f);
+  f.setState(State.UNSUPPORTED, refusal());
+  await screen.findByText(refusalMessage(), {}, { timeout: 3000 });
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  await waitFor(() => expect(f.cancel).toHaveBeenCalledTimes(1));
+  f.setState(State.CANCELED);
+  await screen.findByText(
+    copy("grok-subscription.status.canceled"),
+    {},
+    { timeout: 3000 },
+  );
+  expect(screen.queryByText(refusalMessage())).toBeNull();
+  await waitFor(
+    () => expect(actions(f, OAuthNativeAction.Dispose)).toHaveLength(1),
+    { timeout: 3000 },
+  );
+  await stops(f);
+}, 20000);
+it("treats an unsupported response without a Grok diagnostic as final and shows no notice", async () => {
+  const f = fixture();
+  await start(f);
+  f.setState(State.UNSUPPORTED);
+  await screen.findByText(
+    copy("grok-subscription.status.unsupported"),
+    {},
+    { timeout: 3000 },
+  );
+  expect(screen.queryByText(refusalMessage())).toBeNull();
+  await waitFor(
+    () => expect(actions(f, OAuthNativeAction.Dispose)).toHaveLength(1),
+    { timeout: 3000 },
+  );
+  await stops(f);
+}, 20000);
 
 it("keeps the Grok row unchanged without capability 39 and enables Add account with it", async () => {
   async function row(capabilities: SystemCapability[]) {
