@@ -483,7 +483,7 @@ const records = populated
         create(ResourceSchema, {
           id: newRequestId(),
           kind,
-          schemaVersion: 1,
+          schemaVersion: kind === EntityKind.AGENT ? 4 : 1,
           revision: 1n,
           documentJson: encode({
             name:
@@ -496,7 +496,20 @@ const records = populated
             contents:
               "Complete fixture instruction text.\nSecond line retained.",
             repositories: [],
-            accounts: [],
+            ...(kind === EntityKind.AGENT
+              ? {
+                  routes: [
+                    {
+                      model: {
+                        subscription_service: "chatgpt",
+                        native_id: "fixture-model",
+                      },
+                      accounts: [{ id: subscription.id, weight: 1 }],
+                    },
+                  ],
+                  options: { permission: "default" },
+                }
+              : { accounts: [] }),
             templates: [],
           }),
         }),
