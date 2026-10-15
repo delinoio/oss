@@ -1831,7 +1831,7 @@ fn emitted_evals(
             };
             tracing::debug!(
                 rule = "minifier/direct-eval-blocks-mangling",
-                module = %module.id,
+                module = %context.module_log_label(&module.id),
                 chunk = %file,
                 offset,
                 has_map,
@@ -1902,7 +1902,7 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         let Some(first_emitted) = emitted.first() else {
             tracing::debug!(
                 rule = "minifier/direct-eval-blocks-mangling",
-                module = %module.id,
+                module = %context.module_log_label(&module.id),
                 "skipping direct eval candidate with no attributable emitted eval call"
             );
             continue;
@@ -2107,7 +2107,9 @@ mod tests {
         if let Some(map) = &emitted.map {
             std::fs::write(build_dir.join("main.js.map"), map).unwrap();
         }
-        let module_id = source_path.to_string_lossy().into_owned();
+        // The identifier carries a resource query, as a bundler identifier can;
+        // no log line may repeat it.
+        let module_id = format!("{}?token=hunter2", source_path.to_string_lossy());
         let mut modules = vec![CollectedModule {
             id: module_id.clone(),
             path: Some(source_path.to_string_lossy().into_owned()),
@@ -2803,6 +2805,74 @@ y=/process.env.F/.test(z),process.env.G"#;
         let drafts =
             eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, true, ManglingSetting::Enabled, &emitted);
         assert!(drafts.is_empty());
+    }
+
+    #[derive(Clone)]
+    struct LogWriter(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for LogWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// The debug log written while the rule analyzes `emitted`. Tests run in
+    /// parallel, and a call site first reached on a thread without a
+    /// subscriber caches that no one listens until a later subscriber is
+    /// registered, so a run that captured nothing is repeated.
+    fn eval_rule_log(emitted: &EmittedChunk) -> String {
+        for _ in 0..50 {
+            let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let writer = logs.clone();
+            let subscriber = tracing_subscriber::fmt()
+                .with_ansi(false)
+                .with_max_level(tracing::Level::DEBUG)
+                .with_writer(move || LogWriter(writer.clone()))
+                .finish();
+            let guard = tracing::subscriber::set_default(subscriber);
+            eval_rule_drafts_for_chunk(DEAD_EVAL_SOURCE, true, ManglingSetting::Enabled, emitted);
+            drop(guard);
+            let bytes = logs.lock().unwrap().clone();
+            if !bytes.is_empty() {
+                return String::from_utf8(bytes).unwrap();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        String::new()
+    }
+
+    #[test]
+    fn eval_attribution_logs_never_name_the_raw_module_identifier() {
+        // An attributable emitted call logs the candidate event, a removed
+        // call logs the skip event, and a shared chunk logs the owner count.
+        let cases = [
+            (
+                "candidate",
+                EmittedChunk::plain("const longLocalName = 1;\neval(code);"),
+            ),
+            ("skipped", EmittedChunk::plain("const longLocalName = 1;")),
+            (
+                "shared",
+                EmittedChunk {
+                    code: "const longLocalName = 1;\neval(code);".to_owned(),
+                    map: None,
+                    other_modules: 1,
+                    virtual_modules: 1,
+                },
+            ),
+        ];
+        for (name, emitted) in cases {
+            let log = eval_rule_log(&emitted);
+            assert!(log.contains("module=src/main.js"), "{name}: {log}");
+            assert!(!log.contains("hunter2"), "{name}: {log}");
+            assert!(!log.contains("token="), "{name}: {log}");
+            assert!(!log.contains("virtual:"), "{name}: {log}");
+        }
     }
 
     #[test]

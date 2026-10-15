@@ -336,6 +336,8 @@ When a source map lacks `sourcesContent`, a safe live read may establish that a 
 | Collected module with a resource path                                     | Its display path (project-relative or dependency display path)          |
 | Collected module without a resource path, or module that is not collected | `module-` plus the first 16 hex digits of the SHA-256 of its identifier |
 
+Every rule log event that names a module, including the export usage and direct `eval` attribution events, takes its label from this table through one shared helper.
+
 ## Build and Test
 
 Run root `cargo test` after Rust changes. Unit tests cover every rule with committed fixture collections for its blocker and counterexample, size attribution without double counting, schema rejection, result validation, path validation, token and Origin enforcement, HTML escaping and log redaction. `packages/bundlewhy` acceptance (`pnpm --filter @delino/bundlewhy test:acceptance`) runs real Vite and Rspack fixture builds through the binary and verifies project files stay unchanged. The UI document is embedded from `apps/bundlewhy-web/dist/index.html` when present at build time; otherwise development and test builds embed a minimal page that explains how to build it. Release-profile builds fail without the UI unless `BUNDLEWHY_ALLOW_MISSING_UI=1` is set for a build that is never distributed.
