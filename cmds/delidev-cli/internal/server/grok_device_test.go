@@ -841,3 +841,27 @@ func TestGrokLateCancelOutcomeTable(t *testing.T) {
 		})
 	}
 }
+
+// A poll is bounded by the device-code deadline: with less time left than the
+// client's own request timeout, a response that would arrive after the deadline is
+// never accepted, and the poll settles as uncertain (the code may be redeemed).
+func TestGrokDevicePollIsBoundedByTheDeviceCodeDeadline(t *testing.T) {
+	g := newGrokDeviceFixture(t)
+	g.idp.DeviceExpiresIn = 6
+	g.idp.TokenGate, g.idp.TokenEntered = make(chan struct{}), make(chan struct{}, 1)
+	g.idp.DeviceInterval = 5
+	run := g.startDevice(t)
+	awaitServerFixture(t, g.idp.TokenEntered)
+	// The poll waits for a response the provider never sends. It must end by the
+	// deadline (1s of the 6s window remains after the 5s interval), not by the
+	// operation window or the client timeout.
+	start := time.Now()
+	p, a := g.settle(t, run, stateRecovery)
+	if elapsed := time.Since(start); elapsed > 20*time.Second {
+		t.Fatalf("the poll outlived the device-code deadline by far: %v", elapsed)
+	}
+	if !a.Subscription.RecoveryRequired || p.GrokDiagnostic == nil || p.GrokDiagnostic.Code != string(domain.RecoveryRequired) {
+		t.Fatal("a poll cut off by the device-code deadline did not stay uncertain")
+	}
+	g.requireNoBundle(t, a)
+}

@@ -195,12 +195,10 @@ func (s *Service) grokRefreshSteps(ctx, parent context.Context, id domain.ID, or
 		}
 		return fail(domain.SubscriptionCanceled, domain.Canceled, step)
 	}
-	vault, err := s.secrets()
-	if err != nil {
-		s.logGrok(ctx, slog.LevelWarn, "grok_refresh_vault_unavailable", original, grokStepVault, "code", domain.SafeError(err).Code)
-		return fail(domain.SubscriptionFailed, domain.Unavailable, grokStepVault)
-	}
-	stored, err := vault.Get(ctx, credentials.Ref{Owner: id, ID: original.Generation, Purpose: credentials.AccountLogin})
+	// The vault is opened and read under the account gate, like every other
+	// credential path: concurrent first uses would otherwise race to open the same
+	// vault and publish its cache without synchronization.
+	stored, err := s.readGrokGeneration(ctx, id, original.Generation)
 	if err != nil {
 		if ctx.Err() != nil {
 			return interrupted(grokStepVault)
@@ -274,6 +272,21 @@ func (s *Service) grokRefreshSteps(ctx, parent context.Context, id domain.ID, or
 		return uncertain(grokStepMapping)
 	}
 	return grokOutcome{bundle: next, state: domain.SubscriptionSucceeded, step: grokStepMapping, claimed: true}
+}
+
+// readGrokGeneration opens the shared vault and reads one stored generation while
+// holding the account gate, and releases the gate before any network work.
+func (s *Service) readGrokGeneration(ctx context.Context, id, generation domain.ID) ([]byte, error) {
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	vault, err := s.secrets()
+	if err != nil {
+		return nil, err
+	}
+	return vault.Get(ctx, credentials.Ref{Owner: id, ID: generation, Purpose: credentials.AccountLogin})
 }
 
 // claimGrokRefresh persists the exchange claim before the token request is
