@@ -99,7 +99,9 @@ type IdP struct {
 	UserInfoSubject  string
 	DiscoveryIssuer  string
 	DiscoveryHost    string
-	NoRefreshToken   bool
+	// DiscoveryBody, when set, is returned verbatim as the discovery document.
+	DiscoveryBody  string
+	NoRefreshToken bool
 
 	// Refresh knobs. RefreshMode shapes a successful refresh_token grant,
 	// OmitRefreshIDToken drops the ID token from it, and TruncateTokenBody makes
@@ -229,6 +231,10 @@ func (i *IdP) discovery(w http.ResponseWriter, _ *http.Request) {
 	issuer := subscription.GrokIssuer
 	if i.DiscoveryIssuer != "" {
 		issuer = i.DiscoveryIssuer
+	}
+	if i.DiscoveryBody != "" {
+		_, _ = w.Write([]byte(i.DiscoveryBody))
+		return
 	}
 	base := "https://" + i.host()
 	_ = json.NewEncoder(w).Encode(map[string]any{

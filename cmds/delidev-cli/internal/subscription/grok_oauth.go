@@ -166,6 +166,42 @@ func grokListContains(values []string, want string) bool {
 	return false
 }
 
+// grokDiscoveryDocument is the subset of the OIDC metadata the client reads.
+type grokDiscoveryDocument struct {
+	Issuer        string
+	Authorization string
+	Token         string
+	UserInfo      string
+	JWKS          string
+	ResponseTypes []string
+	Challenges    []string
+	AuthMethods   []string
+	Algorithms    []string
+}
+
+// grokDiscoveryMembers lists the canonical member names the client reads, in the
+// order of grokDiscoveryDocument's fields.
+var grokDiscoveryMembers = []string{"issuer", "authorization_endpoint", "token_endpoint", "userinfo_endpoint", "jwks_uri",
+	"response_types_supported", "code_challenge_methods_supported", "token_endpoint_auth_methods_supported", "id_token_signing_alg_values_supported"}
+
+// grokDecodeDiscovery reads the metadata with exact, case-sensitive member
+// names (see grokExactMembers). A differently cased spelling of a member the
+// client reads is not the member: the document is refused instead of being
+// matched the way encoding/json folds struct field names.
+func grokDecodeDiscovery(raw []byte, doc *grokDiscoveryDocument) bool {
+	members, ok := grokExactMembers(raw)
+	if !ok || grokHasMemberAlias(members, grokDiscoveryMembers) {
+		return false
+	}
+	fields := []any{&doc.Issuer, &doc.Authorization, &doc.Token, &doc.UserInfo, &doc.JWKS, &doc.ResponseTypes, &doc.Challenges, &doc.AuthMethods, &doc.Algorithms}
+	for i, name := range grokDiscoveryMembers {
+		if value, present := members[name]; present && json.Unmarshal(value, fields[i]) != nil {
+			return false
+		}
+	}
+	return true
+}
+
 // Discover reads the OIDC metadata of the fixed issuer and validates it. The
 // issuer must match exactly, every endpoint must live on the issuer origin, and
 // the metadata must not contradict the S256, public-client and ES256 profile.
@@ -175,18 +211,8 @@ func (c GrokOAuthClient) Discover(ctx context.Context) (GrokEndpoints, error) {
 	if err != nil || status != http.StatusOK {
 		return GrokEndpoints{}, grokFailure(GrokReasonDiscovery)
 	}
-	var doc struct {
-		Issuer        string   `json:"issuer"`
-		Authorization string   `json:"authorization_endpoint"`
-		Token         string   `json:"token_endpoint"`
-		UserInfo      string   `json:"userinfo_endpoint"`
-		JWKS          string   `json:"jwks_uri"`
-		ResponseTypes []string `json:"response_types_supported"`
-		Challenges    []string `json:"code_challenge_methods_supported"`
-		AuthMethods   []string `json:"token_endpoint_auth_methods_supported"`
-		Algorithms    []string `json:"id_token_signing_alg_values_supported"`
-	}
-	if json.Unmarshal(raw, &doc) != nil || doc.Issuer != GrokIssuer {
+	var doc grokDiscoveryDocument
+	if !grokDecodeDiscovery(raw, &doc) || doc.Issuer != GrokIssuer {
 		return GrokEndpoints{}, grokFailure(GrokReasonDiscovery)
 	}
 	// Absent capability lists are not a contradiction, but a present list must
@@ -404,52 +430,67 @@ func (t GrokTokens) Format(f fmt.State, _ rune) {
 	_, _ = f.Write([]byte(t.String()))
 }
 
-// grokTokenBody is the JSON body of a token endpoint response. Every member is
+// grokTokenBody is the decoded token endpoint response. Every member is
 // optional on the wire; the callers decide which ones their grant requires.
 type grokTokenBody struct {
-	AccessToken  string      `json:"access_token"`
-	RefreshToken string      `json:"refresh_token"`
-	IDToken      string      `json:"id_token"`
-	TokenType    string      `json:"token_type"`
-	ExpiresIn    json.Number `json:"expires_in"`
-	Error        string      `json:"error"`
+	AccessToken  string
+	RefreshToken string
+	IDToken      string
+	TokenType    string
+	ExpiresIn    json.Number
+	Error        string
+}
+
+// grokTokenBodyFrom decodes the canonical members of a token response. Member
+// names are matched exactly: encoding/json would also match a differently cased
+// struct field, which would let an alias stand in for the member.
+func grokTokenBodyFrom(members map[string]json.RawMessage) (grokTokenBody, bool) {
+	var body grokTokenBody
+	for name, target := range map[string]any{
+		"access_token": &body.AccessToken, "refresh_token": &body.RefreshToken, "id_token": &body.IDToken,
+		"token_type": &body.TokenType, "expires_in": &body.ExpiresIn, "error": &body.Error,
+	} {
+		if raw, present := members[name]; present && json.Unmarshal(raw, target) != nil {
+			return grokTokenBody{}, false
+		}
+	}
+	return body, true
 }
 
 // grokStrictObject reports whether raw is exactly one JSON object whose
-// top-level members are unique and that is followed by nothing but whitespace.
-// Member names are compared case-insensitively when fold is set (as
-// encoding/json matches struct fields) and exactly otherwise (a claim set).
-func grokStrictObject(raw []byte, fold bool) bool {
-	_, ok := grokObjectMembers(raw, fold)
+// top-level member names are unique (exact comparison) and that is followed by
+// nothing but whitespace.
+func grokStrictObject(raw []byte) bool {
+	_, ok := grokExactMembers(raw)
 	return ok
 }
 
-// grokObjectMembers is grokStrictObject that also returns the set of top-level
-// member names (lower-cased when fold is set), so a classifier can see which
-// members a body carries even when their values are empty.
-func grokObjectMembers(raw []byte, fold bool) (map[string]bool, bool) {
+// grokExactMembers returns the top-level members of raw when it is exactly one
+// JSON object followed by nothing but whitespace. OAuth and JSON member names
+// are case-sensitive, so names are compared and returned exactly as written and
+// a repeated name (the decoder would silently keep the last one, and
+// implementations disagree) makes the object unparsed. A classifier can see
+// which members a body carries even when their values are empty or null.
+func grokExactMembers(raw []byte) (map[string]json.RawMessage, bool) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	if open, err := decoder.Token(); err != nil || open != json.Delim('{') {
 		return nil, false
 	}
-	seen := map[string]bool{}
+	members := map[string]json.RawMessage{}
 	for decoder.More() {
 		key, err := decoder.Token()
 		name, isString := key.(string)
 		if err != nil || !isString {
 			return nil, false
 		}
-		if fold {
-			name = strings.ToLower(name)
-		}
-		if seen[name] {
+		if _, repeated := members[name]; repeated {
 			return nil, false
 		}
-		seen[name] = true
 		var value json.RawMessage
 		if decoder.Decode(&value) != nil {
 			return nil, false
 		}
+		members[name] = value
 	}
 	if closing, err := decoder.Token(); err != nil || closing != json.Delim('}') {
 		return nil, false
@@ -457,7 +498,33 @@ func grokObjectMembers(raw []byte, fold bool) (map[string]bool, bool) {
 	if _, err := decoder.Token(); err != io.EOF {
 		return nil, false
 	}
-	return seen, true
+	return members, true
+}
+
+// grokHasMemberAlias reports whether members holds a name that is not one of the
+// canonical names but equals one when case is ignored. Such a name is an alias
+// the provider contract does not define; it is never read as the member, and a
+// classifier treats the whole body as untrustworthy.
+func grokHasMemberAlias(members map[string]json.RawMessage, canonical []string) bool {
+	for name := range members {
+		for _, want := range canonical {
+			if name != want && strings.EqualFold(name, want) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// grokHasMember reports whether members holds any canonical name, even with an
+// empty or null value.
+func grokHasMember(members map[string]json.RawMessage, canonical []string) bool {
+	for _, name := range canonical {
+		if _, present := members[name]; present {
+			return true
+		}
+	}
+	return false
 }
 
 // grokTokenOutcome is the single classification of a token endpoint response.
@@ -487,46 +554,43 @@ var grokTokenSuccessMembers = []string{"access_token", "refresh_token", "id_toke
 // is neither a published success nor proof that nothing rotated.
 var grokTokenErrorMembers = []string{"error", "error_description", "error_uri"}
 
-// classifyGrokTokenResponse is the one table of the token endpoint response:
+// classifyGrokTokenResponse is the one table of the token endpoint response.
+// Member names are case-sensitive: a name that differs from a success or error
+// member only in case is an alias, never that member, and any alias makes the
+// body untrustworthy.
 //
 //	status   | body                                                        | outcome
-//	200      | one object, unique members, only trailing whitespace        | success
-//	200      | one such object that also has any error member              | uncertain
+//	200      | one object, unique exact members, only trailing whitespace  | success
+//	200      | one such object with any error member or error alias        | uncertain
+//	200      | one such object with a success-member alias                 | malformed
 //	200      | anything else                                               | malformed
-//	400, 401 | one object, unique members, non-empty error, no success one | rejected
-//	400, 401 | trailing data, repeated member, no error, or an error that
-//	         | also has any success member                                 | uncertain
+//	400, 401 | one object, unique members, non-empty error, no success one,
+//	         | no alias of any success or error member                     | rejected
+//	400, 401 | trailing data, repeated member, no exact error, an error
+//	         | with a success member, or any alias                         | uncertain
 //	other    | any body                                                    | uncertain
 func classifyGrokTokenResponse(status int, raw []byte) (grokTokenBody, grokTokenOutcome) {
-	members, ok := grokObjectMembers(raw, true)
+	members, ok := grokExactMembers(raw)
 	var body grokTokenBody
 	if ok {
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.UseNumber()
-		if decoder.Decode(&body) != nil {
-			ok = false
-			body = grokTokenBody{}
-		}
+		body, ok = grokTokenBodyFrom(members)
 	}
 	if status == http.StatusOK && ok {
-		for _, name := range grokTokenErrorMembers {
-			if members[name] {
-				return grokTokenBody{}, grokTokenOutcomeUncertain
-			}
+		switch {
+		case grokHasMember(members, grokTokenErrorMembers) || grokHasMemberAlias(members, grokTokenErrorMembers):
+			return grokTokenBody{}, grokTokenOutcomeUncertain
+		case grokHasMemberAlias(members, grokTokenSuccessMembers):
+			return grokTokenBody{}, grokTokenOutcomeMalformed
 		}
+		return body, grokTokenOutcomeSuccess
 	}
 	switch {
-	case status == http.StatusOK && ok:
-		return body, grokTokenOutcomeSuccess
 	case status == http.StatusOK:
 		return grokTokenBody{}, grokTokenOutcomeMalformed
 	case !ok || status != http.StatusBadRequest && status != http.StatusUnauthorized || body.Error == "":
 		return grokTokenBody{}, grokTokenOutcomeUncertain
-	}
-	for _, name := range grokTokenSuccessMembers {
-		if members[name] {
-			return grokTokenBody{}, grokTokenOutcomeUncertain
-		}
+	case grokHasMember(members, grokTokenSuccessMembers) || grokHasMemberAlias(members, grokTokenSuccessMembers) || grokHasMemberAlias(members, grokTokenErrorMembers):
+		return grokTokenBody{}, grokTokenOutcomeUncertain
 	}
 	return grokTokenBody{}, grokTokenOutcomeRejected
 }
@@ -665,7 +729,7 @@ func (c GrokOAuthClient) validateIDToken(ctx context.Context, endpoints GrokEndp
 	}
 	defer clear(payload)
 	var fields map[string]json.RawMessage
-	if !grokStrictObject(payload, false) || json.Unmarshal(payload, &fields) != nil {
+	if !grokStrictObject(payload) || json.Unmarshal(payload, &fields) != nil {
 		return GrokClaims{}, invalid
 	}
 	now := c.now()
@@ -739,7 +803,7 @@ func (c GrokOAuthClient) userInfo(ctx context.Context, endpoints GrokEndpoints, 
 		return GrokUserInfo{}, "", grokFailure(GrokReasonUserInfo)
 	}
 	var fields map[string]json.RawMessage
-	if !grokStrictObject(raw, false) || json.Unmarshal(raw, &fields) != nil {
+	if !grokStrictObject(raw) || json.Unmarshal(raw, &fields) != nil {
 		return GrokUserInfo{}, "", grokFailure(GrokReasonUserInfo)
 	}
 	subject := grokClaimString(fields, "sub")

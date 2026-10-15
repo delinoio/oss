@@ -55,6 +55,70 @@ func TestGrokDiscoveryIsValidatedAgainstTheIssuer(t *testing.T) {
 	}
 }
 
+// Provider member names are case-sensitive: a differently cased spelling of a
+// member the client reads is an alias the contract does not define, so a
+// discovery document that carries one is refused in every cell instead of being
+// matched the way encoding/json folds struct field names.
+func TestGrokDiscoveryRequiresExactMemberNames(t *testing.T) {
+	const base = "https://auth.x.ai"
+	members := []struct{ name, value string }{
+		{"issuer", `"` + subscription.GrokIssuer + `"`},
+		{"authorization_endpoint", `"` + base + `/oauth2/authorize"`},
+		{"token_endpoint", `"` + base + `/oauth2/token"`},
+		{"userinfo_endpoint", `"` + base + `/oauth2/userinfo"`},
+		{"jwks_uri", `"` + base + `/.well-known/jwks.json"`},
+		{"response_types_supported", `["code"]`},
+		{"code_challenge_methods_supported", `["S256"]`},
+		{"token_endpoint_auth_methods_supported", `["none"]`},
+		{"id_token_signing_alg_values_supported", `["ES256"]`},
+	}
+	document := func(rename func(name string) string, extra string) string {
+		body := "{"
+		for i, m := range members {
+			if i > 0 {
+				body += ","
+			}
+			body += `"` + rename(m.name) + `":` + m.value
+		}
+		return body + extra + "}"
+	}
+	exact := func(name string) string { return name }
+	discover := func(body string) error {
+		idp := grokidp.New(t)
+		idp.DiscoveryBody = body
+		_, err := grokClient(idp).Discover(context.Background())
+		return err
+	}
+	if err := discover(document(exact, "")); err != nil {
+		t.Fatalf("the control document was refused: %v", err)
+	}
+	if err := discover(document(exact, `,"Unrelated":1`)); err != nil {
+		t.Fatalf("an unrelated member was refused: %v", err)
+	}
+	for _, m := range members {
+		for _, alias := range []string{strings.ToUpper(m.name), strings.ToUpper(m.name[:1]) + m.name[1:]} {
+			t.Run("only "+alias, func(t *testing.T) {
+				body := document(func(name string) string {
+					if name == m.name {
+						return alias
+					}
+					return name
+				}, "")
+				reason, ok := subscription.GrokOAuthFailure(discover(body))
+				if !ok || reason != subscription.GrokReasonDiscovery {
+					t.Fatalf("a document that spells %s as %s was accepted", m.name, alias)
+				}
+			})
+			t.Run("beside "+alias, func(t *testing.T) {
+				reason, ok := subscription.GrokOAuthFailure(discover(document(exact, `,"`+alias+`":`+m.value)))
+				if !ok || reason != subscription.GrokReasonDiscovery {
+					t.Fatalf("a document that adds the alias %s beside %s was accepted", alias, m.name)
+				}
+			})
+		}
+	}
+}
+
 func TestGrokAuthorizationURLShapeAndRandomness(t *testing.T) {
 	idp := grokidp.New(t)
 	endpoints, err := grokClient(idp).Discover(context.Background())
