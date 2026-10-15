@@ -3933,6 +3933,11 @@ y=/process.env.F/.test(z),process.env.G"#;
         ("(\\u0065val)(c);", 1),
         ("\\u{65}val(c);", 1),
         ("obj.\\u0065val(c);", 0),
+        ("this.#\\u0065val(c);", 0),
+        (
+            "class C { #\\u0065val(v) {} run() { return this.#\\u0065val(1); } }",
+            0,
+        ),
         ("(0, \\u0065val)(c);", 0),
         // Scope: a binding named `eval` makes its calls ordinary.
         ("function f(eval) { (eval)(c); eval(c); }", 0),

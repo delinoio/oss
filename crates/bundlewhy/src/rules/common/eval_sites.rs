@@ -271,12 +271,16 @@ fn tokenize<'a>(source: &'a str, ignored: &[(usize, usize)]) -> Vec<Token<'a>> {
                 length = offset + next.len_utf8();
             }
             (TokenKind::Value, length)
-        } else if character == '#' && rest[1..].chars().next().is_some_and(is_identifier_start) {
-            let length = 1 + rest[1..]
-                .char_indices()
-                .find(|(_, next)| !is_identifier_part(*next))
-                .map_or(rest.len() - 1, |(offset, _)| offset);
-            (TokenKind::Private, length)
+        } else if let Some((length, name)) = (character == '#')
+            .then(|| scan_identifier(&rest[1..]))
+            .flatten()
+        {
+            // A private name may spell its identifier with escapes too:
+            // `this.#\u0065val(code)` is the private `#eval`, not the global.
+            if name == "eval" && rest[1..1 + length].contains('\\') {
+                spelling = Some("#eval");
+            }
+            (TokenKind::Private, 1 + length)
         } else if rest.starts_with("...") {
             (TokenKind::Punct, 3)
         } else if rest.starts_with("=>")
@@ -2004,6 +2008,18 @@ mod tests {
             ("class C { static #eval(value) {} }", &[PRIVATE]),
             ("class C { async #eval(value) {} }", &[PRIVATE]),
             ("this.#eval(value);", &[PRIVATE]),
+            // Escaped spellings of a private name stay private.
+            ("this.#\\u0065val(value);", &[PRIVATE]),
+            ("this.#ev\\u0061l(value);", &[PRIVATE]),
+            ("this.#\\u{65}val(value);", &[PRIVATE]),
+            ("class C { #\\u0065val(value) {} }", &[PRIVATE]),
+            (
+                "class C { static #\\u0065val(value) {} run() { eval(code); } }",
+                &[PRIVATE, CALL],
+            ),
+            ("other?.#\\u0065val(value);", &[PRIVATE]),
+            // A private name other than `#eval` is not recorded.
+            ("this.#\\u0065vil(value);", &[]),
             (
                 "class C { #eval(value) {} run() { return this.#eval(1); } }",
                 &[PRIVATE, PRIVATE],
