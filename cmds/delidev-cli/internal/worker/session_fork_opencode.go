@@ -67,7 +67,7 @@ func readOpenCodeForkSource(ctx context.Context, root string, credential Credent
 	if a.Continuation != nil {
 		history = a.Continuation.HistoryExecutionID
 	}
-	if r.Completion != terminal || r.InputMode != a.Input.Mode || r.PromptSHA256 != executionInputDigest([]byte(a.Input.Prompt)) || r.AssignmentInputSHA256 != executionInputDigest(mustForkJSON(a)) || r.HistoryExecutionID != history || ref.ServerID != credential.ServerID || ref.DeviceID != credential.DeviceID || ref.MachineID != a.MachineID || ref.SessionID != i.SourceSessionID || ref.ExecutionID != a.ExecutionID || ref.JobID != i.SourceJobID || ref.InputID != a.InputID || ref.AccountID != a.AccountID || ref.ConnectionID != a.ConnectionID || ref.ConfigurationDigest != a.ConfigurationDigest || ref.ThreadRequestID != a.ThreadRequestID || ref.InputRequestID != a.TurnRequestID {
+	if r.Completion != terminal || r.InputMode != a.Input.Mode || r.PromptSHA256 != openCodeInputDigest(a.Input) || r.AssignmentInputSHA256 != executionInputDigest(mustForkJSON(a)) || r.HistoryExecutionID != history || ref.ServerID != credential.ServerID || ref.DeviceID != credential.DeviceID || ref.MachineID != a.MachineID || ref.SessionID != i.SourceSessionID || ref.ExecutionID != a.ExecutionID || ref.JobID != i.SourceJobID || ref.InputID != a.InputID || ref.AccountID != a.AccountID || ref.ConnectionID != a.ConnectionID || ref.ConfigurationDigest != a.ConfigurationDigest || ref.ThreadRequestID != a.ThreadRequestID || ref.InputRequestID != a.TurnRequestID {
 		return empty, executionCheckpointUncertain()
 	}
 	checkpoint, err := readOpenCodeExecutionCheckpoint(ctx, root, r, i.Completion.NativeCheckpointDigest, true)
