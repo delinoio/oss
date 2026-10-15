@@ -206,9 +206,9 @@ const REGEX_KEYWORDS: [&str; 14] = [
 
 /// Keywords that cannot end an expression: a line terminator after them never
 /// starts a new statement. Every entry is also in [`REGEX_KEYWORDS`]; the
-/// restricted productions `return`, `throw` and `yield` are left out because a
-/// line terminator after them does end the statement.
-const OPEN_KEYWORDS: [&str; 8] = [
+/// restricted productions `return` and `throw` are left out because a line
+/// terminator after them does end the statement.
+const OPEN_KEYWORDS: [&str; 9] = [
     "in",
     "instanceof",
     "typeof",
@@ -217,6 +217,7 @@ const OPEN_KEYWORDS: [&str; 8] = [
     "new",
     "of",
     "await",
+    "yield",
 ];
 
 /// True when the range is a comment rather than a string, template or regular
@@ -503,7 +504,7 @@ fn asi_terminates(code: &str, terminator: usize, after: usize, ignored: &[(usize
 /// arrow function: the [`asi_terminates`] rule, plus a `{` after an operand.
 /// A `{` cannot continue an expression, so there it opens a block statement
 /// (`(eval) => eval` + line terminator + `{ eval(code) }`).
-fn arrow_body_ends(
+pub(super) fn arrow_body_ends(
     code: &str,
     terminator: usize,
     after: usize,
@@ -4191,6 +4192,110 @@ y=/process.env.F/.test(z),process.env.G"#;
             // arrow body is still open there.
             let expected = usize::from(code.contains("1\n+await"));
             assert_eq!(await_operators_in(code).len(), expected, "{code:?}");
+        }
+    }
+
+    /// Operators and keywords that continue an expression from the next line,
+    /// so a concise arrow body is still open when one of them starts a line.
+    const LINE_START_CONTINUATIONS: [&str; 41] = [
+        "??",
+        "??=",
+        "?.",
+        "||",
+        "&&",
+        "||=",
+        "&&=",
+        "|",
+        "&",
+        "^",
+        "*",
+        "**",
+        "/",
+        "%",
+        "+",
+        "-",
+        "<",
+        ">",
+        "<=",
+        ">=",
+        "<<",
+        ">>",
+        ">>>",
+        "==",
+        "===",
+        "!=",
+        "!==",
+        "=",
+        "+=",
+        "-=",
+        "?",
+        ":",
+        ".",
+        "in",
+        "instanceof",
+        "(",
+        "[",
+        "`t`",
+        "*=",
+        "%=",
+        "^=",
+    ];
+
+    #[test]
+    fn each_line_start_continuation_keeps_a_concise_async_arrow_open() {
+        for operator in LINE_START_CONTINUATIONS {
+            // The operand must be valid after every operator, so wrap it in
+            // parentheses and give a `?` or `:` its other branch.
+            let operand = match operator {
+                "?" => "(await(x) ? 2 : 3) : 4",
+                ":" => "(await(x))",
+                "(" | "[" | "`t`" | "." | "?." => "await(x)",
+                _ => "(await(x) ? 2 : 3)",
+            };
+            let code = match operator {
+                "(" => format!("const g = async () => f\n  ({operand})"),
+                "[" => format!("const g = async () => f\n  [{operand}]"),
+                "`t`" => format!("const g = async () => f\n  `${{{operand}}}`"),
+                "." => format!("const g = async () => a\n  .b({operand})"),
+                "?." => format!("const g = async () => a\n  ?.b({operand})"),
+                "?" => format!("const g = async () => c\n  ? {operand}"),
+                ":" => format!("const g = async () => c ? 1\n  : {operand}"),
+                _ => format!("const g = async () => a\n  {operator} {operand}"),
+            };
+            assert_eq!(await_operators_in(&code).len(), 1, "{operator:?}: {code:?}");
+            // Comments between the line break and the operator change nothing.
+            let commented = code.replacen("\n  ", " // c\n  /* d */ ", 1);
+            assert_eq!(
+                await_operators_in(&commented).len(),
+                1,
+                "{operator:?}: {commented:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn nullish_coalescing_on_the_next_line_keeps_the_async_arrow_guard() {
+        // The scenario of the review: `??` continues the concise arrow body,
+        // so `await(` is the operator and the read keeps its guard.
+        for code in [
+            "const g = async () => 1\n  ?? (await(process.env.FLAG) ? 2 : 3)",
+            "const g = async () => 1\n  ?? 2\n  ?? (await(process.env.FLAG) ? 2 : 3)",
+            "var await = f; const g = async () => 1\n  ?? (await(process.env.FLAG) ? 2 : 3)",
+        ] {
+            let operator_code = code.replace("await(", "typeof(");
+            let expected = await_guard(&operator_code);
+            assert!(expected.is_some(), "{operator_code:?}");
+            assert_eq!(await_guard(code), expected, "{code:?}");
+            assert_eq!(await_operators_in(code).len(), 1, "{code:?}");
+        }
+        // A new statement after the arrow body still makes `await(` a call.
+        for code in [
+            "var await = f; const g = async () => 1;\n?? (await(process.env.FLAG) ? 2 : 3)",
+            "var await = f; const g = async () => 1\n!(await(process.env.FLAG) ? 2 : 3)",
+        ] {
+            let operator_code = code.replace("await(", "typeof(");
+            assert!(await_guard(&operator_code).is_some(), "{operator_code:?}");
+            assert_eq!(await_operators_in(code).len(), 0, "{code:?}");
         }
     }
 

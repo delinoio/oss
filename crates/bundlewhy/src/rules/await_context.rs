@@ -14,7 +14,8 @@
 //! ordinary call.
 
 use super::common::{
-    brace_holds_members, class_heading_precedes, is_identifier_part, is_line_terminator,
+    arrow_body_ends, brace_holds_members, class_heading_precedes, is_identifier_part,
+    is_line_terminator,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -45,24 +46,6 @@ struct Token {
     /// this token from the previous one.
     newline_before: bool,
 }
-
-/// Words after which a line break does not end an expression.
-const OPERATOR_WORDS: [&str; 14] = [
-    "typeof",
-    "void",
-    "delete",
-    "new",
-    "await",
-    "yield",
-    "in",
-    "instanceof",
-    "return",
-    "throw",
-    "case",
-    "extends",
-    "else",
-    "do",
-];
 
 /// Words that start a statement head with a parenthesized part followed by a
 /// block, so `keyword (...) {` is a block and not a function body.
@@ -346,29 +329,20 @@ impl Scan<'_> {
         }
     }
 
-    /// True when the token at `index` ends an expression, so a line break after
-    /// it may end the statement.
-    fn ends_expression(&self, index: usize) -> bool {
-        match self.tokens[index].kind {
-            Kind::Word => !OPERATOR_WORDS.contains(&self.text(index)),
-            Kind::Literal => !self.text(index).ends_with("${"),
-            Kind::Punct(b')' | b']' | b'}') | Kind::Increment => true,
-            _ => false,
-        }
-    }
-
-    /// True when the token at `index`, the first on its line, can continue the
-    /// expression that precedes it.
-    fn continues_expression(&self, index: usize) -> bool {
-        let token = self.tokens[index];
-        match token.kind {
-            Kind::Word => matches!(self.text(index), "in" | "instanceof"),
-            Kind::Literal => matches!(self.code.as_bytes()[token.start], b'`' | b'}'),
-            Kind::Punct(b'!') => self.code.as_bytes().get(token.end) == Some(&b'='),
-            Kind::Punct(byte) => b"+-*/%<>=&|^?:,.([)];}".contains(&byte),
-            Kind::Arrow | Kind::OptionalChain => true,
-            Kind::Spread | Kind::Increment | Kind::Other => false,
-        }
+    /// True when the line break before the token at `index` ends the
+    /// statement by automatic semicolon insertion. The decision is the shared
+    /// one that the environment scan uses for its statement boundaries
+    /// ([`arrow_body_ends`]), so a continuation such as `??`, `?.` or a binary
+    /// operator keeps a concise arrow body open here too.
+    fn line_break_ends_statement(&self, index: usize) -> bool {
+        index > 0
+            && self.tokens[index].newline_before
+            && arrow_body_ends(
+                self.code,
+                self.tokens[index - 1].end,
+                self.tokens[index].start,
+                self.ignored,
+            )
     }
 
     fn classify(&mut self) -> Vec<usize> {
@@ -383,11 +357,7 @@ impl Scan<'_> {
             let token = self.tokens[index];
             // A line break ends a concise arrow body when the next token
             // cannot continue it.
-            if token.newline_before
-                && index > 0
-                && self.ends_expression(index - 1)
-                && !self.continues_expression(index)
-            {
+            if self.line_break_ends_statement(index) {
                 pop_arrow_bodies(&mut frames);
             }
             let enclosing_async = frames.last().is_some_and(|frame| frame.is_async);
