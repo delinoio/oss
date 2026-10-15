@@ -1715,6 +1715,28 @@ A Worker that no longer holds the lease (its instance was replaced) is the
 lost-Worker row of the interleavings table, not a stale lease: its Finish stays
 refused.
 
+### Ownerless cleanup fence
+
+A Finish that publishes a rotated credential (an execute whose native process
+rotated it, a refresh, a login) clears its lease and pending operation in the
+settlement commit and removes the superseded vault generations afterwards. When
+that removal fails, the account is fenced for recovery with nothing left that
+owns the fence: no lease for a Worker to report against, no pending operation
+for the queued-fence reconcile, no running operation. The published generation
+is intact, and the only outstanding work is the idempotent removal of every other
+generation. The scanner owns that work (`recoverGrokOwnerlessCleanupFence`): it
+retries with bounded backoff, removes every generation except the current one
+(and the quota and credit generations that stay protected), then clears the fence
+and returns the health to `ready`. It never reads or rewrites the credential.
+
+| Fence shape                                                    | Owner of the fence                                    | Test                                                        |
+| -------------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------- |
+| connected, no lease, no pending operation, no active operation | the scanner                                           | `TestGrokRotationCleanupFailureIsOwnedByTheScanner`         |
+| the same after an execute that rotated the credential          | the scanner                                           | `TestGrokRotationCleanupFailureIsOwnedByTheScanner`         |
+| the same after a refresh                                       | the scanner                                           | `TestGrokRotationCleanupFailureIsOwnedByTheScanner`         |
+| the scanner's own removal fails                                | the scanner again, with the fence kept                | `TestGrokRotationCleanupFailureIsOwnedByTheScanner`         |
+| a lease, a pending operation or an active operation is present | that lease, operation or reconcile, never the scanner | `TestGrokOwnerlessCleanupFenceSelectsOnlyTheOwnerlessShape` |
+
 ### Late cancellation and actor loss
 
 A cancellation (or a vanished actor) that is durable when a login settles changes

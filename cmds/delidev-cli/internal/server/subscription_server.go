@@ -263,6 +263,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			queuedFence        bool
 			orphan             bool
 			workerLogout       bool
+			cleanupFence       bool
 		}
 		var candidates []candidate
 		eligible := map[domain.ID]bool{}
@@ -292,6 +293,12 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					eligible[a.Subscription.Lease.OperationID] = true
 					if retries[a.Subscription.Lease.OperationID].due(now) {
 						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.Lease.OperationID, cleanup: true, grok: true, workerLogout: true})
+					}
+				} else if grokOwnerlessCleanupFence(a) {
+					// The key is the account itself: the fence belongs to no operation.
+					eligible[r.ID] = true
+					if retries[r.ID].due(now) {
+						candidates = append(candidates, candidate{account: r.ID, operation: r.ID, cleanup: true, grok: true, cleanupFence: true})
 					}
 				} else if grokQueuedFenceNeedsReconcile(a) && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() {
 					eligible[a.Subscription.ServerOperation.ID] = true
@@ -359,6 +366,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					if err := s.fenceOrphanedGrokOperation(child, next.account, next.operation); err != nil && child.Err() == nil {
 						result.failed = true
 						s.logger.WarnContext(child, "grok_orphaned_operation_fence_pending", "phase", grokLogPhaseCleanup, "operation_id", next.operation, "code", domain.SafeError(err).Code)
+					}
+				} else if next.cleanupFence {
+					if err := s.recoverGrokOwnerlessCleanupFence(child, next.account); err != nil && child.Err() == nil {
+						result.failed = true
+						s.logger.WarnContext(child, "grok_cleanup_fence_retry_scheduled", "phase", grokLogPhaseCleanup, "account_id", next.account, "code", domain.SafeError(err).Code)
 					}
 				} else if next.workerLogout {
 					if err := s.recoverGrokWorkerLogout(child, next.account, next.operation); err != nil && child.Err() == nil {
