@@ -435,35 +435,44 @@ func recoveryNativeHome(config Config, original *domain.SubscriptionLease, accou
 	return recorded, nil
 }
 
+// recoveryProcessOwner names one process owner of the fenced lease together with
+// the lease whose durable journal records whether its execution started.
+type recoveryProcessOwner struct {
+	operation, lease domain.ID
+}
+
 // reconcileRecoveryProcessOwners joins the original process owners through the
 // process owner index, never by PID guesses. The native owner of the lease must
-// have its index: a missing index is never proof of completion.
+// have its index: a missing index is never proof of completion. Any other owner
+// with a missing index is skipped only when its own durable journal proves that
+// no execution was ever started; an unreadable, foreign or started journal keeps
+// the fence because its descendants may still run.
 func reconcileRecoveryProcessOwners(ctx context.Context, config Config, original *domain.SubscriptionLease, members []domain.SubscriptionMember) (domain.SubscriptionRecoveryReason, error) {
 	root := filepath.Join(config.Root, "processes")
 	nativeOwner := original.OperationID
 	if original.Shared {
 		nativeOwner = original.ID
 	}
-	owners := []domain.ID{nativeOwner}
+	owners := []recoveryProcessOwner{{operation: nativeOwner, lease: original.ID}}
 	if original.OperationID != nativeOwner {
-		owners = append(owners, original.OperationID)
+		owners = append(owners, recoveryProcessOwner{operation: original.OperationID, lease: original.ID})
 	}
 	for _, member := range members {
-		owners = append(owners, member.OperationID)
+		owners = append(owners, recoveryProcessOwner{operation: member.OperationID, lease: member.LeaseID})
 	}
 	seen := map[domain.ID]bool{}
 	for _, owner := range owners {
-		if seen[owner] {
+		if seen[owner.operation] {
 			continue
 		}
-		seen[owner] = true
-		if _, err := os.Lstat(filepath.Join(root, string(owner))); errors.Is(err, fs.ErrNotExist) {
-			if owner == nativeOwner {
+		seen[owner.operation] = true
+		if _, err := os.Lstat(filepath.Join(root, string(owner.operation))); errors.Is(err, fs.ErrNotExist) {
+			if owner.operation == nativeOwner || managedMemberExecutionClaimed(config, owner.lease, owner.operation, nil) {
 				return domain.RecoveryOwnershipUnproven, nil
 			}
 			continue
 		}
-		if err := process.ReconcileOwnerContext(ctx, root, owner); err != nil {
+		if err := process.ReconcileOwnerContext(ctx, root, owner.operation); err != nil {
 			if ctx.Err() != nil {
 				return "", domain.SafeError(ctx.Err())
 			}

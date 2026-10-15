@@ -723,3 +723,60 @@ func TestCodexRecoveryClearsTheCaptureRequestBuffer(t *testing.T) {
 		}
 	}
 }
+
+func TestCodexRecoveryRequiresJournalProofForMissingMemberIndexes(t *testing.T) {
+	member := func(f *recoveryFixture) (domain.SubscriptionMember, string) {
+		m := domain.SubscriptionMember{LeaseID: domain.NewID(), OperationID: domain.NewID()}
+		return m, filepath.Join(f.root, "managed-auth", string(m.LeaseID)+".json")
+	}
+	cells := []struct {
+		name    string
+		journal func(f *recoveryFixture, m domain.SubscriptionMember, path string)
+		settled bool
+	}{
+		{"member-journal-proves-no-execution-started", func(f *recoveryFixture, m domain.SubscriptionMember, path string) {
+			if err := writeJSON(path, managedSubscriptionJournal{Version: 1, Lease: m.LeaseID, Operation: m.OperationID}); err != nil {
+				t.Fatal(err)
+			}
+		}, true},
+		{"member-journal-records-a-started-execution", func(f *recoveryFixture, m domain.SubscriptionMember, path string) {
+			if err := writeJSON(path, managedSubscriptionJournal{Version: 1, Lease: m.LeaseID, Operation: m.OperationID, ExecutionStarted: true}); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"member-journal-is-missing", func(f *recoveryFixture, m domain.SubscriptionMember, path string) {}, false},
+		{"member-journal-names-another-lease", func(f *recoveryFixture, m domain.SubscriptionMember, path string) {
+			if err := writeJSON(path, managedSubscriptionJournal{Version: 1, Lease: domain.NewID(), Operation: m.OperationID}); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"member-journal-names-another-operation", func(f *recoveryFixture, m domain.SubscriptionMember, path string) {
+			if err := writeJSON(path, managedSubscriptionJournal{Version: 1, Lease: m.LeaseID, Operation: domain.NewID()}); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"member-journal-is-unreadable", func(f *recoveryFixture, m domain.SubscriptionMember, path string) {
+			if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+	}
+	for _, c := range cells {
+		t.Run(c.name, func(t *testing.T) {
+			f := newRecoveryFixture(t)
+			f.withCapture()
+			f.writeJournal()
+			f.processOwner(f.lease.OperationID)
+			m, path := member(f)
+			f.state.Members = []domain.SubscriptionMember{m}
+			c.journal(f, m, path)
+			result := f.reconcile(f.instance)
+			if c.settled != result.settled {
+				t.Fatalf("unexpected outcome %+v", result)
+			}
+			if !c.settled && (result.blocked != domain.RecoveryOwnershipUnproven || len(f.server.recovered) != 0) {
+				t.Fatalf("a member without journal proof was accepted: %+v", result)
+			}
+		})
+	}
+}

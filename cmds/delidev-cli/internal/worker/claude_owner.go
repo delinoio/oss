@@ -619,13 +619,13 @@ func (g *claudeAccountGate) acquireLegacyHistory(ctx context.Context) (func(), e
 	}
 }
 
-// claudeMemberExecutionClaimed reports whether a member's durable journal
+// managedMemberExecutionClaimed reports whether a member's durable journal
 // records that its native execution may have launched processes. The claim is
 // written before the first launch, so a journal that says nothing started proves
 // no process owner exists. A journal that cannot be read, or that names another
 // lease or operation, proves nothing: the member is treated as started. The live
 // journal, when the caller holds one, can only add to the claim.
-func claudeMemberExecutionClaimed(config Config, leaseID, operation domain.ID, live *managedSubscriptionJournal) bool {
+func managedMemberExecutionClaimed(config Config, leaseID, operation domain.ID, live *managedSubscriptionJournal) bool {
 	if live != nil && live.ExecutionStarted {
 		return true
 	}
@@ -644,7 +644,7 @@ func claudeMemberExecutionClaimed(config Config, leaseID, operation domain.ID, l
 // directory fails closed with the process package's ownership error.
 func settleClaudeMemberProcesses(ctx context.Context, config Config, leaseID, operation domain.ID, live *managedSubscriptionJournal) error {
 	root := filepath.Join(config.Root, "processes")
-	if _, err := os.Lstat(filepath.Join(root, string(operation))); errors.Is(err, os.ErrNotExist) && !claudeMemberExecutionClaimed(config, leaseID, operation, live) {
+	if _, err := os.Lstat(filepath.Join(root, string(operation))); errors.Is(err, os.ErrNotExist) && !managedMemberExecutionClaimed(config, leaseID, operation, live) {
 		return nil
 	}
 	return process.ReconcileOwnerContext(ctx, root, operation)

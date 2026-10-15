@@ -239,7 +239,9 @@ generation, revision, action), validates the journaled home (canonical private
 directory in the Worker root; the account history home for a shared owner), joins
 the original process owners through the process owner index (the native owner,
 which must have its index, and every member's process scope; a missing native
-index is never proof) and obtains the latest bundle: the retained server capture
+index is never proof; any other owner with a missing index is skipped only when its own
+durable journal proves that no execution started, so an unreadable, foreign or started
+member journal keeps the fence) and obtains the latest bundle: the retained server capture
 via `ReadSubscriptionRecoveryCapture`, or, for a lease that never synchronized
 one, the surviving transient file, which is captured first under the fence so it
 is durable before deletion. A surviving file that is not the captured bundle is

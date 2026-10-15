@@ -615,6 +615,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	// recovery-required startup must retain its authentication and lease, except
 	// that a joined tree with failed helper retirement still runs authentication
 	// cleanup while keeping the lease.
+	if managed != nil {
+		// Record before the first launch that this execution's process index may
+		// exist, so a later recovery never treats a lost index as proof that the
+		// member never started. The pre-native cleanup stays installed on failure.
+		managed.journal.ExecutionStarted = true
+		if err := writeJSON(managed.journalPath, managed.journal); err != nil {
+			return nil, publicationUncertain()
+		}
+	}
 	managedPreNativeCleanup = false
 	config.startup.setPhase(domain.StartupInitialize)
 	var client *codex.Client

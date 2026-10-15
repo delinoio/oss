@@ -51,7 +51,7 @@ process contexts.
 The journal retains the selected original domain for exact cleanup; coalition,
 process-birth, start-barrier and descendant-join requirements remain unchanged.
 
-ChatGPT execution recovery joins the original process owners of a fenced Execute lease only through this owner index: the native owner (the lease for a shared account owner, the operation otherwise) must have its index, every member's scope is joined when present, and a missing native index is never proof of completion.
+ChatGPT execution recovery joins the original process owners of a fenced Execute lease only through this owner index: the native owner (the lease for a shared account owner, the operation otherwise) must have its index, every member's scope is joined when present, and a missing native index is never proof of completion. A missing member index is skipped only when that member's durable journal, which a managed Codex execution marks as started before its first launch, proves that no execution started; a missing, unreadable, foreign or started member journal keeps the fence.
 
 Unix reconciliation atomically persists completion when the current boot identity
 differs from the valid original journal. Preserve the original owner, process birth,
