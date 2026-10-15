@@ -306,6 +306,44 @@ test("exact usage keeps its unavailable and partial markers inside the card", ()
   expect(within(card).getByText("Observed: Unavailable")).toBeTruthy();
 });
 
+test("hiding the Info rail dismisses an open card immediately and keeps it closed", async () => {
+  vi.useRealTimers();
+  const session = newRequestId();
+  const rows = named(session, ["Atlas", "Nova"]);
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.SUBAGENT_OBSERVATION_V1],
+      }),
+    });
+    router.service(ResourceService, {
+      listResources: () => ({ resources: rows }),
+    });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const tree = (visible: boolean) => (
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <aside hidden={!visible} inert={!visible}>
+          <Subagents sessionId={session} revision="1" visible={visible} />
+        </aside>
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+  const view = render(tree(true));
+  const atlas = await screen.findByText("Atlas");
+  act(() => atlas.focus());
+  expect(screen.getByRole("tooltip")).toBeTruthy();
+  // Hiding an ancestor emits no pointerleave, so the visibility prop must
+  // dismiss the card by itself.
+  view.rerender(tree(false));
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  view.rerender(tree(true));
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
 test("opening and dismissing cards sends no additional request or mutation", async () => {
   vi.useRealTimers();
   const session = newRequestId();

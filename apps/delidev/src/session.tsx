@@ -3631,6 +3631,7 @@ export function SessionView({
                           key={id}
                           sessionId={id}
                           revision={session.revision.toString()}
+                          visible={!infoHidden}
                           emptyChanged={setSubagentsEmpty}
                           diagnosticsTarget={diagnosticsTarget}
                         />
