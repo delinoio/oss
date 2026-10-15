@@ -649,9 +649,16 @@ fn accessors_reflection_and_prototype_lookup_keep_names() {
 
 #[test]
 fn class_inheritance_overrides_and_super_keep_behavior() {
-    let cases = [
+    // Closed classes: every instance and receiver is known, so the field
+    // and the method are renamed together across the hierarchy.
+    let temp = fixture(
         "export {}; class Base {longProperty = 1; read() {return this.longProperty}} class Child \
          extends Base {longProperty = 2} console.log(new Base().read(), new Child().read());",
+    );
+    success(run(temp.path(), "out"));
+    compare(temp.path());
+    assert!(report(temp.path())["renamed_properties"].as_u64().unwrap() >= 2);
+    let cases = [
         "export {}; class Base {longProperty = 1; describe() {return `base \
          ${this.longProperty}`}} class Child extends Base {describe() {return `child \
          ${super.describe()}`}} const items: Base[] = [new Base(), new Child()]; \

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -36,6 +37,10 @@ func inspectProfile(ctx context.Context, config process.Config, profile apiProfi
 		return domain.Fail(domain.ResourceExhausted, "Grok Build configuration inspection exceeded its bound.", "Use an isolated supported native installation and refresh discovery.")
 	}
 	if err != nil {
+		// An expired deadline is a timeout, not an inspection that exited.
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return domain.SafeTimeoutError(ctx.Err())
+		}
 		return probeUnavailable()
 	}
 	return validateProfileInspection(stdout.buffer.Bytes(), config.Cwd, profile)
