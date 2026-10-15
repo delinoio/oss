@@ -170,6 +170,8 @@ const EXPRESSION_KEYWORDS: &[ExpressionKeyword] = &[
     keyword("typeof", KeywordKind::Reserved, true, true),
     keyword("delete", KeywordKind::Reserved, true, true),
     keyword("case", KeywordKind::Reserved, true, true),
+    keyword("default", KeywordKind::Reserved, true, true),
+    keyword("extends", KeywordKind::Reserved, true, true),
     keyword("else", KeywordKind::Reserved, true, true),
     keyword("do", KeywordKind::Reserved, true, true),
     keyword("in", KeywordKind::Reserved, true, true),
@@ -322,6 +324,17 @@ fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
     index > 0 && offset < ranges[index - 1].1
 }
 
+/// Whether `offset` is inside a `//` or `/* */` comment range. Literal ranges
+/// never start with `//` or `/*`, so the first bytes tell the kinds apart.
+fn is_comment_at(bytes: &[u8], ranges: &[(usize, usize)], offset: usize) -> bool {
+    let index = ranges.partition_point(|(start, _)| *start <= offset);
+    if index == 0 || offset >= ranges[index - 1].1 {
+        return false;
+    }
+    let start = ranges[index - 1].0;
+    bytes[start] == b'/' && matches!(bytes.get(start + 1), Some(b'/' | b'*'))
+}
+
 fn next_code_byte(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<u8> {
     let mut index = start;
     while index < bytes.len() {
@@ -425,19 +438,21 @@ fn is_direct_optional_chain_base(
     question: usize,
     ignored: &[(usize, usize)],
 ) -> bool {
+    // Only whitespace and comments are skipped. String, template and regular
+    // expression literals end an expression, so they stay visible as the
+    // token before a parenthesis (`/x/(read)?.y` calls the literal).
+    let is_trivia = |position: usize| {
+        bytes[position].is_ascii_whitespace() || is_comment_at(bytes, ignored, position)
+    };
     let skip_forward = |mut position: usize| {
-        while position < bytes.len()
-            && (in_ranges(ignored, position) || bytes[position].is_ascii_whitespace())
-        {
+        while position < bytes.len() && is_trivia(position) {
             position += 1;
         }
         position
     };
     // Last code byte position before `position`, if any.
     let skip_backward = |mut position: usize| {
-        while position > 0
-            && (in_ranges(ignored, position - 1) || bytes[position - 1].is_ascii_whitespace())
-        {
+        while position > 0 && is_trivia(position - 1) {
             position -= 1;
         }
         position.checked_sub(1)
@@ -466,7 +481,7 @@ fn is_direct_optional_chain_base(
             // that starts with `(` is indistinguishable without a parser, so
             // it is read as a call too (see Known limits in the docs).
             let call_like = is_identifier_byte(byte)
-                || matches!(byte, b')' | b']' | b'}' | b'.' | b'\'' | b'"' | b'`');
+                || matches!(byte, b')' | b']' | b'}' | b'.' | b'/' | b'\'' | b'"' | b'`');
             if call_like {
                 let mut word_start = before + 1;
                 while word_start > 0 && is_identifier_byte(bytes[word_start - 1]) {
@@ -717,18 +732,19 @@ fn env_guards(
                 // `a?.b`, `a?.[k]` and `a?.()` short-circuit on a nullish
                 // base. Only the read that is the direct base qualifies; other
                 // pending reads in the scope are arguments or operands.
-                for &read in &scopes[current_scope].pending_reads {
-                    if guards[read].is_none()
-                        && is_direct_optional_chain_base(
-                            bytes,
-                            reads[read].0,
-                            reads[read].1,
-                            index,
-                            ignored,
-                        )
-                    {
-                        guards[read] = Some(EnvGuard::OptionalChain);
-                    }
+                // Reads are queued in source order, so the direct base can only
+                // be the last one; checking it alone keeps the scan linear.
+                if let Some(&read) = scopes[current_scope].pending_reads.last()
+                    && guards[read].is_none()
+                    && is_direct_optional_chain_base(
+                        bytes,
+                        reads[read].0,
+                        reads[read].1,
+                        index,
+                        ignored,
+                    )
+                {
+                    guards[read] = Some(EnvGuard::OptionalChain);
                 }
             }
             b'?' if bytes.get(index + 1) != Some(&b'.')
@@ -2450,6 +2466,58 @@ y=/process.env.F/.test(z),process.env.G"#;
         // conservative reading is a call and no guard is reported.
         assert_eq!(guard("for(const a of(process.env.FLAG)?.x){}"), None);
         assert_eq!(guard("for(const a in(process.env.FLAG)?.x){}"), chain);
+    }
+
+    #[test]
+    fn literal_before_parenthesized_read_is_a_callee() {
+        let guard = |code: &str| {
+            let start = code.find("process.env.FLAG").unwrap();
+            env_guard(
+                code,
+                start,
+                start + "process.env.FLAG".len(),
+                &non_code_ranges(code),
+            )
+            .map(EnvGuard::evidence)
+        };
+        let chain = Some(EnvGuard::OptionalChain.evidence());
+        for literal in ["/x/", "/x/gi", "/[/]/", "\"s\"", "'s'", "`t`", "`a${b}c`"] {
+            for template in [
+                "try{LIT(process.env.FLAG)?.value}catch{}",
+                "x=LIT(process.env.FLAG)?.value;",
+                "x=LIT /* c */ (process.env.FLAG)?.value;",
+                "x=LIT // c\n(process.env.FLAG)?.value;",
+            ] {
+                let code = template.replace("LIT", literal);
+                assert_eq!(guard(&code), None, "{code}");
+            }
+        }
+        // Comments between the operator and the read are still skipped.
+        for code in [
+            "x=/* c */(process.env.FLAG)?.value;",
+            "x=// c\n(process.env.FLAG)?.value;",
+            "x=`${(process.env.FLAG)?.value}`;",
+        ] {
+            assert_eq!(guard(code), chain, "{code}");
+        }
+    }
+
+    #[test]
+    fn optional_chain_scan_marks_every_read_among_many() {
+        let mut code = String::new();
+        let mut reads = Vec::new();
+        for index in 0..200 {
+            if index > 0 {
+                code.push_str("&&");
+            }
+            let start = code.len();
+            code.push_str(&format!("process.env.F{index}"));
+            reads.push((start, code.len()));
+            code.push_str("?.x");
+        }
+        let ignored = non_code_ranges(&code);
+        let guards = env_guards(&code, &reads, &ignored);
+        assert!(guards.iter().all(Option::is_some));
     }
 
     #[test]
