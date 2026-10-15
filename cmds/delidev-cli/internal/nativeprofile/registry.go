@@ -29,6 +29,10 @@ const (
 // publication failures.
 var writeRegistryFile = security.WriteAtomic
 
+// removeProfileAfterVerifyHook lets tests replace a validated path immediately
+// before removal. Production never installs a hook.
+var removeProfileAfterVerifyHook func()
+
 // Config selects the storage root and ownership of one registry. Server and
 // Worker owners never share a registry because each root is owner-local.
 type Config struct {
@@ -60,6 +64,16 @@ type entry struct {
 	CreatedAt time.Time   `json:"created_at"`
 	Histories []domain.ID `json:"histories,omitempty"`
 	Refs      []Reference `json:"refs,omitempty"`
+}
+
+// violatesRegisteredOnly reports whether the entry breaks the invariant of a
+// registered-only purpose: such an entry exists only as a legacy directory
+// registered in place and never holds a conversation history. Registration
+// enforces it when the entry is created and every registry load enforces it
+// again, so a restored registry cannot smuggle in an entry that Acquire would
+// then lock as an ordinary profile.
+func (e entry) violatesRegisteredOnly() bool {
+	return e.Key.Purpose.RegisteredOnly() && (e.Origin != OriginLegacy || len(e.Histories) > 0)
 }
 
 type registryFile struct {
@@ -211,13 +225,20 @@ func (r *Registry) load() (registryFile, error) {
 		return registryFile{}, Failure(domain.RecoveryRequired, ReasonRegistryInvalid, "The native profile registry is invalid.", "Restore the registry from a trusted backup without deleting profile directories.")
 	}
 	seenID, seenKey := map[domain.ID]bool{}, map[string]bool{}
+	seenHistory := map[domain.ID]domain.ID{}
 	for _, e := range file.Profiles {
 		// Every stored key must belong to this owner root: a restored or reused
 		// root under another server or Worker identity is invalid as a whole.
-		if e.ID.Validate() != nil || e.Key.Validate() != nil || e.Key.Owner != r.config.Owner || e.Key.Server != r.config.Server || e.Key.Machine != r.config.Machine || (e.Origin == OriginLegacy && !validLegacyPath(e.Path)) || seenID[e.ID] || seenKey[e.Key.String()] || len(e.Histories) > maxHistories || (e.Origin != OriginManaged && e.Origin != OriginLegacy) || (e.Origin == OriginLegacy) == (e.Path == "") {
+		if e.ID.Validate() != nil || e.Key.Validate() != nil || e.Key.Owner != r.config.Owner || e.Key.Server != r.config.Server || e.Key.Machine != r.config.Machine || (e.Origin == OriginLegacy && !validLegacyPath(e.Path)) || seenID[e.ID] || seenKey[e.Key.String()] || len(e.Histories) > maxHistories || (e.Origin != OriginManaged && e.Origin != OriginLegacy) || (e.Origin == OriginLegacy) == (e.Path == "") || e.violatesRegisteredOnly() {
 			return registryFile{}, Failure(domain.RecoveryRequired, ReasonRegistryInvalid, "The native profile registry is invalid.", "Restore the registry from a trusted backup without deleting profile directories.")
 		}
 		seenID[e.ID], seenKey[e.Key.String()] = true, true
+		for _, history := range e.Histories {
+			if history.Validate() != nil || seenHistory[history] != "" && seenHistory[history] != e.ID {
+				return registryFile{}, Failure(domain.RecoveryRequired, ReasonRegistryInvalid, "The native profile registry is invalid.", "Restore the registry from a trusted backup without deleting profile directories.")
+			}
+			seenHistory[history] = e.ID
+		}
 	}
 	return file, nil
 }
@@ -316,13 +337,26 @@ type Lease struct {
 	Info
 	lock   *security.Lock
 	logger *slog.Logger
-	once   sync.Once
+	mu     sync.Mutex
+	closed bool
 }
 
-// Close releases the profile lock.
+// Close releases the profile lock. A close that succeeded is final and every
+// later call returns nil without touching the lock. A close that failed is not
+// final: the lease stays open, so a later call closes the lock handle again and
+// reports that result instead of a success the lock never confirmed. A caller
+// that needs proof of release must therefore not read a later nil as a clean
+// release of an earlier failed close.
 func (l *Lease) Close() error {
-	var err error
-	l.once.Do(func() { err = l.lock.Close() })
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return nil
+	}
+	err := l.lock.Close()
+	if err == nil {
+		l.closed = true
+	}
 	return err
 }
 
@@ -361,6 +395,12 @@ func (r *Registry) Acquire(ctx context.Context, key Key) (*Lease, error) {
 				Log(r.config.Logger, "native_profile_acquired", key, e.ID, ReasonReused, "origin", e.Origin)
 				return false, nil
 			}
+		}
+		if key.Purpose.RegisteredOnly() {
+			// A registered-only purpose names a pre-registry directory that is
+			// registered in place; creating a managed profile would fork its
+			// history, so nothing is created and the key stays unregistered.
+			return false, Failure(domain.NotFound, ReasonLegacyUnverified, "The native profile is not registered.", "Register the existing native history before acquiring it.")
 		}
 		if len(file.Profiles) >= maxProfiles {
 			return false, Failure(domain.ResourceExhausted, ReasonRegistryInvalid, "The native profile registry is full.", "Delete unused sessions or accounts before creating more profiles.")
@@ -489,6 +529,39 @@ func (r *Registry) Lookup(ctx context.Context, key Key) (Info, bool, error) {
 	return found, ok, err
 }
 
+// Peek is Lookup for readers that must not change anything. It takes no lock
+// and creates no directory or file, so it also works on a read-only root: a
+// registry that does not exist yet reports the key as unregistered. Registry
+// publication replaces the file atomically, so a lock-free read sees either the
+// old or the new registry, never a partial one. A registry directory that is
+// not a real private directory, or an unreadable or invalid registry, fails
+// with the same closed cause the locked paths use.
+func (r *Registry) Peek(key Key) (Info, bool, error) {
+	key, err := r.normalize(key)
+	if err != nil {
+		return Info{}, false, err
+	}
+	if _, err := os.Lstat(r.base); errors.Is(err, os.ErrNotExist) {
+		return Info{}, false, nil
+	}
+	if err := security.CheckPrivateDir(r.base); err != nil {
+		return Info{}, false, Failure(domain.RecoveryRequired, ReasonRegistryInvalid, "The native profile directory is not private.", "Inspect the owner storage root before retrying.")
+	}
+	if _, err := os.Lstat(r.registryPath()); errors.Is(err, os.ErrNotExist) {
+		return Info{}, false, nil
+	}
+	file, err := r.load()
+	if err != nil {
+		return Info{}, false, err
+	}
+	for _, e := range file.Profiles {
+		if e.Key == key {
+			return r.info(e, false), true, nil
+		}
+	}
+	return Info{}, false, nil
+}
+
 // RegisterLegacy registers an existing pre-registry history directory in
 // place. The directory must be a real private directory below the owner root.
 // Nothing is moved, merged or rewritten. Registering the same directory for the
@@ -507,8 +580,14 @@ func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string,
 			return Info{}, invalidKey()
 		}
 	}
+	if key.Purpose.RegisteredOnly() && len(histories) > 0 {
+		return Info{}, invalidKey()
+	}
 	var result Info
 	err = r.withRegistry(ctx, func(file *registryFile) (bool, error) {
+		if historyOwnedByOther(file.Profiles, key, histories) {
+			return false, historyConflict()
+		}
 		for i, e := range file.Profiles {
 			if e.Key == key {
 				if e.Origin != OriginLegacy || e.Path != clean {
@@ -537,6 +616,31 @@ func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string,
 		return true, nil
 	})
 	return result, err
+}
+
+func historyOwnedByOther(entries []entry, key Key, histories []domain.ID) bool {
+	if len(histories) == 0 {
+		return false
+	}
+	wanted := make(map[domain.ID]struct{}, len(histories))
+	for _, history := range histories {
+		wanted[history] = struct{}{}
+	}
+	for _, e := range entries {
+		if e.Key == key {
+			continue
+		}
+		for _, history := range e.Histories {
+			if _, ok := wanted[history]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func historyConflict() error {
+	return Failure(domain.Conflict, ReasonKeyConflict, "The native history belongs to another profile.", "Keep both profiles and inspect the original history owner before retrying.")
 }
 
 // validLegacyPath accepts only a normalized, local, slash-separated path below
@@ -574,10 +678,13 @@ func (r *Registry) RecordHistory(ctx context.Context, key Key, history domain.ID
 	if err != nil {
 		return err
 	}
-	if history.Validate() != nil {
+	if history.Validate() != nil || key.Purpose.RegisteredOnly() {
 		return invalidKey()
 	}
 	return r.withRegistry(ctx, func(file *registryFile) (bool, error) {
+		if historyOwnedByOther(file.Profiles, key, []domain.ID{history}) {
+			return false, historyConflict()
+		}
 		for i, e := range file.Profiles {
 			if e.Key != key {
 				continue
@@ -784,12 +891,87 @@ func (r *Registry) Delete(ctx context.Context, scope DeleteScope) (int, error) {
 	return deleted, err
 }
 
+// DeleteRemovedClaudeProfile retires only the original account's registered
+// Claude auth entry after its legacy directory is proven absent. It is for
+// original logout recovery after native removal but before registry publication.
+func (r *Registry) DeleteRemovedClaudeProfile(ctx context.Context, key Key, relative string) error {
+	key, err := r.normalize(key)
+	if err != nil {
+		return err
+	}
+	if key.Harness != domain.ClaudeCode || key.Purpose != PurposeAuth || !validLegacyPath(relative) {
+		return invalidKey()
+	}
+	path := filepath.Join(r.config.Root, filepath.FromSlash(relative))
+	return r.withRegistry(ctx, func(file *registryFile) (bool, error) {
+		missing, err := security.CapturePathIdentity(path)
+		if err != nil || missing.Present() {
+			missing.Close()
+			return false, Failure(domain.RecoveryRequired, ReasonDeleteBlocked, "The original Claude profile removal is unproven.", "Inspect the original profile before retrying cleanup.")
+		}
+		defer missing.Close()
+		for _, e := range file.Profiles {
+			if e.Origin == OriginLegacy && e.Path == relative && e.Key != key {
+				return false, Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The original Claude profile path belongs to another registry entry.", "Inspect the original profile before retrying cleanup.")
+			}
+		}
+		for i, e := range file.Profiles {
+			if e.Key != key {
+				continue
+			}
+			if e.Origin != OriginLegacy || e.Path != relative {
+				return false, Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The original Claude profile registry entry changed.", "Inspect the original profile before retrying cleanup.")
+			}
+			if len(e.Refs) != 0 {
+				return false, Failure(domain.Conflict, ReasonReferenced, "The native profile is still referenced.", "Remove the referencing session, account or checkpoint first.")
+			}
+			lock, err := security.TryLock(r.lockPath(e.ID))
+			if err != nil {
+				return false, busy()
+			}
+			defer lock.Close()
+			if err := security.RemoveOwnedTreeIdentity(ctx, r.config.Root, path, missing); err != nil {
+				return false, Failure(domain.RecoveryRequired, ReasonDeleteBlocked, "The original Claude profile removal is unproven.", "Inspect the original profile before retrying cleanup.")
+			}
+			file.Profiles = append(file.Profiles[:i], file.Profiles[i+1:]...)
+			Log(r.config.Logger, "native_profile_deleted", e.Key, e.ID, ReasonDeleted)
+			return true, nil
+		}
+		return false, nil
+	})
+}
+
 func removeProfile(ctx context.Context, r *Registry, e entry) error {
 	root := r.pathOf(e)
 	if info, err := os.Lstat(root); errors.Is(err, os.ErrNotExist) {
+		if e.Origin == OriginManaged {
+			return Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The retained native profile owner is missing.", "Restore the original profile before retrying deletion.")
+		}
 		return nil
 	} else if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return Failure(domain.RecoveryRequired, ReasonDeleteBlocked, "The native profile path is not a real directory.", "Inspect the profile without following links.")
+	}
+	if e.Origin == OriginManaged {
+		// Capture the directory before checking its owner. The removal helper then
+		// binds traversal to this exact object, even if its path is replaced.
+		identity, err := security.CapturePathIdentity(root)
+		if err != nil || !identity.Present() {
+			return Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The retained native profile owner changed.", "Restore the original profile before retrying deletion.")
+		}
+		defer identity.Close()
+		if err := r.verifyDirectory(e); err != nil {
+			return err
+		}
+		if err := identity.StillAt(root); err != nil {
+			return Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The retained native profile owner changed.", "Restore the original profile before retrying deletion.")
+		}
+		if removeProfileAfterVerifyHook != nil {
+			removeProfileAfterVerifyHook()
+		}
+		if err := security.RemoveOwnedTreeIdentity(ctx, r.config.Root, root, identity); err != nil {
+			return Failure(domain.RecoveryRequired, ReasonDeleteBlocked, "The native profile could not be removed.", "Inspect the profile without following links.")
+		}
+		return nil
 	}
 	if err := security.RemoveOwnedTree(ctx, r.config.Root, root); err != nil {
 		return Failure(domain.RecoveryRequired, ReasonDeleteBlocked, "The native profile could not be removed.", "Inspect the profile without following links.")

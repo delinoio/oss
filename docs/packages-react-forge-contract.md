@@ -27,6 +27,7 @@ PPTX list, image, shape, chart and connector components are leaves. Nonempty Rea
 ### Project requirements
 
 - `react-forge` is the public npm Node.js 24 / React 19.2.8 cross-platform document project in the feature. Follow `project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
+- GLB/FBX `SceneSession` exposes explicit static geometry derivation under the scene contract. Reserve aggregate admission before native work, retain original registered assets, and publish only validated complete derived handles after cancellation checks.
 
 ### Application integration
 
@@ -141,6 +142,10 @@ The private source workspace generates a public `@delino/react-forge` package pl
 ## Static 3D extension (Published in npm 0.2.0)
 
 The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
+
+The unreleased `react-forge analyze <entry.tsx> [--data <json>] [--json]` command accepts only a GLB/FBX scene task, returns the pinned scene complexity report as JSON or prints totals and the ten largest mesh rows, and disposes the session. It uses the same trusted task loader and cancellation behavior as `run`, but does not automatically export or publish. Task code can still perform explicit caller-authored effects. See the [scene analysis contract](packages-react-forge-scene-contract.md).
+
+The unreleased GLB/FBX `geometryBudget` option is set in trusted task code. CLI `run` subscribes to typed scene warnings before export: text mode writes them to stderr, while JSON mode includes them in successful or failed results when emitted. A warning can precede a later failed export and does not establish publication. No CLI threshold flags are added. See the [scene contract](packages-react-forge-scene-contract.md).
 
 ## Sprite Extension (Published in npm 0.2.0)
 

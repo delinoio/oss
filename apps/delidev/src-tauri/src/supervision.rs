@@ -1,5 +1,5 @@
 use std::{
-    sync::{Arc, Condvar, Mutex, atomic::Ordering},
+    sync::{Arc, Condvar, Mutex},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -186,7 +186,7 @@ impl Supervision {
     }
 
     pub fn request_stop(&self) {
-        self.connector.exiting.store(true, Ordering::Release);
+        self.connector.retire_exiting();
         self.connector.session.fence();
         let mut state = self.shared.value.lock().unwrap_or_else(|e| e.into_inner());
         state.exit = true;
@@ -301,6 +301,18 @@ mod tests {
             runtime_generation: None,
             runtime_key: None,
         }
+    }
+
+    // Writer table for the dispatch flag `Connector::exiting`: the stop request
+    // must be ordered with a browser dispatch's commit-to-spawn transition.
+    #[cfg(unix)]
+    #[test]
+    fn request_stop_is_ordered_with_the_browser_commit() {
+        let (_temporary, supervision) = test_supervision();
+        crate::browser_opener::retirement_fixture::assert_writer_waits_for_commit(
+            &supervision.connector.exiting,
+            || supervision.request_stop(),
+        );
     }
 
     #[test]

@@ -13,15 +13,22 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{BwError, BwResult, ErrorCode, problem},
-    model::{Analysis, ProblemSeverity, RunStatus, SCHEMA_VERSION, SourceFile},
+    model::{
+        Analysis, Diagnostic, ExportReference, ExportScope, ExportUsage, ExportUsageEdge,
+        ExportUsagePathEnd, ExportUsageState, ExportUsageTruncation, ProblemSeverity, RunStatus,
+        SCHEMA_VERSION, SourceFile,
+    },
+    rules::export_usage::{MAX_EDGES_PER_PATH, MAX_PATHS},
     sources::{
-        as_text, is_binary_asset_path, is_generated_asset_module, safe_project_relative, sha256_hex,
+        as_text, filesystem_path, is_binary_asset_path, is_generated_asset_module,
+        safe_project_relative, sha256_hex,
     },
 };
 
 pub const BUNDLE_FILE: &str = "analysis.json";
 pub const INCOMPLETE_MARKER: &str = "INCOMPLETE";
 pub const SUMMARY_FILE: &str = "run-summary.json";
+pub const COMPLETION_FILE: &str = "completion.json";
 const MAX_SUMMARY_BYTES: u64 = 64 * 1024;
 #[cfg(not(test))]
 const MAX_BUNDLE_BYTES: u64 = 512 * 1024 * 1024;
@@ -48,6 +55,17 @@ pub struct ResultBundle {
     /// checks that the file still exists.
     #[serde(default)]
     pub existence_relative: BTreeMap<String, String>,
+}
+
+/// A small record written after the result bundle and summary are committed.
+/// Its write is outside the measured interval to avoid a self-referential
+/// duration, while the main result persistence is inside that interval.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Completion {
+    run_id: String,
+    duration_ms: u32,
+    finished_at: String,
 }
 
 /// Keeps a result within the loader's size limit. When source content makes
@@ -107,6 +125,8 @@ pub fn save(run_dir: &Path, bundle: &ResultBundle) -> BwResult<()> {
     // the old one first, commit the bundle, then publish the new summary.
     let summary_path = run_dir.join(SUMMARY_FILE);
     let _ = std::fs::remove_file(&summary_path);
+    // A replacement bundle must not retain timing for the previous contents.
+    let _ = std::fs::remove_file(run_dir.join(COMPLETION_FILE));
     let temporary = run_dir.join(format!("{BUNDLE_FILE}.tmp"));
     // std::fs::rename replaces an existing destination on every supported
     // platform, including Windows (MoveFileExW with replacement).
@@ -138,6 +158,47 @@ pub fn save(run_dir: &Path, bundle: &ResultBundle) -> BwResult<()> {
         tracing::warn!(%error, "run summary could not be written; listings will read the bundle");
         let _ = std::fs::remove_file(&summary_temporary);
         let _ = std::fs::remove_file(&summary_path);
+    }
+    Ok(())
+}
+
+pub fn save_completion(
+    run_dir: &Path,
+    run_id: &str,
+    duration_ms: u32,
+    finished_at: &str,
+) -> BwResult<()> {
+    use std::io::Write;
+
+    let completion = Completion {
+        run_id: run_id.to_owned(),
+        duration_ms,
+        finished_at: finished_at.to_owned(),
+    };
+    let bytes = serde_json::to_vec(&completion).map_err(|error| {
+        BwError::new(
+            ErrorCode::ResultInvalid,
+            format!("Could not serialize completion timing: {error}"),
+            "Report this as a bug.",
+        )
+    })?;
+    let temporary = run_dir.join(format!("{COMPLETION_FILE}.tmp"));
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .and_then(|mut file| file.write_all(&bytes))
+        .and_then(|()| std::fs::rename(&temporary, run_dir.join(COMPLETION_FILE)));
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(BwError::new(
+            ErrorCode::OutputDirInvalid,
+            format!(
+                "Could not write {}: {error}",
+                run_dir.join(COMPLETION_FILE).display()
+            ),
+            "Check that the output directory is writable and has free space.",
+        ));
     }
     Ok(())
 }
@@ -232,6 +293,11 @@ fn validate(bundle: &ResultBundle) -> BwResult<()> {
             }
         }
     }
+    for diagnostic in &analysis.diagnostics {
+        if let Some(usage) = &diagnostic.export_usage {
+            validate_export_usage(diagnostic, usage)?;
+        }
+    }
     for (id, path) in bundle
         .project_relative
         .iter()
@@ -242,6 +308,122 @@ fn validate(bundle: &ResultBundle) -> BwResult<()> {
         }
     }
     Ok(())
+}
+
+fn valid_export_reference(reference: &ExportReference) -> bool {
+    !reference.module.is_empty()
+        && match reference.scope {
+            ExportScope::Named => {
+                !reference.export_path.is_empty()
+                    && reference.export_path.iter().all(|part| !part.is_empty())
+            }
+            ExportScope::Module => reference.export_path.is_empty(),
+            ExportScope::Unspecified => false,
+        }
+}
+
+/// Export usage evidence is untrusted input: its shape must match what the
+/// analysis produces, so a damaged or hand-edited bundle cannot show a chain
+/// whose edges do not connect or whose limits contradict each other.
+fn validate_export_usage(diagnostic: &Diagnostic, usage: &ExportUsage) -> BwResult<()> {
+    let id = &diagnostic.id;
+    let bad = |detail: &str| {
+        invalid(format!(
+            "diagnostic {id} has invalid export usage: {detail}"
+        ))
+    };
+    match usage.state {
+        ExportUsageState::Unspecified => return Err(bad("state is unspecified")),
+        ExportUsageState::Unavailable => {
+            if !usage.paths.is_empty() {
+                return Err(bad("unavailable evidence lists paths"));
+            }
+            return Ok(());
+        }
+        ExportUsageState::Available => {}
+    }
+    if usage.paths.is_empty() {
+        return Err(bad("available evidence has no paths"));
+    }
+    if usage.paths.len() > MAX_PATHS {
+        return Err(bad("too many paths"));
+    }
+    if usage.truncation == ExportUsageTruncation::Unspecified {
+        return Err(bad("truncation is unspecified"));
+    }
+    for path in &usage.paths {
+        if path.edges.is_empty() || path.edges.len() > MAX_EDGES_PER_PATH {
+            return Err(bad("a path has no edges or too many edges"));
+        }
+        match path.end {
+            ExportUsagePathEnd::Unspecified => return Err(bad("a path end is unspecified")),
+            ExportUsagePathEnd::Truncated if usage.truncation == ExportUsageTruncation::None => {
+                return Err(bad("a truncated path without a truncation marker"));
+            }
+            // An unconfirmed start exists only because an edge was dropped,
+            // and the analysis always discloses dropped edges in the note.
+            ExportUsagePathEnd::Incomplete if usage.note.is_empty() => {
+                return Err(bad("an incomplete path without a disclosure note"));
+            }
+            _ => {}
+        }
+        for edge in &path.edges {
+            if !valid_export_reference(&edge.consumer) || !valid_export_reference(&edge.provider) {
+                return Err(bad("an edge has an invalid export reference"));
+            }
+        }
+        // Each edge's provider is the next edge's consumer: the chain runs
+        // from the outermost consumer to the diagnostic module.
+        if path
+            .edges
+            .windows(2)
+            .any(|pair| pair[0].provider != pair[1].consumer)
+        {
+            return Err(bad("path edges are not connected"));
+        }
+        // The last edge provides the diagnostic's own module; otherwise the
+        // chain is evidence about some other module.
+        if path
+            .edges
+            .last()
+            .is_some_and(|edge| edge.provider.module != diagnostic.module)
+        {
+            return Err(bad("a path does not end at the diagnostic module"));
+        }
+        if repeats_inside_chain(&path.edges) {
+            return Err(bad("a path repeats an export before its first edge"));
+        }
+        if closes_cycle(&path.edges) != (path.end == ExportUsagePathEnd::Cycle) {
+            return Err(bad("a path end disagrees with its first edge about a cycle"));
+        }
+    }
+    Ok(())
+}
+
+/// True when the first edge (the outermost consumer) revisits an export of the
+/// chain: its consumer is the consumer or provider of another edge, or the
+/// consumer of the only edge is its own provider. The analysis ends exactly
+/// these chains with `CYCLE`.
+fn closes_cycle(edges: &[ExportUsageEdge]) -> bool {
+    let Some((first, rest)) = edges.split_first() else {
+        return false;
+    };
+    first.consumer == first.provider
+        || rest
+            .iter()
+            .any(|edge| edge.consumer == first.consumer || edge.provider == first.consumer)
+}
+
+/// True when an edge other than the first revisits an export of the edges
+/// closer to the diagnostic module, or consumes the export it provides. The
+/// analysis ends a chain at the first such edge, so it never extends past one.
+fn repeats_inside_chain(edges: &[ExportUsageEdge]) -> bool {
+    edges.iter().enumerate().skip(1).any(|(index, edge)| {
+        edge.consumer == edge.provider
+            || edges[index + 1..]
+                .iter()
+                .any(|inner| inner.consumer == edge.consumer || inner.provider == edge.consumer)
+    })
 }
 
 /// Reads `analysis.json` only when it is a regular file no larger than the
@@ -278,6 +460,12 @@ pub fn read_summary_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
         &mut std::io::Read::take(open_no_follow(path)?, MAX_SUMMARY_BYTES + 1),
         &mut bytes,
     )?;
+    if bytes.len() as u64 > MAX_SUMMARY_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "metadata file is too large",
+        ));
+    }
     Ok(bytes)
 }
 
@@ -334,6 +522,27 @@ pub fn load(run_dir: &Path) -> BwResult<ResultBundle> {
         ))
     })?;
     let mut bundle = parse(&bytes)?;
+    let completion_path = run_dir.join(COMPLETION_FILE);
+    match std::fs::symlink_metadata(&completion_path) {
+        Ok(_) => {
+            let bytes = read_summary_bytes(&completion_path)
+                .map_err(|error| invalid(format!("completion.json is invalid: {error}")))?;
+            let completion: Completion = serde_json::from_slice(&bytes)
+                .map_err(|error| invalid(format!("completion.json is invalid: {error}")))?;
+            if completion.run_id != bundle.analysis.run_id
+                || completion.duration_ms < bundle.analysis.duration_ms
+                || chrono::DateTime::parse_from_rfc3339(&completion.finished_at).is_err()
+            {
+                return Err(invalid("completion.json does not match the result bundle"));
+            }
+            bundle.analysis.duration_ms = completion.duration_ms;
+            bundle.analysis.finished_at = completion.finished_at;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // Bundles saved before completion.json use analysis.json timing.
+        }
+        Err(error) => return Err(invalid(format!("completion.json is inaccessible: {error}"))),
+    }
     let status = normalized_status(bundle.analysis.status, run_dir);
     if bundle.analysis.status == RunStatus::Running {
         bundle.analysis.problems.push(problem(
@@ -458,6 +667,23 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
         let Some(relative) = safe_project_relative(path) else {
             continue;
         };
+        // Older schema-1 bundles stored the module path rather than the
+        // backing file in projectRelative. Resolve it with the same literal
+        // filename precedence as a new analysis, then validate the selected
+        // path again before reading it.
+        let backing = if existence_only {
+            canonical_root.join(&relative)
+        } else {
+            filesystem_path(&canonical_root.join(&relative))
+        };
+        let Some(relative) = backing
+            .strip_prefix(&canonical_root)
+            .ok()
+            .and_then(|path| path.to_str())
+            .and_then(safe_project_relative)
+        else {
+            continue;
+        };
         // A file that cannot be verified (too large, special, outside the
         // root) is not reported stale; only a removed file or a hash mismatch
         // is.
@@ -507,7 +733,7 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Diagnostic, SourceLocation};
+    use crate::model::{Diagnostic, ExportUsageEdge, ExportUsagePath, SourceLocation};
 
     fn bundle() -> ResultBundle {
         ResultBundle {
@@ -527,6 +753,48 @@ mod tests {
             project_relative: BTreeMap::new(),
             existence_relative: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn completed_at_legacy_bundle_uses_embedded_duration() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut legacy = bundle();
+        legacy.analysis.duration_ms = 123;
+        legacy.analysis.finished_at = "2026-10-14T09:00:00Z".to_owned();
+        save(dir.path(), &legacy).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded.analysis.duration_ms, 123);
+        assert_eq!(loaded.analysis.finished_at, legacy.analysis.finished_at);
+    }
+
+    #[test]
+    fn completed_at_rejects_timing_for_another_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let saved = bundle();
+        save(dir.path(), &saved).unwrap();
+        save_completion(
+            dir.path(),
+            &uuid::Uuid::now_v7().to_string(),
+            123,
+            "2026-10-14T09:00:00Z",
+        )
+        .unwrap();
+        assert_eq!(load(dir.path()).unwrap_err().code, ErrorCode::ResultInvalid);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn completed_at_rejects_symlinked_timing_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        save(dir.path(), &bundle()).unwrap();
+        std::fs::write(outside.path().join(COMPLETION_FILE), "{}").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join(COMPLETION_FILE),
+            dir.path().join(COMPLETION_FILE),
+        )
+        .unwrap();
+        assert_eq!(load(dir.path()).unwrap_err().code, ErrorCode::ResultInvalid);
     }
 
     #[test]
@@ -579,6 +847,397 @@ mod tests {
         });
         assert_eq!(
             parse(&serde_json::to_vec(&broken).unwrap())
+                .unwrap_err()
+                .code,
+            ErrorCode::ResultInvalid
+        );
+    }
+
+    fn named(module: &str, name: &str) -> ExportReference {
+        ExportReference {
+            module: module.to_owned(),
+            export_path: vec![name.to_owned()],
+            scope: ExportScope::Named,
+        }
+    }
+
+    fn module_scope(module: &str) -> ExportReference {
+        ExportReference {
+            module: module.to_owned(),
+            export_path: Vec::new(),
+            scope: ExportScope::Module,
+        }
+    }
+
+    fn usage_edge(consumer: ExportReference, provider: ExportReference) -> ExportUsageEdge {
+        ExportUsageEdge {
+            consumer,
+            provider,
+            dependency_id: "7".to_owned(),
+            location: "3:1-4".to_owned(),
+        }
+    }
+
+    fn valid_usage() -> ExportUsage {
+        ExportUsage {
+            state: ExportUsageState::Available,
+            note: String::new(),
+            paths: vec![ExportUsagePath {
+                edges: vec![
+                    usage_edge(module_scope("src/main.js"), named("src/lib.js", "foo")),
+                    usage_edge(named("src/lib.js", "foo"), named("src/shared.js", "bar")),
+                ],
+                end: ExportUsagePathEnd::Root,
+            }],
+            truncation: ExportUsageTruncation::None,
+        }
+    }
+
+    fn bundle_with_usage(usage: ExportUsage) -> ResultBundle {
+        let mut bundle = bundle();
+        bundle.analysis.diagnostics.push(Diagnostic {
+            id: "d-0123456789ab".to_owned(),
+            module: "src/shared.js".to_owned(),
+            export_usage: Some(usage),
+            ..Diagnostic::default()
+        });
+        bundle
+    }
+
+    fn parse_usage(usage: ExportUsage) -> BwResult<ResultBundle> {
+        parse(&serde_json::to_vec(&bundle_with_usage(usage)).unwrap())
+    }
+
+    #[test]
+    fn export_usage_round_trips_and_older_bundles_still_open() {
+        let parsed = parse_usage(valid_usage()).unwrap();
+        assert_eq!(
+            parsed.analysis.diagnostics[0].export_usage,
+            Some(valid_usage())
+        );
+        // A bundle written before the field existed has no `exportUsage` key.
+        let mut value = serde_json::to_value(bundle_with_usage(valid_usage())).unwrap();
+        value["analysis"]["diagnostics"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("exportUsage");
+        let older = parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(older.analysis.diagnostics[0].export_usage.is_none());
+    }
+
+    #[test]
+    fn an_incomplete_path_end_with_a_note_is_valid_without_a_truncation_marker() {
+        let mut usage = valid_usage();
+        usage.paths[0].end = ExportUsagePathEnd::Incomplete;
+        usage.note = "1 engine edge(s) were not shown.".to_owned();
+        assert_eq!(usage.truncation, ExportUsageTruncation::None);
+        let parsed = parse_usage(usage.clone()).unwrap();
+        assert_eq!(parsed.analysis.diagnostics[0].export_usage, Some(usage));
+    }
+
+    #[test]
+    fn unavailable_export_usage_is_valid_without_paths() {
+        let usage = ExportUsage {
+            state: ExportUsageState::Unavailable,
+            note: "hook missing".to_owned(),
+            ..ExportUsage::default()
+        };
+        assert!(parse_usage(usage).is_ok());
+    }
+
+    #[test]
+    fn rejects_every_invalid_export_usage_shape() {
+        type Edit = fn(&mut ExportUsage);
+        let cases: [(&str, Edit); 17] = [
+            ("unspecified state", |usage| {
+                usage.state = ExportUsageState::Unspecified;
+            }),
+            ("unavailable with paths", |usage| {
+                usage.state = ExportUsageState::Unavailable;
+            }),
+            ("available without paths", |usage| usage.paths.clear()),
+            ("too many paths", |usage| {
+                let path = usage.paths[0].clone();
+                usage.paths = vec![path; MAX_PATHS + 1];
+            }),
+            ("unspecified truncation", |usage| {
+                usage.truncation = ExportUsageTruncation::Unspecified;
+            }),
+            ("path without edges", |usage| usage.paths[0].edges.clear()),
+            ("path with too many edges", |usage| {
+                let edge = usage.paths[0].edges[1].clone();
+                usage.paths[0].edges = vec![edge; MAX_EDGES_PER_PATH + 1];
+            }),
+            ("unspecified path end", |usage| {
+                usage.paths[0].end = ExportUsagePathEnd::Unspecified;
+            }),
+            ("truncated end without marker", |usage| {
+                usage.paths[0].end = ExportUsagePathEnd::Truncated;
+            }),
+            ("incomplete end without a note", |usage| {
+                usage.paths[0].end = ExportUsagePathEnd::Incomplete;
+            }),
+            ("unspecified scope", |usage| {
+                usage.paths[0].edges[0].consumer.scope = ExportScope::Unspecified;
+            }),
+            ("named scope without export path", |usage| {
+                usage.paths[0].edges[1].consumer.export_path.clear();
+            }),
+            ("module scope with export path", |usage| {
+                usage.paths[0].edges[0].consumer.export_path = vec!["x".to_owned()];
+            }),
+            ("empty module", |usage| {
+                usage.paths[0].edges[0].consumer.module.clear();
+            }),
+            ("disconnected edges", |usage| {
+                usage.paths[0].edges[1].consumer = named("src/other.js", "foo");
+            }),
+            ("path ends at another module", |usage| {
+                usage.paths[0].edges[1].provider = named("src/other.js", "bar");
+            }),
+            ("cycle end without a closing edge", |usage| {
+                usage.paths[0].end = ExportUsagePathEnd::Cycle;
+            }),
+        ];
+        for (name, edit) in cases {
+            let mut usage = valid_usage();
+            edit(&mut usage);
+            let error = parse_usage(usage).expect_err(name);
+            assert_eq!(error.code, ErrorCode::ResultInvalid, "{name}");
+            assert!(error.message.contains("export usage"), "{name}");
+        }
+    }
+
+    /// Chain shape against the diagnostic module and the cycle rules. Every
+    /// row names a chain, the end it carries and whether a saved bundle with
+    /// it opens. Mirrors the "Saved export usage" table in the contract.
+    #[test]
+    fn export_usage_chain_shape_table() {
+        use ExportUsagePathEnd::{Cycle, Root, Truncated};
+        let foo = || named("src/lib.js", "foo");
+        let bar = || named("src/shared.js", "bar");
+        let main = || module_scope("src/main.js");
+        let cases: Vec<(&str, Vec<ExportUsageEdge>, ExportUsagePathEnd, bool)> = vec![
+            (
+                "one edge into the diagnostic module",
+                vec![usage_edge(main(), bar())],
+                Root,
+                true,
+            ),
+            (
+                "one edge into another module",
+                vec![usage_edge(main(), foo())],
+                Root,
+                false,
+            ),
+            (
+                "the last edge provides another module although earlier edges name the diagnostic \
+                 module",
+                vec![usage_edge(main(), bar()), usage_edge(bar(), foo())],
+                Root,
+                false,
+            ),
+            (
+                "a self-referencing edge ends the chain with a cycle",
+                vec![usage_edge(bar(), bar())],
+                Cycle,
+                true,
+            ),
+            (
+                "a self-referencing edge cannot be a root",
+                vec![usage_edge(bar(), bar())],
+                Root,
+                false,
+            ),
+            (
+                "a self-referencing edge cannot be truncated",
+                vec![usage_edge(bar(), bar())],
+                Truncated,
+                false,
+            ),
+            (
+                "a self-referencing start edge cannot be extended",
+                vec![usage_edge(main(), bar()), usage_edge(bar(), bar())],
+                Root,
+                false,
+            ),
+            (
+                "the first edge returns to the provider of a later edge",
+                vec![usage_edge(bar(), foo()), usage_edge(foo(), bar())],
+                Cycle,
+                true,
+            ),
+            (
+                "a closing first edge cannot be a root",
+                vec![usage_edge(bar(), foo()), usage_edge(foo(), bar())],
+                Root,
+                false,
+            ),
+            (
+                "the first edge consumes the export it provides above another edge",
+                vec![usage_edge(foo(), foo()), usage_edge(foo(), bar())],
+                Cycle,
+                true,
+            ),
+            (
+                "a chain without a repeated export cannot end with a cycle",
+                vec![usage_edge(main(), foo()), usage_edge(foo(), bar())],
+                Cycle,
+                false,
+            ),
+            (
+                "an inner edge revisits an export of the later edges",
+                vec![
+                    usage_edge(main(), bar()),
+                    usage_edge(bar(), foo()),
+                    usage_edge(foo(), bar()),
+                ],
+                Root,
+                false,
+            ),
+            (
+                "an inner revisit cannot be hidden by a cycle end",
+                vec![
+                    usage_edge(main(), bar()),
+                    usage_edge(bar(), foo()),
+                    usage_edge(foo(), bar()),
+                ],
+                Cycle,
+                false,
+            ),
+        ];
+        for (name, edges, end, opens) in cases {
+            let usage = ExportUsage {
+                state: ExportUsageState::Available,
+                note: String::new(),
+                paths: vec![ExportUsagePath { edges, end }],
+                truncation: if end == Truncated {
+                    ExportUsageTruncation::Depth
+                } else {
+                    ExportUsageTruncation::None
+                },
+            };
+            let result = parse_usage(usage);
+            assert_eq!(result.is_ok(), opens, "{name}: {:?}", result.err());
+            if !opens {
+                assert_eq!(result.unwrap_err().code, ErrorCode::ResultInvalid, "{name}");
+            }
+        }
+    }
+
+    /// Everything the traversal can produce opens: the validation accepts
+    /// exactly the chains the analysis can derive. Random small graphs over
+    /// few modules and exports make cycles, self-references and shared
+    /// exports likely.
+    #[test]
+    fn every_chain_the_traversal_derives_passes_validation() {
+        use std::path::PathBuf;
+
+        use crate::{
+            collect::{CollectedExportEdge, CollectedExportRef, CollectedExportUsage, Collection},
+            rules::{
+                Context,
+                export_usage::{ExportUsageIndex, Limits, MAX_EDGES_PER_PATH, MAX_PATHS, traverse},
+            },
+            sources::SourceStore,
+        };
+
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = move |bound: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % bound as u64) as usize
+        };
+        let reference = |module: usize, export: usize| CollectedExportRef {
+            module: format!("m{module}"),
+            export: match export {
+                0 => None,
+                1 => Some(vec!["a".to_owned()]),
+                _ => Some(vec!["b".to_owned()]),
+            },
+        };
+        let mut checked_paths = 0usize;
+        let mut cycles = 0usize;
+        let mut incomplete = 0usize;
+        for case in 0..2_000 {
+            let modules = 2 + next(3);
+            let edge_count = 1 + next(12);
+            let edges: Vec<CollectedExportEdge> = (0..edge_count)
+                .map(|index| CollectedExportEdge {
+                    consumer: reference(next(modules), next(3)),
+                    provider: reference(next(modules), next(3)),
+                    dependency_id: Some(index.to_string()),
+                    location: None,
+                })
+                .collect();
+            let collection = Collection {
+                export_usage: Some(CollectedExportUsage {
+                    available: true,
+                    edges,
+                    skipped_edges: u32::from(next(4) == 0),
+                    unattributed_edges: u32::from(next(4) == 0),
+                    ..CollectedExportUsage::default()
+                }),
+                ..Collection::default()
+            };
+            let context = Context::new(
+                &collection,
+                PathBuf::from("/project"),
+                "project".to_owned(),
+                Vec::new(),
+                SourceStore::new(false),
+            );
+            let limits = match case % 4 {
+                0 => Limits::DEFAULT,
+                1 => Limits {
+                    max_edges_per_path: 1 + next(3),
+                    ..Limits::DEFAULT
+                },
+                2 => Limits {
+                    max_paths: 1 + next(MAX_PATHS),
+                    max_expansions: next(6),
+                    ..Limits::DEFAULT
+                },
+                _ => Limits {
+                    max_queued: 1 + next(4),
+                    max_edges_per_path: MAX_EDGES_PER_PATH,
+                    ..Limits::DEFAULT
+                },
+            };
+            let usage_data = collection.export_usage.as_ref().unwrap();
+            let index = ExportUsageIndex::new(usage_data);
+            for module in 0..modules {
+                let name = format!("m{module}");
+                let usage = traverse(&context, &index, &name, limits);
+                for path in &usage.paths {
+                    checked_paths += 1;
+                    cycles += usize::from(path.end == ExportUsagePathEnd::Cycle);
+                    incomplete += usize::from(path.end == ExportUsagePathEnd::Incomplete);
+                }
+                let diagnostic = Diagnostic {
+                    id: "d-0123456789ab".to_owned(),
+                    module: name,
+                    export_usage: Some(usage.clone()),
+                    ..Diagnostic::default()
+                };
+                validate_export_usage(&diagnostic, &usage)
+                    .unwrap_or_else(|error| panic!("case {case}: {} for {usage:?}", error.message));
+            }
+        }
+        // The sample must exercise the interesting ends, or it proves little.
+        assert!(checked_paths > 1_000, "{checked_paths}");
+        assert!(cycles > 50, "{cycles}");
+        assert!(incomplete > 20, "{incomplete}");
+    }
+
+    #[test]
+    fn rejects_unknown_export_usage_enum_values() {
+        let mut value = serde_json::to_value(bundle_with_usage(valid_usage())).unwrap();
+        value["analysis"]["diagnostics"][0]["exportUsage"]["state"] =
+            serde_json::json!("EXPORT_USAGE_STATE_EXPLODED");
+        assert_eq!(
+            parse(&serde_json::to_vec(&value).unwrap())
                 .unwrap_err()
                 .code,
             ErrorCode::ResultInvalid
@@ -646,6 +1305,162 @@ mod tests {
             .project_relative
             .insert("src-0123456789abcdef".to_owned(), "src/a.js".to_owned());
         saved
+    }
+
+    #[test]
+    fn legacy_source_query_asset_reopens_without_false_stale_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        let asset = project.join("src/icon.svg");
+        std::fs::write(&asset, "<svg/>").unwrap();
+
+        let mut saved = stale_fixture(dir.path(), "source");
+        saved.sources[0].path = "src/icon.svg?raw".to_owned();
+        saved.sources[0].content = "export default \"<svg/>\"".to_owned();
+        saved.sources[0].content_included = true;
+        saved.sources[0].sha256 = sha256_hex(saved.sources[0].content.as_bytes());
+        saved.sources[0].stale = true;
+        saved.analysis.sources[0] = saved.sources[0].summary();
+        saved
+            .project_relative
+            .insert(saved.sources[0].id.clone(), "src/icon.svg?raw".to_owned());
+        save(dir.path(), &saved).unwrap();
+
+        for _ in 0..2 {
+            let loaded = load(dir.path()).unwrap();
+            assert_eq!(loaded.project_relative, saved.project_relative);
+            assert!(!loaded.sources[0].stale);
+            assert!(!loaded.analysis.sources[0].stale);
+            assert_eq!(stale_count(&loaded), 0);
+        }
+
+        std::fs::remove_file(&asset).unwrap();
+        let removed = load(dir.path()).unwrap();
+        assert!(removed.sources[0].stale && removed.analysis.sources[0].stale);
+        assert_eq!(stale_count(&removed), 1);
+
+        std::fs::write(&asset, "<svg changed/>").unwrap();
+        let restored = load(dir.path()).unwrap();
+        assert!(!restored.sources[0].stale && !restored.analysis.sources[0].stale);
+        assert_eq!(stale_count(&restored), 0);
+    }
+
+    #[test]
+    fn legacy_source_literal_paths_win_and_text_still_uses_its_hash() {
+        // Windows cannot create a literal filename containing `?`.
+        let suffixes: &[&str] = if cfg!(windows) {
+            &["#component"]
+        } else {
+            &["?raw", "#component"]
+        };
+        for suffix in suffixes {
+            let dir = tempfile::tempdir().unwrap();
+            let mut saved = stale_fixture(dir.path(), "original");
+            let relative = format!("src/a.js{suffix}");
+            saved.sources[0].path = relative.clone();
+            saved.sources[0].content = "original".to_owned();
+            saved.sources[0].content_included = true;
+            saved.analysis.sources[0] = saved.sources[0].summary();
+            saved
+                .project_relative
+                .insert(saved.sources[0].id.clone(), relative.clone());
+            save(dir.path(), &saved).unwrap();
+
+            let literal = dir.path().join("project").join(&relative);
+            std::fs::write(&literal, "different").unwrap();
+            let loaded = load(dir.path()).unwrap();
+            assert!(loaded.sources[0].stale, "{relative}");
+            assert_eq!(stale_count(&loaded), 1);
+
+            std::fs::remove_file(&literal).unwrap();
+            let loaded = load(dir.path()).unwrap();
+            assert!(!loaded.sources[0].stale, "{relative}");
+            assert_eq!(stale_count(&loaded), 0);
+
+            std::fs::write(dir.path().join("project/src/a.js"), "changed").unwrap();
+            let loaded = load(dir.path()).unwrap();
+            assert!(loaded.sources[0].stale, "{relative}");
+            assert_eq!(stale_count(&loaded), 1);
+        }
+    }
+
+    #[test]
+    fn legacy_source_query_keeps_saved_path_safety_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut saved = stale_fixture(dir.path(), "original");
+        let project = dir.path().join("project");
+        let backing = project.join("src/a.js");
+        saved.sources[0].path = "src/a.js?raw".to_owned();
+        saved
+            .project_relative
+            .insert(saved.sources[0].id.clone(), "src/a.js?raw".to_owned());
+
+        // A directory and an oversized regular file both exist, but neither
+        // can be read or treated as a source change.
+        std::fs::remove_file(&backing).unwrap();
+        std::fs::create_dir(&backing).unwrap();
+        mark_stale(&mut saved);
+        assert!(!saved.sources[0].stale);
+        std::fs::remove_dir(&backing).unwrap();
+        std::fs::write(&backing, vec![b'x'; (MAX_STALE_CHECK_BYTES + 1) as usize]).unwrap();
+        mark_stale(&mut saved);
+        assert!(!saved.sources[0].stale);
+
+        #[cfg(unix)]
+        {
+            std::fs::remove_file(&backing).unwrap();
+            let outside = dir.path().join("outside.js");
+            std::fs::write(&outside, "different").unwrap();
+            std::os::unix::fs::symlink(&outside, &backing).unwrap();
+            mark_stale(&mut saved);
+            assert!(!saved.sources[0].stale);
+        }
+
+        saved.project_relative.insert(
+            saved.sources[0].id.clone(),
+            "src/../../outside.js?raw".to_owned(),
+        );
+        assert_eq!(
+            parse(&serde_json::to_vec(&saved).unwrap())
+                .unwrap_err()
+                .code,
+            ErrorCode::ResultInvalid
+        );
+    }
+
+    #[test]
+    fn legacy_source_missing_fragment_clears_after_restoration() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        let module = project.join("src/a.js#component");
+        let mut store = crate::sources::SourceStore::new(true);
+        store.snapshots.insert(
+            crate::sources::normalize(&module),
+            "export const a = 1;".to_owned(),
+        );
+        store.add_file(&project, &module).unwrap();
+        let mut saved = bundle();
+        saved.project_root = project.to_string_lossy().into_owned();
+        saved.project_relative = store.project_relative.clone();
+        saved.sources = store.into_files();
+        saved.analysis.sources = saved.sources.iter().map(SourceFile::summary).collect();
+        assert_eq!(
+            saved.project_relative.get(&saved.sources[0].id),
+            Some(&"src/a.js".to_owned())
+        );
+        assert_eq!(saved.sources[0].path, "src/a.js#component");
+        save(dir.path(), &saved).unwrap();
+
+        let missing = load(dir.path()).unwrap();
+        assert!(missing.sources[0].stale);
+        assert_eq!(stale_count(&missing), 1);
+
+        std::fs::write(project.join("src/a.js"), "export const a = 1;").unwrap();
+        let restored = load(dir.path()).unwrap();
+        assert!(!restored.sources[0].stale && !restored.analysis.sources[0].stale);
+        assert_eq!(stale_count(&restored), 0);
     }
 
     #[test]

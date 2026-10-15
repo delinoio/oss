@@ -18,7 +18,7 @@ import (
 // evidence; notification bytes still have to match the native media-free
 // projection before that history item is accepted.
 func (c *Client) functionOutputHistoryItemLocked(ctx context.Context, turn domain.ID, itemID string, notification json.RawMessage) (json.RawMessage, error) {
-	reply, err := c.wire.Call(ctx, domain.NewID(), "thread/turns/list", struct {
+	reply, err := c.call(ctx, domain.NewID(), "thread/turns/list", struct {
 		Thread    domain.ID `json:"threadId"`
 		Limit     int       `json:"limit"`
 		Direction string    `json:"sortDirection"`

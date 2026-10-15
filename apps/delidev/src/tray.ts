@@ -6,6 +6,7 @@ import {
   type ListResourcesResponse,
 } from "@delinoio/delidev-api-client";
 import { document, items, object, text } from "./documents";
+import { PresentationPhase } from "./presentation-diagnostics";
 
 import {
   TrayQuotaState,
@@ -205,7 +206,10 @@ export class TrayPublisher {
   private revision = 0;
   constructor(
     private readonly bridge: TrayBridge,
-    private readonly problem: (failed: boolean) => void,
+    private readonly problem: (
+      failed: boolean,
+      phase: PresentationPhase,
+    ) => void,
   ) {}
   update(summary: TraySummary) {
     if (!this.closed) {
@@ -221,19 +225,22 @@ export class TrayPublisher {
   private async drain() {
     if (this.running) return;
     this.running = true;
+    let phase = PresentationPhase.TrayBegin;
     try {
       this.scope ??= this.bridge.begin();
       const scope = await this.scope;
+      if (!this.closed) this.problem(false, PresentationPhase.TrayBegin);
+      phase = PresentationPhase.TrayPublish;
       while (this.pending) {
         const next = this.pending;
         this.pending = undefined;
         await this.bridge.publish(scope, ++this.revision, next);
-        if (!this.closed) this.problem(false);
+        if (!this.closed) this.problem(false, PresentationPhase.TrayPublish);
       }
     } catch {
       if (!this.closed) {
         this.scope = undefined;
-        this.problem(true);
+        this.problem(true, phase);
       }
     } finally {
       this.running = false;

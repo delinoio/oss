@@ -54,7 +54,7 @@ Main desktop local Workers now have automatic same-owner registration/start and 
 
 The feature preserves closed private local-startup ownership/admission classifications across Go, native supervision and localized startup/Connection & diagnostics guidance. Original owners and data remain untouched; ownership and unclassified legacy conflicts retain safe inspection and explicit retry guidance under the existing supervision cadence. This adds no RPC, allocation, migration or automatic lifecycle authority. See the [desktop contract](apps-delidev-desktop-contract.md#local-startup-conflict-guidance).
 
-Failed-login subscription cleanup uses System capability 41 after main-first reservation the originating change. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and Grok 39/40 reservations retain ownership; no migration or Rust/native change is added.
+Failed-login subscription cleanup uses System capability 41 after main-first reservation the originating change. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and the declared-but-unadvertised Grok 39/40 identifiers retain ownership; no migration or Rust/native change is added.
 
 Native execution option selection follows the [catalog contract](cmds-delidev-catalog-contract.md#native-execution-option-selection). Available settings pass unchanged to native execution; unavailable saved values remain explicit, and all four Codex API/subscription permission modes preserve authentication, applied-setting and cleanup/recovery ownership. No protocol or database migration is required.
 
@@ -74,7 +74,7 @@ The feature adds Worker-owned session terminals with native Unix PTY/Windows Con
 
 The desktop presents each retained browser page of the session account's profile as a direct workspace tab beside Conversation (no Browser singleton or inner page row). The tab-bar `+` is the Open tool trigger (there is no direct New browser page button), and its Browser row opens the one address dialog that creates nothing until explicit submission; Page × closes the actual native page and removes its descriptor only after the original native-local operation is observed. The trusted-local `browser_pages` command (Inventory, Create, Close, Observe) is owned by `apps/delidev/src-tauri/src/browser_host.rs` and `main.rs` under [the protected browser contract](cmds-delidev-browser-contract.md#direct-workspace-pages-and-original-native-operations).
 
-Codex native flows use a common minimum SemVer `0.151.0` with no upper bound under the [harness contract](cmds-delidev-harness-contract.md). Preserve actual immutable executable/version attribution and independently verify native protocols and account authority. The [desktop contract](apps-delidev-desktop-contract.md) defines bounded sidecar lookup, and the [subscription Settings contract](apps-delidev-subscription-settings-contract.md) defines safe original-operation diagnostics. Feature PRs may record schema allocations with their implementation; optional document metadata adds no migration. Record fixture/build/native initialization and real account/platform evidence separately in pull requests and CI.
+Codex native flows use a common minimum SemVer `0.151.0` with no upper bound under the [harness contract](cmds-delidev-harness-contract.md). The Codex native transport queues up to 4,096 undelivered events (about 576 KiB of event descriptors on 64-bit targets, plus its unchanged payload byte bound) so a response fragmented into many small deltas does not fail while durable publication drains; the Grok JSON-RPC profile keeps 128, and exhaustion logs a closed event-count, event-bytes or frame-bytes classification under the [native event queue limits](cmds-delidev-harness-contract.md#native-event-queue-limits). No public RPC, protocol field or migration is added. Preserve actual immutable executable/version attribution and independently verify native protocols and account authority. The [desktop contract](apps-delidev-desktop-contract.md) defines bounded sidecar lookup, and the [subscription Settings contract](apps-delidev-subscription-settings-contract.md) defines safe original-operation diagnostics. Feature PRs may record schema allocations with their implementation; optional document metadata adds no migration. Record fixture/build/native initialization and real account/platform evidence separately in pull requests and CI.
 
 ## Project ID
 
@@ -91,7 +91,7 @@ Repositories use required remote URLs with optional Local folder connections und
 - `protos/delidev/v1`: versioned Connect schema; `protos/gen/go/delidev/v1`: generated Go bindings.
 - `packages/delidev-api-client`: generated TypeScript client and bounded transport/synchronization helpers.
 
-The [desktop File menu](apps-delidev-desktop-contract.md#native-tray-and-menu-bar) opens a new product window with Command+N on macOS and Control+N on Windows/Linux through one native app-level handler. Close Window has no keyboard accelerator (Command/Control+W closes the active session tool tab in the renderer) and retains existing Local/Saved window ownership.
+The [desktop File menu](apps-delidev-desktop-contract.md#native-tray-and-menu-bar) opens a new product window by menu click only, with no keyboard accelerator, through one native app-level handler (Command+N on macOS and Control+N on Windows/Linux open the New session page in the current window). Close Window has no keyboard accelerator (Command/Control+W closes the active session tool tab in the renderer) and retains existing Local/Saved window ownership.
 
 New schedule creation adds frequency presets and a creation-only three-section layout under the [desktop contract](apps-delidev-desktop-contract.md#new-schedule-creation), while strict schedule definitions and server recurrence authority remain unchanged.
 
@@ -127,6 +127,7 @@ The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalo
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
+- [Native OpenCode testing runbook](cmds-delidev-opencode-native-testing.md)
 - [Direct execution startup](cmds-delidev-execution-startup-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
@@ -137,7 +138,7 @@ The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalo
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions and shared account owner/member ownership](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members), Worker 67 `SHARED_SUBSCRIPTION_OWNER_V1` and Worker 68 `CLAUDE_DEVICE_OWNED_MEMBERS_V1`
 - [OpenCode Go subscriptions](cmds-delidev-opencode-go-subscription-contract.md)
-- [Grok Build subscriptions (planned)](cmds-delidev-grok-subscription-contract.md)
+- [Grok Build subscriptions (storage and lease layer implemented; protocol identifiers declared but unadvertised; desktop browser and device-code login UI implemented behind capability 39 and merged after the server layers; server login, execution and advertisement planned)](cmds-delidev-grok-subscription-contract.md)
 - [API account browser OAuth](cmds-delidev-account-oauth-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
@@ -177,7 +178,7 @@ owns the lifecycle, snapshot-copy deletion integration and remaining database-re
 
 - macOS development launches retain a verified bundle per run. Only its Go server uses the explicitly registered local self-signed certificate and stable certificate-bound identifier. Original server/Worker files survive rebuilds and abnormal desktop exit. Code-change checks precede fresh OAuth and protected reads/writes; old ad-hoc items retain their original user authorization/repair boundary. Follow [local development signing](apps-delidev-desktop-contract.md#local-development-signing-and-recovery) and the [credential contract](cmds-delidev-credentials-contract.md). Public RPC/capability/schema and release-signing ownership are unchanged; fixture evidence cannot establish real account/platform acceptance.
 
-- Desktop Settings has four ordered groups: AI, Coding, Device management and System, with 20 independent category screens (21 in the original local desktop window, which adds Tailscale; saved-server windows list 20). Project defaults, Projects, Repositories and Git Profiles are the Coding menus; Runner Devices, Paired devices and Tailscale belong to Device management. Project defaults is the sole global SETTINGS policy editor for Plan defaults/approval, routing, Branch prefix, Worktree fetch and PR remediation. Server preferences owns only the independently scoped Network workspace. Preserve complete singleton documents and Connect configuration authority; grouping grants no new capability or migration. Existing category IDs and lifetimes remain stable; legacy `git-workflow` entries resolve to Project defaults.
+- Desktop Settings has four ordered groups: AI, Coding, Device management and System, with 20 independent category screens (21 in the original local desktop window, which adds Tailscale; saved-server windows list 20). Project defaults, Projects, Repositories and Git Profiles are the Coding menus; Runner Devices, Paired devices and Tailscale belong to Device management. Project defaults is the sole global SETTINGS policy editor for Plan defaults/approval, routing, Branch prefix, Worktree fetch and PR remediation. Server preferences owns only the independently scoped Network workspace, which starts expanded on category entry (Runner Device Network settings stays an on-demand dialog). Preserve complete singleton documents and Connect configuration authority; grouping grants no new capability or migration. Existing category IDs and lifetimes remain stable; legacy `git-workflow` entries resolve to Project defaults.
 - Agent Worker creation/editing uses Harness → account source groups → source-specific Models → Configure under System capabilities 33/36, reserved on main by the originating change. Models Settings is removed; Usage owns model details and Token pricing. The [desktop wizard](apps-delidev-desktop-contract.md#agent-worker-wizard) and [catalog](cmds-delidev-catalog-contract.md#agent-worker-model-selection) contracts preserve atomic model/Worker saving, legacy APIs and historical attribution without a migration or native/account readiness grant. Shared Reasoning effort/Subagent effort autocomplete provides advisory harness hints and exact direct input under the [desktop presentation contract](apps-delidev-desktop-contract.md#agent-worker-core-and-optional-presentation), without discovery or new execution support.
 - Project defaults is the inline revision-bound policy singleton under the [desktop contract](apps-delidev-desktop-contract.md#project-defaults-and-server-preferences). Complete reads admit the existing saved values or Go defaults without writes. Explicit Save adopts the returned full document/ID/revision in the same form; dirty drafts and original uncertain requests survive refresh/reconnect, while category departure disposes presentation. Server preferences provides independent Network operations with no policy singleton read, editor or Save/Discard. This UI amendment changes no RPC, schema, storage or execution capability.
 - Sidechat follows the [native read-only contract](cmds-delidev-sidechat-contract.md): retain the complete original parent snapshot and account separately from the child enforcement overlay, reference workspace roots without taking deletion ownership, and join dependent child cleanup before removing parent files. Retain original-job-bound unpublished metadata claims across restart and reconcile only their exact child roots after process-owner cleanup. Independent Fork retains its separate lifetime. System 27 / Worker 16 reservations grant no native or product support.
@@ -294,7 +295,7 @@ Codex subagent settings require independent server/Worker capabilities, immutabl
 
 The feature extends native subagent observation to OpenCode 1.18.32 foreground tasks under the existing subagent contract and independent System/Worker capabilities. Preserve the one-level dual task/child ownership proof, same account/model, separate usage, original Stop/cleanup and paused child-bearing completion; implementation and native/account/platform acceptance remain separately recorded in the integration PR.
 
-- Bounded Unix plain-text OpenCode General Chat Fork uses independent System 26 / Worker 15, native ID-clone/history proof, explicit no-change relocation, preparation without inference and independent copied files. The [fork contract](cmds-delidev-forks-contract.md) owns this profile; Codex support does not imply OpenCode or Sidechat authority.
+- Bounded Unix plain-text OpenCode General Chat Fork uses independent System 26 / Worker 15, native ID-clone/history proof, explicit no-change relocation, preparation without inference and independent copied files. The [fork contract](cmds-delidev-forks-contract.md) owns this profile; Codex support does not imply OpenCode or Sidechat authority. Completed plain timed reasoning history forks only under the independent System 104 / Worker 69 `OPENCODE_GENERAL_CHAT_FORK_REASONING_V1` pair and profile `opencode-general-chat-v2`; it never changes capability 26/15 or the v1 profile.
 
 - The canonical 35-ID API provider registry preserves original wire IDs and shares product ordering across RPC/CLI/desktop. Real default migration 30 follows actual 26–29, retaining existing identities and deletions. Fixed native/private inspection authority is owned by the [provider inspection](cmds-delidev-providers-contract.md), [catalog](cmds-delidev-catalog-contract.md) and [activation](cmds-delidev-provider-activation-contract.md) contracts; discovery grants no inference or subscription authority.
 
@@ -304,7 +305,7 @@ Workspace storage exposes original-job snapshot, usage preview, cleanup, inspect
 - [DeliDev signed updates](cmds-delidev-updates-contract.md)
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
 
-AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming. Claude independently selects its owning Runner under capability 38 and then uses login/name steps; Grok remains unsupported. Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in the originating change; this optional JSON amendment adds no migration.
+AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming. Claude sign-in is server-owned under capability 67 with login/name steps and never selects a Runner Device (capability 38 and the original Runner remain only for existing device-owned accounts' execution and logout); Grok remains unsupported (System 39/40, Worker 21 and progress field 10 are declared in the protos but unadvertised, with no server or Worker behavior). Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in the originating change; this optional JSON amendment adds no migration.
 
 Ordered account source routing follows the catalog, desktop, sessions, protocol and
 portable configuration contracts. One Harness retains source-specific models and
@@ -324,8 +325,8 @@ their original ownership and alone grant no support.
 The originating change established System 38, Worker 20 and the complete protocol declaration
 closure on main before implementation. The extension composes the existing
 subscription, desktop, harness, protocol and storage owners. Claude Code
-at or above the pinned `2.1.236` SemVer baseline owns login/status/logout and execution in an original account-specific
-profile on the explicitly selected local or remote Runner. The server retains
+at or above the pinned `2.1.236` SemVer baseline owns status/logout and execution of existing device-owned accounts in an original account-specific
+profile on its original local or remote Runner. Fresh machine-bound Claude login and reauthentication are rejected by the server; new Claude sign-in is server-owned (System 67). The server retains
 only opaque profile/owner/generation/operation metadata and a keyed identity
 commitment; native credentials never transfer. One exclusive lease serializes
 lifecycle and execution, and original cleanup gates logout/deletion/recovery.
@@ -337,7 +338,7 @@ The owner-approved native Claude subscription extension spans the existing
 subscription, desktop, harness, protocol and storage owners. Record System 38,
 Worker 20 and the complete login-code/progress/native-identity declarations in
 the owning feature PR. Authentication remains in an original installed
-Claude Code account profile on the selected Runner Device; server metadata does
+Claude Code account profile on the original Runner Device of an existing device-owned account (new sign-in is server-owned under System 67); server metadata does
 not grant credentials, cross-device execution or cleanup authority. The
 reservation prerequisite activates no support and adds no migration. Follow
 [the subscription contract](cmds-delidev-subscription-contract.md#native-claude-subscriptions).
@@ -408,7 +409,7 @@ Project settings and server defaults follow the [project behavior contract](cmds
 
 - Codex Agent Worker Fast mode selection and original native diagnostics follow the catalog, desktop and diagnostics contracts for the feature. No allocation/migration or actual subscription acceptance is implied by fixture evidence.
 
-- The feature adds the System Keyboard shortcuts category after Appearance and a device-owned version-1 `shortcuts.json` preference. Native authorized product-window read/update/publication uses expected revisions and atomic replacement; `ShortcutPreferenceProvider` stays above connections. Seven existing actions support explicit save/discard/default/disable, with one committed binding source for dispatch/help/ARIA. Preserve fixed editing/newline/Escape and K/N/W/1–9 reservations; keep preferences outside server backups/portable transfer and uncertainty recovery read-only. See the desktop and localization contracts.
+- The feature adds the System Keyboard shortcuts category after Appearance and a device-owned version-1 `shortcuts.json` preference. Native authorized product-window read/update/publication uses expected revisions and atomic replacement; `ShortcutPreferenceProvider` stays above connections. Seven existing actions support explicit save/discard/default/disable, with one committed binding source for dispatch/help/ARIA. Preserve fixed editing/newline/Escape and the reserved chords defined by the [desktop shortcut chord table](apps-delidev-desktop-contract.md#device-local-shortcut-preferences) (unshifted Command/Control+N is the editable New session default); keep preferences outside server backups/portable transfer and uncertainty recovery read-only. See the desktop and localization contracts.
 
 - New Project can open independently scoped existing repository registration in either Home or Settings. The desktop contract owns modal/draft lifetime, confirmed-identity catalog resolution and read-only retry; existing repository/native/Connect authority remains unchanged.
 
@@ -501,3 +502,7 @@ the [harness](cmds-delidev-harness-contract.md#persistent-native-profiles),
 and [sessions](cmds-delidev-sessions-contract.md#native-histories-and-persistent-profiles)
 contracts. Deploy the updated server and Workers; each owner migrates only its
 own state and rejects incompatible local profile versions without rewriting them.
+The managed shared Codex owner's account-wide history home is registered in place as a `shared_owner` profile. Native history IDs have one owner per registry. Explicit deletion verifies the
+selected managed profile owner and binds its directory identity, while an
+original Claude logout can finish a registry-only retry after its owned
+directory was removed.

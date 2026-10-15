@@ -1,4 +1,4 @@
-import { create, toJson } from "@bufbuild/protobuf";
+import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 import {
   Code,
   ConnectError,
@@ -30,7 +30,11 @@ import {
   type Analysis,
 } from "./gen/bundlewhy/v1/bundlewhy_pb";
 import { TransportMode } from "./transport";
-import { fixtureAnalysis, fixtureSource } from "./test-fixtures";
+import {
+  fixtureAnalysis,
+  fixtureExportUsage,
+  fixtureSource,
+} from "./test-fixtures";
 
 type Impl = Partial<ServiceImpl<typeof AnalysisService>>;
 
@@ -733,5 +737,125 @@ describe("App boot", () => {
     expect(
       within(screen.getByRole("alert")).getByText("BW_SCHEMA_UNSUPPORTED"),
     ).toBeTruthy();
+  });
+});
+
+describe("export usage in diagnostic details", () => {
+  function embedReport(analysis: Analysis) {
+    const script = document.createElement("script");
+    script.type = "application/json";
+    script.id = "bundlewhy-report";
+    script.textContent = JSON.stringify({
+      analysis: toJson(AnalysisSchema, analysis),
+      sources: [toJson(SourceFileSchema, fixtureSource())],
+    });
+    document.head.appendChild(script);
+  }
+
+  function exportUsageText(): string {
+    const details = screen.getByRole("region", { name: "Diagnostic details" });
+    const heading = within(details).getByRole("heading", {
+      level: 3,
+      name: "Export usage paths",
+    });
+    return heading.closest("section")!.textContent!;
+  }
+
+  it("shows the section after the module dependency paths", async () => {
+    const analysis = fixtureAnalysis();
+    analysis.diagnostics[0].exportUsage = fixtureExportUsage();
+    await renderAnalysis(analysis);
+    const details = screen.getByRole("region", { name: "Diagnostic details" });
+    const headings = within(details)
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.textContent);
+    expect(headings.indexOf("Export usage paths")).toBe(
+      headings.indexOf("Dependency paths") + 1,
+    );
+    expect(exportUsageText()).toContain("Observed by Rspack");
+    // The module dependency path is still shown.
+    expect(
+      within(details).getByRole("list", {
+        name: "Dependency path 1, from entry to module",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("omits the section for reports saved without export usage", async () => {
+    await renderAnalysis(fixtureAnalysis());
+    const details = screen.getByRole("region", { name: "Diagnostic details" });
+    expect(
+      within(details).queryByRole("heading", { name: "Export usage paths" }),
+    ).toBeNull();
+    expect(within(details).getByText("Dependency paths")).toBeTruthy();
+  });
+
+  it("shows the same paths in a live view and in an exported report", async () => {
+    const analysis = fixtureAnalysis();
+    analysis.diagnostics[0].exportUsage = fixtureExportUsage();
+    const live = await renderAnalysis(analysis);
+    const liveText = exportUsageText();
+    live.unmount();
+
+    embedReport(analysis);
+    render(<App />);
+    await screen.findByRole("heading", { level: 1, name: "storefront" });
+    expect(exportUsageText()).toBe(liveText);
+  });
+
+  it("parses export usage JSON written by the Rust analysis", async () => {
+    // Shape of `Diagnostic.exportUsage` as bundlewhy serializes it (proto3
+    // JSON names, empty arrays for module scope).
+    const rustJson = {
+      state: "EXPORT_USAGE_STATE_AVAILABLE",
+      note: "",
+      paths: [
+        {
+          edges: [
+            {
+              consumer: {
+                module: "src/main.js",
+                exportPath: [],
+                scope: "EXPORT_SCOPE_MODULE",
+              },
+              provider: {
+                module: "src/exports/namespace.js",
+                exportPath: ["viaNamespace"],
+                scope: "EXPORT_SCOPE_NAMED",
+              },
+              dependencyId: "28",
+              location: "29:52-64",
+            },
+            {
+              consumer: {
+                module: "src/exports/namespace.js",
+                exportPath: ["viaNamespace"],
+                scope: "EXPORT_SCOPE_NAMED",
+              },
+              provider: {
+                module: "src/exports/leaf.js",
+                exportPath: [],
+                scope: "EXPORT_SCOPE_MODULE",
+              },
+              dependencyId: "51",
+              location: "4:10-20",
+            },
+          ],
+          end: "EXPORT_USAGE_PATH_END_ROOT",
+        },
+      ],
+      truncation: "EXPORT_USAGE_TRUNCATION_NONE",
+    };
+    const base = toJson(AnalysisSchema, fixtureAnalysis()) as {
+      diagnostics: Record<string, JsonValue>[];
+    };
+    base.diagnostics[0].exportUsage = rustJson;
+    const analysis = fromJson(AnalysisSchema, base as unknown as JsonValue);
+    await renderAnalysis(analysis);
+    const text = exportUsageText();
+    expect(text).toContain("src/exports/namespace.js");
+    expect(text).toContain("export viaNamespace");
+    expect(text).toContain("Dependency ID 51");
+    expect(text).toContain("module or namespace scope (no named export)");
   });
 });

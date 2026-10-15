@@ -165,6 +165,54 @@ func (s *sessionAPI) freshCheckpointInput(request domain.ID, message, part strin
 	return true
 }
 
+// inPlace reports whether the resumed native history already lives in the
+// persistent profile that will run it. Such a resume reuses the retained files
+// instead of copying them, so the predecessor checkpoint is superseded once the
+// resume claim is durable.
+func (r *checkpointResume) inPlace(config apiSessionConfig) bool {
+	return r != nil && filepath.Dir(config.Probe.Home) == r.source.RuntimeHome
+}
+
+// stageInPlace verifies the retained checkpoint files in the profile, records
+// the once-only resume claim and then retires only DeliDev-owned transient
+// files so the profile can be launched again. Native history, caches and
+// helper files are retained.
+func (r *checkpointResume) stageInPlace(ctx context.Context, config apiSessionConfig, profile *nativeAPIProfile) error {
+	home := filepath.Dir(config.Probe.Home)
+	if r == nil || profile == nil || home != r.source.RuntimeHome || mutationDigest([]byte(profile.Token)) == r.source.CredentialSHA256 {
+		return sessionUncertain()
+	}
+	settings, err := checkpointSettingsForAgent(&sessionAPI{apiProfile: profile, creation: &sessionCreation{settings: config.Settings}}, r.previousAgent)
+	if err != nil || settings != r.source.SettingsSHA256 || InspectCheckpoint(ctx, r.source.RuntimeHome, r.raw, r.ref) != nil {
+		return sessionUncertain()
+	}
+	claim, err := CheckpointResumeClaim(config, r.ref, r.request)
+	if err != nil {
+		return err
+	}
+	if claim.Validate() != nil || config.Claim(ctx, claim) != nil {
+		return sessionUncertain()
+	}
+	if r.source.Snapshot != nil {
+		// The native snapshot repository depends on workspace objects that may
+		// have changed since the checkpoint. Rebuild it from the verified
+		// self-contained archive exactly as a copied runtime would receive it.
+		if err := resetNativeSnapshot(ctx, home, r.source); err != nil {
+			return err
+		}
+		if err := stageCheckpointSnapshot(ctx, r.source, home); err != nil {
+			return err
+		}
+	}
+	if err := retireOwnedRuntimeFiles(ctx, home); err != nil {
+		return err
+	}
+	if config.Probe.Process.Logger != nil {
+		config.Probe.Process.Logger.InfoContext(ctx, "opencode_profile_resumed_in_place", "owner_id", config.Probe.Process.OwnerID, "request_id", r.request)
+	}
+	return nil
+}
+
 func (r *checkpointResume) stage(ctx context.Context, config apiSessionConfig, profile *nativeAPIProfile) error {
 	home := filepath.Dir(config.Probe.Home)
 	if r == nil || profile == nil || home == r.source.RuntimeHome || directoryContains(home, r.source.RuntimeHome) || directoryContains(r.source.RuntimeHome, home) || mutationDigest([]byte(profile.Token)) == r.source.CredentialSHA256 {
@@ -202,6 +250,18 @@ func InspectReplacementCheckpoint(ctx context.Context, home string, raw []byte, 
 		return err
 	}
 	return InspectCheckpoint(ctx, home, raw, ref)
+}
+
+// InspectReplacementMetadata is InspectReplacementCheckpoint without the file
+// comparison. It serves a checkpoint that a later run of the same persistent
+// profile superseded: its retained metadata stays comparable evidence, but its
+// files are no longer a resume source.
+func InspectReplacementMetadata(raw []byte, ref CheckpointReference, home string) error {
+	value, err := decodeCheckpoint(raw, ref, home)
+	if err != nil {
+		return err
+	}
+	return checkpointReplacementProfile(value)
 }
 
 func checkpointReplacementProfile(value nativeCheckpoint) error {

@@ -65,6 +65,9 @@ The [SFX format](/react-forge/formats/sfx/) uses the same execute, inspect, meas
 
 [GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. The released static API excludes existing-file editing, animation and rigging. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
 
+In the unreleased source extension, trusted task code can set a [caller geometry budget](/react-forge/formats/glb/#caller-geometry-budgets-unreleased) on its GLB/FBX session. `react_forge_inspect` with `view: "scene_analysis"` reports all policy violations without enforcing them. A successful Warn-mode `react_forge_export` includes structured warnings; Error mode returns typed `resource_limit` context before publication. Warnings do not prove a file was committed. MCP adds no budget arguments or tools.
+The unreleased `react_forge_inspect` view `scene_analysis` accepts `geometryQuality: true` for exact-index base-geometry findings. Each mesh page includes only reports for geometries on that page, once per geometry. Category counts cover the whole geometry. Other inspection views reject this option. See the [GLB analysis guide](/react-forge/formats/glb/#scene-complexity-analysis-unreleased) for finding meanings and limits.
+
 ## Animated scenes (unreleased)
 
 The unreleased extension uses the same nine tools. Execute authors scenes with

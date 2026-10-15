@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -223,15 +224,10 @@ func TestProbeRejectsExistingRuntimeBeforeLaunch(t *testing.T) {
 }
 
 func TestManualNativeOpenCodeInitialization(t *testing.T) {
-	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if executable == "" {
-		t.Skip("explicit private OpenCode initialization")
-	}
-	if !filepath.IsAbs(executable) {
-		t.Fatal("select an absolute native executable")
-	}
+	executable, version := nativetest.NativeOpenCodeExecutable(t)
 	config, logs := fixtureConfig(t, "native")
 	config.Process.Executable = executable
+	config.Version = version
 	if err := Probe(context.Background(), config); err != nil {
 		t.Fatalf("native probe: %v; logs: %s", err, logs.String())
 	}
@@ -276,18 +272,59 @@ func TestProbeAdmitsNewerVersionsToRealNativeChecks(t *testing.T) {
 	}
 }
 
-// TestProbeNewerVersionStillFailsChangedNativeBehavior proves admission does not
-// bypass the native protocol or settings validation.
-func TestProbeNewerVersionStillFailsChangedNativeBehavior(t *testing.T) {
-	config, logs := fixtureConfig(t, "config")
-	config.Version = "1.18.33"
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	err := Probe(ctx, config)
-	if err == nil || domain.SafeError(err).Code != domain.Unsupported {
-		t.Fatalf("changed native behavior outcome: %v; logs: %s", err, logs.String())
+// TestProbeCausesCarryTheirOwnRemedy proves the update instruction belongs only
+// to the initial below-baseline admission. A mismatch observed from an admitted
+// or newer installation (changed health payload, global configuration, startup
+// output or OpenAPI schema) keeps the same typed code but never tells the
+// operator to upgrade, because a validated older release or a corrected
+// configuration may be the remedy. Neither message names the numeric baseline.
+func TestProbeCausesCarryTheirOwnRemedy(t *testing.T) {
+	type cause struct {
+		name           string
+		mode           string
+		version        string
+		wantUpgrade    bool
+		wantLaunch     bool
+		wantGuidanceIn string
 	}
-	if err := process.ReconcileOwner(config.Process.Directory, config.Process.OwnerID); err != nil {
-		t.Fatal(err)
+	for _, test := range []cause{
+		{name: "below-baseline", mode: "valid", version: "1.18.31", wantUpgrade: true, wantGuidanceIn: "opencode upgrade"},
+		{name: "malformed-version", mode: "valid", version: "not-a-version", wantUpgrade: true, wantGuidanceIn: "opencode upgrade"},
+		{name: "prerelease-of-baseline", mode: "valid", version: "1.18.32-rc.1", wantUpgrade: true, wantGuidanceIn: "opencode upgrade"},
+		{name: "health-payload", mode: "version", version: "1.18.33", wantLaunch: true, wantGuidanceIn: "validated"},
+		{name: "global-config", mode: "config", version: "1.18.33", wantLaunch: true, wantGuidanceIn: "correct its configuration"},
+		{name: "openapi-schema", mode: "schema", version: "1.19.0", wantLaunch: true, wantGuidanceIn: "validated"},
+		{name: "startup-trailing-output", mode: "trailing", version: "1.18.33", wantLaunch: true, wantGuidanceIn: "validated"},
+		{name: "startup-duplicate-output", mode: "duplicate", version: "1.18.33", wantLaunch: true, wantGuidanceIn: "validated"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config, logs := fixtureConfig(t, test.mode)
+			config.Version = test.version
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			err := Probe(ctx, config)
+			problem := domain.SafeError(err)
+			if err == nil || problem.Code != domain.Unsupported {
+				t.Fatalf("outcome: %v; logs: %s", err, logs.String())
+			}
+			if upgrade := strings.Contains(problem.Guidance, "opencode upgrade"); upgrade != test.wantUpgrade {
+				t.Fatalf("upgrade instruction = %v, want %v: %q", upgrade, test.wantUpgrade, problem.Guidance)
+			}
+			if !strings.Contains(problem.Guidance, test.wantGuidanceIn) || !strings.Contains(problem.Guidance, "refresh discovery") {
+				t.Fatalf("guidance lacks %q and a discovery refresh: %q", test.wantGuidanceIn, problem.Guidance)
+			}
+			if strings.Contains(problem.Message+problem.Guidance, SupportedVersion) {
+				t.Fatalf("problem names the numeric baseline: %q %q", problem.Message, problem.Guidance)
+			}
+			_, statErr := os.Stat(config.Process.Directory)
+			if launched := !os.IsNotExist(statErr); launched != test.wantLaunch {
+				t.Fatalf("process launched = %v, want %v", launched, test.wantLaunch)
+			}
+			if test.wantLaunch {
+				if err := process.ReconcileOwner(config.Process.Directory, config.Process.OwnerID); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
 	}
 }

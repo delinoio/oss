@@ -138,6 +138,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	manager := &workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
+	var sharedMember *codexSharedMember
 	if retry := input.Retry; retry != nil {
 		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)
 	} else if retry := input.SidechatRetry; retry != nil {
@@ -156,6 +157,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	config.startup.claimedWorkspace()
 	defer func() {
+		if sharedMember != nil && !sharedMember.proven {
+			return
+		}
 		if err := lease.Close(); err != nil {
 			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
@@ -204,8 +208,29 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, domain.SafeError(err)
 	}
 	nativeHome := filepath.Join(profile.Root, "codex")
+	sharedCodex := config.codexMembers && input.SharedCodexOwnerEligible()
+	if sharedCodex {
+		// The shared account history home is registered in place in the
+		// persistent profile registry; its lock is taken by the founding owner.
+		sharedInfo, err := resolveSharedCodexHome(ctx, config, input.MachineID, input.AccountID)
+		if err != nil {
+			return nil, err
+		}
+		nativeHome = sharedInfo.Root
+	}
+	env, err = replaceCodexHome(env, nativeHome)
+	if err != nil {
+		return nil, err
+	}
 	var checkpoint CodexExecutionCheckpoint
 	var compacted *codex.CompactedCheckpoint
+	// accountHold is the shared account home lock of an exclusive version 2
+	// continuation. It is released, verified, before the managed Finish.
+	var accountHold *sharedHomeHold
+	// pendingV1Import is the version 1 checkpoint of a shared continuation whose
+	// retained rollout is copied into the shared account home only after the
+	// request is admitted under that home's lock; see the import below.
+	var pendingV1Import *ExecutionCheckpointRef
 	if c := input.Continuation; c != nil {
 		rawDigest, err := hex.DecodeString(c.PromptDigest)
 		if err != nil || len(rawDigest) != sha256.Size {
@@ -217,14 +242,54 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if c.PreviousAccountID != "" {
 			account, connection = c.PreviousAccountID, c.PreviousConnectionID
 		}
-		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{ContextRevision: c.Previous.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+		if sharedCodex && (account != input.AccountID || connection != input.ConnectionID) {
+			return nil, executionCheckpointUncertain()
+		}
+		checkpointRef := ExecutionCheckpointRef{ContextRevision: c.Previous.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)}
+		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, checkpointRef)
+		if err != nil {
+			return nil, err
+		}
+		if sharedCodex {
+			if checkpoint.Version == 1 {
+				// The copy writes the account-wide home, which an exclusive
+				// continuation or a running owner may hold, so it waits until
+				// this request holds or joins that home's lock.
+				pendingV1Import = &checkpointRef
+			}
+		} else if checkpoint.Version == 2 {
+			if checkpoint.AccountID != input.AccountID || checkpoint.ConnectionID != input.ConnectionID {
+				return nil, executionCheckpointUncertain()
+			}
+			nativeHome = checkpoint.AccountHome
+			// An exclusive continuation of the account history locks the same
+			// registered profile that a shared owner holds, so both can never
+			// write the home at once. The managed Finish releases it first.
+			hold, err := holdSharedCodexHome(ctx, config, input.MachineID, input.AccountID)
+			if err != nil {
+				return nil, err
+			}
+			if hold.root() != nativeHome {
+				if err := hold.release(); err != nil {
+					config.codexOwners.parkUnverifiedRelease(input.AccountID, hold)
+				}
+				return nil, executionCheckpointUncertain()
+			}
+			accountHold = hold
+			defer func() {
+				if changed, settled := retryHeldRelease(config, input.AccountID, accountHold, returned); changed {
+					output, returned = nil, settled
+				}
+			}()
+		}
+		env, err = replaceCodexHome(env, nativeHome)
 		if err != nil {
 			return nil, err
 		}
 		if security.CheckPrivateDir(nativeHome) != nil {
 			return nil, executionCheckpointUncertain()
 		}
-		if c.Compaction == nil {
+		if c.Compaction == nil && pendingV1Import == nil {
 			if err := codex.VerifyContinuationContextRollout(ctx, nativeHome, checkpoint.Native); err != nil {
 				return nil, err
 			}
@@ -273,33 +338,65 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			settings.Options.Permission = domain.PermissionFullAccess
 		}
 	}
+	accountHistory := sharedCodex || checkpoint.Version == 2
 	if input.Configuration.Subscription {
 		if err := validateManagedAuthenticationHome(nativeHome, manifest.WorkspaceRoots()); err != nil {
 			return nil, err
 		}
 	}
 	var managed *managedSubscriptionLease
+	var sharedOwner *codexSharedOwner
+	var sharedFounder bool
+	var releaseCodexAdmission func()
 	var managedLatest []byte
 	var closeManagedRPC func()
 	managedCleanup, managedSuccess := false, false
 	managedUnusedOriginal := false
 	managedPreNativeCleanup, managedHelperRetained := false, false
 	defer func() {
+		founderAbort := sharedMember != nil && sharedFounder && sharedOwner.runtime == nil
+		var founderErr error
+		if founderAbort {
+			// Keep admission serialized until the original owner Finish settles.
+			// A waiting Take must not join an owner without a native runtime.
+			founderErr = sharedOwner.abortFounder(nativeHome, sharedMember)
+		}
+		if releaseCodexAdmission != nil {
+			releaseCodexAdmission()
+		}
 		if closeManagedRPC != nil {
 			defer closeManagedRPC()
+		}
+		if sharedMember != nil {
+			finishErr := founderErr
+			if !founderAbort {
+				finishErr = sharedOwner.gate.finishMember(sharedOwner, sharedMember, sharedMember.proven)
+			}
+			var releaseFailure *sharedHomeReleaseError
+			if errors.As(finishErr, &releaseFailure) {
+				// The owner Finish was published; only the shared home release is
+				// unverified. Report it like an exclusive continuation does, and
+				// keep it for the next holder of the account home.
+				output, returned = nil, config.startup.cleanupFailure(returned, finishErr)
+			} else if finishErr != nil {
+				output, returned = nil, &managedExecutionUncertain{finishErr}
+			}
+			clear(managed.response.Bundle)
+			return
 		}
 		if managed != nil {
 			// Finish may acknowledge a fenced account without establishing safe
 			// ownership. Only a captured bundle or the verified unused original,
 			// together with independent cleanup, permits ordinary job reporting.
 			conclusive := managedCleanup && (managedSuccess || managedUnusedOriginal)
-			if err := managed.finish(managedLatest, managedCleanup, false, managedSuccess); err != nil {
-				output, returned = nil, &managedExecutionUncertain{err}
-			} else if !conclusive {
-				if returned == nil {
-					returned = subscription.Invalid()
-				}
-				output, returned = nil, &managedExecutionUncertain{returned}
+			// The server frees the account lease when it commits Finish, so the
+			// shared home lock is released and verified before that request: a
+			// continuation already retrying its Take would otherwise be admitted
+			// and meet profile_busy.
+			if changed, settled := settleExclusiveFinish(config, input.AccountID, accountHold, returned, conclusive, func() error {
+				return managed.finish(managedLatest, managedCleanup, false, managedSuccess)
+			}); changed {
+				output, returned = nil, settled
 			}
 			clear(managed.response.Bundle)
 		}
@@ -312,17 +409,48 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			return nil, err
 		}
 		closeManagedRPC = closeRPC
-		managed, err = takeManagedSubscription(ctx, config, client, connection.Credential, connection.Instance, input.AccountID, owner, connection.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
+		if sharedCodex {
+			managed, releaseCodexAdmission, err = takeManagedSubscriptionAdmitted(ctx, config, client, connection.Credential, connection.Instance, input.AccountID, owner, connection.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE, config.codexOwners.gate(input.AccountID))
+		} else {
+			managed, err = takeManagedSubscription(ctx, config, client, connection.Credential, connection.Instance, input.AccountID, owner, connection.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
+		}
 		if err != nil {
 			return nil, err
 		}
-		if _, _, err := subscription.Parse(managed.response.Bundle); err != nil {
+		if sharedCodex {
+			gate := config.codexOwners.gate(input.AccountID)
+			sharedOwner, sharedMember, sharedFounder, err = gate.register(config, managed, closeRPC, owner, lease)
+			if err != nil {
+				scope := pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER
+				bundle := []byte(nil)
+				if managed.response.OwnerLeaseId == "" {
+					scope, bundle = pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, managed.response.Bundle
+				}
+				finishErr := managed.finishCodexScopedRetry(bundle, false, false, scope, managed.response.LeaseRevision)
+				clear(managed.response.Bundle)
+				managed = nil
+				gate.fence()
+				releaseCodexAdmission()
+				releaseCodexAdmission = nil
+				if finishErr != nil {
+					return nil, &managedExecutionUncertain{finishErr}
+				}
+				return nil, err
+			}
+			if !sharedFounder {
+				releaseCodexAdmission()
+				releaseCodexAdmission = nil
+			} else if _, _, err := subscription.Parse(managed.response.Bundle); err != nil {
+				return nil, err
+			}
+			closeManagedRPC = nil // The registered member closes its own transport.
+		} else if _, _, err := subscription.Parse(managed.response.Bundle); err != nil {
 			return nil, err
 		}
 		// Install cleanup before the atomic write: even a synchronization error
 		// may leave the owned plaintext file committed. Publisher/registration
 		// failures occur before any native process can own this authentication.
-		managedPreNativeCleanup = true
+		managedPreNativeCleanup = !sharedCodex
 		defer func() {
 			if managedPreNativeCleanup {
 				var authErr error
@@ -346,8 +474,40 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				}
 			}
 		}()
-		if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
-			return nil, subscription.Invalid()
+		if sharedCodex && sharedFounder {
+			// The founding owner locks the registered account home until the
+			// owner retires; joined members rely on that lock.
+			sharedOwner.profile, err = holdSharedCodexHome(ctx, config, input.MachineID, input.AccountID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if pendingV1Import != nil {
+			// The founder holds the account home lock and a joined member runs
+			// under the founder's hold, so the copy never races an exclusive
+			// continuation of the account history.
+			importedHome := ""
+			checkpoint, importedHome, err = importCodexV1History(ctx, manager.Root, *pendingV1Import, sharedOwner.profile)
+			if err != nil {
+				return nil, err
+			}
+			if importedHome != nativeHome || security.CheckPrivateDir(nativeHome) != nil {
+				return nil, executionCheckpointUncertain()
+			}
+			if err := codex.VerifyContinuationContextRollout(ctx, nativeHome, checkpoint.Native); err != nil {
+				return nil, err
+			}
+			logger.InfoContext(ctx, "native_execution_v1_history_imported", "history_execution_id", pendingV1Import.HistoryExecutionID)
+		}
+		if !sharedCodex || sharedFounder {
+			if sharedCodex || checkpoint.Version == 2 {
+				if _, statErr := os.Lstat(filepath.Join(nativeHome, "auth.json")); !errors.Is(statErr, os.ErrNotExist) {
+					return nil, subscription.Invalid()
+				}
+			}
+			if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
+				return nil, subscription.Invalid()
+			}
 		}
 	}
 	if err := codex.ValidateThreadSettings(settings); err != nil {
@@ -457,15 +617,55 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	// cleanup while keeping the lease.
 	managedPreNativeCleanup = false
 	config.startup.setPhase(domain.StartupInitialize)
-	client, err := codex.Open(nativeCtx, nativeConfig)
-	if err != nil {
-		managedHelperRetained = codex.NativeJoinedHelperRetirementFailed(err)
-		managedPreNativeCleanup = managedHelperRetained || domain.SafeError(err).Code != domain.RecoveryRequired
-		return nil, err
+	var client *codex.Client
+	if sharedCodex {
+		if sharedFounder {
+			var nativeOwner *codex.Client
+			ownerConfig := nativeConfig
+			ownerConfig.Process.Cwd = nativeHome
+			ownerConfig.Process.OwnerID = sharedOwner.ownerProcessID()
+			nativeOwner, err = codex.Open(config.executionContext, ownerConfig)
+			if err == nil {
+				var sharedRuntime *codex.SharedRuntime
+				sharedRuntime, err = nativeOwner.StartSharedRuntime()
+				if err == nil {
+					err = sharedOwner.ready(sharedRuntime, nativeHome)
+				}
+				if err != nil {
+					var nativeErr, helperErr error
+					if sharedRuntime != nil {
+						nativeErr, helperErr = sharedRuntime.Close()
+					} else {
+						nativeErr, helperErr = nativeOwner.CloseWithExecutionHelpers()
+					}
+					sharedOwner.nativeUncertain = nativeErr != nil || helperErr != nil
+				}
+			}
+			if err != nil {
+				sharedOwner.nativeUncertain = sharedOwner.nativeUncertain || domain.SafeError(err).Code == domain.RecoveryRequired
+				return nil, err
+			}
+			if config.observations != nil {
+				sharedOwner.unregisterObservations = config.observations.register(input.AccountID, nativeOwner, sharedOwner.lease)
+			}
+			releaseCodexAdmission()
+			releaseCodexAdmission = nil
+		}
+		client, err = sharedOwner.runtime.NewMember(nativeConfig)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		client, err = codex.Open(nativeCtx, nativeConfig)
+		if err != nil {
+			managedHelperRetained = codex.NativeJoinedHelperRetirementFailed(err)
+			managedPreNativeCleanup = managedHelperRetained || domain.SafeError(err).Code != domain.RecoveryRequired
+			return nil, err
+		}
 	}
 	managedBundleAttempted := false
 	captureManagedBundle := func() {
-		if managed == nil || managedBundleAttempted {
+		if managed == nil || sharedCodex || managedBundleAttempted {
 			return
 		}
 		managedBundleAttempted = true
@@ -475,6 +675,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		managedLatest, managedSuccess = bundle, bundleErr == nil
 	}
 	defer func() {
+		if sharedCodex {
+			return
+		}
 		captureManagedBundle()
 		nativeErr, helperErr := client.CloseWithExecutionHelpers()
 		if nativeErr != nil {
@@ -494,7 +697,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 	}()
 	var unregisterObservations func()
-	if managed != nil && config.observations != nil {
+	if managed != nil && !sharedCodex && config.observations != nil {
 		unregisterObservations = config.observations.register(input.AccountID, client, managed)
 		defer unregisterObservations()
 	}
@@ -760,8 +963,50 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 		}
 		captureManagedBundle()
-		if err := client.Close(); err != nil {
-			return nil, err
+		var historyProof *codex.ThreadHistoryProof
+		if sharedCodex {
+			bounded, stop := context.WithTimeout(cleanupContext, 15*time.Second)
+			closeErr := client.RetireSharedMember(bounded, domain.NewID())
+			stop()
+			if closeErr != nil {
+				return nil, closeErr
+			}
+			if !mapper.dynamicToolsSettled() || !childrenClosed {
+				return nil, sharedOwnerUncertain()
+			}
+			if !hasChildren {
+				proof, proofErr := client.RetainThreadHistory(cleanupContext)
+				if proofErr != nil {
+					return nil, proofErr
+				}
+				historyProof = &proof
+				if contextProof != nil {
+					if contextProof.RolloutPath != proof.Path {
+						return nil, executionCheckpointUncertain()
+					}
+					contextProof.RolloutDigest = proof.Digest
+				}
+			}
+		} else {
+			if accountHistory && !hasChildren {
+				proof, proofErr := client.RetainThreadHistory(cleanupContext)
+				if proofErr != nil {
+					return nil, proofErr
+				}
+				historyProof = &proof
+				if contextProof != nil {
+					if contextProof.RolloutPath != proof.Path {
+						return nil, executionCheckpointUncertain()
+					}
+					contextProof.RolloutDigest = proof.Digest
+				}
+			}
+			if err := client.Close(); err != nil {
+				return nil, err
+			}
+			if historyProof != nil && codex.VerifyThreadHistory(cleanupContext, nativeHome, *historyProof) != nil {
+				return nil, executionCheckpointUncertain()
+			}
 		}
 		if ownedProxy != nil {
 			if err := ownedProxy.Close(); err != nil {
@@ -782,6 +1027,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		if err := lease.Close(); err != nil {
 			return nil, err
+		}
+		if sharedMember != nil {
+			sharedMember.proven = true
 		}
 		sequence, err := publisher.acknowledgedSequence()
 		if err != nil {
@@ -811,7 +1059,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err != nil {
 			return nil, err
 		}
-		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, acceptedInput, bound, completion, acceptedInputs, contextProof)
+		var checkpointDigest string
+		if accountHistory {
+			if historyProof == nil {
+				return nil, executionCheckpointUncertain()
+			}
+			checkpointDigest, err = retainCodexCompletionWithHistory(manager.Root, owner, job, acceptedInput, bound, completion, acceptedInputs, contextProof, historyProof, nativeHome)
+		} else {
+			checkpointDigest, err = retainCodexCompletion(manager.Root, owner, job, acceptedInput, bound, completion, acceptedInputs, contextProof)
+		}
 		if err != nil {
 			logger.WarnContext(ctx, "native_execution_checkpoint_retention_failed", "code", domain.SafeError(err).Code)
 			return nil, err

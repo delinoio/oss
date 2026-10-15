@@ -1181,6 +1181,99 @@ it("renders ordered native provider actions, enters once without writes, and ret
   expect(value.connect).not.toHaveBeenCalled();
 });
 
+it("renders providers from every scroll continuation page as ordered direct buttons inside the single list", () => {
+  const value = fixture();
+  const pages = [
+    [
+      "OpenAI",
+      "A provider with an exceptionally long display name that must wrap",
+    ],
+    ["Anthropic", "Local gateway"],
+    ["xAI"],
+  ];
+  const summaries = new Map(
+    pages.flat().map((displayName) => {
+      const provider = resource(EntityKind.PROVIDER, {
+        name: displayName,
+        authentication:
+          displayName === "Local gateway"
+            ? Authentication.Keyless
+            : Authentication.Bearer,
+        protocol: "openai-chat",
+        endpoint: "https://api.example.test/v1",
+      });
+      return [
+        displayName,
+        {
+          ...value.providerOption,
+          providerId: provider.id,
+          provider,
+          displayName,
+        },
+      ] as const;
+    }),
+  );
+  const renderOptions: NonNullable<
+    React.ComponentProps<typeof AccountSettings>["providerPicker"]
+  >["renderOptions"] = (renderProvider) =>
+    pages.map((names, index) => (
+      <div key={index} data-payload-page={`page-${index}`}>
+        {names.map((name) => renderProvider(summaries.get(name)!))}
+      </div>
+    ));
+  render(
+    value.view(
+      value.settings(AccountSettingsSection.Api, {
+        eligibleProviders: [...summaries.values()],
+        providerPicker: {
+          ready: true,
+          loaded: true,
+          fetching: false,
+          pageToken: "",
+          nextPageToken: "next-page",
+          retry: vi.fn(),
+          next: value.callbacks.loadMoreProviders,
+          first: vi.fn(),
+          renderOptions,
+        },
+      }),
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
+  const choices = window.document.querySelector(".account-provider-choices")!;
+  expect(choices.children).toHaveLength(pages.length);
+  const buttons = Array.from(
+    choices.querySelectorAll<HTMLButtonElement>("button"),
+  );
+  expect(
+    buttons.map((button) => button.querySelector("strong")?.textContent),
+  ).toEqual(pages.flat());
+  for (const button of buttons) {
+    expect(button.getAttribute("type")).toBe("button");
+    expect(button.classList.contains("account-provider-action")).toBe(true);
+    expect(button.closest("[data-payload-page]")?.parentElement).toBe(choices);
+    expect(
+      button.querySelectorAll(".account-provider-chevron[aria-hidden='true']"),
+    ).toHaveLength(1);
+    expect(button.querySelectorAll(".account-provider-method")).toHaveLength(1);
+  }
+  expect(
+    buttons.map(
+      (button) => button.querySelector(".account-provider-method")?.textContent,
+    ),
+  ).toEqual(["API key", "API key", "API key", "Local endpoint", "API key"]);
+  const loadMore = screen.getByRole("button", {
+    name: "Load more Provider pages",
+  });
+  // The continuation control is outside every page wrapper, so wrapper layout
+  // rules never size it.
+  expect(choices.contains(loadMore)).toBe(false);
+  expect(loadMore.closest("[data-payload-page]")).toBeNull();
+  expect(value.save).not.toHaveBeenCalled();
+  expect(value.connect).not.toHaveBeenCalled();
+  expect(value.other).not.toHaveBeenCalled();
+});
+
 it.each([
   {
     label: "loading",

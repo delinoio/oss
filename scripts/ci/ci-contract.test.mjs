@@ -629,7 +629,7 @@ test("caches restore on PRs and save only after successful main validation", () 
         if (!setup) continue;
         const save = job.steps.find(
           ({ with: inputs, uses }) =>
-            uses === "actions/cache/save@v5" &&
+            uses?.startsWith("actions/cache/save@") &&
             inputs.key.includes(`ci-${kind}`),
         );
         assert.ok(save, `${id}: ${kind}`);
@@ -640,7 +640,9 @@ test("caches restore on PRs and save only after successful main validation", () 
         assert.ok(job.steps.indexOf(save) > job.steps.indexOf(setup));
       }
       for (const candidate of job.steps.filter(
-        ({ uses }) => uses === "Swatinem/rust-cache@v2",
+        ({ uses }) =>
+          uses ===
+          "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
       )) {
         assert.equal(
           candidate.with["save-if"],
@@ -652,7 +654,8 @@ test("caches restore on PRs and save only after successful main validation", () 
   }
   assert.ok(
     !workflow.jobs["rust-fmt"].steps.some(
-      ({ uses }) => uses === "Swatinem/rust-cache@v2",
+      ({ uses }) =>
+        uses === "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
     ),
   );
   for (const kind of ["node", "go"]) {
@@ -663,10 +666,14 @@ test("caches restore on PRs and save only after successful main validation", () 
       ),
     );
     assert.ok(
-      !action.runs.steps.some(({ uses }) => uses === "actions/cache/save@v5"),
+      !action.runs.steps.some(({ uses }) =>
+        uses?.startsWith("actions/cache/save@"),
+      ),
     );
     const cache = action.runs.steps.find(
-      ({ uses }) => uses === "actions/cache/restore@v5",
+      ({ uses }) =>
+        uses ===
+        "actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25",
     );
     for (const marker of [
       "runner.os",
@@ -691,7 +698,10 @@ test("DevHud desktop retries its locked Rust fetch before offline contract verif
   const fetch = namedStep(desktop, "Fetch locked Rust dependencies");
   const verify = namedStep(desktop, "Verify frontend and immutable pins");
 
-  assert.equal(cache.uses, "Swatinem/rust-cache@v2");
+  assert.equal(
+    cache.uses,
+    "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+  );
   assert.equal(cache.with["save-if"], "${{ github.ref == 'refs/heads/main' }}");
   assert.equal(cache.with["cache-on-failure"], false);
   assert.equal(cache.with["cache-targets"], false);
@@ -1833,7 +1843,7 @@ test("the separate Runmoor PR workflow retains full native validation through Tu
   for (const candidate of job.steps) {
     if (candidate.run?.includes("ci:runmoor:"))
       assert.equal(candidate.env.FORCE_RUN, "true");
-    if (candidate.uses === "actions/cache/save@v5")
+    if (candidate.uses?.startsWith("actions/cache/save@"))
       assert.ok(
         candidate.if.includes("success() && github.ref == 'refs/heads/main'"),
       );

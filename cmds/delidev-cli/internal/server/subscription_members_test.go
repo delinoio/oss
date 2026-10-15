@@ -200,6 +200,27 @@ func TestSharedOwnerStaysExclusiveWithoutNegotiation(t *testing.T) {
 	}
 }
 
+func TestSharedCodexOwnerKeepsProcessWideImageProfileExclusive(t *testing.T) {
+	f := newMemberFixture(t, true)
+	f.input.NativeImageGeneration = true
+	jobs := f.prepareJobs(1)
+	first, err := f.takeJob(jobs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(first.Bundle)
+	if first.OwnerLeaseId != "" {
+		t.Fatal("singleton image profile joined a shared owner")
+	}
+	_, account := f.record()
+	if account.Subscription.SharedOwner() || len(account.Subscription.Members) != 0 {
+		t.Fatal("process-wide image profile founded a shared owner")
+	}
+	if _, err := f.takeJob(jobs[1]); err == nil {
+		t.Fatal("second image session bypassed its singleton lease")
+	}
+}
+
 func TestMemberFinishNeverTouchesCredentialsOrSiblings(t *testing.T) {
 	f := newMemberFixture(t, true)
 	jobs := f.prepareJobs(3)
@@ -801,7 +822,7 @@ func TestClaudeRefreshStaysDeniedBehindExclusiveLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, _ := f.record()
-	_, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH}))
+	_, err := claudeTryLegacyRequest(f.subscriptionFixture, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH})
 	if err == nil {
 		t.Fatal("a refresh was accepted behind an exclusive singleton lease")
 	}

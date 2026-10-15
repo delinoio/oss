@@ -26,7 +26,6 @@
   "agent-worker-wizard.chooseHarnessToContinueToAccounts": "계속하려면 하니스를 선택하세요: 계정.",
   "agent-worker-wizard.harness": "하네스",
   "agent-worker-wizard.chooseAccounts": "계정 선택",
-  "agent-worker-wizard.changeHarness": "하네스 변경",
   "agent-worker-wizard.selectAtLeastOneAccount": "계정을 하나 이상 선택하세요. 같은 소스에서 여러 계정을 선택할 수 있습니다.",
   "agent-worker-wizard.accountSource": "계정 소스",
   "agent-worker-wizard.selectSource": "소스 선택",

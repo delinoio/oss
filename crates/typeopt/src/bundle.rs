@@ -7,7 +7,20 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
+use swc_core::{
+    common::{FileName, GLOBALS, Globals, Mark, SourceMap, SyntaxContext, sync::Lrc},
+    ecma::{
+        ast::{
+            BindingIdent, CallExpr, Callee, ClassDecl, ClassExpr, EsVersion, Expr, FnDecl, FnExpr,
+            Id, ImportDecl, ImportSpecifier, Lit, MemberProp, ModuleExportName, ObjectLit, Prop,
+            PropName, PropOrSpread, WithStmt,
+        },
+        parser::{EsSyntax, Syntax, parse_file_as_program},
+        transforms::base::resolver,
+        visit::{Visit, VisitMutWith, VisitWith},
+    },
+};
 
 use crate::{
     compiler::Snapshot,
@@ -682,6 +695,11 @@ fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<MapRef> {
 /// comment (inline or referencing a file). Source maps are debugging
 /// metadata and never count as size, so composing, re-encoding or removing a
 /// map comment does not change the measured size.
+/// Where the trailing source map comment of a chunk starts, if it has one.
+pub(crate) fn map_comment_start(text: &str) -> Option<usize> {
+    map_reference(text).map(|comment| comment.start)
+}
+
 pub(crate) fn chunk_code_len(text: &str) -> usize {
     map_reference(text).map_or(text.len(), |comment| {
         text.len() - (comment.end - comment.start)
@@ -753,26 +771,33 @@ fn map_reference(text: &str) -> Option<MapComment<'_>> {
 /// Composes the source map of one edited chunk in place. Returns whether a
 /// map was composed (`Some(true)`), dropped because it could not be composed
 /// (`Some(false)`) or absent (`None`).
+/// Composes the source map of an edited chunk. `text` is the edited chunk
+/// that `chain` produced from `original`; `published` is the text written,
+/// which differs from `text` when minification replaced its code, and then
+/// `minified` maps `published` back to `text`.
+#[allow(clippy::too_many_arguments)]
 fn update_chunk_map(
     root: &Path,
     target: &Path,
     original: &str,
     text: &str,
+    published: &str,
+    minified: Option<&sourcemap::SourceMap>,
     chain: &[Vec<Edit>],
     original_maps: &mut BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<Option<bool>> {
-    let location = match chunk_map(root, target, text) {
+    let location = match chunk_map(root, target, published) {
         None => return Ok(None),
         Some(MapRef::Local(location)) => location,
         Some(MapRef::Uncomposable(url)) => {
             // Such a map describes the pre-optimization chunk and cannot be
             // composed here; a missing map is better than a wrong one.
             tracing::warn!("dropping an uncomposable source map reference of an edited chunk");
-            let comment = map_reference(text)
+            let comment = map_reference(published)
                 .filter(|comment| comment.url == url)
                 .context("cannot locate the source map comment of an edited chunk")?;
             let (start, end) = (comment.start, comment.end);
-            let updated = format!("{}{}", &text[..start], &text[end..]);
+            let updated = format!("{}{}", &published[..start], &published[end..]);
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             return Ok(Some(false));
         }
@@ -789,7 +814,18 @@ fn update_chunk_map(
             .and_then(|bytes| sourcemap::decode_slice(&bytes).map_err(anyhow::Error::from)),
     };
     let composed = match decoded {
-        Ok(sourcemap::DecodedMap::Regular(map)) => compose_bundle_map(&map, original, text, chain),
+        Ok(sourcemap::DecodedMap::Regular(map)) => {
+            compose_bundle_map(&map, original, text, chain).map(|mut edited| {
+                // The composed map leads from the edited chunk to the
+                // sources; the minifier's map leads from the published code
+                // to the edited chunk. Adjusting the first by the second
+                // leads from the published code to the sources.
+                if let Some(minified) = minified {
+                    edited.adjust_mappings(minified);
+                }
+                edited
+            })
+        }
         Ok(_) => Err(anyhow::anyhow!(
             "indexed or Hermes chunk maps are unsupported"
         )),
@@ -803,12 +839,14 @@ fn update_chunk_map(
             Ok(Some(true))
         }
         (ChunkMap::Inline(url), Ok(map)) => {
-            let at = text.rfind(&url).context("inline source map disappeared")?;
+            let at = published
+                .rfind(&url)
+                .context("inline source map disappeared")?;
             let updated = format!(
                 "{}{}{}",
-                &text[..at],
+                &published[..at],
                 map.to_data_url()?,
-                &text[at + url.len()..]
+                &published[at + url.len()..]
             );
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             Ok(Some(true))
@@ -819,20 +857,20 @@ fn update_chunk_map(
             std::fs::remove_file(path)?;
             // An explicit trailing directive would point at the deleted map;
             // a hidden adjacent map has no directive to remove.
-            if let Some(comment) = map_reference(text) {
+            if let Some(comment) = map_reference(published) {
                 let (start, end) = (comment.start, comment.end);
-                let updated = format!("{}{}", &text[..start], &text[end..]);
+                let updated = format!("{}{}", &published[..start], &published[end..]);
                 std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             }
             Ok(Some(false))
         }
         (ChunkMap::Inline(url), Err(error)) => {
             tracing::warn!(%error, "dropping an unreadable inline chunk source map");
-            let comment = map_reference(text)
+            let comment = map_reference(published)
                 .filter(|comment| comment.url == url)
                 .context("cannot locate the unreadable inline source map comment")?;
             let (start, end) = (comment.start, comment.end);
-            let updated = format!("{}{}", &text[..start], &text[end..]);
+            let updated = format!("{}{}", &published[..start], &published[end..]);
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             Ok(Some(false))
         }
@@ -1289,167 +1327,328 @@ fn rehash(
     })
 }
 
-/// String value of the property `key` at `at` (`key:"…"`, `"key":'…'`), with
-/// the byte span of the value inside its quotes.
-fn string_property(text: &str, at: usize, key: &str) -> Option<(String, usize, usize)> {
-    let bytes = text.as_bytes();
-    let mut index = at;
-    let quoted = matches!(bytes.get(index), Some(b'"' | b'\''));
-    if quoted {
-        index += 1;
-    }
-    if !text[index..].starts_with(key) {
-        return None;
-    }
-    index += key.len();
-    if quoted {
-        if bytes.get(index) != bytes.get(at) {
-            return None;
-        }
-        index += 1;
-    }
-    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
-        index += 1;
-    }
-    if bytes.get(index) != Some(&b':') {
-        return None;
-    }
-    index += 1;
-    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
-        index += 1;
-    }
-    let quote = *bytes.get(index).filter(|b| matches!(b, b'"' | b'\''))?;
-    let start = index + 1;
-    let end = start + text[start..].find(quote as char)?;
-    let value = &text[start..end];
-    // Escaped content is not a plain file name or digest.
-    (!value.contains('\\')).then(|| (value.to_owned(), start, end))
-}
-
-/// Byte spans of the array literals passed to Workbox `precacheAndRoute(…)`
-/// or `precache(…)` calls (as a method or a plain call), the only places
-/// where a `{url, revision}` object is a precache manifest entry rather than
-/// application data.
-fn precache_arrays(text: &str) -> Vec<(usize, usize)> {
-    let bytes = text.as_bytes();
-    let mut arrays = Vec::new();
-    let mut from = 0;
-    while let Some(offset) = text[from..].find("precache") {
-        let at = from + offset;
-        from = at + "precache".len();
-        let mut index = from;
-        if text[index..].starts_with("AndRoute") {
-            index += "AndRoute".len();
-        }
-        let joined = at > 0
-            && (bytes[at - 1].is_ascii_alphanumeric() || matches!(bytes[at - 1], b'_' | b'$'));
-        let skip = |mut i: usize| {
-            while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
-                i += 1;
-            }
-            i
-        };
-        index = skip(index);
-        if joined || bytes.get(index) != Some(&b'(') {
-            continue;
-        }
-        index = skip(index + 1);
-        if bytes.get(index) != Some(&b'[') {
-            continue;
-        }
-        // The matching bracket, skipping string literals.
-        let (start, mut depth, mut quote, mut escaped) = (index, 0usize, None, false);
-        let mut end = None;
-        for (i, &b) in bytes.iter().enumerate().skip(start) {
-            if let Some(q) = quote {
-                if escaped {
-                    escaped = false;
-                } else if b == b'\\' {
-                    escaped = true;
-                } else if b == q {
-                    quote = None;
-                }
-                continue;
-            }
-            match b {
-                b'"' | b'\'' | b'`' => quote = Some(b),
-                b'[' => depth += 1,
-                b']' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = Some(i);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        if let Some(end) = end {
-            arrays.push((start, end));
-            from = end;
-        }
-    }
-    arrays
-}
-
-/// Whether the property key at `at` starts an object member: it follows `{` or
-/// `,`, possibly after whitespace (formatted manifests put each key on its
-/// own line).
-fn follows_delimiter(bytes: &[u8], at: usize) -> bool {
-    bytes[..at]
-        .iter()
-        .rev()
-        .find(|b| !b.is_ascii_whitespace())
-        .is_some_and(|&b| matches!(b, b'{' | b','))
-}
-
 /// Precache entries `{url:"…",revision:"…"}` (either order) of a service
 /// worker manifest, as Workbox and vite-plugin-pwa emit them inside a
-/// `precacheAndRoute`/`precache` array: the URL and the byte span of the
-/// revision string.
-fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
-    let bytes = text.as_bytes();
-    let arrays = precache_arrays(text);
-    let mut entries = Vec::new();
-    let mut from = 0;
-    while let Some(offset) = text[from..].find("revision") {
-        let at = from + offset;
-        from = at + "revision".len();
-        if !arrays.iter().any(|&(start, end)| at > start && at < end) {
-            continue;
-        }
-        let key = if at > 0 && matches!(bytes[at - 1], b'"' | b'\'') {
-            at - 1
-        } else {
-            at
-        };
-        if !follows_delimiter(bytes, key) {
-            continue;
-        }
-        let Some((_, start, end)) = string_property(text, key, "revision") else {
-            continue;
-        };
-        // The enclosing object literal, which holds no nested objects.
-        let Some(open) = text[..key].rfind(['{', '}']).filter(|&i| bytes[i] == b'{') else {
-            continue;
-        };
-        let Some(close) = text[end..].find(['{', '}']).map(|i| end + i) else {
-            continue;
-        };
-        if bytes[close] != b'}' {
-            continue;
-        }
-        let object = &text[open..=close];
-        let url = object.char_indices().find_map(|(i, c)| {
-            (matches!(c, 'u' | '"' | '\'') && follows_delimiter(object.as_bytes(), i))
-                .then(|| string_property(text, open + i, "url"))
-                .flatten()
-        });
-        if let Some((url, _, _)) = url {
-            entries.push((url, start, end));
+/// `precacheAndRoute`/`precache` array: the decoded URL and the byte span of
+/// the revision string. Parsing JavaScript excludes apparent calls in strings,
+/// comments, template text and regular expressions.
+fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
+    struct WorkboxBindings {
+        direct: BTreeSet<Id>,
+        namespace: BTreeSet<Id>,
+        ambiguous: BTreeSet<String>,
+        declared: BTreeSet<String>,
+    }
+
+    impl WorkboxBindings {
+        fn mark_declared(&mut self, name: &str) {
+            self.declared.insert(name.to_owned());
+            if matches!(name, "precache" | "precacheAndRoute") {
+                self.ambiguous.insert(name.to_owned());
+            }
         }
     }
-    entries
+
+    impl Visit for WorkboxBindings {
+        fn visit_import_decl(&mut self, declaration: &ImportDecl) {
+            let workbox = declaration.src.value == "workbox-precaching";
+            for specifier in &declaration.specifiers {
+                if let ImportSpecifier::Namespace(namespace) = specifier {
+                    if workbox {
+                        self.namespace.insert(namespace.local.to_id());
+                    } else {
+                        self.mark_declared(namespace.local.sym.as_ref());
+                    }
+                    continue;
+                }
+                let ImportSpecifier::Named(named) = specifier else {
+                    self.mark_declared(named_local_name(specifier));
+                    continue;
+                };
+                let imported = named
+                    .imported
+                    .as_ref()
+                    .and_then(|name| match name {
+                        ModuleExportName::Ident(name) => Some(name.sym.as_ref()),
+                        ModuleExportName::Str(name) => name.value.as_str(),
+                    })
+                    .unwrap_or(named.local.sym.as_ref());
+                if workbox && matches!(imported, "precache" | "precacheAndRoute") {
+                    let local = named.local.sym.to_string();
+                    if self.declared.contains(&local) {
+                        self.ambiguous.insert(local.clone());
+                    }
+                    self.direct.insert(named.local.to_id());
+                } else {
+                    self.mark_declared(named.local.sym.as_ref());
+                }
+            }
+        }
+
+        fn visit_binding_ident(&mut self, binding: &BindingIdent) {
+            self.mark_declared(binding.id.sym.as_ref());
+            binding.visit_children_with(self);
+        }
+
+        fn visit_fn_decl(&mut self, declaration: &FnDecl) {
+            self.mark_declared(declaration.ident.sym.as_ref());
+            declaration.visit_children_with(self);
+        }
+
+        fn visit_fn_expr(&mut self, expression: &FnExpr) {
+            if let Some(ident) = &expression.ident {
+                self.mark_declared(ident.sym.as_ref());
+            }
+            expression.visit_children_with(self);
+        }
+
+        fn visit_class_decl(&mut self, declaration: &ClassDecl) {
+            self.mark_declared(declaration.ident.sym.as_ref());
+            declaration.visit_children_with(self);
+        }
+
+        fn visit_class_expr(&mut self, expression: &ClassExpr) {
+            if let Some(ident) = &expression.ident {
+                self.mark_declared(ident.sym.as_ref());
+            }
+            expression.visit_children_with(self);
+        }
+    }
+
+    fn named_local_name(specifier: &ImportSpecifier) -> &str {
+        specifier.local().sym.as_ref()
+    }
+
+    struct Entries<'a> {
+        text: &'a str,
+        base: u32,
+        unresolved_ctxt: SyntaxContext,
+        direct_workbox_bindings: BTreeSet<Id>,
+        namespace_workbox_bindings: BTreeSet<Id>,
+        ambiguous_bindings: BTreeSet<String>,
+        with_depth: usize,
+        values: Vec<(String, usize, usize, bool)>,
+    }
+
+    impl Entries<'_> {
+        fn name(key: &PropName) -> Option<&str> {
+            match key {
+                PropName::Ident(name) => Some(name.sym.as_ref()),
+                PropName::Str(name) => Some(name.value.as_str()?),
+                _ => None,
+            }
+        }
+
+        fn value(&self, value: &swc_core::ecma::ast::Str) -> Option<(String, usize, usize)> {
+            let start = value.span.lo.0.checked_sub(self.base)? as usize + 1;
+            let end = (value.span.hi.0.checked_sub(self.base)? as usize).checked_sub(1)?;
+            let raw = self.text.get(start..end)?;
+            Some((decode_js_string(raw)?, start, end))
+        }
+
+        fn entry(&self, object: &ObjectLit) -> Option<(String, usize, usize)> {
+            let (mut url, mut revision) = (None, None);
+            for property in &object.props {
+                let PropOrSpread::Prop(property) = property else {
+                    return None;
+                };
+                let Prop::KeyValue(property) = &**property else {
+                    return None;
+                };
+                match Self::name(&property.key) {
+                    Some("url") if url.is_none() => {
+                        let Expr::Lit(Lit::Str(value)) = &*property.value else {
+                            return None;
+                        };
+                        url = Some(self.value(value)?.0);
+                    }
+                    Some("revision") if revision.is_none() => {
+                        let Expr::Lit(Lit::Str(value)) = &*property.value else {
+                            return None;
+                        };
+                        let (_, start, end) = self.value(value)?;
+                        // Keep replacement spans simple so source-map offsets
+                        // stay stable and the revision remains a literal.
+                        if self.text[start..end].contains('\\') {
+                            return None;
+                        }
+                        revision = Some((start, end));
+                    }
+                    Some("url" | "revision") => return None,
+                    _ => {}
+                }
+            }
+            let (start, end) = revision?;
+            Some((url?, start, end))
+        }
+    }
+
+    impl Visit for Entries<'_> {
+        fn visit_with_stmt(&mut self, statement: &WithStmt) {
+            statement.obj.visit_with(self);
+            self.with_depth += 1;
+            statement.body.visit_with(self);
+            self.with_depth -= 1;
+        }
+
+        fn visit_call_expr(&mut self, call: &CallExpr) {
+            let (name, trusted) = match &call.callee {
+                Callee::Expr(callee) => match &**callee {
+                    Expr::Ident(name) => (
+                        Some(name.sym.as_ref()),
+                        self.direct_workbox_bindings.contains(&name.to_id())
+                            || (matches!(name.sym.as_ref(), "precache" | "precacheAndRoute")
+                                && !self.ambiguous_bindings.contains(name.sym.as_ref())),
+                    ),
+                    Expr::Member(member) => match &member.prop {
+                        MemberProp::Ident(name) => (
+                            Some(name.sym.as_ref()),
+                            is_workbox_receiver(
+                                &member.obj,
+                                &self.namespace_workbox_bindings,
+                                self.unresolved_ctxt,
+                            ),
+                        ),
+                        _ => (None, false),
+                    },
+                    _ => (None, false),
+                },
+                _ => (None, false),
+            };
+            let trusted = trusted && self.with_depth == 0;
+            if name.is_some_and(|name| {
+                matches!(name, "precache" | "precacheAndRoute")
+                    || self
+                        .direct_workbox_bindings
+                        .iter()
+                        .any(|(symbol, _)| symbol.as_ref() == name)
+            }) && let Some(first) = call.args.first()
+                && let Expr::Array(array) = &*first.expr
+            {
+                for element in array.elems.iter().flatten() {
+                    if let Expr::Object(object) = &*element.expr
+                        && let Some(entry) = self.entry(object)
+                    {
+                        let (url, start, end) = entry;
+                        self.values.push((url, start, end, trusted));
+                    }
+                }
+            }
+            call.visit_children_with(self);
+        }
+    }
+
+    fn is_workbox_receiver(
+        receiver: &Expr,
+        namespace_workbox_bindings: &BTreeSet<Id>,
+        unresolved_ctxt: SyntaxContext,
+    ) -> bool {
+        match receiver {
+            Expr::Ident(name) => {
+                // The resolver marks unresolved globals with its supplied
+                // unresolved context and gives local bindings distinct IDs.
+                (name.sym == "workbox" && name.ctxt == unresolved_ctxt)
+                    || namespace_workbox_bindings.contains(&name.to_id())
+            }
+            Expr::Member(member) => {
+                let MemberProp::Ident(name) = &member.prop else {
+                    return false;
+                };
+                (name.sym == "workbox"
+                    && matches!(&*member.obj, Expr::Ident(root)
+                        if matches!(root.sym.as_ref(), "self" | "globalThis" | "window")
+                            && root.ctxt == unresolved_ctxt))
+                    || (name.sym == "precaching"
+                        && is_workbox_receiver(
+                            &member.obj,
+                            namespace_workbox_bindings,
+                            unresolved_ctxt,
+                        ))
+            }
+            _ => false,
+        }
+    }
+
+    let source_map: Lrc<SourceMap> = Default::default();
+    let file = source_map.new_source_file(Lrc::new(FileName::Anon), text.to_owned());
+    GLOBALS.set(&Globals::new(), || {
+        let mut errors = Vec::new();
+        let Ok(mut program) = parse_file_as_program(
+            &file,
+            Syntax::Es(EsSyntax::default()),
+            EsVersion::latest(),
+            None,
+            &mut errors,
+        ) else {
+            return Vec::new();
+        };
+        if !errors.is_empty() {
+            return Vec::new();
+        }
+        let unresolved_mark = Mark::new();
+        let top_level_mark = Mark::new();
+        program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
+        let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
+        let mut bindings = WorkboxBindings {
+            direct: BTreeSet::new(),
+            namespace: BTreeSet::new(),
+            ambiguous: BTreeSet::new(),
+            declared: BTreeSet::new(),
+        };
+        program.visit_with(&mut bindings);
+        let mut visitor = Entries {
+            text,
+            base: file.start_pos.0,
+            unresolved_ctxt,
+            direct_workbox_bindings: bindings.direct,
+            namespace_workbox_bindings: bindings.namespace,
+            ambiguous_bindings: bindings.ambiguous,
+            with_depth: 0,
+            values: Vec::new(),
+        };
+        program.visit_with(&mut visitor);
+        visitor.values.sort_by_key(|(_, start, _, _)| *start);
+        visitor.values
+    })
+}
+
+/// Maps a Workbox URL to a regular staged file. A root-relative deployment
+/// prefix may be absent from the bundle, but an exact staged path wins.
+fn precache_target(root: &Path, directory: &Path, url: &str) -> Option<PathBuf> {
+    let path = crate::compiler::percent_decode(url.split(['?', '#']).next()?);
+    if path.is_empty()
+        || path.contains('\\')
+        || path.starts_with("//")
+        || url::Url::parse(&path).is_ok()
+    {
+        return None;
+    }
+    let rooted = path.strip_prefix('/');
+    let joined = rooted.map_or_else(|| directory.join(&path), |path| root.join(path));
+    let exact = normalize_within(root, &joined)?;
+    match std::fs::symlink_metadata(&exact) {
+        Ok(metadata) => return metadata.is_file().then_some(exact),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return None,
+    }
+    let rooted = rooted?;
+    let segments: Vec<&str> = rooted.split('/').collect();
+    // A fallback must only remove a deployment prefix, never a traversal or
+    // an empty path component that could change the URL's meaning.
+    if segments.len() < 2
+        || segments
+            .iter()
+            .any(|s| s.is_empty() || *s == "." || *s == "..")
+    {
+        return None;
+    }
+    (1..segments.len()).find_map(|skip| {
+        let candidate = normalize_within(root, &root.join(segments[skip..].join("/")))?;
+        std::fs::symlink_metadata(&candidate)
+            .ok()
+            .filter(|metadata| metadata.is_file())
+            .map(|_| candidate)
+    })
 }
 
 /// Gives precache entries of files whose published content differs from the
@@ -1468,37 +1667,89 @@ fn refresh_precache_revisions(
     let mut files = Vec::new();
     files_under(root, &mut files)?;
     files.sort();
-    let mut refreshed = 0;
-    for file in &files {
-        let name = file.file_name().unwrap().to_string_lossy();
-        let script = file
-            .extension()
-            .is_some_and(|e| e == "js" || e == "mjs" || e == "cjs");
-        if !script || pinned.contains(file) || hashed_name(&name).is_some() {
+
+    let eligible = files
+        .iter()
+        .filter(|file| {
+            let name = file.file_name().unwrap().to_string_lossy();
+            let script = file
+                .extension()
+                .is_some_and(|e| e == "js" || e == "mjs" || e == "cjs");
+            script && !pinned.contains(*file) && hashed_name(&name).is_none()
+        })
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut dependencies = BTreeMap::new();
+    for file in &eligible {
+        let Ok(text) = std::fs::read_to_string(file) else {
             continue;
+        };
+        let directory = file.parent().unwrap_or(root);
+        let targets = precache_entries(&text)
+            .into_iter()
+            .filter(|(_, _, _, trusted)| *trusted)
+            .filter_map(|(url, _, _, _)| precache_target(root, directory, &url))
+            .filter(|target| eligible.contains(target))
+            .collect::<Vec<_>>();
+        dependencies.insert(file.clone(), targets);
+    }
+
+    fn visit_manifest(
+        file: &Path,
+        dependencies: &BTreeMap<PathBuf, Vec<PathBuf>>,
+        visiting: &mut BTreeSet<PathBuf>,
+        visited: &mut BTreeSet<PathBuf>,
+        order: &mut Vec<PathBuf>,
+    ) -> Result<()> {
+        if visited.contains(file) {
+            return Ok(());
         }
-        let Ok(mut text) = std::fs::read_to_string(file) else {
+        if !visiting.insert(file.to_path_buf()) {
+            bail!(
+                "cyclic precache manifest dependency involving {}",
+                file.display()
+            );
+        }
+        if let Some(targets) = dependencies.get(file) {
+            for target in targets {
+                visit_manifest(target, dependencies, visiting, visited, order)?;
+            }
+        }
+        visiting.remove(file);
+        visited.insert(file.to_path_buf());
+        order.push(file.to_path_buf());
+        Ok(())
+    }
+
+    let mut ordered = Vec::with_capacity(eligible.len());
+    let mut visiting = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    for file in &eligible {
+        visit_manifest(
+            file,
+            &dependencies,
+            &mut visiting,
+            &mut visited,
+            &mut ordered,
+        )?;
+    }
+
+    let mut refreshed = 0;
+    for file in ordered {
+        let Ok(mut text) = std::fs::read_to_string(&file) else {
             continue;
         };
         let directory = file.parent().unwrap_or(root);
         let mut changed = false;
-        for (url, start, end) in precache_entries(&text.clone()) {
-            let path = url.split(['?', '#']).next().unwrap_or_default();
-            if path.is_empty() || path.contains("://") || path.starts_with("//") {
+        for (url, start, end, trusted) in precache_entries(&text.clone()) {
+            if !trusted {
                 continue;
             }
-            let joined = match path.strip_prefix('/') {
-                Some(absolute) => root.join(absolute),
-                None => directory.join(path),
-            };
             // Only regular files of the staged bundle: `..` must not leave it,
             // and a device or FIFO must not block publication.
-            let Some(staged) = normalize_within(root, &joined) else {
+            let Some(staged) = precache_target(root, directory, &url) else {
                 continue;
             };
-            if !std::fs::symlink_metadata(&staged).is_ok_and(|m| m.is_file()) {
-                continue;
-            }
             let Ok(published) = std::fs::read(&staged) else {
                 continue;
             };
@@ -1506,18 +1757,33 @@ fn refresh_precache_revisions(
             if std::fs::read(source.join(relative)).is_ok_and(|input| input == published) {
                 continue;
             }
-            let digest = crate::compiler::sha256_hex(&published);
-            let revision: String = digest.chars().cycle().take(end - start).collect();
-            if text[start..end] != revision {
-                text.replace_range(start..end, &revision);
-                refreshed += 1;
-                changed = true;
+            ensure!(
+                end > start || !trusted,
+                "cannot refresh empty precache revision in {}",
+                relative_display(root, &file)
+            );
+            if end == start {
                 tracing::debug!(
-                    manifest = %relative_display(root, file),
-                    entry = url.as_str(),
-                    "refreshed a precache revision of a changed file"
+                    manifest = %relative_display(root, &file),
+                    target = %relative_display(root, &staged),
+                    "skipped an empty revision from an ambiguous precache call"
                 );
+                continue;
             }
+            let digest = crate::compiler::sha256_hex(&published);
+            let mut revision: String = digest.chars().cycle().take(end - start).collect();
+            if text[start..end] == revision {
+                let last = revision.pop().expect("nonempty revision");
+                revision.push(if last == '0' { '1' } else { '0' });
+            }
+            text.replace_range(start..end, &revision);
+            refreshed += 1;
+            changed = true;
+            tracing::debug!(
+                manifest = %relative_display(root, &file),
+                target = %relative_display(root, &staged),
+                "refreshed a precache revision of a changed file"
+            );
         }
         if changed {
             std::fs::write(file, text).context("cannot refresh a precache revision")?;
@@ -1644,6 +1910,8 @@ pub fn fingerprint(dir: &Path) -> Result<Fingerprint> {
 /// published only by [`Staged::commit`]; dropping it removes the staging
 /// directory, so a failure after staging never leaves a published result.
 pub struct Staged {
+    /// Code bytes that `--minify` removed from edited chunks.
+    pub minified_bytes: usize,
     _staging: tempfile::TempDir,
     root: PathBuf,
     destination: PathBuf,
@@ -1712,6 +1980,18 @@ pub fn stage(
     // Original bytes of map files that composition changes or removes.
     let mut original_maps = BTreeMap::new();
     let (mut maps, mut dropped) = (0usize, 0usize);
+    let mut minified_bytes = 0usize;
+    // A read in any chunk may stringify a callable imported from an edited
+    // chunk. Keep the edited text when the bundle has no closed target proof.
+    let source_reflection = crate::app::minify()
+        && (crate::app::bundle_html_reflection()
+            || outcome
+                .texts
+                .values()
+                .any(|text| crate::minify::may_observe_function_source(text)));
+    if source_reflection {
+        tracing::info!("callable source reflection may be reachable; bundle minification skipped");
+    }
     for (name, text) in &outcome.texts {
         crate::app::check_cancelled()?;
         let original = &snapshot.sources[name];
@@ -1722,11 +2002,28 @@ pub fn stage(
             .strip_prefix(source)
             .context("edited chunk is outside the bundle directory")?;
         let target = root.join(relative);
-        std::fs::write(&target, text).context("cannot write an edited chunk")?;
+        let (published, minified) = if crate::app::minify() && !source_reflection {
+            minify_chunk(name, text)
+        } else {
+            (text.clone(), None)
+        };
+        if minified.is_some() {
+            minified_bytes += chunk_code_len(text) - chunk_code_len(&published);
+        }
+        std::fs::write(&target, &published).context("cannot write an edited chunk")?;
         edited.insert(target.clone());
         originals.insert(target.clone(), original.clone());
         let chain = outcome.chains.get(name).map_or(&[][..], Vec::as_slice);
-        match update_chunk_map(&root, &target, original, text, chain, &mut original_maps)? {
+        match update_chunk_map(
+            &root,
+            &target,
+            original,
+            text,
+            &published,
+            minified.as_ref(),
+            chain,
+            &mut original_maps,
+        )? {
             Some(true) => maps += 1,
             Some(false) => dropped += 1,
             None => {}
@@ -1754,6 +2051,7 @@ pub fn stage(
         rehashed = rehashed.renamed,
         precache_revisions = revisions,
         retained_bytes = rehashed.retained_bytes,
+        minified_bytes,
         "bundle chunks written"
     );
     Ok(Staged {
@@ -1761,7 +2059,55 @@ pub fn stage(
         root,
         destination: destination.to_path_buf(),
         retained_bytes: rehashed.retained_bytes,
+        minified_bytes,
     })
+}
+
+/// The published text of an edited chunk under `--minify`: its code minified
+/// with SWC when that compresses smaller, followed by its original source
+/// map comment, with the map from the published code to the edited chunk.
+/// Otherwise the edited chunk itself.
+fn minify_chunk(name: &str, text: &str) -> (String, Option<sourcemap::SourceMap>) {
+    let (code, comment) = match map_reference(text) {
+        Some(comment) => (
+            format!("{}{}", &text[..comment.start], &text[comment.end..]),
+            Some(text[comment.start..comment.end].to_owned()),
+        ),
+        None => (text.to_owned(), None),
+    };
+    let Some(minified) = crate::minify::minify_module(&code) else {
+        tracing::debug!(
+            chunk = name,
+            "SWC could not minify an edited chunk; kept as is"
+        );
+        return (text.to_owned(), None);
+    };
+    let before = crate::minify::compressed(&code);
+    let after = minified.compressed;
+    if !crate::minify::better(before, after) {
+        tracing::debug!(
+            chunk = name,
+            brotli_before = before.brotli,
+            brotli_after = after.brotli,
+            gzip_before = before.gzip,
+            gzip_after = after.gzip,
+            "minified chunk does not compress smaller; kept as is"
+        );
+        return (text.to_owned(), None);
+    }
+    tracing::debug!(
+        chunk = name,
+        bytes_before = code.len(),
+        bytes_after = minified.code.len(),
+        brotli_before = before.brotli,
+        brotli_after = after.brotli,
+        "edited chunk minified"
+    );
+    let published = match comment {
+        Some(comment) => format!("{}\n{comment}", minified.code),
+        None => minified.code,
+    };
+    (published, Some(minified.map))
 }
 
 #[cfg(test)]

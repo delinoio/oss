@@ -483,6 +483,24 @@ describe("shared Page descriptors follow native browser pages", () => {
         sessionTabKey(page("p1", "a")),
       ]);
     });
+    it("keeps a page held by another Session's pending Close until it is released", () => {
+      const store = new SessionTabsStore();
+      const owner = {};
+      store.open("a", page("p1", "x"));
+      store.open("b", page("p1", "x"));
+      store.open("b", page("p1", "y"));
+      store.holdPendingClose("p1", "x", owner);
+      store.reconcilePages("b", "p1", []);
+      expect(store.snapshot("b").tabs.map(sessionTabKey)).toEqual([
+        SessionTabKind.Conversation,
+        sessionTabKey(page("p1", "x")),
+      ]);
+      store.releasePendingClose("p1", "x", owner);
+      store.reconcilePages("b", "p1", []);
+      expect(store.snapshot("b").tabs.map(sessionTabKey)).toEqual([
+        SessionTabKind.Conversation,
+      ]);
+    });
     it("never creates descriptors for an empty inventory", () => {
       const store = new SessionTabsStore();
       const before = store.snapshot("s");
@@ -663,5 +681,53 @@ describe("automatic Sidechat publication", () => {
     const store = new SessionTabsStore();
     store.open("never-visited-parent", child);
     expect(store.automaticSidechat("child")).toBe(false);
+  });
+});
+
+describe("provisional Sidechat descriptors", () => {
+  const placeholder = {
+    kind: SessionTabKind.Sidechat as const,
+    id: "child",
+    name: "Session unavailable",
+    provisional: true,
+  };
+  const names = (store: SessionTabsStore) =>
+    store
+      .snapshot("parent")
+      .tabs.flatMap((tab) =>
+        tab.kind === SessionTabKind.Sidechat ? [tab.name] : [],
+      );
+  it("takes the verified name without changing order or selection", () => {
+    const store = new SessionTabsStore();
+    store.open("parent", placeholder);
+    expect(store.provisionalSidechat("parent", "child")).toBe(true);
+    store.settleSidechat("parent", "child", "Verified");
+    expect(names(store)).toEqual(["Verified"]);
+    expect(store.snapshot("parent").selected).toBe(
+      sessionTabKey({ ...placeholder, name: "" }),
+    );
+    expect(store.provisionalSidechat("parent", "child")).toBe(false);
+    expect(store.sidechats("parent")[0]).toEqual({
+      kind: SessionTabKind.Sidechat,
+      id: "child",
+      name: "Verified",
+    });
+  });
+  it("never renames or discards a verified descriptor", () => {
+    const store = new SessionTabsStore();
+    store.open("parent", { ...placeholder, provisional: undefined, name: "A" });
+    store.settleSidechat("parent", "child", "B");
+    store.discardProvisionalSidechat("parent", "child");
+    expect(names(store)).toEqual(["A"]);
+    expect(store.parent("child")).toBe("parent");
+  });
+  it("removes a discarded placeholder tab and its ownership", () => {
+    const store = new SessionTabsStore();
+    store.open("parent", placeholder);
+    store.discardProvisionalSidechat("parent", "child");
+    expect(names(store)).toEqual([]);
+    expect(store.sidechats("parent")).toEqual([]);
+    expect(store.parent("child")).toBeUndefined();
+    expect(store.snapshot("parent").selected).toBe(SessionTabKind.Conversation);
   });
 });

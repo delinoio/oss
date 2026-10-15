@@ -45,7 +45,7 @@ type openCodeForkCheckpoint struct {
 
 // Fork inspects an accepted ordinary source directly. It never constructs a
 // pretend continuation assignment to borrow replacement or execution authority.
-func readOpenCodeForkSource(ctx context.Context, root string, credential Credential, i domain.ForkJobInput) (openCodeExecutionCheckpoint, error) {
+func readOpenCodeForkSource(ctx context.Context, root string, credential Credential, i domain.ForkJobInput, reasoning bool) (openCodeExecutionCheckpoint, error) {
 	var empty openCodeExecutionCheckpoint
 	a := i.SourceAssignment
 	if i.Validate() != nil || a.Configuration.Harness != domain.OpenCode || credential.MachineID != a.MachineID {
@@ -67,10 +67,10 @@ func readOpenCodeForkSource(ctx context.Context, root string, credential Credent
 	if a.Continuation != nil {
 		history = a.Continuation.HistoryExecutionID
 	}
-	if r.Completion != terminal || r.InputMode != a.Input.Mode || r.PromptSHA256 != executionInputDigest([]byte(a.Input.Prompt)) || r.AssignmentInputSHA256 != executionInputDigest(mustForkJSON(a)) || r.HistoryExecutionID != history || ref.ServerID != credential.ServerID || ref.DeviceID != credential.DeviceID || ref.MachineID != a.MachineID || ref.SessionID != i.SourceSessionID || ref.ExecutionID != a.ExecutionID || ref.JobID != i.SourceJobID || ref.InputID != a.InputID || ref.AccountID != a.AccountID || ref.ConnectionID != a.ConnectionID || ref.ConfigurationDigest != a.ConfigurationDigest || ref.ThreadRequestID != a.ThreadRequestID || ref.InputRequestID != a.TurnRequestID {
+	if r.Completion != terminal || r.InputMode != a.Input.Mode || r.PromptSHA256 != openCodeInputDigest(a.Input) || r.AssignmentInputSHA256 != executionInputDigest(mustForkJSON(a)) || r.HistoryExecutionID != history || ref.ServerID != credential.ServerID || ref.DeviceID != credential.DeviceID || ref.MachineID != a.MachineID || ref.SessionID != i.SourceSessionID || ref.ExecutionID != a.ExecutionID || ref.JobID != i.SourceJobID || ref.InputID != a.InputID || ref.AccountID != a.AccountID || ref.ConnectionID != a.ConnectionID || ref.ConfigurationDigest != a.ConfigurationDigest || ref.ThreadRequestID != a.ThreadRequestID || ref.InputRequestID != a.TurnRequestID {
 		return empty, executionCheckpointUncertain()
 	}
-	checkpoint, err := readOpenCodeExecutionCheckpoint(ctx, root, r, i.Completion.NativeCheckpointDigest)
+	checkpoint, err := readOpenCodeExecutionCheckpoint(ctx, root, r, i.Completion.NativeCheckpointDigest, true)
 	if err != nil {
 		return empty, err
 	}
@@ -79,8 +79,11 @@ func readOpenCodeForkSource(ctx context.Context, root string, credential Credent
 	if err != nil || encodeErr != nil || executionInputDigest(claimBytes) != r.ClaimsSHA256 || len(claims) < 2 || claims[1].SessionID != checkpoint.NativeReference.SessionID || claims[1].MessageID != checkpoint.NativeReference.InputID || claims[1].PartID != checkpoint.NativeReference.PartID || claims[1].RequestID != checkpoint.NativeReference.InputRequestID || verifyOpenCodeContinuationJournals(root, ref, i.Completion) != nil {
 		return empty, executionCheckpointUncertain()
 	}
-	home := filepath.Join(root, "runtimes", string(a.ExecutionID))
-	if err := opencode.InspectForkSourceCheckpoint(ctx, home, checkpoint.Native, checkpoint.NativeReference); err != nil {
+	home, err := openCodeHistoryRoot(ctx, root, a.MachineID, a.AccountID, a.ExecutionID)
+	if err != nil {
+		return empty, err
+	}
+	if err := opencode.InspectForkSourceCheckpoint(ctx, home, checkpoint.Native, checkpoint.NativeReference, reasoning); err != nil {
 		return empty, err
 	}
 	return checkpoint, nil
@@ -89,6 +92,12 @@ func readOpenCodeForkSource(ctx context.Context, root string, credential Credent
 func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, job domain.Job, i domain.ForkJobInput) (output json.RawMessage, returned error) {
 	c := config.execution
 	if runtime.GOOS == "windows" || c == nil || c.Assignment == nil || domain.ID(c.Assignment.Id) != owner || c.Instance != job.InstanceID || c.Credential.DeviceID != job.AssignedDeviceID || i.Validate() != nil || i.Version != 2 || i.SourceAssignment.Version != 4 && !domain.ValidNativeVersionMetadata(i.SourceAssignment.Installation.Version) {
+		return nil, executionCheckpointUncertain()
+	}
+	// Profile v2 is accepted only after this Worker negotiated the reasoning
+	// capability with the original server; profile v1 jobs keep their behavior.
+	reasoning := i.OpenCode.Profile.Reasoning()
+	if reasoning && !config.openCodeForkReasoning {
 		return nil, executionCheckpointUncertain()
 	}
 	var prep workspace.PrepareRequest
@@ -107,7 +116,7 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 			output, returned = nil, executionCheckpointUncertain()
 		}
 	}()
-	source, err := readOpenCodeForkSource(ctx, manager.Root, c.Credential, i)
+	source, err := readOpenCodeForkSource(ctx, manager.Root, c.Credential, i, reasoning)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +144,14 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 		returned = finishForkChildProcessFailure(config.Root, i.ChildSessionID, childProcessIdentity, forkRuntimeUnused, returned)
 	}()
 	childPrep.ForkProfile = workspace.OpenCodeGeneralChatForkV1
-	inventory, err := opencode.InspectForkSourceInventory(ctx, filepath.Join(config.Root, "runtimes", string(a.ExecutionID)), source.Native, source.NativeReference)
+	if reasoning {
+		childPrep.ForkProfile = workspace.OpenCodeGeneralChatForkV2
+	}
+	sourceHome, err := openCodeHistoryRoot(ctx, manager.Root, a.MachineID, a.AccountID, a.ExecutionID)
+	if err != nil {
+		return nil, err
+	}
+	inventory, err := opencode.InspectForkSourceInventory(ctx, sourceHome, source.Native, source.NativeReference, reasoning)
 	if err != nil {
 		return nil, err
 	}
@@ -181,8 +197,21 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 		return nil, publicationUncertain()
 	}
 	// Outer Worker claims/envelope stay outside the native snapshot's complete
-	// file inventory. Child permanent deletion owns the entire original runtime.
-	nativeHome := filepath.Join(home, "native")
+	// file inventory in the operation journal. The child's native history lives
+	// in its own persistent profile.
+	childProfile, err := forkChildProfile(ctx, config, job.MachineID, domain.OpenCode, a.AccountID, i.RuntimeID)
+	if err != nil {
+		return nil, executionCheckpointUncertain()
+	}
+	defer func() {
+		if err := childProfile.Close(); err != nil && returned == nil {
+			output, returned = nil, executionCheckpointUncertain()
+		}
+	}()
+	nativeHome, err := openCodeRuntimeRoot(childProfile.Info)
+	if err != nil {
+		return nil, err
+	}
 	ordinaryTools := ordinaryExecutionTools(config.Logger)
 	env, err := harness.PrivateRuntimeEnvironment(nativeHome)
 	if err != nil {
@@ -205,7 +234,7 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 		nativeConfig.ContextLimit = int64(a.Configuration.OpenCodeContext.Tokens)
 		nativeConfig.Prune = a.Configuration.OpenCodeContext.Policy == domain.OpenCodeNativeContextV1
 	}
-	requests := opencode.ForkRequests{Restore: i.OpenCode.Restore, Fork: i.OpenCode.Fork, Move: i.OpenCode.Move, Mark: i.OpenCode.Mark, DeleteSource: i.OpenCode.DeleteSource}
+	requests := opencode.ForkRequests{Restore: i.OpenCode.Restore, Fork: i.OpenCode.Fork, Move: i.OpenCode.Move, Mark: i.OpenCode.Mark, DeleteSource: i.OpenCode.DeleteSource, Reasoning: reasoning}
 	resume, err := opencode.CheckpointResumeClaim(nativeConfig, source.NativeReference, requests.Restore)
 	if err != nil {
 		return nil, err
@@ -253,11 +282,11 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	}
 	// The fresh nonce is never registered. All provider/model credentials remain
 	// in Go's vault; preparation inference fails relay authentication before reads.
-	raw, ref, err := opencode.PrepareForkAPI(ctx, nativeConfig, filepath.Join(runtimeRoot, string(a.ExecutionID)), source.Native, source.NativeReference, childManifest.PrimaryPath, requests)
+	raw, ref, err := opencode.PrepareForkAPI(ctx, nativeConfig, sourceHome, source.Native, source.NativeReference, childManifest.PrimaryPath, requests)
 	if err != nil {
 		return nil, executionCheckpointUncertain()
 	}
-	if len(claims) != 5 || snapshot.Verify(ctx, childManifest) != nil || opencode.InspectForkSourceCheckpoint(ctx, filepath.Join(runtimeRoot, string(a.ExecutionID)), source.Native, source.NativeReference) != nil {
+	if len(claims) != 5 || snapshot.Verify(ctx, childManifest) != nil || opencode.InspectForkSourceCheckpoint(ctx, sourceHome, source.Native, source.NativeReference, reasoning) != nil {
 		return nil, executionCheckpointUncertain()
 	}
 	ids, err := opencode.InspectForkCheckpoint(ctx, nativeHome, raw, ref)
@@ -303,15 +332,19 @@ func readOpenCodeForkCheckpoint(ctx context.Context, root string, credential Cre
 	}
 	home := filepath.Join(root, "runtimes", string(f.RuntimeID))
 	raw, err := security.ReadPrivate(filepath.Join(home, "fork-completion.json"), maxOpenCodeExecutionCheckpointBytes)
-	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.DecodeWithLimit(raw, &value, maxOpenCodeExecutionCheckpointBytes) != nil || value.Version != 2 || !bytes.Equal(mustForkJSON(value), raw) || value.JobID != f.JobID || value.ServerID != credential.ServerID || value.DeviceID != credential.DeviceID || value.SessionID != i.SessionID || value.MachineID != i.MachineID || credential.MachineID != i.MachineID || value.RuntimeID != f.RuntimeID || value.ConfigurationDigest != i.ConfigurationDigest || value.AccountID != i.AccountID || value.ConnectionID != i.ConnectionID || value.ManifestDigest != executionInputDigest(i.Manifest) || value.NativeReference.SessionID != string(f.NativeThreadID) || value.NativeReference.InputID != string(f.NativeTurnID) || value.NativeReference.CreationRequestID != value.Requests.Fork || value.Requests.Validate() != nil || value.InstanceID.Validate() != nil || value.Revision == 0 || !canonicalDigest(value.AssignmentDigest) || !canonicalDigest(value.JobInputDigest) || len(value.Claims) != 5 {
+	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.DecodeWithLimit(raw, &value, maxOpenCodeExecutionCheckpointBytes) != nil || value.Version != 2 || !bytes.Equal(mustForkJSON(value), raw) || value.JobID != f.JobID || value.ServerID != credential.ServerID || value.DeviceID != credential.DeviceID || value.SessionID != i.SessionID || value.MachineID != i.MachineID || credential.MachineID != i.MachineID || value.RuntimeID != f.RuntimeID || value.ConfigurationDigest != i.ConfigurationDigest || value.AccountID != i.AccountID || value.ConnectionID != i.ConnectionID || value.ManifestDigest != executionInputDigest(i.Manifest) || value.NativeReference.SessionID != string(f.NativeThreadID) || value.NativeReference.InputID != string(f.NativeTurnID) || value.NativeReference.CreationRequestID != value.Requests.Fork || value.Requests.Validate() != nil || value.Requests.Profile != f.OpenCodeProfile || value.InstanceID.Validate() != nil || value.Revision == 0 || !canonicalDigest(value.AssignmentDigest) || !canonicalDigest(value.JobInputDigest) || len(value.Claims) != 5 {
 		return openCodeForkCheckpoint{}, executionCheckpointUncertain()
 	}
-	ids, err := opencode.InspectForkCheckpoint(ctx, filepath.Join(home, "native"), value.Native, value.NativeReference)
+	nativeHome, err := openCodeHistoryRoot(ctx, root, i.MachineID, i.AccountID, f.RuntimeID)
+	if err != nil {
+		return openCodeForkCheckpoint{}, err
+	}
+	ids, err := opencode.InspectForkCheckpoint(ctx, nativeHome, value.Native, value.NativeReference)
 	if err != nil || len(ids) != len(value.Mappings) {
 		return openCodeForkCheckpoint{}, executionCheckpointUncertain()
 	}
-	proofRequests := opencode.ForkRequests{Restore: value.Requests.Restore, Fork: value.Requests.Fork, Move: value.Requests.Move, Mark: value.Requests.Mark, DeleteSource: value.Requests.DeleteSource}
-	if opencode.InspectForkClaims(value.Native, value.NativeReference, filepath.Join(home, "native"), proofRequests, value.Claims) != nil {
+	proofRequests := opencode.ForkRequests{Restore: value.Requests.Restore, Fork: value.Requests.Fork, Move: value.Requests.Move, Mark: value.Requests.Mark, DeleteSource: value.Requests.DeleteSource, Reasoning: value.Requests.Profile.Reasoning()}
+	if opencode.InspectForkClaims(value.Native, value.NativeReference, nativeHome, proofRequests, value.Claims) != nil {
 		return openCodeForkCheckpoint{}, executionCheckpointUncertain()
 	}
 	kinds := []opencode.SessionMutation{opencode.ResumeSessionMutation, opencode.ForkSessionMutation, opencode.MoveForkMutation, opencode.MarkForkMutation, opencode.DeleteForkSourceMutation}

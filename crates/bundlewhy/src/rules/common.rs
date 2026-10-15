@@ -112,6 +112,7 @@ fn duplicate_packages(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraf
                      tests after deduplicating."
                 .to_owned(),
             dependency: true,
+            export_usage: None,
         });
     }
 }
@@ -259,6 +260,428 @@ fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
     index > 0 && offset < ranges[index - 1].1
 }
 
+fn next_code_byte(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<u8> {
+    let mut index = start;
+    while index < bytes.len() {
+        if in_ranges(ignored, index) || bytes[index].is_ascii_whitespace() {
+            index += 1;
+        } else {
+            return Some(bytes[index]);
+        }
+    }
+    None
+}
+
+fn asi_terminates(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> bool {
+    let Some(next) = next_code_byte(bytes, index + 1, ignored) else {
+        return true;
+    };
+    match next {
+        b'+' => next_code_byte(bytes, index + 2, ignored) != Some(b'+'),
+        b'-' => next_code_byte(bytes, index + 2, ignored) != Some(b'-'),
+        b'!' | b'%' | b'&' | b'(' | b')' | b'*' | b',' | b'.' | b'/' | b':' | b';' | b'<'
+        | b'=' | b'>' | b'?' | b'[' | b']' | b'^' | b'{' | b'}' | b'|' | b'~' => false,
+        _ => true,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum EnvGuard {
+    ShortCircuitAnd,
+    ShortCircuitOr,
+    NullishCoalescing,
+    Conditional,
+    If,
+    While,
+    Switch,
+    For,
+}
+
+impl EnvGuard {
+    fn evidence(self) -> &'static str {
+        match self {
+            Self::ShortCircuitAnd => "the retained read controls a && short-circuit branch",
+            Self::ShortCircuitOr => "the retained read controls a || short-circuit branch",
+            Self::NullishCoalescing => "the retained read controls a ?? fallback branch",
+            Self::Conditional => "the retained read controls a conditional (?:) branch",
+            Self::If => "the retained read is in an if condition",
+            Self::While => "the retained read is in a while condition",
+            Self::Switch => "the retained read is in a switch condition",
+            Self::For => "the retained read is in a for condition",
+        }
+    }
+}
+
+/// Recognize only a generated branch whose test contains this read. A plain
+/// value read in a call, assignment or another data expression is not a DCE
+/// blocker.
+#[cfg(test)]
+fn env_guard(code: &str, start: usize, end: usize, ignored: &[(usize, usize)]) -> Option<EnvGuard> {
+    env_guards(code, &[(start, end)], ignored)
+        .into_iter()
+        .next()
+        .flatten()
+}
+
+#[derive(Clone, Copy)]
+enum ScopeContext {
+    Neutral,
+    Invalid,
+    Guard(EnvGuard),
+    For(ForClause),
+}
+
+#[derive(Clone, Copy)]
+enum ForClause {
+    Initializer,
+    Test,
+    Update,
+}
+
+struct ScanScope {
+    parent: usize,
+    context: ScopeContext,
+    conditional_questions: usize,
+    pending_reads: Vec<usize>,
+    conditional_pending: Vec<usize>,
+    arrow_expression: bool,
+}
+
+fn env_guards(
+    code: &str,
+    reads: &[(usize, usize)],
+    ignored: &[(usize, usize)],
+) -> Vec<Option<EnvGuard>> {
+    if reads.is_empty() {
+        return Vec::new();
+    }
+    let bytes = code.as_bytes();
+    let mut guards = vec![None; reads.len()];
+    let mut blocked = vec![false; reads.len()];
+    let mut contexts = vec![ScopeContext::Neutral; reads.len()];
+    let mut scopes = vec![ScanScope {
+        parent: 0,
+        context: ScopeContext::Neutral,
+        conditional_questions: 0,
+        pending_reads: Vec::new(),
+        conditional_pending: Vec::new(),
+        arrow_expression: false,
+    }];
+    let mut current_scope = 0;
+    let mut next_start = 0;
+    let mut next_end = 0;
+    let mut ignored_index = 0;
+
+    for index in 0..bytes.len() {
+        while next_start < reads.len() && reads[next_start].0 == index {
+            contexts[next_start] = scopes[current_scope].context;
+            next_start += 1;
+        }
+        while next_end < reads.len() && reads[next_end].1 <= index {
+            scopes[current_scope].pending_reads.push(next_end);
+            next_end += 1;
+        }
+        while ignored_index < ignored.len() && ignored[ignored_index].1 <= index {
+            ignored_index += 1;
+        }
+        if ignored_index < ignored.len()
+            && ignored[ignored_index].0 <= index
+            && index < ignored[ignored_index].1
+        {
+            continue;
+        }
+
+        if scopes[current_scope].arrow_expression
+            && matches!(bytes[index], b',' | b';' | b')' | b']' | b'}')
+        {
+            let parent = scopes[current_scope].parent;
+            let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
+            let conditional_pending =
+                std::mem::take(&mut scopes[current_scope].conditional_pending);
+            // An expression-bodied arrow evaluates to a function object at
+            // the enclosing expression. Do not let its unguarded reads flow
+            // into an enclosing branch operator. Guards found inside the
+            // arrow body remain recorded on their own reads.
+            drop(pending_reads);
+            drop(conditional_pending);
+            current_scope = parent;
+        }
+
+        if bytes[index] == b'\n' && asi_terminates(bytes, index, ignored) {
+            for read in scopes[current_scope].pending_reads.drain(..) {
+                if guards[read].is_none() {
+                    blocked[read] = true;
+                }
+            }
+            for read in scopes[current_scope].conditional_pending.drain(..) {
+                if guards[read].is_none() {
+                    blocked[read] = true;
+                }
+            }
+        }
+
+        match bytes[index] {
+            b'(' | b'[' | b'{' => {
+                let context = scope_context(
+                    code,
+                    index,
+                    bytes[index],
+                    scopes[current_scope].context,
+                    ignored,
+                );
+                scopes.push(ScanScope {
+                    parent: current_scope,
+                    context,
+                    conditional_questions: 0,
+                    pending_reads: Vec::new(),
+                    conditional_pending: Vec::new(),
+                    arrow_expression: false,
+                });
+                current_scope = scopes.len() - 1;
+            }
+            b')' | b']' | b'}' if current_scope != 0 => {
+                let parent = scopes[current_scope].parent;
+                let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
+                let conditional_pending =
+                    std::mem::take(&mut scopes[current_scope].conditional_pending);
+                scopes[parent].pending_reads.extend(pending_reads);
+                scopes[parent].pending_reads.extend(conditional_pending);
+                scopes[parent].pending_reads.sort_unstable();
+                current_scope = parent;
+            }
+            b';' => {
+                let context = scopes[current_scope].context;
+                match context {
+                    ScopeContext::For(ForClause::Test) => {
+                        for read in scopes[current_scope].pending_reads.drain(..) {
+                            if guards[read].is_none() {
+                                guards[read] = Some(EnvGuard::For);
+                            }
+                        }
+                    }
+                    _ => {
+                        for read in scopes[current_scope].pending_reads.drain(..) {
+                            if guards[read].is_none() {
+                                blocked[read] = true;
+                            }
+                        }
+                    }
+                }
+                for read in scopes[current_scope].conditional_pending.drain(..) {
+                    if matches!(context, ScopeContext::For(ForClause::Test)) {
+                        if guards[read].is_none() {
+                            guards[read] = Some(EnvGuard::For);
+                        }
+                    } else if guards[read].is_none() {
+                        blocked[read] = true;
+                    }
+                }
+                if let ScopeContext::For(clause) = context {
+                    scopes[current_scope].context = ScopeContext::For(match clause {
+                        ForClause::Initializer => ForClause::Test,
+                        ForClause::Test | ForClause::Update => ForClause::Update,
+                    });
+                }
+            }
+            b',' => {
+                for read in scopes[current_scope].pending_reads.drain(..) {
+                    if guards[read].is_none() {
+                        blocked[read] = true;
+                    }
+                }
+                for read in scopes[current_scope].conditional_pending.drain(..) {
+                    if guards[read].is_none() {
+                        blocked[read] = true;
+                    }
+                }
+            }
+            b':' => {
+                if scopes[current_scope].conditional_questions > 0 {
+                    let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
+                    scopes[current_scope]
+                        .conditional_pending
+                        .extend(pending_reads);
+                    scopes[current_scope].conditional_questions -= 1;
+                } else {
+                    for read in scopes[current_scope].pending_reads.drain(..) {
+                        if guards[read].is_none() {
+                            blocked[read] = true;
+                        }
+                    }
+                    for read in scopes[current_scope].conditional_pending.drain(..) {
+                        if guards[read].is_none() {
+                            blocked[read] = true;
+                        }
+                    }
+                }
+            }
+            b'=' if bytes.get(index + 1) == Some(&b'>') => {
+                if next_code_byte(bytes, index + 2, ignored) != Some(b'{') {
+                    scopes.push(ScanScope {
+                        parent: current_scope,
+                        context: ScopeContext::Neutral,
+                        conditional_questions: 0,
+                        pending_reads: Vec::new(),
+                        conditional_pending: Vec::new(),
+                        arrow_expression: true,
+                    });
+                    current_scope = scopes.len() - 1;
+                }
+            }
+            b'=' if bytes.get(index + 1) != Some(&b'=')
+                && bytes.get(index.wrapping_sub(1)) != Some(&b'=')
+                && bytes.get(index.wrapping_sub(1)) != Some(&b'!')
+                && bytes.get(index.wrapping_sub(1)) != Some(&b'<')
+                && bytes.get(index.wrapping_sub(1)) != Some(&b'>') =>
+            {
+                for read in scopes[current_scope].pending_reads.drain(..) {
+                    if guards[read].is_none() {
+                        blocked[read] = true;
+                    }
+                }
+                for read in scopes[current_scope].conditional_pending.drain(..) {
+                    if guards[read].is_none() {
+                        blocked[read] = true;
+                    }
+                }
+            }
+            b'&' if bytes.get(index + 1) == Some(&b'&') => {
+                for &read in &scopes[current_scope].pending_reads {
+                    if guards[read].is_none() {
+                        guards[read] = Some(EnvGuard::ShortCircuitAnd);
+                    }
+                }
+            }
+            b'|' if bytes.get(index + 1) == Some(&b'|') => {
+                for &read in &scopes[current_scope].pending_reads {
+                    if guards[read].is_none() {
+                        guards[read] = Some(EnvGuard::ShortCircuitOr);
+                    }
+                }
+            }
+            b'?' if bytes.get(index + 1) == Some(&b'?') => {
+                for &read in &scopes[current_scope].pending_reads {
+                    if guards[read].is_none() {
+                        guards[read] = Some(EnvGuard::NullishCoalescing);
+                    }
+                }
+            }
+            b'?' if bytes.get(index + 1) != Some(&b'.')
+                && bytes.get(index.wrapping_sub(1)) != Some(&b'?') =>
+            {
+                for &read in &scopes[current_scope].pending_reads {
+                    if guards[read].is_none() {
+                        guards[read] = Some(EnvGuard::Conditional);
+                    }
+                }
+                scopes[current_scope].conditional_questions += 1;
+            }
+            _ => {}
+        }
+    }
+
+    while scopes[current_scope].arrow_expression {
+        let parent = scopes[current_scope].parent;
+        current_scope = parent;
+    }
+
+    guards
+        .into_iter()
+        .zip(contexts.into_iter().zip(blocked))
+        .map(|(guard, (context, blocked))| match context {
+            // An invalid enclosing expression blocks inherited branch
+            // evidence, but an operator found inside that expression still
+            // directly controls its own branch.
+            ScopeContext::Invalid => guard,
+            ScopeContext::Neutral => guard,
+            ScopeContext::Guard(fallback) if !blocked => guard.or(Some(fallback)),
+            ScopeContext::Guard(_) => guard,
+            ScopeContext::For(ForClause::Test) if !blocked => guard.or(Some(EnvGuard::For)),
+            ScopeContext::For(_) => guard,
+        })
+        .collect()
+}
+
+fn scope_prefix<'a>(code: &'a str, index: usize, ignored: &[(usize, usize)]) -> &'a str {
+    let mut end = code[..index].trim_end().len();
+    loop {
+        let Some(comment_index) = ignored
+            .partition_point(|(_, stop)| *stop <= end)
+            .checked_sub(1)
+        else {
+            return &code[..end];
+        };
+        let (start, stop) = ignored[comment_index];
+        if stop != end || !code[start..stop].starts_with("/*") {
+            return &code[..end];
+        }
+        end = code[..start].trim_end().len();
+    }
+}
+
+fn scope_context(
+    code: &str,
+    index: usize,
+    opener: u8,
+    parent: ScopeContext,
+    ignored: &[(usize, usize)],
+) -> ScopeContext {
+    let prefix = scope_prefix(code, index, ignored);
+    if opener == b'[' {
+        // A bracket after an expression is a computed member access and keeps
+        // the surrounding condition. A bracket after an operator starts an
+        // array literal, whose contents do not form a guard by themselves.
+        if prefix.as_bytes().last().is_some_and(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    *byte,
+                    b'_' | b'$' | b']' | b')' | b'}' | b'\'' | b'"' | b'`' | b'.'
+                )
+        }) {
+            return parent;
+        }
+        return ScopeContext::Invalid;
+    }
+    if opener != b'(' {
+        return ScopeContext::Invalid;
+    }
+    if prefix.ends_with("for")
+        && prefix
+            .as_bytes()
+            .get(..prefix.len() - "for".len())
+            .and_then(|prefix| prefix.last())
+            .is_none_or(|byte| {
+                !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
+            })
+    {
+        return ScopeContext::For(ForClause::Initializer);
+    }
+    for (keyword, guard) in [
+        ("if", EnvGuard::If),
+        ("while", EnvGuard::While),
+        ("switch", EnvGuard::Switch),
+    ] {
+        if prefix.ends_with(keyword)
+            && prefix
+                .as_bytes()
+                .get(..prefix.len() - keyword.len())
+                .and_then(|prefix| prefix.last())
+                .is_none_or(|byte| {
+                    !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
+                })
+        {
+            return ScopeContext::Guard(guard);
+        }
+    }
+    if prefix.as_bytes().last().is_some_and(|byte| {
+        byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'$' | b']' | b')' | b'.')
+    }) {
+        ScopeContext::Invalid
+    } else {
+        parent
+    }
+}
+
 fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     let vite = context.collection.bundler == "vite";
     // Vite replaces `process.env` with `{}` in client builds; Rspack leaves
@@ -278,7 +701,7 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
             return;
         }
         let ignored = non_code_ranges(&context.chunks[index].code);
-        let matches: Vec<(usize, String)> = pattern
+        let matches: Vec<(usize, usize, usize, String)> = pattern
             .captures_iter(&context.chunks[index].code)
             .filter_map(|captures| {
                 let whole = captures.get(0)?;
@@ -298,10 +721,18 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                     .get(1)
                     .or_else(|| captures.get(2))
                     .or_else(|| captures.get(3))?;
-                Some((offset, name.as_str().to_owned()))
+                Some((whole.start(), whole.end(), offset, name.as_str().to_owned()))
             })
             .collect();
-        for (offset, name) in matches {
+        let reads: Vec<(usize, usize)> = matches
+            .iter()
+            .map(|(start, end, _, _)| (*start, *end))
+            .collect();
+        let guards = env_guards(&context.chunks[index].code, &reads, &ignored);
+        for ((_start, _end, offset, name), guard) in matches.into_iter().zip(guards) {
+            let Some(guard) = guard else {
+                continue;
+            };
             let located = context.chunk_location(index, offset);
             let mapped = located.generated.is_some();
             tracing::debug!(
@@ -342,9 +773,9 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                 status: EvidenceStatus::Inferred,
                 title: format!("process.env.{name} is not a compile-time constant"),
                 summary: format!(
-                    "The generated code still reads {generated_text} at runtime, so the minifier \
-                     cannot evaluate conditions that depend on it and cannot remove the branches \
-                     they guard."
+                    "The generated code retains a branch guarded by {generated_text}. Because \
+                     this value is read at runtime, bundlewhy infers that the minifier could not \
+                     resolve the branch at build time."
                 ),
                 conditions: vec![
                     Condition::new(
@@ -353,9 +784,9 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                         format!("{generated_text} remains in {chunk_file}"),
                     ),
                     Condition::new(
-                        "The guarded branch can be evaluated and removed",
-                        ConditionOutcome::Unknown,
-                        "Depends on whether the value is constant for the deployed build",
+                        "The retained environment read guards a branch",
+                        ConditionOutcome::Met,
+                        guard.evidence(),
                     ),
                 ],
                 located,
@@ -371,13 +802,17 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                         "bundlewhy analysis",
                         EvidenceStatus::Inferred,
                         if mapped {
-                            "Mapped to the original source through the chunk source map. The \
-                             engine does not report why the condition was kept; bundlewhy infers \
-                             that the unresolved read blocks dead-code elimination."
+                            format!(
+                                "{}; mapped to the original source through the chunk source map. \
+                                 The engine does not report why the branch was kept.",
+                                guard.evidence()
+                            )
                         } else {
-                            "No source mapping is available for this position. The engine does not \
-                             report why the condition was kept; bundlewhy infers that the \
-                             unresolved read blocks dead-code elimination."
+                            format!(
+                                "{}; no source mapping is available for this position. The engine \
+                                 does not report why the branch was kept.",
+                                guard.evidence()
+                            )
                         },
                     ),
                 ],
@@ -397,6 +832,7 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                          values are inlined into the client bundle, so never define secrets."
                     .to_owned(),
                 dependency,
+                export_usage: None,
             });
         }
     }
@@ -457,6 +893,7 @@ pub fn configuration_disabled(
         direction: finding.direction.to_owned(),
         safety: finding.safety.to_owned(),
         dependency: false,
+        export_usage: None,
     });
 }
 
@@ -514,6 +951,7 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
                  Function.prototype.name needs keep-names options."
             .to_owned(),
         dependency: false,
+        export_usage: None,
     });
 }
 
@@ -784,9 +1222,9 @@ fn collect_binding_names(pattern: &str, names: &mut Vec<String>) {
     }
 }
 
-/// Source ranges in which a binding named `eval` is visible: the enclosing
-/// block of a `const`/`let`/`var`/`function eval` declaration, or the body of
-/// a function or arrow whose parameter list binds `eval`.
+/// Source ranges in which a binding named `eval` is visible. Lexical
+/// declarations use their block, while `var` uses its containing function.
+/// A named function expression binds its name only inside its own body.
 fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, usize)> {
     let mut masked = source.as_bytes().to_vec();
     for (start, end) in ignored {
@@ -818,11 +1256,36 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             .min_by_key(|(open, close)| close - open)
             .map_or((0, bytes.len()), |(open, close)| (*open, *close))
     };
+    // The lexical scan does not parse JavaScript. Match function bodies by
+    // balancing their parameter lists, then use the already paired braces.
+    // This keeps nested `var` declarations inside the nearest function.
+    let function =
+        Regex::new(r"\bfunction(?:\s*\*)?(?:\s+[A-Za-z_$][\w$]*)?").expect("static regex");
+    let function_bodies: Vec<(usize, (usize, usize))> = function
+        .find_iter(&code)
+        .filter_map(|found| {
+            // A member call such as `obj.function()` is not a declaration.
+            let preceding = code[..found.start()]
+                .bytes()
+                .rev()
+                .find(|byte| !byte.is_ascii_whitespace());
+            if preceding == Some(b'.') {
+                return None;
+            }
+            let mut cursor = found.end();
+            while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+                cursor += 1;
+            }
+            if bytes.get(cursor) != Some(&b'(') {
+                return None;
+            }
+            cursor = matching_delimiter(bytes, cursor, b'(', b')')? + 1;
+            let body = function_body_block(&code, bytes, &blocks, cursor)?;
+            Some((found.start(), body))
+        })
+        .collect();
+    let mut bodies: Vec<(usize, usize)> = function_bodies.iter().map(|(_, body)| *body).collect();
     let mut scopes = Vec::new();
-    let declaration = Regex::new(r"\b(?:const|let|var|function)\s+eval\b").expect("static regex");
-    for found in declaration.find_iter(&code) {
-        scopes.push(enclosing(found.start()));
-    }
     // Parameter lists followed by a body: `(...) {` or `(...) =>`.
     let parameters = Regex::new(r"\(([^()]*)\)\s*(?:=>|\{)").expect("static regex");
     for captures in parameters.captures_iter(&code) {
@@ -839,7 +1302,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             .next()
             .unwrap_or("");
         if whole.as_str().ends_with('{')
-            && matches!(keyword, "if" | "while" | "for" | "switch" | "with")
+            && is_control_flow_parentheses(&code, whole.start(), keyword)
         {
             continue;
         }
@@ -851,21 +1314,85 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
                 .trim_start_matches("...");
             collect_binding_names(target, &mut names);
         }
-        if names.iter().any(|name| name == "eval") {
-            let body = whole.end();
-            let end = if whole.as_str().ends_with('{') {
-                blocks
-                    .iter()
-                    .find(|(open, _)| *open == body - 1)
-                    .map_or(bytes.len(), |(_, close)| *close)
-            } else {
+        let body = whole.end();
+        let open = if whole.as_str().ends_with('{') {
+            Some(body - 1)
+        } else {
+            code[body..]
+                .bytes()
+                .position(|byte| !byte.is_ascii_whitespace())
+                .map(|offset| body + offset)
+                .filter(|open| bytes.get(*open) == Some(&b'{'))
+        };
+        let block = open.and_then(|open| blocks.iter().find(|(start, _)| *start == open).copied());
+        let end = block.map_or_else(
+            || {
                 code[body..]
                     .find([';', '\n'])
                     .map_or(bytes.len(), |offset| body + offset)
-            };
+            },
+            |(_, close)| close,
+        );
+        if let Some(block) = block
+            && keyword != "catch"
+        {
+            bodies.push(block);
+        }
+        if names.iter().any(|name| name == "eval") {
             scopes.push((list.start(), end));
         }
     }
+    // The compatibility regex above handles the common case. Scan balanced
+    // delimiters as well so defaults such as `value = make()` do not hide a
+    // parameter binding.
+    for (open, byte) in bytes.iter().enumerate() {
+        if *byte != b'(' {
+            continue;
+        }
+        let Some(close) = matching_delimiter(bytes, open, b'(', b')') else {
+            continue;
+        };
+        let Some((body, arrow)) = arrow_or_function_body(bytes, close) else {
+            continue;
+        };
+        let keyword = code[..open]
+            .trim_end()
+            .rsplit(|character: char| {
+                !(character.is_alphanumeric() || character == '_' || character == '$')
+            })
+            .next()
+            .unwrap_or("");
+        if !arrow && is_control_flow_parentheses(&code, open, keyword) {
+            continue;
+        }
+        let list = &code[open + 1..close];
+        let mut names = Vec::new();
+        for parameter in split_top_level(list, b',') {
+            let target = split_top_level(binding_target(parameter), b':')[0]
+                .trim()
+                .trim_end_matches('?')
+                .trim_start_matches("...");
+            collect_binding_names(target, &mut names);
+        }
+        let block = blocks.iter().find(|(start, _)| *start == body).copied();
+        let end = block.map_or_else(
+            || {
+                code[body..]
+                    .find([';', '\n'])
+                    .map_or(bytes.len(), |offset| body + offset)
+            },
+            |(_, close)| close,
+        );
+        if let Some(block) = block
+            && keyword != "catch"
+        {
+            bodies.push(block);
+        }
+        if names.iter().any(|name| name == "eval") {
+            scopes.push((open + 1, end));
+        }
+    }
+
     let single = Regex::new(r"\beval\s*=>").expect("static regex");
     for found in single.find_iter(&code) {
         let end = code[found.end()..]
@@ -873,7 +1400,231 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             .map_or(bytes.len(), |offset| found.end() + offset);
         scopes.push((found.start(), end));
     }
+    // A single-parameter arrow does not have parentheses to identify its
+    // body. Use ECMAScript's Unicode identifier classes so names such as `λ`
+    // are scoped like their ASCII counterparts. ZWNJ and ZWJ are permitted
+    // after the first identifier character by the ECMAScript grammar.
+    let single_arrow =
+        Regex::new(r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*\s*=>\s*\{")
+            .expect("static regex");
+    for found in single_arrow.find_iter(&code) {
+        let open = found.end() - 1;
+        if let Some(body) = blocks.iter().find(|(start, _)| *start == open) {
+            bodies.push(*body);
+        }
+    }
+    let declaration = Regex::new(r"\b(const|let|var|function)\s+eval\b").expect("static regex");
+    for captures in declaration.captures_iter(&code) {
+        let (Some(found), Some(kind)) = (captures.get(0), captures.get(1)) else {
+            continue;
+        };
+        let scope = match kind.as_str() {
+            "var" => bodies
+                .iter()
+                .filter(|(open, close)| *open < found.start() && found.start() < *close)
+                .min_by_key(|(open, close)| close - open)
+                .copied()
+                .unwrap_or((0, bytes.len())),
+            "function" if named_function_is_expression(&code, found.start()) => function_bodies
+                .iter()
+                .find(|(start, _)| *start == found.start())
+                .map_or_else(
+                    || enclosing(found.start()),
+                    |(_, body)| (found.start(), body.1),
+                ),
+            _ => enclosing(found.start()),
+        };
+        scopes.push(scope);
+    }
     scopes
+}
+
+/// Finds a block-bodied function or arrow body after a parameter list.
+/// TypeScript arrow return annotations can sit between `)` and `=>`, and
+/// their nested delimiters must be skipped before locating the executable body.
+fn arrow_or_function_body(bytes: &[u8], close: usize) -> Option<(usize, bool)> {
+    let mut cursor = close + 1;
+    while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+        cursor += 1;
+    }
+    if bytes.get(cursor) == Some(&b'{') {
+        return Some((cursor, false));
+    }
+    if bytes.get(cursor..cursor.saturating_add(2)) == Some(b"=>") {
+        cursor += 2;
+        while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        return (bytes.get(cursor) == Some(&b'{')).then_some((cursor, true));
+    }
+    if bytes.get(cursor) != Some(&b':') {
+        return None;
+    }
+    cursor += 1;
+    let mut parentheses = 0i32;
+    let mut brackets = 0i32;
+    let mut braces = 0i32;
+    let mut angles = 0i32;
+    while let Some(byte) = bytes.get(cursor) {
+        if *byte == b'{' && parentheses == 0 && brackets == 0 && braces == 0 && angles == 0 {
+            // A method can have a TypeScript return annotation before its
+            // body. Object-shaped return types also use braces, so skip a
+            // brace preceded by a type delimiter and continue to the next
+            // executable block.
+            let type_brace = bytes[..cursor]
+                .iter()
+                .rev()
+                .find(|byte| !byte.is_ascii_whitespace())
+                .is_some_and(|byte| matches!(byte, b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'('))
+                || bytes[..cursor].ends_with(b"=>");
+            if !type_brace {
+                return Some((cursor, false));
+            }
+            cursor = matching_delimiter(bytes, cursor, b'{', b'}')? + 1;
+            continue;
+        }
+        if *byte == b'='
+            && bytes.get(cursor + 1) == Some(&b'>')
+            && parentheses == 0
+            && brackets == 0
+            && braces == 0
+            && angles == 0
+        {
+            cursor += 2;
+            while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+                cursor += 1;
+            }
+            return (bytes.get(cursor) == Some(&b'{')).then_some((cursor, true));
+        }
+        match *byte {
+            b'(' => parentheses += 1,
+            b')' => parentheses = parentheses.checked_sub(1)?,
+            b'[' => brackets += 1,
+            b']' => brackets = brackets.checked_sub(1)?,
+            b'{' => braces += 1,
+            b'}' => braces = braces.checked_sub(1)?,
+            b'<' => angles += 1,
+            b'>' if angles > 0 => angles -= 1,
+            _ => {}
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn is_control_flow_parentheses(code: &str, open: usize, keyword: &str) -> bool {
+    if matches!(keyword, "if" | "while" | "for" | "switch" | "with") {
+        return true;
+    }
+    if keyword != "await" {
+        return false;
+    }
+    let prefix = code[..open].trim_end();
+    let await_start = prefix.len().saturating_sub("await".len());
+    let before_await = prefix[..await_start].trim_end();
+    before_await.strip_suffix("for").is_some_and(|before_for| {
+        before_for.chars().next_back().is_none_or(|character| {
+            !(character.is_alphanumeric() || character == '_' || character == '$')
+        })
+    })
+}
+
+/// Finds the block that starts a function body after its parameter list.
+/// TypeScript return annotations can contain object types with braces of
+/// their own, so skip those before selecting the executable block.
+fn function_body_block(
+    code: &str,
+    bytes: &[u8],
+    blocks: &[(usize, usize)],
+    mut cursor: usize,
+) -> Option<(usize, usize)> {
+    let mut return_annotation = false;
+    while let Some(byte) = bytes.get(cursor) {
+        if byte.is_ascii_whitespace() {
+            cursor += 1;
+            continue;
+        }
+        if *byte == b'{' {
+            let type_brace = return_annotation
+                && code[..cursor]
+                    .bytes()
+                    .rev()
+                    .find(|byte| !byte.is_ascii_whitespace())
+                    .is_some_and(|byte| {
+                        matches!(byte, b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'(')
+                    })
+                || return_annotation && code[..cursor].trim_end().ends_with("=>");
+            if !type_brace {
+                return blocks.iter().find(|(open, _)| *open == cursor).copied();
+            }
+            let (_, close) = blocks.iter().find(|(open, _)| *open == cursor).copied()?;
+            cursor = close + 1;
+            continue;
+        }
+        if *byte == b':' {
+            return_annotation = true;
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn named_function_is_expression(code: &str, start: usize) -> bool {
+    let raw_prefix = &code[..start];
+    let prefix = raw_prefix.trim_end();
+    let prefix = prefix.strip_suffix("async").unwrap_or(prefix).trim_end();
+    if prefix.ends_with("=>") {
+        return true;
+    }
+    let preceding = prefix.as_bytes().last().copied();
+    if preceding == Some(b':') && is_case_label(prefix) {
+        return false;
+    }
+    if preceding.is_some_and(|byte| b"=([,:?!+-*/%&|^~".contains(&byte)) {
+        return true;
+    }
+    let keyword = prefix
+        .rsplit(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .next();
+    if !matches!(
+        keyword,
+        Some("return" | "throw" | "yield" | "await" | "void" | "new")
+    ) {
+        return false;
+    }
+    let keyword_start = prefix
+        .len()
+        .saturating_sub(keyword.unwrap_or_default().len());
+    !raw_prefix[keyword_start..].contains(['\n', '\r'])
+}
+
+fn matching_delimiter(bytes: &[u8], open: usize, opening: u8, closing: u8) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, byte) in bytes.iter().enumerate().skip(open) {
+        match byte {
+            byte if *byte == opening => depth += 1,
+            byte if *byte == closing => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn is_case_label(prefix: &str) -> bool {
+    let label = prefix.strip_suffix(':').unwrap_or(prefix);
+    let statement = label
+        .rsplit_once(['{', '}', ';', '\n'])
+        .map_or(label, |(_, rest)| rest)
+        .trim();
+    statement == "default"
+        || statement
+            .strip_prefix("case")
+            .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
 }
 
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
@@ -1020,6 +1771,7 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                      values explicitly. Evaluating untrusted strings remains unsafe either way."
                 .to_owned(),
             dependency: context.is_dependency(module),
+            export_usage: None,
         });
     }
 }
@@ -1027,6 +1779,50 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn eval_rule_drafts(source: &str, engine_reports_eval: bool) -> Vec<DiagnosticDraft> {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let source_path = root.join("src/main.js");
+        let build_dir = root.join("build");
+        std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(&build_dir).unwrap();
+        std::fs::write(&source_path, source).unwrap();
+        std::fs::write(build_dir.join("main.js"), "const longLocalName = 1;").unwrap();
+        let module_id = source_path.to_string_lossy().into_owned();
+        let collection = crate::collect::Collection {
+            default_minifier: true,
+            minify_enabled: true,
+            logs: if engine_reports_eval {
+                vec![crate::collect::EngineLog {
+                    code: Some("EVAL".to_owned()),
+                    id: Some(module_id.clone()),
+                    ..crate::collect::EngineLog::default()
+                }]
+            } else {
+                Vec::new()
+            },
+            modules: vec![CollectedModule {
+                id: module_id,
+                path: Some(source_path.to_string_lossy().into_owned()),
+                included: true,
+                chunks: vec!["main.js".to_owned()],
+                ..CollectedModule::default()
+            }],
+            ..crate::collect::Collection::default()
+        };
+        let chunk = crate::chunks::Chunk::load(&build_dir, "main.js", None, true, root).unwrap();
+        let mut context = Context::new(
+            &collection,
+            root.to_path_buf(),
+            "app".to_owned(),
+            vec![chunk],
+            crate::sources::SourceStore::new(true),
+        );
+        let mut drafts = Vec::new();
+        direct_eval_mangling(&mut context, &mut drafts);
+        drafts
+    }
 
     fn package_module(
         id: &str,
@@ -1217,6 +2013,168 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn env_reads_require_a_generated_branch() {
+        let guard = |code: &str, read: &str| {
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        for code in [
+            "console.log(process.env.VERSION);",
+            "const version=process.env.VERSION;ready&&run()",
+            "console.log(process.env.VERSION),ready&&run()",
+            "if(console.log(process.env.VERSION))run()",
+            "if(process.env.VERSION,ready)run()",
+            "if((process.env.VERSION),ready)run()",
+            "if([process.env.VERSION])run()",
+            "if({value:process.env.VERSION})run()",
+            "console.log(process.env.VERSION, '&&')",
+        ] {
+            assert_eq!(guard(code, "process.env.VERSION"), None, "{code}");
+        }
+        assert_eq!(guard("console.log(({}).VERSION)", "({}).VERSION"), None);
+        assert_eq!(
+            guard("'on'===process.env.VERSION&&run()", "process.env.VERSION"),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard(
+                "(sideEffect(), process.env.VERSION)&&run()",
+                "process.env.VERSION"
+            ),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard("({}).VERSION==='on'&&run()", "({}).VERSION"),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard("if((process.env.VERSION))run()", "process.env.VERSION"),
+            Some("the retained read is in an if condition")
+        );
+        assert_eq!(
+            guard(
+                "if({on:true}[process.env.VERSION])run()",
+                "process.env.VERSION"
+            ),
+            Some("the retained read is in an if condition")
+        );
+        assert_eq!(
+            guard(
+                "if(ready?process.env.VERSION:false)run()",
+                "process.env.VERSION"
+            ),
+            Some("the retained read is in an if condition")
+        );
+        assert_eq!(
+            guard(
+                "if/*!license*/(process.env.VERSION)run()",
+                "process.env.VERSION"
+            ),
+            Some("the retained read is in an if condition")
+        );
+        for code in [
+            "obj.if(process.env.VERSION)run()",
+            "obj.switch(process.env.VERSION)run()",
+        ] {
+            assert_eq!(guard(code, "process.env.VERSION"), None, "{code}");
+        }
+        assert_eq!(
+            guard("process.env.VERSION?on():off()", "process.env.VERSION"),
+            Some("the retained read controls a conditional (?:) branch")
+        );
+        assert_eq!(
+            guard("process.env.VERSION??fallback", "process.env.VERSION"),
+            Some("the retained read controls a ?? fallback branch")
+        );
+        assert_eq!(
+            guard("(()=>process.env.VERSION)&&run()", "process.env.VERSION"),
+            None
+        );
+        assert_eq!(
+            guard(
+                "function run(){process.env.VERSION&&work()}",
+                "process.env.VERSION"
+            ),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard(
+                "for (; process.env.VERSION; ) work()",
+                "process.env.VERSION"
+            ),
+            Some("the retained read is in a for condition")
+        );
+        assert_eq!(
+            guard(
+                "for (process.env.VERSION; ; ) work()",
+                "process.env.VERSION"
+            ),
+            None
+        );
+        assert_eq!(
+            guard(
+                "for (; ; process.env.VERSION) work()",
+                "process.env.VERSION"
+            ),
+            None
+        );
+        assert_eq!(
+            guard(
+                "ready ? process.env.VERSION : fallback && work()",
+                "process.env.VERSION"
+            ),
+            None
+        );
+        assert_eq!(
+            guard(
+                "(ready ? process.env.VERSION : fallback) && work()",
+                "process.env.VERSION"
+            ),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard(
+                "process.env.VERSION ? yes : no && work()",
+                "process.env.VERSION"
+            ),
+            Some("the retained read controls a conditional (?:) branch")
+        );
+        assert_eq!(
+            guard("process.env.VERSION\nready&&run()", "process.env.VERSION"),
+            None
+        );
+        assert_eq!(
+            guard("process.env.VERSION\n&&run()", "process.env.VERSION"),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard("if (process.env.VERSION\n) run()", "process.env.VERSION"),
+            Some("the retained read is in an if condition")
+        );
+    }
+
+    #[test]
+    fn env_guard_scans_many_reads_in_one_pass() {
+        let mut code = String::new();
+        let mut reads = Vec::new();
+        for index in 0..256 {
+            let read = format!("process.env.FLAG{index}");
+            let start = code.len();
+            code.push_str(&read);
+            reads.push((start, start + read.len()));
+            code.push_str("&&run();");
+        }
+        let guards = env_guards(&code, &reads, &[]);
+        assert_eq!(guards.len(), reads.len());
+        assert!(
+            guards
+                .iter()
+                .all(|guard| matches!(guard, Some(EnvGuard::ShortCircuitAnd)))
+        );
+    }
+
+    #[test]
     fn eval_shadowing_is_decided_per_call() {
         // A shadowing parameter in one function does not hide a real direct
         // eval in another.
@@ -1242,6 +2200,127 @@ y=/process.env.F/.test(z),process.env.G"#;
             direct_eval_line("try {} catch (eval) { eval(code); }"),
             None
         );
+    }
+
+    #[test]
+    fn named_function_expression_eval_shadows_only_its_body() {
+        assert_eq!(
+            direct_eval_line("const helper = function eval() { return 1; }; eval(code);"),
+            Some((0, 46))
+        );
+        assert_eq!(
+            direct_eval_line("const helper = function eval() { return eval(code); };"),
+            None
+        );
+        assert_eq!(
+            direct_eval_line("function eval(code) { return code; } eval(code);"),
+            None
+        );
+        let source = "const helper = function eval() { return eval(code); };\nconst longLocalName \
+                      = 1;\neval('longLocalName');";
+        assert_eq!(direct_eval_line(source), Some((2, 0)));
+        let drafts = eval_rule_drafts(source, false);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+        assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+        assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 3);
+    }
+
+    #[test]
+    fn function_bodies_skip_typescript_return_annotations() {
+        let source = "function run(): void { var eval = helper; } eval(code);";
+        assert!(direct_eval_line(source).is_some());
+        let source = "function run(): Promise<{ ok: boolean }> { var eval = helper; } eval(code);";
+        assert!(direct_eval_line(source).is_some());
+        let source = "function run(): () => { ok: boolean } { var eval = helper; } eval(code);";
+        assert!(direct_eval_line(source).is_some());
+    }
+
+    #[test]
+    fn eval_shadowing_handles_function_scan_edge_cases() {
+        assert_eq!(
+            direct_eval_line("obj.function(); if (condition) { var eval = helper; } eval(code);"),
+            None
+        );
+        assert!(direct_eval_line("const make = () => function eval() {}; eval(code);").is_some());
+        assert!(direct_eval_line("const instance = new function eval() {}; eval(code);").is_some());
+        assert!(
+            direct_eval_line("const run = (value = make()) => { var eval = helper; }; eval(code);")
+                .is_some()
+        );
+        assert!(
+            direct_eval_line("const run = (value): void => { var eval = helper; }; eval(code);")
+                .is_some()
+        );
+        assert!(direct_eval_line("const run = λ => { var eval = helper; }; eval(code);").is_some());
+        assert!(
+            direct_eval_line("class C { run(): void { var eval = helper; } } eval(code);")
+                .is_some()
+        );
+        assert!(
+            direct_eval_line(
+                "class C { run(): Promise<{ ok: boolean }> { var eval = helper; } } eval(code);"
+            )
+            .is_some()
+        );
+        assert_eq!(
+            direct_eval_line(
+                "async function run() { for await (const item of items) { var eval = helper; } \
+                 eval(code); }"
+            ),
+            None
+        );
+        assert!(
+            direct_eval_line("function outer() { return\nfunction eval() {}; } eval(code);")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn switch_case_function_declarations_keep_their_declaration_scope() {
+        for source in [
+            "switch (value) { case 0: function eval(x) { return x; } eval(code); }",
+            "switch (value) { default: function eval(x) { return x; } eval(code); }",
+        ] {
+            assert_eq!(direct_eval_line(source), None);
+        }
+    }
+
+    #[test]
+    fn var_eval_uses_the_containing_function_scope() {
+        let shadowed = "function run() { if (condition) { var eval = helper; } eval(code); }";
+        assert_eq!(direct_eval_line(shadowed), None);
+        assert_eq!(
+            direct_eval_line(&format!("{shadowed}\nfunction other() {{ eval(code); }}")),
+            Some((1, 19))
+        );
+        assert_eq!(
+            direct_eval_line("function run() { if (true) { let eval = helper; } eval(code); }"),
+            Some((0, 50))
+        );
+        assert_eq!(
+            direct_eval_line("function run() { if (true) { const eval = helper; } eval(code); }"),
+            Some((0, 52))
+        );
+        assert_eq!(direct_eval_line("{ var eval = helper; } eval(code);"), None);
+        for source in [
+            "const run = () => { var eval = helper; eval(code); }; eval(code);",
+            "const run = value => { var eval = helper; eval(code); }; eval(code);",
+        ] {
+            assert_eq!(
+                direct_eval_line(source),
+                Some((
+                    0,
+                    u32::try_from(source.rfind("eval(code)").unwrap()).unwrap()
+                ))
+            );
+        }
+        let source = "function run() { if (condition) { var eval = helper; } const longLocalName \
+                      = 1; return eval(code); }";
+        assert!(eval_rule_drafts(source, false).is_empty());
+        let reported = eval_rule_drafts(source, true);
+        assert_eq!(reported.len(), 1);
+        assert_eq!(reported[0].status, EvidenceStatus::Confirmed);
     }
 
     #[test]

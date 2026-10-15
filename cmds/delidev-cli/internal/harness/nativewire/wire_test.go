@@ -86,9 +86,17 @@ func init() {
 		case "oversize":
 			_, _ = os.Stdout.Write(bytes.Repeat([]byte("x"), MaxFrame+1))
 		case "events":
-			for i := 0; i < maxEvents+1; i++ {
+			// Emit params.count ordered notifications, then answer the request.
+			var params struct {
+				Count int `json:"count"`
+			}
+			if json.Unmarshal(request.Params, &params) != nil {
+				os.Exit(7)
+			}
+			for i := 0; i < params.Count; i++ {
 				write(map[string]any{"method": "progress", "params": map[string]int{"step": i}})
 			}
+			write(map[string]any{"id": request.ID, "result": map[string]bool{"accepted": true}})
 		case "exit":
 			os.Exit(9)
 		case "":
@@ -431,7 +439,7 @@ func TestNativeWireRetirementDoesNotEraseInFlightOwnership(t *testing.T) {
 	}
 }
 func TestNativeWireProtocolFailuresAndBoundsStopOwnedScope(t *testing.T) {
-	for _, method := range []string{"malformed", "both", "invalid-error", "oversize", "events", "exit"} {
+	for _, method := range []string{"malformed", "both", "invalid-error", "oversize", "exit"} {
 		t.Run(method, func(t *testing.T) {
 			c, config, _ := startFixture(t, "normal")
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -449,7 +457,7 @@ func TestNativeWireProtocolFailuresAndBoundsStopOwnedScope(t *testing.T) {
 			if problem == nil {
 				t.Fatal("missing native failure")
 			}
-			if (method == "oversize" || method == "events") && problem.Code != domain.ResourceExhausted {
+			if method == "oversize" && problem.Code != domain.ResourceExhausted {
 				t.Fatalf("wrong limit classification: %v", problem)
 			}
 			if err := c.Close(); err != nil {

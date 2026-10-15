@@ -25,6 +25,23 @@ import {
   contextCapacity,
 } from "./session-context";
 
+// Text of the primary Context metric block without any progress semantics.
+const metricText = (container: HTMLElement) =>
+  container.querySelector(".context-metric")?.textContent;
+
+const metricValue = (container: HTMLElement) =>
+  container.querySelector(".context-metric-value")?.textContent;
+
+// Prose that the default Info Context display must never render.
+const REMOVED_CONTEXT_PROSE = [
+  /Latest reported snapshot/,
+  /Historical snapshot/,
+  /Observed at/,
+  /This is a native snapshot/,
+  /Compact the native working context/,
+  /Latest native-reported context tokens/,
+];
+
 it.each([
   { harness: "codex", large: false },
   { harness: "opencode", large: false },
@@ -153,13 +170,7 @@ it.each([
     expect(requests[0]).toMatchObject({
       mutation: { id: session.id, expectedRevision: 8n },
     });
-    expect(
-      screen.getByText(
-        harness === "codex"
-          ? "Latest native-reported context tokens: Not reported"
-          : "Current context tokens: Not reported",
-      ),
-    ).toBeTruthy();
+    expect(metricText(rendered.container)).toBe("Context usedNot reported");
     expect(
       (
         screen.getByRole("button", {
@@ -320,10 +331,11 @@ it("validates closed context provenance and exact decimal counts without numeric
 });
 
 it.each(["en", "ko"])(
-  "renders exact native snapshots, historical transitions and retained read failures in %s without compaction",
+  "renders exact native numerators and retained read failures in %s without snapshot prose or compaction",
   async (language) => {
     await i18n.changeLanguage(language);
     try {
+      const label = language === "en" ? "Context used" : "컨텍스트 사용량";
       const native = nativeContextFixture();
       const session = create(ResourceSchema, {
         kind: EntityKind.SESSION,
@@ -369,7 +381,7 @@ it.each(["en", "ko"])(
       const client = new QueryClient({
         defaultOptions: { queries: { retry: false } },
       });
-      render(
+      const view = render(
         <TransportProvider transport={transport}>
           <QueryClientProvider client={client}>
             <MutationIntents>
@@ -378,35 +390,37 @@ it.each(["en", "ko"])(
           </QueryClientProvider>
         </TransportProvider>,
       );
-      await screen.findByText(
-        language === "en"
-          ? "Latest native-reported context tokens: 9007199254740993"
-          : "네이티브가 최근 보고한 컨텍스트 토큰: 9007199254740993",
-      );
-      await screen.findByText(
-        language === "en" ? "Latest reported snapshot" : "최근 보고된 스냅샷",
+      const expectNoRemovedProse = () => {
+        for (const prose of [
+          ...REMOVED_CONTEXT_PROSE,
+          /최근 보고된 스냅샷/,
+          /이전 스냅샷/,
+          /관측 시각/,
+          /네이티브 스냅샷입니다/,
+        ])
+          expect(screen.queryByText(prose)).toBeNull();
+        expect(view.container.querySelector("time")).toBeNull();
+        // A missing usage capacity never produces a fabricated progress value.
+        expect(screen.queryByRole("progressbar")).toBeNull();
+      };
+      await waitFor(() =>
+        expect(metricValue(view.container)).toBe("9007199254740993"),
       );
       expect(
-        document.querySelector('time[datetime="2026-10-09T01:00:00Z"]'),
-      ).toBeTruthy();
+        view.container.querySelector(".context-metric-label")?.textContent,
+      ).toBe(label);
+      expectNoRemovedProse();
       const refresh = () => {
         void client.invalidateQueries({ refetchType: "active" });
       };
+      // A reported zero stays zero and is never replaced by Not reported.
       observation = { ...native, status: "historical", tokens: "0" };
       refresh();
-      await screen.findByText(
-        language === "en"
-          ? "Latest native-reported context tokens: 0"
-          : "네이티브가 최근 보고한 컨텍스트 토큰: 0",
-      );
-      await screen.findByText(
-        language === "en" ? "Historical snapshot" : "이전 스냅샷",
-      );
+      await waitFor(() => expect(metricValue(view.container)).toBe("0"));
+      expectNoRemovedProse();
       observation = { ...native, tokens: "2" };
       refresh();
-      await screen.findByText(
-        language === "en" ? "Latest reported snapshot" : "최근 보고된 스냅샷",
-      );
+      await waitFor(() => expect(metricValue(view.container)).toBe("2"));
       fail = true;
       refresh();
       await screen.findByText(
@@ -414,21 +428,156 @@ it.each(["en", "ko"])(
           ? /Context refresh failed/
           : /컨텍스트 새로고침에 실패/,
       );
-      expect(
-        screen.queryByText(
-          language === "en" ? "Latest reported snapshot" : "최근 보고된 스냅샷",
-        ),
-      ).toBeNull();
-      expect(
-        screen.getByText(
-          language === "en"
-            ? "Latest native-reported context tokens: 2"
-            : "네이티브가 최근 보고한 컨텍스트 토큰: 2",
-        ),
-      ).toBeTruthy();
+      expect(metricValue(view.container)).toBe("2");
+      expectNoRemovedProse();
       expect(compact).not.toHaveBeenCalled();
     } finally {
       await i18n.changeLanguage("en");
+    }
+  },
+);
+
+type ContextCapacityScenario = {
+  name: string;
+  // Native numerator; null models a Context read without a native observation.
+  tokens: string | null;
+  usage: { total: number; contextWindow: number } | undefined;
+  metric: string;
+  percent: string | undefined;
+  capacityNote: boolean;
+};
+
+it.each<ContextCapacityScenario>([
+  {
+    name: "matching capacity",
+    tokens: "68000",
+    usage: { total: 68000, contextWindow: 128000 },
+    metric: "Context used68000 / 12800053.1%",
+    percent: "53.125",
+    capacityNote: false,
+  },
+  {
+    name: "mismatched capacity",
+    tokens: "68000",
+    usage: { total: 67999, contextWindow: 128000 },
+    metric: "Context used68000Reported capacity unavailable",
+    percent: undefined,
+    capacityNote: true,
+  },
+  {
+    name: "unavailable capacity",
+    tokens: "68000",
+    usage: undefined,
+    metric: "Context used68000Reported capacity unavailable",
+    percent: undefined,
+    capacityNote: true,
+  },
+  {
+    name: "a missing numerator",
+    tokens: null,
+    usage: undefined,
+    metric: "Context usedNot reported",
+    percent: undefined,
+    capacityNote: false,
+  },
+])(
+  "presents Context used with $name",
+  async ({ tokens, usage, metric, percent, capacityNote }) => {
+    const native = { ...nativeContextFixture(), tokens: tokens ?? "0" };
+    const session = create(ResourceSchema, {
+      kind: EntityKind.SESSION,
+      id: newRequestId(),
+      revision: 8n,
+      schemaVersion: 1,
+      documentJson: encode({
+        initial_execution: { configuration: { harness: "codex" } },
+        execution: {
+          execution_id: native.execution_id,
+          native_thread_id: native.native_thread_id,
+          native_turn_id: native.native_turn_id,
+        },
+      }),
+    });
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          capabilities: [SystemCapability.NATIVE_SESSION_COMPACTION_V1],
+        }),
+      });
+      router.service(SessionService, {
+        getSessionContext: () => ({
+          documentJson: encode({
+            session_id: session.id,
+            session_revision: "8",
+            execution_id: native.execution_id,
+            current_tokens: null,
+            native_context: tokens === null ? null : native,
+          }),
+          capabilities: [],
+        }),
+      });
+      router.service(ResourceService, {
+        getResource: () => {
+          if (!usage) throw new ConnectError("Missing", Code.NotFound);
+          return {
+            resource: create(ResourceSchema, {
+              kind: EntityKind.USAGE,
+              id: native.observation_id,
+              sessionId: session.id,
+              revision: 1n,
+              schemaVersion: 1,
+              documentJson: encode({
+                harness: "codex",
+                execution_id: native.execution_id,
+                native_thread_id: native.native_thread_id,
+                native_turn_id: native.native_turn_id,
+                sequence: Number(native.sequence),
+                observation: {
+                  last_request: { total: usage.total },
+                  context_window: usage.contextWindow,
+                },
+              }),
+            }),
+          };
+        },
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <MutationIntents>
+            <SessionContext session={session} />
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    try {
+      await waitFor(() => expect(metricText(view.container)).toBe(metric));
+      const bar = screen.queryByRole("progressbar");
+      if (percent === undefined) {
+        expect(bar).toBeNull();
+      } else {
+        expect(bar?.getAttribute("aria-valuenow")).toBe(percent);
+        expect(bar?.getAttribute("aria-valuemin")).toBe("0");
+        expect(bar?.getAttribute("aria-valuemax")).toBe("100");
+        expect(bar?.getAttribute("aria-valuetext")).toBe(
+          "68000 / 128000 (53.1%)",
+        );
+        expect(bar?.getAttribute("aria-label")).toBe("Context used");
+        // The bar accompanies the numeric value and never replaces it.
+        expect(metricText(view.container)).toContain("68000 / 128000");
+      }
+      expect(screen.queryByText("Reported capacity unavailable") !== null).toBe(
+        capacityNote,
+      );
+      for (const prose of REMOVED_CONTEXT_PROSE)
+        expect(screen.queryByText(prose)).toBeNull();
+    } finally {
+      view.unmount();
+      client.clear();
     }
   },
 );
@@ -641,6 +790,7 @@ it("retries failed original capacity reads and preserves raw over-capacity acces
     expect(screen.queryByText("PRIVATE_CAPACITY_SENTINEL")).toBeNull();
     fireEvent.click(retry);
     const progress = await screen.findByRole("progressbar");
+    expect(metricText(view.container)).toBe("Context used300 / 200150.0%");
     await waitFor(() =>
       expect(progress.getAttribute("aria-valuetext")).toBe(
         "300 / 200 (150.0%)",

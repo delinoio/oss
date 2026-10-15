@@ -23,6 +23,17 @@ Workspace request/result history retains optional immutable `directory_name` und
 
 Named storage acceptance and assignment, snapshot/restoration execution, recovery, Fork and deletion require original Worker capability 53. Deletion recomputes live paths from validated frozen fields and original UUID identities. It never follows a mutable registration name or silently converts retained UUID history. A name/path mismatch, occupied destination, missing capability or changed ownership preserves files and recovery evidence.
 
+## Grok subscription restore
+
+Managed backups never contain Grok credential material because the protected
+vault is outside the database image. Restore disconnects Grok accounts and
+quarantines any generation, keyed identity commitment, pending operation or lease
+as recovery-required evidence with its original owner fields unchanged; it grants
+no Worker authority and never calls native logout. Restore rewrites copied Worker
+devices as revoked while keeping their records readable by later scans such as
+account deletion. See the
+[Grok contract](cmds-delidev-grok-subscription-contract.md#grok-backup-and-restore).
+
 ## API format generation storage
 
 Capability 9 keeps bounded server-owned generations in account JSON, with no
@@ -1656,5 +1667,8 @@ storage deletion. Session deletion removes the session's conversation, fork,
 sidechat, title and review profiles together with its `runtimes/<id>` and
 `title-runtimes/<job>` journals and proves their absence on replay; a referenced
 or active profile keeps the deletion pending. Backup and restore treat the tree
-as owner-local state that is never imported across owners. See the
+as owner-local state that is never imported across owners. The account-wide
+shared Codex history home (`runtimes/accounts/<account-id>/codex`) is registered
+in place under the `shared_owner` purpose and is not removed by session
+deletion. See the
 [harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).

@@ -141,7 +141,7 @@ func openOpenCodeClaimsWithResume(p *ExecutionPublisher, resume *opencode.Sessio
 		return nil, openCodeClaimUncertain()
 	}
 	return &openCodeClaimJournal{path: path, state: state, saved: raw, release: lock.Close, logger: p.config.Logger, inputDigest: func(c opencode.SessionClaim) (string, error) {
-		return opencode.TextInputClaimDigest(requested.Session, c.MessageID, c.PartID, i.Input.Prompt)
+		return opencode.InputClaimDigest(requested.Session, c.MessageID, c.PartID, i.Input.Prompt, openCodeClaimImages(i.Input.Attachments))
 	}}, nil
 }
 

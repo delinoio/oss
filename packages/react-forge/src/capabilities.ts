@@ -22,6 +22,9 @@ export const capabilities = Object.freeze({
       skinning: true,
       morphTargets: true,
       embeddedTextures: true,
+      sceneAnalysis: true,
+      geometryBudget: true,
+      geometryQuality: true,
     }),
     [Format.Fbx]: Object.freeze({
       generate: true,
@@ -32,6 +35,9 @@ export const capabilities = Object.freeze({
       skinning: true,
       morphTargets: true,
       embeddedTextures: true,
+      sceneAnalysis: true,
+      geometryBudget: true,
+      geometryQuality: true,
       materialProfile: "blender-4.5",
     }),
     [Format.Pptx]: Object.freeze({

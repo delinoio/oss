@@ -36,7 +36,15 @@
 //!   every value reaching it is such a literal and those literals reach no
 //!   other observable use. Their literal spans become property occurrences, and
 //!   every object accessed through one literal joins one region.
+//! - Classes: instances of closed classes are values too (see [`classes`]).
+//!   `this` in their instance members holds the instances of the class and its
+//!   subclasses, `new` passes arguments to the nearest constructor, and
+//!   `x.m(…)` dispatches to the method that each instance resolves `m` to.
+//!   Names that instance code reads or writes become properties of the instance
+//!   even without a declaration.
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+
+mod classes;
 
 use anyhow::Result;
 
@@ -99,6 +107,27 @@ struct Flow {
     done: HashSet<(Value, Value)>,
 }
 
+/// What a class instance resolves a method name to.
+#[derive(Clone)]
+enum Target {
+    /// A summarized method: argument `i` flows into `params[i]`.
+    Summary { params: Vec<CellId>, result: CellId },
+    /// A method without a summary; its arguments escape.
+    Opaque,
+}
+
+/// A call `receiver.name(args)` (or a construction) dispatched on the
+/// instances that reach the receiver.
+struct Dispatch {
+    receiver: CellId,
+    name: &'static str,
+    args: Vec<CellId>,
+    /// A spread argument shifts every later position.
+    spread: bool,
+    result: CellId,
+    done: HashSet<Value>,
+}
+
 struct Graph {
     cells: Vec<Cell>,
     succ: Vec<Vec<CellId>>,
@@ -112,6 +141,14 @@ struct Graph {
     names: Vec<&'static str>,
     queue: VecDeque<CellId>,
     queued: Vec<bool>,
+    dispatches: Vec<Dispatch>,
+    dispatch_watchers: Vec<Vec<usize>>,
+    /// Method of an instance by name, the nearest definition in its class
+    /// chain (constructors under [`classes::CONSTRUCTOR`]).
+    methods: HashMap<(Value, &'static str), Target>,
+    /// Cells that unknown code reaches once an instance escapes: method
+    /// parameters and results and the `this` cells of its class chain.
+    exposure: HashMap<Value, Vec<CellId>>,
 }
 
 impl Graph {
@@ -129,6 +166,10 @@ impl Graph {
             names,
             queue: VecDeque::new(),
             queued: Vec::new(),
+            dispatches: Vec::new(),
+            dispatch_watchers: Vec::new(),
+            methods: HashMap::new(),
+            exposure: HashMap::new(),
         };
         graph.cell(true);
         graph.cell(false);
@@ -143,8 +184,69 @@ impl Graph {
         });
         self.succ.push(Vec::new());
         self.watchers.push(Vec::new());
+        self.dispatch_watchers.push(Vec::new());
         self.queued.push(false);
         id
+    }
+
+    fn dispatch(
+        &mut self,
+        receiver: CellId,
+        name: &'static str,
+        args: Vec<CellId>,
+        spread: bool,
+        result: CellId,
+    ) {
+        let index = self.dispatches.len();
+        self.dispatches.push(Dispatch {
+            receiver,
+            name,
+            args,
+            spread,
+            result,
+            done: HashSet::new(),
+        });
+        self.dispatch_watchers[receiver as usize].push(index);
+        self.fire_dispatch(index);
+    }
+
+    /// Connects the arguments and the result of a dispatched call with the
+    /// method of every instance that reached its receiver. Any other
+    /// receiver value calls code the analysis does not own.
+    fn fire_dispatch(&mut self, index: usize) {
+        let (receiver, name, spread, result) = {
+            let d = &self.dispatches[index];
+            (d.receiver, d.name, d.spread, d.result)
+        };
+        let values = self.cells[receiver as usize].clone();
+        if values.unknown {
+            self.set_unknown(result);
+        }
+        for value in values.values {
+            if !self.dispatches[index].done.insert(value) {
+                continue;
+            }
+            match self.methods.get(&(value, name)).cloned() {
+                Some(Target::Summary {
+                    params,
+                    result: returned,
+                }) => {
+                    let args = self.dispatches[index].args.clone();
+                    for (position, &param) in params.iter().enumerate() {
+                        if spread {
+                            self.set_unknown(param);
+                            for &arg in &args {
+                                self.edge(arg, param);
+                            }
+                        } else if let Some(&arg) = args.get(position) {
+                            self.edge(arg, param);
+                        }
+                    }
+                    self.edge(returned, result);
+                }
+                _ => self.set_unknown(result),
+            }
+        }
     }
 
     fn holding(&mut self, value: Value) -> CellId {
@@ -281,6 +383,13 @@ impl Graph {
         for field in self.object_fields[object as usize].clone() {
             self.set_unknown(field);
         }
+        // Unknown code may call an escaped instance's methods with any
+        // arguments and receivers and observe their results.
+        for cell in self.exposure.get(&object).cloned().unwrap_or_default() {
+            if cell > EMPTY {
+                self.set_unknown(cell);
+            }
+        }
     }
 
     fn solve(&mut self) -> Result<usize> {
@@ -298,6 +407,9 @@ impl Graph {
             }
             for flow in self.watchers[cell as usize].clone() {
                 self.fire(flow);
+            }
+            for dispatch in self.dispatch_watchers[cell as usize].clone() {
+                self.fire_dispatch(dispatch);
             }
         }
         Ok(steps)
@@ -341,13 +453,33 @@ enum AccessKey {
     Dynamic,
 }
 
+/// How an access uses the property.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Usage {
+    /// A read or write of the value.
+    Data,
+    /// `receiver.name(…)`: the property is called with the receiver as
+    /// `this`.
+    Call,
+    /// Tagged templates and `delete` observe more than a data property.
+    Other,
+}
+
 #[derive(Clone)]
 struct Access {
     receiver: CellId,
     key: AccessKey,
-    /// Calls through the property, tagged templates and `delete` observe
-    /// more than a data property.
-    operation: bool,
+    usage: Usage,
+    /// The access is a write target.
+    write: bool,
+}
+
+/// A dispatched call whose arguments escape unless every receiver value is
+/// an instance with a summarized method of that name.
+struct MethodCall {
+    receiver: CellId,
+    name: &'static str,
+    args: Vec<CellId>,
 }
 
 #[derive(Clone, Copy)]
@@ -365,6 +497,8 @@ struct Use {
     objects: Option<Preservation2>,
     /// Key literals escape (their text would be observed).
     tokens: bool,
+    /// Debug label of the context that makes objects escape.
+    cause: &'static str,
 }
 
 /// `Preservation` is not `Copy`; uses keep a compact reason.
@@ -410,18 +544,36 @@ struct Builder<'a, 'c> {
     accesses: Vec<Access>,
     stores: Vec<Store>,
     annotations: Vec<(Node, CellId)>,
-    sinks: Vec<CellId>,
+    /// Cells whose values escape, with a debug label.
+    sinks: Vec<(CellId, &'static str)>,
     constraints: Vec<CellId>,
     /// `(receiver, key)` of every analyzed computed access.
     computed_keys: Vec<(CellId, CellId)>,
     /// Exports observable through module namespace objects.
     exposed: HashSet<SymbolId>,
+    /// Why a function binding has no trusted summary (debug causes).
+    boundary_of: HashMap<SymbolId, FunctionBoundary>,
+    /// Closed classes and their lookup tables.
+    classes: Vec<classes::Class>,
+    class_by_node: HashMap<Node, usize>,
+    class_by_symbol: HashMap<SymbolId, usize>,
+    /// Class of each object value; `None` for object literals.
+    instance_class: Vec<Option<usize>>,
+    /// Dispatched calls and constructions.
+    calls: Vec<MethodCall>,
+    dispatched: HashSet<Node>,
+    /// Summaries of static methods of closed classes.
+    static_targets: HashMap<(usize, &'static str), usize>,
 }
 
 /// Everything decided from the current cells.
 struct Evaluation {
     reasons: Vec<Option<Preservation>>,
+    /// Property index per occurrence; indices past an object's declared
+    /// properties refer to `extras`.
     occurrences: Vec<Vec<(usize, Occurrence)>>,
+    /// Undeclared names that code reads or writes on instances.
+    extras: Vec<Vec<&'static str>>,
     parents: Vec<usize>,
 }
 
@@ -656,15 +808,94 @@ impl Builder<'_, '_> {
         }
     }
 
+    /// Creates the summary of a function-like node whose parameters and
+    /// returns the analysis owns.
+    fn summarize(&mut self, node: Node) -> usize {
+        let result = self.graph.cell(false);
+        let index = self.functions.len();
+        let parameters: Vec<Node> = node.parameters().iter().collect();
+        let mut patterns = Vec::new();
+        for &parameter in &parameters {
+            if parameter.name().kind() == SyntaxKind::Identifier {
+                patterns.push(None);
+            } else {
+                let cell = self.graph.cell(false);
+                self.annotate(parameter.type_(), cell);
+                patterns.push(Some(cell));
+            }
+        }
+        self.functions.push(Function {
+            parameters,
+            patterns,
+            result,
+        });
+        self.owners.insert(node, index);
+        self.annotate(node.type_(), result);
+        index
+    }
+
     fn target(&self, call: Node) -> Option<usize> {
         if call.kind() != SyntaxKind::CallExpression {
             return None;
         }
         let callee = skip_outer(call.expression());
-        if callee.kind() != SyntaxKind::Identifier {
-            return None;
+        match callee.kind() {
+            SyntaxKind::Identifier => self.targets.get(&self.symbol(callee)?).copied(),
+            // `C.m(…)` of a summarized static method of a closed class.
+            SyntaxKind::PropertyAccessExpression => {
+                let object = skip_outer(callee.expression());
+                if object.kind() != SyntaxKind::Identifier
+                    || callee.name().kind() != SyntaxKind::Identifier
+                {
+                    return None;
+                }
+                let class = *self.class_by_symbol.get(&self.symbol(object)?)?;
+                self.static_target(class, callee.name().text())
+            }
+            _ => None,
         }
-        self.targets.get(&self.symbol(callee)?).copied()
+    }
+
+    /// Debug label of why a call passes its arguments to unknown code.
+    fn call_boundary(&self, call: Node) -> &'static str {
+        let callee = skip_outer(call.expression());
+        match callee.kind() {
+            SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression => {
+                "call-argument:method-call"
+            }
+            SyntaxKind::Identifier => {
+                let Some(symbol) = self.symbol(callee) else {
+                    return "call-argument:unresolved-callee";
+                };
+                match self.boundary_of.get(&symbol) {
+                    Some(FunctionBoundary::Scope) => "call-argument:function-scope",
+                    Some(FunctionBoundary::AsyncOrGenerator) => "call-argument:async-or-generator",
+                    Some(FunctionBoundary::Parameters) => "call-argument:function-parameters",
+                    Some(FunctionBoundary::Receiver) => "call-argument:function-receiver",
+                    Some(FunctionBoundary::External) => "call-argument:function-external",
+                    Some(FunctionBoundary::References) => "call-argument:function-references",
+                    None => {
+                        let declaration = self.ctx.checker.sym(symbol).value_declaration;
+                        let function_valued = declaration.is_some()
+                            && declaration.kind() == SyntaxKind::VariableDeclaration
+                            && matches!(
+                                skip_outer(declaration.initializer()).kind(),
+                                SyntaxKind::ArrowFunction | SyntaxKind::FunctionExpression
+                            );
+                        if function_valued {
+                            "call-argument:non-const-function-binding"
+                        } else if declaration.is_some()
+                            && declaration.kind() == SyntaxKind::Parameter
+                        {
+                            "call-argument:parameter-callee"
+                        } else {
+                            "call-argument:other-callee"
+                        }
+                    }
+                }
+            }
+            _ => "call-argument:computed-callee",
+        }
     }
 
     fn identifier(&mut self, node: Node) -> CellId {
@@ -731,14 +962,20 @@ impl Builder<'_, '_> {
             },
             SyntaxKind::CallExpression => match self.target(node) {
                 Some(index) => self.functions[index].result,
-                None => UNKNOWN,
+                None => self.method_call(node),
             },
+            SyntaxKind::ThisKeyword => self.this_cell(node),
+            SyntaxKind::SuperKeyword => self.super_cell(node),
+            SyntaxKind::NewExpression => self.construction(node),
             SyntaxKind::PropertyAccessExpression => {
                 let receiver = self.expr(node.expression());
-                if node.name().kind() != SyntaxKind::Identifier {
-                    UNKNOWN
-                } else {
+                if matches!(
+                    node.name().kind(),
+                    SyntaxKind::Identifier | SyntaxKind::PrivateIdentifier
+                ) {
                     self.load(receiver, Key::Name(node.name().text()))
+                } else {
+                    UNKNOWN
                 }
             }
             SyntaxKind::ElementAccessExpression => {
@@ -847,6 +1084,7 @@ impl Builder<'_, '_> {
         self.allocations.insert(node, id);
         self.objects.push(object);
         self.intrinsic.push(reason);
+        self.instance_class.push(None);
     }
 
     /// String literals that may flow to computed keys.
@@ -930,7 +1168,8 @@ impl Builder<'_, '_> {
                 self.accesses.push(Access {
                     receiver,
                     key,
-                    operation: false,
+                    usage: Usage::Data,
+                    write: false,
                 });
             }
         }
@@ -944,7 +1183,11 @@ impl Builder<'_, '_> {
                 self.symbols.insert(r.node, (symbol, r.kind));
             }
         }
-        // Allocations and key literals, in file and preorder order.
+        // Class closure needs the exports that module namespaces expose.
+        self.exposed = exposed_exports(self.ctx);
+        let closed = self.closed_classes(&files);
+        // Allocations, closed classes and key literals, in file and
+        // preorder order.
         for &file in &files {
             crate::app::check_cancelled()?;
             let nodes = std::mem::take(&mut self.ctx.files[file].nodes);
@@ -953,10 +1196,13 @@ impl Builder<'_, '_> {
                     && assignment_target(node).is_nil()
                 {
                     self.allocation(file, node);
+                } else if let Some(candidate) = closed.get(&node) {
+                    self.class_allocation(file, node, candidate);
                 }
             }
             self.ctx.files[file].nodes = nodes;
         }
+        self.link_classes();
         let mut names = Vec::new();
         if self.options.finite_keys {
             for &file in &files {
@@ -978,7 +1224,7 @@ impl Builder<'_, '_> {
             }
         }
         self.graph = Graph::new(self.objects.len(), names);
-        self.exposed = exposed_exports(self.ctx);
+        self.class_cells();
         // Function summaries.
         let mut boundaries = std::collections::BTreeMap::<FunctionBoundary, usize>::new();
         for &file in &files {
@@ -1003,29 +1249,11 @@ impl Builder<'_, '_> {
                 };
                 if let Err(boundary) = self.closed_function(node, binding, symbol) {
                     *boundaries.entry(boundary).or_default() += 1;
+                    self.boundary_of.insert(symbol, boundary);
                     continue;
                 }
-                let result = self.graph.cell(false);
-                let index = self.functions.len();
-                let parameters: Vec<Node> = node.parameters().iter().collect();
-                let mut patterns = Vec::new();
-                for &parameter in &parameters {
-                    if parameter.name().kind() == SyntaxKind::Identifier {
-                        patterns.push(None);
-                    } else {
-                        let cell = self.graph.cell(false);
-                        self.annotate(parameter.type_(), cell);
-                        patterns.push(Some(cell));
-                    }
-                }
-                self.functions.push(Function {
-                    parameters,
-                    patterns,
-                    result,
-                });
+                let index = self.summarize(node);
                 self.targets.insert(symbol, index);
-                self.owners.insert(node, index);
-                self.annotate(node.type_(), result);
             }
         }
         tracing::debug!(
@@ -1033,6 +1261,7 @@ impl Builder<'_, '_> {
             ?boundaries,
             "function summaries classified"
         );
+        self.summarize_members();
         // Bindings: variables, parameters and destructured names.
         for &file in &files {
             let module = is_external_module(self.ctx.files[file].node);
@@ -1058,7 +1287,20 @@ impl Builder<'_, '_> {
                         self.bindings.insert(symbol, cell);
                         if !module || in_namespace(node) || !self.internal(symbol) {
                             self.graph.set_unknown(cell);
-                            self.sinks.push(cell);
+                            let cause = if !module {
+                                "sink:script-binding"
+                            } else if in_namespace(node) {
+                                "sink:namespace-binding"
+                            } else if self.exposed.contains(&symbol) {
+                                "sink:exposed-export"
+                            } else if self.ctx.public.contains(&symbol) {
+                                "sink:public-export"
+                            } else if self.ctx.js_referenced.contains(&symbol) {
+                                "sink:referenced-from-unchecked-code"
+                            } else {
+                                "sink:declared-outside-application"
+                            };
+                            self.sinks.push((cell, cause));
                         }
                         cell
                     }
@@ -1106,7 +1348,7 @@ impl Builder<'_, '_> {
                         if !Self::value_reference(r.node, kind) {
                             // Namespace member or qualified access.
                             self.graph.set_unknown(cell);
-                            self.sinks.push(cell);
+                            self.sinks.push((cell, "sink:non-value-reference"));
                         } else if assignment_target(r.node).is_some() && !simple_assignment(r.node)
                         {
                             self.graph.set_unknown(cell);
@@ -1115,6 +1357,7 @@ impl Builder<'_, '_> {
                 }
             }
         }
+        self.method_tables();
         // Graph edges and uses.
         for &file in &files {
             crate::app::check_cancelled()?;
@@ -1210,15 +1453,31 @@ impl Builder<'_, '_> {
                     };
                     let outer = walk_up_outer(node);
                     let parent = outer.parent();
-                    let operation = (matches!(
-                        parent.kind(),
-                        SyntaxKind::CallExpression | SyntaxKind::TaggedTemplateExpression
-                    ) && parent.expression() == outer)
-                        || parent.kind() == SyntaxKind::DeleteExpression;
+                    // A call counts as a method call only when it was
+                    // dispatched; any other call through an instance
+                    // connects neither its arguments nor its result.
+                    let usage = if parent.kind() == SyntaxKind::CallExpression
+                        && parent.expression() == outer
+                    {
+                        self.expr(parent);
+                        if self.dispatched.contains(&parent) {
+                            Usage::Call
+                        } else {
+                            Usage::Other
+                        }
+                    } else if (parent.kind() == SyntaxKind::TaggedTemplateExpression
+                        && parent.tag() == outer)
+                        || parent.kind() == SyntaxKind::DeleteExpression
+                    {
+                        Usage::Other
+                    } else {
+                        Usage::Data
+                    };
                     self.accesses.push(Access {
                         receiver,
                         key,
-                        operation,
+                        usage,
+                        write: assignment_target(node).is_some(),
                     });
                 }
                 self.expr(node);
@@ -1232,7 +1491,16 @@ impl Builder<'_, '_> {
                             self.graph.edge(from, cell);
                         }
                     }
+                } else {
+                    // Dispatches method calls.
+                    self.expr(node);
                 }
+            }
+            SyntaxKind::NewExpression => {
+                self.expr(node);
+            }
+            SyntaxKind::PropertyDeclaration | SyntaxKind::GetAccessor | SyntaxKind::SetAccessor => {
+                self.member_edges(node)
             }
             SyntaxKind::ReturnStatement if node.expression().is_some() => {
                 if let Some(&index) = self.owners.get(&owner(node)) {
@@ -1291,7 +1559,10 @@ impl Builder<'_, '_> {
     fn store(&mut self, target: Node, value: CellId) {
         let receiver = self.expr(target.expression());
         let key = if target.kind() == SyntaxKind::PropertyAccessExpression {
-            if target.name().kind() == SyntaxKind::Identifier {
+            if matches!(
+                target.name().kind(),
+                SyntaxKind::Identifier | SyntaxKind::PrivateIdentifier
+            ) {
                 Key::Name(target.name().text())
             } else {
                 Key::Dynamic
@@ -1324,7 +1595,9 @@ impl Builder<'_, '_> {
             | SyntaxKind::BinaryExpression
             | SyntaxKind::CallExpression
             | SyntaxKind::PropertyAccessExpression
-            | SyntaxKind::ElementAccessExpression => true,
+            | SyntaxKind::ElementAccessExpression
+            | SyntaxKind::ThisKeyword
+            | SyntaxKind::NewExpression => true,
             _ => false,
         };
         if !carrier {
@@ -1334,21 +1607,24 @@ impl Builder<'_, '_> {
         if cell <= EMPTY {
             return;
         }
-        let (objects, tokens) = self.context(node);
+        let (objects, tokens, cause) = self.context(node);
         if objects.is_some() || tokens {
             self.uses.push(Use {
                 cell,
                 objects,
                 tokens,
+                cause,
             });
         }
     }
 
     /// `(object escape reason, key literals escape)` for a value in the
     /// context of `node`'s parent.
-    fn context(&self, node: Node) -> (Option<Preservation2>, bool) {
-        const ACCEPT: (Option<Preservation2>, bool) = (None, false);
-        const ESCAPE: (Option<Preservation2>, bool) = (Some(Preservation2::Escapes), true);
+    fn context(&self, node: Node) -> (Option<Preservation2>, bool, &'static str) {
+        const ACCEPT: (Option<Preservation2>, bool, &str) = (None, false, "");
+        const fn escape(cause: &'static str) -> (Option<Preservation2>, bool, &'static str) {
+            (Some(Preservation2::Escapes), true, cause)
+        }
         // Write targets: a plain assignment, destructuring or loop target
         // does not read the old value; compound writes and updates do.
         let target = assignment_target(node);
@@ -1363,7 +1639,7 @@ impl Builder<'_, '_> {
             {
                 ACCEPT
             } else {
-                ESCAPE
+                escape("compound-write")
             };
         }
         let parent = node.parent();
@@ -1397,16 +1673,26 @@ impl Builder<'_, '_> {
                         | SyntaxKind::ElementAccessExpression => true,
                         _ => false,
                     };
-                    if tracked { ACCEPT } else { ESCAPE }
+                    if tracked {
+                        ACCEPT
+                    } else {
+                        escape("assignment-to-untracked")
+                    }
                 }
                 SyntaxKind::AmpersandAmpersandToken
                 | SyntaxKind::BarBarToken
                 | SyntaxKind::QuestionQuestionToken
                 | SyntaxKind::CommaToken => ACCEPT,
                 SyntaxKind::EqualsEqualsEqualsToken | SyntaxKind::ExclamationEqualsEqualsToken => {
-                    (None, true)
+                    (None, true, "")
                 }
-                _ => ESCAPE,
+                // Reads only the prototype chain of the left operand.
+                SyntaxKind::InstanceOfKeyword
+                    if parent.left() == node && self.ordinary_instance_check(parent.right()) =>
+                {
+                    (None, true, "")
+                }
+                _ => escape("binary-operator"),
             },
             SyntaxKind::VariableDeclaration if parent.initializer() == node => {
                 let name = parent.name();
@@ -1417,55 +1703,71 @@ impl Builder<'_, '_> {
                     {
                         ACCEPT
                     } else {
-                        ESCAPE
+                        escape("untracked-variable")
                     }
                 } else if self.supported_pattern(name) {
-                    (None, true)
+                    (None, true, "")
                 } else {
-                    (Some(Preservation2::Unsupported), true)
+                    (Some(Preservation2::Unsupported), true, "")
                 }
             }
             SyntaxKind::Parameter if parent.initializer() == node => {
                 if self.owners.contains_key(&parent.parent()) {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape("default-of-unsummarized-parameter")
                 }
             }
             SyntaxKind::BindingElement if parent.initializer() == node => {
                 if self.supported_pattern(parent.parent()) {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape("binding-default")
                 }
             }
+            // Dispatched arguments escape during evaluation unless every
+            // receiver resolves to a summarized method.
             SyntaxKind::CallExpression if parent.expression() != node => {
-                if self.target(parent).is_some() {
+                if self.target(parent).is_some() || self.dispatched.contains(&parent) {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape(self.call_boundary(parent))
+                }
+            }
+            SyntaxKind::NewExpression
+                if parent.expression() != node && self.dispatched.contains(&parent) =>
+            {
+                ACCEPT
+            }
+            SyntaxKind::PropertyDeclaration if parent.initializer() == node => {
+                if self.instance_field(parent) {
+                    ACCEPT
+                } else {
+                    escape("field-of-untracked-class")
                 }
             }
             SyntaxKind::ReturnStatement => {
                 if self.owners.contains_key(&owner(parent)) {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape("return-from-unsummarized")
                 }
             }
             SyntaxKind::ArrowFunction if parent.body() == node => {
                 if self.owners.contains_key(&parent) {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape("arrow-body-of-unsummarized")
                 }
             }
             // Receivers: accesses are analyzed separately. A key literal as
             // a receiver exposes its text.
-            SyntaxKind::PropertyAccessExpression if parent.expression() == node => (None, true),
-            SyntaxKind::ElementAccessExpression if parent.expression() == node => (None, true),
+            SyntaxKind::PropertyAccessExpression if parent.expression() == node => (None, true, ""),
+            SyntaxKind::ElementAccessExpression if parent.expression() == node => (None, true, ""),
             // Keys: objects are converted to strings.
-            SyntaxKind::ElementAccessExpression => (Some(Preservation2::Escapes), false),
+            SyntaxKind::ElementAccessExpression => {
+                (Some(Preservation2::Escapes), false, "element-key")
+            }
             SyntaxKind::PropertyAssignment if parent.initializer() == node => {
                 // Only static names are modeled as fields.
                 if self.allocations.contains_key(&parent.parent())
@@ -1476,18 +1778,18 @@ impl Builder<'_, '_> {
                 {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape("field-of-untracked-object")
                 }
             }
             SyntaxKind::ShorthandPropertyAssignment if parent.name() == node => {
                 if self.allocations.contains_key(&parent.parent()) {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape("shorthand-of-untracked-object")
                 }
             }
-            SyntaxKind::DeleteExpression => (Some(Preservation2::Operation), true),
-            _ => ESCAPE,
+            SyntaxKind::DeleteExpression => (Some(Preservation2::Operation), true, ""),
+            kind => escape(kind_label(kind)),
         }
     }
 
@@ -1499,6 +1801,21 @@ impl Builder<'_, '_> {
         let mut occurrences: Vec<Vec<(usize, Occurrence)>> = vec![Vec::new(); objects];
         let mut parents: Vec<usize> = (0..total).collect();
         let graph = &self.graph;
+        // Debug attribution: the first context that preserved each object.
+        let debug = tracing::enabled!(tracing::Level::DEBUG);
+        let mut causes: Vec<&'static str> = vec![""; objects];
+        let stamp = |reasons: &[Option<Preservation>],
+                     causes: &mut Vec<&'static str>,
+                     label: &'static str| {
+            if debug {
+                for (object, cause) in causes.iter_mut().enumerate() {
+                    if cause.is_empty() && reasons[object].is_some() {
+                        *cause = label;
+                    }
+                }
+            }
+        };
+        stamp(&reasons, &mut causes, "intrinsic");
         let preserve = |reasons: &mut Vec<Option<Preservation>>,
                         token_escaped: &mut Vec<bool>,
                         cell: CellId,
@@ -1514,7 +1831,7 @@ impl Builder<'_, '_> {
                 }
             }
         };
-        for &cell in &self.sinks {
+        for &(cell, cause) in &self.sinks {
             preserve(
                 &mut reasons,
                 &mut token_escaped,
@@ -1522,6 +1839,13 @@ impl Builder<'_, '_> {
                 Some(Preservation::Escapes),
                 true,
             );
+            if debug {
+                for &value in &graph.cells[cell as usize].values {
+                    if graph.is_object(value) && causes[value as usize].is_empty() {
+                        causes[value as usize] = cause;
+                    }
+                }
+            }
         }
         for &cell in &self.constraints {
             preserve(
@@ -1532,6 +1856,7 @@ impl Builder<'_, '_> {
                 true,
             );
         }
+        stamp(&reasons, &mut causes, "type-constraint");
         for u in &self.uses {
             preserve(
                 &mut reasons,
@@ -1540,6 +1865,55 @@ impl Builder<'_, '_> {
                 u.objects.map(Preservation2::reason),
                 u.tokens,
             );
+            if debug && u.objects.is_some() {
+                for &value in &graph.cells[u.cell as usize].values {
+                    if graph.is_object(value) && causes[value as usize].is_empty() {
+                        causes[value as usize] = if u.cause.is_empty() { "use" } else { u.cause };
+                    }
+                }
+            }
+        }
+        // Arguments of calls that may reach code without a summary escape.
+        let mut escaping_calls = HashMap::<&str, usize>::new();
+        for call in &self.calls {
+            let receiver = &graph.cells[call.receiver as usize];
+            let resolved = !receiver.unknown
+                && !receiver.values.is_empty()
+                && receiver.values.iter().all(|&v| {
+                    matches!(
+                        graph.methods.get(&(v, call.name)),
+                        Some(Target::Summary { .. })
+                    )
+                });
+            if resolved {
+                continue;
+            }
+            if debug
+                && call.args.iter().any(|&arg| {
+                    graph.cells[arg as usize]
+                        .values
+                        .iter()
+                        .any(|&v| graph.is_object(v) && self.instance_class[v as usize].is_some())
+                })
+            {
+                *escaping_calls.entry(call.name).or_default() += 1;
+            }
+            for &arg in &call.args {
+                preserve(
+                    &mut reasons,
+                    &mut token_escaped,
+                    arg,
+                    Some(Preservation::Escapes),
+                    true,
+                );
+            }
+        }
+        stamp(&reasons, &mut causes, "call-argument:method-call");
+        if debug {
+            let mut escaping_calls: Vec<_> = escaping_calls.into_iter().collect();
+            escaping_calls.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+            escaping_calls.truncate(30);
+            tracing::debug!(?escaping_calls, "instances passed to unresolved calls");
         }
         // Values joined with unknown ones cannot be renamed alone (unknown
         // code may read an escaped object's fields, including key literals
@@ -1562,6 +1936,7 @@ impl Builder<'_, '_> {
                 }
             }
         }
+        stamp(&reasons, &mut causes, "joined-with-unknown-value");
         // A key literal used on a receiver that is not purely tracked
         // objects keeps its text.
         for &(receiver, key) in &self.computed_keys {
@@ -1600,20 +1975,46 @@ impl Builder<'_, '_> {
                 );
             }
         }
+        stamp(&reasons, &mut causes, "store-into-unknown-receiver");
+        let mut extras: Vec<Vec<&'static str>> = vec![Vec::new(); objects];
+        // Names that code writes on each instance.
+        let mut written: Vec<HashSet<&'static str>> = vec![HashSet::new(); objects];
+        // Literals have exactly their own properties. Instances gain every
+        // undeclared name that code reads or writes, except private names
+        // (never renamed) and names that `Object.prototype` defines.
         let record = |reasons: &mut Vec<Option<Preservation>>,
                       occurrences: &mut Vec<Vec<(usize, Occurrence)>>,
+                      extras: &mut Vec<Vec<&'static str>>,
                       object: usize,
-                      name: &str,
+                      name: &'static str,
                       occurrence: &Occurrence| {
-            match self.objects[object]
-                .properties
-                .iter()
-                .position(|p| p.name == name)
-            {
-                Some(property) => occurrences[object].push((property, occurrence.clone())),
-                None => {
-                    reasons[object].get_or_insert(Preservation::ObservableOperation);
-                }
+            let properties = &self.objects[object].properties;
+            if let Some(property) = properties.iter().position(|p| p.name == name) {
+                occurrences[object].push((property, occurrence.clone()));
+            } else if self.instance_class[object].is_none() {
+                reasons[object].get_or_insert(Preservation::ObservableOperation);
+            } else if classes::inherited_name(name) {
+                reasons[object].get_or_insert(Preservation::SpecialProperty);
+            } else if !name.starts_with('#') {
+                let list = &mut extras[object];
+                let index = match list.iter().position(|&n| n == name) {
+                    Some(index) => index,
+                    None => {
+                        list.push(name);
+                        list.len() - 1
+                    }
+                };
+                occurrences[object].push((properties.len() + index, occurrence.clone()));
+            }
+        };
+        // A call through an instance needs a method; reading or writing a
+        // method's slot observes the function (and its `this`).
+        let observes_method = |object: usize, name: &'static str, usage: Usage| {
+            let method = graph.methods.contains_key(&(object as Value, name));
+            match usage {
+                Usage::Data => method,
+                Usage::Call => !method,
+                Usage::Other => true,
             }
         };
         for access in &self.accesses {
@@ -1628,11 +2029,32 @@ impl Builder<'_, '_> {
                 continue;
             }
             let mixed = receiver.unknown || members.len() != receiver.values.len();
+            let names: Vec<&'static str> = match access.key {
+                AccessKey::Static { name, .. } => vec![name],
+                AccessKey::Computed(cell) => graph.cells[cell as usize]
+                    .values
+                    .iter()
+                    .filter(|&&v| !graph.is_object(v))
+                    .map(|&v| graph.names[(v - graph.objects) as usize])
+                    .collect(),
+                AccessKey::Dynamic => Vec::new(),
+            };
             for &object in &members {
                 if mixed {
                     reasons[object].get_or_insert(Preservation::Escapes);
                 }
-                if access.operation {
+                if access.write {
+                    written[object].extend(names.iter().copied());
+                }
+                let observable = if self.instance_class[object].is_some() {
+                    access.usage == Usage::Other
+                        || names
+                            .iter()
+                            .any(|&name| observes_method(object, name, access.usage))
+                } else {
+                    access.usage != Usage::Data
+                };
+                if observable {
                     reasons[object].get_or_insert(Preservation::ObservableOperation);
                 }
             }
@@ -1642,6 +2064,7 @@ impl Builder<'_, '_> {
                         record(
                             &mut reasons,
                             &mut occurrences,
+                            &mut extras,
                             object,
                             name,
                             &self.spans[occurrence],
@@ -1665,6 +2088,7 @@ impl Builder<'_, '_> {
                                 record(
                                     &mut reasons,
                                     &mut occurrences,
+                                    &mut extras,
                                     object,
                                     name,
                                     &self.token_info[token].occurrence,
@@ -1685,6 +2109,7 @@ impl Builder<'_, '_> {
                 }
             }
         }
+        stamp(&reasons, &mut causes, "access");
         // Inline type literals are renamed with the values they describe;
         // any other annotation is a type constraint.
         for &(ty, cell) in &self.annotations {
@@ -1722,8 +2147,37 @@ impl Builder<'_, '_> {
                 }
             }
         }
+        stamp(&reasons, &mut causes, "annotation");
+        // A name that no instance of a region declares or writes resolves
+        // through the prototype chain, which code may extend
+        // (`Object.prototype.x = …`); reading it keeps the region.
+        let mut known = HashMap::<usize, HashSet<&str>>::new();
+        for object in 0..objects {
+            if self.instance_class[object].is_none() {
+                continue;
+            }
+            let names = known.entry(root(&mut parents, object)).or_default();
+            names.extend(
+                self.objects[object]
+                    .properties
+                    .iter()
+                    .map(|p| p.name.as_str()),
+            );
+            names.extend(written[object].iter().copied());
+        }
+        for object in 0..objects {
+            if extras[object].is_empty() {
+                continue;
+            }
+            let names = &known[&root(&mut parents, object)];
+            if extras[object].iter().any(|name| !names.contains(name)) {
+                reasons[object].get_or_insert(Preservation::SpecialProperty);
+            }
+        }
+        stamp(&reasons, &mut causes, "prototype-read");
         // Region preservation.
         let mut region = vec![None::<Preservation>; total];
+        let mut region_cause = vec![""; total];
         for element in 0..total {
             let reason = if element < objects {
                 reasons[element].clone()
@@ -1734,18 +2188,78 @@ impl Builder<'_, '_> {
             };
             if let Some(reason) = reason {
                 let r = root(&mut parents, element);
+                if region[r].is_none() {
+                    region_cause[r] = if element < objects {
+                        causes[element]
+                    } else {
+                        "escaped-key-literal"
+                    };
+                }
                 region[r].get_or_insert(reason);
             }
         }
         for (object, reason) in reasons.iter_mut().enumerate() {
             let r = root(&mut parents, object);
             if let Some(region) = &region[r] {
+                if debug && reason.is_none() {
+                    causes[object] = region_cause[r];
+                }
                 reason.get_or_insert(region.clone());
             }
+        }
+        if debug {
+            // Preserved properties per cause, the most frequent first.
+            let mut totals = HashMap::<&str, usize>::new();
+            for (object, cause) in causes.iter().enumerate() {
+                if reasons[object].is_some() {
+                    *totals
+                        .entry(if cause.is_empty() {
+                            "unattributed"
+                        } else {
+                            cause
+                        })
+                        .or_default() += self.objects[object].properties.len();
+                }
+            }
+            let mut totals: Vec<_> = totals.into_iter().collect();
+            totals.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+            totals.truncate(30);
+            tracing::debug!(?totals, "property preservation causes");
+            // Closed classes per cause, the most frequent first.
+            let mut classes = HashMap::<&str, usize>::new();
+            let mut renamed = 0usize;
+            for (object, cause) in causes.iter().enumerate() {
+                if self.instance_class[object].is_none() {
+                    continue;
+                }
+                tracing::debug!(
+                    file = %self.objects[object].file,
+                    start = self.objects[object].start,
+                    reason = ?reasons[object],
+                    cause,
+                    "class instance classified"
+                );
+                if reasons[object].is_none() {
+                    renamed += 1;
+                } else {
+                    *classes
+                        .entry(if cause.is_empty() {
+                            "unattributed"
+                        } else {
+                            cause
+                        })
+                        .or_default() += 1;
+                }
+            }
+            let mut classes: Vec<_> = classes.into_iter().collect();
+            classes.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+            classes.truncate(30);
+            tracing::debug!(renamed, preserved = ?classes, "class preservation causes");
         }
         Evaluation {
             reasons,
             occurrences,
+            extras,
             parents,
         }
     }
@@ -1917,10 +2431,17 @@ impl Builder<'_, '_> {
         let Evaluation {
             reasons,
             occurrences,
+            extras,
             mut parents,
         } = evaluation;
         let mut objects = std::mem::take(&mut self.objects);
         for (index, list) in occurrences.into_iter().enumerate() {
+            for name in &extras[index] {
+                objects[index].properties.push(Property {
+                    name: (*name).to_owned(),
+                    occurrences: Vec::new(),
+                });
+            }
             for (property, occurrence) in list {
                 objects[index].properties[property]
                     .occurrences
@@ -2126,7 +2647,29 @@ pub(super) fn analyze(ctx: &mut Ctx, options: Options) -> Result<Vec<Object>> {
         constraints: Vec::new(),
         computed_keys: Vec::new(),
         exposed: HashSet::new(),
+        boundary_of: HashMap::new(),
+        classes: Vec::new(),
+        class_by_node: HashMap::new(),
+        class_by_symbol: HashMap::new(),
+        instance_class: Vec::new(),
+        calls: Vec::new(),
+        dispatched: HashSet::new(),
+        static_targets: HashMap::new(),
     };
     builder.build()?;
     builder.finish()
+}
+
+/// Static debug label of an unsupported value context.
+fn kind_label(kind: SyntaxKind) -> &'static str {
+    thread_local! {
+        static LABELS: std::cell::RefCell<HashMap<SyntaxKind, &'static str>> =
+            std::cell::RefCell::new(HashMap::new());
+    }
+    LABELS.with(|labels| {
+        *labels
+            .borrow_mut()
+            .entry(kind)
+            .or_insert_with(|| Box::leak(format!("context:{kind:?}").into_boxed_str()))
+    })
 }

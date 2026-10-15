@@ -19,6 +19,13 @@ export interface PayloadWindowQuery<Row extends PaginationRow, Payload> {
   protect?: (token?: string) => void;
 }
 
+/** Closed state of a reached-page wrapper. Stylesheets key wrapper layout off
+ * this value so a measured placeholder never inherits stretching behavior. */
+export enum PayloadPageState {
+  Resident = "resident",
+  Placeholder = "placeholder",
+}
+
 function PayloadPage<Row extends PaginationRow, Payload>({
   page,
   payload,
@@ -112,6 +119,9 @@ function PayloadPage<Row extends PaginationRow, Payload>({
       ref={element}
       style={payload ? undefined : { minHeight: page.height ?? 48 }}
       data-payload-page={page.token}
+      data-payload-state={
+        payload ? PayloadPageState.Resident : PayloadPageState.Placeholder
+      }
       onFocusCapture={() => query.protect?.(page.token)}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null))
@@ -189,8 +199,11 @@ export function ScrollPayloadWindow<Row extends PaginationRow, Payload>({
   const priorFocus =
     typeof document === "undefined" ? null : document.activeElement;
   useLayoutEffect(() => {
+    // A single page has no preceding payload to compensate. Its surrounding
+    // layout can move during dialog dismissal without changing list scroll.
     if (
       container &&
+      query.pages.length > 1 &&
       anchorToken !== undefined &&
       anchorToken !== null &&
       anchorTop !== undefined

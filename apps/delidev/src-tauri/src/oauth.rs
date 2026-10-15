@@ -31,6 +31,11 @@ pub enum OAuthAction {
     SubscriptionReopen,
     ClaudeSubscriptionOpen,
     ClaudeSubscriptionReopen,
+    GrokSubscriptionOpen,
+    GrokSubscriptionReopen,
+    // Stateless: opens the validated Grok device verification page in the
+    // system default browser. It binds no listener and records no attempt.
+    GrokDeviceAuthorizationOpen,
     Reopen,
     Take,
     Dispose,
@@ -149,6 +154,7 @@ enum BrowserBindingKind {
     Provider,
     CodexSubscription,
     ClaudeSubscription,
+    GrokSubscription,
 }
 struct Attempt {
     kind: BrowserBindingKind,
@@ -164,7 +170,7 @@ struct Attempt {
 }
 impl Drop for Attempt {
     fn drop(&mut self) {
-        self.shared.stop.store(true, Ordering::Release);
+        crate::browser_opener::retire(&self.shared.stop);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -173,20 +179,65 @@ impl Drop for Attempt {
         }
     }
 }
+// One admitted Grok device verification dispatch. It owns a cancellation flag
+// that only retirement of its own scope (Dispose), its window (close), or the
+// whole host (stop/exhaustion) can set, so a dispatch that was admitted just
+// before a Settings screen closed still observes that closure.
+struct DeviceOpening {
+    scope: OAuthScope,
+    cancel: Arc<AtomicBool>,
+}
+// Unregisters an admitted device opening when its dispatch settles, whether the
+// opener succeeded, failed or panicked.
+struct DeviceOpeningGuard<'a> {
+    host: &'a OAuthHost,
+    cancel: Arc<AtomicBool>,
+}
+impl Drop for DeviceOpeningGuard<'_> {
+    fn drop(&mut self) {
+        self.host
+            .device_openings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .retain(|opening| !Arc::ptr_eq(&opening.cancel, &self.cancel));
+    }
+}
 #[derive(Default)]
 pub struct OAuthHost {
     disposed: Mutex<std::collections::BTreeSet<OAuthScope>>,
     attempts: Mutex<BTreeMap<String, Attempt>>,
+    // Lock order: `attempts` is always taken before `device_openings`, and
+    // `device_openings` is never held while taking another lock.
+    device_openings: Mutex<Vec<DeviceOpening>>,
     epochs: Mutex<BTreeMap<String, u64>>,
     stopped: AtomicBool,
+    // Remote Grok login needs the Go server to validate and forward the captured
+    // Grok callback. It does not yet, so production leaves this false and a
+    // remote Grok open is refused before any listener or browser exists.
+    grok_remote_forwarding: bool,
     // Deterministic unit scheduling after pre-admission and before attempts.
     #[cfg(test)]
     admission_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
 }
 
 impl OAuthHost {
+    // Cancels every admitted device opening selected by `retired`. A poisoned
+    // registry must still deliver cancellation, so poisoning is ignored.
+    fn cancel_device_openings(&self, retired: impl Fn(&OAuthScope) -> bool) {
+        for opening in self
+            .device_openings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .filter(|opening| retired(&opening.scope))
+        {
+            crate::browser_opener::retire(&opening.cancel);
+        }
+    }
+
     fn exhausted(&self, attempts: &mut BTreeMap<String, Attempt>) -> NativeFailure {
         self.stopped.store(true, Ordering::Release);
+        self.cancel_device_openings(|_| true);
         // Retained revocations are never evicted. Stop and join every original
         // listener so capacity failure cannot leave active callback authority.
         attempts.clear();
@@ -238,6 +289,9 @@ impl OAuthHost {
         let next = epoch
             .checked_add(1)
             .ok_or_else(|| self.exhausted(&mut attempts))?;
+        // The epoch advances under the attempts lock, so a device opening is
+        // either already registered here or is refused as a stale epoch.
+        self.cancel_device_openings(|scope| scope.window == window);
         *self
             .epochs
             .lock()
@@ -252,8 +306,20 @@ impl OAuthHost {
 
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::Release);
-        if let Ok(mut attempts) = self.attempts.lock() {
-            attempts.clear();
+        // Retire every admitted device dispatch before anything can block:
+        // clearing the attempts joins their callback listeners, and a pending
+        // dispatch must not commit and spawn the browser while that join waits.
+        self.cancel_device_openings(|_| true);
+        // A dispatch that passed the stopped check before the store above
+        // registers under the attempts lock, so cancelling once more while
+        // holding that lock retires it too: admission either refused the
+        // dispatch or registered it before this cancellation.
+        match self.attempts.lock() {
+            Ok(mut attempts) => {
+                self.cancel_device_openings(|_| true);
+                attempts.clear();
+            }
+            Err(_) => self.cancel_device_openings(|_| true),
         }
     }
 
@@ -359,21 +425,65 @@ impl OAuthHost {
             self.remember_disposed(expired.clone(), &mut attempts)?;
             attempts.remove(&expired.window);
         }
+        if action == OAuthAction::GrokDeviceAuthorizationOpen {
+            // Device sign-in has no PKCE listener, callback or attempt. The
+            // only native authority is opening the fixed xAI verification page
+            // through the OAuth dispatcher, which always uses the operating
+            // system default browser and ignores the General/Local choices.
+            canonical_id(attempt_id)?;
+            if !generation.is_empty() {
+                return Err(NativeFailure::InvalidInput);
+            }
+            if self
+                .disposed
+                .lock()
+                .map_err(|_| NativeFailure::Busy)?
+                .contains(&scope)
+            {
+                return Err(NativeFailure::Stopped);
+            }
+            validate_grok_device_authorization(authorization)?;
+            let url = Zeroizing::new(authorization.to_string());
+            // The attempts lock is held from the disposed check through
+            // registration, and Dispose, window close and stop hold it while
+            // retiring a scope. Every dispatch is therefore either refused
+            // above or registered here and cancelled by the retirement that
+            // follows it.
+            let cancel = Arc::new(AtomicBool::new(false));
+            self.device_openings
+                .lock()
+                .map_err(|_| NativeFailure::Busy)?
+                .push(DeviceOpening {
+                    scope,
+                    cancel: Arc::clone(&cancel),
+                });
+            let _guard = DeviceOpeningGuard {
+                host: self,
+                cancel: Arc::clone(&cancel),
+            };
+            drop(attempts);
+            // The dispatcher checks this per-opening flag immediately before it
+            // starts the browser process and while it waits for it.
+            opener(&url, &cancel)?;
+            return Ok(OAuthResult::default());
+        }
         if matches!(
             action,
             OAuthAction::SubscriptionOpen
                 | OAuthAction::SubscriptionReopen
                 | OAuthAction::ClaudeSubscriptionOpen
                 | OAuthAction::ClaudeSubscriptionReopen
+                | OAuthAction::GrokSubscriptionOpen
+                | OAuthAction::GrokSubscriptionReopen
         ) {
-            let claude = matches!(
-                action,
-                OAuthAction::ClaudeSubscriptionOpen | OAuthAction::ClaudeSubscriptionReopen
-            );
-            let kind = if claude {
-                BrowserBindingKind::ClaudeSubscription
-            } else {
-                BrowserBindingKind::CodexSubscription
+            let kind = match action {
+                OAuthAction::ClaudeSubscriptionOpen | OAuthAction::ClaudeSubscriptionReopen => {
+                    BrowserBindingKind::ClaudeSubscription
+                }
+                OAuthAction::GrokSubscriptionOpen | OAuthAction::GrokSubscriptionReopen => {
+                    BrowserBindingKind::GrokSubscription
+                }
+                _ => BrowserBindingKind::CodexSubscription,
             };
             canonical_id(attempt_id)?;
             if self
@@ -390,7 +500,8 @@ impl OAuthHost {
                     || original.authorization.as_str() != authorization
                     || !generation.is_empty() && original.generation != generation
                     || original.kind != kind
-                    || !claude && original.shared.expected_state.is_none()
+                    || kind != BrowserBindingKind::ClaudeSubscription
+                        && original.shared.expected_state.is_none()
                 {
                     return Err(NativeFailure::InvalidEvidence);
                 }
@@ -399,7 +510,9 @@ impl OAuthHost {
                 // this same original address exactly once.
                 if matches!(
                     action,
-                    OAuthAction::SubscriptionReopen | OAuthAction::ClaudeSubscriptionReopen
+                    OAuthAction::SubscriptionReopen
+                        | OAuthAction::ClaudeSubscriptionReopen
+                        | OAuthAction::GrokSubscriptionReopen
                 ) {
                     let shared = Arc::clone(&original.shared);
                     let url = Zeroizing::new(original.authorization.to_string());
@@ -430,10 +543,18 @@ impl OAuthHost {
             {
                 return Err(NativeFailure::Busy);
             }
-            let original = if claude {
-                begin_claude_subscription(scope, attempt_id, authorization)?
-            } else {
-                begin_subscription(scope, attempt_id, authorization, local)?
+            let original = match kind {
+                BrowserBindingKind::ClaudeSubscription => {
+                    begin_claude_subscription(scope, attempt_id, authorization)?
+                }
+                BrowserBindingKind::GrokSubscription => begin_grok_subscription(
+                    scope,
+                    attempt_id,
+                    authorization,
+                    local,
+                    self.grok_remote_forwarding,
+                )?,
+                _ => begin_subscription(scope, attempt_id, authorization, local)?,
             };
             let result = OAuthResult {
                 generation: original.generation.clone(),
@@ -533,6 +654,9 @@ impl OAuthHost {
         // Disposal is idempotent only for the exact old generation. A late
         // Settings cleanup cannot close a replacement listener.
         if action == OAuthAction::Dispose {
+            // Retire admitted device dispatches first so a disposal that fails
+            // on capacity still cancels them.
+            self.cancel_device_openings(|opening| *opening == scope);
             self.remember_disposed(scope.clone(), &mut attempts)?;
             if let Some(original) = attempts.get(&scope.window)
                 && original.scope == scope
@@ -788,7 +912,7 @@ fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, Na
                         if !peer.ip().is_loopback() {
                             continue;
                         }
-                        handle_request(&mut stream, &host, &path, &control);
+                        handle_request(&mut stream, &host, &path, &control, until);
                     }
                 }
                 thread::sleep(Duration::from_millis(10));
@@ -950,10 +1074,33 @@ fn parse_request_profile(
     let code = query.strip_prefix("code=")?;
     decode_code(code).map(Some)
 }
-fn handle_request(stream: &mut TcpStream, host: &str, path: &str, shared: &Shared) {
+// The one-shot claim of a callback. The deadline is rechecked here, immediately
+// before the compare-and-swap, because the owning loop only evaluates it
+// between connections.
+fn claim_callback(shared: &Shared, deadline: Instant) -> bool {
+    shared.bound.load(Ordering::Acquire)
+        && !shared.stop.load(Ordering::Acquire)
+        && Instant::now() < deadline
+        && shared
+            .consumed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+}
+
+// `deadline` is the owning attempt's expiry. A delivery that was accepted just
+// before it can still be read for up to a second, so the handler reads no
+// longer than the deadline and rechecks it immediately before it consumes the
+// callback. An expired delivery is answered as a bad request and never stored.
+fn handle_request(
+    stream: &mut TcpStream,
+    host: &str,
+    path: &str,
+    shared: &Shared,
+    deadline: Instant,
+) {
     let _ = stream.set_read_timeout(Some(Duration::from_millis(25)));
     let _ = stream.set_write_timeout(Some(Duration::from_millis(100)));
-    let until = Instant::now() + Duration::from_secs(1);
+    let until = (Instant::now() + Duration::from_secs(1)).min(deadline);
     let mut raw = Zeroizing::new(Vec::new());
     let mut buffer = [0u8; 1024];
     while raw.len() <= 32 << 10 && Instant::now() < until && !shared.stop.load(Ordering::Acquire) {
@@ -989,14 +1136,7 @@ fn handle_request(stream: &mut TcpStream, host: &str, path: &str, shared: &Share
                   no-referrer\r\nContent-Security-Policy: default-src 'none'; frame-ancestors \
                   'none'\r\nConnection: close\r\n";
     let response = match parsed {
-        Some(Some(code))
-            if shared.bound.load(Ordering::Acquire)
-                && !shared.stop.load(Ordering::Acquire)
-                && shared
-                    .consumed
-                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                    .is_ok() =>
-        {
+        Some(Some(code)) if claim_callback(shared, deadline) => {
             if let Ok(mut slot) = shared.code.lock() {
                 *slot = Some(code);
             }
@@ -1149,7 +1289,7 @@ mod tests {
     // Serialize only tests that create these loopback listeners.
     static LOOPBACK_LISTENER_TESTS: Mutex<()> = Mutex::new(());
 
-    fn loopback_listener_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    pub(super) fn loopback_listener_test_guard() -> std::sync::MutexGuard<'static, ()> {
         LOOPBACK_LISTENER_TESTS
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -1262,6 +1402,9 @@ mod tests {
             OAuthAction::SubscriptionReopen,
             OAuthAction::ClaudeSubscriptionOpen,
             OAuthAction::ClaudeSubscriptionReopen,
+            OAuthAction::GrokSubscriptionOpen,
+            OAuthAction::GrokSubscriptionReopen,
+            OAuthAction::GrokDeviceAuthorizationOpen,
         ] {
             let host = Arc::new(OAuthHost::default());
             let known = scope();
@@ -2044,6 +2187,7 @@ fn begin_subscription(
                                     callback.authority(),
                                     "/auth/callback",
                                     &control,
+                                    until,
                                 );
                             }
                         }
@@ -2698,5 +2842,1685 @@ mod claude_subscription_tests {
         ] {
             assert!(validate_claude_subscription_authorization(&changed).is_err());
         }
+    }
+}
+
+// Grok Build browser login. The Go server owns PKCE, the loopback listener on
+// its own machine and the token exchange. When the desktop is local to that
+// loopback the browser redirect reaches the server directly, so this receiver
+// only opens the validated URL. When the desktop is remote it binds the same
+// IPv4 loopback address and numeric port, accepts exactly one redirect and
+// hands the code/state query to the authenticated Connect forwarder via Take.
+// A bind conflict is explicit; the port is never remapped.
+//
+// The Go server's `ForwardSubscriptionCallback` accepts only the Codex login
+// today (ChatGPT accounts, `auth.openai.com`, fixed port 1457). A captured Grok
+// callback could not be forwarded, and the one-shot code would be consumed for
+// nothing, so a remote Grok open is refused up front with
+// `NativeFailure::Incompatible` until the server gains Grok forwarding.
+const GROK_ATTEMPT_LIFETIME: Duration = Duration::from_secs(900);
+const GROK_AUTHORIZATION_HOST: &str = "auth.x.ai";
+const GROK_AUTHORIZATION_PATH: &str = "/oauth2/authorize";
+const GROK_CLIENT_ID: &str = "b1a00492-073a-47ea-816f-4c329264a828";
+const GROK_CALLBACK_PATH: &str = "/callback";
+const GROK_REFERRER: &str = "grok-build";
+
+fn grok_opaque_value(value: &str) -> bool {
+    (1..=512).contains(&value.len())
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~'))
+}
+
+// Returns the original state and the numeric loopback port of the redirect.
+fn validate_grok_subscription_authorization(
+    raw: &str,
+) -> Result<(Zeroizing<String>, u16), NativeFailure> {
+    let invalid = NativeFailure::InvalidInput;
+    if raw.len() > 4096 || !raw.bytes().all(|b| (33..=126).contains(&b)) {
+        return Err(invalid);
+    }
+    let url = url::Url::parse(raw).map_err(|_| invalid)?;
+    if url.scheme() != "https"
+        || url.host_str() != Some(GROK_AUTHORIZATION_HOST)
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != GROK_AUTHORIZATION_PATH
+        || url.fragment().is_some()
+        || url.as_str() != raw
+    {
+        return Err(invalid);
+    }
+    let mut fields = BTreeMap::new();
+    for (key, value) in url.query_pairs() {
+        if !matches!(
+            key.as_ref(),
+            "response_type"
+                | "client_id"
+                | "redirect_uri"
+                | "scope"
+                | "code_challenge"
+                | "code_challenge_method"
+                | "state"
+                | "nonce"
+                | "referrer"
+        ) || fields
+            .insert(key.into_owned(), Zeroizing::new(value.into_owned()))
+            .is_some()
+        {
+            return Err(invalid);
+        }
+    }
+    let get = |name: &str| fields.get(name).map(|v| v.as_str());
+    let port = get("redirect_uri")
+        .and_then(|v| v.strip_prefix("http://127.0.0.1:"))
+        .and_then(|v| v.strip_suffix(GROK_CALLBACK_PATH))
+        .filter(|v| {
+            (1..=5).contains(&v.len())
+                && v.bytes().all(|b| b.is_ascii_digit())
+                && !v.starts_with('0')
+        })
+        .and_then(|v| v.parse::<u16>().ok())
+        .filter(|port| *port >= 1024)
+        .ok_or(invalid)?;
+    if get("response_type") != Some("code")
+        || get("client_id") != Some(GROK_CLIENT_ID)
+        || get("code_challenge_method") != Some("S256")
+        || get("code_challenge").is_none_or(|v| {
+            v.len() != 43
+                || !v
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        })
+        || !get("state").is_some_and(grok_opaque_value)
+        || !get("nonce").is_some_and(grok_opaque_value)
+        || get("referrer").is_some_and(|v| v != GROK_REFERRER)
+        || get("scope").is_some_and(|v| {
+            v.is_empty()
+                || v.len() > 1024
+                || v.split(' ').any(|part| {
+                    part.is_empty()
+                        || !part.bytes().all(|b| {
+                            b.is_ascii_alphanumeric() || matches!(b, b':' | b'_' | b'.' | b'-')
+                        })
+                })
+        })
+    {
+        return Err(invalid);
+    }
+    let state = fields.remove("state").ok_or(invalid)?;
+    Ok((Zeroizing::new(state.as_str().to_owned()), port))
+}
+
+fn begin_grok_subscription(
+    scope: OAuthScope,
+    attempt_id: &str,
+    authorization: &str,
+    local: bool,
+    remote_forwarding: bool,
+) -> Result<Attempt, NativeFailure> {
+    begin_grok_subscription_for(
+        scope,
+        attempt_id,
+        authorization,
+        local,
+        remote_forwarding,
+        GROK_ATTEMPT_LIFETIME,
+    )
+}
+
+fn begin_grok_subscription_for(
+    scope: OAuthScope,
+    attempt_id: &str,
+    authorization: &str,
+    local: bool,
+    remote_forwarding: bool,
+    lifetime: Duration,
+) -> Result<Attempt, NativeFailure> {
+    let (state, port) = validate_grok_subscription_authorization(authorization)?;
+    if !local && !remote_forwarding {
+        tracing::warn!(
+            operation = "grok_subscription_callback",
+            phase = "remote-forwarding-unavailable"
+        );
+        return Err(NativeFailure::Incompatible);
+    }
+    let shared = Arc::new(Shared {
+        expected_state: Some(state),
+        api_state: Mutex::new(None),
+        api_profile: None,
+        bound: AtomicBool::new(true),
+        consumed: AtomicBool::new(false),
+        stop: AtomicBool::new(false),
+        code: Mutex::new(None),
+    });
+    let until = Instant::now() + lifetime;
+    let authority = format!("127.0.0.1:{port}");
+    let handle = if local {
+        None
+    } else {
+        // IPv4 only: the original redirect names 127.0.0.1. A conflict is
+        // explicit and the numeric port is never remapped.
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).map_err(|_| {
+            tracing::warn!(
+                operation = "grok_subscription_callback",
+                phase = "bind-failed"
+            );
+            NativeFailure::SidecarFailed
+        })?;
+        listener
+            .set_nonblocking(true)
+            .map_err(|_| NativeFailure::SidecarFailed)?;
+        let control = Arc::clone(&shared);
+        let host = authority.clone();
+        Some(
+            thread::Builder::new()
+                .name("delidev-grok-callback".into())
+                .spawn(move || {
+                    while !control.stop.load(Ordering::Acquire) && Instant::now() < until {
+                        if let Ok((mut stream, peer)) = listener.accept()
+                            && peer.ip().is_loopback()
+                        {
+                            handle_request(&mut stream, &host, GROK_CALLBACK_PATH, &control, until);
+                        }
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                })
+                .map_err(|_| NativeFailure::SidecarFailed)?,
+        )
+    };
+    tracing::info!(
+        operation = "grok_subscription_callback",
+        phase = "bound",
+        local
+    );
+    Ok(Attempt {
+        kind: BrowserBindingKind::GrokSubscription,
+        profile: OAuthProfile::Openrouter,
+        scope,
+        generation: uuid::Uuid::now_v7().to_string(),
+        callback: format!("http://{authority}{GROK_CALLBACK_PATH}"),
+        attempt: attempt_id.into(),
+        authorization: Zeroizing::new(authorization.into()),
+        until,
+        shared,
+        thread: handle,
+    })
+}
+
+const GROK_DEVICE_HOST: &str = "accounts.x.ai";
+const GROK_DEVICE_PATH: &str = "/oauth2/device";
+const GROK_DEVICE_CODE_PARAMETER: &str = "user_code";
+
+fn grok_device_user_code(value: &str) -> bool {
+    (4..=32).contains(&value.len())
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'-')
+}
+
+// The device verification address is the fixed xAI page with, at most, one
+// `user_code` parameter. The renderer additionally pins it to the displayed
+// code; native only has to keep the destination closed.
+fn validate_grok_device_authorization(raw: &str) -> Result<(), NativeFailure> {
+    let invalid = NativeFailure::InvalidInput;
+    if raw.len() > 512 || !raw.bytes().all(|b| (33..=126).contains(&b)) {
+        return Err(invalid);
+    }
+    let url = url::Url::parse(raw).map_err(|_| invalid)?;
+    if url.scheme() != "https"
+        || url.host_str() != Some(GROK_DEVICE_HOST)
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != GROK_DEVICE_PATH
+        || url.fragment().is_some()
+        || url.as_str() != raw
+    {
+        return Err(invalid);
+    }
+    if url.query().is_none() {
+        return Ok(());
+    }
+    let mut pairs = url.query_pairs();
+    match (pairs.next(), pairs.next()) {
+        (Some((key, value)), None)
+            if key == GROK_DEVICE_CODE_PARAMETER && grok_device_user_code(&value) =>
+        {
+            Ok(())
+        }
+        _ => Err(invalid),
+    }
+}
+
+#[cfg(test)]
+mod grok_subscription_tests {
+    use super::*;
+
+    const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+    const STATE: &str = "fixture-grok-state_123";
+
+    fn free_port() -> u16 {
+        TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    }
+
+    fn authorization_with(port: u16, edit: impl Fn(&mut url::Url)) -> String {
+        let mut u = url::Url::parse("https://auth.x.ai/oauth2/authorize").unwrap();
+        u.query_pairs_mut()
+            .append_pair("response_type", "code")
+            .append_pair("client_id", GROK_CLIENT_ID)
+            .append_pair("redirect_uri", &format!("http://127.0.0.1:{port}/callback"))
+            .append_pair(
+                "scope",
+                "openid profile email offline_access grok-cli:access",
+            )
+            .append_pair("code_challenge", CHALLENGE)
+            .append_pair("code_challenge_method", "S256")
+            .append_pair("state", STATE)
+            .append_pair("nonce", "fixture-grok-nonce")
+            .append_pair("referrer", "grok-build");
+        edit(&mut u);
+        u.to_string()
+    }
+
+    fn authorization(port: u16) -> String {
+        authorization_with(port, |_| {})
+    }
+
+    fn without(name: &'static str) -> impl Fn(&mut url::Url) {
+        move |u| {
+            let kept: Vec<_> = u
+                .query_pairs()
+                .filter(|(k, _)| k != name)
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
+            u.query_pairs_mut().clear().extend_pairs(kept);
+        }
+    }
+
+    fn replaced(name: &'static str, value: &'static str) -> impl Fn(&mut url::Url) {
+        move |u| {
+            let kept: Vec<_> = u
+                .query_pairs()
+                .map(|(k, v)| {
+                    let v = if k == name {
+                        value.into()
+                    } else {
+                        v.into_owned()
+                    };
+                    (k.into_owned(), v)
+                })
+                .collect();
+            u.query_pairs_mut().clear().extend_pairs(kept);
+        }
+    }
+
+    // Production leaves remote Grok forwarding disabled; these tests exercise
+    // the receiver itself.
+    fn remote_host() -> OAuthHost {
+        let mut host = OAuthHost::default();
+        host.grok_remote_forwarding = true;
+        host
+    }
+
+    fn scope() -> OAuthScope {
+        OAuthScope {
+            window: "main".into(),
+            instance: uuid::Uuid::now_v7().to_string(),
+            server: uuid::Uuid::now_v7().to_string(),
+            opening: uuid::Uuid::now_v7().to_string(),
+            window_epoch: 0,
+        }
+    }
+
+    fn deliver(port: u16, request_line: &str, host: &str) -> String {
+        let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        stream
+            .write_all(format!("GET {request_line} HTTP/1.1\r\nHost: {host}\r\n\r\n").as_bytes())
+            .unwrap();
+        let mut result = String::new();
+        stream.read_to_string(&mut result).unwrap();
+        result
+    }
+
+    #[test]
+    fn wire_names_are_kebab_case_grok_subscription_actions() {
+        for (wire, action) in [
+            ("grok-subscription-open", OAuthAction::GrokSubscriptionOpen),
+            (
+                "grok-subscription-reopen",
+                OAuthAction::GrokSubscriptionReopen,
+            ),
+            (
+                "grok-device-authorization-open",
+                OAuthAction::GrokDeviceAuthorizationOpen,
+            ),
+        ] {
+            let parsed: OAuthAction = serde_json::from_str(&format!("\"{wire}\"")).unwrap();
+            assert_eq!(parsed, action);
+        }
+    }
+
+    // The renderer (apps/delidev/src/grok-subscription-login.tsx) runs the same
+    // table, so both layers agree on every URL.
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct DeviceVerificationCase {
+        name: String,
+        url: String,
+        native: bool,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct AuthorizationCase {
+        name: String,
+        url: String,
+        valid: bool,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct UrlFixtures {
+        device_verification: Vec<DeviceVerificationCase>,
+        authorization: Vec<AuthorizationCase>,
+    }
+
+    fn url_fixtures() -> UrlFixtures {
+        serde_json::from_str(include_str!("../../src/grok-url-validation-fixtures.json")).unwrap()
+    }
+
+    #[test]
+    fn device_validator_matches_the_shared_url_table() {
+        let fixtures = url_fixtures();
+        assert!(fixtures.device_verification.len() > 20);
+        for row in fixtures.device_verification {
+            assert_eq!(
+                validate_grok_device_authorization(&row.url).is_ok(),
+                row.native,
+                "{}",
+                row.name
+            );
+        }
+    }
+
+    #[test]
+    fn authorization_validator_matches_the_shared_url_table() {
+        let fixtures = url_fixtures();
+        assert!(fixtures.authorization.len() > 20);
+        for row in fixtures.authorization {
+            assert_eq!(
+                validate_grok_subscription_authorization(&row.url).is_ok(),
+                row.valid,
+                "{}",
+                row.name
+            );
+        }
+    }
+
+    const DEVICE_PAGE: &str = "https://accounts.x.ai/oauth2/device";
+    const DEVICE_WITH_CODE: &str = "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234";
+
+    #[test]
+    fn device_validator_accepts_only_the_fixed_verification_page() {
+        for accepted in [
+            DEVICE_PAGE,
+            DEVICE_WITH_CODE,
+            "https://accounts.x.ai/oauth2/device?user_code=AB12",
+        ] {
+            assert!(
+                validate_grok_device_authorization(accepted).is_ok(),
+                "{accepted}"
+            );
+        }
+        let long_code = format!("{DEVICE_PAGE}?user_code={}", "A".repeat(33));
+        let too_long = format!("{DEVICE_PAGE}?user_code={}", "A".repeat(600));
+        for rejected in [
+            "https://auth.x.ai/oauth2/device",
+            "https://accounts.x.ai.evil.test/oauth2/device",
+            "https://evil.test/oauth2/device?user_code=ABCD-1234",
+            "http://accounts.x.ai/oauth2/device",
+            "https://accounts.x.ai/oauth2/authorize",
+            "https://accounts.x.ai/oauth2/device/",
+            "https://accounts.x.ai:8443/oauth2/device",
+            "https://user@accounts.x.ai/oauth2/device",
+            "https://user:secret@accounts.x.ai/oauth2/device",
+            "https://accounts.x.ai/oauth2/device#fragment",
+            "https://accounts.x.ai/oauth2/device?",
+            "https://accounts.x.ai/oauth2/device?user_code=",
+            "https://accounts.x.ai/oauth2/device?user_code=abcd-1234",
+            "https://accounts.x.ai/oauth2/device?user_code=AB",
+            "https://accounts.x.ai/oauth2/device?next=https://evil.test",
+            "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&next=1",
+            "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&user_code=ABCD-1234",
+            "https://accounts.x.ai/oauth2/device?x=1",
+            "file:///etc/passwd",
+            "https://accounts.x.ai/oauth2/device ",
+            "not a url",
+            "",
+            long_code.as_str(),
+            too_long.as_str(),
+        ] {
+            assert!(
+                matches!(
+                    validate_grok_device_authorization(rejected),
+                    Err(NativeFailure::InvalidInput)
+                ),
+                "{rejected}"
+            );
+        }
+    }
+
+    #[test]
+    fn device_open_dispatches_the_exact_page_without_binding_or_attempt_state() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        let opened = std::sync::atomic::AtomicUsize::new(0);
+        let opener = |url: &str, _: &AtomicBool| {
+            assert_eq!(url, DEVICE_WITH_CODE);
+            opened.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        };
+        // A browser sign-in already bound in the same window is not disturbed,
+        // and the device action never consumes the single attempt slot.
+        let auth = authorization(free_port());
+        let browser_operation = uuid::Uuid::now_v7().to_string();
+        let bound = host
+            .control_with_browser(
+                scope.clone(),
+                OAuthAction::GrokSubscriptionOpen,
+                "",
+                &browser_operation,
+                &auth,
+                true,
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        for expected in 1..=2 {
+            let result = host
+                .control_with_browser(
+                    scope.clone(),
+                    OAuthAction::GrokDeviceAuthorizationOpen,
+                    "",
+                    &operation,
+                    DEVICE_WITH_CODE,
+                    false,
+                    opener,
+                )
+                .unwrap();
+            // Each deliberate click opens the page once; nothing is retained.
+            assert!(result.generation.is_empty());
+            assert!(result.callback_url.is_empty());
+            assert!(result.code.is_none() && result.state.is_none());
+            assert_eq!(opened.load(Ordering::SeqCst), expected);
+        }
+        let attempts = host.attempts.lock().unwrap();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[&scope.window].generation, bound.generation);
+    }
+
+    #[test]
+    fn device_open_alone_creates_no_attempt_or_disposed_record() {
+        let host = OAuthHost::default();
+        host.control_with_browser(
+            scope(),
+            OAuthAction::GrokDeviceAuthorizationOpen,
+            "",
+            &uuid::Uuid::now_v7().to_string(),
+            DEVICE_PAGE,
+            true,
+            |url, _| {
+                assert_eq!(url, DEVICE_PAGE);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(host.attempts.lock().unwrap().is_empty());
+        assert!(host.disposed.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn device_open_rejects_bad_input_before_the_browser_opens() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        let panics = |_: &str, _: &AtomicBool| -> Result<(), NativeFailure> {
+            panic!("rejected device authorization cannot open a browser")
+        };
+        for (generation, attempt, url) in [
+            ("", operation.as_str(), "https://auth.x.ai/oauth2/device"),
+            ("", operation.as_str(), "https://evil.test/oauth2/device"),
+            (
+                "",
+                operation.as_str(),
+                "https://accounts.x.ai/oauth2/device?x=1",
+            ),
+            ("", operation.as_str(), ""),
+            ("unexpected-generation", operation.as_str(), DEVICE_PAGE),
+        ] {
+            let result = host.control_with_browser(
+                scope.clone(),
+                OAuthAction::GrokDeviceAuthorizationOpen,
+                generation,
+                attempt,
+                url,
+                true,
+                panics,
+            );
+            assert!(
+                matches!(result, Err(NativeFailure::InvalidInput)),
+                "{generation:?} {attempt:?} {url:?}"
+            );
+        }
+        // The attempt identity must be the canonical original operation.
+        for attempt in ["not-an-operation", ""] {
+            assert!(matches!(
+                host.control_with_browser(
+                    scope.clone(),
+                    OAuthAction::GrokDeviceAuthorizationOpen,
+                    "",
+                    attempt,
+                    DEVICE_PAGE,
+                    true,
+                    panics,
+                ),
+                Err(NativeFailure::InvalidEvidence)
+            ));
+        }
+        // A browser authorization address is not a device verification page.
+        let browser = authorization(43817);
+        assert!(matches!(
+            host.control_with_browser(
+                scope,
+                OAuthAction::GrokDeviceAuthorizationOpen,
+                "",
+                &operation,
+                &browser,
+                true,
+                panics,
+            ),
+            Err(NativeFailure::InvalidInput)
+        ));
+        assert!(host.attempts.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn device_open_is_refused_after_dispose_and_surfaces_opener_failure() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        // An opener failure is reported to the renderer and records nothing.
+        assert!(matches!(
+            host.control_with_browser(
+                scope.clone(),
+                OAuthAction::GrokDeviceAuthorizationOpen,
+                "",
+                &operation,
+                DEVICE_PAGE,
+                true,
+                |_, _| Err(NativeFailure::SidecarFailed),
+            ),
+            Err(NativeFailure::SidecarFailed)
+        ));
+        assert!(host.attempts.lock().unwrap().is_empty());
+        host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+            .unwrap();
+        assert!(matches!(
+            host.control_with_browser(
+                scope,
+                OAuthAction::GrokDeviceAuthorizationOpen,
+                "",
+                &operation,
+                DEVICE_PAGE,
+                true,
+                |_, _| panic!("a disposed opening cannot open a browser"),
+            ),
+            Err(NativeFailure::Stopped)
+        ));
+    }
+
+    // Device opener lifecycle (Rust half of the renderer state table); the
+    // contract document lists the same cells:
+    //   admit: refused when stopped, stale epoch, disposed or invalid,
+    //     otherwise registered with a per-opening cancel flag
+    //   Dispose(scope): sets the flag of every opening in that scope only
+    //   close_window: sets the flag of every opening in that window only
+    //   stop and revocation exhaustion: set every flag
+    //   settle: unregisters on success and on failure
+    // Every retirement sets the flag before it joins any callback listener, so
+    // a slow listener cannot delay it.
+    fn open_device(
+        host: &OAuthHost,
+        scope: &OAuthScope,
+        opener: impl FnOnce(&str, &AtomicBool) -> Result<(), NativeFailure>,
+    ) -> Result<OAuthResult, NativeFailure> {
+        host.control_with_browser(
+            scope.clone(),
+            OAuthAction::GrokDeviceAuthorizationOpen,
+            "",
+            &uuid::Uuid::now_v7().to_string(),
+            DEVICE_WITH_CODE,
+            true,
+            opener,
+        )
+    }
+    fn registered_device_openings(host: &OAuthHost) -> usize {
+        host.device_openings.lock().unwrap().len()
+    }
+
+    // A retained callback attempt whose listener thread is still running: the
+    // attempt's drop joins that thread, so every retirement that clears or
+    // removes the attempt blocks until `release` is sent.
+    fn slow_listener_attempt(
+        attempt_scope: OAuthScope,
+        release: std::sync::mpsc::Receiver<()>,
+    ) -> Attempt {
+        Attempt {
+            kind: BrowserBindingKind::Provider,
+            profile: OAuthProfile::Openrouter,
+            scope: attempt_scope,
+            generation: uuid::Uuid::now_v7().to_string(),
+            callback: String::new(),
+            attempt: String::new(),
+            authorization: Zeroizing::new(String::new()),
+            until: Instant::now() + Duration::from_secs(600),
+            shared: Arc::new(Shared {
+                expected_state: None,
+                api_state: Mutex::new(None),
+                api_profile: None,
+                bound: AtomicBool::new(true),
+                consumed: AtomicBool::new(false),
+                stop: AtomicBool::new(false),
+                code: Mutex::new(None),
+            }),
+            thread: Some(thread::spawn(move || {
+                let _ = release.recv();
+            })),
+        }
+    }
+
+    // Runs one retirement while a device dispatch is admitted and a retained
+    // attempt's listener join is blocked. The dispatcher models the browser
+    // opener: it polls only its own flag. The retirement must set that flag
+    // before it waits for the join, so the dispatch is refused instead of
+    // spawning the browser after the retirement began.
+    fn retirement_retires_the_dispatch_before_joining_a_slow_listener(
+        host: OAuthHost,
+        device_scope: OAuthScope,
+        listener_scope: OAuthScope,
+        retire: impl FnOnce(Arc<OAuthHost>) + Send + 'static,
+    ) {
+        let host = Arc::new(host);
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        host.attempts.lock().unwrap().insert(
+            listener_scope.window.clone(),
+            slow_listener_attempt(listener_scope, release_rx),
+        );
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel::<()>();
+        let worker_host = Arc::clone(&host);
+        let spawned = Arc::new(AtomicBool::new(false));
+        let worker_spawned = Arc::clone(&spawned);
+        let worker = thread::spawn(move || {
+            open_device(&worker_host, &device_scope, move |_, cancel| {
+                entered_tx.send(()).unwrap();
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while Instant::now() < deadline {
+                    if cancel.load(Ordering::Acquire) {
+                        return Err(NativeFailure::Stopped);
+                    }
+                    thread::sleep(Duration::from_millis(2));
+                }
+                // The retirement never reached this dispatch: the browser
+                // would have been started.
+                worker_spawned.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+        });
+        entered_rx.recv().unwrap();
+        let retiring_host = Arc::clone(&host);
+        let retiring = thread::spawn(move || retire(retiring_host));
+        let result = worker.join().unwrap();
+        // The listener is still blocked, so the retirement has not finished.
+        let still_joining = !retiring.is_finished();
+        release_tx.send(()).unwrap();
+        retiring.join().unwrap();
+        assert!(
+            matches!(result, Err(NativeFailure::Stopped)),
+            "dispatch was not retired before the listener join"
+        );
+        assert!(!spawned.load(Ordering::SeqCst));
+        assert!(still_joining);
+        assert_eq!(registered_device_openings(&host), 0);
+    }
+
+    #[test]
+    fn host_stop_retires_a_pending_dispatch_before_joining_callback_listeners() {
+        let device_scope = scope();
+        retirement_retires_the_dispatch_before_joining_a_slow_listener(
+            OAuthHost::default(),
+            device_scope.clone(),
+            OAuthScope {
+                window: "listener".into(),
+                ..scope()
+            },
+            |host| host.stop(),
+        );
+    }
+
+    #[test]
+    fn revocation_exhaustion_retires_a_pending_dispatch_before_joining_callback_listeners() {
+        let host = OAuthHost::default();
+        {
+            let mut disposed = host.disposed.lock().unwrap();
+            for _ in 0..4096 {
+                disposed.insert(OAuthScope {
+                    opening: uuid::Uuid::now_v7().to_string(),
+                    ..scope()
+                });
+            }
+        }
+        retirement_retires_the_dispatch_before_joining_a_slow_listener(
+            host,
+            scope(),
+            OAuthScope {
+                window: "listener".into(),
+                ..scope()
+            },
+            |host| {
+                let overflow = OAuthScope {
+                    opening: uuid::Uuid::now_v7().to_string(),
+                    ..scope()
+                };
+                assert!(matches!(
+                    host.control(overflow, OAuthAction::Dispose, "", "", ""),
+                    Err(NativeFailure::Stopped)
+                ));
+            },
+        );
+    }
+
+    #[test]
+    fn dispose_retires_a_pending_dispatch_before_joining_its_callback_listener() {
+        let device_scope = scope();
+        retirement_retires_the_dispatch_before_joining_a_slow_listener(
+            OAuthHost::default(),
+            device_scope.clone(),
+            device_scope.clone(),
+            move |host| {
+                host.control(device_scope, OAuthAction::Dispose, "", "", "")
+                    .unwrap();
+            },
+        );
+    }
+
+    #[test]
+    fn window_close_retires_a_pending_dispatch_before_joining_its_callback_listener() {
+        let device_scope = scope();
+        retirement_retires_the_dispatch_before_joining_a_slow_listener(
+            OAuthHost::default(),
+            device_scope.clone(),
+            device_scope,
+            |host| host.close_window("main").unwrap(),
+        );
+    }
+
+    #[test]
+    fn host_stop_racing_an_admission_never_lets_the_dispatch_start() {
+        // Stop lands exactly while the dispatch is being admitted (after the
+        // first stopped check, before registration): the admission holds the
+        // attempts lock, so stop either finds the registered dispatch or the
+        // admission is refused. Neither outcome starts a browser.
+        for _ in 0..50 {
+            let host = Arc::new(OAuthHost::default());
+            let spawned = Arc::new(AtomicBool::new(false));
+            let barrier = Arc::new(std::sync::Barrier::new(2));
+            let worker_host = Arc::clone(&host);
+            let worker_spawned = Arc::clone(&spawned);
+            let worker_barrier = Arc::clone(&barrier);
+            let worker_scope = scope();
+            let worker = thread::spawn(move || {
+                worker_barrier.wait();
+                open_device(&worker_host, &worker_scope, |_, cancel| {
+                    // Stop either already refused the admission or retires this
+                    // registered dispatch; the dispatcher polls only its flag.
+                    let deadline = Instant::now() + Duration::from_secs(5);
+                    while Instant::now() < deadline && !cancel.load(Ordering::Acquire) {
+                        thread::sleep(Duration::from_millis(1));
+                    }
+                    if cancel.load(Ordering::Acquire) {
+                        return Err(NativeFailure::Stopped);
+                    }
+                    worker_spawned.store(true, Ordering::SeqCst);
+                    Ok(())
+                })
+            });
+            barrier.wait();
+            host.stop();
+            let result = worker.join().unwrap();
+            assert!(
+                matches!(result, Err(NativeFailure::Stopped)),
+                "a dispatch that raced stop was not refused or retired"
+            );
+            assert!(!spawned.load(Ordering::SeqCst));
+            assert_eq!(registered_device_openings(&host), 0);
+        }
+    }
+
+    #[test]
+    fn device_open_receives_its_own_flag_and_dispose_sets_it_while_dispatching() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let sibling = OAuthScope {
+            opening: uuid::Uuid::now_v7().to_string(),
+            ..scope.clone()
+        };
+        open_device(&host, &scope, |_, cancel| {
+            assert!(!cancel.load(Ordering::Acquire));
+            assert_eq!(registered_device_openings(&host), 1);
+            // A different opening in the same window is not retired.
+            host.control(sibling.clone(), OAuthAction::Dispose, "", "", "")
+                .unwrap();
+            assert!(!cancel.load(Ordering::Acquire));
+            // The Settings screen of this opening closes mid-dispatch.
+            host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+                .unwrap();
+            assert!(cancel.load(Ordering::Acquire));
+            assert!(!host.stopped.load(Ordering::Acquire));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(registered_device_openings(&host), 0);
+        // The retired scope refuses the next admission without dispatching.
+        assert!(matches!(
+            open_device(&host, &scope, |_, _| panic!("retired opening dispatched")),
+            Err(NativeFailure::Stopped)
+        ));
+        assert_eq!(registered_device_openings(&host), 0);
+    }
+
+    #[test]
+    fn dispose_cancels_every_concurrent_device_opening_of_the_scope() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        open_device(&host, &scope, |_, first| {
+            open_device(&host, &scope, |_, second| {
+                assert_eq!(registered_device_openings(&host), 2);
+                host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+                    .unwrap();
+                assert!(first.load(Ordering::Acquire));
+                assert!(second.load(Ordering::Acquire));
+                Ok(())
+            })
+            .map(|_| ())
+        })
+        .unwrap();
+        assert_eq!(registered_device_openings(&host), 0);
+    }
+
+    #[test]
+    fn an_admitted_dispatch_observes_dispose_that_lands_before_it_starts_a_browser() {
+        let host = Arc::new(OAuthHost::default());
+        let scope = scope();
+        let (started_tx, started_rx) = std::sync::mpsc::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let worker_host = Arc::clone(&host);
+        let worker_scope = scope.clone();
+        let launched = Arc::new(AtomicBool::new(false));
+        let worker_launched = Arc::clone(&launched);
+        let worker = thread::spawn(move || {
+            // Models the dispatcher: admitted, then checks its flag right
+            // before it would start the browser process.
+            open_device(&worker_host, &worker_scope, move |_, cancel| {
+                started_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                if cancel.load(Ordering::Acquire) {
+                    return Err(NativeFailure::Stopped);
+                }
+                worker_launched.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+        });
+        started_rx.recv().unwrap();
+        host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+            .unwrap();
+        release_tx.send(()).unwrap();
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(NativeFailure::Stopped)
+        ));
+        assert!(!launched.load(Ordering::SeqCst));
+        assert_eq!(registered_device_openings(&host), 0);
+    }
+
+    #[test]
+    fn window_close_cancels_only_device_openings_of_that_window_and_refuses_stale_epochs() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let other_window = OAuthScope {
+            window: "secondary".into(),
+            ..scope.clone()
+        };
+        open_device(&host, &other_window, |_, secondary| {
+            open_device(&host, &scope, |_, main| {
+                host.close_window("secondary").unwrap();
+                assert!(secondary.load(Ordering::Acquire));
+                assert!(!main.load(Ordering::Acquire));
+                host.close_window("main").unwrap();
+                assert!(main.load(Ordering::Acquire));
+                Ok(())
+            })
+            .map(|_| ())
+        })
+        .unwrap();
+        assert_eq!(registered_device_openings(&host), 0);
+        // The closed window's old epoch can no longer admit a dispatch.
+        assert!(matches!(
+            open_device(&host, &scope, |_, _| panic!("stale epoch dispatched")),
+            Err(NativeFailure::Stopped)
+        ));
+        assert_eq!(registered_device_openings(&host), 0);
+    }
+
+    #[test]
+    fn host_stop_and_revocation_exhaustion_cancel_every_device_opening() {
+        let host = OAuthHost::default();
+        open_device(&host, &scope(), |_, cancel| {
+            host.stop();
+            assert!(cancel.load(Ordering::Acquire));
+            Ok(())
+        })
+        .unwrap();
+        assert!(matches!(
+            open_device(&host, &scope(), |_, _| panic!("stopped host dispatched")),
+            Err(NativeFailure::Stopped)
+        ));
+
+        let host = OAuthHost::default();
+        {
+            let mut disposed = host.disposed.lock().unwrap();
+            for _ in 0..4096 {
+                disposed.insert(OAuthScope {
+                    opening: uuid::Uuid::now_v7().to_string(),
+                    ..scope()
+                });
+            }
+        }
+        let admitted = scope();
+        // Pre-seed capacity so the admitted opening itself is not in the set.
+        open_device(&host, &admitted, |_, cancel| {
+            let overflow = OAuthScope {
+                opening: uuid::Uuid::now_v7().to_string(),
+                ..scope()
+            };
+            // Capacity exhaustion closes admission for the whole host and
+            // retires every admitted dispatch, even one in another scope.
+            assert!(matches!(
+                host.control(overflow, OAuthAction::Dispose, "", "", ""),
+                Err(NativeFailure::Stopped)
+            ));
+            assert!(cancel.load(Ordering::Acquire));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(registered_device_openings(&host), 0);
+    }
+
+    #[test]
+    fn a_failed_device_dispatch_unregisters_and_leaves_the_scope_usable() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        assert!(matches!(
+            open_device(&host, &scope, |_, _| Err(NativeFailure::TimedOut)),
+            Err(NativeFailure::TimedOut)
+        ));
+        assert_eq!(registered_device_openings(&host), 0);
+        let opened = AtomicBool::new(false);
+        open_device(&host, &scope, |_, _| {
+            opened.store(true, Ordering::SeqCst);
+            Ok(())
+        })
+        .unwrap();
+        assert!(opened.load(Ordering::SeqCst));
+        assert_eq!(registered_device_openings(&host), 0);
+        assert!(host.disposed.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn validator_accepts_the_exact_cli_shape_and_returns_state_and_port() {
+        let (state, port) = validate_grok_subscription_authorization(&authorization(43817))
+            .expect("exact Grok authorization");
+        assert_eq!(state.as_str(), STATE);
+        assert_eq!(port, 43817);
+        // Scope and referrer are optional; the required members are not.
+        for optional in ["scope", "referrer"] {
+            assert!(
+                validate_grok_subscription_authorization(&authorization_with(
+                    43817,
+                    without(optional)
+                ))
+                .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn validator_rejects_every_changed_or_missing_member() {
+        for name in [
+            "response_type",
+            "client_id",
+            "redirect_uri",
+            "code_challenge",
+            "code_challenge_method",
+            "state",
+            "nonce",
+        ] {
+            assert!(
+                validate_grok_subscription_authorization(&authorization_with(43817, without(name)))
+                    .is_err(),
+                "missing {name}"
+            );
+        }
+        let changed: Vec<String> = vec![
+            authorization_with(43817, replaced("response_type", "token")),
+            authorization_with(43817, replaced("client_id", "other-client")),
+            authorization_with(43817, replaced("code_challenge_method", "plain")),
+            authorization_with(43817, replaced("code_challenge", "short")),
+            authorization_with(43817, replaced("state", "")),
+            authorization_with(43817, replaced("state", "bad state&x=1")),
+            authorization_with(43817, replaced("nonce", "")),
+            authorization_with(43817, replaced("referrer", "other")),
+            authorization_with(43817, replaced("scope", "openid  profile")),
+            authorization_with(43817, replaced("scope", "")),
+            authorization_with(43817, |u| {
+                u.query_pairs_mut().append_pair("extra", "1");
+            }),
+            authorization_with(43817, |u| {
+                u.query_pairs_mut().append_pair("state", "duplicate");
+            }),
+            authorization_with(43817, |u| u.set_fragment(Some("fragment"))),
+            authorization_with(43817, |u| u.set_port(Some(8443)).unwrap()),
+            authorization_with(43817, |u| u.set_username("user").unwrap()),
+            authorization_with(43817, |u| u.set_path("/oauth2/token")),
+            authorization_with(43817, |u| {
+                u.set_host(Some("auth.x.ai.evil.invalid")).unwrap()
+            }),
+            authorization_with(43817, |u| u.set_host(Some("accounts.x.ai")).unwrap()),
+            authorization_with(43817, |u| u.set_scheme("http").unwrap()),
+            authorization(43817).replace("https://auth.x.ai", "https://auth.x.ai@evil.invalid"),
+            authorization(43817).replace("https://auth.x.ai", "https://evil.invalid%2f@auth.x.ai"),
+            format!("{} ", authorization(43817)),
+            format!("{}\n", authorization(43817)),
+        ];
+        for raw in changed {
+            assert!(
+                validate_grok_subscription_authorization(&raw).is_err(),
+                "accepted {}",
+                raw.len()
+            );
+        }
+    }
+
+    #[test]
+    fn validator_binds_the_redirect_to_the_ipv4_loopback_callback() {
+        for redirect in [
+            "http://localhost:43817/callback",
+            "http://[::1]:43817/callback",
+            "http://127.0.0.2:43817/callback",
+            "http://127.1:43817/callback",
+            "http://2130706433:43817/callback",
+            "https://127.0.0.1:43817/callback",
+            "http://127.0.0.1/callback",
+            "http://127.0.0.1:0/callback",
+            "http://127.0.0.1:80/callback",
+            "http://127.0.0.1:043817/callback",
+            "http://127.0.0.1:65536/callback",
+            "http://127.0.0.1:+43817/callback",
+            "http://127.0.0.1:43817/other",
+            "http://127.0.0.1:43817/callback/",
+            "http://127.0.0.1:43817/callback?x=1",
+            "http://127.0.0.1:43817/callback#f",
+            "http://user@127.0.0.1:43817/callback",
+            "http://127.0.0.1:43817@evil.invalid/callback",
+        ] {
+            let raw = authorization_with(43817, |u| {
+                let kept: Vec<_> = u
+                    .query_pairs()
+                    .map(|(k, v)| {
+                        let v = if k == "redirect_uri" {
+                            redirect.to_owned()
+                        } else {
+                            v.into_owned()
+                        };
+                        (k.into_owned(), v)
+                    })
+                    .collect();
+                u.query_pairs_mut().clear().extend_pairs(kept);
+            });
+            assert!(
+                validate_grok_subscription_authorization(&raw).is_err(),
+                "accepted redirect {redirect}"
+            );
+        }
+        assert_eq!(
+            validate_grok_subscription_authorization(&authorization(65535))
+                .unwrap()
+                .1,
+            65535
+        );
+    }
+
+    #[test]
+    fn local_open_binds_nothing_opens_once_and_reopens_only_the_original() {
+        let port = free_port();
+        let auth = authorization(port);
+        let host = OAuthHost::default();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        let opened = std::sync::atomic::AtomicUsize::new(0);
+        let opener = |url: &str, _: &AtomicBool| {
+            assert_eq!(url, &auth);
+            opened.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        };
+        let first = host
+            .control_with_browser(
+                scope.clone(),
+                OAuthAction::GrokSubscriptionOpen,
+                "",
+                &operation,
+                &auth,
+                true,
+                opener,
+            )
+            .unwrap();
+        // Local mode never creates a listener, so the port stays free.
+        drop(TcpListener::bind((Ipv4Addr::LOCALHOST, port)).unwrap());
+        let replay = host
+            .control_with_browser(
+                scope.clone(),
+                OAuthAction::GrokSubscriptionOpen,
+                "",
+                &operation,
+                &auth,
+                true,
+                opener,
+            )
+            .unwrap();
+        assert_eq!(first.generation, replay.generation);
+        assert_eq!(opened.load(Ordering::SeqCst), 1);
+        // A changed URL, another operation or another kind cannot rebind.
+        let other_port = authorization(free_port());
+        for (action, id, url) in [
+            (
+                OAuthAction::GrokSubscriptionReopen,
+                operation.clone(),
+                other_port.clone(),
+            ),
+            (
+                OAuthAction::GrokSubscriptionOpen,
+                uuid::Uuid::now_v7().to_string(),
+                auth.clone(),
+            ),
+            (
+                OAuthAction::SubscriptionOpen,
+                operation.clone(),
+                auth.clone(),
+            ),
+            (
+                OAuthAction::ClaudeSubscriptionOpen,
+                operation.clone(),
+                auth.clone(),
+            ),
+        ] {
+            assert!(
+                host.control_with_browser(scope.clone(), action, "", &id, &url, true, opener)
+                    .is_err()
+            );
+        }
+        assert_eq!(opened.load(Ordering::SeqCst), 1);
+        host.control_with_browser(
+            scope.clone(),
+            OAuthAction::GrokSubscriptionReopen,
+            "",
+            &operation,
+            &auth,
+            true,
+            opener,
+        )
+        .unwrap();
+        assert_eq!(opened.load(Ordering::SeqCst), 2);
+        host.control_with_browser(
+            scope.clone(),
+            OAuthAction::Reopen,
+            &first.generation,
+            &operation,
+            "",
+            true,
+            opener,
+        )
+        .unwrap();
+        assert_eq!(opened.load(Ordering::SeqCst), 3);
+        let taken = host
+            .control(
+                scope.clone(),
+                OAuthAction::Take,
+                &first.generation,
+                &operation,
+                "",
+            )
+            .unwrap();
+        assert!(taken.code.is_none());
+        host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+            .unwrap();
+        assert!(
+            host.control_with_browser(
+                scope,
+                OAuthAction::GrokSubscriptionOpen,
+                "",
+                &operation,
+                &auth,
+                true,
+                opener
+            )
+            .is_err()
+        );
+        assert_eq!(opened.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn invalid_authorization_is_rejected_before_the_browser_opens() {
+        let host = OAuthHost::default();
+        let operation = uuid::Uuid::now_v7().to_string();
+        let bad = authorization_with(43817, replaced("client_id", "other-client"));
+        let result = host.control_with_browser(
+            scope(),
+            OAuthAction::GrokSubscriptionOpen,
+            "",
+            &operation,
+            &bad,
+            false,
+            |_, _| panic!("invalid URL cannot open a browser"),
+        );
+        assert!(matches!(result, Err(NativeFailure::InvalidInput)));
+        assert!(host.attempts.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn remote_receiver_accepts_one_redirect_on_a_dynamic_ipv4_port() {
+        let _guard = super::tests::loopback_listener_test_guard();
+        let port = free_port();
+        let auth = authorization(port);
+        let authority = format!("127.0.0.1:{port}");
+        let host = remote_host();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        let opened = std::sync::atomic::AtomicUsize::new(0);
+        let first = host
+            .control_with_browser(
+                scope.clone(),
+                OAuthAction::GrokSubscriptionOpen,
+                "",
+                &operation,
+                &auth,
+                false,
+                |_, _| {
+                    opened.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert_eq!(opened.load(Ordering::SeqCst), 1);
+        let good = format!("/callback?code=fixture%2Fcode&state={STATE}");
+        // Wrong Host, wrong path, wrong state, missing state, unknown key and
+        // denial redirects are all refused without storing a code.
+        assert!(deliver(port, &good, "localhost").starts_with("HTTP/1.1 400"));
+        assert!(
+            deliver(
+                port,
+                &format!("/other?code=fixture&state={STATE}"),
+                &authority
+            )
+            .starts_with("HTTP/1.1 400")
+        );
+        assert!(
+            deliver(port, "/callback?code=fixture&state=wrong-state", &authority)
+                .starts_with("HTTP/1.1 400")
+        );
+        assert!(deliver(port, "/callback?code=fixture", &authority).starts_with("HTTP/1.1 400"));
+        assert!(
+            deliver(
+                port,
+                &format!("/callback?code=fixture&state={STATE}&extra=1"),
+                &authority
+            )
+            .starts_with("HTTP/1.1 400")
+        );
+        assert!(
+            deliver(
+                port,
+                &format!("/callback?error=access_denied&state={STATE}"),
+                &authority
+            )
+            .starts_with("HTTP/1.1 400")
+        );
+        assert!(
+            host.control(
+                scope.clone(),
+                OAuthAction::Take,
+                &first.generation,
+                &operation,
+                ""
+            )
+            .unwrap()
+            .code
+            .is_none()
+        );
+        assert!(deliver(port, &good, &authority).starts_with("HTTP/1.1 303"));
+        // A second delivery, even a valid one, is dropped and cannot replace
+        // the retained code.
+        assert!(deliver(port, &good, &authority).starts_with("HTTP/1.1 400"));
+        let result = host
+            .control(
+                scope.clone(),
+                OAuthAction::Take,
+                &first.generation,
+                &operation,
+                "",
+            )
+            .unwrap();
+        assert_eq!(
+            result.code.as_ref().unwrap(),
+            format!("code=fixture%2Fcode&state={STATE}").as_bytes()
+        );
+        assert!(
+            host.control(
+                scope.clone(),
+                OAuthAction::Take,
+                &first.generation,
+                &operation,
+                ""
+            )
+            .unwrap()
+            .code
+            .is_none()
+        );
+        // Consumed attempts cannot reopen the browser.
+        assert!(
+            host.control(
+                scope.clone(),
+                OAuthAction::Reopen,
+                &first.generation,
+                &operation,
+                ""
+            )
+            .is_err()
+        );
+        host.control(scope, OAuthAction::Dispose, "", "", "")
+            .unwrap();
+        // Disposal joins the receiver and releases the port.
+        drop(TcpListener::bind((Ipv4Addr::LOCALHOST, port)).unwrap());
+        assert!(TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_err());
+    }
+
+    #[test]
+    fn remote_receiver_never_binds_ipv6_and_drops_delivery_after_window_close() {
+        let _guard = super::tests::loopback_listener_test_guard();
+        let port = free_port();
+        let auth = authorization(port);
+        let host = remote_host();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        host.control_with_browser(
+            scope.clone(),
+            OAuthAction::GrokSubscriptionOpen,
+            "",
+            &operation,
+            &auth,
+            false,
+            |_, _| Ok(()),
+        )
+        .unwrap();
+        // The original redirect names IPv4 only, so the IPv6 loopback stays
+        // free.
+        if let Ok(listener) = TcpListener::bind((Ipv6Addr::LOCALHOST, port)) {
+            drop(listener);
+        }
+        assert!(TcpStream::connect((Ipv6Addr::LOCALHOST, port)).is_err());
+        host.close_window("main").unwrap();
+        // The receiver is joined on close, so a late callback cannot connect.
+        assert!(TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_err());
+        assert!(
+            host.control_with_browser(
+                scope,
+                OAuthAction::GrokSubscriptionOpen,
+                "",
+                &operation,
+                &auth,
+                false,
+                |_, _| panic!("closed window cannot reopen"),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn remote_bind_conflict_fails_explicitly_and_never_remaps_the_port() {
+        let _guard = super::tests::loopback_listener_test_guard();
+        let occupied = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = occupied.local_addr().unwrap().port();
+        let auth = authorization(port);
+        let host = remote_host();
+        let result = host.control_with_browser(
+            scope(),
+            OAuthAction::GrokSubscriptionOpen,
+            "",
+            &uuid::Uuid::now_v7().to_string(),
+            &auth,
+            false,
+            |_, _| panic!("a failed bind cannot open a browser"),
+        );
+        assert!(matches!(result, Err(NativeFailure::SidecarFailed)));
+        assert!(host.attempts.lock().unwrap().is_empty());
+        assert_eq!(occupied.local_addr().unwrap().port(), port);
+    }
+
+    #[test]
+    fn remote_open_is_refused_while_the_server_cannot_forward_grok_callbacks() {
+        let _guard = super::tests::loopback_listener_test_guard();
+        let port = free_port();
+        let auth = authorization(port);
+        let host = OAuthHost::default();
+        let result = host.control_with_browser(
+            scope(),
+            OAuthAction::GrokSubscriptionOpen,
+            "",
+            &uuid::Uuid::now_v7().to_string(),
+            &auth,
+            false,
+            |_, _| panic!("a refused remote login cannot open a browser"),
+        );
+        assert!(matches!(result, Err(NativeFailure::Incompatible)));
+        assert!(host.attempts.lock().unwrap().is_empty());
+        // No listener was created, so the numeric port is still free.
+        drop(TcpListener::bind((Ipv4Addr::LOCALHOST, port)).unwrap());
+        // An invalid URL is still reported as invalid input, and a local login
+        // is unaffected because the server owns that loopback listener.
+        let bad = authorization_with(port, replaced("client_id", "other-client"));
+        let invalid = host.control_with_browser(
+            scope(),
+            OAuthAction::GrokSubscriptionOpen,
+            "",
+            &uuid::Uuid::now_v7().to_string(),
+            &bad,
+            false,
+            |_, _| panic!("invalid URL cannot open a browser"),
+        );
+        assert!(matches!(invalid, Err(NativeFailure::InvalidInput)));
+        host.control_with_browser(
+            scope(),
+            OAuthAction::GrokSubscriptionOpen,
+            "",
+            &uuid::Uuid::now_v7().to_string(),
+            &auth,
+            true,
+            |_, _| Ok(()),
+        )
+        .unwrap();
+    }
+
+    fn shared_for_handler() -> Shared {
+        Shared {
+            expected_state: Some(Zeroizing::new(STATE.to_owned())),
+            api_state: Mutex::new(None),
+            api_profile: None,
+            bound: AtomicBool::new(true),
+            consumed: AtomicBool::new(false),
+            stop: AtomicBool::new(false),
+            code: Mutex::new(None),
+        }
+    }
+
+    // Runs the real `handle_request` against a real loopback connection that
+    // already carries one complete, valid Grok redirect.
+    fn run_handler(shared: &Shared, deadline: Instant) -> String {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        client
+            .write_all(
+                format!(
+                    "GET /callback?code=fixture&state={STATE} HTTP/1.1\r\nHost: \
+                     127.0.0.1:{port}\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        let (mut stream, _) = listener.accept().unwrap();
+        handle_request(
+            &mut stream,
+            &format!("127.0.0.1:{port}"),
+            GROK_CALLBACK_PATH,
+            shared,
+            deadline,
+        );
+        drop(stream);
+        let mut response = String::new();
+        let _ = client.read_to_string(&mut response);
+        response
+    }
+
+    #[test]
+    fn handler_stores_an_in_time_callback_and_drops_one_past_the_deadline() {
+        let in_time = shared_for_handler();
+        let response = run_handler(&in_time, Instant::now() + Duration::from_secs(60));
+        assert!(response.starts_with("HTTP/1.1 303"));
+        assert!(in_time.consumed.load(Ordering::Acquire));
+        assert!(in_time.code.lock().unwrap().is_some());
+
+        // A complete, valid request handled at or after the deadline is dropped
+        // without consuming the one-shot slot or storing a code. The peer may
+        // observe a reset because the request was never read.
+        let expired = shared_for_handler();
+        let response = run_handler(&expired, Instant::now());
+        assert!(!response.starts_with("HTTP/1.1 303"));
+        assert!(!expired.consumed.load(Ordering::Acquire));
+        assert!(expired.code.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn claim_rechecks_the_deadline_immediately_before_the_compare_and_swap() {
+        // The request was read in time, but the deadline passed before the
+        // claim.
+        let shared = shared_for_handler();
+        assert!(!claim_callback(&shared, Instant::now()));
+        assert!(!shared.consumed.load(Ordering::Acquire));
+        // The slot stays claimable until the deadline, and only once.
+        let deadline = Instant::now() + Duration::from_secs(60);
+        assert!(claim_callback(&shared, deadline));
+        assert!(!claim_callback(&shared, deadline));
+        // Stopped and unbound attempts never claim.
+        let stopped = shared_for_handler();
+        stopped.stop.store(true, Ordering::Release);
+        assert!(!claim_callback(&stopped, deadline));
+        let unbound = shared_for_handler();
+        unbound.bound.store(false, Ordering::Release);
+        assert!(!claim_callback(&unbound, deadline));
+    }
+
+    #[test]
+    fn listener_drops_a_delivery_that_completes_after_the_attempt_expires() {
+        let _guard = super::tests::loopback_listener_test_guard();
+        let port = free_port();
+        let attempt = begin_grok_subscription_for(
+            scope(),
+            &uuid::Uuid::now_v7().to_string(),
+            &authorization(port),
+            false,
+            true,
+            Duration::from_millis(400),
+        )
+        .unwrap();
+        let shared = Arc::clone(&attempt.shared);
+        // The peer connects in time (so the listener accepts it) but sends its
+        // request only after the attempt expired.
+        let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        thread::sleep(Duration::from_millis(600));
+        let _ = client.write_all(
+            format!(
+                "GET /callback?code=fixture&state={STATE} HTTP/1.1\r\nHost: \
+                 127.0.0.1:{port}\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        let mut response = String::new();
+        let _ = client.read_to_string(&mut response);
+        assert!(!response.starts_with("HTTP/1.1 303"));
+        assert!(!shared.consumed.load(Ordering::Acquire));
+        assert!(shared.code.lock().unwrap().is_none());
+        drop(attempt);
+    }
+
+    #[test]
+    fn expired_remote_attempt_stops_accepting_and_drops_the_code() {
+        let _guard = super::tests::loopback_listener_test_guard();
+        let port = free_port();
+        let auth = authorization(port);
+        let host = remote_host();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        let first = host
+            .control_with_browser(
+                scope.clone(),
+                OAuthAction::GrokSubscriptionOpen,
+                "",
+                &operation,
+                &auth,
+                false,
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        host.attempts
+            .lock()
+            .unwrap()
+            .get_mut(&scope.window)
+            .unwrap()
+            .until = Instant::now();
+        let result = host.control(scope, OAuthAction::Take, &first.generation, &operation, "");
+        assert!(matches!(result, Err(NativeFailure::InvalidEvidence)));
+        assert!(host.attempts.lock().unwrap().is_empty());
     }
 }

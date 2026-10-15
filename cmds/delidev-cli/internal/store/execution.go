@@ -189,6 +189,13 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err != nil {
 		return empty, err
 	}
+	// A Worker that predates the OpenCode image profile rejects every OpenCode
+	// assignment that declares image input, even a text-only one. Freeze the
+	// declaration only for a Runner Device that negotiated the OpenCode pair, so
+	// other devices keep the text-only snapshot they already understand.
+	if configuration.Harness == domain.OpenCode && configuration.ImageInputDeclared && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeImageInputsV1) {
+		configuration.ImageInputDeclared = false
+	}
 	settingsRecord, settings, err := t.SessionDefaultSettings()
 	if err != nil {
 		return empty, err

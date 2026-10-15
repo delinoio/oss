@@ -51,23 +51,28 @@ function flattenMedia(css: string, viewport: ViewportKind): string {
   return out;
 }
 
-function mountSteps(current: number): HTMLElement[] {
+// Mirrors the wizard markup: the current and visited steps (up to `visited`)
+// are buttons, later steps are plain spans.
+function mountSteps(current: number, visited = current): HTMLElement[] {
   document.body.innerHTML = `
     <div class="desktop-wizard worker-wizard">
       <ol class="worker-steps wizard-progress">
-        ${STEP_VALUES.map(
-          (
-            value,
-          ) => `<li${value === current ? ' aria-current="step"' : ""} data-completed="${value < current}">
-            <span class="wizard-step-number" aria-hidden="true">${value}</span>
-            <span>Step label ${value}</span>
-          </li>`,
-        ).join("")}
+        ${STEP_VALUES.map((value) => {
+          const inner = `<span class="wizard-step-number" aria-hidden="true">${value}</span>
+            <span>Step label ${value}</span>`;
+          return `<li data-current="${value === current}" data-completed="${value < current}">
+            ${
+              value <= visited
+                ? `<button type="button" class="worker-step-target"${value === current ? ' aria-current="step"' : ""}>${inner}</button>`
+                : `<span class="worker-step-target">${inner}</span>`
+            }
+          </li>`;
+        }).join("")}
       </ol>
     </div>`;
   return Array.from(
     document.querySelectorAll<HTMLElement>(
-      ".worker-steps li > span:last-child",
+      ".worker-steps .worker-step-target > span:last-child",
     ),
   );
 }
@@ -133,8 +138,45 @@ describe("Agent Worker step labels", () => {
 
   it("keeps the 28px number circle geometry in the wide viewport", () => {
     expect(WIZARD_CSS).toMatch(
-      /\.worker-steps li > span:first-child \{[^}]*width: 28px;[^}]*height: 28px;/,
+      /\.worker-steps \.wizard-step-number \{[^}]*width: 28px;[^}]*height: 28px;/,
     );
     expect(PRESENTATION_CSS).toContain("font-size: 14px");
+  });
+
+  it.each([ViewportKind.Wide, ViewportKind.Narrow])(
+    "keeps number and label together in one flex target (%s viewport)",
+    (viewport) => {
+      installStyles(viewport);
+      mountSteps(2, 3);
+      for (const target of document.querySelectorAll<HTMLElement>(
+        ".worker-step-target",
+      )) {
+        expect(getComputedStyle(target).display).toBe("flex");
+        expect(
+          getComputedStyle(target.querySelector(".wizard-step-number")!).width,
+        ).toBe("28px");
+      }
+    },
+  );
+
+  it("scopes the hover surface and focus ring to enabled step buttons", () => {
+    const flat = flattenMedia(WIZARD_CSS, ViewportKind.Narrow);
+    expect(flat).toMatch(
+      /\.worker-steps button\.worker-step-target:hover:not\(:disabled\) \{[^}]*background: var\(--selected-background\)/,
+    );
+    expect(flat).toMatch(
+      /\.worker-steps button\.worker-step-target:focus-visible \{[^}]*outline: 2px solid var\(--focus\)/,
+    );
+    // Unvisited steps are spans, so no rule gives them hover or focus styling.
+    expect(flat).not.toMatch(/span\.worker-step-target:(hover|focus)/);
+    // The shared wizard-progress styles used by other wizards stay untouched.
+    expect(PRESENTATION_CSS).not.toContain("worker-step-target");
+  });
+
+  it("styles the current step through the data attribute on the item", () => {
+    expect(WIZARD_CSS).toContain('.worker-steps li[data-current="true"]');
+    expect(WIZARD_CSS).toContain(
+      '.worker-steps li[data-current="true"] .wizard-step-number',
+    );
   });
 });

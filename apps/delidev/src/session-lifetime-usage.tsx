@@ -140,7 +140,6 @@ export function SessionLifetimeUsage({
           <span>{format(displayed?.output)}</span>
         </span>
       </div>
-      <p>{copy("session.usageIncompleteCoverage")}</p>
       {createdAt === undefined ? (
         <p>{copy("session.usageCreationUnavailable")}</p>
       ) : result.isFetching ? (

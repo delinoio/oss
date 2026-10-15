@@ -97,6 +97,11 @@ interface PageReceipt {
 interface PageInventory {
   state: BrowserState;
   receipt: PageReceipt | null;
+  /**
+   * Set when a removal-pending reply was normalized to an empty inventory: the
+   * page ids the host actually listed, kept only to prove an absent Close.
+   */
+  rawPageIds?: string[];
 }
 /** The one in-flight explicit page operation and its original identity. */
 interface PageOperation {
@@ -111,6 +116,11 @@ interface PageOperation {
   receipt?: PageReceipt;
   /** The selected workspace tab when a Create was submitted. */
   selection?: string;
+}
+interface CloseFocus {
+  operationId: string;
+  control: Element;
+  navigation: number;
 }
 export interface BrowserHandle {
   /** Requests closure of one retained native page; descriptors close on proof. */
@@ -174,19 +184,56 @@ function browserState(value: BrowserState): BrowserState {
   return value;
 }
 
+/**
+ * A removal-pending profile is unavailable, so its inventory is authoritative
+ * and empty even when the host replies with the loaded tabs (a committed
+ * Create can race with removal). The raw reply is only used to prove the
+ * original receipt; reconciliation and completion handling see no pages.
+ */
+function pendingInventory(value: PageInventory): PageInventory {
+  if (!value.state.removal_pending || !value.state.tabs.tabs.length)
+    return value;
+  return {
+    ...value,
+    state: { ...value.state, tabs: { tabs: [], selected: "" } },
+    rawPageIds: value.state.tabs.tabs.map((page) => page.id),
+  };
+}
+
+/**
+ * A rejected receipt proof. A removal-pending reply still carries an
+ * independently validated (empty) inventory, so the profile state can be
+ * reconciled while the receipt itself stays rejected and unsettled.
+ */
+class BrowserProofError extends Error {
+  constructor(
+    message: string,
+    readonly inventory?: PageInventory,
+  ) {
+    super(message);
+  }
+}
+
 /** Proves a native page reply against the operation that requested it. */
 function pageInventory(
   value: PageInventory,
   operation?: PageOperation,
 ): PageInventory {
   browserState(value?.state);
+  const reject = (message: string): never => {
+    throw new BrowserProofError(
+      message,
+      value.state.removal_pending
+        ? { ...pendingInventory(value), receipt: null }
+        : undefined,
+    );
+  };
   const receipt = value.receipt;
   if (!operation) {
-    if (receipt !== null)
-      throw new Error("Browser inventory proof is invalid.");
-    return value;
+    if (receipt !== null) reject("Browser inventory proof is invalid.");
+    return pendingInventory(value);
   }
-  if (receipt === null) return value;
+  if (receipt === null) return pendingInventory(value);
   if (
     !receipt ||
     receipt.operation_id !== operation.operation_id ||
@@ -198,21 +245,26 @@ function pageInventory(
     (operation.action === PageAction.Close &&
       receipt.page_id !== operation.page_id)
   )
-    throw new Error("Browser operation proof is invalid.");
+    reject("Browser operation proof is invalid.");
   if (receipt.phase === PagePhase.Completed) {
     const listed = value.state.tabs.tabs.some(
       (page) => page.id === receipt.page_id,
     );
+    // The original receipt is validated independently of the current profile
+    // availability. A removal-pending inventory is treated as empty, so a
+    // completed Create is not required to be listed there; a Close proof is
+    // still checked against the raw listing.
     if (
       receipt.failure !== null ||
       !receipt.metadata_committed ||
       !receipt.native_cleanup_complete ||
-      value.state.removal_pending ||
-      (operation.action === PageAction.Close ? listed : !listed)
+      (operation.action === PageAction.Close
+        ? listed
+        : !listed && !value.state.removal_pending)
     )
-      throw new Error("Browser operation proof is invalid.");
+      reject("Browser operation proof is invalid.");
   }
-  return value;
+  return pendingInventory(value);
 }
 
 /** A command failure that proves nothing was admitted may be retried freshly. */
@@ -454,6 +506,23 @@ function NativeSessionBrowser({
   const presentation = useRef("");
   const shortcutAdmission = useRef("");
   const tabsStore = useSessionTabsStore();
+  // Identifies this view as the holder of its unsettled Close in the shared
+  // store, so every Session keeps the page descriptor until the proof settles.
+  const closeOwner = useRef({});
+  const heldClose = useRef<{ profile: string; page: string }>(undefined);
+  // Resolves once sibling product windows recorded this view's pending Close.
+  const closeSynced = useRef<Promise<void>>(Promise.resolve());
+  const closeFocus = useRef<CloseFocus>(undefined);
+  const releaseClose = () => {
+    const held = heldClose.current;
+    heldClose.current = undefined;
+    if (held)
+      tabsStore.releasePendingClose(
+        held.profile,
+        held.page,
+        closeOwner.current,
+      );
+  };
   const activeRef = useRef(active);
   activeRef.current = active;
   const selectedPageRef = useRef(selectedPage);
@@ -600,6 +669,8 @@ function NativeSessionBrowser({
     alive.current = true;
     return () => {
       alive.current = false;
+      // An abandoned operation can no longer be settled by this view.
+      releaseClose();
     };
   }, []);
   const focusSelectedTab = () => {
@@ -613,6 +684,37 @@ function NativeSessionBrowser({
         ?.focus({ preventScroll: true });
     });
   };
+  const closePageWithFocus = (original: PageOperation, profile: string) => {
+    const intent = closeFocus.current;
+    const transfer =
+      intent?.operationId === original.operation_id &&
+      activeRef.current &&
+      tabsStore.navigation(session.id) === intent.navigation &&
+      document.activeElement === intent.control;
+    tabsStore.closePageEverywhere(profile, original.page_id!);
+    if (!transfer) return;
+    const target = tabsStore.snapshot(session.id).selected;
+    requestAnimationFrame(() => {
+      if (!alive.current || !activeRef.current) return;
+      const current = tabsStore.snapshot(session.id);
+      if (current.selected !== target) return;
+      // Removing the focused control may reset activeElement to body. A later
+      // focus on any surviving control belongs to the user and wins.
+      if (
+        document.activeElement !== intent.control &&
+        document.activeElement !== document.body
+      )
+        return;
+      const index = current.tabs.findIndex(
+        (tab) => sessionTabKey(tab) === target,
+      );
+      const fallback = document.getElementById(
+        `session-tab-${session.id}-${index}`,
+      );
+      if (fallback?.isConnected && !fallback.closest("[hidden], [inert]"))
+        fallback.focus({ preventScroll: true });
+    });
+  };
   // Pages the current operation still owns keep their descriptors until the
   // original proof settles.
   const ownedPages = () =>
@@ -624,15 +726,19 @@ function NativeSessionBrowser({
     );
   const observeInventory = (value: PageInventory, profile: string) => {
     setState(value.state);
-    if (!value.state.removal_pending)
-      tabsStore.reconcilePages(
-        session.id,
-        profile,
-        pageDescriptors(profile, value.state),
-        ownedPages(),
-      );
+    // A removal-pending inventory is authoritative and empty, so it drops this
+    // profile's stale Page descriptors like any other inventory. Reconciliation
+    // is store-only and never sends a native mutation.
+    tabsStore.reconcilePages(
+      session.id,
+      profile,
+      pageDescriptors(profile, value.state),
+      ownedPages(),
+    );
   };
   const finishOperation = () => {
+    releaseClose();
+    closeFocus.current = undefined;
     operationRef.current = undefined;
     setOperation(undefined);
   };
@@ -650,6 +756,33 @@ function NativeSessionBrowser({
     setBusy(true);
     if (!observe) original.sent = true;
     try {
+      // Sibling windows must own the unsettled Close before the native page can
+      // disappear from their inventory reads.
+      if (!observe && original.action === PageAction.Close) {
+        await closeSynced.current;
+        if (
+          !alive.current ||
+          operationRef.current?.operation_id !== original.operation_id
+        )
+          return;
+        // A pagehide or disposal during the wait withdrew the hold; sending
+        // the native Close now would leave siblings without an owner.
+        if (
+          !heldClose.current ||
+          !tabsStore.holdsPendingClose(
+            heldClose.current.profile,
+            heldClose.current.page,
+            closeOwner.current,
+          )
+        ) {
+          original.sent = false;
+          finishOperation();
+          setOperationFailure(
+            ownedMessage("session-browser.extra.51fee7071e2b"),
+          );
+          return;
+        }
+      }
       const value = pageInventory(
         await invoke<PageInventory>("browser_pages", {
           profileId,
@@ -680,11 +813,13 @@ function NativeSessionBrowser({
         observeInventory(value, profileId);
         if (
           original.action === PageAction.Close &&
-          !value.state.tabs.tabs.some((page) => page.id === original.page_id)
+          // The raw listing, not the normalized empty inventory, proves absence.
+          !(
+            value.rawPageIds ?? value.state.tabs.tabs.map((page) => page.id)
+          ).includes(original.page_id!)
         ) {
-          tabsStore.closePageEverywhere(profileId, original.page_id!);
+          closePageWithFocus(original, profileId);
           finishOperation();
-          focusSelectedTab();
         } else {
           finishOperation();
           setOperationFailure(
@@ -696,30 +831,11 @@ function NativeSessionBrowser({
       original.receipt = receipt;
       original.uncertain = false;
       const before = tabsStore.snapshot(session.id);
-      const closedKey =
-        original.action === PageAction.Close
-          ? sessionTabKey({
-              kind: SessionTabKind.Page,
-              profile: profileId,
-              id: original.page_id!,
-              title: "",
-            })
-          : "";
-      const closedIndex = before.tabs.findIndex(
-        (tab) => sessionTabKey(tab) === closedKey,
-      );
-      const focusClosure =
-        before.selected === closedKey ||
-        (closedIndex >= 0 &&
-          document
-            .getElementById(`session-tab-${session.id}-${closedIndex}`)
-            ?.parentElement?.contains(document.activeElement));
       observeInventory(value, profileId);
       setOperationFailure(undefined);
       if (receipt.phase === PagePhase.Completed) {
         if (original.action === PageAction.Close) {
-          tabsStore.closePageEverywhere(profileId, original.page_id!);
-          if (focusClosure) focusSelectedTab();
+          closePageWithFocus(original, profileId);
         } else {
           const page = value.state.tabs.tabs.find(
             (value) => value.id === receipt.page_id,
@@ -772,6 +888,11 @@ function NativeSessionBrowser({
           });
           return;
         }
+        // The receipt stays rejected and the operation unsettled, but the
+        // independently validated removal-pending inventory still drops stale
+        // sibling descriptors; the closing page stays owned by `ownedPages`.
+        if (error instanceof BrowserProofError && error.inventory)
+          observeInventory(error.inventory, profileId);
         original.uncertain = true;
         setOperation({ ...original });
         setOperationFailure(ownedMessage("session-browser.operationUnknown"));
@@ -789,6 +910,40 @@ function NativeSessionBrowser({
   const runner = useRef(runOperation);
   runner.current = runOperation;
   const startOperation = (next: PageOperation) => {
+    releaseClose();
+    closeFocus.current = undefined;
+    if (next.action === PageAction.Close && next.page_id && profileId) {
+      const snapshot = tabsStore.snapshot(session.id);
+      const key = sessionTabKey({
+        kind: SessionTabKind.Page,
+        profile: profileId,
+        id: next.page_id,
+        title: "",
+      });
+      const index = snapshot.tabs.findIndex(
+        (tab) => sessionTabKey(tab) === key,
+      );
+      const control = document.activeElement;
+      if (
+        activeRef.current &&
+        index >= 0 &&
+        control &&
+        document
+          .getElementById(`session-tab-${session.id}-${index}`)
+          ?.parentElement?.contains(control)
+      )
+        closeFocus.current = {
+          operationId: next.operation_id,
+          control,
+          navigation: tabsStore.navigation(session.id),
+        };
+      heldClose.current = { profile: profileId, page: next.page_id };
+      closeSynced.current = tabsStore.holdPendingClose(
+        profileId,
+        next.page_id,
+        closeOwner.current,
+      );
+    }
     operationRef.current = next;
     setOperation(next);
     setOperationFailure(undefined);
@@ -912,7 +1067,17 @@ function NativeSessionBrowser({
           observeInventory(value, profileId);
           setInventoryFailure(undefined);
         }
-      } catch {
+      } catch (error) {
+        if (
+          error instanceof BrowserProofError &&
+          error.inventory &&
+          !disposed &&
+          alive.current &&
+          !nativeBusy.current &&
+          epoch === mutationEpoch.current &&
+          !operationRef.current
+        )
+          observeInventory(error.inventory, profileId);
         if (!disposed)
           setInventoryFailure(
             ownedMessage("session-browser.extra.c6d1ec80c1c4"),

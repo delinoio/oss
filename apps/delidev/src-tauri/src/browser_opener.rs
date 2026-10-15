@@ -6,7 +6,10 @@
 use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Mutex, MutexGuard,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -19,6 +22,45 @@ use crate::{
 };
 
 const INSTALLED_GRACE: Duration = Duration::from_secs(2);
+
+/// Serializes the commit-to-spawn transition of an OS default browser dispatch
+/// with the retirement of the flag it observes. Retirement (a closed Settings
+/// screen, window close or host stop) and the transition that checks the flag
+/// and starts the process are mutually exclusive, so a dispatch either never
+/// spawns after retirement or finishes its spawn first; a process that was
+/// already spawned is then terminated or its dispatch never reports success.
+/// The lock is held only across that check and `spawn()`: it takes no other
+/// lock, so retirement may hold any caller lock while waiting for it.
+static COMMIT: Mutex<()> = Mutex::new(());
+
+fn commit_lock() -> MutexGuard<'static, ()> {
+    COMMIT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Retires a dispatch flag. Every writer of a flag that `dispatch` observes
+/// must use this instead of storing directly, or the commit-to-spawn race
+/// remains open. The flags are the per-opening and per-attempt OAuth flags and
+/// `Connector::exiting`, whose production writers
+/// (`Connector::retire_exiting`) all route here.
+pub(crate) fn retire(flag: &AtomicBool) {
+    let _commit = commit_lock();
+    flag.store(true, Ordering::Release);
+}
+
+/// Points where a retirement can interleave with one dispatch. The production
+/// observer ignores them; tests retire the flag at each one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DispatchPhase {
+    /// The flag was checked clear and the commit lock is held; `spawn()` is
+    /// next.
+    Committing,
+    /// The process exists and the commit lock is released.
+    Spawned,
+    /// The process exited successfully; the final retirement check is next.
+    Exited,
+}
 
 pub(crate) fn dispatch(url: &str, stopped: &AtomicBool) -> std::result::Result<(), NativeFailure> {
     if stopped.load(Ordering::Acquire) {
@@ -42,20 +84,49 @@ pub(crate) fn dispatch(url: &str, stopped: &AtomicBool) -> std::result::Result<(
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     apply_environment(&mut command, false);
-    let mut child = command.spawn().map_err(|_| NativeFailure::SidecarFailed)?;
+    dispatch_command(command, stopped, &mut |_| {})
+}
+
+fn dispatch_command(
+    mut command: Command,
+    stopped: &AtomicBool,
+    observe: &mut dyn FnMut(DispatchPhase),
+) -> std::result::Result<(), NativeFailure> {
+    let mut child = {
+        // Check and spawn under one lock: a retirement either lands before the
+        // check and refuses this dispatch, or waits until the process exists.
+        let _commit = commit_lock();
+        if stopped.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        observe(DispatchPhase::Committing);
+        command.spawn().map_err(|_| NativeFailure::SidecarFailed)?
+    };
+    observe(DispatchPhase::Spawned);
     let until = Instant::now() + Duration::from_secs(5);
     loop {
+        if stopped.load(Ordering::Acquire) {
+            // Retired after the process started: terminate it and never
+            // report the dispatch as successful.
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(NativeFailure::Stopped);
+        }
         match child.try_wait() {
-            Ok(Some(status)) => {
-                return if status.success() {
-                    Ok(())
+            Ok(Some(status)) if status.success() => {
+                observe(DispatchPhase::Exited);
+                // Retirement stores under the commit lock, so this read is
+                // ordered against it: success is reported only if no
+                // retirement completed before the process finished.
+                let _commit = commit_lock();
+                return if stopped.load(Ordering::Acquire) {
+                    Err(NativeFailure::Stopped)
                 } else {
-                    Err(NativeFailure::SidecarFailed)
+                    Ok(())
                 };
             }
-            Ok(None) if Instant::now() < until && !stopped.load(Ordering::Acquire) => {
-                thread::sleep(Duration::from_millis(10))
-            }
+            Ok(Some(_)) => return Err(NativeFailure::SidecarFailed),
+            Ok(None) if Instant::now() < until => thread::sleep(Duration::from_millis(10)),
             _ => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -207,8 +278,7 @@ pub(crate) fn launch(
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let mut child = spawn_retrying_text_file_busy(&mut command)
-        .map_err(|_| NativeFailure::BrowserLaunchFailed)?;
+    let mut child = spawn_retrying_text_file_busy(&mut command, stopped)?;
     let until = Instant::now() + INSTALLED_GRACE;
     loop {
         match child.try_wait() {
@@ -244,30 +314,109 @@ pub(crate) fn launch(
 /// Every other error is returned immediately. Remove this when launches no
 /// longer target freshly written executables (only tests do today).
 #[cfg(target_os = "linux")]
-fn spawn_retrying_text_file_busy(command: &mut Command) -> std::io::Result<std::process::Child> {
+fn spawn_retrying_text_file_busy(
+    command: &mut Command,
+    stopped: &AtomicBool,
+) -> Result<std::process::Child, NativeFailure> {
+    spawn_retrying_text_file_busy_with(stopped, || command.spawn(), thread::sleep)
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_retrying_text_file_busy_with<T>(
+    stopped: &AtomicBool,
+    mut spawn: impl FnMut() -> std::io::Result<T>,
+    mut sleep: impl FnMut(Duration),
+) -> Result<T, NativeFailure> {
     // ETXTBSY is 26 on every Linux architecture.
     const TEXT_FILE_BUSY: i32 = 26;
     let mut attempts = 0u64;
     loop {
-        match command.spawn() {
+        // A failed exec did not launch a browser. Recheck shutdown after each
+        // backoff before another attempt can start one.
+        if stopped.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        match spawn() {
             Err(error) if error.raw_os_error() == Some(TEXT_FILE_BUSY) && attempts < 20 => {
                 attempts += 1;
-                thread::sleep(Duration::from_millis(5 * attempts));
+                sleep(Duration::from_millis(5 * attempts));
             }
-            result => return result,
+            Ok(child) => return Ok(child),
+            Err(_) => return Err(NativeFailure::BrowserLaunchFailed),
         }
     }
 }
 
 /// Other platforms do not report ETXTBSY for this race; spawn once.
 #[cfg(not(target_os = "linux"))]
-fn spawn_retrying_text_file_busy(command: &mut Command) -> std::io::Result<std::process::Child> {
-    command.spawn()
+fn spawn_retrying_text_file_busy(
+    command: &mut Command,
+    _stopped: &AtomicBool,
+) -> Result<std::process::Child, NativeFailure> {
+    command
+        .spawn()
+        .map_err(|_| NativeFailure::BrowserLaunchFailed)
+}
+
+/// Interleaving fixture shared by every writer of a dispatch flag. A writer is
+/// ordered with the commit-to-spawn transition when, started while a dispatch
+/// holds the commit lock, it cannot change the flag until the process exists;
+/// the dispatch then reports `Stopped` and its launcher does not survive.
+#[cfg(all(test, unix))]
+pub(crate) mod retirement_fixture {
+    use std::fs;
+
+    use super::*;
+
+    pub(crate) fn assert_writer_waits_for_commit(flag: &AtomicBool, writer: impl FnOnce() + Send) {
+        let dir = tempfile::tempdir().unwrap();
+        let pid = dir.path().join("pid");
+        let mut command = Command::new("/bin/sh");
+        command
+            .args([
+                "-c",
+                &format!("echo $$ > '{}'; exec sleep 30", pid.display()),
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let started = Instant::now();
+        let mut writer = Some(writer);
+        let result = thread::scope(|scope| {
+            let mut retirer = None;
+            let result = dispatch_command(command, flag, &mut |phase| {
+                if phase != DispatchPhase::Committing {
+                    return;
+                }
+                let writer = writer.take().expect("one commit phase");
+                retirer = Some(scope.spawn(writer));
+                thread::sleep(Duration::from_millis(150));
+                assert!(
+                    !flag.load(Ordering::Acquire),
+                    "the writer changed the flag inside the commit-to-spawn transition"
+                );
+            });
+            retirer.expect("commit phase observed").join().unwrap();
+            result
+        });
+        assert!(flag.load(Ordering::Acquire), "the writer never retired");
+        assert_eq!(result, Err(NativeFailure::Stopped));
+        assert!(started.elapsed() < Duration::from_secs(10));
+        // A launcher killed before its shell ran recorded no pid.
+        if let Ok(pid) = fs::read_to_string(pid) {
+            let alive = Command::new("/bin/sh")
+                .args(["-c", &format!("kill -0 {} 2>/dev/null", pid.trim())])
+                .status()
+                .unwrap()
+                .success();
+            assert!(!alive, "launcher {pid} survived retirement");
+        }
+    }
 }
 
 #[cfg(all(test, unix))]
 mod tests {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::{fs, os::unix::fs::PermissionsExt, sync::Arc};
 
     use super::*;
     use crate::browser_discovery::{BrowserEntry, InstalledBrowser, LaunchArg};
@@ -314,6 +463,159 @@ mod tests {
             result = launch(spec, url, &AtomicBool::new(false));
         }
         result
+    }
+
+    // OS dispatch retirement table (the device open lifecycle table in
+    // docs/cmds-delidev-grok-subscription-contract.md). A retirement can land
+    // at five points; the commit lock makes the first two exclusive with the
+    // spawn itself.
+    //
+    // - before the commit: no process starts; the result is Stopped.
+    // - while committing (blocked on the lock): the process spawns, is
+    //   terminated and the result is Stopped.
+    // - after the spawn, launcher running or already exited: the process is
+    //   terminated or reaped; the result is Stopped.
+    // - after a successful exit, before the final check: the process is reaped;
+    //   the result is Stopped, never Ok.
+    // - after the dispatch returned Ok: the result is unchanged.
+    fn shell(body: &str) -> Command {
+        let mut command = Command::new("/bin/sh");
+        command
+            .args(["-c", body])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        command
+    }
+    fn process_alive(pid: &str) -> bool {
+        Command::new("/bin/sh")
+            .args(["-c", &format!("kill -0 {pid} 2>/dev/null")])
+            .status()
+            .unwrap()
+            .success()
+    }
+    // Each launcher records its pid, then either exits at once or keeps
+    // running until the dispatcher terminates it.
+    fn launcher(dir: &Path, long_running: bool) -> (Command, PathBuf) {
+        let pid = dir.join("pid");
+        let tail = if long_running {
+            "exec sleep 30"
+        } else {
+            "exit 0"
+        };
+        (
+            shell(&format!("echo $$ > '{}'; {tail}", pid.display())),
+            pid,
+        )
+    }
+    fn assert_terminated(pid: &Path) {
+        if let Ok(pid) = fs::read_to_string(pid) {
+            assert!(
+                !process_alive(pid.trim()),
+                "launcher {pid} survived retirement"
+            );
+        }
+    }
+
+    #[test]
+    fn retirement_before_the_commit_refuses_without_starting_a_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let (command, pid) = launcher(dir.path(), false);
+        let stopped = AtomicBool::new(false);
+        retire(&stopped);
+        let mut phases = Vec::new();
+        let result = dispatch_command(command, &stopped, &mut |phase| phases.push(phase));
+        assert_eq!(result, Err(NativeFailure::Stopped));
+        assert!(phases.is_empty(), "a retired dispatch reached {phases:?}");
+        assert!(!pid.exists(), "a retired dispatch started a process");
+    }
+
+    #[test]
+    fn retirement_cannot_land_between_the_flag_check_and_the_spawn() {
+        for long_running in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let (command, pid) = launcher(dir.path(), long_running);
+            let stopped = Arc::new(AtomicBool::new(false));
+            let mut retirer = None;
+            let started = Instant::now();
+            let result = dispatch_command(command, &stopped, &mut |phase| {
+                if phase != DispatchPhase::Committing {
+                    return;
+                }
+                let flag = Arc::clone(&stopped);
+                retirer = Some(thread::spawn(move || retire(&flag)));
+                // The retirement is blocked on the commit lock this dispatch
+                // holds, so the flag cannot change before the spawn.
+                thread::sleep(Duration::from_millis(150));
+                assert!(
+                    !stopped.load(Ordering::Acquire),
+                    "retirement landed inside the commit-to-spawn transition"
+                );
+            });
+            retirer.expect("commit phase observed").join().unwrap();
+            assert!(stopped.load(Ordering::Acquire));
+            assert_eq!(result, Err(NativeFailure::Stopped), "long={long_running}");
+            assert!(started.elapsed() < Duration::from_secs(10));
+            assert_terminated(&pid);
+        }
+    }
+
+    #[test]
+    fn retirement_after_the_spawn_terminates_the_launcher_and_never_reports_success() {
+        for long_running in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let (command, pid) = launcher(dir.path(), long_running);
+            let stopped = AtomicBool::new(false);
+            let started = Instant::now();
+            let result = dispatch_command(command, &stopped, &mut |phase| {
+                if phase == DispatchPhase::Spawned {
+                    retire(&stopped);
+                }
+            });
+            assert_eq!(result, Err(NativeFailure::Stopped), "long={long_running}");
+            assert!(started.elapsed() < Duration::from_secs(10));
+            assert_terminated(&pid);
+        }
+    }
+
+    #[test]
+    fn retirement_after_a_successful_exit_is_never_reported_as_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let (command, pid) = launcher(dir.path(), false);
+        let stopped = AtomicBool::new(false);
+        let result = dispatch_command(command, &stopped, &mut |phase| {
+            if phase == DispatchPhase::Exited {
+                retire(&stopped);
+            }
+        });
+        // The launcher may be observed as stopped before it exits; either way
+        // the retired dispatch is not a success.
+        assert_eq!(result, Err(NativeFailure::Stopped));
+        assert_terminated(&pid);
+    }
+
+    #[test]
+    fn retirement_after_dispatch_returned_leaves_the_result_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let (command, pid) = launcher(dir.path(), false);
+        let stopped = AtomicBool::new(false);
+        assert_eq!(dispatch_command(command, &stopped, &mut |_| {}), Ok(()));
+        retire(&stopped);
+        assert!(stopped.load(Ordering::Acquire));
+        assert_terminated(&pid);
+    }
+
+    #[test]
+    fn a_failing_or_missing_launcher_is_still_a_sidecar_failure() {
+        let stopped = AtomicBool::new(false);
+        assert_eq!(
+            dispatch_command(shell("exit 3"), &stopped, &mut |_| {}),
+            Err(NativeFailure::SidecarFailed)
+        );
+        assert_eq!(
+            dispatch_command(Command::new("/nonexistent/launcher"), &stopped, &mut |_| {}),
+            Err(NativeFailure::SidecarFailed)
+        );
     }
 
     #[test]
@@ -442,5 +744,124 @@ mod tests {
             fs::read_to_string(&count).unwrap(),
             "https://localhost.example/x\n"
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn shutdown_during_text_file_busy_backoff_prevents_retry_spawn() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("ran");
+        let program = script(dir.path(), &format!("echo x >> '{}'", marker.display()));
+        let mut writer = Some(fs::OpenOptions::new().write(true).open(&program).unwrap());
+        let stopped = AtomicBool::new(false);
+        let mut command = Command::new(&program);
+        let mut backoffs = 0;
+
+        let result = spawn_retrying_text_file_busy_with(
+            &stopped,
+            || command.spawn(),
+            |delay| {
+                backoffs += 1;
+                stopped.store(true, Ordering::Release);
+                drop(writer.take());
+                thread::sleep(delay);
+            },
+        );
+
+        assert_eq!(backoffs, 1);
+        assert!(matches!(result, Err(NativeFailure::Stopped)));
+        assert!(!marker.exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn text_file_busy_retry_launches_once_after_writer_closes() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("ran");
+        let program = script(dir.path(), &format!("echo x >> '{}'", marker.display()));
+        let mut writer = Some(fs::OpenOptions::new().write(true).open(&program).unwrap());
+        let stopped = AtomicBool::new(false);
+        let mut command = Command::new(&program);
+        let mut backoffs = 0;
+
+        let mut child = spawn_retrying_text_file_busy_with(
+            &stopped,
+            || command.spawn(),
+            |delay| {
+                backoffs += 1;
+                drop(writer.take());
+                thread::sleep(delay);
+            },
+        )
+        .unwrap();
+
+        assert_eq!(backoffs, 1);
+        assert!(child.wait().unwrap().success());
+        assert_eq!(fs::read_to_string(marker).unwrap(), "x\n");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn retry_helper_keeps_immediate_stop_and_other_spawn_error_distinct() {
+        let stopped = AtomicBool::new(true);
+        let result = spawn_retrying_text_file_busy_with(
+            &stopped,
+            || -> std::io::Result<()> { panic!("spawn after shutdown") },
+            |_| panic!("backoff after shutdown"),
+        );
+        assert!(matches!(result, Err(NativeFailure::Stopped)));
+
+        stopped.store(false, Ordering::Release);
+        let mut attempts = 0;
+        let result = spawn_retrying_text_file_busy_with(
+            &stopped,
+            || -> std::io::Result<()> {
+                attempts += 1;
+                Err(std::io::ErrorKind::PermissionDenied.into())
+            },
+            |_| panic!("backoff after non-ETXTBSY error"),
+        );
+        assert_eq!(attempts, 1);
+        assert!(matches!(result, Err(NativeFailure::BrowserLaunchFailed)));
+    }
+    #[test]
+    fn the_shared_fixture_orders_the_plain_retire_writer_with_the_commit() {
+        let stopped = AtomicBool::new(false);
+        retirement_fixture::assert_writer_waits_for_commit(&stopped, || retire(&stopped));
+    }
+
+    // Every production writer of `Connector::exiting` goes through
+    // `retire_exiting`; the owning modules run the shared fixture against their
+    // writers. This scan keeps a new bare store from reintroducing the race.
+    #[test]
+    fn no_production_code_stores_to_a_flag_dispatch_observes() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        for entry in fs::read_dir(&root).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|extension| extension != "rs") {
+                continue;
+            }
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            if name == "tests.rs" || name.ends_with("_tests.rs") {
+                continue;
+            }
+            let source = fs::read_to_string(&path).unwrap();
+            let production = source
+                .split("\n#[cfg(test)]\nmod ")
+                .next()
+                .unwrap_or(&source);
+            let mut rest = production;
+            while let Some(index) = rest.find("exiting") {
+                let after = rest[index + "exiting".len()..].trim_start();
+                let after = after.strip_prefix('.').map(str::trim_start);
+                assert!(
+                    !after.is_some_and(|call| ["store(", "swap(", "fetch_", "compare_exchange"]
+                        .iter()
+                        .any(|write| call.starts_with(write))),
+                    "{name}: write the exiting flag through Connector::retire_exiting"
+                );
+                rest = &rest[index + "exiting".len()..];
+            }
+        }
     }
 }

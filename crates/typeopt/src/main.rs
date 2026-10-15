@@ -3,6 +3,8 @@ mod bundle;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod compiler;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+mod minify;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod optimizer;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod output;
@@ -50,7 +52,7 @@ mod app {
 
     /// Upstream compiler revision recorded in reports. It must match the
     /// `tsrs` pin in Cargo.toml; a unit test enforces this.
-    pub(crate) const COMPILER_REVISION: &str = "00f16261082fbb2465f0603c667b450d5aa6694b";
+    pub(crate) const COMPILER_REVISION: &str = "abddaae32e5d4c17806095bd3874233fa29b26bf";
 
     pub(crate) static CANCELLED: AtomicBool = AtomicBool::new(false);
     pub(crate) static VERBOSE: AtomicBool = AtomicBool::new(false);
@@ -63,6 +65,19 @@ mod app {
     pub(crate) fn keep_chunk_names() -> bool {
         KEEP_CHUNK_NAMES.load(Ordering::Relaxed)
     }
+    static MINIFY: AtomicBool = AtomicBool::new(false);
+    /// Bundle mode: minify edited chunks with SWC when that compresses smaller.
+    pub(crate) fn minify() -> bool {
+        MINIFY.load(Ordering::Relaxed)
+    }
+    /// Bundle mode: executable inline HTML code can observe callable source.
+    static BUNDLE_HTML_REFLECTION: AtomicBool = AtomicBool::new(false);
+    pub(crate) fn set_bundle_html_reflection(observed: bool) {
+        BUNDLE_HTML_REFLECTION.store(observed, Ordering::Relaxed);
+    }
+    pub(crate) fn bundle_html_reflection() -> bool {
+        BUNDLE_HTML_REFLECTION.load(Ordering::Relaxed)
+    }
     /// Bundle chunks (path substrings) kept as unchecked boundaries.
     static BUNDLE_EXCLUDE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     /// Bundle chunks known to run as ES modules (imported by a chunk or
@@ -72,6 +87,31 @@ mod app {
     /// Bundle chunks that an HTML page loads as a classic script.
     static BUNDLE_CLASSIC: std::sync::OnceLock<std::collections::BTreeSet<String>> =
         std::sync::OnceLock::new();
+    /// Bundle chunks with dynamic package imports that cannot be resolved in
+    /// the closed bundle and therefore stay unchanged.
+    static BUNDLE_DYNAMIC_PACKAGES: std::sync::OnceLock<std::collections::BTreeSet<String>> =
+        std::sync::OnceLock::new();
+    pub(crate) fn set_bundle_dynamic_packages(chunks: std::collections::BTreeSet<String>) {
+        let _ = BUNDLE_DYNAMIC_PACKAGES.set(chunks);
+    }
+    pub(crate) fn bundle_dynamic_package(path: &str) -> bool {
+        BUNDLE_DYNAMIC_PACKAGES
+            .get()
+            .is_some_and(|chunks| chunks.contains(path))
+    }
+    /// Source files reached only through dynamic package imports. Their
+    /// declarations may be supplied by the package and are outside the
+    /// bundle's checked application source.
+    static BUNDLE_DYNAMIC_FILES: std::sync::OnceLock<std::collections::BTreeSet<String>> =
+        std::sync::OnceLock::new();
+    pub(crate) fn set_bundle_dynamic_files(files: std::collections::BTreeSet<String>) {
+        let _ = BUNDLE_DYNAMIC_FILES.set(files);
+    }
+    pub(crate) fn bundle_dynamic_file(path: &str) -> bool {
+        BUNDLE_DYNAMIC_FILES
+            .get()
+            .is_some_and(|files| files.contains(path))
+    }
     /// Bundle chunks that an operator-excluded chunk can import, each with the
     /// excluded chunk that reaches it. They stay unchanged and keep their
     /// names: the excluded chunk keeps importing the original names.
@@ -85,6 +125,11 @@ mod app {
     pub(crate) fn bundle_frozen() -> impl Iterator<Item = (&'static String, &'static String)> {
         BUNDLE_FROZEN.get().into_iter().flatten()
     }
+    pub(crate) fn bundle_frozen_chunk(path: &str) -> bool {
+        BUNDLE_FROZEN
+            .get()
+            .is_some_and(|frozen| frozen.contains_key(path))
+    }
     pub(crate) fn set_bundle_modules(
         modules: std::collections::BTreeSet<String>,
         classic: std::collections::BTreeSet<String>,
@@ -92,12 +137,6 @@ mod app {
         let _ = BUNDLE_MODULES.set(modules);
         let _ = BUNDLE_CLASSIC.set(classic);
     }
-    /// Whether a bundle chunk is an unchecked boundary: excluded by the
-    /// operator, or not known to be an ES module (a classic script shares
-    /// its top-level bindings with other scripts). `.mjs` files, chunks with
-    /// ESM statements and chunks that a chunk or an HTML module script loads
-    /// are ES modules. A chunk that an excluded chunk can import is a boundary
-    /// as well: the excluded chunk keeps importing its original name.
     /// Whether `--bundle-exclude` matches a bundle chunk.
     pub(crate) fn bundle_excluded(path: &str) -> bool {
         BUNDLE_EXCLUDE
@@ -105,17 +144,30 @@ mod app {
             .is_some_and(|patterns| patterns.iter().any(|p| path.contains(p.as_str())))
     }
     /// Whether a bundle chunk stays byte-for-byte unchanged under its original
-    /// name: excluded by the operator, or importable by an excluded chunk.
-    /// Other boundary chunks are never edited by a pass, but their references
-    /// to renamed chunks are rewritten like those of any text asset.
+    /// name: excluded by the operator, reached by an excluded chunk, or
+    /// containing a dynamic package import whose specifier must be preserved.
     pub(crate) fn bundle_pinned(path: &str) -> bool {
         bundle_excluded(path)
+            || bundle_dynamic_package(path)
             || BUNDLE_FROZEN
                 .get()
                 .is_some_and(|frozen| frozen.contains_key(path))
     }
+    /// Whether a bundle chunk is an unchecked boundary: excluded by the
+    /// operator, or not known to be an ES module (a classic script shares
+    /// its top-level bindings with other scripts). `.mjs` files, chunks with
+    /// ESM statements and chunks that a chunk or an HTML module script loads
+    /// are ES modules. A chunk that an excluded chunk can import is a boundary
+    /// as well: the excluded chunk keeps importing its original name.
     pub(crate) fn bundle_boundary(path: &str, esm_statements: bool) -> bool {
-        bundle_pinned(path)
+        bundle_dynamic_package(path)
+            || bundle_frozen_chunk(path)
+            || bundle_excluded_or_classic(path, esm_statements)
+    }
+    /// The operator exclusion and classic-script decisions, without reach
+    /// propagation. Logging checks these before a chunk's own syntax rule.
+    pub(crate) fn bundle_excluded_or_classic(path: &str, esm_statements: bool) -> bool {
+        bundle_excluded(path)
             // A chunk that any page loads as a classic script shares its
             // top-level bindings as globals there, even if it is also
             // imported as a module.
@@ -151,6 +203,10 @@ mod app {
         /// Bundle mode: keep the names of edited content-hashed chunks.
         #[arg(long, requires = "bundle")]
         keep_chunk_names: bool,
+        /// Bundle mode: minify every edited chunk with SWC and keep the result
+        /// when its Brotli size shrinks and its gzip size does not grow.
+        #[arg(long, requires = "bundle")]
+        minify: bool,
         #[arg(long, required_unless_present = "check", conflicts_with = "check")]
         out_dir: Option<PathBuf>,
         #[arg(long)]
@@ -292,6 +348,7 @@ mod app {
     fn run_bundle(args: Args, dir: &std::path::Path, started: Instant) -> Result<()> {
         BUNDLE.store(true, Ordering::Relaxed);
         KEEP_CHUNK_NAMES.store(args.keep_chunk_names, Ordering::Relaxed);
+        MINIFY.store(args.minify, Ordering::Relaxed);
         let _ = BUNDLE_EXCLUDE.set(args.bundle_exclude.clone());
         let dir = dir.canonicalize().context("cannot find bundle directory")?;
         ensure!(dir.is_dir(), "--bundle must be a directory");
@@ -354,6 +411,11 @@ mod app {
         // Original chunks kept for encoded or boundary references are
         // published next to the optimized graph; the report discloses them.
         report.size.retained = staged.retained_bytes;
+        // Minification happens at publication; the report describes the
+        // published chunk text.
+        report.size.minified = staged.minified_bytes;
+        report.size.after -= staged.minified_bytes;
+        report.size.saved += staged.minified_bytes as isize;
         let staged = args.out_dir.is_some().then_some(staged);
         report.measure(started);
         // The report is part of the result: publish only after it was

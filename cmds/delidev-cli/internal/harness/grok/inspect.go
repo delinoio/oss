@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -36,6 +37,10 @@ func inspectProfile(ctx context.Context, config process.Config, profile apiProfi
 		return domain.Fail(domain.ResourceExhausted, "Grok Build configuration inspection exceeded its bound.", "Use an isolated supported native installation and refresh discovery.")
 	}
 	if err != nil {
+		// An expired deadline is a timeout, not an inspection that exited.
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return domain.SafeTimeoutError(ctx.Err())
+		}
 		return probeUnavailable()
 	}
 	return validateProfileInspection(stdout.buffer.Bytes(), config.Cwd, profile)
@@ -107,8 +112,12 @@ func validateProfileInspection(raw []byte, cwd string, profile apiProfile) error
 				Type string `json:"type"`
 			} `json:"source"`
 		} `json:"agents"`
-		Plugins       json.RawMessage `json:"plugins"`
-		Marketplaces  json.RawMessage `json:"marketplaces"`
+		Plugins      json.RawMessage `json:"plugins"`
+		Marketplaces json.RawMessage `json:"marketplaces"`
+		// Grok Build 1.0.52 adds an experiments inventory. Releases at the
+		// baseline omit it, so the key is optional; when present it must be
+		// an empty array like every other native extension inventory.
+		Experiments   json.RawMessage `json:"experiments,omitempty"`
 		MCPServers    json.RawMessage `json:"mcpServers"`
 		LSPServers    json.RawMessage `json:"lspServers"`
 		ConfigSources struct {
@@ -135,6 +144,9 @@ func validateProfileInspection(raw []byte, cwd string, profile apiProfile) error
 		if !emptyArray(list) {
 			return incompatible()
 		}
+	}
+	if len(report.Experiments) != 0 && !emptyArray(report.Experiments) {
+		return incompatible()
 	}
 	if err := profile.instructions.inspect(report.ProjectInstructions); err != nil {
 		return err
