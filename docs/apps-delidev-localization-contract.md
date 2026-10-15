@@ -108,8 +108,10 @@ ARIA-disabled to retain browser focus; reads and recovery failures disable it.
 Korean scope help is “기본값은 시스템 언어입니다.
 변경하면 모든 DeliDev 창에 바로 적용됩니다.” Selection auto-saves; there is no
 Save button. Reading/saving locks selection and announces status. Failure retains
-the last committed value and an explicit Reload action; uncertain writes never
-auto-retry. Controls and text wrap in both themes, narrow layouts and 200% zoom.
+the last committed value and an explicit Reload action, both shown only in the
+Language settings with no window-level alert; uncertain writes never
+auto-retry. Bundled catalogs hold no window-level notice copy for the sidebar,
+Appearance, Language, tray or desktop-notification presentation controllers. Controls and text wrap in both themes, narrow layouts and 200% zoom.
 
 Tray language refresh uses only retained observations and changes labels.
 New notifications and native dialogs use the current language; delivered

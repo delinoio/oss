@@ -96,6 +96,7 @@ type Client struct {
 	pendingEvent         *nativewire.Event
 	api                  *apiBinding
 	managedHome          string
+	mcpStartupServers    map[string]struct{}
 	managedTitle         bool
 	executionHelpers     *executionHelpers
 	revertHistory        bool

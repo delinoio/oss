@@ -318,7 +318,7 @@ The connection-owned `ShortcutProvider` and `useShortcuts` register stable enum 
 
 Dispatch and the read-only help use the same declarations. Match input-target registrations before screen and global registrations. Conflicts at the winning priority execute nothing and log only the stable event classification, scope and action IDs. A disabled matching action cannot fall through. Preserve original button/form guards and original RPC/request authority; a shortcut is not a new execution capability. Never log key events, input, aliases or native/browser content.
 
-Common shortcuts are logical `?` for help, primary+Shift+N for New session and fixed primary+comma for Open Settings. Open Settings uses the existing category-free navigation callback and is available from ordinary text fields. A fresh Settings visit opens AI Subscription through the existing focus handoff; invoking it during an active visit retains the current category, draft, pending requests and focus. The read-only Common catalog, Help and Settings button accessibility annotation share the same binding declaration. This shortcut performs no configuration save or execution action and retains the existing event, modal, terminal and capture guards. Primary means Command on the local macOS renderer and Control on Windows/Linux, independently of the selected server or Worker. Session and New session use primary+I to focus their message input and primary+Enter to submit only from that input. Session submission queues a message; New session submission creates through the original guarded form. The feature gives Session and General Chat follow-up composers fixed Enter submission and native Shift+Enter newline. Preserve New session's guarded Enter submission and native Shift+Enter newline. Search uses primary+I to focus the existing query and retains native Enter form submission. Search has no global entry shortcut. Primary+K opens the fixed command menu described below; it never submits a Search query. The sidebar Search button remains available without shortcut guidance. Ordinary Search entry retains its existing once-only autofocus; Search primary+I focuses the retained query and opens the existing compact drawer when needed. Files, Diff and Diagnostics register their existing focus-local Escape closure and original opener restoration. Other screens initially expose common shortcuts only. Control aria-keyshortcuts derives from the same platform-resolved bindings. The logical help binding carries a physical Shift+/ ARIA annotation for English/Korean slash-key layouts; it never changes logical character matching.
+Common shortcuts are logical `?` for help, unshifted primary+N for New session and fixed primary+comma for Open Settings. Open Settings uses the existing category-free navigation callback and is available from ordinary text fields. A fresh Settings visit opens AI Subscription through the existing focus handoff; invoking it during an active visit retains the current category, draft, pending requests and focus. The read-only Common catalog, Help and Settings button accessibility annotation share the same binding declaration. This shortcut performs no configuration save or execution action and retains the existing event, modal, terminal and capture guards. Primary means Command on the local macOS renderer and Control on Windows/Linux, independently of the selected server or Worker. Session and New session use primary+I to focus their message input and primary+Enter to submit only from that input. Session submission queues a message; New session submission creates through the original guarded form. The feature gives Session and General Chat follow-up composers fixed Enter submission and native Shift+Enter newline. Preserve New session's guarded Enter submission and native Shift+Enter newline. Search uses primary+I to focus the existing query and retains native Enter form submission. Search has no global entry shortcut. Primary+K opens the fixed command menu described below; it never submits a Search query. The sidebar Search button remains available without shortcut guidance. Ordinary Search entry retains its existing once-only autofocus; Search primary+I focuses the retained query and opens the existing compact drawer when needed. Files, Diff and Diagnostics register their existing focus-local Escape closure and original opener restoration. Other screens initially expose common shortcuts only. Control aria-keyshortcuts derives from the same platform-resolved bindings. The logical help binding carries a physical Shift+/ ARIA annotation for English/Korean slash-key layouts; it never changes logical character matching.
 
 The fixed Session Open tool / 도구 열기 action uses primary+T (Command+T on macOS,
 Control+T on Windows/Linux) for the active, selected, nonembedded Session, with
@@ -697,10 +697,9 @@ NewSessionFocus, NewSessionSend and SearchFocus support one primary chord,
 optional Shift and an ASCII letter/digit or Enter, or an explicit disabled
 override. An absent override selects the original default. SessionSend retains fixed unmodified Enter when its primary chord is changed or disabled; show this fixed binding alongside its editable Settings row. SessionNewline is read-only native Shift+Enter. Skill completion accepts a selectable suggestion before send dispatch. The original form/enqueue admission, IME/229/repeat/handled/target/modal/native fences and pending/uncertain request locks remain authoritative. Native newline,
 Search Enter, panel Escape, generic modal Escape, Tab and editing retain their
-original behavior; NewSessionSend always retains guarded plain Enter. Primary+K,
-primary+N (native New Window), primary+W,
-primary+Q/H/M (native Quit/Hide/Minimize) and primary+1–9 remain fixed reservations. Native editing
-chords cannot be assigned. The former New Window primary+T chord is editable; no native T alias remains, and the read-only Open tool and Open Files defaults yield to their T and E overrides. No palette, window action or tab action is added.
+original behavior; NewSessionSend always retains guarded plain Enter. The reserved,
+editable and default primary chords are defined once in the shortcut chord table
+below; native editing chords cannot be assigned. Unshifted primary+N is the editable New session default (Command+N on macOS, Control+N on Windows/Linux) and is not a native reservation or alias: native File > New Window has no accelerator, Shift+N is not an additional default alias, and the Keyboard Help and Settings native/fixed list has no New Window row. The renderer and the native validator treat N like any other editable chord: capturing unshifted N for Help overlaps the New session default and is rejected, while Help Shift+N is accepted. Saved overrides keep their meaning without migration or rewriting of `shortcuts.json`: an explicit Shift+N New session binding stays authoritative and unshifted N does not bypass it, a disabled override disables the action, and every stored document that was valid before this default change stays valid. Installations without a New session override receive unshifted N. An unshifted N override of a higher-priority screen action takes precedence over the New session default under the existing cross-priority dispatch rule. The renderer and native chord validators share one fixture table of accepted and rejected chords and override maps. The former New Window primary+T chord is editable; no native T alias remains, and the read-only Open tool and Open Files defaults yield to their T and E overrides. No palette, window action or tab action is added.
 
 Capture becomes active only after original-product-window native admission and
 an acknowledged native-loop replacement of the exact original app menu with an
@@ -759,6 +758,27 @@ environments expose persistence-unavailable and never use Web Storage. Preferenc
 survive restart and server changes and remain excluded from server backups and
 portable configuration. Logs contain only stable operation/problem/action/revision
 metadata, never captured keys, chords, text or native content.
+
+**Shortcut chord table.** This table is the single definition of the reserved,
+editable and default primary chords. The renderer validator, the native validator,
+the English/Korean fixed-shortcut help text, the shared chord fixture and every
+other document must match it; the table-sync tests in the renderer and native
+suites fail when any of them disagree. Primary means Command on macOS and Control
+on Windows/Linux. Update this table first when a chord changes.
+
+| Row                                   | Value                                                                               |
+| ------------------------------------- | ----------------------------------------------------------------------------------- |
+| Reserved unshifted primary keys       | `a` `b` `c` `h` `k` `m` `q` `v` `w` `x` `y` `z` `1` `2` `3` `4` `5` `6` `7` `8` `9` |
+| Reserved Shift primary keys           | `v` `z`                                                                             |
+| Keys named in the fixed shortcut help | `K` `W` `Q` `H` `M` `1–9`                                                           |
+| Editable New session default          | `N`                                                                                 |
+| Native New Window accelerator         | none                                                                                |
+| Shift+N New session                   | explicit saved override only, never a default alias                                 |
+
+Every other ASCII letter, digit or Enter, with or without Shift, is editable.
+Reserved keys are product or native chords: K command menu, W close session tab,
+B sidebar, Q/H/M native Quit/Hide/Minimize, 1–9 tab positions and A/C/V/X/Y/Z
+native editing; Shift+V and Shift+Z are native editing as well.
 
 English/Korean fixtures cover capture, draft isolation, dispatch/help/ARIA,
 conflicts, publication/recovery, keyboard and compact/effective-reflow layouts.
@@ -1556,11 +1576,11 @@ Profile-owned Worker controls accept the same closed lifecycle action and origin
 
 ### Native tray and menu bar
 
-The native File menu binds New Window to `CmdOrCtrl+N`: Command+N on macOS and Control+N on Windows/Linux. Command/Control+T no longer opens a product window. Menu clicks and the shortcut share one app-level handler, creating one window per activation through the existing Local/Saved window admission. Close Window has no native accelerator; `CmdOrCtrl+W` is the fixed renderer SessionCloseTab shortcut closing only the selected closeable session workspace tab (Conversation stays pinned and the chord never closes or hides a window; W stays reserved against customization; external page-focused forwarding is unchanged; Keyboard Help dismisses before closure; terminal focus is eligible), and the existing menu order is preserved.
+The native File menu item New Window has no keyboard accelerator: it is activated by menu click only, and Command/Control+N is the renderer New session shortcut that opens the New session page in the current window. Command/Control+T no longer opens a product window. Each menu click is handled by one app-level handler, creating one window per activation through the existing Local/Saved window admission. Close Window has no native accelerator; `CmdOrCtrl+W` is the fixed renderer SessionCloseTab shortcut closing only the selected closeable session workspace tab (Conversation stays pinned and the chord never closes or hides a window; W stays reserved against customization; external page-focused forwarding is unchanged; Keyboard Help dismisses before closure; terminal focus is eligible), and the existing menu order is preserved.
 
 One native tray owns one quota-first auxiliary status panel and projects the original ready Local/Saved product windows. TypeScript reads `SystemService.GetOverview`, today's existing usage summary and bounded account pages directly through Connect Query. Overview and today's usage summary poll every 15 seconds, and account reads every 30 seconds while the app process runs, including hidden windows. A failed or missing usage read remains unavailable on publication instead of carrying an old total forward. Rust receives only a validated presentation projection, never RPC authority, account credentials, prompts, native tool identities or paths.
 
-Show server observation time, exact active-session and unanswered-request counts, connected/registered Workers, known UTC-day tokens with incomplete telemetry, and separate account quota windows. Preserve zero and decimal precision; failed or missing evidence is unavailable. Today's half-open UTC range comes from the server. A quota cannot become pooled remaining capacity: preserve its own state, observation/reset times and stale result. At most 20 account aliases and eight windows per account are shown, with explicit Settings links for additional records. Email-shaped aliases are masked before native IPC and again before native menu rendering.
+Show server observation time, exact active-session and unanswered-request counts, connected/registered Workers, known UTC-day tokens with incomplete telemetry, and separate account quota windows. Preserve zero and decimal precision; failed or missing evidence is unavailable. Today's half-open UTC range comes from the server. A quota cannot become pooled remaining capacity: preserve its own state, observation/reset times and stale result. At most 20 account aliases and eight windows per account are shown, with explicit Settings links for additional records. Email-shaped aliases are masked before native IPC and again before native menu rendering. The product window renders no status text for a tray publication, activation-listener or retained-action read failure; the publisher, the `tray-activate` listener and ticket acknowledgment keep their behavior.
 
 Each publication uses the calling window's fresh scope and a strictly increasing revision. Stale scopes, another window's scope and reordered revisions cannot overwrite the current presentation. A native monotonic timer marks unrefreshed data stale after 45 seconds even if renderer timers are suspended. Cached read failures are also visibly stale. Native menus use only closed Sessions, Inbox, Usage and Settings destinations; opening them does not enqueue input, resolve/read a request or grant execution authority. Activation rechecks the original saved-window instance, retains a ticket in memory until the receiving view acknowledges that exact ticket and rejects an older acknowledgment that would erase newer navigation. This preserves activation across delayed mounts and React Strict Mode cleanup.
 
@@ -1656,7 +1676,88 @@ Permission reads have a five-second deadline and never prompt. Only the explicit
 - Windows uses pinned `windows` 0.62.2 WinRT notifications under `io.delino.delidev`; it never borrows PowerShell or another application's identity. Retain activation/dismissal registrations, distinguish application/user/policy/manifest disablement, keep Action Center activation after banner timeout and unregister callbacks during cleanup. Installed AppUserModelID registration and actual supported-system delivery require packaging acceptance.
 - Linux uses pinned `zbus` 5.19.0 with the Freedesktop notification service. Require actions, subscribe before Notify, bind signals and CloseNotification to the original unique bus owner and numeric ID, and use the pinned bundler's `DeliDev.desktop` basename. A replacement daemon cannot activate or close another notification with a reused ID. The interface has no standard user-permission query: display service-available without claiming permission or actual banner visibility.
 
-Native status uses a connection-scoped React Query cache and 30-second reads. Disabled/unavailable permission does not claim candidates. Settings explicitly distinguishes unrequested permission, denial, bundle/action/service/capacity failures and Linux service availability. API submission, platform permission and actual displayed/seen notifications are separate evidence. No browser notification API, network broker, arbitrary native payload or OS-permission request from a timer is allowed. Component tests, cross compilation and native host initialization do not establish real notification acceptance on any platform.
+Native status uses a connection-scoped React Query cache and 30-second reads. The product window renders no status text for a readiness, candidate or presentation-pump failure; requests remain in the inbox and the Settings notification status keeps the truthful native availability. Disabled/unavailable permission does not claim candidates. Settings explicitly distinguishes unrequested permission, denial, bundle/action/service/capacity failures and Linux service availability. API submission, platform permission and actual displayed/seen notifications are separate evidence. No browser notification API, network broker, arbitrary native payload or OS-permission request from a timer is allowed. Component tests, cross compilation and native host initialization do not establish real notification acceptance on any platform.
+
+#### Sidebar, tray and notification failure diagnostics
+
+The product window renders nothing for a sidebar-preference, tray or
+desktop-notification failure, so the renderer records each failing phase as one
+structured console warning. The record has the stable event name
+`delidev.presentation.outcome` and exactly two fields: a closed phase and the
+outcome `failed` or `recovered`. It never contains raw error text, identifiers,
+paths, summaries, payloads or the sidebar problem classification. Every
+reporter (sidebar provider, tray presentation, notification presentation and
+the tray publisher and notification pump it owns) feeds one pure reducer in
+`presentation-diagnostics.ts`; no reporter keeps its own failing flags.
+
+A phase is one operation. Its failure records once on the healthy-to-failing
+transition, so a repeating failure and bounded retries add no further warning;
+its next success records one `recovered` info record. An operation that was not
+attempted changes nothing. Phases never affect each other: a success of one
+phase never recovers another phase, and two phases that fail in the same batch
+each record their own warning.
+
+One log belongs to one lifetime: the sidebar provider, one mounted tray
+presentation or one notification connection. Disposal ends the log and a
+disposed log ignores every later event. A replaced connection or a newly
+mounted tray starts a new log with every phase healthy, so it reports its own
+first failure.
+
+Reducer table (`P` is one phase, `Q` any other phase):
+
+| State of `P`  | Failure of `P`               | Success of `P`                      | Disposal of the log                  |
+| ------------- | ---------------------------- | ----------------------------------- | ------------------------------------ |
+| healthy       | warn; `P` is failing         | no record                           | the log is disposed                  |
+| failing       | no record; `P` stays failing | one `recovered` record; `P` healthy | the log is disposed; failing cleared |
+| any, `Q` fail | independent of `Q`           | independent of `Q`                  | not applicable                       |
+| disposed log  | no record                    | no record                           | no record                            |
+
+| Phase                            | Failure event                                                                                                           | Result                                                                                                                          | Recovery event                                       |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `sidebar-read`                   | a snapshot with problem Unavailable, ReadFailed, InvalidDocument or UnsupportedVersion, including the first native read | warn; saves stay fenced until Reload                                                                                            | a healthy snapshot                                   |
+| `sidebar-save`                   | a snapshot with problem WriteFailed, OutcomeUnknown or Changed                                                          | warn; saves stay fenced and the original save is never replayed                                                                 | a healthy snapshot                                   |
+| `tray-begin`                     | `begin_tray` rejects                                                                                                    | warn; the next summary refresh begins again                                                                                     | `begin_tray` resolves                                |
+| `tray-publish`                   | `publish_tray` rejects                                                                                                  | warn; the scope is dropped and the next refresh begins again                                                                    | a completed publication                              |
+| `tray-action-read`               | `read_tray_action` or `acknowledge_tray_action` rejects or is invalid                                                   | warn once; bounded retry continues unchanged                                                                                    | a completed read or acknowledgment                   |
+| `tray-activation-listener`       | the `tray-activate` listener cannot be registered                                                                       | warn; the tray still publishes and no activation is received                                                                    | none until the tray is mounted again                 |
+| `notification-readiness`         | the permission read rejects                                                                                             | warn; no candidate is read and Settings keeps native availability                                                               | a later successful read                              |
+| `notification-candidate-read`    | the candidate list read rejects                                                                                         | warn; the pump keeps its previous page and presents nothing new                                                                 | a later successful read                              |
+| `notification-scope-begin`       | `begin_notifications` rejects or returns an invalid scope                                                               | warn; nothing is claimed and the next page begins again after a rejection                                                       | a valid scope                                        |
+| `notification-candidate-invalid` | the page exceeds 50 entries or carries an invalid target                                                                | warn; the page is dropped before native initialization                                                                          | the next valid page                                  |
+| `notification-present`           | native display is denied, failed or uncertain                                                                           | warn when the display result is known, before its report is sent; the batch stops after the report and display is never retried | a submitted display                                  |
+| `notification-pump`              | claim verification or the claim request fails                                                                           | warn; pending work is dropped and a submitted notice is not repeated                                                            | a verified claim, including one that may not present |
+| `notification-report`            | the report request rejects                                                                                              | warn; pending work is dropped and display is never retried                                                                      | a completed report                                   |
+
+Notification pump cells. A page is one batch; each row lists the records the
+batch produces in order, and every phase not named keeps its state. A claim that
+is aborted or not found is neither a failure nor a success of `notification-pump`.
+
+| Batch outcome                                         | Records                                                                                                                                               |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| valid page, display submitted, report completes       | recovers each of `notification-scope-begin`, `-pump`, `-present`, `-report` that was failing, and `notification-candidate-invalid` at page validation |
+| page invalid                                          | fails `notification-candidate-invalid`; no native call                                                                                                |
+| `begin_notifications` rejects                         | fails `notification-scope-begin`; nothing is claimed                                                                                                  |
+| scope invalid                                         | fails `notification-scope-begin`; nothing is claimed                                                                                                  |
+| claim rejects or cannot be verified                   | fails `notification-pump`; no display; scope-begin recovered earlier in the same drain                                                                |
+| display denied, failed or uncertain, report completes | fails `notification-present`; recovers every other failing pump phase                                                                                 |
+| display submitted, report rejects                     | fails `notification-report` only                                                                                                                      |
+| display denied, failed or uncertain, report rejects   | fails `notification-present`, then `notification-report`, in that order                                                                               |
+| display or report settles after the pump closed       | no record; the report request is not sent after a closed display                                                                                      |
+| connection replaced                                   | the new pump and its new log report their own first failure                                                                                           |
+
+The sidebar provider does not record its loading placeholder: the initial
+Unavailable value is not an observation. The first native read, even when it is
+a real Unavailable snapshot, is recorded like any other snapshot. A problem in
+the same phase as a failing one adds no record, a problem in the other phase
+adds its own record, and a healthy snapshot recovers both sidebar phases.
+
+Every phase leaves the product UI empty. The tray publisher and the
+notification pump report only the phase and whether its operation failed; the
+presentation component owns the log and decides what is recorded. A closed
+tray publisher or notification pump reports nothing, so an operation that
+settles after unmount, Strict Mode cleanup or connection replacement (for
+example a pending `begin_notifications` that later rejects) adds no record to
+the new lifetime.
 
 #### Notifications settings presentation
 
@@ -1997,7 +2098,7 @@ explicit Close, Archive and deletion retain independent native cleanup gates.
 
 - Home New project/Create a project opens the existing Project editor directly over Sessions or New Session without selecting or mounting Settings. `src/project-creation.tsx` owns the independent scoped lifetime and mutation registry, original pending/uncertain task reopening, exact retries and active-query invalidation; App owns admission and disposal on another surface/conversation or connection identity. Preserve drafts, Home pages/filter/scroll, shared dialog geometry and visible opener/compact Home fallback focus. Keep Settings-internal creation unchanged and follow `apps-delidev-desktop-contract.md#project-creation-outside-settings`.
 
-- Multiple product windows follow `apps-delidev-desktop-contract.md#multiple-product-windows`: retain one process-owned launch/supervisor, exact native Local/Saved role and instance admission, independent renderer memory and original callback epochs. New Window uses `CmdOrCtrl+N` through one native app menu handler (Command+N on macOS, Control+N on Windows/Linux); Command/Control+T no longer opens a window. Close Window has no native accelerator; `CmdOrCtrl+W` is the fixed renderer SessionCloseTab shortcut closing only the selected closeable session workspace tab (Conversation stays pinned and the chord never closes or hides a window; W stays reserved against customization; external page-focused forwarding is unchanged; Keyboard Help dismisses before closure; terminal focus is eligible); only the last product window hides to tray. Saved profile removal blocks and closes all its views. Names update monotonically; Widget publication has one oldest-ready writer per profile. Never transfer drafts, replay startup/pairing, persist window inventory or grant authority from a label pattern alone.
+- Multiple product windows follow `apps-delidev-desktop-contract.md#multiple-product-windows`: retain one process-owned launch/supervisor, exact native Local/Saved role and instance admission, independent renderer memory and original callback epochs. New Window is a menu-click-only action handled by one native app menu handler with no accelerator (Command/Control+N is the renderer New session shortcut); Command/Control+T no longer opens a window. Close Window has no native accelerator; `CmdOrCtrl+W` is the fixed renderer SessionCloseTab shortcut closing only the selected closeable session workspace tab (Conversation stays pinned and the chord never closes or hides a window; W stays reserved against customization; external page-focused forwarding is unchanged; Keyboard Help dismisses before closure; terminal focus is eligible); only the last product window hides to tray. Saved profile removal blocks and closes all its views. Names update monotonically; Widget publication has one oldest-ready writer per profile. Never transfer drafts, replay startup/pairing, persist window inventory or grant authority from a label pattern alone.
 
 - Project defaults owns the scoped direct SETTINGS policy form under the desktop contract and scoped source rules. Use explicit Discard changes/Save changes with header-only Refresh; preserve complete document/revision/retry authority and Settings lifetime. It owns Plan defaults/approval, account routing, Branch prefix, Worktree fetch and PR remediation. Server preferences owns only the independent collapsed Network workspace, with no policy singleton reads, editor or Save/Discard. Legacy Git entries resolve to Project defaults.
 
@@ -2156,7 +2257,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Skill availability presentation follows the desktop explicit skill completion contract. Only complete successful current authenticated scope inventory confirms absence; retain unknown on loading/error/unsupported scope. Keep native textarea overlays aligned and noninteractive; the mirror recopies textarea typography when the acknowledged appearance preferences `composer_size`, `composer_layout` or `density` change (including notifications from another window through the existing appearance provider) in a passive effect after the provider's layout effect applies the data attributes, with no document observer or polling and no textarea remount, skip disabled retained rows, bound panel retention to 256 and discard on dismissal/scope change. Prompt history remains text-only and supplies no completion candidates or binding authority.
 
-- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only primary+B shortcut with no shell toggle or spacer, compact drawer independence and explicit failure reload. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
+- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only primary+B shortcut with no shell toggle or spacer, compact drawer independence and failure fencing with shortcut-driven recovery and no window notice. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
 
 - Reset-credit row names follow the subscription Settings contract: localized one-based ordinals include unavailable returned details, full original IDs remain secondary, and confirmation captures the selected ordinal with the original identity and revision bindings. Reorder and locale changes cannot transfer selection or grant consumption authority. Preserve count-only native-next, once-only confirmation, exact uncertain requests, cleanup gates and native title privacy; add no durable identity or protocol field.
 
@@ -2196,7 +2297,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - `widget_writer.rs` owns the bounded FIFO persistence task and its terminal stale publication for this feature. `tray_host.rs` owns projection/admission and scope/revision/window/oldest-ready rechecks, releasing all state before the Swift ABI. Tray UI reads skip contention. Quit calls only nonblocking publication fencing on the UI loop; join widget, timer, notification, OAuth and window tasks on the tracked Quit worker before permitting native exit. Final-write failure reports uncertainty, never a fabricated durable stale result or blind retry. Follow the widget and desktop contracts and record native evidence separately.
 
-- Multiple product windows follow `apps-delidev-desktop-contract.md#multiple-product-windows`: retain one process-owned launch/supervisor, exact native Local/Saved role and instance admission, independent renderer memory and original callback epochs. New Window uses `CmdOrCtrl+N` through one native app menu handler (Command+N on macOS, Control+N on Windows/Linux); Command/Control+T no longer opens a window. Close Window has no native accelerator; `CmdOrCtrl+W` is the fixed renderer SessionCloseTab shortcut closing only the selected closeable session workspace tab (Conversation stays pinned and the chord never closes or hides a window; W stays reserved against customization; external page-focused forwarding is unchanged; Keyboard Help dismisses before closure; terminal focus is eligible); only the last product window hides to tray. Saved profile removal blocks and closes all its views. Names update monotonically; Widget publication has one oldest-ready writer per profile. Window destruction listeners retain registry state only, never AppHandle cycles that outlive native shutdown. Never transfer drafts, replay startup/pairing, persist window inventory or grant authority from a label pattern alone. Local bootstrap, registration inspection/recovery and original Local Worker commands admit registered Local `main`/`local-*` documents; Saved `server-*` documents retain their independent profile/server bindings and cannot acquire Local authority. Capability label patterns never replace exact native role/instance admission, trusted-document checks or original authority rechecks after asynchronous work. Local connection/recovery results update process-wide supervision only after the original Local role/instance/revision authority passes its post-Go recheck; stale results leave the supervised connection unchanged. All Local windows share the original process launch observation; additional windows never replay automatic startup, pairing or supervision. Preserve closed structured failure diagnostics without credentials, user state or raw native content.
+- Multiple product windows follow `apps-delidev-desktop-contract.md#multiple-product-windows`: retain one process-owned launch/supervisor, exact native Local/Saved role and instance admission, independent renderer memory and original callback epochs. New Window is a menu-click-only action handled by one native app menu handler with no accelerator (Command/Control+N is the renderer New session shortcut); Command/Control+T no longer opens a window. Close Window has no native accelerator; `CmdOrCtrl+W` is the fixed renderer SessionCloseTab shortcut closing only the selected closeable session workspace tab (Conversation stays pinned and the chord never closes or hides a window; W stays reserved against customization; external page-focused forwarding is unchanged; Keyboard Help dismisses before closure; terminal focus is eligible); only the last product window hides to tray. Saved profile removal blocks and closes all its views. Names update monotonically; Widget publication has one oldest-ready writer per profile. Window destruction listeners retain registry state only, never AppHandle cycles that outlive native shutdown. Never transfer drafts, replay startup/pairing, persist window inventory or grant authority from a label pattern alone. Local bootstrap, registration inspection/recovery and original Local Worker commands admit registered Local `main`/`local-*` documents; Saved `server-*` documents retain their independent profile/server bindings and cannot acquire Local authority. Capability label patterns never replace exact native role/instance admission, trusted-document checks or original authority rechecks after asynchronous work. Local connection/recovery results update process-wide supervision only after the original Local role/instance/revision authority passes its post-Go recheck; stale results leave the supervised connection unchanged. All Local windows share the original process launch observation; additional windows never replay automatic startup, pairing or supervision. Preserve closed structured failure diagnostics without credentials, user state or raw native content.
 
 - Provider help accepts only a closed canonical preset/action on an original trusted main or saved-window instance. Declare `open_provider_guidance` in the build app manifest and grant its dedicated `provider-guidance` permission only to the `main` and `server-*` webviews. Test the generated manifests/capabilities with Tauri's authority resolver; parent windows and remote pages cannot grant this command to external children. Use Go-generated `provider-guidance.generated.json`, never RPC/renderer-selected URLs, and preserve regional key guidance. `browser_opener.rs` is an internal bounded OS dispatcher for separately validated callers, with minimal environment, silent streams and joined cancellation; it is not a generic native capability. Provider help opens through the selected general browser destination (see [Browser destinations for external links](#browser-destinations-for-external-links)); OAuth authorization keeps the system default. Follow the provider and desktop contracts.
 
@@ -2327,7 +2428,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Device shortcut IPC requires the dedicated `device-shortcuts` permission for read/update and the closed native capture command in the compiled app manifest and only existing main/local-* and saved server-* product capabilities. Verify actual generated manifests and resolved admission for all desktop targets, including remote-origin, external-child and tray/auxiliary denial; retain original native generation guards independently.
 
-- Shortcut capture requires acknowledged original-window native admission before accepting keys. Preserve the exact app menu behind an accelerator-free fence; expired admission retains the fence until original-token inspection/End or native focus/visibility/disposal/Quit recovery. Fence queued New/Close and original CloseRequested, retain partial restoration uncertainty, reject late Begin with bounded retired tokens, and join the native watchdog through existing Quit without changing its grace. Reserve native Q/H/M and the N New Window chord in every editable map; the former T chord is editable. Compiled ACL fixtures and native policy tests grant no installed-platform acceptance.
+- Shortcut capture requires acknowledged original-window native admission before accepting keys. Preserve the exact app menu behind an accelerator-free fence; expired admission retains the fence until original-token inspection/End or native focus/visibility/disposal/Quit recovery. Fence queued New/Close and original CloseRequested, retain partial restoration uncertainty, reject late Begin with bounded retired tokens, and join the native watchdog through existing Quit without changing its grace. Reserve native Q/H/M in every editable map; New Window has no chord, so N follows the ordinary editable conflict rules, and the former T chord is editable. Compiled ACL fixtures and native policy tests grant no installed-platform acceptance.
 
 - `browser_tab_shortcuts` admits only bounded numeric presentation positions for the original trusted local window/profile/view generation with an expiring admission token. External raw CEF children receive no IPC or page script. Preserve native shortcut-capture fencing, exact modifiers, once-only key consumption and original-view composition proof; unknown or foreign composition evidence denies forwarding. On macOS use only the original NSView subtree's native NSTextInputClient marked-state. The owner-approved the feature amendment defers only Windows/Linux numeric forwarding while external browser content has focus; keep it denied until equivalent supported native composition proof exists. macOS and all other tab requirements remain required. No new server RPC, resource mutation, protocol allocation or database migration.
 
@@ -3268,7 +3369,7 @@ The Schedules list and Occurrence history page adapters (`schedulePage`, `occurr
 
 - The feature image startup guidance requires validated closed settled provenance. Present the exact original rejected input and images. English/Korean guidance directs users to start a new session with an explicitly image-capable Agent Worker and Runner Device, or start a new text-only session; retrying the rejected session retains its original input and selection. Queuing text in that session does not repair its startup retry admission. Keep generic/unverified failures under existing generic guidance; preserve current drafts, attachment identities and explicit retry/recovery guards. Missing or mixed metadata cannot offer image-specific retry. Follow the image-input and direct startup contracts.
 
-- Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The fixed primary+B shortcut shares dispatch/help/ARIA, ordinary-input admission and existing exclusions; the shell has no expand/collapse toggle or replacement spacer. Preserve focus/caret, compact drawer independence, visible navigation handoffs and explicit reload after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
+- Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The fixed primary+B shortcut shares dispatch/help/ARIA, ordinary-input admission and existing exclusions; the shell has no expand/collapse toggle or replacement spacer. Preserve focus/caret, compact drawer independence, visible navigation handoffs and shortcut-driven recovery (no window notice) after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
 
 - The feature per-turn timing uses bounded original owner/input/timestamp metadata and one mounted active timer isolated from transcript payload rendering. Anchor a pre-user line before the first bounded original matching native record, then relocate it before the primary input; reject foreign/earlier/inherited scope. Freeze retained terminal timing and unconfirmed disconnect estimates, preserve zero/unavailable, inherited source attribution, Steer identity, three-page anchors/tokens/scroll/focus and drafts. READY/pre-send states cannot create timing. Keep localized semantic wrapping and aria-live off; display timing grants no control/native authority.
 
@@ -3827,6 +3928,10 @@ events cannot restore older state. Equal unchanged inspections retain the revisi
 Brief saved-window binding contention receives bounded event-admission retries.
 A healthy retained window reinspects when focused or made visible to reconcile a
 missed event; an error or uncertain save still requires explicit Reload appearance.
+The failure text and the Reload action live only in the Appearance settings
+category. The provider renders no window-level alert, so the product window
+reserves no space for an Appearance problem. The same rule applies to the Language
+provider: its failure text and Reload action live only in the Language settings.
 
 The original native controller inspects `appearance.json` once during startup
 setup, before any product window or the tray is created or admitted, using the
@@ -6444,7 +6549,7 @@ page navigation and connection changes settle the latest valid endpoint directly
 Initial preference hydration and breakpoint restoration never animate. Reduced
 motion reaches endpoints immediately. Motion has no preference-write or execution
 authority; pending, failed and uncertain saves retain committed presentation and
-their original recovery controls. Rejected toggles are never queued.
+the recovery path in the sidebar preference table. Rejected toggles are never queued.
 
 Below 760px retain the purpose-named compact opener and modal drawer. Deactivate
 primary+B. Drawer opening/closing never saves the wide preference. On return to
@@ -6579,8 +6684,29 @@ and product-window events remain process-local. Publish ordered
 `sidebar-preference-changed` snapshots only to authorized product windows;
 external, tray and child views have no storage/event authority. Invalid, linked,
 oversized and newer documents remain unchanged. Failure retains committed layout;
-uncertain writes are never automatically replayed. A persistent localized notice
-and explicit Reload sidebar preference action inspect before further saves.
+uncertain writes are never automatically replayed. The product window renders no
+sidebar notice, alert or Reload button for any sidebar problem. In this
+contract Reload is the controller's recovery inspection: a read of the stored
+preference that never saves, queues or replays a change. The only product caller
+is the Toggle sidebar shortcut (primary+B, wide layout), which stays enabled
+while a problem fences saves. Every problem and event has one result:
+
+| State (idle unless stated)     | Event                               | Result                                                                                      |
+| ------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------- |
+| No problem                     | toggle shortcut                     | save the opposite committed value                                                           |
+| Reading or Saving              | toggle shortcut                     | ignored and never queued; no second read or save starts                                     |
+| Any problem                    | toggle shortcut                     | one Reload; the requested change is not saved or queued                                     |
+| Any problem                    | Reload returns a healthy snapshot   | clear the fence without replaying the original save; the next press saves                   |
+| Any problem                    | Reload returns a problem or rejects | keep the fence (ReadFailed when the revision did not advance); the next press reloads again |
+| Any problem, compact layout    | toggle shortcut                     | inactive; no read or save, and the fence waits for the wide layout                          |
+| Any problem                    | focus or visibility                 | no inspection                                                                               |
+| Any problem except Unavailable | event from another window           | ignored; a later delivery never proves an uncertain write                                   |
+| Unavailable                    | event from another window           | accepted                                                                                    |
+
+Unavailable, ReadFailed, InvalidDocument, UnsupportedVersion, WriteFailed,
+OutcomeUnknown and Changed all follow the Any problem rows. Each press is
+bounded to one read and no timer retries. The controller records only the
+`sidebar-read` and `sidebar-save` phases of the diagnostics table above.
 Renderer response/events are monotonic, contradictory snapshots are rejected and
 pending/failed/uncertain writes remain fenced. A structured problem reply
 (Changed, WriteFailed or OutcomeUnknown) to the original save fences the latest
@@ -6588,12 +6714,12 @@ committed presentation even when its revision is older than an already accepted
 newer event; the committed revision and selection never regress to the older
 reply, ordinary older healthy replies and older inspection classifications
 (InvalidDocument, UnsupportedVersion, ReadFailed or Unavailable) stay ignored,
-and only a successful explicit Reload clears the fence without replaying the
+and only a successful Reload clears the fence without replaying the
 save. Logs contain only stable operations,
 revision and outcome classifications. No business RPC, protocol allocation,
 migration, feature flag, dependency or OS-global keyboard bridge is added.
 
-Primary+B works in ordinary editable inputs and consumes an accepted press once.
+Primary+B works in ordinary editable inputs and consumes an accepted press once, including a press that only performs the recovery Reload.
 Preserve handled/repeated/composing/AltGraph/extra-modifier, hidden/inert,
 terminal-passthrough (except fixed `SessionCloseTab`) and modal exclusions, including compact navigation. The owned
 help dialog retains existing eligible action dismissal. B is a fixed product
@@ -7264,7 +7390,7 @@ list/selection owners. At available body width 900 CSS pixels or more, list/deta
 use 40/60 independent scrolling; compact Back restores list scroll and row focus.
 While the standalone Pull requests page is visible, `main` is a vertical flex
 container and the page takes the `main` height left after its preceding siblings,
-including the compact context trigger and the sidebar-preference notice, rather
+including the compact context trigger, rather
 than a full `main` height that those siblings would overflow. The page is itself a
 vertical layout, and the workspace panes use the page height left after the
 header, notices and pending actions down to the page's 32 CSS pixel bottom

@@ -322,7 +322,7 @@ Subscription/Codex/Claude login; embedded browser/account-profile work ; OAuth f
 
 - API provider `model_catalog_url` and `gateway_oauth` permit only omission or exact JSON null in ordinary, title and owned-proxy profiles. Reject populated values, unknown fields and duplicate keys before input. Preserve endpoint/token binding, transport and shell/proxy isolation, title retry restrictions and original cleanup/recovery fences. This compatibility boundary grants no catalog or gateway OAuth authority; diagnostics must not expose native configuration or credentials.
 
-- Managed ChatGPT may discard only the original root's built-in codex_apps MCP startup status through its closed typed passive profile. Retain private errors/descriptors, unknown-field/state/reason rejection and other server/API/unscoped/OAuth/event-stream/tool boundaries. Connector status never changes account health, enables tools or grants input/authentication authority.
+- Managed ChatGPT may discard the original root's built-in codex_apps MCP startup status through its closed typed passive profile. Ordinary managed project execution also accepts external startup names only from its enabled verified native workspace configuration inventory, under the [harness contract](cmds-delidev-harness-contract.md). Retain private errors/descriptors, unknown-field/state/reason rejection and unknown-server/API/unscoped/OAuth/event-stream/tool boundaries. Connector status never changes account health, enables tools or grants input/authentication authority.
 
 ## cmds/delidev-cli/internal/providers constraints
 

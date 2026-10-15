@@ -219,9 +219,29 @@ private error and `reauthenticationRequired` failure reason; discard descriptors
 and diagnostics without changing account health, configuration or input/tool
 authority. [Official native connector registration](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/core/src/mcp.rs)
 and [event mapping](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server/src/bespoke_event_handling.rs)
-keep this status separate from tool execution and authentication. Other server
-names, API profiles, unscoped/foreign observations, OAuth completions, MCP event
+keep this status separate from tool execution and authentication. API profiles,
+unscoped/foreign observations, OAuth completions, MCP event
 streams and tool calls retain their existing private adapter boundaries.
+Ordinary managed ChatGPT project executions also consume root-bound passive
+startup status for project-configured MCP servers using the same closed schema.
+Before binding Start or Resume, the workspace's successful native `config/read`
+retains only enabled names from `mcp_servers` (at most 1,024 entries, bounded
+nonempty names and object descriptors). Disabled and absent entries grant no
+startup-status authority. Malformed or duplicate configuration fails validation;
+a failed fresh read discards any earlier inventory. Each external startup name
+must match that original member's verified workspace inventory exactly. Unknown
+names retain the private unsupported boundary; another member's inventory cannot
+authorize them. Project isolation (see "Codex project and MCP isolation")
+runs after that read and requires the bound thread's effective inventory to be
+empty, so an ordinary thread that reaches input never has a configured server
+whose startup status could arrive; the retained names only describe the
+pre-isolation workspace read and grant no tool authority.
+The adapter discards server names and diagnostics and logs only the closed status,
+owner identity and error presence. These observations do not publish product
+events, complete a turn, change account health or grant tool authority. API,
+isolated title, Sidechat and model-observation profiles retain their separate
+boundaries, as do unscoped and foreign-thread observations. External MCP tool
+calls, OAuth completion and event streams still require their own typed adapters.
 The original execution process's notification-only `skills/changed` accepts
 exactly a required empty object as discarded process metadata. Its native cache
 invalidation signal never causes `skills/list`, package enumeration, catalog

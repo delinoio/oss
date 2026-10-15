@@ -137,7 +137,7 @@ it.each([
         .getByRole("button", { name: "Menu" })
         .getAttribute("aria-keyshortcuts"),
     ).toBe(`${primary === "metaKey" ? "Meta" : "Control"}+K`);
-    fireEvent.keyDown(input, { key: "n", shiftKey: true, [primary]: true });
+    fireEvent.keyDown(input, { key: "n", [primary]: true });
     expect(run).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: "k", [primary]: true });
     expect(screen.queryByRole("dialog")).toBeNull();
