@@ -1,4 +1,9 @@
-import { SidebarProvider, memorySidebarBridge } from "./sidebar-preference";
+import {
+  SidebarPreference,
+  SidebarProblem,
+  SidebarProvider,
+  memorySidebarBridge,
+} from "./sidebar-preference";
 import { sessionInputReceipt } from "./test-session-input";
 import {
   chooseScrollOption,
@@ -4543,13 +4548,44 @@ it("autofocuses visible Search after a wide sidebar preference read failure", as
       <App transport={value.transport} />
     </SidebarProvider>,
   );
-  await screen.findByRole("alert");
+  await waitFor(() => expect(bridge.read).toHaveBeenCalled());
+  await act(async () => {});
   fireEvent.click(headerAction("Search"));
   const input = screen.getByRole("textbox", { name: "Search conversations" });
   flushFrames();
   expect(document.activeElement).toBe(input);
   expectNoNavigationWrites(value);
 });
+
+it.each(Object.values(SidebarProblem))(
+  "renders no sidebar preference notice or Reload action for a %s problem",
+  async (problem) => {
+    viewport();
+    const value = fixture();
+    const bridge = memorySidebarBridge();
+    vi.spyOn(bridge, "read").mockResolvedValue({
+      revision: 1,
+      sidebar_preference: SidebarPreference.Expanded,
+      problem,
+    });
+    const view = render(
+      <SidebarProvider bridge={bridge}>
+        <App transport={value.transport} />
+      </SidebarProvider>,
+    );
+    await waitFor(() => expect(bridge.read).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Reload sidebar preference/ }),
+    ).toBeNull();
+    expect(
+      view.container.querySelector(".sidebar-preference-notice"),
+    ).toBeNull();
+    expect(view.container.textContent).not.toMatch(/sidebar preference/i);
+  },
+);
 
 // Search results carry only the child ID, so routing reads retained metadata.
 function retainedSession(name: string, fork?: Record<string, unknown>) {

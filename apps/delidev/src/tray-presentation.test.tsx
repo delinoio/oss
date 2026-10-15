@@ -30,11 +30,14 @@ const native = vi.hoisted(() => ({
     inbox_id?: string;
   } | null,
   calls: [] as string[],
+  failing: new Set<string>(),
+  listenFails: false,
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => true,
   invoke: async (name: string, args?: { id: string }) => {
     native.calls.push(name);
+    if (native.failing.has(name)) throw new Error(`${name} failed`);
     if (name === "read_sidebar_preference")
       return { revision: 1, sidebar_preference: "expanded", problem: null };
     if (name === "read_navigation_preference")
@@ -49,6 +52,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: async (event: string, callback: () => void) => {
+    if (native.listenFails) throw new Error("listen failed");
     if (event !== "tray-activate") return () => {};
     native.callbacks.add(callback);
     return () => native.callbacks.delete(callback);
@@ -236,3 +240,63 @@ it("opens the native-selected view without sending work or losing the session dr
   view.unmount();
   expect(native.callbacks.size).toBe(0);
 }, 15000);
+
+// The window renders no global status for tray publication, activation listener
+// or retained action failures, and the tray effects keep running.
+it.each([
+  ["publish_tray", "publication"],
+  ["read_tray_action", "action read"],
+  ["listen", "activation listener"],
+] as const)(
+  "renders no global status after a tray %s failure",
+  async (failure, _label) => {
+    native.failing.clear();
+    native.listenFails = failure === "listen";
+    if (failure !== "listen") native.failing.add(failure);
+    native.calls.length = 0;
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({ version: "0.1.0" }),
+        getOverview: () => ({
+          observedAt: "2026-09-27T00:01:00Z",
+          todayFromUnixMs: 1790467200000n,
+          todayUntilUnixMs: 1790467260000n,
+        }),
+      });
+      router.service(SessionService, {
+        listSessions: () => ({ sessions: [] }),
+        listQueue: () => ({ inputs: [] }),
+      });
+      router.service(ResourceService, {
+        listResources: () => ({ resources: [] }),
+        getSnapshot: () => ({ resources: [], cursor: "fixture" }),
+        async *watchEvents(_request, context) {
+          await new Promise<void>((resolve) =>
+            context.signal.addEventListener("abort", () => resolve(), {
+              once: true,
+            }),
+          );
+        },
+      });
+      router.service(InboxService, { listInbox: () => ({ entries: [] }) });
+      router.service(UsageService, { getUsageSummary: () => ({}) });
+    });
+    try {
+      const view = render(<App transport={transport} />);
+      await waitFor(() => expect(native.calls).toContain("begin_tray"));
+      if (failure === "publish_tray")
+        await waitFor(() => expect(native.calls).toContain("publish_tray"));
+      if (failure === "read_tray_action")
+        await waitFor(() => expect(native.calls).toContain("read_tray_action"));
+      await act(async () => {});
+      expect(screen.queryByText(/Tray status is unavailable/)).toBeNull();
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(view.container.querySelector("main [role='alert']")).toBeNull();
+      view.unmount();
+    } finally {
+      native.failing.clear();
+      native.listenFails = false;
+    }
+  },
+  15000,
+);

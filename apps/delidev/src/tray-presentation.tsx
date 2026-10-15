@@ -1,5 +1,4 @@
-import { copy, useLocale } from "./localization";
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -23,7 +22,6 @@ export function TrayPresentation({
 }: {
   navigate: (destination: TrayDestination, inboxId?: string) => void;
 }) {
-  useLocale();
   const enabled = isTauri();
   const overview = useQuery(
     SystemQuery.getOverview,
@@ -66,7 +64,6 @@ export function TrayPresentation({
   const latest = useRef<TraySummary>(summary);
   latest.current = summary;
   const publisher = useRef<TrayPublisher>(undefined);
-  const [failed, setFailed] = useState(false);
   const onNavigate = useEffectEvent(navigate);
   useEffect(() => {
     if (!enabled) return;
@@ -77,8 +74,8 @@ export function TrayPresentation({
         publish: (scope, revision, summary) =>
           invoke("publish_tray", { scope, revision, summary }),
       },
-      (failed) => {
-        if (!canceled) setFailed(failed);
+      () => {
+        // The window shows no global status for tray publication state.
       },
     );
     publisher.current = value;
@@ -122,7 +119,6 @@ export function TrayPresentation({
           retries = 0;
         } catch {
           if (!canceled) {
-            setFailed(true);
             // A concurrent native label publication can briefly return Busy.
             // Retry only this retained read/idempotent acknowledgment, never a
             // product mutation or a new notification display.
@@ -151,7 +147,8 @@ export function TrayPresentation({
         }
       })
       .catch(() => {
-        if (!canceled) setFailed(true);
+        // Without the activation listener the tray still publishes; the
+        // window shows no global status for the missing listener.
       });
     return () => {
       canceled = true;
@@ -164,9 +161,5 @@ export function TrayPresentation({
   useEffect(() => {
     publisher.current?.update(summary);
   }, [summary]);
-  return failed ? (
-    <p role="status">
-      {copy("tray-presentation.trayStatusIsUnavailableSessionsAnd_7fdf0e")}
-    </p>
-  ) : null;
+  return null;
 }

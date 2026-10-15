@@ -1542,7 +1542,7 @@ The native File menu binds New Window to `CmdOrCtrl+N`: Command+N on macOS and C
 
 One native tray owns one quota-first auxiliary status panel and projects the original ready Local/Saved product windows. TypeScript reads `SystemService.GetOverview`, today's existing usage summary and bounded account pages directly through Connect Query. Overview and today's usage summary poll every 15 seconds, and account reads every 30 seconds while the app process runs, including hidden windows. A failed or missing usage read remains unavailable on publication instead of carrying an old total forward. Rust receives only a validated presentation projection, never RPC authority, account credentials, prompts, native tool identities or paths.
 
-Show server observation time, exact active-session and unanswered-request counts, connected/registered Workers, known UTC-day tokens with incomplete telemetry, and separate account quota windows. Preserve zero and decimal precision; failed or missing evidence is unavailable. Today's half-open UTC range comes from the server. A quota cannot become pooled remaining capacity: preserve its own state, observation/reset times and stale result. At most 20 account aliases and eight windows per account are shown, with explicit Settings links for additional records. Email-shaped aliases are masked before native IPC and again before native menu rendering.
+Show server observation time, exact active-session and unanswered-request counts, connected/registered Workers, known UTC-day tokens with incomplete telemetry, and separate account quota windows. Preserve zero and decimal precision; failed or missing evidence is unavailable. Today's half-open UTC range comes from the server. A quota cannot become pooled remaining capacity: preserve its own state, observation/reset times and stale result. At most 20 account aliases and eight windows per account are shown, with explicit Settings links for additional records. Email-shaped aliases are masked before native IPC and again before native menu rendering. The product window renders no status text for a tray publication, activation-listener or retained-action read failure; the publisher, the `tray-activate` listener and ticket acknowledgment keep their behavior.
 
 Each publication uses the calling window's fresh scope and a strictly increasing revision. Stale scopes, another window's scope and reordered revisions cannot overwrite the current presentation. A native monotonic timer marks unrefreshed data stale after 45 seconds even if renderer timers are suspended. Cached read failures are also visibly stale. Native menus use only closed Sessions, Inbox, Usage and Settings destinations; opening them does not enqueue input, resolve/read a request or grant execution authority. Activation rechecks the original saved-window instance, retains a ticket in memory until the receiving view acknowledges that exact ticket and rejects an older acknowledgment that would erase newer navigation. This preserves activation across delayed mounts and React Strict Mode cleanup.
 
@@ -1638,7 +1638,7 @@ Permission reads have a five-second deadline and never prompt. Only the explicit
 - Windows uses pinned `windows` 0.62.2 WinRT notifications under `io.delino.delidev`; it never borrows PowerShell or another application's identity. Retain activation/dismissal registrations, distinguish application/user/policy/manifest disablement, keep Action Center activation after banner timeout and unregister callbacks during cleanup. Installed AppUserModelID registration and actual supported-system delivery require packaging acceptance.
 - Linux uses pinned `zbus` 5.19.0 with the Freedesktop notification service. Require actions, subscribe before Notify, bind signals and CloseNotification to the original unique bus owner and numeric ID, and use the pinned bundler's `DeliDev.desktop` basename. A replacement daemon cannot activate or close another notification with a reused ID. The interface has no standard user-permission query: display service-available without claiming permission or actual banner visibility.
 
-Native status uses a connection-scoped React Query cache and 30-second reads. Disabled/unavailable permission does not claim candidates. Settings explicitly distinguishes unrequested permission, denial, bundle/action/service/capacity failures and Linux service availability. API submission, platform permission and actual displayed/seen notifications are separate evidence. No browser notification API, network broker, arbitrary native payload or OS-permission request from a timer is allowed. Component tests, cross compilation and native host initialization do not establish real notification acceptance on any platform.
+Native status uses a connection-scoped React Query cache and 30-second reads. The product window renders no status text for a readiness, candidate or presentation-pump failure; requests remain in the inbox and the Settings notification status keeps the truthful native availability. Disabled/unavailable permission does not claim candidates. Settings explicitly distinguishes unrequested permission, denial, bundle/action/service/capacity failures and Linux service availability. API submission, platform permission and actual displayed/seen notifications are separate evidence. No browser notification API, network broker, arbitrary native payload or OS-permission request from a timer is allowed. Component tests, cross compilation and native host initialization do not establish real notification acceptance on any platform.
 
 #### Notifications settings presentation
 
@@ -2138,7 +2138,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Skill availability presentation follows the desktop explicit skill completion contract. Only complete successful current authenticated scope inventory confirms absence; retain unknown on loading/error/unsupported scope. Keep native textarea overlays aligned and noninteractive; the mirror recopies textarea typography when the acknowledged appearance preferences `composer_size`, `composer_layout` or `density` change (including notifications from another window through the existing appearance provider) in a passive effect after the provider's layout effect applies the data attributes, with no document observer or polling and no textarea remount, skip disabled retained rows, bound panel retention to 256 and discard on dismissal/scope change. Prompt history remains text-only and supplies no completion candidates or binding authority.
 
-- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only primary+B shortcut with no shell toggle or spacer, compact drawer independence and explicit failure reload. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
+- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only primary+B shortcut with no shell toggle or spacer, compact drawer independence and failure fencing without a window notice. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
 
 - Reset-credit row names follow the subscription Settings contract: localized one-based ordinals include unavailable returned details, full original IDs remain secondary, and confirmation captures the selected ordinal with the original identity and revision bindings. Reorder and locale changes cannot transfer selection or grant consumption authority. Preserve count-only native-next, once-only confirmation, exact uncertain requests, cleanup gates and native title privacy; add no durable identity or protocol field.
 
@@ -3809,6 +3809,10 @@ events cannot restore older state. Equal unchanged inspections retain the revisi
 Brief saved-window binding contention receives bounded event-admission retries.
 A healthy retained window reinspects when focused or made visible to reconcile a
 missed event; an error or uncertain save still requires explicit Reload appearance.
+The failure text and the Reload action live only in the Appearance settings
+category. The provider renders no window-level alert, so the product window
+reserves no space for an Appearance problem. The same rule applies to the Language
+provider: its failure text and Reload action live only in the Language settings.
 
 The original native controller inspects `appearance.json` once during startup
 setup, before any product window or the tray is created or admitted, using the
@@ -6546,8 +6550,9 @@ and product-window events remain process-local. Publish ordered
 `sidebar-preference-changed` snapshots only to authorized product windows;
 external, tray and child views have no storage/event authority. Invalid, linked,
 oversized and newer documents remain unchanged. Failure retains committed layout;
-uncertain writes are never automatically replayed. A persistent localized notice
-and explicit Reload sidebar preference action inspect before further saves.
+uncertain writes are never automatically replayed. The product window renders no
+sidebar notice, alert or Reload action for any sidebar problem; the controller
+keeps its fences, so no further save is sent while a problem exists.
 Renderer response/events are monotonic, contradictory snapshots are rejected and
 pending/failed/uncertain writes remain fenced. A structured problem reply
 (Changed, WriteFailed or OutcomeUnknown) to the original save fences the latest
@@ -7231,7 +7236,7 @@ list/selection owners. At available body width 900 CSS pixels or more, list/deta
 use 40/60 independent scrolling; compact Back restores list scroll and row focus.
 While the standalone Pull requests page is visible, `main` is a vertical flex
 container and the page takes the `main` height left after its preceding siblings,
-including the compact context trigger and the sidebar-preference notice, rather
+including the compact context trigger, rather
 than a full `main` height that those siblings would overflow. The page is itself a
 vertical layout, and the workspace panes use the page height left after the
 header, notices and pending actions down to the page's 32 CSS pixel bottom

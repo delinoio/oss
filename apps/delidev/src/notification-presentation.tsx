@@ -4,7 +4,7 @@ import {
   SettingsActionPresentation,
 } from "./settings-action";
 import { copy, useLocale } from "./localization";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
@@ -43,7 +43,6 @@ function useReadiness(active = true) {
 }
 
 export function NotificationPresentation() {
-  useLocale();
   const enabled = isTauri();
   const transport = useTransport();
   const service = useMemo(
@@ -63,7 +62,6 @@ export function NotificationPresentation() {
     },
   );
   const pump = useRef<NotificationPump>(undefined);
-  const [failed, setFailed] = useState(false);
   // Keep the native scope for the lifetime of this connection. Permission polls
   // must not replace callbacks for already submitted notifications.
   useEffect(() => {
@@ -76,7 +74,9 @@ export function NotificationPresentation() {
         present: (scope, notice) =>
           invoke("present_notification", { scope, notice }),
       },
-      setFailed,
+      () => {
+        // The window shows no global status for notification pump failures.
+      },
       () => {
         void candidates.refetch();
       },
@@ -92,13 +92,7 @@ export function NotificationPresentation() {
     if (ready && !candidates.isError && candidates.data)
       pump.current?.update(candidates.data.candidates);
   }, [ready, candidates.isError, candidates.data, candidates.dataUpdatedAt]);
-  return enabled && (failed || candidates.isError || readiness.isError) ? (
-    <p role="status">
-      {copy(
-        "notification-presentation.desktopNotificationsCouldNotBeConfirmed_8b02e8",
-      )}
-    </p>
-  ) : null;
+  return null;
 }
 
 export function NativeNotificationSettings({ active }: { active: boolean }) {

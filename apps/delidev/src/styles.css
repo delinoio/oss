@@ -5781,14 +5781,6 @@ dialog nav {
     transition: none;
   }
 }
-.sidebar-preference-notice {
-  margin: 12px 16px;
-  max-width: 680px;
-  overflow-wrap: anywhere;
-}
-.sidebar-preference-notice button {
-  min-height: 40px;
-}
 /* Home groups remain shared disclosures, with a bounded flat navigation surface. */
 .sidebar-project-group
   > button.sidebar-project-row.disclosure-header.disclosure-header {

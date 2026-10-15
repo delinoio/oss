@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-import { copy, useLocale } from "./localization";
 import {
   createContext,
   useContext,
@@ -69,30 +68,6 @@ const nativeBridge: SidebarBridge = {
         )
       : () => {},
 };
-const problemMessages: Record<SidebarProblem, string> = {
-  get [SidebarProblem.Unavailable]() {
-    return copy("sidebar-preference.unavailable");
-  },
-  get [SidebarProblem.ReadFailed]() {
-    return copy("sidebar-preference.readFailed");
-  },
-  get [SidebarProblem.InvalidDocument]() {
-    return copy("sidebar-preference.invalidDocument");
-  },
-  get [SidebarProblem.UnsupportedVersion]() {
-    return copy("sidebar-preference.unsupportedVersion");
-  },
-  get [SidebarProblem.WriteFailed]() {
-    return copy("sidebar-preference.writeFailed");
-  },
-  get [SidebarProblem.OutcomeUnknown]() {
-    return copy("sidebar-preference.outcomeUnknown");
-  },
-  get [SidebarProblem.Changed]() {
-    return copy("sidebar-preference.changed");
-  },
-};
-
 export function parseSidebar(value: unknown): SidebarSnapshot {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid sidebar-preference snapshot");
@@ -128,7 +103,6 @@ export function SidebarProvider({
   children: ReactNode;
   bridge?: SidebarBridge;
 }) {
-  useLocale();
   const [fallbackBridge] = useState(() =>
     isTauri() ? nativeBridge : memorySidebarBridge(),
   );
@@ -338,19 +312,6 @@ export function useSidebarPreference() {
   const controller = useContext(SidebarContext);
   if (!controller) throw new Error("Missing sidebar preference owner");
   return controller;
-}
-export function SidebarPreferenceNotice() {
-  useLocale();
-  const { snapshot, operation, reload } = useSidebarPreference();
-  if (!snapshot.problem || operation) return null;
-  return (
-    <div className="sidebar-preference-notice">
-      <p role="alert">{problemMessages[snapshot.problem]}</p>
-      <button type="button" onClick={reload}>
-        {copy("sidebar-preference.reload")}
-      </button>
-    </div>
-  );
 }
 export function useWideSidebar() {
   const [wide, setWide] = useState(

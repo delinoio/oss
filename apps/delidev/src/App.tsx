@@ -11,7 +11,6 @@ import { SessionNameEditorProvider } from "./session-name-editor";
 import {
   SidebarPreference,
   SidebarPreferenceBoundary,
-  SidebarPreferenceNotice,
   useSidebarPreference,
   useWideSidebar,
 } from "./sidebar-preference";
@@ -1134,7 +1133,6 @@ function Shell({
                             : undefined
                         }
                       >
-                        <SidebarPreferenceNotice />
                         <button
                           ref={contextOpener}
                           type="button"

@@ -1,4 +1,4 @@
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -431,3 +431,85 @@ it("shows desktop guidance without a native read or request in non-desktop execu
   ).toBeNull();
   expect(native.invoke).not.toHaveBeenCalled();
 });
+
+// The window renders no global status for any readiness, candidate or pump
+// failure, while the controller keeps its queries and native calls.
+it.each([
+  "readiness-read",
+  "candidate-read",
+  "scope-begin",
+  "native-present",
+] as const)(
+  "renders no global status after a %s failure and keeps the controller behavior",
+  async (failure) => {
+    const candidate = {
+      inboxId: newRequestId(),
+      sessionId: newRequestId(),
+      kind: NotificationKind.REQUEST,
+    };
+    native.invoke.mockImplementation(async (command) => {
+      if (command === "notification_permission") {
+        if (failure === "readiness-read") throw new Error("read failed");
+        return { permission: "service-available", problem: "none" };
+      }
+      if (command === "begin_notifications") {
+        if (failure === "scope-begin") throw new Error("begin failed");
+        return newRequestId();
+      }
+      if (command === "present_notification") return "failed";
+      return undefined;
+    });
+    const list = vi.fn(() => {
+      if (failure === "candidate-read")
+        throw new ConnectError("unavailable", Code.Unavailable);
+      return { candidates: [candidate] };
+    });
+    const claim = vi.fn((request: { requestId: string }) => ({
+      requestId: request.requestId,
+      mayPresent: true,
+      delivery: {
+        claimId: request.requestId,
+        state: NotificationState.CLAIMED,
+        candidate,
+      },
+    }));
+    const report = vi.fn(() => ({}));
+    const transport = createRouterTransport((router) =>
+      router.service(InboxService, {
+        listNotificationCandidates: list,
+        claimNotification: claim,
+        reportNotification: report,
+      }),
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <NotificationPresentation />
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    if (failure === "readiness-read")
+      await waitFor(() =>
+        expect(native.invoke).toHaveBeenCalledWith("notification_permission"),
+      );
+    else if (failure === "candidate-read")
+      await waitFor(() => expect(list).toHaveBeenCalled());
+    else if (failure === "scope-begin")
+      await waitFor(() =>
+        expect(native.invoke).toHaveBeenCalledWith("begin_notifications"),
+      );
+    else await waitFor(() => expect(report).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(view.container.textContent).toBe("");
+    if (failure === "readiness-read") expect(list).not.toHaveBeenCalled();
+    if (failure === "scope-begin") expect(claim).not.toHaveBeenCalled();
+    if (failure === "native-present")
+      expect(claim).toHaveBeenCalledTimes(1);
+    view.unmount();
+  },
+);

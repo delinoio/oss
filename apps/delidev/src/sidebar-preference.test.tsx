@@ -12,15 +12,19 @@ import {
   SidebarPreference,
   SidebarProblem,
   SidebarProvider,
-  SidebarPreferenceNotice,
   memorySidebarBridge,
   parseSidebar,
   useSidebarPreference,
   type SidebarBridge,
   type SidebarSnapshot,
 } from "./sidebar-preference";
+// The product window renders no sidebar notice; the controller state is read
+// through test-local controls instead.
+const shownProblem = () => screen.getByLabelText("Problem").textContent;
+const problemSettled = () =>
+  waitFor(() => expect(shownProblem()).not.toBe("none"));
 function Controls() {
-  const { snapshot, operation, select } = useSidebarPreference();
+  const { snapshot, operation, select, reload } = useSidebarPreference();
   return (
     <>
       <button
@@ -36,7 +40,8 @@ function Controls() {
         Toggle
       </button>
       <output>{snapshot.sidebar_preference}</output>
-      <SidebarPreferenceNotice />
+      <button onClick={reload}>Reload</button>
+      <output aria-label="Problem">{snapshot.problem ?? "none"}</output>
       <textarea aria-label="Draft" defaultValue="retained" />
     </>
   );
@@ -134,9 +139,8 @@ test("pending and uncertain writes never replay; unrelated events cannot clear r
     1,
   );
   await act(async () => reject(new Error("private storage detail")));
-  const reload = await screen.findByRole("button", {
-    name: "Reload sidebar preference",
-  });
+  await problemSettled();
+  const reload = screen.getByRole("button", { name: "Reload" });
   act(() =>
     value.publish({
       revision: 2,
@@ -190,7 +194,7 @@ test("old responses and contradictory same-generation events cannot overwrite ve
     }),
   );
   expect(screen.getByText("collapsed")).toBeTruthy();
-  await screen.findByRole("button", { name: "Reload sidebar preference" });
+  await problemSettled();
 });
 test.each([
   SidebarProblem.Changed,
@@ -234,10 +238,9 @@ test.each([
         problem,
       }),
     );
-    const reload = await screen.findByRole("button", {
-      name: "Reload sidebar preference",
-    });
-    expect(screen.getByRole("alert")).toBeTruthy();
+    await problemSettled();
+    const reload = screen.getByRole("button", { name: "Reload" });
+    expect(shownProblem()).toBe(problem);
     // The committed presentation keeps the newer revision.
     expect(screen.getByText("collapsed")).toBeTruthy();
     expect(toggle.getAttribute("aria-disabled")).toBe("true");
@@ -255,9 +258,9 @@ test.each([
         problem: null,
       }),
     );
-    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(shownProblem()).toBe(problem);
     fireEvent.click(reload);
-    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    await waitFor(() => expect(shownProblem()).toBe("none"));
     expect(value.bridge.read).toHaveBeenCalledTimes(reads + 1);
     // Reload never replays the original save.
     expect(value.bridge.update).toHaveBeenCalledTimes(1);
@@ -313,7 +316,7 @@ test.each([
       }),
     );
     expect(screen.getByText("collapsed")).toBeTruthy();
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(shownProblem()).toBe("none");
     await waitFor(() =>
       expect(toggle.getAttribute("aria-disabled")).toBe("false"),
     );
@@ -352,7 +355,7 @@ test("an older healthy reply to the original save stays ignored and a disposed g
     }),
   );
   expect(screen.getByText("collapsed")).toBeTruthy();
-  expect(screen.queryByRole("alert")).toBeNull();
+  expect(shownProblem()).toBe("none");
   view.unmount();
   const late = fixture();
   let resolveLate!: (reply: unknown) => void;
@@ -392,7 +395,7 @@ test("an older healthy reply to the original save stays ignored and a disposed g
       problem: SidebarProblem.WriteFailed,
     }),
   );
-  expect(screen.queryByRole("alert")).toBeNull();
+  expect(shownProblem()).toBe("none");
 });
 test("closed snapshots reject malformed documents, revisions, enums and fields", () => {
   const valid = { revision: 1, sidebar_preference: "expanded", problem: null };
