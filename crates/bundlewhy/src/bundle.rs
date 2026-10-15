@@ -21,7 +21,7 @@ use crate::{
     rules::export_usage::{MAX_EDGES_PER_PATH, MAX_PATHS},
     sources::{
         LiveFileFailure, as_text, filesystem_path, freshness_unverified_problem,
-        is_binary_asset_path, is_generated_asset_module, probe_entry, probe_vetted_file,
+        is_binary_asset_path, is_generated_asset_module, probe_entry_nofollow, probe_vetted_file,
         read_vetted_file, safe_project_relative, sha256_hex,
     },
 };
@@ -521,7 +521,9 @@ pub fn normalized_status(status: RunStatus, run_dir: &Path) -> RunStatus {
     match status {
         RunStatus::Running => RunStatus::Failed,
         RunStatus::Cancelled | RunStatus::Failed => status,
-        _ => match probe_entry(&run_dir.join(INCOMPLETE_MARKER)) {
+        // The marker entry itself is inspected: a dangling symlink named
+        // `INCOMPLETE` is present, so it is never read as absence.
+        _ => match probe_entry_nofollow(&run_dir.join(INCOMPLETE_MARKER)) {
             Ok(()) => RunStatus::Partial,
             Err(LiveFileFailure::Missing) => status,
             Err(failure) => {
@@ -2158,6 +2160,15 @@ mod tests {
         );
         #[cfg(unix)]
         {
+            // A dangling symlink is a present marker entry, never absence.
+            let dangling = dir.path().join("dangling");
+            std::fs::create_dir(&dangling).unwrap();
+            std::os::unix::fs::symlink(dir.path().join("gone"), dangling.join(INCOMPLETE_MARKER))
+                .unwrap();
+            assert_eq!(
+                normalized_status(RunStatus::Complete, &dangling),
+                RunStatus::Partial
+            );
             if crate::sources::test_support::deny_access(&run_dir) {
                 let status = normalized_status(RunStatus::Complete, &run_dir);
                 crate::sources::test_support::restore_access(&run_dir);

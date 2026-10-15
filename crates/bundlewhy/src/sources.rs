@@ -446,6 +446,15 @@ impl LiveFileFailure {
     }
 }
 
+/// Checks that the directory entry itself exists, without following a final
+/// symlink. A dangling symlink is present (`Ok`); only an entry that is
+/// absent is [`LiveFileFailure::Missing`].
+pub fn probe_entry_nofollow(path: &Path) -> Result<(), LiveFileFailure> {
+    std::fs::symlink_metadata(path)
+        .map(|_| ())
+        .map_err(|error| LiveFileFailure::from_io(&error))
+}
+
 /// Checks that the file behind a path entry exists. A final symlink is
 /// followed, so a symlink whose target was removed is
 /// [`LiveFileFailure::Missing`] exactly as it is when the file is read.
