@@ -117,15 +117,21 @@ export function WaitingQueue({
     active,
     reader,
   );
+  // Excluded rows (the original input) stay part of the query but never receive
+  // controls or ordering targets. Every neighbor, pagination and final-row
+  // calculation below uses this one filtered order, wherever the hidden row sits.
+  const hidden = (id: string) => excludeInputIds?.has(id) ?? false;
+  const visibleRows = query.rows.filter((row) => !hidden(row.id));
+  const hiddenCount = query.rows.length - visibleRows.length;
   const residentPageTokens = new Set(
     query.payloadPages.map(({ token }) => token),
   );
-  let lastResidentPageToken: string | undefined;
-  for (const page of query.pages)
-    if (residentPageTokens.has(page.token)) lastResidentPageToken = page.token;
+  // The final displayed row is the last visible row of the last resident page
+  // that has one, so a hidden trailing row never removes the end-drop target.
   const lastDisplayedRowId = query.pages
-    .find((page) => page.token === lastResidentPageToken)
-    ?.rows.at(-1)?.id;
+    .filter((page) => residentPageTokens.has(page.token))
+    .flatMap((page) => page.rows.filter((row) => !hidden(row.id)))
+    .at(-1)?.id;
   const pendingFocus = useRef<string | undefined>(undefined);
   const pendingDown = useRef<
     { id: string; revision: bigint; generation: bigint } | undefined
@@ -207,11 +213,6 @@ export function WaitingQueue({
       beforeInputRevision: anchor?.revision ?? 0n,
     });
   };
-  // Excluded rows (the original input) are the first server rows. They stay
-  // part of the query but never receive controls or ordering targets.
-  const hidden = (id: string) => excludeInputIds?.has(id) ?? false;
-  const visibleRows = query.rows.filter((row) => !hidden(row.id));
-  const hiddenCount = query.rows.length - visibleRows.length;
   const movement = (row: Resource) => {
     const index = visibleRows.findIndex((item) => item.id === row.id),
       previous = visibleRows[index - 1],
@@ -249,10 +250,10 @@ export function WaitingQueue({
     const intent = pendingDown.current;
     if (!intent || query.loading) return;
     pendingDown.current = undefined;
-    const index = query.rows.findIndex((row) => row.id === intent.id),
-      selected = query.rows[index],
-      next = query.rows[index + 1],
-      after = query.rows[index + 2];
+    const index = visibleRows.findIndex((row) => row.id === intent.id),
+      selected = visibleRows[index],
+      next = visibleRows[index + 1],
+      after = visibleRows[index + 2];
     if (
       !query.error &&
       !locked &&
@@ -262,7 +263,7 @@ export function WaitingQueue({
       (after || !query.nextPageToken)
     )
       send(intent.id, after?.id ?? "");
-  }, [query.loading, query.rows, query.error, locked]);
+  }, [query.loading, query.rows, query.error, locked, excludeInputIds]);
   const drop = (before: string) => {
     if (dragged) send(dragged, before);
   };

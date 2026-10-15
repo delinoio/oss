@@ -5130,7 +5130,10 @@ sequence-one queue row. Startup progress renders below the bubble from the
 existing original-operation evidence; the original projection is never counted
 as a later follow-up and neither suppresses nor fabricates startup feedback.
 Exclude the original input from the legacy queue rows, the negotiated
-WaitingQueue and PendingQueueInputs; later queued inputs keep their controls. A
+WaitingQueue and PendingQueueInputs; later queued inputs keep their controls.
+WaitingQueue computes neighbors, page continuation and the final displayed row
+from the filtered order wherever the hidden original sits, so a moved original
+never becomes a move anchor or removes the end-drop target. A
 user MESSAGE with the same `input_id` replaces the projection once in either
 ordering against the creation response; equal text under a different input ID
 is never deduplicated. Newer queue edits or removal win over stale receipts and
