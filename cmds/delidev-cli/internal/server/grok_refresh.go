@@ -69,6 +69,10 @@ const (
 	// a committed transaction and stand for a lost commit acknowledgement.
 	grokFaultAfterRevokeClaimCommit grokFaultPoint = "after_revoke_claim_commit"
 	grokFaultAfterLogoutDisconnect  grokFaultPoint = "after_logout_disconnect"
+
+	// grokFaultFenceWrite runs before the recovery-fence write of an unsettled
+	// operation; its error stands for a failed fence write.
+	grokFaultFenceWrite grokFaultPoint = "fence_write"
 )
 
 // grokFault runs the test seam at point. Only the lease and settlement points
@@ -499,12 +503,32 @@ func (s *Service) fenceUnsettledGrokOperation(ctx context.Context, id domain.ID,
 	}
 }
 
+// fenceOrphanedGrokOperation repeats the recovery fence of an operation whose
+// first fence write failed. An error means the fence is still unwritten and the
+// scanner retries with backoff; an operation that settled meanwhile is left as
+// committed.
+func (s *Service) fenceOrphanedGrokOperation(ctx context.Context, id, operation domain.ID) error {
+	fenced, err := s.markGrokRecovery(id, operation)
+	switch {
+	case err != nil:
+		return err
+	case fenced:
+		s.logger.WarnContext(ctx, "grok_orphaned_operation_fenced", "phase", grokLogPhaseCleanup, "account_id", id, "operation_id", operation, "correlation_id", operation)
+	default:
+		s.logger.InfoContext(ctx, "grok_orphaned_operation_reconciled", "phase", grokLogPhaseCleanup, "account_id", id, "operation_id", operation, "correlation_id", operation)
+	}
+	return nil
+}
+
 // markGrokRecovery fences a Grok server operation that is still pending, records
 // the diagnostic of its phase (code recovery_required, the operation as
 // correlation id) and reports whether it fenced anything. An operation of another
 // id is refused; one that is no longer the account's pending operation has
 // settled and is left untouched.
 func (s *Service) markGrokRecovery(id, operation domain.ID) (bool, error) {
+	if err := s.grokFault(grokFaultFenceWrite); err != nil {
+		return false, err
+	}
 	ctx, cancel := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 5*time.Second)
 	defer cancel()
 	unlock, err := s.lockAccounts(ctx)
@@ -550,6 +574,23 @@ func (s *Service) markGrokRecovery(id, operation domain.ID) (bool, error) {
 		delete(s.subscriptionProgress, operation)
 	}
 	return fenced && err == nil, err
+}
+
+// grokOrphanedOperation selects a Grok server operation of the current epoch that
+// holds the account's exclusive server lease (native-started, claimed, not
+// fenced) although no runner owns it: its settlement and its fence write both
+// failed, so the durable operation is neither settled nor recovery-required and
+// no other selection matches it. The scanner skips an account while its runner is
+// still running, so a match here is an operation whose runner has ended. The
+// retry only repeats the fence, which re-reads the durable operation and leaves a
+// committed settlement untouched.
+func grokOrphanedOperation(a domain.Account, epoch domain.ID) bool {
+	st := a.Subscription
+	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionGrok || a.ProviderID != "" || a.Removal != nil || st == nil || st.RecoveryRequired || st.Lease != nil {
+		return false
+	}
+	o := st.ServerOperation
+	return o != nil && o.Active() && o.NativeStarted && o.Epoch == epoch && st.Pending != nil && st.Pending.ID == o.ID && st.Pending.Phase == domain.SubscriptionClaimed
 }
 
 // grokRefreshNeedsRecovery selects an interrupted Grok refresh whose exchange
