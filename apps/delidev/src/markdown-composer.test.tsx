@@ -1817,6 +1817,22 @@ it("R40 tab-indented definition with a malformed title: its destination stays pl
   }
 });
 
+it("R41 backslash before whitespace in a plain link destination: it is literal and the whitespace ends the destination", () => {
+  // A plain destination holds no whitespace, so this is not a link and the
+  // URL inside the parentheses is an ordinary bare URL.
+  const { input, view } = mount("[label]( ");
+  select(input, input.value.length);
+  paste(input, `${DOCS}\\ more)`);
+  expect(probe.canonical).toBe(`[label]( [${DOCS}](${DOCS})\\ more)`);
+  undo(input);
+  expect(probe.canonical).toBe("[label]( ");
+  view.unmount();
+  // An escaped punctuation character still belongs to the destination.
+  const escaped = mount(`[label](${DOCS}/a\\))`);
+  expect(escaped.input.value).toBe("label");
+  expect(scanMarkdown(`[label](${DOCS}/a\\))`).links).toHaveLength(1);
+});
+
 // Seeded random walk over the whole state machine. After every operation the
 // field must show exactly the projection of the canonical text for the
 // canonical selection, selection maps must agree, and undoing every edit must

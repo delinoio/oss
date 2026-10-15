@@ -127,6 +127,20 @@ describe("precedence table", () => {
     ]);
   });
 
+  it("P6 a backslash escapes only punctuation: before whitespace it ends the destination", () => {
+    expect(urls("[a](https://a.test\\ more)")).toEqual([]);
+    expect(urls("[a](https://a.test\\\tmore) [b](https://b.test)")).toEqual([
+      "https://b.test",
+    ]);
+    // The malformed construct claims nothing, so the URL in it converts.
+    expect(convert("[a]( https://a.test\\ more)")).toBe(
+      "[a]( [https://a.test](https://a.test)\\ more)",
+    );
+    // An escaped punctuation character stays inside the destination.
+    expect(urls("[a](https://a.test/\\) b)")).toEqual([]);
+    expect(urls("[a](https://a.test/\\))")).toEqual(["https://a.test/)"]);
+  });
+
   it("P6 a title is scanned up to the protected-span limit", () => {
     const title = (count: number) =>
       `[a](https://a.test "${"w ".repeat(count)}https://t.test") https://c.test`;
@@ -369,7 +383,9 @@ function modelDestination(t: string, from: number) {
     let depth = 0;
     while (i < t.length) {
       const c = t[i]!;
-      if (c === "\\") {
+      // A backslash escapes only ASCII punctuation; before whitespace (or the
+      // end of the segment) it is a literal character and the run ends there.
+      if (c === "\\" && /[!-/:-@[-`{-~]/u.test(t[i + 1] ?? "")) {
         i += 2;
         continue;
       }
@@ -600,6 +616,10 @@ const PHRASES = [
   "[a](https://b.test)",
   "[x y](https://c.test)",
   "[a [b](https://c.test)](https://d.test)",
+  "[a](https://e.test\\ more)",
+  "[a](https://e.test\\\tmore)",
+  "[a](https://e.test\\\nmore)",
+  "![a](i.png\\ more)",
   "[open ![i](i.png)](https://d.test)",
   "![x [y](https://c.test)](i.png)",
   "![x][a]",
@@ -653,6 +673,11 @@ describe("differential test against the reference model", () => {
       '[a](https://a.test "' + "t ".repeat(600) + '")',
       '\t[docs]: https://example.test "unterminated',
       ' \t[docs]: https://example.test "unterminated\nhttps://b.test',
+      "[label](https://a.test\\ more) https://b.test",
+      "[label](https://a.test\\\tmore) https://b.test",
+      "[label](https://a.test\\\nmore) https://b.test",
+      "[label](https://a.test\\) https://b.test",
+      "![label](i.png\\ more) https://b.test",
     ]) {
       const model = referenceModel(text),
         scan = scanMarkdown(text);

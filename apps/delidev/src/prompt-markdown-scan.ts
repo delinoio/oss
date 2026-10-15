@@ -354,7 +354,15 @@ function parseDestination(
     while (cursor < limit) {
       if (!budget.spend()) return undefined;
       const char = text[cursor]!;
-      if (char === "\\") {
+      // A backslash escapes only ASCII punctuation. Before whitespace (or the
+      // end of the segment) it is literal, so the whitespace still ends the
+      // plain destination instead of being swallowed with the backslash.
+      const escaped = charAt(source, cursor + 1);
+      if (
+        char === "\\" &&
+        escaped !== undefined &&
+        ASCII_PUNCTUATION.test(escaped)
+      ) {
         cursor += 2;
         continue;
       }
