@@ -504,6 +504,12 @@ struct Parser<'a> {
     sites: Vec<(EnvGuard, Id)>,
     /// The function bodies being parsed, innermost last.
     returns: Vec<Returns>,
+    /// The statement just parsed always completes abruptly (`return`, `throw`,
+    /// `break`, `continue`, or a block or `if`/`else` made of those).
+    abrupt: bool,
+    /// Nesting count of blocks being parsed after an abrupt statement: a
+    /// `return` there is unreachable and yields nothing.
+    dead: usize,
 }
 
 /// What the `return` statements of one function body produced.
@@ -547,6 +553,8 @@ impl<'a> Parser<'a> {
             nodes: Vec::new(),
             sites: Vec::new(),
             returns: vec![Returns::default()],
+            abrupt: false,
+            dead: 0,
         }
     }
 
@@ -640,6 +648,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_statement(&mut self) {
+        self.abrupt = false;
         if self.depth >= MAX_DEPTH {
             self.skip_nested();
             return;
@@ -653,11 +662,24 @@ impl<'a> Parser<'a> {
         let Some(token) = self.tok() else {
             return;
         };
+        // Only these statements can complete abruptly; they set `abrupt`
+        // themselves. Any other statement (a loop, a `switch`, a `try`, a
+        // label) may complete normally as far as this scan can tell.
+        let abrupt_capable = match token.kind {
+            TokenKind::Punct => token.text == "{",
+            TokenKind::Word => {
+                matches!(token.text, "if" | "return" | "throw" | "break" | "continue")
+            }
+            _ => false,
+        };
         match token.kind {
             TokenKind::Punct if token.text == ";" => self.bump(),
             TokenKind::Punct if token.text == "{" => self.within(Self::parse_block),
             TokenKind::Word => self.parse_keyword_statement(token),
             _ => self.expression_statement(),
+        }
+        if !abrupt_capable {
+            self.abrupt = false;
         }
     }
 
@@ -667,8 +689,12 @@ impl<'a> Parser<'a> {
                 self.bump();
                 self.parse_condition(Some(EnvGuard::If));
                 self.parse_statement();
+                let then_abrupt = self.abrupt;
                 if self.eat_word("else") {
                     self.parse_statement();
+                    self.abrupt &= then_abrupt;
+                } else {
+                    self.abrupt = false;
                 }
             }
             "while" => {
@@ -704,10 +730,13 @@ impl<'a> Parser<'a> {
                     }
                     _ => None,
                 };
-                if let Some(frame) = self.returns.last_mut() {
+                if self.dead == 0
+                    && let Some(frame) = self.returns.last_mut()
+                {
                     frame.statements += 1;
                     frame.values.extend(value);
                 }
+                self.abrupt = true;
                 self.eat_punct(";");
             }
             "throw" => {
@@ -716,9 +745,12 @@ impl<'a> Parser<'a> {
                     self.parse_expr();
                 }
                 // Like a `return`, a `throw` completes the function abruptly.
-                if let Some(frame) = self.returns.last_mut() {
+                if self.dead == 0
+                    && let Some(frame) = self.returns.last_mut()
+                {
                     frame.statements += 1;
                 }
+                self.abrupt = true;
                 self.eat_punct(";");
             }
             "break" | "continue" => {
@@ -729,6 +761,7 @@ impl<'a> Parser<'a> {
                 {
                     self.bump();
                 }
+                self.abrupt = true;
                 self.eat_punct(";");
             }
             "debugger" => {
@@ -782,6 +815,9 @@ impl<'a> Parser<'a> {
         if !self.eat_punct("{") {
             return;
         }
+        // Statements after an abrupt one are unreachable: a `return` there
+        // contributes no value.
+        let mut unreachable = false;
         loop {
             match self.tok() {
                 None => break,
@@ -792,21 +828,31 @@ impl<'a> Parser<'a> {
                 Some(_) => {
                     let before = self.pos;
                     self.parse_statement();
+                    if self.abrupt && !unreachable {
+                        unreachable = true;
+                        self.dead += 1;
+                    }
                     if self.pos == before {
                         self.bump();
                     }
                 }
             }
         }
+        if unreachable {
+            self.dead -= 1;
+        }
+        self.abrupt = unreachable;
     }
 
     /// Parse the body of a function: its `return` values are collected apart
     /// from those of the enclosing function.
     fn parse_body(&mut self) -> Vec<Id> {
         self.returns.push(Returns::default());
+        let outer = (std::mem::take(&mut self.dead), self.abrupt);
         if self.is_punct("{") {
             self.within(Self::parse_block);
         }
+        (self.dead, self.abrupt) = outer;
         self.returns.pop().unwrap_or_default().values
     }
 
@@ -4754,6 +4800,103 @@ mod tests {
             ("[process.env.FLAG].at(0x0) && run()", Some("and")),
             ("[0, process.env.FLAG].at(1e0) && run()", Some("and")),
             ("[0, process.env.FLAG].at(1.0) && run()", Some("and")),
+        ];
+        for &(code, expected) in rows {
+            assert_eq!(flag_guard(code), expected, "{code}");
+        }
+    }
+
+    /// A `return` or `throw` that always runs ends the path: later `return`
+    /// statements of the same path produce nothing.
+    #[test]
+    fn returns_after_an_unconditional_completion_are_unreachable() {
+        let rows: &[(&str, Option<&str>)] = &[
+            // Unreachable after an unconditional completion.
+            (
+                "(function(){return 1;return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "(function(){throw e;return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "(function(){return;return process.env.FLAG})()&&run()",
+                None,
+            ),
+            ("(()=>{return 1;return process.env.FLAG})()&&run()", None),
+            (
+                "(function(){{return 1}return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "(function(){{{return 1}}return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "(function(){if(c){return 1}else{return 2}return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "(function(){if(c)return 1;else throw e;return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "(function(){for(;;){break;return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "(function(){for(;;){continue;return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "(function(){return 1;if(c){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            // Still reachable: the earlier completion is conditional or ends
+            // another path.
+            (
+                "(function(){if(c)return 1;return process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "(function(){if(c){return 1}return process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "(function(){if(c){return 1}else{c2()}return process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "(function(){switch(c){case 1:return 1;case 2:return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "(function(){while(c){return 1}return process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "(function(){try{return 1}catch(e){}return process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "(function(){a:{break a}return process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            // A path of its own: the return value precedes its completion, and
+            // an inner function does not make the outer one unreachable.
+            (
+                "(function(){return process.env.FLAG;return 1})()&&run()",
+                Some("and"),
+            ),
+            (
+                "(function(){(function(){return 1;return 2})();return process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "(function(){return 1;function f(){return process.env.FLAG}})()&&run()",
+                None,
+            ),
         ];
         for &(code, expected) in rows {
             assert_eq!(flag_guard(code), expected, "{code}");

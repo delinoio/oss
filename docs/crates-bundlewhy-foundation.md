@@ -97,6 +97,7 @@ Branches found inside any node still guard their own reads, so `[read && run()]`
 Statement and function rules:
 
 - `{` starts a block where a statement starts and an object literal where an operand starts. A function body collects its `return` expressions; a `return` followed by a line terminator of any kind, including one inside a comment, returns `undefined`.
+- A `return`, `throw`, `break` or `continue`, an `if`/`else` whose branches all end that way, or a block made of those, completes its path: the `return` statements after it in the same block are unreachable and contribute no value. Any other statement (a loop, a `switch`, a `try`, a label, an `if` without `else`) is taken to complete normally, so a `return` after it still counts.
 - A `return` or `throw` in a `finally` block replaces the values returned by the `try` and `catch` blocks, so those values are dropped.
 - A parameter list is parsed as expressions so that default values keep their branches. The initializer of a `for` head does not treat `in` as an operator; `for (x in y)` and `for (x of y)` are loops without a condition.
 - A right-associative `**` chain is read iteratively, so a chain of any length is parsed without recursion.
