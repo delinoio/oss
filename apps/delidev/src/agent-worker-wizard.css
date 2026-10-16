@@ -500,6 +500,11 @@
 .worker-source-grip[data-moving="true"] {
   cursor: grabbing;
 }
+/* While a source moves, its body is collapsed so the pointer only travels
+   across card headers, not a long expanded account list or routing form. */
+.worker-source-order > li[data-moving] .worker-source-body {
+  display: none;
+}
 .worker-source-card-header
   button.worker-source-trigger.disclosure-header.disclosure-header {
   flex: 1;

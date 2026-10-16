@@ -17,7 +17,11 @@ export type WorkerSourceOrderItem = {
   /** Zero-based position in the live (preview) order. */
   index: number;
   moving: boolean;
-  /** The reorder grip. It is a standalone button the owner must not nest in another button. */
+  /**
+   * The reorder grip. It is a standalone button the owner must not nest in another
+   * button. Its parent element is the card header used for pointer hit-testing, so
+   * the owner places the grip directly in the header, outside any expandable body.
+   */
   grip: ReactNode;
 };
 /**
@@ -262,13 +266,22 @@ export function WorkerSourceOrder({
                   finish(false);
                   return;
                 }
+                // Hit-test card headers only: an expanded accordion body must not
+                // stretch a row's slot. The target is the insertion index among the
+                // other items, i.e. how many headers the pointer has passed.
                 const rows = Array.from(
                   root.current?.children ?? [],
                 ) as HTMLElement[];
-                const target = rows.findIndex(
-                  (row) => event.clientY < row.getBoundingClientRect().bottom,
-                );
-                move(target < 0 ? rows.length - 1 : target);
+                let target = 0;
+                for (const row of rows) {
+                  const rowID = row.getAttribute("data-source-key");
+                  if (rowID === value.id) continue;
+                  const header =
+                    (rowID && handles.current.get(rowID)?.parentElement) || row;
+                  const box = header.getBoundingClientRect();
+                  if (event.clientY > (box.top + box.bottom) / 2) target += 1;
+                }
+                move(target);
                 // Scroll the existing dialog body rather than creating a second scroll owner.
                 for (
                   let node = root.current?.parentElement;
