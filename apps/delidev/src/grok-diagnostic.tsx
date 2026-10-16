@@ -212,12 +212,19 @@ export function grokDiagnosticFromDocument(
  * Presentation only: the owning workflow supplies original actions. Used by
  * Settings > AI Subscription and by the Worker installation row.
  */
+export enum GrokDiagnosticOwner {
+  Server = "server",
+  Worker = "worker",
+}
+
 export function GrokDiagnosticNotice({
   diagnostic,
   actions,
+  owner = GrokDiagnosticOwner.Worker,
 }: {
   diagnostic?: GrokDiagnostic;
   actions?: ReactNode;
+  owner?: GrokDiagnosticOwner;
 }) {
   useLocale();
   const safe = safeGrokDiagnostic(diagnostic);
@@ -236,7 +243,11 @@ export function GrokDiagnosticNotice({
       summary={
         <>
           <p>{safe.message}</p>
-          <p>{safe.guidance}</p>
+          <p>
+            {owner === GrokDiagnosticOwner.Server
+              ? copy("grok-diagnostic.guidance.server")
+              : safe.guidance}
+          </p>
         </>
       }
       actions={actions}

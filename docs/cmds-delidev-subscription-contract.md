@@ -1,5 +1,12 @@
 # DeliDev native subscriptions
 
+Grok production sign-in uses the server-owned native CLI device-code flow,
+without a Runner. Its original protected generation, permanent auth profile,
+process reconciliation and activation boundary follow the
+[current Grok CLI login contract](cmds-delidev-grok-subscription-contract.md#current-server-owned-cli-login).
+Historical direct browser/device OAuth descriptions below do not select the
+production login implementation.
+
 ## Shared account owner and execution members
 
 A managed subscription account runs independent sessions concurrently through a

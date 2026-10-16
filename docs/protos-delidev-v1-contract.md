@@ -233,16 +233,18 @@ These declarations now exist in `system.proto` (`SYSTEM_CAPABILITY_GROK_SUBSCRIP
 (`WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1 = 21`) and `subscription.proto`
 (`GetSubscriptionProgressResponse.grok_diagnostic = 10`, `GrokDiagnostic`,
 `GrokDiagnosticPhase`) with regenerated Go and TypeScript bindings. They are
-declared but unadvertised: GetStatus and AttachWorker never list 39, 40 or 21,
+independently activated: GetStatus advertises 39 for server-owned native CLI
+device-code login; GetStatus and AttachWorker never list 40 or 21,
 the Worker does not report 21 (the server keeps rejecting it as an unknown
 capability). GetSubscriptionProgress populates `grok_diagnostic` only for a Grok
 account's original operation with safe, locally reconstructed metadata, and reports
 `generation` (field 6) for a succeeded Grok login or refresh; the owning
-feature change advertises and activates the capabilities. The server-owned Grok
-browser login adds no proto member: its authorization URL is the existing
+feature change activates execution separately. The historical server-owned Grok
+browser login added no proto member: its authorization URL is the existing
 transient `GetSubscriptionProgressResponse.url` (WAITING only, in memory), and
 `ForwardSubscriptionCallback` is service-aware without a field change; System 39
-stays unadvertised. Codex field 7, native
+now advertises CLI device-code login, without activating that browser flow.
+Codex field 7, native
 field 9 and existing System 30/35/36/37 and Worker 19 ownership remain
 unchanged. Reservations activate nothing and add no migration.
 

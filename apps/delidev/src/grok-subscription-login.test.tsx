@@ -34,6 +34,8 @@ import { document, encode } from "./documents";
 import { safeGrokDiagnostic } from "./grok-diagnostic";
 import { GrokLifetimeTrigger, grokLifetimeCells } from "./grok-login-machine";
 import {
+  useGrokSubscriptionLogin,
+  GrokLoginMethod,
   grokDeviceVerification,
   grokLoginURL,
 } from "./grok-subscription-login";
@@ -97,7 +99,7 @@ function refusal() {
 // fixture's own message text never reaches it.
 const refusalMessage = () => safeGrokDiagnostic(refusal())!.message;
 
-function fixture(url = loginURL) {
+function fixture(url = loginURL, productEntry = false) {
   let current = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.ACCOUNT,
@@ -200,7 +202,21 @@ function fixture(url = loginURL) {
   let active = true;
   let settings: { dispose: (client: QueryClient) => void } | undefined;
   function Body() {
-    const flow = useSubscriptionLogin(active, changed);
+    const product = useSubscriptionLogin(active, changed);
+    const controller = useGrokSubscriptionLogin(active, changed);
+    const flow = productEntry
+      ? product
+      : {
+          ...controller,
+          begin: (
+            _service: SubscriptionServiceId,
+            _initial?: unknown,
+            device = false,
+          ) =>
+            controller.begin(
+              device ? GrokLoginMethod.DeviceCode : GrokLoginMethod.Browser,
+            ),
+        };
     return (
       <>
         {flow.body ?? (
@@ -3242,4 +3258,18 @@ it("keeps the Claude-only update notice free of Grok state in English and Korean
       catalog["claude-subscription.serverUpdateRequiredClaudeOnly"],
     );
   }
+});
+
+it("starts Grok through the server CLI device flow from the default account action", async () => {
+  const f = fixture("https://accounts.x.ai/oauth2/device", true);
+  f.setUserCode("ABCD-1234");
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: /^Start Grok$/ }));
+  await waitFor(() => expect(f.login).toHaveBeenCalledTimes(1));
+  expect(f.login.mock.calls[0][0]).toMatchObject({
+    deviceCode: true,
+    machineId: "",
+  });
+  await waitFor(() => expect(screen.getByText("ABCD-1234")).toBeTruthy());
+  expect(f.forward).not.toHaveBeenCalled();
 });
