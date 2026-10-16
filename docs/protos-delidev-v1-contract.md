@@ -1738,7 +1738,7 @@ migration is added. See the
 
 `ProviderInventoryCapability.COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1 = 11` and
 `ListProviderInventoryRequest.compatible_account_api_protocol = 5` (existing
-`ApiProtocol`) are recorded in `protos/delidev/allocations.json` for issue 4134 and
+`ApiProtocol`) are recorded in `protos/delidev/allocations.json` and
 activated in the same change, as in the capability 7 precedent. They are additive:
 `UNSPECIFIED` is the unchanged default, an unknown value fails with
 `INVALID_ARGUMENT`, and older servers ignore the field, so clients require the

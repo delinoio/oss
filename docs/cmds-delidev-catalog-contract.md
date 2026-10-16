@@ -206,7 +206,7 @@ skips native enumeration and cannot be relabeled as credential-owning authority.
 
 ## Compatible-account provider inventory filter
 
-Issue 4134 adds ProviderInventory capability
+This contract adds ProviderInventory capability
 `COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1 = 11` and the typed
 `ListProviderInventoryRequest.compatible_account_api_protocol = 5` (the existing
 closed `ApiProtocol` enum). It reuses no existing number; the allocation is
