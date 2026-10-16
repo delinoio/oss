@@ -373,6 +373,9 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	if out.state == domain.SubscriptionFailed && out.code == "" {
 		out.code = grokReasonCode(out.reason)
 	}
+	if s.grokLoginBeforeSettle != nil {
+		s.grokLoginBeforeSettle()
+	}
 	bounded, stop := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), grokLoginSettleTimeout)
 	defer stop()
 	if err := s.finishGrokLogin(bounded, id, original, &out, parent.Err() != nil, cancelSeen.Load()); err != nil {
@@ -554,8 +557,10 @@ func (s *Service) claimGrokExchange(ctx context.Context, id domain.ID, o domain.
 // finishGrokLogin settles the operation in the Finish-equivalent server
 // transaction: it stages the sealed bundle under the protected vault, then
 // publishes the generation and identity commitment, or records the terminal
-// state. A cancellation, a revoked initiator or a recovery fence that appeared
-// after the exchange claim always becomes recovery-required and never publishes.
+// state. A cancellation, a revoked initiator, an elapsed operation deadline, a
+// server shutdown or a recovery fence that appeared after the exchange claim
+// always becomes recovery-required and never publishes: the settlement decides
+// from the state at commit time, not from the state the flow observed earlier.
 func (s *Service) finishGrokLogin(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation, out *grokLoginOutcome, shuttingDown, canceledSeen bool) error {
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
@@ -640,7 +645,10 @@ func (s *Service) finishGrokLogin(ctx context.Context, id domain.ID, o domain.Se
 		claimed := op.ExchangeClaimed
 		stopped := st.Pending.Canceled || subscriptionActorValid(tx, op.Actor) != nil
 		state := out.state
-		publish := success && !stopped
+		// Credentials are published only while the operation is still live at
+		// commit time: an elapsed deadline or a server shutdown that landed after
+		// the flow decided SUCCEEDED keeps the recovery fence instead.
+		publish := success && !stopped && !shuttingDown && time.Now().Before(op.ExpiresAt)
 		switch {
 		case claimed && (state == domain.SubscriptionCanceled || state == domain.SubscriptionExpired || stopped && state != domain.SubscriptionRecovery):
 			// After the claim the provider may hold a credential this server never

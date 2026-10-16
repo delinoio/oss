@@ -640,6 +640,38 @@ func TestGrokBrowserLoginShutdownAfterTheClaimIsRecovery(t *testing.T) {
 	}
 }
 
+// A flow that decided SUCCEEDED can still lose to the deadline or to a server
+// shutdown that lands between its outcome and the settlement commit. The
+// settlement must keep the recovery fence and publish nothing.
+func TestGrokBrowserLoginInterruptionBeforeSettlementIsRecoveryAndNeverPublishes(t *testing.T) {
+	for name, interrupt := range map[string]func(g *grokLoginRun){
+		"deadline": func(g *grokLoginRun) {
+			g.f.mutateAccount(t, func(a *domain.Account) {
+				a.Subscription.ServerOperation.StartedAt = time.Now().Add(-time.Hour)
+				a.Subscription.ServerOperation.ExpiresAt = time.Now().Add(-time.Second)
+			})
+		},
+		"shutdown": func(g *grokLoginRun) { g.cancel() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := newGrokLogin(t)
+			g.f.service.grokLoginBeforeSettle = func() { interrupt(g) }
+			g.waiting()
+			g.browse(nil)
+			g.await()
+			p := g.progress()
+			if p.State != grokRecovery {
+				t.Fatalf("progress after the interruption = %v", p)
+			}
+			a := g.account()
+			if !a.Subscription.RecoveryRequired || a.Connection != nil || a.Subscription.Generation != "" || !g.vaultEmpty() || g.idp.TokenRequests != 1 {
+				t.Fatal("an interrupted settlement published credentials or dropped the recovery fence")
+			}
+			g.noLeak()
+		})
+	}
+}
+
 func TestGrokBrowserLoginRestartLeavesNoListener(t *testing.T) {
 	g := newGrokLogin(t)
 	g.f.service.subscriptionServerEpoch()

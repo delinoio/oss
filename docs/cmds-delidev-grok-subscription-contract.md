@@ -259,8 +259,11 @@ Lifecycle of one runner:
    only a confirmed `CONFLICT` is a duplicate and settles FAILED, while any other
    scan failure propagates and settles RECOVERY_REQUIRED because the exchange
    already completed), and one transaction publishes the generation, commitment and connection. A
-   cancellation or a revoked initiator that appears after the claim wins as
-   RECOVERY_REQUIRED and the staged generation is retired.
+   cancellation, a revoked initiator, an elapsed operation deadline or a server
+   shutdown that appears after the claim wins as RECOVERY_REQUIRED and the
+   staged generation is retired. The publication decision is made inside the
+   settlement transaction from the state at commit time, so a flow that decided
+   success just before the deadline or shutdown never publishes.
 6. The listener is closed and its goroutine joined on every exit path before the
    outcome settles. The PKCE verifier is overwritten. A server restart marks an
    active operation recovery (`initializeServerSubscriptions`) and never binds a

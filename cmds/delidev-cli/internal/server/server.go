@@ -158,7 +158,11 @@ type Service struct {
 	// Grok login in isolated tests; production routes through outboundResolver.
 	grokLoginTransport http.RoundTripper
 	// grokListen binds the loopback callback listener; tests may observe it.
-	grokListen             func() (net.Listener, error)
+	grokListen func() (net.Listener, error)
+	// grokLoginBeforeSettle runs after the browser flow decided its outcome and
+	// before the settlement transaction; tests use it to model a deadline or
+	// shutdown that lands in that window.
+	grokLoginBeforeSettle  func()
 	grokLoginsMu           sync.Mutex
 	grokLogins             map[domain.ID]context.CancelFunc
 	claudeLoginCodes       map[domain.ID][]byte
