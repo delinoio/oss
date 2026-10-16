@@ -81,6 +81,8 @@ type IdP struct {
 	DeviceTokenSuccessCount int
 	// Clock stamps DevicePollTimes; time.Now is used when nil.
 	Clock interface{ Now() time.Time }
+	// BeforeDeviceAuthorization runs inside the device authorization handler.
+	BeforeDeviceAuthorization func()
 	// BeforeDevicePoll runs inside the token handler for a device_code request.
 	BeforeDevicePoll func(poll int)
 
@@ -286,8 +288,12 @@ func (i *IdP) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 	i.mu.Lock()
 	i.DeviceRequests++
 	i.DeviceForms = append(i.DeviceForms, r.PostForm)
+	hook := i.BeforeDeviceAuthorization
 	status, userCode, uri, full, expires, interval, code := i.DeviceStatus, i.DeviceUserCode, i.DeviceVerificationURI, i.DeviceVerificationFull, i.DeviceExpiresIn, i.DeviceInterval, i.DeviceCodeValue
 	i.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	if status != 0 {
 		writeJSON(w, status, map[string]string{"error": "fake_failure"})
 		return
