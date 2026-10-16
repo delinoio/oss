@@ -203,8 +203,18 @@ const NO_STAGES = { dce: OFF, compress: OFF, mangle: OFF };
 const DCE_ONLY_STAGES = { dce: ON, compress: OFF, mangle: OFF };
 
 const stageShapes = [
-  { name: "oxc, absent output", minify: "oxc", output: undefined, stages: ALL_STAGES },
-  { name: "true, absent output", minify: true, output: undefined, stages: ALL_STAGES },
+  {
+    name: "oxc, absent output",
+    minify: "oxc",
+    output: undefined,
+    stages: ALL_STAGES,
+  },
+  {
+    name: "true, absent output",
+    minify: true,
+    output: undefined,
+    stages: ALL_STAGES,
+  },
   {
     name: "false, absent output (Vite passes dce-only)",
     minify: false,
@@ -223,13 +233,48 @@ const stageShapes = [
     output: undefined,
     stages: NO_STAGES,
   },
-  { name: "oxc, output without minify", minify: "oxc", output: {}, stages: ALL_STAGES },
-  { name: "false, output without minify", minify: false, output: {}, stages: DCE_ONLY_STAGES },
-  { name: "oxc, output.minify true", minify: "oxc", output: { minify: true }, stages: ALL_STAGES },
-  { name: "false, output.minify true", minify: false, output: { minify: true }, stages: ALL_STAGES },
-  { name: "terser, output.minify true", minify: "terser", output: { minify: true }, stages: ALL_STAGES },
-  { name: "oxc, output.minify false", minify: "oxc", output: { minify: false }, stages: NO_STAGES },
-  { name: "false, output.minify false", minify: false, output: { minify: false }, stages: NO_STAGES },
+  {
+    name: "oxc, output without minify",
+    minify: "oxc",
+    output: {},
+    stages: ALL_STAGES,
+  },
+  {
+    name: "false, output without minify",
+    minify: false,
+    output: {},
+    stages: DCE_ONLY_STAGES,
+  },
+  {
+    name: "oxc, output.minify true",
+    minify: "oxc",
+    output: { minify: true },
+    stages: ALL_STAGES,
+  },
+  {
+    name: "false, output.minify true",
+    minify: false,
+    output: { minify: true },
+    stages: ALL_STAGES,
+  },
+  {
+    name: "terser, output.minify true",
+    minify: "terser",
+    output: { minify: true },
+    stages: ALL_STAGES,
+  },
+  {
+    name: "oxc, output.minify false",
+    minify: "oxc",
+    output: { minify: false },
+    stages: NO_STAGES,
+  },
+  {
+    name: "false, output.minify false",
+    minify: false,
+    output: { minify: false },
+    stages: NO_STAGES,
+  },
   {
     name: "oxc, output.minify dce-only",
     minify: "oxc",
@@ -290,7 +335,12 @@ const stageShapes = [
     output: { minify: { compress: { unused: true } } },
     stages: ALL_STAGES,
   },
-  { name: "empty options object", minify: "oxc", output: { minify: {} }, stages: ALL_STAGES },
+  {
+    name: "empty options object",
+    minify: "oxc",
+    output: { minify: {} },
+    stages: ALL_STAGES,
+  },
   {
     name: "single-entry array with mangle false",
     minify: "oxc",
@@ -330,7 +380,11 @@ const stageShapes = [
   {
     name: "several entries enable a stage when any entry does",
     minify: "oxc",
-    output: [{ minify: false }, { minify: "dce-only" }, { minify: { compress: false } }],
+    output: [
+      { minify: false },
+      { minify: "dce-only" },
+      { minify: { compress: false } },
+    ],
     stages: { dce: ON, compress: OFF, mangle: ON },
   },
   { name: "empty array", minify: false, output: [], stages: DCE_ONLY_STAGES },
@@ -344,7 +398,10 @@ const stageShapes = [
 
 for (const shape of stageShapes) {
   test(`vite minifier stages (${shape.name})`, () => {
-    assert.deepEqual(resolveMinifyStages(shape.minify, shape.output), shape.stages);
+    assert.deepEqual(
+      resolveMinifyStages(shape.minify, shape.output),
+      shape.stages,
+    );
     // The single-stage and summary helpers read the same facts.
     assert.equal(
       resolveMangleSetting(shape.minify, shape.output),
@@ -522,7 +579,10 @@ for (const [name, buildMinify, rolldownStages, expected] of [
   ],
 ]) {
   test(`vite minifier gate (${name})`, () => {
-    assert.deepEqual(resolveMinifierGate(buildMinify, rolldownStages), expected);
+    assert.deepEqual(
+      resolveMinifierGate(buildMinify, rolldownStages),
+      expected,
+    );
   });
 }
 

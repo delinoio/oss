@@ -861,7 +861,8 @@ await runAdapter(async (request) => {
   const { minifyEnabled, minifierName, stages } = gate;
   const configSummary = {
     "build.minify": summarizeValue(minify),
-    "build.rolldownOptions.output.minify": summarizeOutputMinify(rolldownStages),
+    "build.rolldownOptions.output.minify":
+      summarizeOutputMinify(rolldownStages),
     "build.rolldownOptions.output.minify.dce": stages.dce,
     "build.rolldownOptions.output.minify.compress": stages.compress,
     "build.rolldownOptions.output.minify.mangle": stages.mangle,
