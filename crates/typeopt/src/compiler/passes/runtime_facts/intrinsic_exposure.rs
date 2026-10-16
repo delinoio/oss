@@ -368,9 +368,101 @@ fn key_type_safe(ctx: &mut Ctx, t: TypeId) -> bool {
 }
 
 /// The expression `key` of a computed member is proven harmless.
+///
+/// The checker's type is evidence only while nothing in the program overrides
+/// it. A type assertion (`"constructor" as unknown as number`, a JSDoc cast) or
+/// an `any` value assigned to a number-typed variable makes the type claim the
+/// opposite of what the runtime holds, so the proof follows the key through
+/// assertions, conditional and logical operands, and the initializer and the
+/// assignments of a variable, and rejects the key as soon as one of them has a
+/// type that is not itself harmless. A value that arrives through a parameter,
+/// a property or a call result keeps its declared type as evidence: telling
+/// what a distant producer really returns needs an escape analysis (a known
+/// limit, see `docs/crates-typeopt-foundation.md`).
 fn key_expression_safe(ctx: &mut Ctx, key: Node) -> bool {
     let t = ctx.checker.get_type_at_location(key);
+    key_type_safe(ctx, t) && !key_overridden(ctx, key, 0)
+}
+
+/// Bound on the alias and assertion depth of a key proof.
+const KEY_PROOF_DEPTH: usize = 8;
+
+/// The expression `value` is proven harmless by its own type.
+fn value_type_safe(ctx: &mut Ctx, value: Node) -> bool {
+    let t = ctx.checker.get_type_at_location(value);
     key_type_safe(ctx, t)
+}
+
+/// Some assertion, `any` initializer or assignment behind the key expression
+/// `node` has a type that is not harmless, so the key's own type may be a
+/// claim without runtime evidence.
+fn key_overridden(ctx: &mut Ctx, node: Node, depth: usize) -> bool {
+    if depth > KEY_PROOF_DEPTH {
+        return true;
+    }
+    match node.kind() {
+        SyntaxKind::ParenthesizedExpression
+        | SyntaxKind::NonNullExpression
+        | SyntaxKind::SatisfiesExpression
+        | SyntaxKind::AsExpression
+        | SyntaxKind::TypeAssertionExpression => {
+            let inner = node.expression();
+            !value_type_safe(ctx, inner) || key_overridden(ctx, inner, depth + 1)
+        }
+        SyntaxKind::ConditionalExpression => [node.when_true(), node.when_false()]
+            .into_iter()
+            .any(|branch| !value_type_safe(ctx, branch) || key_overridden(ctx, branch, depth + 1)),
+        SyntaxKind::BinaryExpression => match node.operator_token().kind() {
+            SyntaxKind::BarBarToken
+            | SyntaxKind::QuestionQuestionToken
+            | SyntaxKind::AmpersandAmpersandToken => [node.left(), node.right()]
+                .into_iter()
+                .any(|side| !value_type_safe(ctx, side) || key_overridden(ctx, side, depth + 1)),
+            SyntaxKind::CommaToken | SyntaxKind::EqualsToken => {
+                let right = node.right();
+                !value_type_safe(ctx, right) || key_overridden(ctx, right, depth + 1)
+            }
+            _ => false,
+        },
+        SyntaxKind::Identifier => variable_overridden(ctx, node, depth),
+        _ => false,
+    }
+}
+
+/// An initializer or an assignment of the variable that `identifier` reads
+/// holds a value that is not harmless by its own type.
+fn variable_overridden(ctx: &mut Ctx, identifier: Node, depth: usize) -> bool {
+    let symbol = ctx.resolve(identifier);
+    if symbol.is_nil() {
+        return false;
+    }
+    let mut sources = Vec::new();
+    for declaration in ctx.checker.sym(symbol).declarations.to_vec() {
+        if declaration.kind() == SyntaxKind::VariableDeclaration
+            && declaration.initializer().is_some()
+        {
+            sources.push(declaration.initializer());
+        }
+    }
+    for reference in ctx.refs(symbol).to_vec() {
+        if reference.kind != RefKind::Write {
+            continue;
+        }
+        let outer = walk_up_outer(reference.node);
+        let parent = outer.parent();
+        if parent.kind() == SyntaxKind::BinaryExpression
+            && parent.left() == outer
+            && matches!(
+                parent.operator_token().kind(),
+                SyntaxKind::EqualsToken | SyntaxKind::PlusEqualsToken
+            )
+        {
+            sources.push(parent.right());
+        }
+    }
+    sources
+        .into_iter()
+        .any(|source| !value_type_safe(ctx, source) || key_overridden(ctx, source, depth + 1))
 }
 
 // ---------------------------------------------------------------------------

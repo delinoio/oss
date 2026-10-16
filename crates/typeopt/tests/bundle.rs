@@ -5704,6 +5704,100 @@ fn keeps_names_for_timer_callbacks_without_runtime_evidence() {
     }
 }
 
+/// A computed key is harmless only when its runtime value is a number, a
+/// symbol or a harmless string. The checker's type is a claim: an assertion
+/// (`"constructor" as unknown as number`) or an `any` value flowing into a
+/// number-typed variable makes the claim false, and `a[k]` then reads
+/// `Array`, a handle to every built-in.
+#[test]
+fn keeps_names_for_computed_keys_that_only_a_type_assertion_proves() {
+    let patch_through =
+        |setup: &str| format!("{setup}const A=[][k];A.prototype.pop={HOSTILE_POP};{POP_TAIL}");
+    let number_of_unknown = "/** @type {number} */ (/** @type {unknown} */ (\"constructor\"))";
+    let cases: Vec<(&str, String)> = vec![
+        (
+            "const asserted through unknown",
+            patch_through(&format!("const k={number_of_unknown};")),
+        ),
+        (
+            "key asserted at the access",
+            format!("const A=[][{number_of_unknown}];A.prototype.pop={HOSTILE_POP};{POP_TAIL}"),
+        ),
+        (
+            "any value asserted to a number",
+            patch_through("const k=/** @type {number} */ (JSON.parse('\"constructor\"'));"),
+        ),
+        (
+            "alias of an asserted constant",
+            patch_through(&format!("const raw={number_of_unknown};const k=raw;")),
+        ),
+        (
+            "variable assigned an asserted value later",
+            patch_through(&format!("let k=0;k={number_of_unknown};")),
+        ),
+        (
+            "variable assigned an any value later",
+            patch_through("let k=0;k=JSON.parse('\"constructor\"');"),
+        ),
+        (
+            "conditional with an asserted branch",
+            patch_through(&format!("const k=Math.random()>2?1:{number_of_unknown};")),
+        ),
+        (
+            "logical with an asserted operand",
+            patch_through(&format!("const k=Math.random()>2||{number_of_unknown};")),
+        ),
+        (
+            "comma with an asserted result",
+            patch_through(&format!("const k=(0,{number_of_unknown});")),
+        ),
+        (
+            "destructuring key",
+            format!(
+                "const k={number_of_unknown};const \
+                 {{[k]:A}}=[];A.prototype.pop={HOSTILE_POP};{POP_TAIL}"
+            ),
+        ),
+    ];
+    let (survived, renamed) = partition_by_kept(&cases, item_names_kept);
+    assert_eq!(survived.len(), cases.len(), "renamed for: {renamed:?}");
+    // Neighbors: keys whose runtime value is a number, with or without a
+    // harmless assertion, and literal keys, leave array modeling on.
+    let accepted = [
+        ("numeric literal", "const k=1;const v=[1,2][k];"),
+        ("loop counter", "let t=0;for(let k=0;k<3;k++)t+=[1,2,3][k];"),
+        (
+            "number cast of a number",
+            "const k=/** @type {number} */ (Number(\"1\"));const v=[1,2][k];",
+        ),
+        (
+            "cast of a numeric literal",
+            "const k=/** @type {number} */ (1);const v=[1,2][k];",
+        ),
+        (
+            "conditional of numbers",
+            "const k=Math.random()>2?1:2;const v=[1,2,3][k];",
+        ),
+        (
+            "variable assigned numbers",
+            "let k=0;k=2;k+=1;const v=[1,2,3,4][k];",
+        ),
+        ("length arithmetic", "const a=[1,2];const v=a[a.length-1];"),
+        (
+            "symbol key",
+            "const s=Symbol(\"s\");const o={};o[s]=1;const v=o[s];",
+        ),
+        (
+            "harmless string literal key",
+            "const o={size:1};const v=o[\"size\"];",
+        ),
+    ];
+    for (label, fixture) in accepted {
+        let body = format!("{fixture}{LIST_TAIL}");
+        assert!(!item_names_kept(&body), "names kept beside {label}");
+    }
+}
+
 /// The property that the hostile payloads of the unchecked-chunk fixtures read,
 /// spelled so that the chunk does not mention it (an excluded chunk that
 /// mentions `itemValue` would keep the name for that reason alone) and does not
