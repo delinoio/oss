@@ -1194,7 +1194,10 @@ func TestCodexRecoveryWatchLaneIgnoresRowsWithoutNegotiation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
 	err := watchSubscriptions(ctx, Config{Root: t.TempDir()}, credential, domain.NewID())
-	if err != nil && !errors.Is(err, context.DeadlineExceeded) && connect.CodeOf(err) != connect.CodeCanceled {
+	// The Connect client sends the context deadline as a timeout header, so
+	// a loaded runner can receive the server-side deadline as a wire error that
+	// no longer wraps context.DeadlineExceeded. It is still a clean lane stop.
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) && connect.CodeOf(err) != connect.CodeCanceled && connect.CodeOf(err) != connect.CodeDeadlineExceeded {
 		t.Fatal("an unnegotiated recovery row aborted the lane", err)
 	}
 	server.mu.Lock()
