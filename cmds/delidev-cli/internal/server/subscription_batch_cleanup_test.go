@@ -186,7 +186,7 @@ func TestFailedSubscriptionCleanupRetainsChangedAndReferencedAccounts(t *testing
 			case "vault":
 				f.secrets.referenceError = domain.Fail(domain.Unavailable, "Fixture vault unavailable.", "Inspect cleanup.")
 			case "protected-intent":
-				_, err := f.secrets.Put(ctx, credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}, []byte("synthetic-protected"))
+				_, err := f.secrets.Put(ctx, credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.WorkerSSH}, []byte("synthetic-protected"))
 				if err != nil {
 					t.Fatal(err)
 				}

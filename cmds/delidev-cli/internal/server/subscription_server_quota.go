@@ -473,12 +473,9 @@ func (s *Service) initializeServerQuotaGenerations(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		// Confirm the immutable current reference exists before retiring old refs.
+		// Confirm the immutable current reference exists before using it.
 		bundle, err := vault.Get(ctx, credentials.Ref{Owner: r.ID, ID: a.Subscription.Generation, Purpose: credentials.AccountLogin})
 		clear(bundle)
-		if err == nil {
-			err = cleanupSubscriptionReferences(ctx, vault, r.ID, a.Subscription.Generation)
-		}
 		if err != nil {
 			s.logger.WarnContext(ctx, "server_quota_upgrade_unavailable", "account_id", r.ID, "code", domain.SafeError(err).Code)
 			continue

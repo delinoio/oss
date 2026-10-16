@@ -35,9 +35,9 @@ type serverSubscriptionNative interface {
 	Close([]byte) error
 }
 
-// A non-recovery opener error proves joined native and transient credential
-// cleanup. A recovery error retains the original operation for inspection; the
-// persistent profile is never removed by either outcome.
+// An opener error proves the native process was joined. Account-owned
+// credential files and the persistent profile are retained by every outcome;
+// only explicit logout or account deletion removes them.
 type serverSubscriptionOpener func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error)
 
 type serverCodexRuntime struct {
@@ -48,6 +48,15 @@ type serverCodexRuntime struct {
 	logger    *slog.Logger
 	guard     *http.Server
 	guardDone chan struct{}
+	loggedOut bool
+}
+
+// LogoutManaged runs the native logout; the explicit logout then owns removal
+// of every retained credential file once the original process is joined.
+func (r *serverCodexRuntime) LogoutManaged(ctx context.Context) error {
+	err := r.Client.LogoutManaged(ctx)
+	r.loggedOut = err == nil
+	return err
 }
 
 // acquireAccountProfile resolves the permanent account profile for one purpose.
@@ -60,8 +69,11 @@ func acquireAccountProfile(ctx context.Context, scope nativeScope, harnessKind d
 	return scope.Profiles.Acquire(ctx, nativeprofile.Key{Harness: harnessKind, Purpose: purpose, Account: scope.Account})
 }
 
-// profileCredentialBlock proves that no transient credential file survives in a
-// retained profile before a new operation may write its own.
+// profileCredentialBlock rejects unsafe credential paths in a retained profile.
+// A retained regular credential file in the original account profile is
+// allowed (forbidManaged false): it grants no authority, and the next operation
+// rewrites it from the currently authorized vault generation. An unsafe entry
+// such as a symlink always blocks.
 func profileCredentialBlock(scope nativeScope, lease *nativeprofile.Lease, owner domain.ID, logger *slog.Logger, forbidManaged bool) error {
 	present, err := subscription.CredentialFilePresent(lease.Root)
 	if err != nil || present && forbidManaged {
@@ -83,21 +95,15 @@ func openServerSubscription(ctx context.Context, scope nativeScope, owner domain
 	released := false
 	defer func() {
 		if err != nil && !released {
-			// Retire only the transient credential file this operation may have
-			// written. The profile, its history and caches stay.
-			if domain.SafeError(err).Code != domain.RecoveryRequired {
-				if cleanupErr := subscription.RetireCredentialFiles(home); cleanupErr != nil {
-					logSubscriptionRuntimeCleanup(logger, owner, cleanupErr)
-					nativeprofile.Log(logger, "native_profile_credential_cleanup", lease.Key, lease.ID, nativeprofile.ReasonCredentialBlocked, "operation_id", owner)
-					err = domain.CodexRecoveryFailure(version, phase, err, subscriptionDenied())
-				}
+			// Credential files, history and caches in the account profile stay.
+			if logger != nil {
+				logger.Info("server_subscription_credentials_retained", "operation_id", owner, "reason", "opener_failed")
 			}
 			_ = lease.Close()
 		}
 	}()
-	// A surviving transient credential file from an earlier operation blocks
-	// with a specific cause until that operation's reconciliation retires it.
-	if e := profileCredentialBlock(scope, lease, owner, logger, true); e != nil {
+	// A retained regular credential file is allowed; unsafe entries block.
+	if e := profileCredentialBlock(scope, lease, owner, logger, false); e != nil {
 		return nil, e
 	}
 	env, e := harness.PrivateRuntimeEnvironment(home)
@@ -180,19 +186,29 @@ func (r *serverCodexRuntime) Close(latest []byte) error {
 		logSubscriptionCleanup(r.logger, r.owner, subscription.CleanupNativeProcess, subscription.CleanupUnconfirmed, 0, 0)
 		return subscriptionDenied()
 	}
-	err = cleanupServerSubscriptionRuntime(r.home, r.owner, r.logger, latest)
-	reason := nativeprofile.ReasonCredentialCleaned
-	if err != nil {
-		reason = nativeprofile.ReasonCredentialBlocked
+	if r.loggedOut {
+		// Explicit logout is destructive: remove the account-owned credential files.
+		if rerr := subscription.RetireCredentialFiles(r.home); rerr != nil {
+			logSubscriptionRuntimeCleanup(r.logger, r.owner, rerr)
+			return subscriptionDenied()
+		}
+		if r.logger != nil {
+			r.logger.Info("server_subscription_credentials_removed_by_logout", "operation_id", r.owner)
+		}
+		return nil
 	}
-	nativeprofile.Log(r.logger, "native_profile_credential_cleanup", r.lease.Key, r.lease.ID, reason, "operation_id", r.owner)
+	err = verifyServerSubscriptionCredentials(r.home, r.owner, r.logger, latest)
+	if err == nil && r.logger != nil {
+		r.logger.Info("server_subscription_credentials_retained", "operation_id", r.owner, "reason", "operation_finished")
+	}
 	return err
 }
 
 // The caller has already joined the original native process and descendants.
-// Cleanup verifies and retires only the transient credential file; the
-// persistent profile, native history, caches and helper files are retained.
-func cleanupServerSubscriptionRuntime(home string, owner domain.ID, logger *slog.Logger, latest []byte) error {
+// Verification compares the final credential bytes with the latest published
+// generation. It never removes anything: the credential file, persistent
+// profile, native history, caches and helper files are retained.
+func verifyServerSubscriptionCredentials(home string, owner domain.ID, logger *slog.Logger, latest []byte) error {
 	if len(latest) > 0 {
 		closed, readErr := security.ReadPrivate(filepath.Join(home, "codex", "auth.json"), subscription.MaxBundle)
 		equal := readErr == nil && bytes.Equal(closed, latest)
@@ -205,11 +221,6 @@ func cleanupServerSubscriptionRuntime(home string, owner domain.ID, logger *slog
 			logSubscriptionCleanup(logger, owner, subscription.CleanupAuthFile, reason, 0, 0)
 			return subscriptionDenied()
 		}
-	}
-	err := subscription.RetireCredentialFiles(home)
-	logSubscriptionRuntimeCleanup(logger, owner, err)
-	if err != nil {
-		return subscriptionDenied()
 	}
 	return nil
 }

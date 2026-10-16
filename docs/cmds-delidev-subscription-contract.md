@@ -985,10 +985,20 @@ Server and Worker login, authentication refresh, logout, quota and credit
 operations resolve permanent per-account profiles (`auth`, `quota`, `credit`,
 `subscription_probe`) instead of `subscription-runtime/<kind>/<operation>` or
 `managed-auth/<lease>` homes. Access-only quota and credit profiles never contain
-managed `auth.json`; the managed `auth` profile holds it only between a written
-bundle and its joined cleanup. Cleanup retires only transient credential files;
-native-created helper links, caches and history are retained and never block a
-later Refresh. A surviving credential file, live process or invalid owner blocks
+managed `auth.json`. For server-owned subscription operations (ChatGPT login,
+refresh and observation; quota/credit credential management; Claude setup-token)
+the managed `auth` profile retains its regular credential file after the joined
+operation, and the protected vault retains obsolete generations. Routine
+completion never deletes either and never requires deletion success; the
+published generation alone grants authority, and a retained file or obsolete
+generation grants no connection, execution or renewal. Final credential
+comparison, native process joining and identity validation still gate success.
+Explicit server logout removes every account-owned retained credential file and
+every `AccountLogin` generation (no reference-count cap, cancellation-aware);
+explicit account deletion removes the retained generations after its ordinary
+authority and reference checks. Worker-owned cleanup is unchanged.
+Native-created helper links, caches and history are retained and never block a
+later Refresh. An unsafe credential path, live process or invalid owner blocks
 with a closed cause. Historical per-operation runtimes are never deleted by
 completion: the historical access-only quota shape settles once as failed through
 an idempotent migration receipt that leaves the directory and helper links

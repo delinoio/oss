@@ -24,7 +24,6 @@ func TestServerSubscriptionRuntimeCleanupLogsSafeFailure(t *testing.T) {
 		{"matched", "", ""},
 		{"mismatch", subscription.CleanupAuthFile, subscription.CleanupMismatch},
 		{"missing", subscription.CleanupAuthFile, subscription.CleanupReadFailed},
-		{"special", subscription.CleanupAuthFile, subscription.CleanupNotRegular},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			home := filepath.Join(t.TempDir(), "private-path-sentinel")
@@ -60,10 +59,7 @@ func TestServerSubscriptionRuntimeCleanupLogsSafeFailure(t *testing.T) {
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			owner := domain.NewID()
 			compare := latest
-			if scenario.name == "special" {
-				compare = nil
-			}
-			err := cleanupServerSubscriptionRuntime(home, owner, logger, compare)
+			err := verifyServerSubscriptionCredentials(home, owner, logger, compare)
 			if _, statErr := os.Lstat(helper); statErr != nil {
 				t.Fatal("cleanup removed a retained helper link")
 			}
@@ -71,8 +67,8 @@ func TestServerSubscriptionRuntimeCleanupLogsSafeFailure(t *testing.T) {
 				if err != nil || logs.Len() != 0 {
 					t.Fatal("confirmed cleanup was classified as a failure")
 				}
-				if _, err := os.Lstat(auth); !os.IsNotExist(err) {
-					t.Fatal("transient credential file remained")
+				if _, err := os.Lstat(auth); err != nil {
+					t.Fatal("verification removed the retained credential file")
 				}
 				if _, err := os.Stat(home); err != nil {
 					t.Fatal("confirmed cleanup removed the persistent profile")

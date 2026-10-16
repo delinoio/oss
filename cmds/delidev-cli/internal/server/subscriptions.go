@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/url"
 	"regexp"
 	"slices"
@@ -1456,6 +1457,39 @@ func uniqueSubscriptionIdentity(tx *store.Tx, owner domain.ID, identity string) 
 		if other.ID != owner && a.Subscription != nil && a.Subscription.IdentityCommitment == identity {
 			return domain.Fail(domain.Conflict, "This provider account already has a managed owner.", "Use that account's exclusive connection instead of duplicating its credentials.")
 		}
+	}
+	return nil
+}
+
+// removeAccountLoginReferences is the explicit logout/deletion removal. It
+// enumerates and deletes every account-owned AccountLogin generation without the
+// Worker helper's 256-reference refusal, honoring cancellation between items.
+// Unrelated owners or purposes are never deleted.
+func removeAccountLoginReferences(ctx context.Context, vault accountSecrets, owner domain.ID, logger *slog.Logger) error {
+	refs, err := vault.UnremovedReferences(ctx, owner)
+	if err != nil {
+		return err
+	}
+	removed := 0
+	for _, ref := range refs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Other owners and purposes are never deleted here; callers that need
+		// them gone still see them as remaining references.
+		if ref.Owner != owner || ref.Purpose != credentials.AccountLogin {
+			continue
+		}
+		if err := vault.Delete(ctx, ref); err != nil {
+			if logger != nil {
+				logger.WarnContext(ctx, "server_subscription_credentials_removal_failed", "account_id", owner, "removed", removed, "remaining", len(refs)-removed, "code", domain.SafeError(err).Code)
+			}
+			return err
+		}
+		removed++
+	}
+	if logger != nil {
+		logger.InfoContext(ctx, "server_subscription_credentials_removed", "account_id", owner, "removed", removed)
 	}
 	return nil
 }

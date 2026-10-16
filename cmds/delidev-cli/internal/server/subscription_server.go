@@ -762,15 +762,11 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 	if err != nil {
 		return err
 	}
-	keep := o.Generation
-	if success {
-		keep = o.FinishID
-		if operation.Action == domain.SubscriptionLogout {
-			keep = ""
-		}
-	}
-	if cleanup {
-		if err := cleanupSubscriptionReferences(ctx, vault, id, keep); err != nil {
+	// Routine login, refresh and observation completion retains every vault
+	// generation; only the current published generation grants authority. An
+	// explicit logout removes every account-owned generation before success.
+	if cleanup && success && operation.Action == domain.SubscriptionLogout {
+		if err := removeAccountLoginReferences(ctx, vault, id, s.logger); err != nil {
 			return err
 		}
 	}

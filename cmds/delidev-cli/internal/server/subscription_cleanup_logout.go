@@ -187,7 +187,7 @@ func (s *Service) cleanupServerLogoutLocked(ctx context.Context, parent, child d
 		retain(serverLogoutCleanupPhaseCredentials, err)
 		return out, err
 	}
-	if err := cleanupSubscriptionReferences(ctx, vault, in.AccountID, ""); err != nil {
+	if err := removeAccountLoginReferences(ctx, vault, in.AccountID, s.logger); err != nil {
 		retain(serverLogoutCleanupPhaseCredentials, err)
 		return out, err
 	}

@@ -80,16 +80,11 @@ func openManagedClaudeLogin(ctx context.Context, scope nativeScope, owner domain
 	home := lease.Root
 	defer func() {
 		if err != nil {
-			if domain.SafeError(err).Code != domain.RecoveryRequired {
-				if cleanupErr := subscription.RetireCredentialFiles(home); cleanupErr != nil {
-					logSubscriptionRuntimeCleanup(logger, owner, cleanupErr)
-					err = subscriptionDenied()
-				}
-			}
+			// Credential files in the account profile are retained.
 			_ = lease.Close()
 		}
 	}()
-	if e := profileCredentialBlock(scope, lease, owner, logger, true); e != nil {
+	if e := profileCredentialBlock(scope, lease, owner, logger, false); e != nil {
 		return nil, "", e
 	}
 	env, e := harness.PrivateRuntimeEnvironment(home)
@@ -119,9 +114,9 @@ func openManagedClaudeLogin(ctx context.Context, scope nativeScope, owner domain
 	return &serverClaudeRuntime{SetupTokenLogin: login, home: home, lease: lease, owner: owner, logger: logger}, observed, nil
 }
 
-// Close joins the original child, wipes its screen buffer and retires only the
-// transient credential files. The permanent account profile is retained. A
-// failure keeps the operation fenced.
+// Close joins the original child and wipes its screen buffer. The permanent
+// account profile and its credential files are retained. A join failure keeps
+// the operation fenced.
 func (r *serverClaudeRuntime) Close() error {
 	r.once.Do(func() {
 		defer r.lease.Close()
@@ -129,13 +124,9 @@ func (r *serverClaudeRuntime) Close() error {
 			r.result = err
 			return
 		}
-		if err := subscription.RetireCredentialFiles(r.home); err != nil {
-			logSubscriptionRuntimeCleanup(r.logger, r.owner, err)
-			nativeprofile.Log(r.logger, "native_profile_credential_cleanup", r.lease.Key, r.lease.ID, nativeprofile.ReasonCredentialBlocked, "operation_id", r.owner)
-			r.result = domain.Fail(domain.RecoveryRequired, "The Claude login credential files could not be removed.", "Inspect the retained profile before retrying.")
-			return
+		if r.logger != nil {
+			r.logger.Info("server_subscription_credentials_retained", "operation_id", r.owner, "reason", "operation_finished")
 		}
-		nativeprofile.Log(r.logger, "native_profile_credential_cleanup", r.lease.Key, r.lease.ID, nativeprofile.ReasonCredentialCleaned, "operation_id", r.owner)
 	})
 	return r.result
 }
@@ -881,9 +872,8 @@ func (s *Service) finishManagedClaude(ctx context.Context, id domain.ID, o domai
 				if err := uniqueSubscriptionIdentity(tx, id, commitment); err != nil {
 					return nil, err
 				}
-				// Stale references are retired after publication; the checkpoint keeps
-				// that obligation durable across a restart or failed deletion.
-				st.ServerOperation.CleanupPhase = domain.SubscriptionCredentialCleanupPending
+				// Earlier generations are retained; only the published generation
+				// grants authority, so login owes no routine cleanup checkpoint.
 				st.Generation = o.FinishID
 				st.IdentityCommitment = commitment
 				a.Connection = &domain.AccountConnection{ID: o.FinishID, Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}
@@ -936,10 +926,11 @@ func (s *Service) finishManagedClaude(ctx context.Context, id domain.ID, o domai
 			keep = ""
 		}
 	}
-	if success {
-		// The settled state and its cleanup checkpoint are committed. A failed or
-		// interrupted deletion is retried from the checkpoint, never by fencing or
-		// rewriting the settled operation.
+	if success && !login {
+		// An explicit logout owes removal of every generation. The settled state
+		// and its cleanup checkpoint are committed. A failed or interrupted
+		// deletion is retried from the checkpoint, never by fencing or rewriting
+		// the settled operation.
 		if err := s.retireManagedClaudeReferences(ctx, vault, id, o.ID, keep); err != nil {
 			s.logger.WarnContext(ctx, "claude_managed_cleanup_pending", "operation_id", o.ID, "code", domain.SafeError(err).Code)
 		}
@@ -992,9 +983,13 @@ func (s *Service) reconcileManagedClaudeStaging(id domain.ID, o domain.ServerSub
 // clears the operation's credential-cleanup checkpoint. The caller holds the
 // account gate. The checkpoint is cleared only after deletion is confirmed.
 func (s *Service) retireManagedClaudeReferences(ctx context.Context, vault accountSecrets, id, operation, keep domain.ID) error {
-	if err := cleanupSubscriptionReferences(ctx, vault, id, keep); err != nil {
-		return err
+	if keep == "" {
+		if err := removeAccountLoginReferences(ctx, vault, id, s.logger); err != nil {
+			return err
+		}
 	}
+	// A retained login generation is not an obligation: a legacy routine-cleanup
+	// checkpoint is released without deleting the settled generation's siblings.
 	return s.clearManagedClaudeCleanupCheckpoint(ctx, id, operation)
 }
 

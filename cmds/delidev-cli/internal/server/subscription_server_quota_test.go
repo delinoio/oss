@@ -264,7 +264,7 @@ func TestServerQuotaRestartNeverReplaysClaims(t *testing.T) {
 	}
 }
 
-func TestServerQuotaWaitsForFinalLoginReferenceCleanup(t *testing.T) {
+func TestServerQuotaDoesNotWaitForRoutineLoginReferenceCleanup(t *testing.T) {
 	f := newSubscriptionFixture(t)
 	f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
 	n := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: subscriptionTestBundle("cleanup-fenced-server-account", "first", time.Now().UTC())}
@@ -274,8 +274,8 @@ func TestServerQuotaWaitsForFinalLoginReferenceCleanup(t *testing.T) {
 	close(n.finish)
 	awaitServerFixture(t, done)
 	_, a := f.record()
-	if a.Subscription.ServerQuotaGeneration != "" || serverQuotaReady(a) || !a.Subscription.RecoveryRequired {
-		t.Fatal("login publication granted quota before protected cleanup")
+	if a.Subscription.RecoveryRequired || a.Connection == nil {
+		t.Fatal("routine login depended on protected reference cleanup")
 	}
 }
 func TestServerQuotaShutdownJoinsAndSettlesCanceledRead(t *testing.T) {

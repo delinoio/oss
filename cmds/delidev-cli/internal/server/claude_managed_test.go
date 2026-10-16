@@ -831,7 +831,7 @@ func TestManagedClaudeDisconnectWaitsForOriginalWorkerThenDeletesVault(t *testin
 	}
 }
 
-func TestManagedClaudeLoginKeepsSettledStateAndRetriesStaleCleanupFromCheckpoint(t *testing.T) {
+func TestManagedClaudeLoginRetainsStaleGenerationsWithoutCleanupCheckpoint(t *testing.T) {
 	f := newManagedClaudeFixture(t)
 	stale := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
 	f.secrets.values[stale] = []byte("stale-generation")
@@ -841,26 +841,13 @@ func TestManagedClaudeLoginKeepsSettledStateAndRetriesStaleCleanupFromCheckpoint
 	_, account := f.record()
 	o := account.Subscription.ServerOperation
 	if account.Connection == nil || account.Health != domain.AccountReady || account.Subscription.RecoveryRequired || account.Subscription.Pending != nil || account.Subscription.Generation != generation {
-		t.Fatal("failed stale-reference cleanup unsettled the connected account")
+		t.Fatal("routine login depended on vault deletion")
 	}
-	if o.State != domain.SubscriptionSucceeded || o.CleanupPhase != domain.SubscriptionCredentialCleanupPending || !managedClaudeNeedsRecovery(account) {
-		t.Fatal("failed stale-reference cleanup left no durable retry checkpoint")
+	if o.State != domain.SubscriptionSucceeded || o.CleanupPhase != "" || managedClaudeNeedsRecovery(account) {
+		t.Fatal("routine login left a credential-deletion checkpoint")
 	}
 	if len(f.secrets.values[stale]) == 0 || len(f.secrets.values[current]) == 0 {
-		t.Fatal("cleanup fixture changed unexpectedly")
-	}
-	f.secrets.deleteError = nil
-	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
-	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, o.ID); err != nil {
-		t.Fatalf("checkpoint recovery failed: %v", err)
-	}
-	_, account = f.record()
-	if len(f.secrets.values[stale]) != 0 || len(f.secrets.values[current]) == 0 {
-		t.Fatal("recovery did not retire only the stale reference")
-	}
-	o = account.Subscription.ServerOperation
-	if account.Connection == nil || account.Health != domain.AccountReady || account.Subscription.Generation != generation || account.Subscription.RecoveryRequired || o.State != domain.SubscriptionSucceeded || o.CleanupPhase != "" || managedClaudeNeedsRecovery(account) {
-		t.Fatal("checkpoint recovery did not preserve the settled generation and clear the checkpoint")
+		t.Fatal("routine login deleted a retained generation")
 	}
 }
 
@@ -1443,31 +1430,6 @@ func TestManagedClaudeRestoredGenerationIsRetiredByRecovery(t *testing.T) {
 	}
 	if err := account.Validate(); err != nil {
 		t.Fatalf("recovered account is invalid: %v", err)
-	}
-}
-
-// A restored account whose settled login still owes a cleanup checkpoint retires
-// the historical generation too, not only its stale references.
-func TestManagedClaudeRestoredGenerationWithCheckpointRetiresEveryReference(t *testing.T) {
-	f := newManagedClaudeFixture(t)
-	stale := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
-	f.secrets.values[stale] = []byte("stale-generation")
-	f.secrets.deleteError = errors.New("vault deletion unavailable")
-	generation := f.connect()
-	ref := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
-	f.secrets.deleteError = nil
-	f.restoreManagedClaudeImage()
-	_, account := f.record()
-	if !managedClaudeCredentialCleanupPending(account) || !managedClaudeRestoredGeneration(account) {
-		t.Fatal("the restored account lost its checkpoint")
-	}
-	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
-	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, account.Subscription.ServerOperation.ID); err != nil {
-		t.Fatal(err)
-	}
-	_, account = f.record()
-	if len(f.secrets.values[ref]) != 0 || len(f.secrets.values[stale]) != 0 || account.Subscription.Generation != "" || account.Subscription.RecoveryRequired || managedClaudeNeedsRecovery(account) {
-		t.Fatal("checkpoint recovery preserved the quarantined generation")
 	}
 }
 

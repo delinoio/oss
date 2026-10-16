@@ -621,7 +621,7 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 		return err
 	}
 	if !replayed {
-		var keyless bool
+		var keyless, subscriptionAccount bool
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := tx.Authorize(); err != nil {
 				return err
@@ -635,6 +635,7 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 			if err != nil {
 				return err
 			}
+			subscriptionAccount = account.Type == domain.SubscriptionAccount && account.Subscription != nil
 			keyless, err = accountWithoutCredentials(tx, account)
 			return err
 		})
@@ -646,6 +647,14 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 			vault, err := s.secrets()
 			if err != nil {
 				return err
+			}
+			// Explicit deletion of a server subscription account owns the removal
+			// of its retained AccountLogin generations; any other remaining
+			// reference keeps the ordinary refusal.
+			if subscriptionAccount {
+				if err := removeAccountLoginReferences(ctx, vault, domain.ID(id), s.logger); err != nil {
+					return err
+				}
 			}
 			refs, err := vault.UnremovedReferences(ctx, domain.ID(id))
 			if err != nil {
