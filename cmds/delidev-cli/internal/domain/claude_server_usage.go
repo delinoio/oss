@@ -197,6 +197,10 @@ type ClaudeServerUsageState struct {
 	Windows       []ClaudeUsageWindowEvidence `json:"windows,omitempty"`
 	// RetiredCredentials are protected references whose deletion is still owed.
 	RetiredCredentials []ID `json:"retired_credentials,omitempty"`
+	// ProfileCleanup records that the native credential storage of the exclusive
+	// usage profile may exist and still owes removal. It is set when a login
+	// begins and cleared only after the removal is confirmed.
+	ProfileCleanup bool `json:"profile_cleanup,omitempty"`
 }
 
 func invalidClaudeServerUsage() *Error {

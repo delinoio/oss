@@ -332,15 +332,24 @@ type AuthLogin struct {
 	output    *loginOutput
 	mu        sync.Mutex
 	submitted bool
+	// manualOnly rejects the localhost-callback variant of the login address.
+	// A server-owned login can only complete through the approval code.
+	manualOnly bool
 }
 
 func StartSubscriptionLogin(ctx context.Context, config AuthConfig) (*AuthLogin, error) {
-	if config.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Process.Executable) {
-		return nil, authProblem()
-	}
 	env, err := authEnvironment(config)
 	if err != nil {
 		return nil, err
+	}
+	return startAuthLogin(ctx, config, env, false)
+}
+
+// startAuthLogin starts the original `claude auth login --claudeai` child with
+// an already validated environment.
+func startAuthLogin(ctx context.Context, config AuthConfig, env []string, manualOnly bool) (*AuthLogin, error) {
+	if config.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Process.Executable) {
+		return nil, authProblem()
 	}
 	output := &loginOutput{}
 	prepared := config.Process
@@ -360,11 +369,14 @@ func StartSubscriptionLogin(ctx context.Context, config AuthConfig) (*AuthLogin,
 		}
 		return nil, err
 	}
-	return &AuthLogin{handle: h, output: output}, nil
+	return &AuthLogin{handle: h, output: output, manualOnly: manualOnly}, nil
 }
 func (l *AuthLogin) Progress() (AuthLoginProgress, error) {
 	l.output.mu.Lock()
 	defer l.output.mu.Unlock()
+	if l.manualOnly && l.output.progress.URL != "" && l.output.progress.Method != domain.SubscriptionBrowserCode {
+		return AuthLoginProgress{}, usageLoginUnsupported()
+	}
 	return l.output.progress, l.output.problem
 }
 func (l *AuthLogin) Submit(code []byte) error {
