@@ -9,6 +9,7 @@ use winapi::{
         errhandlingapi::{GetLastError, SetLastError},
         handleapi::CloseHandle,
         minwinbase::LPSECURITY_ATTRIBUTES,
+        processenv::GetEnvironmentVariableW,
         processthreadsapi::*,
         stringapiset::MultiByteToWideChar,
         winbase::{
@@ -154,6 +155,16 @@ unsafe fn environment(
     Ok(buffer)
 }
 
+/// Read the caller's remembered directory for `drive` (the hidden `=X:`
+/// environment record) through the native API. Portable environment accessors
+/// may reject names that start with `=`, so this must not use them.
+fn drive_directory(drive: u16) -> Option<Vec<u16>> {
+    let name = pnport_core::application::drive_directory_variable(drive);
+    pnport_core::application::read_variable(|buffer| unsafe {
+        GetEnvironmentVariableW(name.as_ptr(), buffer.as_mut_ptr(), buffer.len() as u32)
+    })
+}
+
 unsafe fn discard(info: LPPROCESS_INFORMATION) {
     let error = GetLastError();
     TerminateProcess((*info).hProcess, 125);
@@ -233,8 +244,12 @@ unsafe fn create(
         let loader = pnport_core::node::Loader::from_snapshot(&runtime.view.graph.snapshot);
         drop(runtime);
         let cwd_value = string(cwd)?;
+        // The requested child directory only seeds the child's environment
+        // and loader options. Native process creation resolves a partial
+        // application path against the caller's own directory state.
+        let caller = std::env::current_dir()?;
         let cwd = if cwd_value.is_empty() {
-            std::env::current_dir()?
+            caller.clone()
         } else {
             PathBuf::from(OsString::from_wide(&cwd_value))
         };
@@ -243,12 +258,21 @@ unsafe fn create(
         let image = if image.is_empty() {
             None
         } else {
-            let path = PathBuf::from(OsString::from_wide(&image));
-            let path = if path.is_absolute() {
-                path
-            } else {
-                cwd.join(path)
-            };
+            let caller_wide: Vec<u16> = caller.as_os_str().encode_wide().collect();
+            let resolved = pnport_core::application::resolve_application(
+                &image,
+                &caller_wide,
+                drive_directory,
+            )
+            .ok_or(std::io::ErrorKind::Unsupported)?;
+            let path = PathBuf::from(OsString::from_wide(&resolved));
+            tracing::debug!(
+                action = "windows_application_resolved",
+                requested = %String::from_utf16_lossy(&image),
+                caller = %caller.display(),
+                resolved = %path.display(),
+                "Resolved the application against the caller directory"
+            );
             let translation =
                 translate(&path, false).map_err(|_| std::io::ErrorKind::Unsupported)?;
             let mut wide: Vec<_> = translation.physical.as_os_str().encode_wide().collect();
