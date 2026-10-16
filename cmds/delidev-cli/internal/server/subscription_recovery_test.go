@@ -510,7 +510,7 @@ func TestRecoveryRotationOffersEveryFencedAccount(t *testing.T) {
 	cursor := 0
 	for tick := 0; tick < 3; tick++ {
 		var offered []store.Record
-		offered, cursor = mergeRecoveryRows(nil, rows, cursor)
+		offered, _, cursor = mergeRecoveryRows(nil, rows, 0, cursor)
 		if len(offered) > subscriptionWatchLaneBound {
 			t.Fatal("rotation exceeded the lane bound", len(offered))
 		}
@@ -525,12 +525,45 @@ func TestRecoveryRotationOffersEveryFencedAccount(t *testing.T) {
 	}
 	// Ordinary rows keep room: recovery never takes the whole bound from them.
 	others := []store.Record{{ID: domain.NewID()}, {ID: domain.NewID()}, {ID: domain.NewID()}, {ID: domain.NewID()}}
-	offered, _ := mergeRecoveryRows(others, rows, 0)
+	offered, _, _ := mergeRecoveryRows(others, rows, 0, 0)
 	if len(offered) != subscriptionWatchLaneBound {
 		t.Fatal("merged rows exceeded the lane bound", len(offered))
 	}
 	if offered[len(offered)-1].ID != rows[0].ID || offered[0].ID != others[0].ID {
 		t.Fatal("recovery rows lost their reserved slot", len(offered))
+	}
+}
+
+func TestRecoveryRotationOffersEveryOrdinaryAccount(t *testing.T) {
+	recovery := []store.Record{{ID: domain.NewID()}}
+	others := make([]store.Record, 7)
+	for i := range others {
+		others[i] = store.Record{ID: domain.NewID()}
+	}
+	seen := map[domain.ID]int{}
+	otherCursor, recoveryCursor := 0, 0
+	for tick := 0; tick < 4; tick++ {
+		var offered []store.Record
+		offered, otherCursor, recoveryCursor = mergeRecoveryRows(others, recovery, otherCursor, recoveryCursor)
+		if len(offered) > subscriptionWatchLaneBound {
+			t.Fatal("rotation exceeded the lane bound", len(offered))
+		}
+		for _, r := range offered {
+			seen[r.ID]++
+		}
+	}
+	for _, r := range others {
+		if seen[r.ID] == 0 {
+			t.Fatal("an ordinary account starved behind a persistent recovery row")
+		}
+	}
+	if seen[recovery[0].ID] != 4 {
+		t.Fatal("the recovery row lost its reserved slot", seen[recovery[0].ID])
+	}
+	// Without fenced accounts nothing is truncated.
+	all, _, _ := mergeRecoveryRows(others, nil, 0, 0)
+	if len(all) != len(others) {
+		t.Fatal("ordinary rows were truncated without recovery rows", len(all))
 	}
 }
 

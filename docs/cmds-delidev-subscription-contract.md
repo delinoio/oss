@@ -1157,9 +1157,11 @@ secret bytes and the home path is never logged.
 Offer and lane. `WatchSubscription` offers a fenced ChatGPT EXECUTE row
 (`RecoveryRequired`, lease action execute, matching machine) or a committed
 recovery settlement only to its original Worker and only with capability 72.
-Recovery rows share the four-account lane bound with ordinary rows, keep at least
-one slot, and are offered through a rotating window so more than four fenced
-accounts cannot starve each other. The Worker starts at most one in-flight
+Without a fenced row every ordinary row is offered. Otherwise recovery rows share
+the four-account lane bound with ordinary rows and keep at least one slot; both the
+recovery rows and the ordinary rows are offered through rotating windows, so more
+than four fenced accounts, or more ordinary rows than the remaining slots, cannot
+starve each other. The Worker starts at most one in-flight
 attempt per account and retries transient failures after 1, 2, 4, 8 and 16
 seconds and then every 30 seconds. Missing or foreign proof is terminal for the
 current obligation: it is not retried until the lease, generation or settlement

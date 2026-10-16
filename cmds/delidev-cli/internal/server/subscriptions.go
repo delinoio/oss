@@ -438,7 +438,8 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 	defer ticker.Stop()
 	// recoveryCursor rotates the fenced managed ChatGPT accounts this stream
 	// offers, so more fenced accounts than the lane bound cannot starve each other.
-	recoveryCursor := 0
+	// otherCursor does the same for the ordinary rows that share the bound.
+	recoveryCursor, otherCursor := 0, 0
 	for {
 		var records []store.Record
 		var recovery []store.Record
@@ -514,7 +515,7 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 					records = append(records, r)
 				}
 			}
-			records, recoveryCursor = mergeRecoveryRows(records, recovery, recoveryCursor)
+			records, otherCursor, recoveryCursor = mergeRecoveryRows(records, recovery, otherCursor, recoveryCursor)
 			return nil
 		})
 		if err != nil {
@@ -554,22 +555,32 @@ func chatGPTRecoveryOffer(a domain.Account, machine domain.Machine, id domain.ID
 	return state.RecoveryRequired && state.Lease != nil && state.Lease.Action == domain.SubscriptionExecute && state.Lease.MachineID == id
 }
 
-// mergeRecoveryRows combines the ordinary rows with a rotating window of the
-// recovery rows under the single lane bound. Recovery rows always keep at least
-// one slot, and the window start advances by the rows offered, so every fenced
-// account is offered in turn.
-func mergeRecoveryRows(others, recovery []store.Record, cursor int) ([]store.Record, int) {
-	others = others[:min(len(others), subscriptionWatchLaneBound)]
+// mergeRecoveryRows combines the ordinary rows with rotating windows of the
+// recovery rows under the single lane bound. Without recovery rows every
+// ordinary row is offered, as before. Otherwise recovery rows keep at least one
+// slot, and both windows advance by the rows they offered, so every fenced
+// account and every ordinary account is offered in turn instead of the stable
+// head of either list.
+func mergeRecoveryRows(others, recovery []store.Record, otherCursor, recoveryCursor int) (rows []store.Record, nextOther, nextRecovery int) {
 	if len(recovery) == 0 {
-		return others, 0
+		return others, 0, 0
 	}
 	reserved := min(len(recovery), max(1, subscriptionWatchLaneBound-len(others)))
-	rows := others[:min(len(others), subscriptionWatchLaneBound-reserved)]
-	start := cursor % len(recovery)
+	slots := subscriptionWatchLaneBound - reserved
+	if len(others) <= slots {
+		rows = append(rows, others...)
+	} else if slots > 0 {
+		start := otherCursor % len(others)
+		for i := 0; i < slots; i++ {
+			rows = append(rows, others[(start+i)%len(others)])
+		}
+		nextOther = (start + slots) % len(others)
+	}
+	start := recoveryCursor % len(recovery)
 	for i := 0; i < reserved; i++ {
 		rows = append(rows, recovery[(start+i)%len(recovery)])
 	}
-	return rows, (start + reserved) % len(recovery)
+	return rows, nextOther, (start + reserved) % len(recovery)
 }
 
 // subscriptionLease resolves the stored owner-scoped lease: a historical
