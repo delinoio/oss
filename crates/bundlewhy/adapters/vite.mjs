@@ -24,7 +24,7 @@ import {
 } from "./common.mjs";
 
 export const ADAPTER_ID = "bundlewhy-collector-vite";
-export const ADAPTER_VERSION = "3";
+export const ADAPTER_VERSION = "4";
 
 /** Plugins that the adapter adds; they are not part of the project's config. */
 const BUNDLEWHY_PLUGIN_NAMES = new Set([
@@ -295,16 +295,63 @@ export function chunkGraphFields(chunk, externalNames) {
 }
 
 /**
+ * Module ids that one chunk of the finished build holds, or `null` when the
+ * chunk's `modules` record cannot be read as an id-keyed object. A chunk
+ * without a readable record cannot be compared with the snapshot, so it never
+ * counts as unchanged.
+ */
+function finalModuleIds(chunk) {
+  const modules = chunk?.modules;
+  if (modules === null || typeof modules !== "object" || Array.isArray(modules))
+    return null;
+  return new Set(Object.keys(modules));
+}
+
+/**
+ * True when every snapshot chunk holds exactly the modules that the same-named
+ * chunk of the finished build holds. Set equality per chunk file: the order of
+ * the modules inside a chunk is not placement. A module that moved to another
+ * chunk, a module that was removed from the output, a module that was added
+ * and a chunk whose module record cannot be read all differ. Both directions
+ * are compared, so a target and a requester are covered alike.
+ */
+export function finalPlacementMatches(snapshotChunks, finalChunks) {
+  for (const chunk of snapshotChunks) {
+    const finalIds = finalModuleIds(finalChunks.get(chunk.file));
+    const snapshotIds = new Set(chunk.modules ?? []);
+    if (finalIds === null || finalIds.size !== snapshotIds.size) return false;
+    for (const id of snapshotIds) {
+      if (!finalIds.has(id)) return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Replaces the chunk graph of the snapshot with the one of the finished build.
  *
  * A `generateBundle` hook of an output-only plugin (`output.plugins`) can run
  * after the collector whatever its own ordering is, so the snapshot taken in
  * the hook may predate a rewrite of chunk imports. The value `build()` returns
  * is the bundle after every hook. Chunk modules and sizes stay as snapshotted;
- * only the import lists come from the final bundle. When the final output
- * cannot be read or its chunk files differ from the snapshot, the import lists
- * are dropped, which the analysis reads as "no chunk import data" and never as
- * proof.
+ * only the import lists come from the final bundle.
+ *
+ * The final import lists are only valid together with the snapshot's module
+ * placement (`chunk.modules` and `module.chunks`), because the rule reads which
+ * chunk holds the dynamic importer and the target from the placement and the
+ * route between them from the lists. The lists are therefore accepted only
+ * when the finished build has the same chunk files and every chunk holds
+ * exactly the modules of the snapshot. An output-only plugin can move or remove
+ * modules while it keeps every file name; mixing the final edges with the
+ * stale placement would describe two different output graphs. Otherwise, and
+ * when the final output cannot be read, the import lists of every chunk are
+ * dropped (all or nothing, no partial module facts are rebuilt from mixed
+ * snapshots). The analysis reads a chunk without import data as "no chunk
+ * import data" and never as proof; it does not trust the placement of such a
+ * chunk either, so not even a same-chunk finding is proven from it. Other
+ * snapshot facts (sizes, source maps) are unaffected.
+ *
+ * Returns whether the final import lists were applied.
  */
 export function applyFinalChunkGraph(collection, buildResult, externalNames) {
   const results = Array.isArray(buildResult) ? buildResult : [buildResult];
@@ -315,9 +362,11 @@ export function applyFinalChunkGraph(collection, buildResult, externalNames) {
       if (item?.type === "chunk") finalChunks.set(item.fileName, item);
     }
   }
-  const matches =
+  const sameFiles =
     finalChunks.size === collection.chunks.length &&
     collection.chunks.every((chunk) => finalChunks.has(chunk.file));
+  const matches =
+    sameFiles && finalPlacementMatches(collection.chunks, finalChunks);
   for (const chunk of collection.chunks) {
     delete chunk.imports;
     delete chunk.externalImports;
@@ -703,7 +752,7 @@ await runAdapter(async (request) => {
       event: "progress",
       stage: "collecting",
       message:
-        "The finished build's chunks differ from the snapshot; chunk import data is omitted",
+        "The finished build's chunks or their module membership differ from the snapshot; chunk import data is omitted",
     });
   }
 
