@@ -2358,7 +2358,10 @@ impl<'a> MemberScan<'a> {
                 // A class body has no automatic-semicolon-free call
                 // statements, so a member that starts a new line after a
                 // complete field or decorator is a declaration.
-                Token::Punct(")" | "]") | Token::Literal | Token::Number | Token::Template => {
+                Token::Punct(")" | "]" | "++" | "--")
+                | Token::Literal
+                | Token::Number
+                | Token::Template => {
                     return kind == BraceKind::ClassBody
                         && self.new_line_between(token_end, member_start);
                 }
@@ -3531,6 +3534,21 @@ y=/process.env.F/.test(z),process.env.G"#;
             "declare class C { eval(v): string\n run() {} }\nfunction f() {}",
             "eval(v)",
         )]);
+    }
+
+    #[test]
+    fn postfix_updates_complete_a_class_field() {
+        assert_all_declarations(&[
+            "class C { x = value++\n eval(input) {} }",
+            "class C { x = value--\n eval(input) {} }",
+            "class C { x = a.b++\n eval(input) {} }",
+            "class C { x = value++ // c\n eval(input) {} }",
+            "class C { x = value++\n static eval(input) {} }",
+        ]);
+        // On the same line the update is still an expression.
+        assert_all_reported(&[("class C { x = value++ eval(code) {} }", "eval(code)")]);
+        // An object literal member after a postfix update is not a member.
+        assert_all_reported(&[("const o = { x: value++\n eval(code) {} };", "eval(code)")]);
     }
 
     #[test]
