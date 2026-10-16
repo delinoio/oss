@@ -2525,7 +2525,17 @@ fn type_parameters_end(bytes: &[u8], open: usize) -> Option<usize> {
     None
 }
 
+/// Zero-based line and byte column of the first direct `eval` call in
+/// `source`.
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
+    let start = direct_eval_offsets(source).into_iter().next()?;
+    let (line, column) = line_and_column(source, start);
+    Some((u32::try_from(line).ok()?, u32::try_from(column).ok()?))
+}
+
+/// Byte offsets of every direct `eval` call in `source`, in source order. The
+/// same classifier reads original modules and emitted chunks.
+fn direct_eval_offsets(source: &str) -> Vec<usize> {
     // `eval(` inside strings, templates, comments or regular expressions is
     // not a call.
     let ignored = non_code_ranges(source);
@@ -2533,50 +2543,51 @@ fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
     // cannot observe the surrounding scope; shadowing is decided per call.
     let shadows = eval_shadow_scopes(source, &ignored);
     let mut declarations: Option<MemberScan<'_>> = None;
-    let start = source.match_indices("eval").find_map(|(start, name)| {
-        let end = start + name.len();
-        let whole_word = !source[..start].ends_with(is_identifier_part)
-            && !source[end..].starts_with(is_identifier_part);
-        if !whole_word || in_ranges(&ignored, start) {
-            return None;
-        }
-        // A property or private name (`obj.eval(x)`, `obj. // c` + newline +
-        // `eval(x)`, `this.#eval(x)`) is an ordinary call. A spread
-        // (`...eval(x)`) is not a member access.
-        let member = matches!(
-            previous_significant_token(source, end, &ignored),
-            Token::Word { member: true, .. }
-        );
-        // Comments and line terminators may separate the name and `(`; a
-        // balanced type-parameter list may be attached to the name
-        // (`eval<T>(x)`).
-        let called = match next_significant_token(source, end, &ignored).1 {
-            Token::Punct("(") => true,
-            // A `<` that follows the name after whitespace or a comment is a
-            // comparison (`eval < value > (code)`), as for every other
-            // type-argument list in these scans.
-            Token::Punct("<") => {
-                source[end..].starts_with('<')
-                    && declarations
-                        .get_or_insert_with(|| MemberScan::new(source, &ignored))
-                        .parameters_open(end)
-                        .is_some()
+    source
+        .match_indices("eval")
+        .filter_map(|(start, name)| {
+            let end = start + name.len();
+            let whole_word = !source[..start].ends_with(is_identifier_part)
+                && !source[end..].starts_with(is_identifier_part);
+            if !whole_word || in_ranges(&ignored, start) {
+                return None;
             }
-            _ => false,
-        };
-        let shadowed = shadows
-            .iter()
-            .any(|(begin, finish)| (*begin..*finish).contains(&start));
-        if member || !called || shadowed {
-            return None;
-        }
-        // `eval(code) { ... }` in a class body or object literal declares a
-        // method named `eval`; it never calls the global function.
-        let declaration = declarations.get_or_insert_with(|| MemberScan::new(source, &ignored));
-        (!declaration.declares_method(start, end)).then_some(start)
-    })?;
-    let (line, column) = line_and_column(source, start);
-    Some((u32::try_from(line).ok()?, u32::try_from(column).ok()?))
+            // A property or private name (`obj.eval(x)`, `obj. // c` + newline
+            // + `eval(x)`, `this.#eval(x)`) is an ordinary call. A spread
+            // (`...eval(x)`) is not a member access.
+            let member = matches!(
+                previous_significant_token(source, end, &ignored),
+                Token::Word { member: true, .. }
+            );
+            // Comments and line terminators may separate the name and `(`; a
+            // balanced type-parameter list may be attached to the name
+            // (`eval<T>(x)`).
+            let called = match next_significant_token(source, end, &ignored).1 {
+                Token::Punct("(") => true,
+                // A `<` that follows the name after whitespace or a comment
+                // is a comparison (`eval < value > (code)`), as for every
+                // other type-argument list in these scans.
+                Token::Punct("<") => {
+                    source[end..].starts_with('<')
+                        && declarations
+                            .get_or_insert_with(|| MemberScan::new(source, &ignored))
+                            .parameters_open(end)
+                            .is_some()
+                }
+                _ => false,
+            };
+            let shadowed = shadows
+                .iter()
+                .any(|(begin, finish)| (*begin..*finish).contains(&start));
+            if member || !called || shadowed {
+                return None;
+            }
+            // `eval(code) { ... }` in a class body or object literal declares a
+            // method named `eval`; it never calls the global function.
+            let declaration = declarations.get_or_insert_with(|| MemberScan::new(source, &ignored));
+            (!declaration.declares_method(start, end)).then_some(start)
+        })
+        .collect()
 }
 
 /// Zero-based line and byte column of `offset`, counting every ECMAScript
