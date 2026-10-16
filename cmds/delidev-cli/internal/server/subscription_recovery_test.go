@@ -180,6 +180,64 @@ func TestRecoveryWithoutUsableCredentialsDisconnectsAndAllowsLogin(t *testing.T)
 	}
 }
 
+// A refresh or logout accepted while the lost EXECUTE lease was live has nothing
+// left to run once recovery disconnects the account. It retires atomically with
+// the credential decision, so it neither blocks an explicit login nor lets the
+// watch lane claim it against an empty generation.
+func TestRecoveryDisconnectRetiresTheQueuedLifecycleOperation(t *testing.T) {
+	for name, action := range map[string]pb.SubscriptionAction{
+		"refresh": pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH,
+		"logout":  pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newCodexRecoveryFixture(t)
+			defer clear(f.original)
+			queued := f.start(action)
+			if _, a := f.record(); a.Subscription.Pending == nil || a.Subscription.Pending.ID != domain.ID(queued.OperationId) {
+				t.Fatal("the lifecycle operation was not queued behind the live lease")
+			}
+			f.fence()
+			request := domain.NewID()
+			response, err := f.recover(f.recoverRequest(request, pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL, ""))
+			if err != nil || response.Outcome != pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_DISCONNECTED {
+				t.Fatal("proven cleanup without credentials did not disconnect", err)
+			}
+			_, account := f.record()
+			state := account.Subscription
+			if state.Pending != nil || state.RecoveryRequired || state.Lease != nil || account.Health != domain.AccountDisconnected {
+				t.Fatal("the disconnect left the queued lifecycle operation behind", state.Pending)
+			}
+			// The stale operation is not offered to the watch lane, and an explicit
+			// login is accepted again.
+			if f.start(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN) == nil {
+				t.Fatal("explicit login stayed blocked by the retired operation")
+			}
+		})
+	}
+}
+
+// A restored recovery keeps the queued lifecycle operation: the generation it
+// acts on still exists.
+func TestRecoveryRestoreKeepsTheQueuedLifecycleOperation(t *testing.T) {
+	f := newCodexRecoveryFixture(t)
+	defer clear(f.original)
+	latest := f.latest("rotated")
+	defer clear(latest)
+	capture := domain.NewID()
+	if _, err := f.sync(capture, f.original, latest); err != nil {
+		t.Fatal(err)
+	}
+	queued := f.start(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	f.fence()
+	response, err := f.recover(f.recoverRequest(domain.NewID(), pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE, capture))
+	if err != nil || response.Outcome != pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_RESTORED {
+		t.Fatal("verified latest credentials did not restore the account", err)
+	}
+	if _, a := f.record(); a.Subscription.Pending == nil || a.Subscription.Pending.ID != domain.ID(queued.OperationId) {
+		t.Fatal("a restored recovery dropped the queued lifecycle operation")
+	}
+}
+
 func TestRecoveryUnusableCaptureDisconnectsAfterProvenCleanup(t *testing.T) {
 	f := newCodexRecoveryFixture(t)
 	defer clear(f.original)

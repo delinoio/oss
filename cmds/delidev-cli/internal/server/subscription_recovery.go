@@ -855,6 +855,16 @@ func (s *Service) commitRecoverySettlement(ctx context.Context, correlation stri
 			}
 		}
 		if decision.outcome == domain.RecoveryDisconnected {
+			// A refresh or logout accepted while the lost lease was live can no
+			// longer run: no generation remains for a refresh, and a logout's
+			// intent is met by the disconnect. Left pending it would block an
+			// explicit login and let the watch lane claim it against an empty
+			// generation, fencing the account again on failure. Retire it
+			// atomically with the credential decision.
+			if state.Pending != nil {
+				s.logger.InfoContext(ctx, "subscription_recovery_queued_lifecycle_retired", "phase", subscriptionRecoveryPhase, "account_id", account, "lease_id", lease.ID, "request_id", request, "operation_id", state.Pending.ID, "action", state.Pending.Action)
+			}
+			retireQueuedLifecycle(&a, s.subscriptionServerEpoch(), time.Now().UTC())
 			a.Connection = nil
 			a.Health = domain.AccountDisconnected
 			a.Validation = nil

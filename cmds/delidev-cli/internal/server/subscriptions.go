@@ -143,6 +143,27 @@ func cancelPendingLogin(a *domain.Account, epoch domain.ID, now time.Time) error
 	return nil
 }
 
+// retireQueuedLifecycle settles the account's queued lifecycle operation as
+// canceled and clears it. The operation was accepted but never claimed, so no
+// native authority is released; its server record, when it has one, settles
+// with it. A queued login that never owned a generation also releases its
+// reserved native profile and owner.
+func retireQueuedLifecycle(account *domain.Account, epoch domain.ID, now time.Time) {
+	state := account.Subscription
+	if state == nil || state.Pending == nil {
+		return
+	}
+	cancelServerOperation(account, epoch, now)
+	if o := state.NativeOperation; o != nil && o.ID == state.Pending.ID {
+		o.State = domain.SubscriptionCanceled
+		if state.Pending.Action == domain.SubscriptionLogin && state.Lease == nil && state.Generation == "" {
+			state.NativeProfileID = ""
+			state.OwnerMachineID = ""
+		}
+	}
+	state.Pending = nil
+}
+
 // Queued lifecycle requests have not granted native authority. Settle them in
 // the same transaction as client revocation, without releasing independent or
 // claimed leases and without undoing logout's accepted execution revocation.
@@ -166,15 +187,7 @@ func cancelQueuedSubscriptionInitiator(tx *store.Tx, device, epoch domain.ID) er
 		if grokAccountLoggingOut(account) {
 			continue
 		}
-		cancelServerOperation(&account, epoch, time.Now().UTC())
-		if o := state.NativeOperation; o != nil && o.ID == state.Pending.ID {
-			o.State = domain.SubscriptionCanceled
-			if state.Pending.Action == domain.SubscriptionLogin && state.Lease == nil && state.Generation == "" {
-				state.NativeProfileID = ""
-				state.OwnerMachineID = ""
-			}
-		}
-		state.Pending = nil
+		retireQueuedLifecycle(&account, epoch, time.Now().UTC())
 		if _, err := tx.Put(domain.AccountKind, record.ID, record.Revision, "", "", account); err != nil {
 			return err
 		}
