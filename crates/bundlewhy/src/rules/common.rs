@@ -1960,14 +1960,15 @@ fn function_body_block(
 /// A type is expected where the previous token is `:` (the annotation colon or
 /// the `: B` branch of a conditional type), `?` (the `A ? { .. } : B` branch),
 /// an opener or separator (`<`, `(`, `[`, `,`), a type operator (`|`, `&`,
-/// `=>`) or one of the keywords `extends` and `is` (`T extends { a: 1 } ? X :
-/// Y`, `v is { a: 1 }`). Any other previous token (`)`, `]`, `>`, a type name
-/// such as `void`) ends the type, so the brace is the body.
+/// `=>`) or one of the keywords `extends`, `is` and `keyof` (`T extends { a: 1
+/// } ? X : Y`, `v is { a: 1 }`, `keyof { a: 1 }`). Any other previous token
+/// (`)`, `]`, `>`, a type name such as `void`) ends the type, so the brace is
+/// the body.
 fn opens_type_literal(code: &str, open: usize) -> bool {
     let before = code[..open].trim_end();
     before.ends_with(['<', '|', '&', ',', '[', '(', ':', '?'])
         || before.ends_with("=>")
-        || matches!(trailing_word(before), "extends" | "is")
+        || matches!(trailing_word(before), "extends" | "is" | "keyof")
 }
 
 /// The offset of the `{` that opens a function or method body, given the
@@ -3919,6 +3920,31 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "class C { eval(v): void }\nconst o = { run() {} };",
                 "eval(v)",
             ),
+            // `keyof` takes an object type, which is not a body.
+            (
+                "abstract class C { abstract eval(): keyof { a: 1 }; run() {} }",
+                "eval()",
+            ),
+            (
+                "abstract class C { abstract eval(): keyof { a: 1 }\n run() {} }",
+                "eval()",
+            ),
+            (
+                "abstract class C { abstract eval(): keyof\n { a: 1 }; run() {} }",
+                "eval()",
+            ),
+            (
+                "abstract class C { abstract eval(): keyof\n { a: 1 }\n run() {} }",
+                "eval()",
+            ),
+            (
+                "declare class C { eval(): keyof { a: 1 } }\nfunction later() {}",
+                "eval()",
+            ),
+            (
+                "class C { eval(): keyof { a: 1 }; eval(): string { return \"a\"; } }",
+                "eval()",
+            ),
         ] {
             assert_reports_at(source, marker);
         }
@@ -3941,6 +3967,10 @@ y=/process.env.F/.test(z),process.env.G"#;
             "class C { eval(v): Promise<\n  { a: number }\n> { } }",
             "class C { eval(v): { a: number;\n b: string } { } }",
             "class C { eval(v): { a: number; b: string } { } }",
+            "class C { eval(): keyof { a: 1 } { return \"a\"; } }",
+            "class C { eval(): keyof\n { a: 1 } { return \"a\"; } }",
+            "class C { eval(): keyof { a: 1 }\n { return \"a\"; } }",
+            "const o = { eval(): keyof { a: 1 } { return \"a\"; } };",
             "class C { eval(v): A extends B\n ? C : D { } }",
             "class C { eval(v): A[\n] { } }",
             "class C { eval(v) // c\n  { } }",
