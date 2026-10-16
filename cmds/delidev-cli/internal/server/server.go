@@ -7,6 +7,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/knownmodels"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -158,6 +159,12 @@ type Service struct {
 	// grokLoginTransport replaces the outbound transport of the server-owned
 	// Grok login in isolated tests; production routes through outboundResolver.
 	grokLoginTransport http.RoundTripper
+	// Test adapters preserve isolated OAuth lifecycle coverage. Production always
+	// uses the server-owned native CLI for login and logout.
+	grokLoginPerform  func(context.Context, domain.ID, domain.ServerSubscriptionOperation, *atomic.Bool) grokLoginOutcome
+	grokLogoutPerform func(context.Context, domain.ID, domain.ServerSubscriptionOperation) (grokLogoutOutcome, bool)
+	grokCLIDiscover   func(context.Context, harness.DiscoveryConfig) (domain.Installation, error)
+
 	// grokDeviceClock replaces the wall clock of the Grok device poll loop in
 	// isolated tests; nil selects the system clock.
 	grokDeviceClock subscription.GrokDeviceClock

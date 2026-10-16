@@ -83,6 +83,19 @@ func DiscoverCodex(ctx context.Context, config DiscoveryConfig) (domain.Installa
 	return result.Installations[0], nil
 }
 
+// DiscoverGrok probes the server-local CLI without registering a Worker or
+// reading account credentials. Login needs the native CLI, not its ACP profile.
+func DiscoverGrok(ctx context.Context, config DiscoveryConfig) (domain.Installation, error) {
+	result, err := discover(ctx, config, domain.HarnessDiscoveryInput{Revision: 1, Selections: domain.ExecutableSelections{Executables: []domain.ExecutableSelection{}}}, false, domain.GrokBuild)
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	if len(result.Installations) != 1 {
+		return domain.Installation{}, domain.Fail(domain.Unsupported, "The server's Grok CLI is unavailable.", "Install Grok Build on the server.")
+	}
+	return result.Installations[0], nil
+}
+
 func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput, onlyCodex bool, only domain.Harness) (result domain.HarnessDiscoveryOutput, returned error) {
 	root, owner := config.Root, config.OwnerID
 	codexVersion := ""

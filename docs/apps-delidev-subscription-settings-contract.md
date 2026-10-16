@@ -1,5 +1,13 @@
 # DeliDev AI Subscription Settings
 
+Grok login through capability 39 uses the existing device-code screen for both
+Add account and Use a device code. The DeliDev server runs the native Grok CLI;
+no Runner selector or registration participates. The client displays the original
+operation's validated transient verification address and code, opens that page
+through the existing closed native action and advances to naming only after
+server-confirmed success. Historical browser-flow presentation specifications
+remain compatibility references. See the [current Grok CLI login contract](cmds-delidev-grok-subscription-contract.md#current-server-owned-cli-login).
+
 ## Scope
 
 The feature owns the compact AI Subscription presentation; composes its independent service identity in `subscription-accounts.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 17 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Managed Codex login/cancel/refresh/logout uses authenticated SubscriptionService and the independent server credential owner. Native quota and reset-credit operations belong to ; Claude sign-in is server-owned under independent capability 67 and never uses a Runner Device; capability 38 and the original Runner remain only for device-owned Claude execution and logout; Grok browser login uses its independent System capability 39 flow below, Grok Refresh login runs on the server-owned refresh lane under the same capability, and other Grok lifecycle actions remain explicit. Account preferences, native authentication, quota observation and real-account/platform acceptance remain independent.
@@ -177,7 +185,7 @@ AI Subscription exposes no account-storage inspection reader, toolbar, row slot,
 
 ### Read-only quota rail
 
-The desktop contract's the feature rail independently reads saved subscription resources and uses the same service-native connection projection. It does not mount this category's login, cleanup or quota operation controllers. Fresh blocking-window aggregation determines its conservative remaining badge; the detail popover may show saved stale values only with explicit state labels. Manage subscriptions enters this existing category without targeted account mutation or automatic quota observation. The only automatic quota mutation is the connection-owned foreground Refresh all cadence described in the desktop contract; it shares the `subscription:quota:all` retained request with this category's header Refresh all and does not mount here.
+The desktop contract's the feature rail independently reads saved subscription resources and uses the same service-native connection projection. It does not mount this category's login, cleanup or quota operation controllers. Fresh blocking-window aggregation determines its conservative remaining badge; the detail popover may show saved stale values only with explicit state labels. Local account creation, completed connection and validated naming saves publish one generated `ListResources` invalidation for the subscription-account inventory (`subscription-inventory.ts`), so a mounted rail rereads its already accepted ranges immediately in addition to this category's own refresh; the rail still never discovers an unseen page, mounts login or quota controllers, or replays a mutation. Manage subscriptions enters this existing category without targeted account mutation or automatic quota observation. The only automatic quota mutation is the connection-owned foreground Refresh all cadence described in the desktop contract; it shares the `subscription:quota:all` retained request with this category's header Refresh all and does not mount here.
 
 ## Inline failure ownership
 
