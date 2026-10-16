@@ -56,6 +56,17 @@ service SubscriptionService {
   rpc SyncSubscriptionRecoveryCapture(SyncSubscriptionRecoveryCaptureRequest) returns (SyncSubscriptionRecoveryCaptureResponse);
   rpc ReadSubscriptionRecoveryCapture(ReadSubscriptionRecoveryCaptureRequest) returns (ReadSubscriptionRecoveryCaptureResponse);
   rpc RecoverSubscription(RecoverSubscriptionRequest) returns (RecoverSubscriptionResponse);
+
+  // Server-owned Claude usage tracking. A separate, explicitly linked read-only
+  // login of a server-token Claude account; none of these operations changes the
+  // execution setup-token or execution readiness. Gated by
+  // SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1.
+  rpc StartClaudeUsage(StartClaudeUsageRequest) returns (StartClaudeUsageResponse);
+  rpc GetClaudeUsageProgress(GetClaudeUsageProgressRequest) returns (GetClaudeUsageProgressResponse);
+  rpc SubmitClaudeUsageCode(SubmitClaudeUsageCodeRequest) returns (SubmitClaudeUsageCodeResponse);
+  rpc ConfirmClaudeUsageLink(ConfirmClaudeUsageLinkRequest) returns (ConfirmClaudeUsageLinkResponse);
+  rpc CancelClaudeUsage(CancelClaudeUsageRequest) returns (CancelClaudeUsageResponse);
+  rpc DisconnectClaudeUsage(DisconnectClaudeUsageRequest) returns (DisconnectClaudeUsageResponse);
 }
 
 // Explicit server-owned cleanup of failed initial logins. No native login or
@@ -509,6 +520,128 @@ message SetAutomaticResetCreditConsentRequest {
   bool confirmed = 5;
 }
 message SetAutomaticResetCreditConsentResponse {
+  Resource account = 1;
+  bool replayed = 2;
+}
+
+// Lifecycle of one Claude usage login. A connection becomes linked only after
+// the user confirms the validated identity.
+enum ClaudeUsageLoginState {
+  CLAUDE_USAGE_LOGIN_STATE_UNSPECIFIED = 0;
+  CLAUDE_USAGE_LOGIN_STATE_PREPARING = 1;
+  CLAUDE_USAGE_LOGIN_STATE_WAITING = 2;
+  CLAUDE_USAGE_LOGIN_STATE_CONFIRMING = 3;
+  CLAUDE_USAGE_LOGIN_STATE_LINKED = 4;
+  CLAUDE_USAGE_LOGIN_STATE_CANCELED = 5;
+  CLAUDE_USAGE_LOGIN_STATE_EXPIRED = 6;
+  CLAUDE_USAGE_LOGIN_STATE_UNSUPPORTED = 7;
+  CLAUDE_USAGE_LOGIN_STATE_FAILED = 8;
+  CLAUDE_USAGE_LOGIN_STATE_RECOVERY_REQUIRED = 9;
+}
+
+// Closed failure vocabulary. It never carries native text, identity, quota
+// values, credentials or paths.
+enum ClaudeUsageFailure {
+  CLAUDE_USAGE_FAILURE_UNSPECIFIED = 0;
+  CLAUDE_USAGE_FAILURE_TIMEOUT = 1;
+  CLAUDE_USAGE_FAILURE_NETWORK = 2;
+  CLAUDE_USAGE_FAILURE_ROUTE_UNSUPPORTED = 3;
+  CLAUDE_USAGE_FAILURE_REDIRECT = 4;
+  CLAUDE_USAGE_FAILURE_OVERSIZED = 5;
+  CLAUDE_USAGE_FAILURE_MALFORMED = 6;
+  CLAUDE_USAGE_FAILURE_EMPTY = 7;
+  CLAUDE_USAGE_FAILURE_UNAUTHORIZED = 8;
+  CLAUDE_USAGE_FAILURE_FORBIDDEN = 9;
+  CLAUDE_USAGE_FAILURE_RATE_LIMITED = 10;
+  CLAUDE_USAGE_FAILURE_SERVER_ERROR = 11;
+  CLAUDE_USAGE_FAILURE_CREDENTIALS_UNAVAILABLE = 12;
+  CLAUDE_USAGE_FAILURE_STORAGE_UNSUPPORTED = 13;
+  CLAUDE_USAGE_FAILURE_REFRESH_REJECTED = 14;
+  CLAUDE_USAGE_FAILURE_REFRESH_UNSUPPORTED = 15;
+  CLAUDE_USAGE_FAILURE_REFRESH_UNCERTAIN = 16;
+  CLAUDE_USAGE_FAILURE_IDENTITY_CHANGED = 17;
+  CLAUDE_USAGE_FAILURE_LOGIN_REJECTED = 18;
+  CLAUDE_USAGE_FAILURE_LOGIN_UNSUPPORTED = 19;
+  CLAUDE_USAGE_FAILURE_PROFILE_UNSAFE = 20;
+  CLAUDE_USAGE_FAILURE_CLEANUP_UNCERTAIN = 21;
+  CLAUDE_USAGE_FAILURE_INSTALLATION_UNSUPPORTED = 22;
+  CLAUDE_USAGE_FAILURE_INTERRUPTED = 23;
+  CLAUDE_USAGE_FAILURE_AUTHORITY_CHANGED = 24;
+  CLAUDE_USAGE_FAILURE_LOGIN_MANUAL_CODE_REQUIRED = 25;
+}
+
+// Validated OAuth identity shown for confirmation. It is a display assertion
+// only and implies no equality with the execution account.
+message ClaudeUsageIdentity {
+  string email = 1;
+  string organization = 2;
+  string plan = 3;
+}
+
+message StartClaudeUsageRequest {
+  // mutation.id is the Claude account, expected_revision its observed revision.
+  Mutation mutation = 1;
+  // The usage generation the caller observed; empty when none exists. The new
+  // generation is the request ID.
+  string observed_usage_generation = 2;
+}
+message StartClaudeUsageResponse {
+  Resource account = 1;
+  string operation_id = 2;
+  string usage_generation = 3;
+  bool replayed = 4;
+}
+message GetClaudeUsageProgressRequest {
+  string account_id = 1;
+  string operation_id = 2;
+  string usage_generation = 3;
+}
+// Progress reads never relaunch native work.
+message GetClaudeUsageProgressResponse {
+  ClaudeUsageLoginState state = 1;
+  // Short-lived presentation of the original login address; never persisted.
+  string url = 2;
+  SubscriptionLoginMethod login_method = 3;
+  // Present only while the identity awaits confirmation.
+  ClaudeUsageIdentity identity = 4;
+  ClaudeUsageFailure failure = 5;
+  // The native login accepts one manual approval code and has not received it.
+  bool code_requested = 6;
+  bool canceled = 7;
+}
+message SubmitClaudeUsageCodeRequest {
+  Mutation mutation = 1;
+  string operation_id = 2;
+  string usage_generation = 3;
+  // Transient original CLI input. Excluded from receipts, resources and logs.
+  bytes code = 4;
+}
+message SubmitClaudeUsageCodeResponse {
+  bool accepted = 1;
+}
+message ConfirmClaudeUsageLinkRequest {
+  Mutation mutation = 1;
+  string operation_id = 2;
+  string usage_generation = 3;
+}
+message ConfirmClaudeUsageLinkResponse {
+  Resource account = 1;
+  bool replayed = 2;
+}
+message CancelClaudeUsageRequest {
+  Mutation mutation = 1;
+  string operation_id = 2;
+  string usage_generation = 3;
+}
+message CancelClaudeUsageResponse {
+  Resource account = 1;
+  bool replayed = 2;
+}
+message DisconnectClaudeUsageRequest {
+  Mutation mutation = 1;
+  string usage_generation = 2;
+}
+message DisconnectClaudeUsageResponse {
   Resource account = 1;
   bool replayed = 2;
 }

@@ -96,6 +96,24 @@ const (
 	// SubscriptionServiceRecoverSubscriptionProcedure is the fully-qualified name of the
 	// SubscriptionService's RecoverSubscription RPC.
 	SubscriptionServiceRecoverSubscriptionProcedure = "/delidev.v1.SubscriptionService/RecoverSubscription"
+	// SubscriptionServiceStartClaudeUsageProcedure is the fully-qualified name of the
+	// SubscriptionService's StartClaudeUsage RPC.
+	SubscriptionServiceStartClaudeUsageProcedure = "/delidev.v1.SubscriptionService/StartClaudeUsage"
+	// SubscriptionServiceGetClaudeUsageProgressProcedure is the fully-qualified name of the
+	// SubscriptionService's GetClaudeUsageProgress RPC.
+	SubscriptionServiceGetClaudeUsageProgressProcedure = "/delidev.v1.SubscriptionService/GetClaudeUsageProgress"
+	// SubscriptionServiceSubmitClaudeUsageCodeProcedure is the fully-qualified name of the
+	// SubscriptionService's SubmitClaudeUsageCode RPC.
+	SubscriptionServiceSubmitClaudeUsageCodeProcedure = "/delidev.v1.SubscriptionService/SubmitClaudeUsageCode"
+	// SubscriptionServiceConfirmClaudeUsageLinkProcedure is the fully-qualified name of the
+	// SubscriptionService's ConfirmClaudeUsageLink RPC.
+	SubscriptionServiceConfirmClaudeUsageLinkProcedure = "/delidev.v1.SubscriptionService/ConfirmClaudeUsageLink"
+	// SubscriptionServiceCancelClaudeUsageProcedure is the fully-qualified name of the
+	// SubscriptionService's CancelClaudeUsage RPC.
+	SubscriptionServiceCancelClaudeUsageProcedure = "/delidev.v1.SubscriptionService/CancelClaudeUsage"
+	// SubscriptionServiceDisconnectClaudeUsageProcedure is the fully-qualified name of the
+	// SubscriptionService's DisconnectClaudeUsage RPC.
+	SubscriptionServiceDisconnectClaudeUsageProcedure = "/delidev.v1.SubscriptionService/DisconnectClaudeUsage"
 )
 
 // SubscriptionServiceClient is a client for the delidev.v1.SubscriptionService service.
@@ -124,6 +142,16 @@ type SubscriptionServiceClient interface {
 	SyncSubscriptionRecoveryCapture(context.Context, *connect.Request[v1.SyncSubscriptionRecoveryCaptureRequest]) (*connect.Response[v1.SyncSubscriptionRecoveryCaptureResponse], error)
 	ReadSubscriptionRecoveryCapture(context.Context, *connect.Request[v1.ReadSubscriptionRecoveryCaptureRequest]) (*connect.Response[v1.ReadSubscriptionRecoveryCaptureResponse], error)
 	RecoverSubscription(context.Context, *connect.Request[v1.RecoverSubscriptionRequest]) (*connect.Response[v1.RecoverSubscriptionResponse], error)
+	// Server-owned Claude usage tracking. A separate, explicitly linked read-only
+	// login of a server-token Claude account; none of these operations changes the
+	// execution setup-token or execution readiness. Gated by
+	// SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1.
+	StartClaudeUsage(context.Context, *connect.Request[v1.StartClaudeUsageRequest]) (*connect.Response[v1.StartClaudeUsageResponse], error)
+	GetClaudeUsageProgress(context.Context, *connect.Request[v1.GetClaudeUsageProgressRequest]) (*connect.Response[v1.GetClaudeUsageProgressResponse], error)
+	SubmitClaudeUsageCode(context.Context, *connect.Request[v1.SubmitClaudeUsageCodeRequest]) (*connect.Response[v1.SubmitClaudeUsageCodeResponse], error)
+	ConfirmClaudeUsageLink(context.Context, *connect.Request[v1.ConfirmClaudeUsageLinkRequest]) (*connect.Response[v1.ConfirmClaudeUsageLinkResponse], error)
+	CancelClaudeUsage(context.Context, *connect.Request[v1.CancelClaudeUsageRequest]) (*connect.Response[v1.CancelClaudeUsageResponse], error)
+	DisconnectClaudeUsage(context.Context, *connect.Request[v1.DisconnectClaudeUsageRequest]) (*connect.Response[v1.DisconnectClaudeUsageResponse], error)
 }
 
 // NewSubscriptionServiceClient constructs a client for the delidev.v1.SubscriptionService service.
@@ -263,6 +291,42 @@ func NewSubscriptionServiceClient(httpClient connect.HTTPClient, baseURL string,
 			connect.WithSchema(subscriptionServiceMethods.ByName("RecoverSubscription")),
 			connect.WithClientOptions(opts...),
 		),
+		startClaudeUsage: connect.NewClient[v1.StartClaudeUsageRequest, v1.StartClaudeUsageResponse](
+			httpClient,
+			baseURL+SubscriptionServiceStartClaudeUsageProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("StartClaudeUsage")),
+			connect.WithClientOptions(opts...),
+		),
+		getClaudeUsageProgress: connect.NewClient[v1.GetClaudeUsageProgressRequest, v1.GetClaudeUsageProgressResponse](
+			httpClient,
+			baseURL+SubscriptionServiceGetClaudeUsageProgressProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("GetClaudeUsageProgress")),
+			connect.WithClientOptions(opts...),
+		),
+		submitClaudeUsageCode: connect.NewClient[v1.SubmitClaudeUsageCodeRequest, v1.SubmitClaudeUsageCodeResponse](
+			httpClient,
+			baseURL+SubscriptionServiceSubmitClaudeUsageCodeProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("SubmitClaudeUsageCode")),
+			connect.WithClientOptions(opts...),
+		),
+		confirmClaudeUsageLink: connect.NewClient[v1.ConfirmClaudeUsageLinkRequest, v1.ConfirmClaudeUsageLinkResponse](
+			httpClient,
+			baseURL+SubscriptionServiceConfirmClaudeUsageLinkProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("ConfirmClaudeUsageLink")),
+			connect.WithClientOptions(opts...),
+		),
+		cancelClaudeUsage: connect.NewClient[v1.CancelClaudeUsageRequest, v1.CancelClaudeUsageResponse](
+			httpClient,
+			baseURL+SubscriptionServiceCancelClaudeUsageProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("CancelClaudeUsage")),
+			connect.WithClientOptions(opts...),
+		),
+		disconnectClaudeUsage: connect.NewClient[v1.DisconnectClaudeUsageRequest, v1.DisconnectClaudeUsageResponse](
+			httpClient,
+			baseURL+SubscriptionServiceDisconnectClaudeUsageProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("DisconnectClaudeUsage")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -289,6 +353,12 @@ type subscriptionServiceClient struct {
 	syncSubscriptionRecoveryCapture *connect.Client[v1.SyncSubscriptionRecoveryCaptureRequest, v1.SyncSubscriptionRecoveryCaptureResponse]
 	readSubscriptionRecoveryCapture *connect.Client[v1.ReadSubscriptionRecoveryCaptureRequest, v1.ReadSubscriptionRecoveryCaptureResponse]
 	recoverSubscription             *connect.Client[v1.RecoverSubscriptionRequest, v1.RecoverSubscriptionResponse]
+	startClaudeUsage                *connect.Client[v1.StartClaudeUsageRequest, v1.StartClaudeUsageResponse]
+	getClaudeUsageProgress          *connect.Client[v1.GetClaudeUsageProgressRequest, v1.GetClaudeUsageProgressResponse]
+	submitClaudeUsageCode           *connect.Client[v1.SubmitClaudeUsageCodeRequest, v1.SubmitClaudeUsageCodeResponse]
+	confirmClaudeUsageLink          *connect.Client[v1.ConfirmClaudeUsageLinkRequest, v1.ConfirmClaudeUsageLinkResponse]
+	cancelClaudeUsage               *connect.Client[v1.CancelClaudeUsageRequest, v1.CancelClaudeUsageResponse]
+	disconnectClaudeUsage           *connect.Client[v1.DisconnectClaudeUsageRequest, v1.DisconnectClaudeUsageResponse]
 }
 
 // SetAutomaticResetCreditConsent calls
@@ -401,6 +471,36 @@ func (c *subscriptionServiceClient) RecoverSubscription(ctx context.Context, req
 	return c.recoverSubscription.CallUnary(ctx, req)
 }
 
+// StartClaudeUsage calls delidev.v1.SubscriptionService.StartClaudeUsage.
+func (c *subscriptionServiceClient) StartClaudeUsage(ctx context.Context, req *connect.Request[v1.StartClaudeUsageRequest]) (*connect.Response[v1.StartClaudeUsageResponse], error) {
+	return c.startClaudeUsage.CallUnary(ctx, req)
+}
+
+// GetClaudeUsageProgress calls delidev.v1.SubscriptionService.GetClaudeUsageProgress.
+func (c *subscriptionServiceClient) GetClaudeUsageProgress(ctx context.Context, req *connect.Request[v1.GetClaudeUsageProgressRequest]) (*connect.Response[v1.GetClaudeUsageProgressResponse], error) {
+	return c.getClaudeUsageProgress.CallUnary(ctx, req)
+}
+
+// SubmitClaudeUsageCode calls delidev.v1.SubscriptionService.SubmitClaudeUsageCode.
+func (c *subscriptionServiceClient) SubmitClaudeUsageCode(ctx context.Context, req *connect.Request[v1.SubmitClaudeUsageCodeRequest]) (*connect.Response[v1.SubmitClaudeUsageCodeResponse], error) {
+	return c.submitClaudeUsageCode.CallUnary(ctx, req)
+}
+
+// ConfirmClaudeUsageLink calls delidev.v1.SubscriptionService.ConfirmClaudeUsageLink.
+func (c *subscriptionServiceClient) ConfirmClaudeUsageLink(ctx context.Context, req *connect.Request[v1.ConfirmClaudeUsageLinkRequest]) (*connect.Response[v1.ConfirmClaudeUsageLinkResponse], error) {
+	return c.confirmClaudeUsageLink.CallUnary(ctx, req)
+}
+
+// CancelClaudeUsage calls delidev.v1.SubscriptionService.CancelClaudeUsage.
+func (c *subscriptionServiceClient) CancelClaudeUsage(ctx context.Context, req *connect.Request[v1.CancelClaudeUsageRequest]) (*connect.Response[v1.CancelClaudeUsageResponse], error) {
+	return c.cancelClaudeUsage.CallUnary(ctx, req)
+}
+
+// DisconnectClaudeUsage calls delidev.v1.SubscriptionService.DisconnectClaudeUsage.
+func (c *subscriptionServiceClient) DisconnectClaudeUsage(ctx context.Context, req *connect.Request[v1.DisconnectClaudeUsageRequest]) (*connect.Response[v1.DisconnectClaudeUsageResponse], error) {
+	return c.disconnectClaudeUsage.CallUnary(ctx, req)
+}
+
 // SubscriptionServiceHandler is an implementation of the delidev.v1.SubscriptionService service.
 type SubscriptionServiceHandler interface {
 	SetAutomaticResetCreditConsent(context.Context, *connect.Request[v1.SetAutomaticResetCreditConsentRequest]) (*connect.Response[v1.SetAutomaticResetCreditConsentResponse], error)
@@ -427,6 +527,16 @@ type SubscriptionServiceHandler interface {
 	SyncSubscriptionRecoveryCapture(context.Context, *connect.Request[v1.SyncSubscriptionRecoveryCaptureRequest]) (*connect.Response[v1.SyncSubscriptionRecoveryCaptureResponse], error)
 	ReadSubscriptionRecoveryCapture(context.Context, *connect.Request[v1.ReadSubscriptionRecoveryCaptureRequest]) (*connect.Response[v1.ReadSubscriptionRecoveryCaptureResponse], error)
 	RecoverSubscription(context.Context, *connect.Request[v1.RecoverSubscriptionRequest]) (*connect.Response[v1.RecoverSubscriptionResponse], error)
+	// Server-owned Claude usage tracking. A separate, explicitly linked read-only
+	// login of a server-token Claude account; none of these operations changes the
+	// execution setup-token or execution readiness. Gated by
+	// SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1.
+	StartClaudeUsage(context.Context, *connect.Request[v1.StartClaudeUsageRequest]) (*connect.Response[v1.StartClaudeUsageResponse], error)
+	GetClaudeUsageProgress(context.Context, *connect.Request[v1.GetClaudeUsageProgressRequest]) (*connect.Response[v1.GetClaudeUsageProgressResponse], error)
+	SubmitClaudeUsageCode(context.Context, *connect.Request[v1.SubmitClaudeUsageCodeRequest]) (*connect.Response[v1.SubmitClaudeUsageCodeResponse], error)
+	ConfirmClaudeUsageLink(context.Context, *connect.Request[v1.ConfirmClaudeUsageLinkRequest]) (*connect.Response[v1.ConfirmClaudeUsageLinkResponse], error)
+	CancelClaudeUsage(context.Context, *connect.Request[v1.CancelClaudeUsageRequest]) (*connect.Response[v1.CancelClaudeUsageResponse], error)
+	DisconnectClaudeUsage(context.Context, *connect.Request[v1.DisconnectClaudeUsageRequest]) (*connect.Response[v1.DisconnectClaudeUsageResponse], error)
 }
 
 // NewSubscriptionServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -562,6 +672,42 @@ func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...conne
 		connect.WithSchema(subscriptionServiceMethods.ByName("RecoverSubscription")),
 		connect.WithHandlerOptions(opts...),
 	)
+	subscriptionServiceStartClaudeUsageHandler := connect.NewUnaryHandler(
+		SubscriptionServiceStartClaudeUsageProcedure,
+		svc.StartClaudeUsage,
+		connect.WithSchema(subscriptionServiceMethods.ByName("StartClaudeUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionServiceGetClaudeUsageProgressHandler := connect.NewUnaryHandler(
+		SubscriptionServiceGetClaudeUsageProgressProcedure,
+		svc.GetClaudeUsageProgress,
+		connect.WithSchema(subscriptionServiceMethods.ByName("GetClaudeUsageProgress")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionServiceSubmitClaudeUsageCodeHandler := connect.NewUnaryHandler(
+		SubscriptionServiceSubmitClaudeUsageCodeProcedure,
+		svc.SubmitClaudeUsageCode,
+		connect.WithSchema(subscriptionServiceMethods.ByName("SubmitClaudeUsageCode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionServiceConfirmClaudeUsageLinkHandler := connect.NewUnaryHandler(
+		SubscriptionServiceConfirmClaudeUsageLinkProcedure,
+		svc.ConfirmClaudeUsageLink,
+		connect.WithSchema(subscriptionServiceMethods.ByName("ConfirmClaudeUsageLink")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionServiceCancelClaudeUsageHandler := connect.NewUnaryHandler(
+		SubscriptionServiceCancelClaudeUsageProcedure,
+		svc.CancelClaudeUsage,
+		connect.WithSchema(subscriptionServiceMethods.ByName("CancelClaudeUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionServiceDisconnectClaudeUsageHandler := connect.NewUnaryHandler(
+		SubscriptionServiceDisconnectClaudeUsageProcedure,
+		svc.DisconnectClaudeUsage,
+		connect.WithSchema(subscriptionServiceMethods.ByName("DisconnectClaudeUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.SubscriptionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SubscriptionServiceSetAutomaticResetCreditConsentProcedure:
@@ -606,6 +752,18 @@ func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...conne
 			subscriptionServiceReadSubscriptionRecoveryCaptureHandler.ServeHTTP(w, r)
 		case SubscriptionServiceRecoverSubscriptionProcedure:
 			subscriptionServiceRecoverSubscriptionHandler.ServeHTTP(w, r)
+		case SubscriptionServiceStartClaudeUsageProcedure:
+			subscriptionServiceStartClaudeUsageHandler.ServeHTTP(w, r)
+		case SubscriptionServiceGetClaudeUsageProgressProcedure:
+			subscriptionServiceGetClaudeUsageProgressHandler.ServeHTTP(w, r)
+		case SubscriptionServiceSubmitClaudeUsageCodeProcedure:
+			subscriptionServiceSubmitClaudeUsageCodeHandler.ServeHTTP(w, r)
+		case SubscriptionServiceConfirmClaudeUsageLinkProcedure:
+			subscriptionServiceConfirmClaudeUsageLinkHandler.ServeHTTP(w, r)
+		case SubscriptionServiceCancelClaudeUsageProcedure:
+			subscriptionServiceCancelClaudeUsageHandler.ServeHTTP(w, r)
+		case SubscriptionServiceDisconnectClaudeUsageProcedure:
+			subscriptionServiceDisconnectClaudeUsageHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -697,4 +855,28 @@ func (UnimplementedSubscriptionServiceHandler) ReadSubscriptionRecoveryCapture(c
 
 func (UnimplementedSubscriptionServiceHandler) RecoverSubscription(context.Context, *connect.Request[v1.RecoverSubscriptionRequest]) (*connect.Response[v1.RecoverSubscriptionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.RecoverSubscription is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) StartClaudeUsage(context.Context, *connect.Request[v1.StartClaudeUsageRequest]) (*connect.Response[v1.StartClaudeUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.StartClaudeUsage is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) GetClaudeUsageProgress(context.Context, *connect.Request[v1.GetClaudeUsageProgressRequest]) (*connect.Response[v1.GetClaudeUsageProgressResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.GetClaudeUsageProgress is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) SubmitClaudeUsageCode(context.Context, *connect.Request[v1.SubmitClaudeUsageCodeRequest]) (*connect.Response[v1.SubmitClaudeUsageCodeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.SubmitClaudeUsageCode is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) ConfirmClaudeUsageLink(context.Context, *connect.Request[v1.ConfirmClaudeUsageLinkRequest]) (*connect.Response[v1.ConfirmClaudeUsageLinkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.ConfirmClaudeUsageLink is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) CancelClaudeUsage(context.Context, *connect.Request[v1.CancelClaudeUsageRequest]) (*connect.Response[v1.CancelClaudeUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.CancelClaudeUsage is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) DisconnectClaudeUsage(context.Context, *connect.Request[v1.DisconnectClaudeUsageRequest]) (*connect.Response[v1.DisconnectClaudeUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.DisconnectClaudeUsage is not implemented"))
 }

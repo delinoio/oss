@@ -107,3 +107,38 @@ export const readSubscriptionRecoveryCapture = SubscriptionService.method.readSu
  * @generated from rpc delidev.v1.SubscriptionService.RecoverSubscription
  */
 export const recoverSubscription = SubscriptionService.method.recoverSubscription;
+
+/**
+ * Server-owned Claude usage tracking. A separate, explicitly linked read-only
+ * login of a server-token Claude account; none of these operations changes the
+ * execution setup-token or execution readiness. Gated by
+ * SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1.
+ *
+ * @generated from rpc delidev.v1.SubscriptionService.StartClaudeUsage
+ */
+export const startClaudeUsage = SubscriptionService.method.startClaudeUsage;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.GetClaudeUsageProgress
+ */
+export const getClaudeUsageProgress = SubscriptionService.method.getClaudeUsageProgress;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.SubmitClaudeUsageCode
+ */
+export const submitClaudeUsageCode = SubscriptionService.method.submitClaudeUsageCode;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.ConfirmClaudeUsageLink
+ */
+export const confirmClaudeUsageLink = SubscriptionService.method.confirmClaudeUsageLink;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.CancelClaudeUsage
+ */
+export const cancelClaudeUsage = SubscriptionService.method.cancelClaudeUsage;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.DisconnectClaudeUsage
+ */
+export const disconnectClaudeUsage = SubscriptionService.method.disconnectClaudeUsage;

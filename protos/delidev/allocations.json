@@ -15387,6 +15387,605 @@
       "member": "blocked_reason",
       "number": 4,
       "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1",
+      "number": 110
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageLoginState",
+      "member": "CLAUDE_USAGE_LOGIN_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageLoginState",
+      "member": "CLAUDE_USAGE_LOGIN_STATE_PREPARING",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageLoginState",
+      "member": "CLAUDE_USAGE_LOGIN_STATE_WAITING",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageLoginState",
+      "member": "CLAUDE_USAGE_LOGIN_STATE_CONFIRMING",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageLoginState",
+      "member": "CLAUDE_USAGE_LOGIN_STATE_LINKED",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageLoginState",
+      "member": "CLAUDE_USAGE_LOGIN_STATE_CANCELED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageLoginState",
+      "member": "CLAUDE_USAGE_LOGIN_STATE_EXPIRED",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageLoginState",
+      "member": "CLAUDE_USAGE_LOGIN_STATE_UNSUPPORTED",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageLoginState",
+      "member": "CLAUDE_USAGE_LOGIN_STATE_FAILED",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageLoginState",
+      "member": "CLAUDE_USAGE_LOGIN_STATE_RECOVERY_REQUIRED",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_TIMEOUT",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_NETWORK",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_ROUTE_UNSUPPORTED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_REDIRECT",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_OVERSIZED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_MALFORMED",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_EMPTY",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_UNAUTHORIZED",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_FORBIDDEN",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_RATE_LIMITED",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_SERVER_ERROR",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_CREDENTIALS_UNAVAILABLE",
+      "number": 12,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_STORAGE_UNSUPPORTED",
+      "number": 13,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_REFRESH_REJECTED",
+      "number": 14,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_REFRESH_UNSUPPORTED",
+      "number": 15,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_REFRESH_UNCERTAIN",
+      "number": 16,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_IDENTITY_CHANGED",
+      "number": 17,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_LOGIN_REJECTED",
+      "number": 18,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_LOGIN_UNSUPPORTED",
+      "number": 19,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_PROFILE_UNSAFE",
+      "number": 20,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_CLEANUP_UNCERTAIN",
+      "number": 21,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_INSTALLATION_UNSUPPORTED",
+      "number": 22,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_INTERRUPTED",
+      "number": 23,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_AUTHORITY_CHANGED",
+      "number": 24,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "ClaudeUsageFailure",
+      "member": "CLAUDE_USAGE_FAILURE_LOGIN_MANUAL_CODE_REQUIRED",
+      "number": 25,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "ClaudeUsageIdentity",
+      "member": "email",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "ClaudeUsageIdentity",
+      "member": "organization",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "ClaudeUsageIdentity",
+      "member": "plan",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "StartClaudeUsageRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "StartClaudeUsageRequest",
+      "member": "observed_usage_generation",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "StartClaudeUsageResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "StartClaudeUsageResponse",
+      "member": "operation_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "StartClaudeUsageResponse",
+      "member": "usage_generation",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "StartClaudeUsageResponse",
+      "member": "replayed",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "GetClaudeUsageProgressRequest",
+      "member": "account_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "GetClaudeUsageProgressRequest",
+      "member": "operation_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "GetClaudeUsageProgressRequest",
+      "member": "usage_generation",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "GetClaudeUsageProgressResponse",
+      "member": "state",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "GetClaudeUsageProgressResponse",
+      "member": "url",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "GetClaudeUsageProgressResponse",
+      "member": "login_method",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "GetClaudeUsageProgressResponse",
+      "member": "identity",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "GetClaudeUsageProgressResponse",
+      "member": "failure",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "GetClaudeUsageProgressResponse",
+      "member": "code_requested",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "GetClaudeUsageProgressResponse",
+      "member": "canceled",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "SubmitClaudeUsageCodeRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "SubmitClaudeUsageCodeRequest",
+      "member": "operation_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "SubmitClaudeUsageCodeRequest",
+      "member": "usage_generation",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "SubmitClaudeUsageCodeRequest",
+      "member": "code",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "SubmitClaudeUsageCodeResponse",
+      "member": "accepted",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "ConfirmClaudeUsageLinkRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "ConfirmClaudeUsageLinkRequest",
+      "member": "operation_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "ConfirmClaudeUsageLinkRequest",
+      "member": "usage_generation",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "ConfirmClaudeUsageLinkResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "ConfirmClaudeUsageLinkResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "CancelClaudeUsageRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "CancelClaudeUsageRequest",
+      "member": "operation_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "CancelClaudeUsageRequest",
+      "member": "usage_generation",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "CancelClaudeUsageResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "CancelClaudeUsageResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "DisconnectClaudeUsageRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "DisconnectClaudeUsageRequest",
+      "member": "usage_generation",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "DisconnectClaudeUsageResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "DisconnectClaudeUsageResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -15855,6 +16454,60 @@
       "method": "RecoverSubscription",
       "input": "RecoverSubscriptionRequest",
       "output": "RecoverSubscriptionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 4069,
+      "service": "SubscriptionService",
+      "method": "StartClaudeUsage",
+      "input": "StartClaudeUsageRequest",
+      "output": "StartClaudeUsageResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 4069,
+      "service": "SubscriptionService",
+      "method": "GetClaudeUsageProgress",
+      "input": "GetClaudeUsageProgressRequest",
+      "output": "GetClaudeUsageProgressResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 4069,
+      "service": "SubscriptionService",
+      "method": "SubmitClaudeUsageCode",
+      "input": "SubmitClaudeUsageCodeRequest",
+      "output": "SubmitClaudeUsageCodeResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 4069,
+      "service": "SubscriptionService",
+      "method": "ConfirmClaudeUsageLink",
+      "input": "ConfirmClaudeUsageLinkRequest",
+      "output": "ConfirmClaudeUsageLinkResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 4069,
+      "service": "SubscriptionService",
+      "method": "CancelClaudeUsage",
+      "input": "CancelClaudeUsageRequest",
+      "output": "CancelClaudeUsageResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 4069,
+      "service": "SubscriptionService",
+      "method": "DisconnectClaudeUsage",
+      "input": "DisconnectClaudeUsageRequest",
+      "output": "DisconnectClaudeUsageResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }
