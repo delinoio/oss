@@ -95,6 +95,16 @@ func listForkConfigFile(ctx context.Context, git Git, dir, path string, allowanc
 			return nil, 0, domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
 		}
 	}
+	// The retained proof is the complete backing allocation plus the record and
+	// slice headers. Reject before allocating the record slice when that total
+	// cannot fit the caller's remaining allowance.
+	proofBytes, err := forkConfigProofBytes(uint64(cap(out)), recordsCount)
+	if err != nil {
+		return nil, 0, err
+	}
+	if proofBytes > allowance {
+		return nil, 0, domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
+	}
 	// splitForkConfigRecords keeps strings backed by out. Charge the complete
 	// backing allocation because bytes.Buffer may retain spare capacity beyond
 	// the logical output length while those strings keep the buffer alive.
@@ -261,17 +271,32 @@ func (l forkConfigLayer) hasKey(key string) bool {
 // unchanged and in its original order, each normalized key has exactly its
 // accepted value, and each removed key has no record at all.
 func (l forkConfigLayer) matchesNormalized(child forkConfigLayer, normalized map[string]string, removed ...string) bool {
-	rest := func(records []string) []string {
-		result := []string{}
-		for _, record := range records {
-			key := forkConfigKey(record)
-			if _, ok := normalized[key]; !ok && !slices.Contains(removed, key) {
-				result = append(result, record)
-			}
-		}
-		return result
+	// Compare the two filtered record sequences in place. Allocating filtered
+	// copies would add comparison scratch that the remaining verification
+	// allowance does not account for.
+	retained := func(record string) bool {
+		key := forkConfigKey(record)
+		_, ok := normalized[key]
+		return !ok && !slices.Contains(removed, key)
 	}
-	if !slices.Equal(rest(l.records), rest(child.records)) {
+	next := func(records []string, index int) int {
+		for index < len(records) && !retained(records[index]) {
+			index++
+		}
+		return index
+	}
+	i, j := 0, 0
+	for {
+		i, j = next(l.records, i), next(child.records, j)
+		if i == len(l.records) || j == len(child.records) {
+			break
+		}
+		if l.records[i] != child.records[j] {
+			return false
+		}
+		i, j = i+1, j+1
+	}
+	if i != len(l.records) || j != len(child.records) {
 		return false
 	}
 	for _, key := range removed {
@@ -280,13 +305,14 @@ func (l forkConfigLayer) matchesNormalized(child forkConfigLayer, normalized map
 		}
 	}
 	for key, value := range normalized {
-		got := []string{}
+		count, exact := 0, false
 		for _, record := range child.records {
 			if forkConfigKey(record) == key {
-				got = append(got, record)
+				count++
+				exact = len(record) == len(key)+1+len(value) && record[len(key)+1:] == value
 			}
 		}
-		if len(got) != 1 || got[0] != key+"\n"+value {
+		if count != 1 || !exact {
 			return false
 		}
 	}

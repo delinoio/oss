@@ -128,12 +128,12 @@ func TestIndependentForkInventoryAdmitsLargeConfigLayers(t *testing.T) {
 			if info, err := os.Stat(childPath); err != nil || info.Size() <= MaxGitOutput {
 				t.Fatalf("child config did not cross the old limit: %v, %v", info, err)
 			}
-			if err := proof.verify(context.Background(), git); err != nil {
+			if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); err != nil {
 				t.Fatalf("large config lost its normalized ordered proof: %v", err)
 			}
 			original := readForkFixtureFile(t, childPath)
 			gitTest(t, child.PrimaryPath, "config", "--file", childPath, "fixture.drift", "changed")
-			if err := proof.verify(context.Background(), git); domain.SafeError(err).Code != domain.Conflict {
+			if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); domain.SafeError(err).Code != domain.Conflict {
 				t.Fatalf("large child config drift accepted: %v", err)
 			}
 			if err := os.WriteFile(childPath, original, 0600); err != nil {
@@ -153,7 +153,7 @@ func TestIndependentForkInventoryAdmitsLargeConfigLayers(t *testing.T) {
 			if err = file.Close(); err != nil {
 				t.Fatal(err)
 			}
-			if err := proof.verify(context.Background(), git); domain.SafeError(err).Code != domain.Conflict {
+			if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); domain.SafeError(err).Code != domain.Conflict {
 				t.Fatalf("large source config drift accepted: %v", err)
 			}
 			if _, err := git.run(context.Background(), child.PrimaryPath, "config", "--no-includes", "--file", childPath, "--list", "-z"); err == nil {
@@ -230,7 +230,7 @@ func TestIndependentForkInventoryRecheckMapsConfigCardinalityDriftToConflict(t *
 
 	git := m.Git
 	git.OwnerID = manifest.SessionID
-	if err := proof.gitInventory.verify(context.Background(), git, source, proof.target); domain.SafeError(err).Code != domain.Conflict {
+	if err := proof.gitInventory.verify(context.Background(), git, source, proof.target, proof.gitInventory.configProof.retainedBytes); domain.SafeError(err).Code != domain.Conflict {
 		t.Fatalf("source config cardinality drift was misclassified: %v", err)
 	}
 }
@@ -281,7 +281,7 @@ func TestIndependentForkInventoryProvesRetainedConfig(t *testing.T) {
 			if _, err := os.Lstat(filepath.Join(target, "config.worktree")); err != nil {
 				t.Fatal("fixture has no retained config.worktree", err)
 			}
-			if err := proof.verify(context.Background(), git); err != nil {
+			if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); err != nil {
 				t.Fatal("accepted normalization was rejected", err)
 			}
 			config, worktree := filepath.Join(target, "config"), filepath.Join(target, "config.worktree")
@@ -327,12 +327,12 @@ func TestIndependentForkInventoryProvesRetainedConfig(t *testing.T) {
 			}
 			for _, mutation := range mutations {
 				mutation.mutate()
-				err := proof.verify(context.Background(), git)
+				err := proof.verify(context.Background(), git, soloLiveProofBytes(proof))
 				if err == nil || domain.SafeError(err).Code != domain.Conflict {
 					t.Fatalf("%s accepted or misclassified: %v", mutation.name, err)
 				}
 				restore()
-				if err := proof.verify(context.Background(), git); err != nil {
+				if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); err != nil {
 					t.Fatalf("%s: restored child rejected: %v", mutation.name, err)
 				}
 			}
@@ -363,7 +363,7 @@ func TestIndependentForkInventoryDropsStaleWorktreeRemoteURL(t *testing.T) {
 			git := m.Git
 			git.OwnerID = child.SessionID
 			worktree := filepath.Join(child.PrimaryPath, ".git", "config.worktree")
-			if err := proof.verify(context.Background(), git); err != nil {
+			if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); err != nil {
 				t.Fatal("normalized child was rejected", err)
 			}
 			// Git must resolve exactly the selected URL, with no stale endpoint.
@@ -382,14 +382,14 @@ func TestIndependentForkInventoryDropsStaleWorktreeRemoteURL(t *testing.T) {
 			original := readForkFixtureFile(t, worktree)
 			for _, stale := range []string{"https://example.invalid/stale-source.git", proof.gitInventory.configProof.remoteURL} {
 				gitTest(t, child.PrimaryPath, "config", "--file", worktree, "remote.origin.url", stale)
-				if err := proof.verify(context.Background(), git); domain.SafeError(err).Code != domain.Conflict {
+				if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); domain.SafeError(err).Code != domain.Conflict {
 					t.Fatalf("worktree-scoped remote URL %q accepted: %v", stale, err)
 				}
 				if err := os.WriteFile(worktree, original, 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if err := proof.verify(context.Background(), git); err != nil {
+			if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -407,7 +407,7 @@ func TestIndependentForkInventoryConfigWorktreeLayerFollowsSource(t *testing.T) 
 	if err := os.WriteFile(worktree, []byte("[fixture]\n\tinjected = yes\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := proof.verify(context.Background(), git); domain.SafeError(err).Code != domain.Conflict {
+	if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); domain.SafeError(err).Code != domain.Conflict {
 		t.Fatalf("child config.worktree absent from source accepted: %v", err)
 	}
 }
@@ -420,13 +420,13 @@ func TestIndependentForkInventoryConfigProofIsFrozenSourceNotChild(t *testing.T)
 	path := filepath.Join(proof.gitInventory.common, "config")
 	original := readForkFixtureFile(t, path)
 	gitTest(t, proof.source, "config", "--local", "fixture.first", "edited")
-	if err := proof.verify(context.Background(), git); domain.SafeError(err).Code != domain.Conflict {
+	if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); domain.SafeError(err).Code != domain.Conflict {
 		t.Fatalf("source config drift accepted: %v", err)
 	}
 	if err := os.WriteFile(path, original, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := proof.verify(context.Background(), git); err != nil {
+	if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); err != nil {
 		t.Fatal(err)
 	}
 	// An unbound proof has no accepted remote and fails closed.
@@ -434,14 +434,14 @@ func TestIndependentForkInventoryConfigProofIsFrozenSourceNotChild(t *testing.T)
 	inventory := *proof.gitInventory
 	inventory.configProof.bound = false
 	unbound.gitInventory = &inventory
-	if err := unbound.verify(context.Background(), git); err == nil {
+	if err := unbound.verify(context.Background(), git, soloLiveProofBytes(unbound)); err == nil {
 		t.Fatal("proof without a remote selection accepted")
 	}
 	// A different accepted remote selection is not satisfied by this child.
 	inventory = *proof.gitInventory
 	inventory.configProof.remoteURL = "https://example.invalid/different.git"
 	unbound.gitInventory = &inventory
-	if err := unbound.verify(context.Background(), git); domain.SafeError(err).Code != domain.Conflict {
+	if err := unbound.verify(context.Background(), git, soloLiveProofBytes(unbound)); domain.SafeError(err).Code != domain.Conflict {
 		t.Fatalf("different accepted remote URL satisfied: %v", err)
 	}
 }
@@ -520,4 +520,13 @@ func TestForkSnapshotVerifyRejectsChildConfigDrift(t *testing.T) {
 	if err := snapshot.Verify(context.Background(), child); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// soloLiveProofBytes is the live proof total for a copy verified without any
+// sibling repository.
+func soloLiveProofBytes(c forkCopy) uint64 {
+	if c.gitInventory == nil {
+		return 0
+	}
+	return c.gitInventory.configProof.retainedBytes
 }

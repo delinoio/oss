@@ -316,7 +316,7 @@ func verifyIndependentDirectory(repo PreparedRepository, ready bool) error {
 	return nil
 }
 
-func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, root string, spec RepositorySpec, manifest *Manifest, write func() error, forkBudget *snapshotCopyBudget, snapshot *ForkSnapshot) (PreparedRepository, *forkCopy, error) {
+func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, root string, spec RepositorySpec, manifest *Manifest, write func() error, forkBudget *snapshotCopyBudget, snapshot *ForkSnapshot, prior []forkCopy) (PreparedRepository, *forkCopy, error) {
 	prepared := PreparedRepository{ID: spec.ID, DirectoryName: spec.DirectoryName, SourceKind: spec.SourceKind, RemoteURL: spec.RemoteURL, Path: ownedRepositoryPath(root, spec.ID, spec.DirectoryName), Owned: true, Base: spec.Base, Starting: spec.Starting, PRTarget: spec.PRTarget}
 	prepared.Source = prepared.Path
 	manifest.Repositories = append(manifest.Repositories, prepared)
@@ -347,7 +347,7 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	bounded, cancel := context.WithTimeout(ctx, RepositoryCloneTimeout)
 	defer cancel()
 	if spec.SourceKind == IndependentForkSource {
-		return m.prepareForkGitInventory(bounded, git, spec, manifest, write, forkBudget, snapshot)
+		return m.prepareForkGitInventory(bounded, git, spec, manifest, write, forkBudget, snapshot, prior)
 	}
 	if spec.SourceKind == RemoteCloneSource {
 		if err := git.validateManagedCloneSource(bounded, root, source); err != nil {

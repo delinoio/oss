@@ -718,6 +718,23 @@ replaces `config.worktree`, so preparation synchronizes the rewritten file along
 with `config` and the Git directory before Ready publication. Any other difference returns the
 Fork snapshot Conflict. Config values and remote URLs are never logged.
 
+Every frozen source proof stays allocated until the Fork snapshot is dropped, so
+child config verification accounts for all of them, not only the repository being
+verified. Each verification phase (the immediate check after one repository is
+prepared, the final all-repository check, and the snapshot verification across
+the native Fork boundary) deducts the sum of the retained proof bytes of every
+live Fork source from the unchanged 256 MiB bound, beside the verified child's Git
+files, before it reads any child layer. A source shared by the snapshot and a
+prepared copy is counted once. `config` and `config.worktree` are then read one
+after the other against what remains, and each layer is charged its complete
+output capacity plus record and slice headers before the next layer is read.
+A layer whose retained proof does not fit is rejected before its records are
+allocated, and the frozen-source comparison allocates no scratch. Exhaustion
+returns the Fork snapshot Conflict through the existing original cleanup and
+recovery ownership. Git output beyond the remaining allowance is cut off by the
+bounded process output and keeps that process's ownership result. Logs carry
+only byte totals and error codes.
+
 Fresh child root and Git-directory identities are journaled before copying.
 Each copied regular file has independent storage and synchronized publication;
 Git fsck validates the complete local object and index closure before readiness.
