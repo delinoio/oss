@@ -408,7 +408,8 @@ func recoveryMissingAncestor(root, home string) bool {
 // recoverAuthentication removes the transient authentication of an interrupted
 // execution and proves, with a complete streaming inspection of the retained
 // history, that no credential remnant survives. A missing file is already
-// removed. A file that is neither of the expected bundles stays in place.
+// removed. A file that is not one of the exact captured bundles (latest or
+// original) or the retained legacy bytes stays in place.
 func recoverAuthentication(ctx context.Context, home string, missingHome bool, latest, original, extra []byte) error {
 	if missingHome {
 		return nil
@@ -422,7 +423,10 @@ func recoverAuthentication(ctx context.Context, home string, missingHome bool, l
 		clear(closed)
 		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
 	default:
-		matches := len(latest) != 0 && bytes.Equal(closed, latest) || len(extra) != 0 && bytes.Equal(closed, extra)
+		// The captured original is the exact generation the Take delivered into
+		// the profile; an interrupted execution that never refreshed it leaves
+		// precisely those bytes, which are as authenticated as the latest bundle.
+		matches := len(latest) != 0 && bytes.Equal(closed, latest) || len(original) != 0 && bytes.Equal(closed, original) || len(extra) != 0 && bytes.Equal(closed, extra)
 		clear(closed)
 		if !matches {
 			return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthBundle}

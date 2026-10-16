@@ -233,6 +233,35 @@ func TestCodexRecoveryRestoresFromCaptureThroughAReplacementInstance(t *testing.
 	}
 }
 
+// An interrupted profile can still hold the exact original generation the Take
+// delivered while the capture already carries a refreshed latest bundle. Both are
+// authenticated recovery evidence, so cleanup removes either exact file.
+func TestCodexRecoveryRemovesTheCapturedOriginalGeneration(t *testing.T) {
+	f := newRecoveryWorkerFixture(t)
+	f.server.capture = &pb.ReadSubscriptionRecoveryCaptureResponse{CaptureId: string(domain.NewID()), Original: f.original, Latest: f.latest}
+	if err := security.WriteAtomic(filepath.Join(f.home, "auth.json"), f.original); err != nil {
+		t.Fatal(err)
+	}
+	if result := f.run(); result.disposition != recoverySettled {
+		t.Fatal("the captured original generation was not accepted for cleanup", result)
+	}
+	if f.authExists() {
+		t.Fatal("recovery left the delivered original authentication")
+	}
+	if settling := f.server.settling(); len(settling) != 1 || settling[0].Report != pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE {
+		t.Fatal("cleanup of the original generation was not reported against the capture")
+	}
+	// A file that is neither captured bundle stays in place.
+	g := newRecoveryWorkerFixture(t)
+	g.server.capture = &pb.ReadSubscriptionRecoveryCaptureResponse{CaptureId: string(domain.NewID()), Original: g.original, Latest: g.latest}
+	if err := security.WriteAtomic(filepath.Join(g.home, "auth.json"), workerSubscriptionBundle("third")); err != nil {
+		t.Fatal(err)
+	}
+	if result := g.run(); result.disposition != recoveryRetry || !g.authExists() || len(g.server.settling()) != 0 {
+		t.Fatal("an unrelated authentication file was removed", result)
+	}
+}
+
 func TestCodexRecoveryKeepsCredentialRemnantsProtected(t *testing.T) {
 	f := newRecoveryWorkerFixture(t)
 	f.server.capture = &pb.ReadSubscriptionRecoveryCaptureResponse{CaptureId: string(domain.NewID()), Original: f.original, Latest: f.latest}
