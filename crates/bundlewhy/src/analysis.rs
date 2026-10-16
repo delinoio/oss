@@ -3751,6 +3751,16 @@ mod tests {
              use(); } } }",
             "class C { async #load() { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } \
              } }",
+            // A comment right after `case` or `default` does not turn the clause block
+            // into a member container, so the async context reaches the guard.
+            "async function \
+             outer(x){switch(x){case/*c*/1:{if(x){if(await(process.env.\
+             BUNDLEWHY_FIXTURE_FLAG))run()}}}}",
+            "async function outer(x){switch(x){case/*c*/ \
+             1:{if(x){if(await(process.env.BUNDLEWHY_FIXTURE_FLAG))run()}}}}",
+            "async function \
+             outer(x){switch(x){default/*c*/:{if(x){if(await(process.env.\
+             BUNDLEWHY_FIXTURE_FLAG))run()}}}}",
         ] {
             let fixture = run_fixture_patched(
                 BundlerChoice::Rspack,
