@@ -1261,7 +1261,10 @@ fn collect_binding_names(pattern: &str, names: &mut Vec<String>) {
 /// Source ranges in which a binding named `eval` is visible. Lexical
 /// declarations use their block, while `var` uses its containing function.
 /// A named function expression binds its name only inside its own body.
-fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, usize)> {
+/// The source with every non-code range (comment, string, template text and
+/// regular expression) replaced by spaces, keeping line terminators, so byte
+/// offsets agree with `source`.
+fn masked_code(source: &str, ignored: &[(usize, usize)]) -> String {
     let mut masked = source.as_bytes().to_vec();
     for (start, end) in ignored {
         for byte in &mut masked[*start..(*end).min(source.len())] {
@@ -1270,8 +1273,12 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             }
         }
     }
-    let code = String::from_utf8_lossy(&masked).into_owned();
-    let bytes = code.as_bytes();
+    String::from_utf8_lossy(&masked).into_owned()
+}
+
+/// Every balanced `{ ... }` pair of masked code as `(open, close)` offsets, in
+/// the order the closing braces appear.
+fn brace_blocks(bytes: &[u8]) -> Vec<(usize, usize)> {
     let mut blocks = Vec::new();
     let mut stack = Vec::new();
     for (index, byte) in bytes.iter().enumerate() {
@@ -1285,6 +1292,13 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             _ => {}
         }
     }
+    blocks
+}
+
+fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, usize)> {
+    let code = masked_code(source, ignored);
+    let bytes = code.as_bytes();
+    let blocks = brace_blocks(bytes);
     let enclosing = |position: usize| {
         blocks
             .iter()
@@ -1903,6 +1917,198 @@ fn is_case_label(prefix: &str) -> bool {
             .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
 }
 
+/// What a `{` opens, as far as a lexical scan can tell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BraceKind {
+    /// The body of a `class` declaration or expression.
+    ClassBody,
+    /// An object literal (a value position, not a statement block).
+    ObjectLiteral,
+    /// A statement block, function body, or any brace the scan cannot place.
+    Other,
+}
+
+/// Modifiers that may precede a method name in a class body or object literal.
+const METHOD_MODIFIERS: [&str; 10] = [
+    "async",
+    "static",
+    "get",
+    "set",
+    "public",
+    "private",
+    "protected",
+    "override",
+    "readonly",
+    "abstract",
+];
+
+/// Keywords after which an object literal can start.
+const OBJECT_VALUE_KEYWORDS: [&str; 5] = ["return", "default", "yield", "await", "throw"];
+
+/// Lazily built lexical context that decides whether an `eval` name followed
+/// by a parameter list is a class or object method declaration.
+struct MemberScan<'a> {
+    source: &'a str,
+    ignored: &'a [(usize, usize)],
+    code: String,
+    blocks: Vec<(usize, usize)>,
+}
+
+impl<'a> MemberScan<'a> {
+    fn new(source: &'a str, ignored: &'a [(usize, usize)]) -> Self {
+        let code = masked_code(source, ignored);
+        let blocks = brace_blocks(code.as_bytes());
+        Self {
+            source,
+            ignored,
+            code,
+            blocks,
+        }
+    }
+
+    /// The innermost brace pair that contains `position` with only balanced
+    /// brackets between the opening brace and `position`, so `position` sits
+    /// directly in that brace's body and not inside a call or array.
+    fn direct_enclosing_block(&self, position: usize) -> Option<(usize, usize)> {
+        let (open, close) = self
+            .blocks
+            .iter()
+            .filter(|(open, close)| *open < position && position < *close)
+            .min_by_key(|(open, close)| close - open)
+            .copied()?;
+        let mut depth = 0usize;
+        for byte in &self.code.as_bytes()[open + 1..position] {
+            match byte {
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' => depth = depth.checked_sub(1)?,
+                _ => {}
+            }
+        }
+        (depth == 0).then_some((open, close))
+    }
+
+    /// Whether the header before the brace at `open` contains a `class`
+    /// keyword (`class A extends B {`, `const C = class {`).
+    fn has_class_header(&self, open: usize) -> bool {
+        let bytes = self.code.as_bytes();
+        let mut depth = 0usize;
+        let mut index = open;
+        while index > 0 {
+            index -= 1;
+            match bytes[index] {
+                b')' | b']' => depth += 1,
+                b'(' | b'[' => match depth.checked_sub(1) {
+                    Some(next) => depth = next,
+                    None => return false,
+                },
+                b';' | b'{' | b'}' | b'=' if depth == 0 => return false,
+                byte if depth == 0 && is_identifier_part(char::from(byte)) => {
+                    let end = index + 1;
+                    while index > 0 && is_identifier_part(char::from(bytes[index - 1])) {
+                        index -= 1;
+                    }
+                    let preceded_by_dot = self.code[..index].trim_end().ends_with('.');
+                    if &self.code[index..end] == "class" && !preceded_by_dot {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn brace_kind(&self, open: usize) -> BraceKind {
+        if self.has_class_header(open) {
+            return BraceKind::ClassBody;
+        }
+        let is_object = match previous_significant_token(self.source, open, self.ignored) {
+            Token::Punct(text) => match text {
+                "=" | "(" | "," | "[" | "?" | "|" | "&" => true,
+                // A property value (`{ key: { eval(x) {} } }`); a label or a
+                // `case` clause is a statement block and stays unplaced.
+                ":" => self
+                    .direct_enclosing_block(open)
+                    .is_some_and(|(outer, _)| self.brace_kind(outer) == BraceKind::ObjectLiteral),
+                _ => false,
+            },
+            Token::Word { text, member } => !member && OBJECT_VALUE_KEYWORDS.contains(&text),
+            _ => false,
+        };
+        if is_object {
+            BraceKind::ObjectLiteral
+        } else {
+            BraceKind::Other
+        }
+    }
+
+    /// Whether the offset starts a member in the body of a `kind` brace: the
+    /// previous token (past any modifiers and a generator `*`) ends an earlier
+    /// member or opens the body.
+    fn at_member_position(&self, name_start: usize, kind: BraceKind) -> bool {
+        let mut member_start = name_start;
+        loop {
+            let token = previous_significant_token(self.source, member_start, self.ignored);
+            let token_end =
+                strip_comments_for_prefix(self.source, member_start, self.ignored).len();
+            match token {
+                Token::Word {
+                    text,
+                    member: false,
+                } if METHOD_MODIFIERS.contains(&text) => {
+                    member_start = token_end - text.len();
+                }
+                Token::Punct("*") => member_start = token_end - 1,
+                Token::Punct("{" | "}" | ";") => return true,
+                Token::Punct(",") => return kind == BraceKind::ObjectLiteral,
+                // A class body has no automatic-semicolon-free call
+                // statements, so a member that starts a new line after a
+                // complete field or decorator is a declaration.
+                Token::Punct(")" | "]") | Token::Literal | Token::Number | Token::Template => {
+                    return kind == BraceKind::ClassBody
+                        && self.new_line_between(token_end, member_start);
+                }
+                Token::Word {
+                    text,
+                    member: false,
+                } => {
+                    return kind == BraceKind::ClassBody
+                        && !REGEX_KEYWORDS.contains(&text)
+                        && self.new_line_between(token_end, member_start);
+                }
+                _ => return false,
+            }
+        }
+    }
+
+    fn new_line_between(&self, start: usize, end: usize) -> bool {
+        self.source[start..end].contains(is_line_terminator)
+    }
+
+    /// Whether the `eval` at `start..end` names a method: it sits directly in
+    /// a class body or object literal at a member position, and its parameter
+    /// list is followed by a body (after an optional TypeScript return type).
+    /// When the scan cannot tell, the name is treated as a call.
+    fn declares_method(&self, start: usize, end: usize) -> bool {
+        let (open_paren, token) = next_significant_token(self.source, end, self.ignored);
+        if token != Token::Punct("(") {
+            return false;
+        }
+        let bytes = self.code.as_bytes();
+        let Some(close_paren) = matching_delimiter(bytes, open_paren, b'(', b')') else {
+            return false;
+        };
+        if function_body_block(&self.code, bytes, &self.blocks, close_paren + 1).is_none() {
+            return false;
+        }
+        let Some((open, _)) = self.direct_enclosing_block(start) else {
+            return false;
+        };
+        let kind = self.brace_kind(open);
+        kind != BraceKind::Other && self.at_member_position(start, kind)
+    }
+}
+
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
     // `eval(` inside strings, templates, comments or regular expressions is
     // not a call.
@@ -1910,6 +2116,7 @@ fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
     // A binding named `eval` makes calls inside its scope ordinary calls that
     // cannot observe the surrounding scope; shadowing is decided per call.
     let shadows = eval_shadow_scopes(source, &ignored);
+    let mut declarations: Option<MemberScan<'_>> = None;
     let start = source.match_indices("eval").find_map(|(start, name)| {
         let end = start + name.len();
         let whole_word = !source[..start].ends_with(is_identifier_part)
@@ -1929,7 +2136,13 @@ fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
         let shadowed = shadows
             .iter()
             .any(|(begin, finish)| (*begin..*finish).contains(&start));
-        (!member && called && !shadowed).then_some(start)
+        if member || !called || shadowed {
+            return None;
+        }
+        // `eval(code) { ... }` in a class body or object literal declares a
+        // method named `eval`; it never calls the global function.
+        let declaration = declarations.get_or_insert_with(|| MemberScan::new(source, &ignored));
+        (!declaration.declares_method(start, end)).then_some(start)
     })?;
     let (line, column) = line_and_column(source, start);
     Some((u32::try_from(line).ok()?, u32::try_from(column).ok()?))
@@ -2105,44 +2318,57 @@ mod tests {
     const UNARY_KEYWORDS: [&str; 4] = ["typeof", "await", "void", "delete"];
 
     fn eval_rule_drafts(source: &str, engine_reports_eval: bool) -> Vec<DiagnosticDraft> {
+        eval_rule_drafts_for_modules(&[("src/main.js", source)], engine_reports_eval)
+    }
+
+    /// Runs the rule over several modules that share one generated chunk. The
+    /// engine log, when requested, names the first module.
+    fn eval_rule_drafts_for_modules(
+        modules: &[(&str, &str)],
+        engine_reports_eval: bool,
+    ) -> Vec<DiagnosticDraft> {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let source_path = root.join("src/main.js");
         let build_dir = root.join("build");
-        std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
         std::fs::create_dir_all(&build_dir).unwrap();
-        std::fs::write(&source_path, source).unwrap();
         std::fs::write(build_dir.join("main.js"), "const longLocalName = 1;").unwrap();
-        let module_id = source_path.to_string_lossy().into_owned();
+        let mut sources = crate::sources::SourceStore::new(true);
+        let mut collected = Vec::new();
+        for (name, source) in modules {
+            let source_path = root.join(name);
+            std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            std::fs::write(&source_path, source).unwrap();
+            // `module_source` reads build-backed text, so model the
+            // source-map snapshot used by a collected build instead of
+            // relying on an unverified live file.
+            sources.snapshots.insert(
+                crate::sources::normalize(&source_path),
+                (*source).to_owned(),
+            );
+            collected.push(CollectedModule {
+                id: source_path.to_string_lossy().into_owned(),
+                path: Some(source_path.to_string_lossy().into_owned()),
+                included: true,
+                chunks: vec!["main.js".to_owned()],
+                ..CollectedModule::default()
+            });
+        }
         let collection = crate::collect::Collection {
             default_minifier: true,
             minify_enabled: true,
             logs: if engine_reports_eval {
                 vec![crate::collect::EngineLog {
                     code: Some("EVAL".to_owned()),
-                    id: Some(module_id.clone()),
+                    id: Some(collected[0].id.clone()),
                     ..crate::collect::EngineLog::default()
                 }]
             } else {
                 Vec::new()
             },
-            modules: vec![CollectedModule {
-                id: module_id,
-                path: Some(source_path.to_string_lossy().into_owned()),
-                included: true,
-                chunks: vec!["main.js".to_owned()],
-                ..CollectedModule::default()
-            }],
+            modules: collected,
             ..crate::collect::Collection::default()
         };
         let chunk = crate::chunks::Chunk::load(&build_dir, "main.js", None, true, root).unwrap();
-        // `module_source` reads build-backed text, so model the source-map
-        // snapshot used by a collected build instead of relying on an
-        // unverified live file.
-        let mut sources = crate::sources::SourceStore::new(true);
-        sources
-            .snapshots
-            .insert(crate::sources::normalize(&source_path), source.to_owned());
         let mut context = Context::new(
             &collection,
             root.to_path_buf(),
@@ -2405,6 +2631,160 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
         assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
         assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 3);
+    }
+
+    #[test]
+    fn method_declarations_named_eval_are_not_direct_eval() {
+        for source in [
+            "class C { eval(value) { return value; } }",
+            "class C {\n  eval(object) {\n    return object;\n  }\n}",
+            "class C { run() {} eval(value) {} }",
+            "class C { x = 1; eval(value) {} }",
+            "class C { x = 1\n  eval(value) {} }",
+            "class C { x = \"a\"\n  eval(value) {} }",
+            "class C { @dec()\n  eval(value) {} }",
+            "class C extends Base { eval(value) {} }",
+            "class C extends mix(A, B) { eval(value) {} }",
+            "class C<T> implements I { eval(value) {} }",
+            "export default class { eval(value) {} }",
+            "const C = class { eval(value) {} };",
+            "const C = class extends B { eval(value) {} };",
+            "class C { async eval(value) {} }",
+            "class C { *eval(value) {} }",
+            "class C { async *eval(value) {} }",
+            "class C { static eval(value) {} }",
+            "class C { static async eval(value) {} }",
+            "class C { get eval() { return 1; } }",
+            "class C { set eval(value) {} }",
+            "class C { public eval(value: string): number { return 1; } }",
+            "class C { private static async eval(value: string): Promise<void> {} }",
+            "class C { eval(value: string): { a: number } { return { a: 1 }; } }",
+            "class C { eval/* c */(value) {} }",
+            "class C { eval // c\n(value) {} }",
+            "}class C { run() {}eval(object) {} }",
+            "const o = { eval(value) { return value; } };",
+            "const o = { a: 1, eval(value) {} };",
+            "const o = { async eval(value) {} };",
+            "const o = { *eval(value) {} };",
+            "const o = { async *eval(value) {} };",
+            "const o = { get eval() { return 1; } };",
+            "const o = { set eval(value) {} };",
+            "const o = { eval(value): number { return 1; } };",
+            "module.exports = { eval(value) {} };",
+            "export default { eval(value) {} };",
+            "run({ eval(value) {} });",
+            "run(a, { eval(value) {} });",
+            "const list = [{ eval(value) {} }];",
+            "const o = { nested: { eval(value) {} } };",
+            "const o = c ? { eval(value) {} } : null;",
+            "function f() { return { eval(value) {} }; }",
+            "const o = { run() {}, eval(value) {} };",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn calls_next_to_method_declarations_are_still_direct_eval() {
+        // The reported position is the call, not the declaration.
+        for (source, call) in [
+            ("class C { eval(value) {} }\neval(code);", "eval(code)"),
+            (
+                "class C { eval(value) { return eval(value); } }",
+                "eval(value);",
+            ),
+            (
+                "class C {\n  eval(value) {}\n  run() { eval(code); }\n}",
+                "eval(code)",
+            ),
+            (
+                "const o = { eval(value) {} };\nconst x = eval(code);",
+                "eval(code)",
+            ),
+            ("const o = { a: eval(code), eval(value) {} };", "eval(code)"),
+            (
+                "const o = { eval(value) { return eval(code); } };",
+                "eval(code)",
+            ),
+            ("const o = { a: eval(code) };", "eval(code)"),
+            ("const o = { a: c ? eval(code) : { b: 1 } };", "eval(code)"),
+            ("class C { x = eval(code); }", "eval(code)"),
+            ("class C { x = c ? eval(code) : { b: 1 }; }", "eval(code)"),
+            ("class C { [eval(code)]() {} }", "eval(code)"),
+            ("class C { @eval(code) run() {} }", "eval(code)"),
+            ("class C { static { eval(code); } }", "eval(code)"),
+            ("class C { run() { eval(code) } }", "eval(code)"),
+            ("run(a, eval(code)) ;", "eval(code)"),
+            ("run(eval(code)) ;", "eval(code)"),
+            ("x = a ? eval(code) : b;", "eval(code)"),
+            ("if (x) { eval(code) }", "eval(code)"),
+            ("function run() { eval(code) }", "eval(code)"),
+            ("const f = () => { eval(code) };", "eval(code)"),
+            ("{ eval(code) }", "eval(code)"),
+            ("a;\neval(code)\n{ b }", "eval(code)"),
+            ("const o = { a, b }; eval(code);", "eval(code)"),
+        ] {
+            let offset = source.find(call).expect(source);
+            let expected = line_and_column(source, offset);
+            let expected = (expected.0 as u32, expected.1 as u32);
+            assert_eq!(direct_eval_line(source), Some(expected), "{source:?}");
+        }
+        // Member calls stay member calls.
+        for source in [
+            "class C { run() { return this.eval(value); } }",
+            "instance.eval(value);",
+            "const o = { eval(value) {} }; o.eval(1);",
+            "class C { eval(value) {} } new C().eval(1);",
+            "class C { eval(value) { return this.#eval(value); } }",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn eval_methods_in_one_module_do_not_hide_a_real_call_in_another() {
+        let prefix = "const longLocalName = 1;\n";
+        let method_module = format!(
+            "{prefix}export class Prefilter {{\n  eval(input, pos) {{ return input; }}\n}}\n"
+        );
+        let call_module =
+            format!("{prefix}export const run = (code) => {{\n  return eval(code);\n}};\n");
+        // Only the method: no finding.
+        let drafts = eval_rule_drafts_for_modules(&[("src/method.js", &method_module)], false);
+        assert!(drafts.is_empty());
+        // The method dependency and the real call dependency: one finding on
+        // the real call.
+        let drafts = eval_rule_drafts_for_modules(
+            &[
+                ("src/method.js", &method_module),
+                ("src/call.js", &call_module),
+            ],
+            false,
+        );
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+        assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+        let location = drafts[0].located.location.as_ref().unwrap();
+        assert!(location.path.ends_with("src/call.js"));
+        assert_eq!(location.line, 3);
+        // Reversing the module order does not change the result.
+        let drafts = eval_rule_drafts_for_modules(
+            &[
+                ("src/call.js", &call_module),
+                ("src/method.js", &method_module),
+            ],
+            false,
+        );
+        assert_eq!(drafts.len(), 1);
+        // A method and a real call in the same module report the call.
+        let both = format!(
+            "{prefix}class Prefilter {{\n  eval(input, pos) {{ return input; }}\n}}\neval(code);\n"
+        );
+        let drafts = eval_rule_drafts(&both, false);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 5);
+        // An engine-reported eval is still reported for a method-only module.
+        assert_eq!(eval_rule_drafts(&method_module, true).len(), 1);
     }
 
     #[test]
@@ -3368,12 +3748,17 @@ y=/process.env.F/.test(z),process.env.G"#;
     #[test]
     fn lexical_token_limits_stay_conservative() {
         let read = "process.env.FLAG";
-        // A method named `eval` looks like a call, and a comma inside
-        // TypeScript type arguments ends an arrow body early: both are
-        // reported as a possible direct eval.
+        // A comma inside TypeScript type arguments ends an arrow body early,
+        // so the call is reported as a possible direct eval.
+        let source = "const f = (eval) => g<A, B>(eval(code));";
+        assert!(direct_eval_line(source).is_some(), "{source:?}");
+        // A method declaration named `eval` is no call, but a declaration the
+        // scan cannot place (a statement block that only looks like a member
+        // list, or a `case` clause) is still reported.
         for source in [
-            "class A { eval(code) { return 1; } }",
-            "const f = (eval) => g<A, B>(eval(code));",
+            "if (x) { eval(code) }",
+            "label: { eval(code) {} }",
+            "switch (a) { case 1: { eval(code) {} } }",
         ] {
             assert!(direct_eval_line(source).is_some(), "{source:?}");
         }
