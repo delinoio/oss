@@ -9,6 +9,7 @@ use winapi::{
         errhandlingapi::{GetLastError, SetLastError},
         handleapi::CloseHandle,
         minwinbase::LPSECURITY_ATTRIBUTES,
+        processenv::GetEnvironmentVariableW,
         processthreadsapi::*,
         stringapiset::MultiByteToWideChar,
         winbase::{
@@ -154,6 +155,16 @@ unsafe fn environment(
     Ok(buffer)
 }
 
+/// Read the caller's remembered directory for `drive` (the hidden `=X:`
+/// environment record) through the native API. Portable environment accessors
+/// may reject names that start with `=`, so this must not use them.
+fn drive_directory(drive: u16) -> Option<Vec<u16>> {
+    let name = pnport_core::application::drive_directory_variable(drive);
+    pnport_core::application::read_variable(|buffer| unsafe {
+        GetEnvironmentVariableW(name.as_ptr(), buffer.as_mut_ptr(), buffer.len() as u32)
+    })
+}
+
 unsafe fn discard(info: LPPROCESS_INFORMATION) {
     let error = GetLastError();
     TerminateProcess((*info).hProcess, 125);
@@ -248,13 +259,12 @@ unsafe fn create(
             None
         } else {
             let caller_wide: Vec<u16> = caller.as_os_str().encode_wide().collect();
-            let resolved =
-                pnport_core::application::resolve_application(&image, &caller_wide, |drive| {
-                    let name: Vec<u16> = [u16::from(b'='), drive, u16::from(b':')].to_vec();
-                    std::env::var_os(OsString::from_wide(&name))
-                        .map(|value| value.encode_wide().collect())
-                })
-                .ok_or(std::io::ErrorKind::Unsupported)?;
+            let resolved = pnport_core::application::resolve_application(
+                &image,
+                &caller_wide,
+                drive_directory,
+            )
+            .ok_or(std::io::ErrorKind::Unsupported)?;
             let path = PathBuf::from(OsString::from_wide(&resolved));
             tracing::debug!(
                 action = "windows_application_resolved",

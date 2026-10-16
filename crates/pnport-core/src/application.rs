@@ -114,6 +114,37 @@ fn caller_drive(caller: &[u16]) -> Option<u16> {
     drive_of(&caller[prefix..])
 }
 
+/// NUL-terminated name of the hidden per-drive directory record (`=X:`) that
+/// the process environment keeps for `drive`.
+///
+/// Callers must read it with the native environment API; portable
+/// environment accessors may reject names that start with `=`.
+pub fn drive_directory_variable(drive: u16) -> [u16; 4] {
+    [u16::from(b'='), drive, COLON, 0]
+}
+
+/// Read a wide variable through the native two-call buffer protocol.
+///
+/// `fetch` receives a buffer and returns what `GetEnvironmentVariableW`
+/// returns: zero when the variable is missing, the length without the NUL
+/// terminator when it fit, otherwise the required length including the NUL
+/// terminator. Empty values read as missing.
+pub fn read_variable(mut fetch: impl FnMut(&mut [u16]) -> u32) -> Option<Vec<u16>> {
+    let mut buffer = vec![0u16; 260];
+    for _ in 0..4 {
+        let length = fetch(&mut buffer) as usize;
+        if length == 0 {
+            return None;
+        }
+        if length < buffer.len() {
+            buffer.truncate(length);
+            return Some(buffer);
+        }
+        buffer.resize(length, 0);
+    }
+    None
+}
+
 /// Resolve `application` the way native process creation would for a caller
 /// whose current directory is `caller`.
 ///
@@ -269,6 +300,44 @@ mod tests {
         assert_eq!(
             resolve(r"D:bin\worker.exe", r"\\?\C:\caller").unwrap(),
             r"D:\work\sub\bin\worker.exe"
+        );
+    }
+
+    #[test]
+    fn drive_directory_variable_keeps_the_leading_equals_sign() {
+        assert_eq!(
+            String::from_utf16(&drive_directory_variable(u16::from(b'D'))).unwrap(),
+            "=D:\0"
+        );
+    }
+
+    #[test]
+    fn read_variable_follows_the_native_buffer_protocol() {
+        let value = wide(&format!(r"D:\{}", "a".repeat(400)));
+        let mut calls = 0;
+        let read = read_variable(|buffer| {
+            calls += 1;
+            if buffer.len() <= value.len() {
+                return u32::try_from(value.len() + 1).unwrap();
+            }
+            buffer[..value.len()].copy_from_slice(&value);
+            buffer[value.len()] = 0;
+            u32::try_from(value.len()).unwrap()
+        });
+        assert_eq!(read.as_deref(), Some(value.as_slice()));
+        assert_eq!(calls, 2);
+
+        let short = wide(r"D:\work");
+        let read = read_variable(|buffer| {
+            buffer[..short.len()].copy_from_slice(&short);
+            u32::try_from(short.len()).unwrap()
+        });
+        assert_eq!(read.as_deref(), Some(short.as_slice()));
+        assert_eq!(read_variable(|_| 0), None);
+        // A value that keeps growing is abandoned instead of looping.
+        assert_eq!(
+            read_variable(|buffer| u32::try_from(buffer.len() + 1).unwrap()),
+            None
         );
     }
 

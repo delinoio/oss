@@ -68,7 +68,9 @@ caller's current drive and directory, never against the requested child
 `lpCurrentDirectory`. The Windows adapter keeps that rule for `CreateProcessW`
 and `CreateProcessA`: relative, root-relative (`\name`) and drive-relative
 (`C:name`, using the caller directory on the same drive, otherwise the
-caller's `=C:` record or the drive root) images are made absolute from the
+caller's `=C:` record or the drive root; the record is read with the native
+`GetEnvironmentVariableW` because portable environment accessors may reject
+names that start with `=`) images are made absolute from the
 caller's state by `pnport_core::application` before translation. A
 root-relative image takes the caller's drive root or UNC share root, including
 the `\\?\C:` and `\\?\UNC\server\share` spellings; a caller directory

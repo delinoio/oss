@@ -22,7 +22,7 @@ fspy_detours_sys = { workspace = true }
 fspy_nostd = { workspace = true }
 ntapi = { workspace = true }
 winsafe = { workspace = true, features = ["kernel"] }
-winapi = { workspace = true, features = ["fileapi", "libloaderapi", "processthreadsapi", "stringapiset", "winnls", "synchapi", "winerror", "memoryapi", "errhandlingapi", "winbase"] }
+winapi = { workspace = true, features = ["fileapi", "libloaderapi", "processenv", "processthreadsapi", "stringapiset", "winnls", "synchapi", "winerror", "memoryapi", "errhandlingapi", "winbase"] }
 uuid = { version = "1", features = ["v7"] }
 tempfile = "3.25"
 tracing = "0.1.44"
