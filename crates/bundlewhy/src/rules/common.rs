@@ -8642,6 +8642,231 @@ y=/process.env.F/.test(z),process.env.G"#;
         }
     }
 
+    const AWAIT_BRANCH: &str = "the retained read controls a conditional (?:) branch";
+
+    /// `await(` is an ordinary call in `code`: the classifier finds no
+    /// operator, the call argument is not a branch guard, and the same layout
+    /// with `!` keeps its guard.
+    fn assert_field_await_is_a_call(code: &str) {
+        assert!(await_operators_in(code).is_empty(), "{code:?}");
+        assert_eq!(await_guard(code), None, "{code:?}");
+        let operator_code = code.replace("await(", "!(");
+        assert_eq!(
+            await_guard(&operator_code),
+            Some(AWAIT_BRANCH),
+            "{operator_code:?}"
+        );
+    }
+
+    fn assert_field_await_is_an_operator(code: &str) {
+        assert_eq!(await_operators_in(code).len(), 1, "{code:?}");
+        assert_eq!(await_guard(code), Some(AWAIT_BRANCH), "{code:?}");
+    }
+
+    const FIELD_CALL: &str = "await(process.env.FLAG) ? 1 : 2";
+
+    #[test]
+    fn an_instance_field_initializer_does_not_inherit_the_async_context() {
+        let field = format!("field = {FIELD_CALL}");
+        for class_body in [
+            field.clone(),
+            format!("{field};"),
+            format!("{field}\n"),
+            format!("{field} // note\n"),
+            format!("{field};\n m() {{}}"),
+            format!("{field}\n m() {{}}"),
+            format!("{field}\n async m() {{}}"),
+            format!("{field}\n static s = 1"),
+            format!("a = 1\n {field}"),
+            format!("a = 1;\n {field}"),
+            format!("a\n {field}"),
+            format!("#field = {FIELD_CALL}"),
+            format!("'field' = {FIELD_CALL}"),
+            format!("42 = {FIELD_CALL}"),
+            format!("[key] = {FIELD_CALL}"),
+            format!("[\"field\"] = {FIELD_CALL}"),
+            // A static initializer is evaluated as a separate function too.
+            format!("static field = {FIELD_CALL}"),
+            format!("static #field = {FIELD_CALL}"),
+            format!("accessor field = {FIELD_CALL}"),
+            "field = (await(process.env.FLAG) ? 1 : 2)".to_string(),
+            "field = [await(process.env.FLAG) ? 1 : 2]".to_string(),
+            "field = { k: await(process.env.FLAG) ? 1 : 2 }".to_string(),
+            "field = `${await(process.env.FLAG) ? 1 : 2}`".to_string(),
+            "field = run(await(process.env.FLAG) ? 1 : 2)".to_string(),
+            "field = () => await(process.env.FLAG) ? 1 : 2".to_string(),
+            "field = () => { return await(process.env.FLAG) ? 1 : 2 }".to_string(),
+            "field = function () { return await(process.env.FLAG) ? 1 : 2 }".to_string(),
+            "field = { m() { return await(process.env.FLAG) ? 1 : 2 } }".to_string(),
+            "field = { get v() { return await(process.env.FLAG) ? 1 : 2 } }".to_string(),
+            // A nested class keeps the field initializer as its context.
+            "field = class { [await(process.env.FLAG) ? 1 : 2] = 1 }".to_string(),
+            format!("field = class {{ inner = {FIELD_CALL} }}"),
+            "field = class { m() { return await(process.env.FLAG) ? 1 : 2 } }".to_string(),
+            // An async function nested in an initializer starts its own
+            // context, and a field initializer inside it is a call again.
+            format!("field = async () => {{ class D {{ inner = {FIELD_CALL} }} }}"),
+            format!("field = async function () {{ class D {{ inner = {FIELD_CALL} }} }}"),
+            format!("field = {{ async m() {{ class D {{ inner = {FIELD_CALL} }} }} }}"),
+        ] {
+            let async_functions = [
+                format!("async function outer() {{ class C {{ {class_body} }} return 1 }}"),
+                format!("async function* outer() {{ class C {{ {class_body} }} }}"),
+                format!("const outer = async () => {{ class C {{ {class_body} }} }}"),
+                format!("const outer = async function () {{ class C {{ {class_body} }} }}"),
+                format!("const o = {{ async outer() {{ class C {{ {class_body} }} }} }}"),
+                format!("class K {{ async outer() {{ class C {{ {class_body} }} }} }}"),
+                format!("async function outer() {{ const C = class {{ {class_body} }} }}"),
+                format!(
+                    "async function outer() {{ class B {{}} class C extends B {{ {class_body} }} \
+                     }}"
+                ),
+                format!("async function outer() {{ class C extends mix(B) {{ {class_body} }} }}"),
+                format!(
+                    "async function outer() {{ class C extends class {{}} {{ {class_body} }} }}"
+                ),
+                format!("async function outer() {{ if (a) {{ class C {{ {class_body} }} }} }}"),
+                format!(
+                    "var await = x => 0; async function outer() {{ class C {{ {class_body} }} }}"
+                ),
+            ];
+            for code in async_functions {
+                assert_field_await_is_a_call(&code);
+            }
+            // Without an enclosing async function the call was already
+            // classified correctly.
+            for code in [
+                format!("function outer() {{ class C {{ {class_body} }} }}"),
+                format!("class C {{ {class_body} }}"),
+            ] {
+                assert_field_await_is_a_call(&code);
+            }
+        }
+    }
+
+    #[test]
+    fn the_reported_instance_field_fixture_is_not_an_await_operator() {
+        let code = "var await = x => 0; async function outer() { class C { field = \
+                    await(process.env.FLAG) ? 1 : 2 } return new C().field } outer()";
+        assert!(await_operators_in(code).is_empty());
+        assert_eq!(await_guard(code), None);
+    }
+
+    #[test]
+    fn computed_keys_and_members_around_a_field_keep_the_async_context() {
+        for class_body in [
+            // A computed key belongs to the surrounding async function, also
+            // when it names a field.
+            "[await(process.env.FLAG) ? 'yes' : 'no'] = 1",
+            "static [await(process.env.FLAG) ? 'yes' : 'no'] = 1",
+            "[await(process.env.FLAG) ? 'yes' : 'no']() {}",
+            "async [await(process.env.FLAG) ? 'yes' : 'no']() {}",
+            "get [await(process.env.FLAG) ? 'yes' : 'no']() { return 1 }",
+            // A member after a field that ends with `;`, or at a line break
+            // that ends the statement, is back in the surrounding context.
+            "a = 1; [await(process.env.FLAG) ? 'yes' : 'no'] = 2",
+            "a = 1;\n [await(process.env.FLAG) ? 'yes' : 'no'] = 2",
+            "a = 1\n async [await(process.env.FLAG) ? 'yes' : 'no']() {}",
+            "a = 1\n static [await(process.env.FLAG) ? 'yes' : 'no'] = 2",
+            "a = b\n get [await(process.env.FLAG) ? 'yes' : 'no']() { return 1 }",
+            "a = () => 1\n async [await(process.env.FLAG) ? 'yes' : 'no']() {}",
+            "a = { k: 1 };\n [await(process.env.FLAG) ? 'yes' : 'no'] = 2",
+            // The body of an async method or the key of a later field is not
+            // part of an earlier initializer.
+            "a = 1; async m() { return await(process.env.FLAG) ? 1 : 2 }",
+            "a = 1\n async m() { return await(process.env.FLAG) ? 1 : 2 }",
+            "a = 1\n static async m() { return await(process.env.FLAG) ? 1 : 2 }",
+            "a = b\n async *g() { return await(process.env.FLAG) ? 1 : 2 }",
+            // A static block is not a field initializer.
+            "static { v = await(process.env.FLAG) ? 1 : 2 }",
+            "static { v = 1 } [await(process.env.FLAG) ? 'yes' : 'no'] = 2",
+            // An `=` inside a method body or parameter list is not a field.
+            "async m() { let v; v = await(process.env.FLAG) ? 1 : 2 }",
+            "async m() { const o = { k: await(process.env.FLAG) ? 1 : 2 } }",
+            // An initializer that starts an async function of its own.
+            "field = async () => await(process.env.FLAG) ? 1 : 2",
+            "field = async x => await(process.env.FLAG) ? 1 : 2",
+            "field = async () => { return await(process.env.FLAG) ? 1 : 2 }",
+            "field = async function () { return await(process.env.FLAG) ? 1 : 2 }",
+            "field = async function* () { return await(process.env.FLAG) ? 1 : 2 }",
+            "field = { async m() { return await(process.env.FLAG) ? 1 : 2 } }",
+            "field = { async *m() { return await(process.env.FLAG) ? 1 : 2 } }",
+            "field = { async [key]() { return await(process.env.FLAG) ? 1 : 2 } }",
+            "field = class { async m() { return await(process.env.FLAG) ? 1 : 2 } }",
+            "field = class { static async m() { return await(process.env.FLAG) ? 1 : 2 } }",
+            "field = class { a = 1; async m() { return await(process.env.FLAG) ? 1 : 2 } }",
+            "field = async () => { class D { async m() { return await(process.env.FLAG) ? 1 : 2 } \
+             } }",
+            "field = async () => { class D { [await(process.env.FLAG) ? 'yes' : 'no'] = 1 } }",
+            "field = async () => await(process.env.FLAG) ? 1 : 2;\n b = 2",
+            "field = async () => await(process.env.FLAG) ? 1 : 2\n b = 2",
+        ] {
+            let code = format!("async function outer() {{ class C {{ {class_body} }} }}");
+            assert_field_await_is_an_operator(&code);
+        }
+    }
+
+    #[test]
+    fn an_instance_field_after_a_computed_key_keeps_each_context() {
+        // The computed key is an operator and the initializer that follows it
+        // is a call, in either order.
+        let code = "async function outer() { class C { [await(a) ? 'k' : 'j'] = \
+                    await(process.env.FLAG) ? 1 : 2 } }";
+        assert_eq!(await_operators_in(code), [code.find("await(a)").unwrap()]);
+        assert_eq!(await_guard(code), None);
+        let code = "async function outer() { class C { field = await(process.env.FLAG) ? 1 : 2; \
+                    [await(a) ? 'k' : 'j'] = 1 } }";
+        assert_eq!(await_operators_in(code), [code.find("await(a)").unwrap()]);
+        assert_eq!(await_guard(code), None);
+        let code =
+            "async function outer() { class C { a = await(x)\n [await(y) ? 'k' : 'j'] = 1 } }";
+        // A line break before `[` does not end the initializer, so both
+        // `await(` calls stay inside it.
+        assert!(await_operators_in(code).is_empty(), "{code:?}");
+    }
+
+    #[test]
+    fn a_module_reads_await_as_the_operator_in_a_field_initializer() {
+        // `await` is reserved in a module, so the identifier reading that
+        // applies to a script never applies there.
+        let code = "export {};\nclass C { field = await(process.env.FLAG) ? 1 : 2 }";
+        assert_field_await_is_an_operator(code);
+        let code = "export {};\nasync function outer() { class C { field = \
+                    await(process.env.FLAG) ? 1 : 2 } }";
+        assert_field_await_is_an_operator(code);
+    }
+
+    #[test]
+    fn a_real_guard_inside_an_instance_field_initializer_stays_detectable() {
+        for class_body in [
+            "field = process.env.FLAG ? 1 : 2",
+            "field = !process.env.FLAG ? 1 : 2",
+            "field = (process.env.FLAG) ? 1 : 2",
+            "static field = process.env.FLAG ? 1 : 2",
+            "[key] = process.env.FLAG ? 1 : 2",
+            "field = process.env.FLAG ? 1 : 2\n other = 3",
+            "field = () => process.env.FLAG ? 1 : 2",
+            "field = async () => await(process.env.FLAG) ? 1 : 2",
+            "field = async () => { return await(process.env.FLAG) ? 1 : 2 }",
+            "field = run() ? process.env.FLAG : 2",
+        ] {
+            for outer in [
+                "async function outer() { class C { CLASS } }",
+                "function outer() { class C { CLASS } }",
+                "class C { CLASS }",
+            ] {
+                let code = outer.replace("CLASS", class_body);
+                let expected = if class_body.contains("? process.env.FLAG") {
+                    // The read is a branch value, not the branch condition.
+                    None
+                } else {
+                    Some(AWAIT_BRANCH)
+                };
+                assert_eq!(await_guard(&code), expected, "{code:?}");
+            }
+        }
+    }
+
     /// Operators and keywords that continue an expression from the next line,
     /// so a concise arrow body is still open when one of them starts a line.
     const LINE_START_CONTINUATIONS: [&str; 41] = [
