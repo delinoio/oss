@@ -251,8 +251,10 @@ Lifecycle of one runner:
 5. Success follows the Finish-equivalent server settlement: the sealed
    `GrokBundle` envelope is staged in the protected vault as the new
    `AccountLogin` generation, the keyed identity commitment is checked for
-   duplicates (`uniqueSubscriptionIdentity`, same rules as the Take/Finish path),
-   and one transaction publishes the generation, commitment and connection. A
+   duplicates (`uniqueSubscriptionIdentity`, same rules as the Take/Finish path;
+   only a confirmed `CONFLICT` is a duplicate and settles FAILED, while any other
+   scan failure propagates and settles RECOVERY_REQUIRED because the exchange
+   already completed), and one transaction publishes the generation, commitment and connection. A
    cancellation or a revoked initiator that appears after the claim wins as
    RECOVERY_REQUIRED and the staged generation is retired.
 6. The listener is closed and its goroutine joined on every exit path before the

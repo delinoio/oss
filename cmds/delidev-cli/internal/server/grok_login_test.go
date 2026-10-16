@@ -4,12 +4,14 @@ package server
 import (
 	"connectrpc.com/connect"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -484,6 +486,47 @@ func TestGrokBrowserLoginRejectsADuplicateIdentity(t *testing.T) {
 	requireGrokProgressOnly(t, p, grokFailedSt, domain.Conflict, g.op)
 	if a := g.account(); a.Connection != nil || a.Subscription.Generation != "" || !g.vaultEmpty() {
 		t.Fatal("a duplicate identity was stored")
+	}
+}
+
+// An identity scan that fails for a reason other than a confirmed duplicate
+// (here an unrelated account record that cannot be decoded) says nothing about
+// the identity. The exchange already completed, so the login must fence the
+// account for recovery instead of settling a definitive FAILED or a duplicate.
+func TestGrokBrowserLoginFencesAnIdentityScanFailureAsRecovery(t *testing.T) {
+	g := newGrokLogin(t)
+	unrelated := domain.NewID()
+	_, account := g.f.record()
+	_, err := g.f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.unrelated", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.AccountKind, unrelated, 0, "", "", account)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(g.f.service.Store.Root(), "state.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("UPDATE entities SET body=? WHERE id=?", []byte("{"), string(unrelated)); err != nil {
+		t.Fatal(err)
+	}
+	g.waiting()
+	g.browse(nil)
+	p := g.waitState(grokRecovery)
+	g.await()
+	if p.GrokDiagnostic == nil || p.GrokDiagnostic.Code != string(domain.RecoveryRequired) {
+		t.Fatalf("recovery progress = %v", p)
+	}
+	a := g.account()
+	if g.idp.TokenRequests != 1 || !a.Subscription.ServerOperation.ExchangeClaimed || !a.Subscription.RecoveryRequired || a.Subscription.Pending == nil || a.Connection != nil || a.Subscription.Generation != "" || !g.vaultEmpty() {
+		t.Fatal("an identity scan failure did not fence the account for recovery")
+	}
+	g.logs.mu.Lock()
+	logs := g.logs.buf.String()
+	g.logs.mu.Unlock()
+	if strings.Contains(logs, "grok_login_identity_duplicate") {
+		t.Fatal("an identity scan failure was logged as a duplicate identity")
 	}
 }
 

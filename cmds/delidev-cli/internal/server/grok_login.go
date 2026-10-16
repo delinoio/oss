@@ -585,7 +585,15 @@ func (s *Service) finishGrokLogin(ctx context.Context, id domain.ID, o domain.Se
 				return nil
 			}
 			if e := uniqueSubscriptionIdentity(tx, id, commitment); e != nil {
-				success, out.state, out.reason, out.code = false, domain.SubscriptionFailed, subscription.GrokReasonMapping, domain.SafeError(e).Code
+				// Only a confirmed conflict proves a duplicate identity. Any other
+				// scan failure (an unreadable or undecodable account record) says
+				// nothing about the identity after the exchange completed, so it
+				// propagates and the caller fences the account for recovery.
+				if domain.SafeError(e).Code != domain.Conflict {
+					s.logger.WarnContext(ctx, "grok_login_identity_scan_failed", "phase", grokLoginPhase, "operation_id", o.ID, "correlation_id", o.ID, "code", domain.SafeError(e).Code)
+					return e
+				}
+				success, out.state, out.reason, out.code = false, domain.SubscriptionFailed, subscription.GrokReasonMapping, domain.Conflict
 				s.logger.WarnContext(ctx, "grok_login_identity_duplicate", "phase", grokLoginPhase, "operation_id", o.ID, "correlation_id", o.ID, "code", out.code)
 			}
 		}
