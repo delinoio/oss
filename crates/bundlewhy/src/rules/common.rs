@@ -277,9 +277,7 @@ fn previous_significant_token<'a>(
             || (before.ends_with('.')
                 && !before.ends_with("...")
                 // `1. in x`: the dot belongs to a number literal.
-                && !trailing_word(&before[..before.len() - 1]).starts_with(|character: char| {
-                    character.is_ascii_digit()
-                }));
+                && !dot_ends_decimal_integer(&before[..before.len() - 1]));
         return Token::Word { text, member };
     }
     for operator in ["...", "++", "--"] {
@@ -288,6 +286,71 @@ fn previous_significant_token<'a>(
         }
     }
     Token::Punct(&prefix[end - last.len_utf8()..])
+}
+
+/// Whether a `.` that directly follows `head` is the last character of a
+/// decimal integer literal (`1.`, `0.`) instead of a property dot.
+///
+/// `head` is the code before the dot. Only a decimal integer literal can take
+/// the dot as its fraction separator. A literal that is already complete
+/// leaves the dot as a property access: a hexadecimal, binary or octal
+/// literal (`0x1.eval`), a legacy octal literal (`017.eval`), a BigInt
+/// (`1n.eval`), a literal with an exponent (`1e3.eval`, `1e+3.eval`), one
+/// with a fraction (`1.5.eval`, `.5.eval`) and `1..eval`, whose first dot is
+/// the fraction separator. A dot after anything else that ends in a digit is
+/// part of the number (`1.`, `1_0.`, `08.`).
+fn dot_ends_decimal_integer(head: &str) -> bool {
+    let word = trailing_word(head);
+    if !word.starts_with(|character: char| character.is_ascii_digit()) {
+        return false;
+    }
+    let bytes = word.as_bytes();
+    let is_digits = |text: &str| {
+        text.bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'_')
+    };
+    if bytes.len() > 1
+        && bytes[0] == b'0'
+        && matches!(bytes[1], b'x' | b'X' | b'b' | b'B' | b'o' | b'O')
+    {
+        return false;
+    }
+    if word.ends_with('n') {
+        // A BigInt has no fraction: `1n.eval`.
+        return false;
+    }
+    if bytes.len() > 1 && bytes[0] == b'0' && bytes.iter().all(|byte| matches!(byte, b'0'..=b'7')) {
+        // `017.eval`: a legacy octal literal never takes a fraction.
+        return false;
+    }
+    if !is_digits(word) {
+        // An exponent (`1e3`, `1E3`) completes the literal.
+        return false;
+    }
+    let before_word = &head[..head.len() - word.len()];
+    if before_word.ends_with('.') {
+        // The fraction of `1.5` or `.5` is complete.
+        return false;
+    }
+    if let Some(sign_free) = before_word
+        .strip_suffix('+')
+        .or_else(|| before_word.strip_suffix('-'))
+    {
+        // `1e+3.eval`: the signed exponent completes the literal. Another
+        // word before the sign (`x1e + 3.`) is not a decimal exponent.
+        let exponent_base = trailing_word(sign_free);
+        let mantissa = exponent_base
+            .strip_suffix('e')
+            .or_else(|| exponent_base.strip_suffix('E'));
+        if let Some(mantissa) = mantissa
+            && !mantissa.is_empty()
+            && is_digits(mantissa)
+            && mantissa.starts_with(|character: char| character.is_ascii_digit())
+        {
+            return false;
+        }
+    }
+    true
 }
 
 /// The first significant token at or after `start`, with its position:
@@ -6825,6 +6888,14 @@ y=/process.env.F/.test(z),process.env.G"#;
                 ("this.#new|".to_string(), word("new", true)),
                 ("x = ...of|".to_string(), word("of", false)),
                 ("1. in|".to_string(), word("in", false)),
+                ("1.\u{a0}in|".to_string(), word("in", false)),
+                ("1..in|".to_string(), word("in", true)),
+                ("1 .in|".to_string(), word("in", true)),
+                ("0x1.in|".to_string(), word("in", true)),
+                ("1e3.in|".to_string(), word("in", true)),
+                ("1n.in|".to_string(), word("in", true)),
+                ("1.5.in|".to_string(), word("in", true)),
+                ("x = 1_0. in|".to_string(), word("in", false)),
                 (format!("x.a{terminator}return|"), word("return", false)),
                 (format!("x = 12{terminator}|"), Token::Number),
                 (format!("x = 1.5 // c{terminator}|"), Token::Number),
@@ -6993,6 +7064,102 @@ y=/process.env.F/.test(z),process.env.G"#;
             "éeval(code)",
         ] {
             assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn member_calls_on_complete_numeric_literals_are_never_direct() {
+        for source in [
+            "0x1.eval(code)",
+            "0XFF.eval(code)",
+            "0x1e.eval(code)",
+            "0x1n.eval(code)",
+            "0b1.eval(code)",
+            "0B1.eval(code)",
+            "0o7.eval(code)",
+            "0O7.eval(code)",
+            "017.eval(code)",
+            "1e3.eval(code)",
+            "1E3.eval(code)",
+            "1e+3.eval(code)",
+            "1E-3.eval(code)",
+            "1.5e+3.eval(code)",
+            "1_0e1_0.eval(code)",
+            "1n.eval(code)",
+            "1_0n.eval(code)",
+            "1.5.eval(code)",
+            ".5.eval(code)",
+            "1..eval(code)",
+            "1.e3.eval(code)",
+            "1 .eval(code)",
+            "1.5?.eval(code)",
+            "x = 0x1.eval(code)",
+            "f(1e3.eval(code))",
+            "0x1.\n  eval(code)",
+            "1e3. // c\n  eval(code)",
+            "1n. /* c */ eval(code)",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+        // The same literals do not hide a real call next to them.
+        for source in [
+            "0x1.eval(a); eval(code)",
+            "1e3.eval(a); eval(code)",
+            "1n.eval(a)\neval(code)",
+            "x = 1. + eval(code)",
+            "x = 1.\n+ eval(code)",
+            "1. in x; eval(code)",
+            "f(...eval(code))",
+            "eval(code)",
+            "x = 08. + eval(code)",
+            "x = 1e+3 + eval(code)",
+            "x = 0x1e+3. + eval(code)",
+        ] {
+            assert!(direct_eval_line(source).is_some(), "{source:?}");
+        }
+        assert_eq!(direct_eval_line("0x1.eval(a); eval(code)"), Some((0, 13)));
+    }
+
+    #[test]
+    fn dot_after_a_decimal_integer_belongs_to_the_number() {
+        for head in ["1", "0", "12", "1_0", "08", "09", "x = 1", "x + 7", "[1, 2"] {
+            assert!(dot_ends_decimal_integer(head), "{head:?}");
+        }
+        for head in [
+            "", "x", "x1", "obj", "1.", "1.5", ".5", "1.0", "1e3", "1E3", "1e+3", "1e-3", "1.5e+3",
+            "0x1", "0xF", "0X1e", "0b1", "0o7", "017", "00", "1n", "0n", "1_0n", "1 ", "\u{e9}1x",
+        ] {
+            assert!(!dot_ends_decimal_integer(head), "{head:?}");
+        }
+        // A sign after a name or a hexadecimal literal is an addition, so the
+        // number after it takes the dot.
+        for head in ["e+3", "x1e+3", "0x1e+3", "1x+3", "a - 3", "1+3"] {
+            assert!(dot_ends_decimal_integer(head), "{head:?}");
+        }
+    }
+
+    #[test]
+    fn numeric_member_eval_calls_are_not_rule_blockers() {
+        // A control call proves that the source below would be reported.
+        let control = "const longLocalName = 1;\neval(longLocalName);\n";
+        assert_eq!(eval_rule_drafts(control, false).len(), 1);
+        for call in [
+            "0x1.eval(longLocalName)",
+            "0b1.eval(longLocalName)",
+            "0o7.eval(longLocalName)",
+            "1e3.eval(longLocalName)",
+            "1e+3.eval(longLocalName)",
+            "1n.eval(longLocalName)",
+            "1_0.5.eval(longLocalName)",
+        ] {
+            let source = format!("const longLocalName = 1;\n{call};\n");
+            let drafts = eval_rule_drafts(&source, false);
+            assert!(drafts.is_empty(), "{source:?}");
+            // A real call after the member call is still the finding.
+            let source = format!("const longLocalName = 1;\n{call};\neval(longLocalName);\n");
+            let drafts = eval_rule_drafts(&source, false);
+            assert_eq!(drafts.len(), 1, "{source:?}");
+            assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 3);
         }
     }
 
