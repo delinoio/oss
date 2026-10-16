@@ -148,6 +148,38 @@ export function resolveMangleSetting(buildOptions) {
 }
 
 /**
+ * Reads the mangling state from the finalized (normalized) output options that
+ * Rolldown passes to `renderStart`, after every plugin `outputOptions` hook ran.
+ *
+ * `fallback` is the setting resolved from the configuration. Rolldown
+ * normalizes `output.minify` to `false`, `"dce-only"` or an options object, and
+ * it omits `mangle` from the object when mangling is off, so those shapes are
+ * verified disabled. `false` is disabled only when Rolldown owns minification
+ * (`build.minify` is `"oxc"` or `true`); with another minifier, Vite minifies
+ * outside Rolldown and `false` says nothing about names, so the fallback stays.
+ * Any other shape keeps the fallback.
+ */
+export function resolveNormalizedMangleSetting(
+  minify,
+  buildMinify,
+  fallback = MangleSetting.Enabled,
+) {
+  if (minify === "dce-only") return MangleSetting.Disabled;
+  if (minify === false) {
+    return buildMinify === "oxc" || buildMinify === true
+      ? MangleSetting.Disabled
+      : fallback;
+  }
+  if (minify !== null && typeof minify === "object" && !Array.isArray(minify)) {
+    const mangle = minify.mangle;
+    return mangle === undefined || mangle === null || mangle === false
+      ? MangleSetting.Disabled
+      : MangleSetting.Enabled;
+  }
+  return fallback;
+}
+
+/**
  * Evaluates `build.rolldownOptions.treeshake.moduleSideEffects` for one bundled
  * module the way Rolldown does when no plugin hook set a value for it.
  *
@@ -345,6 +377,19 @@ function collectorPlugin(state) {
         plugins: config.plugins.map((plugin) => plugin.name).filter(Boolean),
       };
     },
+    // The configResolved snapshot cannot see `outputOptions` hooks of Vite or
+    // Rolldown plugins, which Rolldown applies when it generates the bundle.
+    // `renderStart` receives the finalized output options, so the mangle
+    // setting is taken from them. bundlewhy analyzes the first output only.
+    renderStart(outputOptions) {
+      state.renderStarts += 1;
+      if (state.renderStarts > 1 || !state.resolved) return;
+      state.resolved.mangle = resolveNormalizedMangleSetting(
+        outputOptions?.minify,
+        state.resolved.minify,
+        state.resolved.mangle,
+      );
+    },
     onLog(level, log) {
       // Rolldown reports optimization-relevant warnings (for example EVAL and
       // INEFFECTIVE_DYNAMIC_IMPORT) as structured logs. Record them as
@@ -498,6 +543,7 @@ await runAdapter(async (request) => {
     moduleSideEffectsOption: undefined,
     collection: null,
     outputs: 0,
+    renderStarts: 0,
     externalNames: new Set(),
     warnings: [],
     logs: [],
