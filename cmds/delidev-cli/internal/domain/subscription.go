@@ -28,6 +28,9 @@ type SubscriptionState struct {
 	AutomaticCreditEpisode *AutomaticResetCreditEpisode   `json:"automatic_credit_episode,omitempty"`
 	PaidCredits            []SubscriptionPaidCreditBucket `json:"paid_credits,omitempty"`
 
+	// ClaudeUsage is the optional server-owned Claude usage connection. It is
+	// absent for every account the user has not explicitly connected.
+	ClaudeUsage            *ClaudeLimitState                 `json:"claude_usage,omitempty"`
 	ServerCredit           *ServerCreditOperation            `json:"server_credit,omitempty"`
 	ServerQuota            *ServerQuotaOperation             `json:"server_quota,omitempty"`
 	ServerQuotaGeneration  ID                                `json:"server_quota_generation,omitempty"`
@@ -139,6 +142,11 @@ func (s SubscriptionState) Validate(account Account) error {
 	}
 	if account.Type != SubscriptionAccount {
 		return invalid()
+	}
+	if s.ClaudeUsage != nil {
+		if err := s.ClaudeUsage.Validate(account); err != nil {
+			return err
+		}
 	}
 	if err := s.validateNativeClaude(account); err != nil {
 		return err
