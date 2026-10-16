@@ -49,6 +49,9 @@ type managedSubscriptionLease struct {
 	// grokHome is the Grok home bound at materialization; Grok Finish retires the
 	// credential only in that directory.
 	grokHome subscription.GrokHome
+	// grokRetry is set while a Grok Finish reported its private cleanup as
+	// unconfirmed; the original owner's retry consumes it.
+	grokRetry *grokCleanupRetry
 }
 
 type managedJournalState string

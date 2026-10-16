@@ -11,11 +11,12 @@ Worker-side credential custody described under Storage and the server-owned
 browser login described under [Server-owned browser login](#server-owned-browser-login),
 including its remote callback forwarding, and the server-owned device-code login
 described under [Server-owned device-code login](#server-owned-device-code-login),
-the server-owned refresh described under [Server-owned refresh](#server-owned-refresh)
-and the Worker execution-exit credential protocol described under
-[Worker execution exit](#worker-execution-exit).
-Not activated: the capability advertisement, logout, Worker-side
-watch dispatch and Grok execution.
+the server-owned refresh described under [Server-owned refresh](#server-owned-refresh),
+the server-owned logout and logout-before-delete described under
+[Server-owned logout](#server-owned-logout) and the Worker execution-exit
+credential protocol described under [Worker execution exit](#worker-execution-exit).
+Not activated: the capability advertisement, Worker-side watch dispatch and Grok
+execution.
 The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and gates protected Take admission of a Grok lease; no capability, discovery or execution path references it. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); Grok Build 1.0.52 inspection is accepted when its optional `experiments` inventory is an empty array (see `cmds-delidev-harness-contract.md`), which does not change these baselines. Reservation support is separate
 from implemented support and actual account/platform acceptance.
 
@@ -204,8 +205,7 @@ against a server that does not advertise it.
 
 `RequestSubscription` for a Grok account with action LOGIN, `device_code` false
 and no machine ID creates the server-owned operation (`ServerOperation` plus a
-`Pending` operation without a Runner Device, 15-minute expiry). Logout and any request that names a machine stay `unsupported` until
-their own changes; refresh has its own lane under [Server-owned refresh](#server-owned-refresh). LOGIN with `device_code` true takes the device-code lane
+`Pending` operation without a Runner Device, 15-minute expiry). Any request that names a machine stays `unsupported`; refresh has its own lane under [Server-owned refresh](#server-owned-refresh) and logout under [Server-owned logout](#server-owned-logout). LOGIN with `device_code` true takes the device-code lane
 described under [Server-owned device-code login](#server-owned-device-code-login). The scanner (`runServerSubscriptions`) claims the operation in
 the current server epoch and starts exactly one runner (`grok_login.go`); a Grok
 account never reaches the Codex runner.
@@ -310,8 +310,9 @@ the choice is stored on the `Pending` operation and the scanner starts the
 device runner (`grok_device_login.go`) in place of the browser runner. A login
 never switches method: a device login that fails never opens a listener or
 publishes an authorization URL, and a browser login never requests a device code.
-Replaying the same mutation id returns the original operation. Logout
-and any request that names a machine stay `unsupported`. Capability 39 stays
+Replaying the same mutation id returns the original operation. Any
+request that names a machine stays `unsupported`; logout has its own lane under
+[Server-owned logout](#server-owned-logout). Capability 39 stays
 under the single shared switch `grokSubscriptionLoginAdvertised`
 (`server_status.go`), which stays false; no separate device capability exists.
 
@@ -516,6 +517,204 @@ token, in which case userinfo alone proves the identity. Tests use
 (rotation, omitted ID token, scripted failures); the requirement set is covered by
 `grok_refresh_test.go` in `internal/subscription` (client) and `internal/server`
 (runner, fault injection and restart).
+
+### Server-owned logout
+
+`RequestSubscription` for a connected Grok account with action LOGOUT, no
+`device_code` and no machine ID creates the server-owned operation
+(`ServerOperation` with action `logout` plus a `Pending` operation without a
+Runner Device). The acceptance window is 30 days, not the 15-minute login window,
+because a logout may wait for the original execution for as long as it runs. A
+logout of an unconnected account, a logout that names a Runner Device and a
+logout with `device_code` are refused. Acceptance marks the account logging out:
+its health becomes `revoked`, queued executions and titles of the account are
+canceled, and `grokAccountLoggingOut` is true for as long as the logout holds the
+account (queued, running or recovering). Every new Worker Take of the account is
+refused with a typed `unavailable` problem ("The Grok account is logging out");
+new Grok execution must use the same refusal (`grokLoggingOutProblem`) when it
+lands. A logout is never cancelable (`CancelSubscription` refuses it).
+
+The exclusive account lease of the logout is its claimed `ServerOperation`
+(`native_started` with the `Pending` phase `claimed`), exactly as for the refresh:
+it never coexists with a Worker lease. The scanner (`runServerSubscriptions`)
+starts the runner (`internal/server/grok_logout.go`) only while no Worker lease
+exists on the account, so the logout waits for the original execution exit: a
+lease whose owner has not yet reported a confirmed Finish keeps the logout queued,
+and nothing is sent. The revocation client is `internal/subscription/grok_revoke.go`
+on top of the profile, discovery and bounded round trip of `grok_oauth.go`;
+discovery additionally reads the optional `revocation_endpoint` (https on the
+issuer origin, otherwise ignored).
+
+Lifecycle of one runner:
+
+1. The claim moves the operation to `claimed` and freezes the current generation
+   (`ServerOperation.generation`). An unavailable initiator does not stop it:
+   the logout was accepted and only protects the credential. A logout whose
+   30-day acceptance window elapsed while it waited for the original execution
+   exit is never claimed: clients were already told it expired
+   (`GetSubscriptionProgress` reports EXPIRED), so the claim settles it as
+   `expired`, clears the pending operation, sends nothing and returns the account
+   to `ready` with its credential and generation intact.
+2. The bound bundle is opened from the protected vault against this server, the
+   account and the frozen generation, then discovery is read. Any failure here
+   sends nothing: it settles FAILED (`logout` / `unavailable`; unusable discovery
+   or no revocation endpoint) with the credential stored and the account `ready`
+   again, so a new explicit logout may try again, or RECOVERY_REQUIRED (an invalid
+   stored bundle).
+3. The durable revocation claim (`ServerSubscriptionOperation.exchange_claimed`,
+   which for a logout records that the request was attempted) is committed. Only
+   after that commit the single request is sent: a form POST of `token` (the bound
+   refresh token), `token_type_hint=refresh_token` and the public `client_id` to
+   the discovered revocation endpoint, with no client secret and no authentication
+   header.
+4. Outcomes: a 2xx answer is `revoked`; the provider answers `invalid_token` or
+   `invalid_grant` (HTTP 400 or 401) for an already unusable token, which counts as
+   revoked (`already_invalid`); every other 4xx answer is a definite rejection and
+   every other result (transport error, timeout, 3xx, 5xx, truncated or oversized
+   body, shutdown or deadline) is uncertain. Both of the latter settle
+   RECOVERY_REQUIRED (`logout` / `recovery_required`): the account is fenced
+   (`failed`), the bundle stays stored and the revocation is not repeated by a
+   restart. The credential is never deleted without a confirmed revocation, and a
+   failed revocation never deletes it without the recovery state.
+5. After a confirmed revocation one transaction publishes the disconnected account
+   (no connection, generation, identity commitment or owner machine). It requires
+   that the account still references the frozen generation and that no Worker lease
+   or member exists: a Worker lease is released only after its owner confirmed
+   that its private home holds neither `auth.json` nor `auth.json.lock`, so the
+   absence of a lease is the confirmation that every Worker copy was removed.
+   Otherwise the logout settles RECOVERY_REQUIRED. Because the protected vault
+   generation still exists at that commit, the same transaction already persists
+   the retained logout-cleanup recovery shape (health `failed`, RECOVERY_REQUIRED,
+   the original operation with a `cleanup` / `recovery_required` diagnostic and
+   its queued placeholder). A process death between the publication and the vault
+   removal therefore leaves a recoverable shape that explicit account deletion
+   consumes, never a disconnected `succeeded` account whose credential reference
+   blocks deletion.
+6. Only after the publication are the protected vault generations removed
+   (`cleanupSubscriptionReferences`, the vault generation path). A confirmed
+   removal settles the account in a second transaction: health `disconnected`,
+   the operation `succeeded`, the cleanup diagnostic and the recovery fence
+   cleared, so a client may observe RECOVERY_REQUIRED for the short interval
+   between the two transactions. A failed removal, or a failure to record the
+   settlement, keeps the persisted shape exactly as the ChatGPT server logout does;
+   `serverLogoutRecoveryOwner` accepts Grok accounts, and explicit account
+   deletion consumes the shape (it removes the references, never sends another
+   revocation and then deletes).
+
+A restart marks an active logout recovery (`initializeServerSubscriptions`) and
+never claims it again. The original actor may retry a logout that ended
+RECOVERY_REQUIRED with the credential still stored (rejected, uncertain or
+interrupted revocation) by sending a new LOGOUT request: the retry replaces the
+unfinished operation and sends the idempotent revocation again. When the
+original actor is a client device that was revoked, the owner takes over that
+retry. Another actor, a Worker lease or any other recovery fence is refused.
+Revoking the client device that queued a logout behind a Worker lease does not
+cancel it (`cancelQueuedSubscriptionInitiator` skips a queued server-owned Grok
+logout): the logout owes the provider a revocation that needs no initiator, so
+it stays queued and runs after the original execution exits.
+
+Fault injection (`Service.grokLogoutCrash`, tests only) simulates a process death
+after the revocation claim, after the confirmed revocation and after the
+publication. The first two leave the claim on disk and the bundle stored, the
+restart settles RECOVERY_REQUIRED and no revocation is repeated; the third leaves
+a disconnected account whose unreferenced generation the next explicit cleanup
+removes.
+
+#### Original-owner cleanup retry
+
+A Worker lease whose Finish reports unconfirmed private cleanup (a credential
+file, its temporaries or `auth.json.lock` could not be proven removed) keeps the
+lease, the generation and the account recovery fence, and marks the lease
+`cleanup_unconfirmed`. Only the original lease owner (the same Runner Device,
+Worker device, instance, epoch and lease revision, as for every Finish) may report
+the cleanup again, with a fresh request identity because the first Finish
+committed under the old one; any other Worker device, instance or lease revision
+is refused and the lease is untouched. The Worker keeps the home it bound at
+materialization and the original credential on the lease
+(`retryGrokCleanup`), so the retry removes the credential only in that directory.
+The first report freezes its native outcome on the lease (`first_finish`:
+`succeeded` and `refresh_confirmed`): a retry only confirms the cleanup and can
+keep or lower each flag but never raise it, so a reported native failure cannot
+become a success, publish a bundle or clear the connection through the retry. A
+lease that carries no frozen outcome (written before the field existed) is
+treated as having reported a failure. A confirmed retry releases the lease and
+lifts the fence that its own report set; a recovery fence set for any other reason
+cannot be finished this way. The recorded outcome of the operation stays the first
+failure. The server-owned logout
+waits for such a lease to be released.
+
+#### Account deletion
+
+Deleting a connected Grok account performs the logout first
+(`logoutGrokBeforeDelete`, in `DeleteConfiguration`): when the account has a
+connection or generation and no other operation or recovery fence, the server
+first checks the non-credential references (`validateDeletionReferences`: projects,
+agents, models, accounts and retained sessions) and refuses a referenced account
+as `conflict` before anything is revoked or removed, then the server
+accepts a logout whose operation id is derived from the deletion request id
+(`grokDeleteLogoutID`), runs it, waits for its outcome (bounded by the request)
+and deletes the account at the revision the logout produced. The deletion
+receipt keeps the revision the caller sent, so a retry of the same request after
+the logout already advanced the account (the process stopped before the receipt,
+or a later deletion step failed) recognizes its own logout by that id, continues
+at the current revision and sends no second revocation; a logout the request did
+not run is never adopted. A
+Worker lease that has not exited keeps the logout queued and the deletion fails
+as `unavailable` (the account stays leased and logging out); a failed logout is
+`unavailable`; a rejected or uncertain revocation is `recovery_required` and keeps
+the connected account and its bundle; an unconfirmed credential removal keeps the
+retained logout-cleanup shape, which the next explicit deletion finishes. The
+cleanup child settles that shape when the removal is finally confirmed: the
+operation becomes `succeeded` and its cleanup `GrokDiagnostic` is cleared, so a
+deletion that a reference then blocks leaves a valid disconnected account.
+Deletion never succeeds without a confirmed revocation and confirmed removal.
+Accounts that are already disconnected, or that were never connected, use the
+ordinary deletion path and send no revocation.
+
+#### Protected credential treatment
+
+Failed-login cleanup (capability 41) never selects a Grok account that holds a
+generation or a connection, and a Grok login fenced for recovery is not adopted
+by the Codex failed-login cleanup (`failedServerLoginOwner` stays ChatGPT-only;
+a failed Grok login stores no bundle, because a staged generation is retired
+when its publication fails). A disconnected Grok account is a batch cleanup
+target only when the vault holds no unremoved reference
+(`protectedAccountDeletion`); the retained logout-cleanup shape is never created
+by the batch. Backup images carry no bundle material and restore quarantines the
+account (see [Grok backup and restore](#grok-backup-and-restore)). Diagnostics
+(`doctor`) never read a Grok account's protected storage in any state.
+
+Structured `slog` records use `phase=LOGOUT` for the logout and `phase=CLEANUP`
+for the credential removal and the original-owner cleanup retry, and the
+operation id as `correlation_id`: `grok_logout_started`,
+`grok_logout_bundle_unavailable`, `grok_logout_discovery_failed`,
+`grok_logout_revocation_endpoint_missing`, `grok_logout_claim_refused`,
+`grok_logout_revocation_claimed`, `grok_logout_revocation_confirmed`
+(`revocation` is `revoked` or `already_invalid`), `grok_logout_revocation_unconfirmed`
+(closed reason), `grok_logout_finished`, `grok_logout_cleanup_started`,
+`grok_logout_cleanup_confirmed`, `grok_logout_cleanup_pending`,
+`grok_delete_logout_started`, `grok_delete_logout_completed`,
+`grok_delete_logout_blocked`, `grok_subscription_take_refused_logging_out`,
+`grok_subscription_finish_refused` and `grok_subscription_cleanup_retry`. The
+acceptance logs `grok_operation_accepted`. They never contain a token, the
+revocation request, a path, an account email or another identity field, and no
+event or error carries one.
+
+Unverified assumptions (no real revocation was captured; the opt-in real-account
+run records them and this change records no real-world validation): the
+revocation endpoint accepts the public-client form above, answers 200 for a
+revoked token and an HTTP 400/401 `invalid_token` or `invalid_grant` document for
+an already unusable one, and a refresh_token grant fails with `invalid_grant`
+after the revocation. Tests use `internal/grokidptest`, which serves
+`revocation_endpoint` (scripted failures, a blocking hook, request observation and
+revocation of the accepted refresh token) and answers `invalid_grant` for a revoked
+token; the requirement set is covered by `grok_revoke_test.go` in
+`internal/subscription` (client) and `grok_logout_test.go`,
+`grok_logout_delete_test.go`, `grok_owner_recovery_test.go` and
+`grok_protected_credentials_test.go` in `internal/server` plus
+`grok_cleanup_retry_test.go` in `internal/worker`. Logout during execution is
+covered with a fixture execution lease, because the Grok execute Take does not
+exist yet.
 
 ### Worker execution exit
 
@@ -1323,10 +1522,19 @@ managed subscription (the quarantine is service-agnostic):
 - Deleting the account never starts a native logout on a Worker that lacks the
   original home. Deletion stays refused by the recovery fence and, once that is
   cleared, by `protectedAccountDeletion` while the vault holds unremoved
-  references.
-- Finishing an unsettled Grok cleanup on the original Worker needs the Grok
-  owner-recovery path, which is not activated. Until then restore retains the
-  ownership evidence and never completes or reassigns the cleanup.
+  references. A restored account is disconnected, so the logout-before-delete
+  step of [Server-owned logout](#server-owned-logout) does not apply to it and
+  never sends a revocation on its own.
+- A server-owned logout that was queued, claimed or fenced when the image was
+  taken is retained as quarantined evidence. The restored account has no
+  connection, so the scanner never claims the logout, no revocation is sent from
+  a restored image and a new logout request is refused; the protected generation
+  reference stays in the vault.
+- Finishing an unsettled Grok cleanup on the original Worker uses the
+  owner-recovery path described under
+  [Original-owner cleanup retry](#original-owner-cleanup-retry), which applies to
+  a live lease of the running server. Restore retains the ownership evidence and
+  never completes or reassigns the cleanup.
 
 Restore also keeps copied Worker device records readable after revoking them.
 
@@ -1449,8 +1657,8 @@ owner's active operation:
   cleanup is also unconfirmed. An unconfirmed native cleanup is the `cleanup` /
   `recovery_required` diagnostic only after a success or a cancellation.
   Progress reports `recovery-required` while the account is fenced.
-- Canceling a queued, unclaimed operation (initiator device revocation, or the
-  shared `cancelPendingLogin` body that `CancelSubscription` applies once Grok
+- Canceling a queued, unclaimed operation (initiator device revocation, which
+  spares a queued logout, or the shared `cancelPendingLogin` body that `CancelSubscription` applies once Grok
   login can be requested; the RPC still refuses Grok accounts today) removes the
   pending operation and settles `cancelServerOperation`'s record as `canceled`.
   A Grok operation has no server record until it settles, so a cancellation
@@ -1590,10 +1798,11 @@ A succeeded operation's progress response carries `generation` (the generation
 the account still references) so the onboarding controller can name the account;
 Grok produces no suggested name. The version label is the Runner Device's single
 valid Grok Build installation at settlement time. Diagnostics for the `models`,
-`execution` and `history` phases and for server-side native login, refresh and
-logout have no producers yet; they remain covered by the phase mapping and
-validation tests and attach through the same `settleGrokOperation` when those
-producers land.
+`execution` and `history` phases have no producers yet; they remain covered by
+the phase mapping and validation tests and attach through the same
+`settleGrokOperation` when those producers land. The server-owned logout writes
+its own `logout` and `cleanup` diagnostics (see
+[Server-owned logout](#server-owned-logout)).
 
 The desktop reconstructs presentation from closed metadata only
 (`apps/delidev/src/grok-diagnostic.tsx`, English and Korean). Guidance follows
@@ -1628,7 +1837,8 @@ or received value that omits it is dropped as untrusted.
 
 Login, refresh, execution and logout share one exclusive account lease. Logout
 blocks new execution and completes only after original execution exit and
-credential cleanup are confirmed; deletion reuses logout-before-delete.
+credential cleanup are confirmed; deletion reuses logout-before-delete
+(see [Server-owned logout](#server-owned-logout)).
 Workers use the exact verified binary and a fresh private home. Managed bundles
 move only through protected Take/Finish. Native refresh is confined to the lease;
 verify the latest bundle and original identity, process exit and authentication

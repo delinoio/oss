@@ -52,10 +52,13 @@ func validOriginalOperationActor(actor domain.Principal) bool {
 }
 
 // serverLogoutRecoveryOwner reports whether the account is exactly a terminal
-// original server LOGOUT whose only remaining work is protected cleanup.
+// original server LOGOUT whose only remaining work is protected cleanup. A Grok
+// account qualifies exactly like a ChatGPT account: its server-owned logout
+// publishes the disconnected metadata only after the revocation was confirmed,
+// and a failed vault removal leaves this shape.
 func serverLogoutRecoveryOwner(a domain.Account, operation domain.ID) bool {
 	st := a.Subscription
-	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionChatGPT || a.Health != domain.AccountFailed || a.Connection != nil || a.Removal != nil || st == nil {
+	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionChatGPT && a.SubscriptionService != domain.SubscriptionGrok || a.Health != domain.AccountFailed || a.Connection != nil || a.Removal != nil || st == nil {
 		return false
 	}
 	if st.Generation != "" || st.IdentityCommitment != "" || st.OwnerMachineID != "" || st.NativeProfileID != "" || st.NativeOperation != nil || st.Lease != nil || st.ResetCredits != nil || !st.RecoveryRequired {
@@ -98,10 +101,15 @@ func serverLogoutRecoveryCleared(a domain.Account, in failedCleanupAccount) bool
 	return st != nil && frozenServerLogoutOperation(st.ServerOperation, in) && st.ServerOperation.State == domain.SubscriptionSucceeded && !st.ServerOperation.NativeStarted && disconnectedSubscription(a)
 }
 
-func serverLogoutCleanupChild(account domain.Account, id domain.ID, revision uint64, request domain.ID) failedCleanupAccount {
+// serverLogoutCleanupChild binds the cleanup to the account revision it compares
+// against (revision) and to the revision the public deletion request named
+// (deleteRevision). They differ when the logout of a deletion advanced the
+// account: the request digest keeps the revision the caller sent, so a retry of
+// the same request still replays instead of conflicting with its own logout.
+func serverLogoutCleanupChild(account domain.Account, id domain.ID, revision, deleteRevision uint64, request domain.ID) failedCleanupAccount {
 	o := account.Subscription.ServerOperation
 	actor := o.Actor
-	return failedCleanupAccount{Version: 3, Target: subscriptionCleanupServerLogout, AccountID: id, Revision: revision, DeleteRevision: revision, OperationID: o.ID, DeleteRequestID: request, Alias: account.Alias, Generation: o.Generation, FinishID: o.FinishID, OriginalActor: &actor}
+	return failedCleanupAccount{Version: 3, Target: subscriptionCleanupServerLogout, AccountID: id, Revision: revision, DeleteRevision: deleteRevision, OperationID: o.ID, DeleteRequestID: request, Alias: account.Alias, Generation: o.Generation, FinishID: o.FinishID, OriginalActor: &actor}
 }
 
 // updateCleanupCheckpoint advances only the private child. It is the single
@@ -155,11 +163,16 @@ func (s *Service) cleanupServerLogoutLocked(ctx context.Context, parent, child d
 	if !out.NativeConfirmed {
 		original := *account.Subscription.ServerOperation
 		// The claim barrier set NativeStarted before the original logout ran; its
-		// settled metadata cleared the flag only after joined native closure.
+		// settled metadata cleared the flag only after joined native closure. A
+		// Grok logout runs no native process and owns no server-side profile, so
+		// its native proof is the absence of a Worker lease, which the recovery
+		// shape already requires.
 		original.NativeStarted = true
-		if err := reconcileFailedServerLoginRuntime(ctx, s.scopeFor(in.AccountID), original); err != nil {
-			retain(serverLogoutCleanupPhaseNative, err)
-			return out, err
+		if account.SubscriptionService != domain.SubscriptionGrok {
+			if err := reconcileFailedServerLoginRuntime(ctx, s.scopeFor(in.AccountID), original); err != nil {
+				retain(serverLogoutCleanupPhaseNative, err)
+				return out, err
+			}
 		}
 		if out, err = s.updateCleanupCheckpoint(ctx, "subscription.cleanup.logout.native", parent, child, func(c *failedCleanupCheckpoint) error {
 			c.NativeConfirmed = true
@@ -189,10 +202,16 @@ func (s *Service) cleanupServerLogoutLocked(ctx context.Context, parent, child d
 	}
 	if err := cleanupSubscriptionReferences(ctx, vault, in.AccountID, ""); err != nil {
 		retain(serverLogoutCleanupPhaseCredentials, err)
+		if account.SubscriptionService == domain.SubscriptionGrok {
+			logger.WarnContext(ctx, "grok_logout_cleanup_pending", "phase", grokCleanupPhase, "code", domain.SafeError(err).Code)
+		}
 		return out, err
 	}
+	if account.SubscriptionService == domain.SubscriptionGrok {
+		logger.InfoContext(ctx, "grok_logout_cleanup_confirmed", "phase", grokCleanupPhase)
+	}
 	_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.cleanup.logout.credentials", child, func(tx *store.Tx) (any, error) {
-		r, current, err := subscriptionAccount(tx, in.AccountID, 0)
+		r, current, err := serverLoginAccount(tx, in.AccountID, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -202,6 +221,9 @@ func (s *Service) cleanupServerLogoutLocked(ctx context.Context, parent, child d
 		st := current.Subscription
 		st.ServerOperation.State = domain.SubscriptionSucceeded
 		st.ServerOperation.Diagnostic = nil
+		// A Grok recovery carries its cleanup diagnostic in the Grok field, which
+		// a settled operation must not keep.
+		st.ServerOperation.GrokDiagnostic = nil
 		st.Pending = nil
 		st.RecoveryRequired = false
 		current.Health = domain.AccountDisconnected

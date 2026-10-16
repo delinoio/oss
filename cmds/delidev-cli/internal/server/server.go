@@ -169,7 +169,9 @@ type Service struct {
 	grokLoginBeforeSettle func()
 	// grokRefreshCrash simulates a process death at a refresh stage in tests: a
 	// true result makes the runner return at once without settling anything.
-	grokRefreshCrash       func(grokRefreshStage) bool
+	grokRefreshCrash func(grokRefreshStage) bool
+	// grokLogoutCrash simulates a process death at a logout stage in tests.
+	grokLogoutCrash        func(grokLogoutStage) bool
 	grokLoginsMu           sync.Mutex
 	grokLogins             map[domain.ID]context.CancelFunc
 	claudeLoginCodes       map[domain.ID][]byte

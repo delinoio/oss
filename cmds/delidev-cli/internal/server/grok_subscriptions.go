@@ -270,6 +270,12 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
 			return nil, err
 		}
+		// An accepted server-owned logout holds the account: new work is refused
+		// with a typed unavailable problem, never silently queued behind it.
+		if grokAccountLoggingOut(a) {
+			s.logger.WarnContext(ctx, "grok_subscription_take_refused_logging_out", "phase", grokLogoutPhase, "account_id", input.Account, "operation_id", input.Operation, "action", action)
+			return nil, grokLoggingOutProblem()
+		}
 		op := st.Pending
 		// A missing or replaced original is classified before any field of the
 		// current Pending operation, which belongs to someone else's claim.
@@ -500,11 +506,23 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		}
 		state := original.Subscription
 		lease := state.Lease
-		if state.RecoveryRequired || state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
+		// A lease whose owner reported unconfirmed private cleanup is fenced for
+		// recovery, and only that same owner (the view above binds the Runner
+		// Device, Worker device and instance) may report it again.
+		if state.RecoveryRequired && !lease.CleanupUnconfirmed || state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
+			s.logger.WarnContext(ctx, "grok_subscription_finish_refused", "phase", grokCleanupPhase, "account_id", input.Account, "lease_id", input.Lease, "recovery_owner", state.RecoveryRequired && lease.CleanupUnconfirmed)
 			return nil, rpc.Error(subscriptionDenied(), c)
 		}
+		// The first reported outcome stays authoritative across cleanup retries: a
+		// retry confirms the cleanup and can never turn a reported native failure
+		// into a success.
+		success, refreshed := input.Success, input.Refresh
+		if state.RecoveryRequired {
+			success, refreshed = lease.FirstFinish.Frozen(input.Success, input.Refresh)
+			s.logger.InfoContext(ctx, "grok_subscription_cleanup_retry", "phase", grokCleanupPhase, "account_id", input.Account, "lease_id", input.Lease, "cleanup_confirmed", input.Cleanup, "outcome_frozen", success != input.Success || refreshed != input.Refresh)
+		}
 		owned = true
-		usable := input.Success && input.Cleanup && (lease.Action != domain.SubscriptionRefresh || input.Refresh)
+		usable := success && input.Cleanup && (lease.Action != domain.SubscriptionRefresh || refreshed)
 		if state.Pending != nil && state.Pending.Canceled {
 			usable = false
 		}
@@ -590,8 +608,12 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 				return nil, err
 			}
 			state := a.Subscription
-			if state.RecoveryRequired || state.Generation != input.Generation {
+			if state.RecoveryRequired && !state.Lease.CleanupUnconfirmed || state.Generation != input.Generation {
 				return nil, subscriptionDenied()
+			}
+			success, refreshed := input.Success, input.Refresh
+			if state.RecoveryRequired {
+				success, refreshed = state.Lease.FirstFinish.Frozen(input.Success, input.Refresh)
 			}
 			// The original operation is captured before a login failure or a
 			// settled outcome clears it, so its actor survives for progress.
@@ -619,7 +641,25 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 				// process timeout establishes safe refresh-token redistribution.
 				state.RecoveryRequired = true
 				a.Health = domain.AccountFailed
+				// Unconfirmed private cleanup is retried by the original owner only.
+				if !input.Cleanup {
+					state.Lease.CleanupUnconfirmed = true
+					// A retry arrives here already narrowed to the first report, so the
+					// frozen outcome only ever stays or lowers.
+					state.Lease.FirstFinish = &domain.SubscriptionFinishOutcome{Succeeded: success, RefreshConfirmed: refreshed}
+				}
 			} else {
+				// A confirmed cleanup by the original owner releases the lease and
+				// lifts the recovery fence its unconfirmed report set.
+				if state.RecoveryRequired {
+					state.RecoveryRequired = false
+					if a.Health == domain.AccountFailed {
+						a.Health = domain.AccountDisconnected
+						if a.Connection != nil {
+							a.Health = domain.AccountReady
+						}
+					}
+				}
 				state.Lease = nil
 				state.Members = nil
 				if state.Pending != nil && state.Pending.ID == lease.OperationID {
@@ -653,7 +693,7 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 				// reported is never replaced by its unconfirmed cleanup, which only
 				// fences the account above. An unconfirmed cleanup is the diagnostic
 				// only when the operation itself succeeded or was canceled.
-				nativeFailed := !input.Success || lease.Action == domain.SubscriptionRefresh && !input.Refresh
+				nativeFailed := !success || lease.Action == domain.SubscriptionRefresh && !refreshed
 				switch {
 				case canceled && input.Cleanup:
 					settlement.State = domain.SubscriptionCanceled

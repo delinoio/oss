@@ -506,6 +506,7 @@ type configurationDeletePhase string
 const (
 	configurationDeleteValidation  configurationDeletePhase = "validation"
 	configurationDeleteAdmission   configurationDeletePhase = "account-admission"
+	configurationDeleteLogout      configurationDeletePhase = "grok-logout"
 	configurationDeleteReceipt     configurationDeletePhase = "receipt"
 	configurationDeleteReferences  configurationDeletePhase = "references"
 	configurationDeleteAccount     configurationDeletePhase = "account-state"
@@ -548,6 +549,10 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 		Revision uint64      `json:"revision"`
 		Kind     domain.Kind `json:"kind"`
 	}{meta.Id, meta.ExpectedRevision, kind}
+	// revision is the account revision the deletion is checked and committed
+	// against. It equals the caller's expected revision unless a connected Grok
+	// account was logged out first, which advances the revision.
+	revision := meta.ExpectedRevision
 	if kind == domain.AccountKind {
 		phase = configurationDeleteAdmission
 		_, replayed, err := s.Store.Replay(ctx, domain.ID(meta.RequestId), "configuration.delete", input)
@@ -562,7 +567,14 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 		if s.afterAccountDeleteReplay != nil {
 			s.afterAccountDeleteReplay(ctx)
 		}
-		outcome, err := s.deleteFailedSubscription(ctx, domain.ID(meta.RequestId), domain.ID(meta.Id), meta.ExpectedRevision)
+		// A connected Grok account is logged out (token revoked, protected bundle
+		// removed) before it can be deleted; an uncertain logout blocks deletion.
+		phase = configurationDeleteLogout
+		if revision, err = s.logoutGrokBeforeDelete(ctx, domain.ID(meta.Id), meta.ExpectedRevision, domain.ID(meta.RequestId)); err != nil {
+			return reject(err)
+		}
+		phase = configurationDeleteAdmission
+		outcome, err := s.deleteFailedSubscription(ctx, domain.ID(meta.RequestId), domain.ID(meta.Id), revision, meta.ExpectedRevision)
 		if err != nil {
 			return reject(err)
 		}
@@ -582,13 +594,13 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 			return reject(err)
 		}
 		defer unlock()
-		if err := s.checkAccountDeletionLocked(ctx, meta.RequestId, meta.Id, meta.ExpectedRevision, input, func(next configurationDeletePhase) { phase = next }); err != nil {
+		if err := s.checkAccountDeletionLocked(ctx, meta.RequestId, meta.Id, revision, input, func(next configurationDeletePhase) { phase = next }); err != nil {
 			return reject(err)
 		}
 	}
 	phase = configurationDeleteCommit
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "configuration.delete", input, func(tx *store.Tx) (any, error) {
-		if err := deleteConfigurationTx(tx, kind, domain.ID(meta.Id), meta.ExpectedRevision); err != nil {
+		if err := deleteConfigurationTx(tx, kind, domain.ID(meta.Id), revision); err != nil {
 			return nil, err
 		}
 		return struct {
@@ -699,9 +711,6 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 	if err != nil {
 		return err
 	}
-	conflict := func() error {
-		return domain.Fail(domain.Conflict, "This configuration is still referenced.", "Reconfigure its dependents before deleting it.")
-	}
 	if kind == domain.AccountKind {
 		account, err := store.Decode[domain.Account](existing)
 		if err != nil {
@@ -710,6 +719,17 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 		if account.Health != domain.AccountDisconnected || account.Connection != nil || account.Removal != nil || account.Subscription != nil && (account.Subscription.ServerObservationActive() || account.Subscription.Pending != nil || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Generation != "" || account.Subscription.NativeProfileID != "" || account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.OwnerMachineID != "") {
 			return domain.Fail(domain.Conflict, "Connected accounts require credential and device cleanup before deletion.", "Disconnect the account and complete its protected-resource cleanup first.")
 		}
+	}
+	return validateDeletionReferences(tx, kind, id)
+}
+
+// validateDeletionReferences rejects the deletion of a configuration that other
+// configuration or retained sessions still reference. It reads only references
+// and never the entity's own credential or connection state, so a caller can run
+// it before any side effect that a deletion owes.
+func validateDeletionReferences(tx *store.Tx, kind domain.Kind, id domain.ID) error {
+	conflict := func() error {
+		return domain.Fail(domain.Conflict, "This configuration is still referenced.", "Reconfigure its dependents before deleting it.")
 	}
 	for _, ownerKind := range []domain.Kind{domain.ProjectKind, domain.AgentKind, domain.ModelKind, domain.AccountKind} {
 		records, err := all(tx, ownerKind)

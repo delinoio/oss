@@ -152,7 +152,7 @@ func failedCleanupMessage(row store.Record) (*pb.FailedSubscriptionCleanupJob, e
 // additionally represents disconnected configuration without inventing an owner.
 func validCleanupTarget(in failedCleanupAccount) bool {
 	if in.Target == subscriptionCleanupServerLogout {
-		return in.Version == 3 && in.DeleteRevision != 0 && in.DeleteRevision == in.Revision && in.OperationID.Validate() == nil && in.Generation.Validate() == nil && in.FinishID.Validate() == nil && in.OriginalActor != nil && validOriginalOperationActor(*in.OriginalActor)
+		return in.Version == 3 && in.DeleteRevision != 0 && in.DeleteRevision <= in.Revision && in.OperationID.Validate() == nil && in.Generation.Validate() == nil && in.FinishID.Validate() == nil && in.OriginalActor != nil && validOriginalOperationActor(*in.OriginalActor)
 	}
 	if in.Version == 3 || in.Generation != "" || in.FinishID != "" || in.OriginalActor != nil {
 		return false
