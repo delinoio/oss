@@ -2110,7 +2110,13 @@ fn has_export_declaration(code: &str, blocks: &[(usize, usize)], body: (usize, u
                 .filter(|(open, close)| *open < start && start < *close)
                 .min_by_key(|(open, close)| close - open)
                 .is_some_and(|block| *block == body);
-            let member = matches!(code[..start].bytes().next_back(), Some(b'.' | b'$'));
+            // A property named `export` (`x.export`, `x. export`,
+            // `x.\n/* note */ export`) or an identifier that merely ends in
+            // `$export` is not a statement. Comments are masked, so the
+            // previous significant byte is the previous non-whitespace byte.
+            let before = &code[..start];
+            let member =
+                before.bytes().next_back() == Some(b'$') || before.trim_end().ends_with('.');
             if !own || member {
                 return None;
             }
@@ -6615,6 +6621,34 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "declare namespace N { var eval: any; export default class {} }\nnamespace N { \
                  eval(code); }",
                 None,
+            ),
+            // A member property named `export` is not a statement, with
+            // trivia or a line break after the dot.
+            (
+                "declare namespace N { var eval: any; x. export = 1; }\nnamespace N { eval(code); \
+                 }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; x.\n export = 1; }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; x. /* note */ export default 1; \
+                 }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; x?.\n export = 1; }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            // A statement after a complete one is not a member access.
+            (
+                "declare namespace N { var eval: any; x;\n export = 1; }\nnamespace N { \
+                 eval(code); }",
+                Some((2, 14)),
             ),
             // A property named `export` is not an export declaration.
             (
