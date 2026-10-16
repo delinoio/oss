@@ -286,3 +286,45 @@ func (p *grokCLIPrompt) line(raw []byte) {
 	p.err = p.publish(p.address, p.code)
 	p.published = p.err == nil
 }
+
+// An explicit native logout retry cannot discard the previous native owner.
+// Reconcile that exact owner's journals before request admission replaces its
+// operation record. Historical direct-OAuth logouts have no Grok auth profile.
+func (s *Service) reconcileGrokLogoutRetry(ctx context.Context, id domain.ID) error {
+	actor, err := subscriptionClient(ctx)
+	if err != nil {
+		return err
+	}
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	var previous domain.ID
+	err = s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := grokSubscriptionAccount(tx, id, 0)
+		if err != nil {
+			return err
+		}
+		if grokLogoutRetryableBy(tx, a, actor) {
+			previous = a.Subscription.ServerOperation.ID
+		}
+		return nil
+	})
+	if err != nil || previous == "" {
+		return err
+	}
+	scope, err := s.nativeScope(id)
+	if err != nil {
+		return err
+	}
+	_, exists, err := scope.Profiles.Lookup(ctx, nativeprofile.Key{Harness: domain.GrokBuild, Purpose: nativeprofile.PurposeAuth, Account: id})
+	if err != nil || !exists {
+		return err
+	}
+	err = process.ReconcileOwnerContext(ctx, filepath.Join(scope.Root, "subscription-runtime", "processes"), previous)
+	if err != nil {
+		s.logger.WarnContext(ctx, "grok_cli_logout_retry_blocked", "phase", grokCleanupPhase, "operation_id", previous, "code", domain.SafeError(err).Code)
+	}
+	return err
+}

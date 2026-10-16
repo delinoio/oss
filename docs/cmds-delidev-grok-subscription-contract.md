@@ -45,6 +45,9 @@ preserves the existing confirmed provider-revocation guarantee, materializes the
 current protected generation in the same server-owned profile and runs
 `grok --no-auto-update logout`. Native closure and credential/lock-file cleanup
 must succeed before logout is acknowledged. An uncertain cleanup retains recovery.
+An explicit logout retry reconciles the preceding operation's exact native process
+journals before admission can replace that operation. Missing or uncertain proof
+keeps the original owner and refuses the retry.
 
 System capability 39 advertises the server-owned CLI login. System 40 and
 Worker 21 retain their independent default-off execution gates.

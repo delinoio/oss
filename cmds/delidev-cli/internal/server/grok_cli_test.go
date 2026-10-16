@@ -366,3 +366,49 @@ func TestGrokCLIExpiredQueuedLoginDoesNotLaunch(t *testing.T) {
 		t.Fatal("expired login launched the CLI")
 	}
 }
+
+func TestGrokCLILogoutRetryRetainsTheOriginalProcessProof(t *testing.T) {
+	for _, missing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("missing=%v", missing), func(t *testing.T) {
+			f, root := nativeGrokFixture(t, "logout-fail")
+			idp := grokidptest.New()
+			f.service.grokLoginTransport = idp.Transport()
+			connectGrokAccount(t, f, f.input.AccountID, idp)
+			original, err := f.grokLoginRequest(t, func(r *pb.RequestSubscriptionRequest) { r.Action = grokLogoutAction })
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.service.runGrokLogout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), f.input.AccountID)
+			if f.progressFor(original.OperationId).State != grokRecovery {
+				t.Fatal("fixture did not retain native cleanup")
+			}
+			if missing {
+				if err := os.RemoveAll(filepath.Join(f.service.Store.Root(), "subscription-runtime", "processes", original.OperationId)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			raw, _ := json.Marshal(grokCLIFixture{Mode: "success"})
+			if err := security.WriteAtomic(filepath.Join(root, "grok-cli-fixture.json"), raw); err != nil {
+				t.Fatal(err)
+			}
+			next, err := f.grokLoginRequest(t, func(r *pb.RequestSubscriptionRequest) { r.Action = grokLogoutAction })
+			if missing {
+				if err == nil {
+					t.Fatal("retry replaced the original operation without process proof")
+				}
+				_, a := f.record()
+				if string(a.Subscription.ServerOperation.ID) != original.OperationId {
+					t.Fatal("refused retry lost the original owner")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.service.runGrokLogout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), f.input.AccountID)
+			if f.progressFor(next.OperationId).State != grokSucceeds {
+				t.Fatal("reconciled native retry failed")
+			}
+		})
+	}
+}

@@ -826,6 +826,11 @@ func (s *Service) requestGrokSubscription(ctx context.Context, req *connect.Requ
 	if req.Msg.MachineId != "" || action != domain.SubscriptionLogin && action != domain.SubscriptionRefresh && action != domain.SubscriptionLogout || action == domain.SubscriptionLogout && req.Msg.DeviceCode {
 		return nil, rpc.Error(domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Start the Grok login, refresh or logout without a Runner Device."), req.Header().Get(rpc.CorrelationHeader))
 	}
+	if action == domain.SubscriptionLogout && s.grokLogoutPerform == nil {
+		if err := s.reconcileGrokLogoutRetry(ctx, domain.ID(req.Msg.Mutation.Id)); err != nil {
+			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+		}
+	}
 	response, err := s.requestServerSubscription(ctx, req)
 	if err == nil {
 		phase := grokLoginPhase
