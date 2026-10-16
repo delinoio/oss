@@ -4006,6 +4006,36 @@ Next), only grows when a step is selected, and is never persisted or saved.
   are unchanged. The styles are scoped to `.worker-steps`; other wizards keep
   the shared `wizard-progress` presentation.
 
+Atomic step labels. Each step's number and label form one unbreakable group.
+The label is `white-space: nowrap` and never breaks inside a word, for example
+Harness or Accounts in English and the equivalent Korean labels. When the
+available width cannot hold all four groups on one row, whole groups wrap to the
+next row in source order (the strip is `flex-wrap: wrap`) and no label is
+hidden, truncated or clipped, and the page or dialog gains no horizontal
+overflow. The shared control rules of every host (wizard, Settings task dialog,
+Settings page) cap a button at `max-width: 100%` of its list item at different
+selector specificities. That cap excludes the 16px of padding the negative
+margins give back, which squeezed the label and let it break inside words. The
+step button therefore declares `min-width: max-content`, which overrides the cap
+in every host without an `!important` or a change to shared control sizing; the
+28px circle, 14px/20px label, 8px number-to-label gap, 24px group gap and the
+thin divider are unchanged.
+
+`scripts/test-worker-steps-layout.mjs` (`pnpm test:worker-steps-layout`) mounts
+the committed stylesheets and step markup in a Settings task dialog host and a
+Settings page host with a host-supplied Playwright/Chrome
+(`DELIDEV_QA_PLAYWRIGHT_MODULE`, optional `DELIDEV_QA_BROWSER_CHANNEL`). It
+measures real line boxes in English and Korean, light and dark: every
+current/visited combination at the 720px wizard bound stays on one row with
+one-line labels and 28px circles; viewports of 320, 640, 641, 760 and 761px at
+100% and effective 200% zoom, plus a 1px sweep across the wrapped-row boundary,
+keep groups whole and ordered with no overlapping hit targets or horizontal
+overflow; the focus ring, hover surface, `aria-current="step"` and non-focusable
+future steps are unchanged. Effective 200% zoom uses the halved CSS viewport and
+skips only the 320px case (160 CSS px, below the 960px native window minimum).
+It is a synthetic browser fixture outside `pnpm test` and CI; it does not
+establish mounted-app, actual browser zoom or packaged CEF acceptance.
+
 Step strip hit areas. The strip never lets two adjacent step hit areas overlap,
 so the visible edge of a step always activates that step. Step spacing is owned
 by the shared `wizard-progress` rule (24px between steps at every width) and the
