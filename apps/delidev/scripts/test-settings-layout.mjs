@@ -573,13 +573,11 @@ try {
     await assertHiddenAccounts();
     await page.evaluate(() => window.refreshWizardAccounts());
     await assertHiddenAccounts();
-    const workspace = form.locator(".worker-accounts-workspace");
+    const workspace = form.locator(".worker-source-workspace");
     const geometry = await workspace.evaluate((node) => {
-      const form = node.closest("form"),
-        columns = getComputedStyle(node).gridTemplateColumns.split(" ");
+      const list = node.querySelector(".worker-source-order");
       return {
-        width: form.getBoundingClientRect().width,
-        columns,
+        columns: getComputedStyle(list).gridTemplateColumns.split(" "),
         overflow: node.scrollWidth > node.clientWidth,
       };
     });
@@ -588,14 +586,11 @@ try {
       false,
       "Accounts workspace has no horizontal overflow",
     );
-    if (geometry.width >= 720)
-      assert.equal(geometry.columns[0], "260px", "Wide Accounts source column");
-    else
-      assert.equal(
-        geometry.columns.length,
-        1,
-        "Narrow Accounts stacks source list and detail",
-      );
+    assert.equal(
+      geometry.columns.length,
+      1,
+      "Accounts sources form one vertical accordion list at every width",
+    );
     const footerNext = page
       .locator(".settings-task-footer")
       .getByRole("button", { name: l("Next"), exact: true });
@@ -1010,16 +1005,15 @@ try {
               }
             }
             const geometry = await form
-              .locator(".worker-accounts-workspace")
+              .locator(".worker-source-workspace")
               .evaluate((node) => ({
-                width: node.getBoundingClientRect().width,
-                columns: getComputedStyle(node).gridTemplateColumns.split(" "),
+                columns: getComputedStyle(
+                  node.querySelector(".worker-source-order"),
+                ).gridTemplateColumns.split(" "),
                 overflow: node.scrollWidth > node.clientWidth,
               }));
             assert.equal(geometry.overflow, false);
-            if (geometry.width >= 720)
-              assert.equal(geometry.columns[0], "260px");
-            else assert.equal(geometry.columns.length, 1);
+            assert.equal(geometry.columns.length, 1);
             const footer = page.locator(".settings-task-footer");
             assert(await footer.isVisible());
             assert(
@@ -1029,7 +1023,7 @@ try {
             );
             if (ordered)
               await form
-                .locator(".worker-source-selection")
+                .locator(".worker-source-trigger")
                 .filter({ hasText: "Fixture provider" })
                 .click();
             if (screenshotDirectory) {

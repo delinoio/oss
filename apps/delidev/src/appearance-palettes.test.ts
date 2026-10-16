@@ -198,7 +198,7 @@ test("ordinary controls use semantic accent and contrast tokens", async () => {
   await declarations("agent-worker-wizard.css", [
     [".worker-account-add", "color", "link"],
     [
-      '.worker-source-list button[aria-pressed="true"]',
+      '.worker-source-group[data-expanded="true"]',
       "border-color",
       "selected-border",
     ],

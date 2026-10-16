@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { useEntranceActivation } from "./entrance-motion";
@@ -230,4 +232,103 @@ it("moves the highlight with the keyboard without changing the accepted value", 
   expect(first.getAttribute("aria-selected")).toBe("true");
   expect(last.getAttribute("aria-selected")).toBe("false");
   expect(change).not.toHaveBeenCalled();
+});
+
+it("includes an optional action in keyboard traversal after the choices", () => {
+  const change = vi.fn(),
+    invoke = vi.fn();
+  render(
+    <ScrollPicker
+      options={options}
+      label="Runner"
+      value="a"
+      change={change}
+      query={query()}
+      active
+      action={{ label: "New", name: "New runner", invoke }}
+    />,
+  );
+  const trigger = screen.getByRole("combobox", { name: "Runner" });
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  const action = screen.getByRole("option", { name: "New runner" });
+  // The action follows the choices and the continuation control in the popup.
+  expect(screen.getByRole("listbox").lastElementChild).toBe(action);
+  expect(action.textContent).toBe("New");
+  expect(action.hasAttribute("data-picker-id")).toBe(false);
+  // Disabled choices are skipped: a -> b -> action.
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  expect(trigger.getAttribute("aria-activedescendant")).toBe(action.id);
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  expect(trigger.getAttribute("aria-activedescendant")).toBe(action.id);
+  fireEvent.keyDown(trigger, { key: "ArrowUp" });
+  expect(trigger.getAttribute("aria-activedescendant")).not.toBe(action.id);
+  fireEvent.keyDown(trigger, { key: "End" });
+  fireEvent.keyDown(trigger, { key: " " });
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(change).not.toHaveBeenCalled();
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  // Escape dismisses an open popup without invoking the action.
+  fireEvent.keyDown(trigger, { key: "End" });
+  fireEvent.keyDown(trigger, { key: "Escape" });
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(invoke).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the action reachable when no choice is enabled and ignores it while inactive", () => {
+  const invoke = vi.fn();
+  const view = (active: boolean) => (
+    <ScrollPicker
+      options={[{ id: "off", label: "Off", disabled: true }]}
+      label="Runner"
+      value=""
+      change={() => {}}
+      query={query()}
+      active={active}
+      action={{ label: "New", name: "New runner", invoke }}
+    />
+  );
+  const result = render(view(true)),
+    trigger = screen.getByRole("combobox", { name: "Runner" });
+  fireEvent.click(trigger);
+  fireEvent.keyDown(trigger, { key: "Enter" });
+  expect(invoke).toHaveBeenCalledTimes(1);
+  fireEvent.click(trigger);
+  const action = screen.getByRole("option", { name: "New runner" });
+  result.rerender(view(false));
+  fireEvent.click(action);
+  expect(invoke).toHaveBeenCalledTimes(1);
+});
+
+it("reserves scroll clearance for the pinned action only when one is present", () => {
+  const css = readFileSync(join(__dirname, "scroll-picker.css"), "utf8");
+  expect(css).toMatch(
+    /\.scroll-picker-popup\[data-has-action\]\s*\{[^}]*scroll-padding-bottom:\s*41px/,
+  );
+  const view = (withAction: boolean) => (
+    <ScrollPicker
+      options={options}
+      label="Runner"
+      value="a"
+      change={() => {}}
+      query={query()}
+      active
+      action={
+        withAction
+          ? { label: "New", name: "New runner", invoke() {} }
+          : undefined
+      }
+    />
+  );
+  const result = render(view(true));
+  fireEvent.click(screen.getByRole("combobox", { name: "Runner" }));
+  expect(screen.getByRole("listbox").hasAttribute("data-has-action")).toBe(
+    true,
+  );
+  result.rerender(view(false));
+  expect(screen.getByRole("listbox").hasAttribute("data-has-action")).toBe(
+    false,
+  );
 });

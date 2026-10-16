@@ -2,12 +2,29 @@
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { expect, it, vi } from "vitest";
 import { WorkerSourceOrder } from "./worker-source-order";
 const original = ["A", "B", "C"],
   names = new Map(original.map((id) => [id, id]));
 const transport = createRouterTransport(() => {});
+// The owner renders the card around the supplied grip; the grip stays a sibling.
+const card = ({
+  id,
+  index,
+  grip,
+}: {
+  id: string;
+  index: number;
+  grip: ReactNode;
+}) => (
+  <div>
+    {grip}
+    <strong>
+      {index + 1} · {id}
+    </strong>
+  </div>
+);
 function mount() {
   const change = vi.fn();
   function Harness({ enabled }: { enabled: boolean }) {
@@ -16,14 +33,12 @@ function mount() {
       <WorkerSourceOrder
         ids={ids}
         names={names}
-        counts={new Map(original.map((id) => [id, 1]))}
-        selected="B"
-        select={() => {}}
         active={enabled}
         change={(value) => {
           change(value);
           set(value);
         }}
+        renderItem={card}
       />
     );
   }
@@ -112,8 +127,9 @@ it("pointer preview shares keyboard commit order; cancellation and same-place dr
     Object.defineProperty(event, "pointerId", { value: pointerId });
     fireEvent(c, event);
   };
-  document.querySelectorAll("li").forEach((row, index) =>
-    vi.spyOn(row, "getBoundingClientRect").mockReturnValue({
+  // Pointer hit-testing reads the card header, which is the grip's parent.
+  original.forEach((id, index) =>
+    vi.spyOn(grip(id).parentElement!, "getBoundingClientRect").mockReturnValue({
       top: index * 50,
       bottom: (index + 1) * 50,
     } as DOMRect),
@@ -132,25 +148,60 @@ it("pointer preview shares keyboard commit order; cancellation and same-place dr
   pointer("pointerup", 9);
   expect(f.change).toHaveBeenCalledExactlyOnceWith(["C", "A", "B"]);
 });
-it("disables a singleton grip without hiding its separate selection action", () => {
+it("hit-tests card headers so an expanded body does not stretch a slot", () => {
+  const f = mount(),
+    c = grip("C");
+  const pointer = (type: string, clientY: number) => {
+    const event = new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientY,
+    });
+    Object.defineProperty(event, "pointerId", { value: 7 });
+    fireEvent(c, event);
+  };
+  // A is expanded: its 40px header sits above a 360px body, so the full row is
+  // taller than its header. B and C headers follow below the body.
+  const headers: Record<string, [number, number]> = {
+    A: [0, 40],
+    B: [400, 440],
+    C: [450, 490],
+  };
+  for (const id of original) {
+    const [top, bottom] = headers[id];
+    vi.spyOn(grip(id).parentElement!, "getBoundingClientRect").mockReturnValue({
+      top,
+      bottom,
+    } as DOMRect);
+  }
+  pointer("pointerdown", 450);
+  // Pointer inside A's body, below A's header midpoint, passes A only.
+  pointer("pointermove", 100);
+  expect(order()).toEqual(["A", "C", "B"]);
+  // Above A's header midpoint the moving item goes first.
+  pointer("pointermove", 10);
+  expect(order()).toEqual(["C", "A", "B"]);
+  // Past every other header it lands last.
+  pointer("pointermove", 480);
+  expect(order()).toEqual(["A", "B", "C"]);
+  pointer("pointercancel", 450);
+  expect(f.change).not.toHaveBeenCalled();
+});
+it("disables a singleton grip while the owner's card content stays reachable", () => {
   render(
     <TransportProvider transport={transport}>
       <WorkerSourceOrder
         ids={["A"]}
         names={names}
-        counts={new Map([["A", 0]])}
-        selected="A"
-        select={vi.fn()}
         active
         change={vi.fn()}
+        renderItem={card}
       />
     </TransportProvider>,
   );
   expect(grip("A")).toHaveProperty("disabled", true);
-  expect(screen.getByRole("button", { name: /1 · A/ })).toHaveProperty(
-    "disabled",
-    false,
-  );
+  expect(screen.getByText("1 · A")).toBeTruthy();
 });
 it("rejects late commits after draft membership or order changes", () => {
   const change = vi.fn();
@@ -159,11 +210,9 @@ it("rejects late commits after draft membership or order changes", () => {
       <WorkerSourceOrder
         ids={ids}
         names={names}
-        counts={new Map()}
-        selected="B"
-        select={() => {}}
         active
         change={change}
+        renderItem={card}
       />
     </TransportProvider>
   );
@@ -189,12 +238,10 @@ it("keeps pending or uncertain grips visible and disabled", () => {
       <WorkerSourceOrder
         ids={original}
         names={names}
-        counts={new Map()}
-        selected="B"
-        select={() => {}}
         active
         editable={false}
         change={vi.fn()}
+        renderItem={card}
       />
     </TransportProvider>,
   );
