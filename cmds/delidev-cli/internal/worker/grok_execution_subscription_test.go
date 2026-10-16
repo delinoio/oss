@@ -606,6 +606,57 @@ func TestGrokRecoveryRetiresTheOriginalHomeAndReportsCleanupOnly(t *testing.T) {
 	}
 }
 
+// The watch exposes a fenced lease as soon as its first Finish reported an
+// unconfirmed cleanup, while the owning execution still has its in-process
+// retries to run. Recovery must not run beside them: it would retire the
+// credential and release the lease under the retry.
+func TestGrokRecoveryWaitsForTheLiveExecutionToFinishItsCleanupRetries(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory replacement semantics differ")
+	}
+	f := newGrokExecutionFixture(t)
+	managed, err := f.begin(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := managed.credentialHook(f.home)(); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(f.config.Root, "processes")); err != nil {
+		t.Fatal(err)
+	}
+	journal := managed.lease.journal
+	fenced := domain.Account{Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionGrok, Subscription: &domain.SubscriptionState{RecoveryRequired: true, Generation: f.generation, Lease: &domain.SubscriptionLease{ID: domain.ID(managed.lease.response.LeaseId), OperationID: journal.Operation, Revision: 3, Action: domain.SubscriptionExecute, MachineID: f.credential.MachineID, InstanceID: journal.Instance, DeviceID: f.credential.DeviceID, Generation: f.generation, CleanupUnconfirmed: true}}}
+	client := delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.credential.Endpoint)
+	// The watch delivers the fenced lease while the execution still owns it.
+	if err := runGrokRecovery(context.Background(), f.config, client, f.credential, f.account, fenced); err != nil {
+		t.Fatalf("a deferred recovery must not fail: %v", err)
+	}
+	f.mu.Lock()
+	reported, present := len(f.finishes), false
+	if _, err := os.Lstat(f.authPath()); err == nil {
+		present = true
+	}
+	f.mu.Unlock()
+	if reported != 0 || !present {
+		t.Fatalf("recovery ran beside the live execution: %d reports, credential present = %v", reported, present)
+	}
+	// The execution ends with an unconfirmed cleanup, so its lane closes and the
+	// next watch may recover the lease.
+	if err := os.Mkdir(filepath.Join(f.home, security.OwnedTemporaryPrefix(f.authPath())+"stuck"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := managed.finish(true); err == nil {
+		t.Fatal("an unconfirmed cleanup ended without closing the lane")
+	}
+	if grokExecutionInFlight(domain.ID(managed.lease.response.LeaseId)) {
+		t.Fatal("the finished execution still holds its lease")
+	}
+	if err := runGrokRecovery(context.Background(), f.config, client, f.credential, f.account, fenced); err == nil {
+		t.Fatal("recovery was still deferred after the execution ended")
+	}
+}
+
 func TestGrokRecoveryRefusesForeignJournalsAndUnprovenCleanup(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("directory replacement semantics differ")

@@ -821,7 +821,13 @@ release and starts only then.
 fenced Grok execute lease (`WatchSubscription`, Worker capability 21 required).
 `runGrokRecovery` reads the retained journal, joins the supervised process of the
 job, retires `auth.json`, its lock and temporaries in exactly the journaled home and
-sends the cleanup-only Finish. The durable claim precedes the protected delivery, so
+sends the cleanup-only Finish. Recovery never runs beside a live execution of the
+same Worker process: the watch also delivers the lease right after the execution's
+first Finish fenced it, but until the execution has finished its in-process
+cleanup retries (the lease stays marked as owned by the live execution until its
+Finish returns) the watch skips it without touching the home or sending anything.
+When those retries end unconfirmed the lane closes, and the next watch recovers
+the lease. The durable claim precedes the protected delivery, so
 a journal that never recorded a generation, lease revision or home (the Take
 response was lost after the server committed the lease) is the accepted
 pre-delivery claim: the Finish names the generation and revision of the

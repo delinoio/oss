@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -28,6 +29,35 @@ const grokExecutionPhase = "EXECUTION"
 const grokCleanupRetries = 3
 
 var grokCleanupRetryWait = time.Second
+
+// grokExecutionsInFlight holds the lease identifiers of the Grok execute leases
+// whose execution this Worker process still owns, from the Take until the end of
+// their Finish and its in-process cleanup retries. The subscription watch also
+// shows the same lease once its first Finish fenced it, but the owning
+// execution still has its private home and its retries to run, so a concurrent
+// recovery would race them: it could remove the credential and release the
+// lease, and the local retry would then report against a released lease. Recovery
+// only starts for a lease that no live execution of this process owns.
+var grokExecutionsInFlight sync.Map
+
+// holdGrokExecution marks the lease as owned by a live execution and returns the
+// function that releases the mark. Releasing twice is harmless.
+func holdGrokExecution(lease string) func() {
+	grokExecutionsInFlight.Store(lease, struct{}{})
+	return func() { grokExecutionsInFlight.Delete(lease) }
+}
+
+func (e *grokSubscriptionExecution) releaseHold() {
+	if e.release != nil {
+		e.release()
+	}
+}
+
+// grokExecutionInFlight reports whether a live execution of this process owns the lease.
+func grokExecutionInFlight(lease domain.ID) bool {
+	_, held := grokExecutionsInFlight.Load(string(lease))
+	return held
+}
 
 // grokSubscriptionExecution is one managed Grok execution lease held by this
 // Worker. It owns the whole credential lifecycle of a native Grok process:
@@ -60,6 +90,9 @@ type grokSubscriptionExecution struct {
 	materialized bool
 	home         string
 	settled      bool
+	// release drops the in-flight mark of the lease once the execution and its
+	// retries are over.
+	release func()
 }
 
 func beginGrokSubscriptionExecution(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput) (*grokSubscriptionExecution, error) {
@@ -76,7 +109,7 @@ func beginGrokSubscriptionExecution(ctx context.Context, config Config, owner do
 		closeHTTP()
 		return nil, err
 	}
-	e := &grokSubscriptionExecution{lease: lease, closeHTTP: closeHTTP, logger: config.Logger, account: input.AccountID}
+	e := &grokSubscriptionExecution{lease: lease, closeHTTP: closeHTTP, logger: config.Logger, account: input.AccountID, release: holdGrokExecution(lease.response.LeaseId)}
 	// A managed Grok lease always delivers one sealed bundle for a settled
 	// generation and never a native profile of the device-owned lanes.
 	if len(lease.response.Bundle) == 0 || domain.ID(lease.response.GenerationId).Validate() != nil || lease.response.NativeProfileId != "" || lease.response.OwnerLeaseId != "" {
@@ -84,6 +117,7 @@ func beginGrokSubscriptionExecution(ctx context.Context, config Config, owner do
 		lease.response.Bundle = nil
 		e.settled = true
 		defer closeHTTP()
+		defer e.releaseHold()
 		if err := lease.finish(nil, false, false, false); err != nil {
 			// The lease may still be live or the report unacknowledged.
 			return nil, &managedExecutionUncertain{err}
@@ -141,6 +175,8 @@ func (e *grokSubscriptionExecution) finish(joined bool) (returned error) {
 		return nil
 	}
 	e.settled = true
+	// The in-flight mark outlives every retry and is the last thing dropped.
+	defer e.releaseHold()
 	// Every failure of a protected Finish (the journal write, the RPC, a lost
 	// response, a cleanup retry) leaves the lease possibly live or its commit
 	// unacknowledged, so none may become an ordinary reported job error: each one
@@ -246,6 +282,15 @@ func runGrokRecovery(ctx context.Context, config Config, client delidevv1connect
 		return subscription.Invalid()
 	}
 	original := state.Lease
+	if grokExecutionInFlight(original.ID) {
+		// The live execution of this very lease still owns its home and its
+		// in-process cleanup retries. If they end unconfirmed the lane closes and the
+		// next watch runs this recovery.
+		if config.Logger != nil {
+			config.Logger.InfoContext(ctx, "grok_subscription_recovery_deferred", "phase", grokExecutionPhase, "account_id", accountID, "lease_id", original.ID)
+		}
+		return nil
+	}
 	path := filepath.Join(config.Root, "managed-auth", string(original.ID)+".json")
 	raw, err := security.ReadPrivate(path, 16<<10)
 	var journal managedSubscriptionJournal
