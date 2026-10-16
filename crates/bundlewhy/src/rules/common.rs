@@ -643,7 +643,7 @@ pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, us
     match last {
         ')' => class_heading_precedes(code, prefix.len(), ignored),
         ';' | '{' | '}' => false,
-        ':' => !is_case_label(prefix),
+        ':' => !is_case_label(prefix, ignored),
         _ if is_identifier_part(last) => match trailing_word(prefix) {
             "else" | "try" | "do" | "finally" | "static" => false,
             word if OBJECT_VALUE_KEYWORDS.contains(&word) => true,
@@ -1613,13 +1613,15 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
                 .min_by_key(|(open, close)| close - open)
                 .copied()
                 .unwrap_or((0, bytes.len())),
-            "function" if named_function_is_expression(&code, found.start()) => function_bodies
-                .iter()
-                .find(|(start, _)| *start == found.start())
-                .map_or_else(
-                    || enclosing(found.start()),
-                    |(_, body)| (found.start(), body.1),
-                ),
+            "function" if named_function_is_expression(source, &code, ignored, found.start()) => {
+                function_bodies
+                    .iter()
+                    .find(|(start, _)| *start == found.start())
+                    .map_or_else(
+                        || enclosing(found.start()),
+                        |(_, body)| (found.start(), body.1),
+                    )
+            }
             _ => enclosing(found.start()),
         };
         scopes.push(scope);
@@ -2069,7 +2071,15 @@ const TYPE_OPERATOR_KEYWORDS: [&str; 7] = [
     "extends", "keyof", "typeof", "infer", "unique", "readonly", "is",
 ];
 
-fn named_function_is_expression(code: &str, start: usize) -> bool {
+/// `source` and `code` are the same text; `code` has every non-code range in
+/// `ignored` masked. The raw `source` is needed to tell a `case` label whose
+/// expression is a literal (`case"a":`) from a property named `case`.
+fn named_function_is_expression(
+    source: &str,
+    code: &str,
+    ignored: &[(usize, usize)],
+    start: usize,
+) -> bool {
     let raw_prefix = &code[..start];
     let prefix = raw_prefix.trim_end();
     let prefix = prefix.strip_suffix("async").unwrap_or(prefix).trim_end();
@@ -2077,7 +2087,7 @@ fn named_function_is_expression(code: &str, start: usize) -> bool {
         return true;
     }
     let preceding = prefix.as_bytes().last().copied();
-    if preceding == Some(b':') && is_case_label(prefix) {
+    if preceding == Some(b':') && is_case_label(&source[..prefix.len()], ignored) {
         return false;
     }
     if preceding.is_some_and(|byte| b"=([,:?!+-*/%&|^~".contains(&byte)) {
@@ -2115,18 +2125,60 @@ fn matching_delimiter(bytes: &[u8], open: usize, opening: u8, closing: u8) -> Op
     None
 }
 
-fn is_case_label(prefix: &str) -> bool {
-    let label = prefix.strip_suffix(':').unwrap_or(prefix);
-    let statement = label
-        .rsplit_once(|character: char| {
-            matches!(character, '{' | '}') || is_statement_end(character)
+/// Whether `prefix`, which ends with the `:` of a label or property, ends a
+/// `case` clause head or a `default` clause. `prefix` is the start of the
+/// source and `ignored` holds its non-code ranges.
+///
+/// The statement head is read with comments as blanks and every other
+/// non-code range (a string, template or regular expression literal) as one
+/// opaque operand, so trivia between `case` and its expression
+/// (`case/*c*/1:`, `case/*c*/ 1:`, `case/*;*/"a":`) never changes the
+/// decision and `case"a":` and `case(1):` are labels. `case` must be followed
+/// by a character that cannot continue an identifier and by an expression, so
+/// `casey:` and a property named `case` (`{ case: 1 }`, `{ case/*c*/: 1 }`)
+/// are not labels.
+fn is_case_label(prefix: &str, ignored: &[(usize, usize)]) -> bool {
+    let head = statement_head_for_label(prefix, ignored);
+    let head = head.trim();
+    head == "default"
+        || head.strip_prefix("case").is_some_and(|rest| {
+            rest.chars()
+                .next()
+                .is_some_and(|next| !is_identifier_part(next))
+                && !rest.trim().is_empty()
         })
-        .map_or(label, |(_, rest)| rest)
-        .trim();
-    statement == "default"
-        || statement
-            .strip_prefix("case")
-            .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
+}
+
+/// The statement that ends `prefix` (after its last `{`, `}`, `;` or line
+/// terminator outside a non-code range), without the trailing `:`. Comments
+/// read as a blank and other non-code ranges as one `"` each.
+fn statement_head_for_label(prefix: &str, ignored: &[(usize, usize)]) -> String {
+    let label = prefix.strip_suffix(':').unwrap_or(prefix);
+    let mut reversed = Vec::new();
+    let mut last_literal = None;
+    for (position, character) in label.char_indices().rev() {
+        let range = ignored
+            .partition_point(|(start, _)| *start <= position)
+            .checked_sub(1)
+            .map(|found| ignored[found])
+            .filter(|(_, stop)| position < *stop);
+        match range {
+            Some((start, _))
+                if label[start..].starts_with("/*") || label[start..].starts_with("//") =>
+            {
+                reversed.push(' ');
+            }
+            Some((start, _)) => {
+                if last_literal != Some(start) {
+                    reversed.push('"');
+                    last_literal = Some(start);
+                }
+            }
+            None if matches!(character, '{' | '}') || is_statement_end(character) => break,
+            None => reversed.push(character),
+        }
+    }
+    reversed.iter().rev().collect()
 }
 
 /// Whether the `?` at `index` of masked code is the question mark of a
@@ -7878,6 +7930,143 @@ y=/process.env.F/.test(z),process.env.G"#;
             format!("class C {{ async *while(a) {{ {gate} }} }}"),
         ] {
             assert_await_is_an_operator(&code);
+        }
+    }
+
+    /// A comment, a literal or a parenthesis right after `case` (or after
+    /// `default`) still makes the clause a statement block, so the enclosing
+    /// `async` function reaches the `await` operator and its `if` guard.
+    #[test]
+    fn case_labels_skip_comments_and_keep_the_async_context() {
+        let reported = format!(
+            "async function \
+             outer(x){{switch(x){{case/*c*/1:{{if(x){{if(await({AWAIT_READ}))run()}}}}}}}}"
+        );
+        assert_await_is_an_operator(&reported);
+        assert_eq!(await_operators_in(&reported).len(), 1, "{reported:?}");
+        let gate = await_gate();
+        for label in [
+            // Controls that already worked.
+            "case 1:",
+            "case /*c*/1:",
+            "case\t1:",
+            "default:",
+            "default :",
+            // Trivia between `case` and the expression.
+            "case/*c*/1:",
+            "case/*c*/ 1:",
+            "case /*c*/ 1:",
+            "case/*a*//*b*/1:",
+            "case/*a*/ /*b*/1:",
+            "case/*{*/1:",
+            "case/*}*/1:",
+            "case/*;*/1:",
+            "case/*: {*/1:",
+            "case/*a\nb*/1:",
+            "case/*a\u{2028}b*/1:",
+            "case/*c*/1/*d*/:",
+            "case 1/*c*/:",
+            // Literal and parenthesized expressions need no whitespace.
+            "case\"a\":",
+            "case'a':",
+            "case`a`:",
+            "case(1):",
+            "case/*c*/\"a\":",
+            "case/*c*/(1):",
+            "case-1:",
+            "case[1]:",
+            "case+x:",
+            "case/*;*/\"a;{\":",
+            // `default` with trivia.
+            "default/*c*/:",
+            "default/*{*/:",
+            "default /*c*/ :",
+        ] {
+            let code =
+                format!("async function outer(x){{switch(x){{{label}{{if(x){{{gate}}}}}}}}}");
+            assert_await_is_an_operator(&code);
+            assert_eq!(await_operators_in(&code).len(), 1, "{code:?}");
+            let repeated = format!(
+                "async function outer(x){{switch(x){{case 0:{{}}{label}{{if(x){{{gate}}}}}}}}}"
+            );
+            assert_await_is_an_operator(&repeated);
+        }
+    }
+
+    /// A name that only starts with `case` and a property named `case` are not
+    /// clause labels, so a block after them keeps holding members and an `if`
+    /// there is a method, not a statement.
+    #[test]
+    fn case_lookalikes_are_not_case_labels() {
+        let gate = await_gate();
+        for head in [
+            "casey:",
+            "case_:",
+            "case$:",
+            "case1:",
+            "case\u{3bb}:",
+            "defaulty:",
+            "default1:",
+            "case:",
+            "case/*c*/:",
+            "case /*c*/ :",
+            "\"case\":",
+            "'case':",
+            "a:",
+            "a/*c*/:",
+            "obj.case:",
+        ] {
+            let code = format!("async function outer(x){{const o={{{head}{{if(x){{{gate}}}}}}}}}");
+            assert_eq!(await_guard(&code), None, "{code:?}");
+            assert_eq!(await_operators_in(&code).len(), 0, "{code:?}");
+        }
+        // A genuine call argument is never a guard, with or without a label.
+        for code in [
+            format!("function outer(x){{switch(x){{case/*c*/1:{{if(x){{{gate}}}}}}}}}"),
+            format!(
+                "async function \
+                 outer(x){{switch(x){{case/*c*/1:{{if(x)run(await({AWAIT_READ}))}}}}}}"
+            ),
+        ] {
+            assert_eq!(await_guard(&code), None, "{code:?}");
+        }
+    }
+
+    /// Known limit: the clause head is read back only to the previous line
+    /// terminator, so a line break between `case` and its expression is not
+    /// recognized and the block is read as holding members.
+    #[test]
+    fn case_labels_split_by_a_line_break_are_a_known_limit() {
+        let gate = await_gate();
+        for label in ["case\n1:", "case // c\n1:", "case 1 +\n2:"] {
+            let code =
+                format!("async function outer(x){{switch(x){{{label}{{if(x){{{gate}}}}}}}}}");
+            assert_eq!(await_guard(&code), None, "{code:?}");
+        }
+    }
+
+    /// The same label rule decides whether a named function expression or a
+    /// declaration is bound after a clause label.
+    #[test]
+    fn eval_declared_after_a_case_label_with_trivia_is_a_declaration() {
+        for label in [
+            "case 0:",
+            "case/*c*/0:",
+            "case/*c*/ 0:",
+            "case\"a\":",
+            "case(0):",
+            "default/*c*/:",
+        ] {
+            let source = format!(
+                "switch (value) {{ {label} function eval(x) {{ return x; }} eval(code); }}"
+            );
+            assert_eq!(direct_eval_line(&source), None, "{source:?}");
+        }
+        // After a property colon the same function is an expression, so its
+        // name is not bound outside it and the call stays reported.
+        for head in ["case/*c*/:", "casey:", "a:"] {
+            let source = format!("o = {{ {head} function eval(x) {{ return x; }} }}; eval(code);");
+            assert!(direct_eval_line(&source).is_some(), "{source:?}");
         }
     }
 
