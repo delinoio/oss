@@ -42,7 +42,10 @@ type grokExecutionFixture struct {
 	finishes                   []*pb.FinishSubscriptionRequest
 	homeAtFinish               []bool
 	afterFinish                func(int)
-	logs                       *bytes.Buffer
+	// finishError, when set, fails the numbered Finish request after it was
+	// recorded, as a lost or refused response would.
+	finishError func(int) error
+	logs        *bytes.Buffer
 }
 
 func (f *grokExecutionFixture) TakeSubscription(_ context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (*connect.Response[pb.TakeSubscriptionResponse], error) {
@@ -85,6 +88,11 @@ func (f *grokExecutionFixture) FinishSubscription(_ context.Context, req *connec
 	f.homeAtFinish = append(f.homeAtFinish, present)
 	if f.afterFinish != nil {
 		f.afterFinish(len(f.finishes))
+	}
+	if f.finishError != nil {
+		if err := f.finishError(len(f.finishes)); err != nil {
+			return nil, err
+		}
 	}
 	document, _ := json.Marshal(domain.Account{Subscription: &domain.SubscriptionState{}})
 	return connect.NewResponse(&pb.FinishSubscriptionResponse{Account: &pb.Resource{Id: string(f.account), Revision: 4, DocumentJson: document}}), nil
@@ -402,6 +410,88 @@ func TestGrokExecutionKeepsTheLeaseWhenCleanupCannotBeConfirmed(t *testing.T) {
 	}
 	if len(f.finishes) != 1+grokCleanupRetries {
 		t.Fatalf("finish reports = %d", len(f.finishes))
+	}
+}
+
+// A failed protected Finish (lost response, refused RPC, a failed retry) leaves
+// the lease possibly live or its commit unacknowledged. None of those may be
+// reported as an ordinary job error: each closes the primary lane through
+// managedExecutionUncertain.
+func TestGrokExecutionEveryFailedProtectedFinishIsExecutionUncertainty(t *testing.T) {
+	failAt := func(n int) func(int) error {
+		return func(count int) error {
+			if count == n {
+				return connect.NewError(connect.CodeUnavailable, nil)
+			}
+			return nil
+		}
+	}
+	stuck := func(t *testing.T, f *grokExecutionFixture) {
+		if err := os.Mkdir(filepath.Join(f.home, security.OwnedTemporaryPrefix(f.authPath())+"stuck"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, test := range map[string]struct {
+		prepare func(*testing.T, *grokExecutionFixture, *grokSubscriptionExecution)
+		joined  bool
+		fail    func(int) error
+	}{
+		"final report lost":  {joined: true, fail: failAt(1)},
+		"not joined":         {joined: false, fail: failAt(1)},
+		"cleanup retry lost": {joined: true, fail: failAt(2), prepare: func(t *testing.T, f *grokExecutionFixture, _ *grokSubscriptionExecution) { stuck(t, f) }},
+		"never materialized": {joined: true, fail: failAt(1), prepare: func(t *testing.T, f *grokExecutionFixture, m *grokSubscriptionExecution) { m.attempted = false }},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if runtime.GOOS == "windows" {
+				t.Skip("directory replacement semantics differ")
+			}
+			f := newGrokExecutionFixture(t)
+			f.finishError = test.fail
+			managed, err := f.begin(t)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if name != "never materialized" {
+				if err := managed.credentialHook(f.home)(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if test.prepare != nil {
+				test.prepare(t, f, managed)
+			}
+			err = managed.finish(test.joined)
+			var uncertain *managedExecutionUncertain
+			if err == nil || !asManagedExecutionUncertain(err, &uncertain) {
+				t.Fatalf("a failed Finish was not execution uncertainty: %v", err)
+			}
+		})
+	}
+}
+
+// A Finish whose journal cannot be written is as unconfirmed as a lost response.
+func TestGrokExecutionFinishJournalFailureIsExecutionUncertainty(t *testing.T) {
+	f := newGrokExecutionFixture(t)
+	managed, err := f.begin(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := managed.credentialHook(f.home)(); err != nil {
+		t.Fatal(err)
+	}
+	// The journal path becomes a directory, so the next write of it fails.
+	if err := os.Remove(managed.lease.journalPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(managed.lease.journalPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err = managed.finish(true)
+	var uncertain *managedExecutionUncertain
+	if err == nil || !asManagedExecutionUncertain(err, &uncertain) {
+		t.Fatalf("a journal write failure was not execution uncertainty: %v", err)
+	}
+	if len(f.finishes) != 0 {
+		t.Fatal("a Finish was sent although its journal could not be written")
 	}
 }
 

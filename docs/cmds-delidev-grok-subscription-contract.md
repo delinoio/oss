@@ -785,7 +785,13 @@ Stop, crash, timeout) the Worker runs the Worker execution exit
 successor for the Finish generation, delete `auth.json` and `auth.json.lock` and
 only then report Finish. Unconfirmed cleanup is retried by the same owner up to
 three times with fresh Finish identities; if it stays unconfirmed the lane
-closes and the lease stays fenced. A process that was not joined is never read or
+closes and the lease stays fenced. Every failure of a protected Finish is
+execution uncertainty for the work runner (`managedExecutionUncertain`): a
+journal write that fails before the report, a failed or refused RPC, a lost
+response and a failed cleanup retry all close the primary lane and leave the job
+journal unfinished, because the lease may still be live or its commit
+unacknowledged. None of them is an ordinary terminal job error that keeps the
+Worker connected. A process that was not joined is never read or
 modified: the lease is reported uncleaned. A lease that never wrote a credential
 is released unchanged. A materialization failure retires whatever may exist in the
 named home and reports no success.

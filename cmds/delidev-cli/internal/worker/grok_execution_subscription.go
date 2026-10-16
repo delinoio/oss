@@ -85,7 +85,8 @@ func beginGrokSubscriptionExecution(ctx context.Context, config Config, owner do
 		e.settled = true
 		defer closeHTTP()
 		if err := lease.finish(nil, false, false, false); err != nil {
-			return nil, err
+			// The lease may still be live or the report unacknowledged.
+			return nil, &managedExecutionUncertain{err}
 		}
 		return nil, &managedReportedFailure{subscription.GrokBundleInvalid()}
 	}
@@ -140,6 +141,17 @@ func (e *grokSubscriptionExecution) finish(joined bool) (returned error) {
 		return nil
 	}
 	e.settled = true
+	// Every failure of a protected Finish (the journal write, the RPC, a lost
+	// response, a cleanup retry) leaves the lease possibly live or its commit
+	// unacknowledged, so none may become an ordinary reported job error: each one
+	// closes the primary lane through managedExecutionUncertain.
+	defer func() {
+		var uncertain *managedExecutionUncertain
+		if returned != nil && !errors.As(returned, &uncertain) {
+			e.log(context.Background(), slog.LevelError, "grok_subscription_execution_finish_unconfirmed")
+			returned = &managedExecutionUncertain{returned}
+		}
+	}()
 	defer e.closeHTTP()
 	defer func() { e.original.Clear() }()
 	ctx := context.Background()
