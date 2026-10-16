@@ -624,69 +624,73 @@ func idKey(raw json.RawMessage) (string, error) {
 	}
 	return "", protocolFailure()
 }
+func (c *Connection) rejectProtocol(reason string) error {
+	c.logger.Warn("native_protocol_rejected", "profile", c.profile, "reason", reason)
+	return protocolFailure()
+}
 func (c *Connection) receive(raw []byte) error {
 	if !c.protected.Safe(raw) {
 		return domain.Fail(domain.PermissionDenied, "The native protocol reflected protected runtime authority.", "Stop and reconcile the original runtime without publishing its private output.")
 	}
 	var message envelope
 	if err := domain.DecodeBounded(raw, &message, c.frameLimit()); err != nil {
-		return protocolFailure()
+		return c.rejectProtocol("envelope")
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
-		return protocolFailure()
+		return c.rejectProtocol("object")
 	}
 	_, hasMethod := fields["method"]
 	_, hasResult := fields["result"]
 	_, hasError := fields["error"]
 	_, hasParams := fields["params"]
 	if message.JSONRPC != "" && message.JSONRPC != "2.0" {
-		return protocolFailure()
+		return c.rejectProtocol("jsonrpc-version")
 	}
 	if c.jsonrpc != "" {
 		if string(fields["jsonrpc"]) != `"2.0"` {
-			return protocolFailure()
+			return c.rejectProtocol("jsonrpc-required")
 		}
 		for key := range fields {
 			switch key {
 			case "jsonrpc", "id", "method", "params", "result", "error":
 			default:
-				return protocolFailure()
+				return c.rejectProtocol("jsonrpc-extra-field")
 			}
 		}
 		if hasError {
 			var errorFields map[string]json.RawMessage
 			if json.Unmarshal(fields["error"], &errorFields) != nil {
-				return protocolFailure()
+				return c.rejectProtocol("error-object")
 			}
 			for key := range errorFields {
 				if key != "code" && key != "message" && key != "data" {
-					return protocolFailure()
+					return c.rejectProtocol("error-extra-field")
 				}
 			}
 		}
 	}
 	if message.EmittedAtMS != nil && (*message.EmittedAtMS < 0 || *message.EmittedAtMS > 253402300799999) {
-		return protocolFailure()
+		return c.rejectProtocol("emitted-time")
 	}
 	key := ""
 	if len(message.ID) > 0 {
 		var err error
 		key, err = idKey(message.ID)
 		if err != nil {
-			return err
+			return c.rejectProtocol("request-id")
 		}
 	}
 	if hasMethod {
 		if domain.Text(message.Method, "native method", 256, true) != nil || hasResult || hasError {
-			return protocolFailure()
+			return c.rejectProtocol("notification-shape")
 		}
 		event := Event{Kind: Notification, Method: message.Method, Params: message.Params, EmittedAtMS: message.EmittedAtMS, size: len(raw)}
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		if key != "" {
 			if _, exists := c.incoming[key]; exists {
-				return protocolFailure()
+				return c.rejectProtocol("duplicate-arrival")
 			}
 			if len(c.incoming) >= maxPending {
 				return domain.Fail(domain.ResourceExhausted, "Too many pending native interactions.", "Resolve or cancel existing native interactions before resuming.")
@@ -697,7 +701,7 @@ func (c *Connection) receive(raw []byte) error {
 		return c.queueLocked(event)
 	}
 	if key == "" || hasParams || hasResult == hasError || (hasError && (message.Error == nil || message.Error.Code == nil || message.Error.Message == nil)) {
-		return protocolFailure()
+		return c.rejectProtocol("response-shape")
 	}
 	response := Response{Result: message.Result}
 	if message.Error != nil {
@@ -708,7 +712,7 @@ func (c *Connection) receive(raw []byte) error {
 	defer c.mu.Unlock()
 	p, exists := c.pending[key]
 	if !exists {
-		return protocolFailure()
+		return c.rejectProtocol("orphan-response")
 	}
 	delete(c.pending, key)
 	if p.abandoned {
