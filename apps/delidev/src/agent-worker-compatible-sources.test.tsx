@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// Issue 4134: Agent Worker API source choices are the server-filtered saved
-// providers that own a selectable account compatible with the harness protocol.
+// Agent Worker API source choices are the server-filtered saved providers that
+// own a selectable account compatible with the harness protocol.
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
