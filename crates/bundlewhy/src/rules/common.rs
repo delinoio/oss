@@ -2390,11 +2390,14 @@ impl<'a> MemberScan<'a> {
                 // A name ends a field or signature, a member access
                 // (`x = a.b`) and a private name (`#state`) included; only an
                 // expression keyword (`x = typeof`) leaves the member open.
+                // A keyword that itself starts a member (`class C { typeof`)
+                // is a field name, not an operator, and ends that member.
                 Token::Word { text, member } => {
                     return kind == BraceKind::ClassBody
                         && (member
                             || !REGEX_KEYWORDS.contains(&text)
-                            || self.void_ends_type(token_end, text))
+                            || self.void_ends_type(token_end, text)
+                            || self.at_member_position(token_end - text.len(), kind))
                         && self.new_line_between(token_end, member_start);
                 }
                 _ => return false,
@@ -4281,6 +4284,25 @@ y=/process.env.F/.test(z),process.env.G"#;
             "class C { #state\n @dec() eval(value) {} }",
             "class C { #a\n #b\n eval(value) {} }",
             "class C { #state\u{2028} eval(value) {} }",
+            // A keyword-named field starts its own member, so it is a name.
+            "class C { typeof\n eval(value) {} }",
+            "class C { void\n eval(value) {} }",
+            "class C { return\n eval(value) {} }",
+            "class C { delete\n eval(value) {} }",
+            "class C { in\n eval(value) {} }",
+            "class C { new\n eval(value) {} }",
+            "class C { default\n eval(value) {} }",
+            "class C { await\n eval(value) {} }",
+            "class C { typeof;\n eval(value) {} }",
+            "class C { typeof; eval(value) {} }",
+            "class C { state\n eval(value) {} }",
+            "class C { a\n typeof\n eval(value) {} }",
+            "class C { x = 1\n typeof\n eval(value) {} }",
+            "class C { a = b;\n typeof\n eval(value) {} }",
+            "class C { static typeof\n eval(value) {} }",
+            "class C { @dec typeof\n eval(value) {} }",
+            "class C { typeof\n static eval(value) {} }",
+            "class C { typeof // c\n eval(value) {} }",
         ]);
         assert_all_reported(&[
             // No line break: the next token continues the field expression.
@@ -4292,6 +4314,10 @@ y=/process.env.F/.test(z),process.env.G"#;
             ("class C { x!\n eval(value) {} }", "eval(value)"),
             // A keyword that cannot end a field leaves the member open.
             ("class C { x = typeof\n eval(value) {} }", "eval(value)"),
+            ("class C { x = void\n eval(value) {} }", "eval(value)"),
+            ("class C { x = delete\n eval(value) {} }", "eval(value)"),
+            ("class C { x = await\n eval(value) {} }", "eval(value)"),
+            ("class C { typeof eval(value) {} }", "eval(value)"),
             ("class C { x = a.b +\n eval(value) {} }", "eval(value)"),
             // An object literal needs a comma, never a line break.
             ("const o = { a: b\n eval(value) {} };", "eval(value)"),
