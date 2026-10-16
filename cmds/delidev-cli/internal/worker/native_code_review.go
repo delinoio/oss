@@ -269,6 +269,9 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		if err := validateManagedAuthenticationHome(nativeHome, manifest.WorkspaceRoots()); err != nil {
 			return nil, err
 		}
+		if err := managed.recordAuthenticationHome(nativeHome); err != nil {
+			return nil, err
+		}
 		if subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle) != nil {
 			return nil, subscription.Invalid()
 		}
@@ -375,7 +378,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 						managedUnused = true
 					}
 				} else {
-					e = cleanupExecutionAuthentication(nativeHome, latest, managed.response.Bundle)
+					e = managed.cleanupAuthentication(nativeHome, latest, managed.response.Bundle)
 				}
 				if e != nil {
 					failures = append(failures, e)

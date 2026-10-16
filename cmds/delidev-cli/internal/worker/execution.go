@@ -505,6 +505,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 					return nil, subscription.Invalid()
 				}
 			}
+			if err := managed.recordAuthenticationHome(nativeHome); err != nil {
+				return nil, err
+			}
 			if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
 				return nil, subscription.Invalid()
 			}
@@ -688,7 +691,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			// The original process join authorizes the independent final auth
 			// comparison/removal and complete retained-file scan. A failed helper
 			// owner must not skip that work or release the credential lease.
-			authErr := cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle)
+			authErr := managed.cleanupAuthentication(nativeHome, managedLatest, managed.response.Bundle)
 			managedCleanup = helperErr == nil && authErr == nil
 			logExecutionAuthenticationCleanup(config.Logger, owner, authErr)
 			if !managedCleanup || !managedSuccess {

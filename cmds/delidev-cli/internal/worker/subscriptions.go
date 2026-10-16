@@ -52,6 +52,10 @@ type managedSubscriptionLease struct {
 	// grokRetry is set while a Grok Finish reported its private cleanup as
 	// unconfirmed; the original owner's retry consumes it.
 	grokRetry *grokCleanupRetry
+	// recoveryCapture is set when the current attach negotiated managed ChatGPT
+	// recovery: the lease then synchronizes a protected capture of the latest
+	// validated bundle before deleting its transient authentication.
+	recoveryCapture bool
 }
 
 type managedJournalState string
@@ -106,6 +110,26 @@ type managedSubscriptionJournal struct {
 	// opened, so the final settlement keeps the account connected instead of
 	// confirming a logout cleanup. It survives an interrupted recovery.
 	AccountPreserved bool `json:"account_preserved,omitempty"`
+	// Server is the stable server identity the lease was granted by. Recovery
+	// accepts only evidence recorded for the same server; journals written before
+	// this field existed omit it.
+	Server domain.ID `json:"server,omitempty"`
+	// AuthHome is the canonical native directory the lease's transient
+	// authentication was written to. It is recorded before the credential is
+	// written, lives only in this private journal and is never logged.
+	AuthHome string `json:"auth_home,omitempty"`
+	// CaptureRequest is the durable identity of the protected recovery capture of
+	// the latest validated bundle, CaptureDigest the digest of the captured bundle
+	// and CaptureSynced whether the server confirmed it.
+	CaptureRequest domain.ID `json:"capture_request,omitempty"`
+	CaptureDigest  string    `json:"capture_digest,omitempty"`
+	CaptureSynced  bool      `json:"capture_synced,omitempty"`
+	// Recovery* retain the durable recovery request once the original cleanup was
+	// proven, so a crash or lost response resends exactly the same request.
+	RecoveryRequest domain.ID `json:"recovery_request,omitempty"`
+	RecoveryCapture domain.ID `json:"recovery_capture,omitempty"`
+	RecoveryReport  int32     `json:"recovery_report,omitempty"`
+	RecoveryCleaned bool      `json:"recovery_cleaned,omitempty"`
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {
@@ -152,7 +176,7 @@ func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client 
 	}
 	// A durable claim precedes the protected delivery and every native side
 	// effect. Reconnect never regenerates this claim or replays the login.
-	claim := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: account, Operation: operation, Instance: instance, Finish: domain.NewID(), Action: action, State: managedClaimed, InstallationRetention: true}
+	claim := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: account, Operation: operation, Instance: instance, Finish: domain.NewID(), Action: action, State: managedClaimed, InstallationRetention: true, Server: credential.ServerID}
 	journalPath := filepath.Join(root, string(leaseID)+".json")
 	if err := writeJSON(journalPath, claim); err != nil {
 		return nil, release, subscription.Invalid()
@@ -252,11 +276,15 @@ func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client 
 		clear(response.Msg.Bundle)
 		return nil, release, &managedExecutionUncertain{subscription.Invalid()}
 	}
-	return &managedSubscriptionLease{paidCredits: config.paidCredits, logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, release, nil
+	if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE {
+		codexLeasesInFlight.Store(string(leaseID), struct{}{})
+	}
+	return &managedSubscriptionLease{paidCredits: config.paidCredits, recoveryCapture: config.codexRecovery && action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE, logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, release, nil
 }
 
 func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, success bool) error {
 	defer clear(bundle)
+	codexLeasesInFlight.Delete(l.response.LeaseId)
 	l.journal.State = managedClosed
 	l.journal.Cleanup = cleanup
 	l.journal.Refresh = refresh
@@ -318,6 +346,7 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	active := map[domain.ID]bool{}
+	recoveries := newCodexRecoveryLane()
 	failures := make(chan error, 1)
 	defer func() {
 		cancel()
@@ -334,8 +363,45 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			continue
 		}
 		var account domain.Account
-		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) && !grokExecutionRecovery(account) {
+		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) && !grokExecutionRecovery(account) && !codexRecoveryRow(account) {
 			return subscription.Invalid()
+		}
+		if codexRecoveryRow(account) {
+			// A fenced managed ChatGPT EXECUTE lease is reconciled by its original
+			// Worker only after both sides negotiated recovery. One in-flight attempt
+			// per account within the lane bound; the lane retries with backoff and
+			// never blocks the other accounts.
+			if !config.codexRecovery {
+				continue
+			}
+			key, obligation := codexRecoveryKey(account), codexRecoveryObligation(account)
+			if !recoveries.due(key, obligation) {
+				continue
+			}
+			mu.Lock()
+			if active[key] || len(active) >= codexRecoveryLaneBound {
+				mu.Unlock()
+				continue
+			}
+			active[key] = true
+			mu.Unlock()
+			accountID := domain.ID(r.Id)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer func() { mu.Lock(); delete(active, key); mu.Unlock() }()
+				result := runCodexRecovery(ctx, config, client, credential, instance, accountID, account)
+				if result.disposition == recoverySettled {
+					recoveries.success(key)
+					return
+				}
+				if ctx.Err() != nil {
+					return
+				}
+				delay := recoveries.failure(key, obligation, result.disposition == recoveryTerminal)
+				logCodexRecovery(config.Logger, ctx, slog.LevelInfo, "codex_recovery_retry_scheduled", "account_id", accountID, "lease_id", key, "disposition", result.disposition, "reason", result.reason, "retry_delay", delay.String())
+			}()
+			continue
 		}
 		var op domain.SubscriptionOperation
 		var observation *domain.SubscriptionObservationOperation
@@ -636,6 +702,7 @@ const (
 	executionAuthPending    executionAuthenticationReason = "pending-file"
 	executionAuthSpecial    executionAuthenticationReason = "non-regular-file"
 	executionAuthCanceled   executionAuthenticationReason = "canceled"
+	executionAuthCapture    executionAuthenticationReason = "capture-unsynchronized"
 	executionAuthRemnant    executionAuthenticationReason = "credential-remnant"
 )
 

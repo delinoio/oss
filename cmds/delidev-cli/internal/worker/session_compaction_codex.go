@@ -223,6 +223,9 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 			return nil, err
 		}
 		managedPreNative = true
+		if err := managed.recordAuthenticationHome(nativeHome); err != nil {
+			return nil, err
+		}
 		if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
 			return nil, subscription.Invalid()
 		}
@@ -333,7 +336,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		closed = true
 		nativeClosed = true
 		if managed != nil {
-			authErr := cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle)
+			authErr := managed.cleanupAuthentication(nativeHome, managedLatest, managed.response.Bundle)
 			managedCleanup = helperErr == nil && authErr == nil
 			logExecutionAuthenticationCleanup(config.Logger, owner, authErr)
 			if helperErr != nil {

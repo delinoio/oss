@@ -39,6 +39,10 @@ func (l *managedSubscriptionLease) finishCodexScoped(bundle []byte, cleanup, suc
 	if scope == pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER && len(bundle) != 0 {
 		return subscription.Invalid()
 	}
+	if scope != pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER {
+		// The execution ended. A shared member's Finish does not end its owner.
+		codexLeasesInFlight.Delete(l.response.LeaseId)
+	}
 	l.journal.State = managedClosed
 	l.journal.Cleanup = cleanup
 	l.journal.Refresh = false

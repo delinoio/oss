@@ -381,6 +381,9 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 			return nil, err
 		}
 		preNative = true
+		if err := managed.recordAuthenticationHome(nativeConfig.Home); err != nil {
+			return nil, err
+		}
 		if err := subscription.WriteCredentialFile(filepath.Join(nativeConfig.Home, "auth.json"), managed.response.Bundle); err != nil {
 			return nil, subscription.Invalid()
 		}
@@ -407,7 +410,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	closeErr = errors.Join(nativeErr, helperErr)
 	if managed != nil && nativeErr == nil {
 		logger.InfoContext(ctx, "managed_fork_authentication", "job_id", owner, "phase", "cleanup")
-		authErr := cleanupExecutionAuthentication(nativeConfig.Home, latest, managed.response.Bundle)
+		authErr := managed.cleanupAuthentication(nativeConfig.Home, latest, managed.response.Bundle)
 		cleanup = helperErr == nil && authErr == nil
 		logExecutionAuthenticationCleanup(config.Logger, owner, authErr)
 		if !captured || authErr != nil {
