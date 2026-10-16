@@ -1051,6 +1051,44 @@ it("cancels the Close without a native call when pagehide withdrew its hold duri
   expect(pageCalls("close")).toHaveLength(1);
 });
 
+it("restores the hold of a sent unsettled Close after a bfcache return without resending it", async () => {
+  const f = fixture({ pages: 1 });
+  f.model.outcome = "cleanup-pending";
+  f.model.settleOnObserve = false;
+  const captured = mountWithRetainedSession(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  const [first] = f.model.pages;
+  const store = captured.store;
+  store.open(retained, pageTab(f.profileId, first.id));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  const pending = await screen.findByRole("alert");
+  expect(pageCalls("close")).toHaveLength(1);
+  const owned = () => store.snapshot(retained).tabs.map(sessionTabKey);
+  // pagehide withdraws the hold; a persisted pageshow restores the same one.
+  act(() => {
+    window.dispatchEvent(new Event("pagehide"));
+  });
+  const restored = new Event("pageshow");
+  Object.defineProperty(restored, "persisted", { value: true });
+  act(() => {
+    window.dispatchEvent(restored);
+  });
+  // The restored hold keeps the descriptor through an empty inventory.
+  store.reconcilePages(retained, f.profileId, []);
+  expect(owned()).toContain(sessionTabKey(pageTab(f.profileId, first.id)));
+  expect(pageCalls("close")).toHaveLength(1);
+  // The original proof still settles it everywhere without a second Close.
+  f.model.settleOnObserve = true;
+  fireEvent.click(
+    within(pending).getByRole("button", { name: "Check status" }),
+  );
+  await waitFor(() => expect(tabNames()).toEqual(["Conversation"]));
+  expect(owned()).toEqual([SessionTabKind.Conversation]);
+  expect(pageCalls("close")).toHaveLength(1);
+});
+
 it("retains the descriptor in every session while a close fails or stays unconfirmed", async () => {
   const f = fixture({ pages: 1 });
   const captured = mountWithRetainedSession(f);
