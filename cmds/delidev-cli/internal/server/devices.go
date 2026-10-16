@@ -251,6 +251,7 @@ func (s *Service) PairDevice(ctx context.Context, req *connect.Request[pb.PairDe
 			}
 			value.Network = nil
 			value.Disabled = false
+			value.Retired = false
 			value.LastSeen = time.Time{}
 			value.Installations = nil
 			value.DiscoveryRevision = 0
@@ -383,6 +384,121 @@ func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[pb.Revo
 		return nil, rpc.Error(err, correlation)
 	}
 	response := connect.NewResponse(&pb.RevokeDeviceResponse{Device: projected, RequestId: meta.RequestId, Replayed: result.Replayed})
+	rpc.CopyCorrelation(response, req.Header())
+	return response, nil
+}
+
+// workerRemoval is the replayable receipt of one accepted RemoveWorker request.
+// It carries the revoked device identities so a lost response can still close
+// their connections after replay, without storing any credential material.
+type workerRemoval struct {
+	Machine store.Record `json:"machine"`
+	Devices []domain.ID  `json:"devices"`
+}
+
+// RemoveWorker revokes every Worker authorization of one saved machine and
+// retires the machine in a single transaction. It reuses the RevokeDevice effect
+// set and never deletes sessions, usage, schedules, cleanup evidence or files.
+func (s *Service) RemoveWorker(ctx context.Context, req *connect.Request[pb.RemoveWorkerRequest]) (*connect.Response[pb.RemoveWorkerResponse], error) {
+	correlation := req.Header().Get(rpc.CorrelationHeader)
+	meta := req.Msg.Mutation
+	requestID, machineID := "", ""
+	if meta != nil {
+		requestID, machineID = meta.RequestId, meta.Id
+	}
+	fail := func(err error) (*connect.Response[pb.RemoveWorkerResponse], error) {
+		s.logger.Warn("worker_removal_failed", "request_id", requestID, "machine_id", machineID, "code", domain.SafeError(err).Code)
+		return nil, rpc.Error(err, correlation)
+	}
+	if actor, ok := domain.PrincipalFrom(ctx); ok && actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice {
+		return fail(domain.Fail(domain.PermissionDenied, "Worker credentials cannot remove Workers.", "Use an owner or paired client credential."))
+	}
+	if meta == nil || meta.ExpectedRevision == 0 {
+		return fail(domain.Fail(domain.MissingInput, "Worker removal requires the machine's current revision and a request ID.", "Inspect the Runner Device first."))
+	}
+	if req.Msg.SchemaVersion != 1 {
+		return fail(domain.Fail(domain.Unsupported, "Worker removal supports only Runner Device schema 1.", "Update DeliDev before removing this Worker."))
+	}
+	if err := domain.ID(meta.Id).Validate(); err != nil {
+		return fail(err)
+	}
+	input := struct {
+		ID       string
+		Revision uint64
+		Schema   uint32
+	}{meta.Id, meta.ExpectedRevision, req.Msg.SchemaVersion}
+	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "device.remove-worker", input, func(tx *store.Tx) (any, error) {
+		record, err := tx.Get(domain.MachineKind, domain.ID(meta.Id))
+		if err != nil {
+			return nil, err
+		}
+		machine, err := store.Decode[domain.Machine](record)
+		if err != nil {
+			return nil, err
+		}
+		if machine.Retired {
+			return nil, domain.Fail(domain.Conflict, "This Worker was already removed.", "Refresh Runner Devices; the original removal request keeps its receipt.")
+		}
+		if record.Revision != meta.ExpectedRevision {
+			return nil, domain.Fail(domain.Conflict, "This Worker changed after the confirmation was opened.", "Review the current Runner Device and confirm removal again.")
+		}
+		devices, err := tx.WorkerDevicesForMachine(record.ID)
+		if err != nil {
+			return nil, err
+		}
+		if len(devices) == 0 {
+			return nil, domain.Fail(domain.InvalidArgument, "The target is not a paired Worker.", "Select a saved Worker from Runner Devices.")
+		}
+		removal := workerRemoval{Devices: make([]domain.ID, 0, len(devices))}
+		for _, deviceRecord := range devices {
+			device, err := store.Decode[domain.Device](deviceRecord)
+			if err != nil {
+				return nil, err
+			}
+			if device.Type != domain.WorkerDevice || device.MachineID != record.ID {
+				return nil, domain.Fail(domain.InvalidArgument, "The target is not a paired Worker.", "Select a saved Worker from Runner Devices.")
+			}
+			// An already revoked registration keeps its original timestamp.
+			if !device.Revoked {
+				now := time.Now().UTC()
+				device.Revoked, device.RevokedAt = true, &now
+				if _, err := tx.Put(domain.DeviceKind, deviceRecord.ID, deviceRecord.Revision, "", "", device); err != nil {
+					return nil, err
+				}
+			}
+			if err := tx.StopForwards("", deviceRecord.ID); err != nil {
+				return nil, err
+			}
+			if err := tx.RevokeCredential(deviceRecord.ID); err != nil {
+				return nil, err
+			}
+			removal.Devices = append(removal.Devices, deviceRecord.ID)
+		}
+		machine.Disabled, machine.Retired = true, true
+		removal.Machine, err = tx.Put(domain.MachineKind, record.ID, meta.ExpectedRevision, "", "", machine)
+		if err != nil {
+			return nil, err
+		}
+		if err := revokeMachineJobs(tx, record.ID); err != nil {
+			return nil, err
+		}
+		if err := loseTerminalAuthority(tx, record.ID); err != nil {
+			return nil, err
+		}
+		return removal, nil
+	})
+	if err != nil {
+		return fail(err)
+	}
+	var removal workerRemoval
+	if err := domain.Decode(result.Data, &removal); err != nil {
+		return fail(err)
+	}
+	for _, id := range removal.Devices {
+		s.cancelDevice(id)
+	}
+	s.logger.Info("worker_removed", "request_id", meta.RequestId, "machine_id", removal.Machine.ID, "revoked_device_count", len(removal.Devices), "replayed", result.Replayed)
+	response := connect.NewResponse(&pb.RemoveWorkerResponse{Machine: rpc.Resource(removal.Machine), RequestId: meta.RequestId, Replayed: result.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }

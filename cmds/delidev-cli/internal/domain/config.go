@@ -807,9 +807,16 @@ type Machine struct {
 	DiscoveryRevision  uint64              `json:"discovery_revision,omitempty"`
 	LastSeen           time.Time           `json:"last_seen"`
 	Disabled           bool                `json:"disabled"`
+	// Retired removes the saved Worker from active inventories and new execution
+	// choices. Exact reads keep the original record. Records written before
+	// Worker removal omit it and are therefore not retired.
+	Retired bool `json:"retired,omitempty"`
 }
 
 func (m Machine) Validate() error {
+	if m.Retired && !m.Disabled {
+		return Fail(InvalidArgument, "A retired Worker must also be disabled.", "Remove the Worker through its revocation-bound operation.")
+	}
 	if m.Network != nil && m.Network.Validate() != nil {
 		return Fail(InvalidArgument, "Invalid Worker network state.", "Use authenticated route synchronization.")
 	}

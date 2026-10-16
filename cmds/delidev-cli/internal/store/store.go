@@ -973,6 +973,12 @@ func listRows(ctx context.Context, q queryer, f Filter, limit int) ([]Record, er
 		query += " AND project_id=?"
 		args = append(args, f.ProjectID)
 	}
+	if f.Kind == domain.MachineKind {
+		// Retired Workers are excluded before the page limit applies so cursors and
+		// streams fill from active records. Exact reads (Get) are unaffected, and
+		// records written before retirement existed omit the marker.
+		query += " AND COALESCE(json_extract(CAST(body AS TEXT),'$.retired'),0)=0"
+	}
 	query += " ORDER BY id LIMIT ?"
 	args = append(args, limit)
 	rows, err := q.QueryContext(ctx, query, args...)
