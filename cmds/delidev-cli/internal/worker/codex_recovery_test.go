@@ -140,7 +140,7 @@ func newRecoveryWorkerFixture(t *testing.T) *recoveryWorkerFixture {
 		t.Fatal(err)
 	}
 	f.lease = domain.SubscriptionLease{ID: domain.NewID(), OperationID: domain.NewID(), Revision: 3, Action: domain.SubscriptionExecute, MachineID: f.credential.MachineID, InstanceID: domain.NewID(), DeviceID: f.credential.DeviceID, Epoch: domain.NewID(), Generation: domain.NewID(), StartedAt: time.Now().UTC()}
-	f.journal = managedSubscriptionJournal{Version: 1, Lease: f.lease.ID, Account: f.accountID, Operation: f.lease.OperationID, Instance: f.lease.InstanceID, Finish: domain.NewID(), Generation: f.lease.Generation, LeaseRevision: f.lease.Revision, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE, State: managedClosed, Server: f.credential.ServerID, AuthHome: f.home}
+	f.journal = managedSubscriptionJournal{Version: 1, Lease: f.lease.ID, Account: f.accountID, Operation: f.lease.OperationID, Instance: f.lease.InstanceID, Finish: domain.NewID(), Generation: f.lease.Generation, LeaseRevision: f.lease.Revision, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE, State: managedClosed, Server: f.credential.ServerID, AuthHome: f.home, NativeOwnerEvidence: true}
 	f.path = filepath.Join(root, "managed-auth", string(f.lease.ID)+".json")
 	if err := security.PrivateDir(filepath.Dir(f.path)); err != nil {
 		t.Fatal(err)
@@ -584,7 +584,7 @@ func TestCodexRecoveryMembersMustBelongToTheOwner(t *testing.T) {
 	if result := runCodexRecovery(context.Background(), f.config, f.client, f.credential, f.instance, f.accountID, account); result.disposition != recoveryTerminal || !f.authExists() {
 		t.Fatal("a member without retained journal evidence was settled", result)
 	}
-	journal := managedSubscriptionJournal{Version: 1, Lease: member, Account: f.accountID, Operation: account.Subscription.Members[1].OperationID, Instance: f.lease.InstanceID, Finish: domain.NewID(), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE, OwnerLease: f.lease.ID}
+	journal := managedSubscriptionJournal{Version: 1, Lease: member, Account: f.accountID, Operation: account.Subscription.Members[1].OperationID, Instance: f.lease.InstanceID, Finish: domain.NewID(), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE, OwnerLease: f.lease.ID, NativeOwnerEvidence: true}
 	if err := writeJSON(filepath.Join(f.config.Root, "managed-auth", string(member)+".json"), journal); err != nil {
 		t.Fatal(err)
 	}
@@ -594,6 +594,98 @@ func TestCodexRecoveryMembersMustBelongToTheOwner(t *testing.T) {
 	settling := f.server.settling()
 	if len(settling) != 1 || len(settling[0].SettledMemberLeaseIds) != 2 {
 		t.Fatal("the owner did not report every settled member")
+	}
+}
+
+// A missing process index proves that no process ran only when the governing
+// retained journal proves the owner never launched; a lost index of a journaled
+// owner, or a journal that proves nothing, never proves completion.
+func TestCodexRecoveryMissingProcessIndexRequiresNoLaunchEvidence(t *testing.T) {
+	blocked := func(t *testing.T, f *recoveryWorkerFixture, account domain.Account, reason domain.SubscriptionRecoveryBlockedReason) {
+		t.Helper()
+		f.server.capture = &pb.ReadSubscriptionRecoveryCaptureResponse{CaptureId: string(domain.NewID()), Original: f.original, Latest: f.latest}
+		result := runCodexRecovery(context.Background(), f.config, f.client, f.credential, f.instance, f.accountID, account)
+		if result.disposition != recoveryTerminal || result.reason != reason || len(f.server.settling()) != 0 || !f.authExists() {
+			t.Fatal("a missing process index was read as proof that no process ran", result)
+		}
+	}
+	t.Run("journaled job owner lost its index", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		f.journal.NativeOwners = []domain.ID{f.lease.OperationID}
+		f.writeJournal()
+		blocked(t, f, f.account(), domain.RecoveryOwnershipEvidenceInvalid)
+	})
+	t.Run("journaled owner lease lost its index", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		f.journal.NativeOwners = []domain.ID{f.lease.ID}
+		f.writeJournal()
+		blocked(t, f, f.account(), domain.RecoveryOwnershipEvidenceInvalid)
+	})
+	t.Run("journal without launch evidence", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		f.journal.NativeOwnerEvidence = false
+		f.writeJournal()
+		blocked(t, f, f.account(), domain.RecoveryOwnershipEvidenceInvalid)
+	})
+	t.Run("legacy journal without a home", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		f.journal.NativeOwnerEvidence, f.journal.AuthHome = false, ""
+		f.writeJournal()
+		blocked(t, f, f.account(), domain.RecoveryCredentialProofUnavailable)
+	})
+	t.Run("member that launched lost its index", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		member, operation := domain.NewID(), domain.NewID()
+		account := f.account()
+		account.Subscription.Lease.Shared = true
+		account.Subscription.Members = []domain.SubscriptionMember{{LeaseID: f.lease.ID, OperationID: f.lease.OperationID, Revision: 1, State: domain.SubscriptionMemberRetained}, {LeaseID: member, OperationID: operation, Revision: 2, State: domain.SubscriptionMemberRetained}}
+		journal := managedSubscriptionJournal{Version: 1, Lease: member, Account: f.accountID, Operation: operation, Instance: f.lease.InstanceID, Finish: domain.NewID(), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE, OwnerLease: f.lease.ID, NativeOwnerEvidence: true, NativeOwners: []domain.ID{operation}}
+		if err := writeJSON(filepath.Join(f.config.Root, "managed-auth", string(member)+".json"), journal); err != nil {
+			t.Fatal(err)
+		}
+		blocked(t, f, account, domain.RecoveryOwnershipEvidenceInvalid)
+		// The same member that never launched settles with its owner.
+		journal.NativeOwners = nil
+		if err := writeJSON(filepath.Join(f.config.Root, "managed-auth", string(member)+".json"), journal); err != nil {
+			t.Fatal(err)
+		}
+		if result := runCodexRecovery(context.Background(), f.config, f.client, f.credential, f.instance, f.accountID, account); result.disposition != recoverySettled {
+			t.Fatal("a member without a launch did not settle", result)
+		}
+	})
+	t.Run("an existing index is still reconciled", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		f.journal.NativeOwners = []domain.ID{f.lease.OperationID}
+		f.writeJournal()
+		if err := security.PrivateDir(filepath.Join(f.config.Root, "processes", string(f.lease.OperationID))); err != nil {
+			t.Fatal(err)
+		}
+		f.server.capture = &pb.ReadSubscriptionRecoveryCaptureResponse{CaptureId: string(domain.NewID()), Original: f.original, Latest: f.latest}
+		if result := f.run(); result.disposition != recoverySettled {
+			t.Fatal("an intact process index blocked recovery", result)
+		}
+	})
+}
+
+// The index of every native owner exists, and is journaled, before its
+// credentialed launch.
+func TestRecordNativeOwnerCreatesAndJournalsTheIndex(t *testing.T) {
+	f := newRecoveryWorkerFixture(t)
+	lease := &managedSubscriptionLease{client: f.client, credential: f.credential, instance: f.lease.InstanceID, account: f.accountID, journalPath: f.path, journal: f.journal}
+	owner := domain.NewID()
+	for i := 0; i < 2; i++ {
+		if err := lease.recordNativeOwner(owner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := security.CheckPrivateDir(filepath.Join(f.config.Root, "processes", string(owner))); err != nil {
+		t.Fatal("the process index was not created", err)
+	}
+	if owners := f.readJournal().NativeOwners; len(owners) != 1 || owners[0] != owner {
+		t.Fatal("the owner was not journaled exactly once", owners)
+	}
+	if err := lease.recordNativeOwner("not-an-id"); err == nil {
+		t.Fatal("an invalid owner was journaled")
 	}
 }
 

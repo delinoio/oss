@@ -114,6 +114,16 @@ type managedSubscriptionJournal struct {
 	// accepts only evidence recorded for the same server; journals written before
 	// this field existed omit it.
 	Server domain.ID `json:"server,omitempty"`
+	// NativeOwnerEvidence marks a journal written by a Worker that creates and
+	// journals every native process owner's index (NativeOwners) before any native
+	// process holding the credential can start. Only such a journal can prove that
+	// an owner without a process index never started a process; a journal without
+	// the marker proves nothing. It is set with the durable claim.
+	NativeOwnerEvidence bool `json:"native_owner_evidence,omitempty"`
+	// NativeOwners lists the process owners whose index directory was created, and
+	// journaled here, immediately before the credentialed native launch of this
+	// lease (the job and, for a shared owner, the owner lease itself).
+	NativeOwners []domain.ID `json:"native_owners,omitempty"`
 	// AuthHome is the canonical native directory the lease's transient
 	// authentication was written to. It is recorded before the credential is
 	// written, lives only in this private journal and is never logged.
@@ -186,7 +196,7 @@ func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client 
 	}
 	// A durable claim precedes the protected delivery and every native side
 	// effect. Reconnect never regenerates this claim or replays the login.
-	claim := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: account, Operation: operation, Instance: instance, Finish: domain.NewID(), Action: action, State: managedClaimed, InstallationRetention: true, Server: credential.ServerID}
+	claim := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: account, Operation: operation, Instance: instance, Finish: domain.NewID(), Action: action, State: managedClaimed, InstallationRetention: true, NativeOwnerEvidence: true, Server: credential.ServerID}
 	journalPath := filepath.Join(root, string(leaseID)+".json")
 	if err := writeJSON(journalPath, claim); err != nil {
 		return nil, release, subscription.Invalid()

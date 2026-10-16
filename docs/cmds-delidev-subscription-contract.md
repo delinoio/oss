@@ -1177,7 +1177,9 @@ instance, the caller to be the machine's current instance and the lease to be
 fenced. Another Worker, a revoked device, a replaced generation, restored or
 foreign journals and a live execution of the same lease in the running process
 are rejected. Every original process owner (job, shared owner and members) is
-joined through the process journals before the home is touched; shared-owner
+joined through the process journals before the home is touched; an owner without
+an index is accepted only with the journaled no-launch evidence of the
+[process contract](cmds-delidev-process-contract.md#managed-chatgpt-recovery-process-reconciliation); shared-owner
 members must each be retained members of the owner, and the owner Finish
 equivalent waits until the request lists every member the server holds. Dependent
 credential users (access-only quota or credit readers) block owner retirement.

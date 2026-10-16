@@ -613,6 +613,18 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		nativeConfig.ManagedAuthentication = true
 		nativeConfig.QuotaObserver = managed.publishRollingQuota
 	}
+	if managed != nil {
+		// Journal every native process owner's index before the credentialed
+		// launch, so recovery never reads a lost index as proof of no process.
+		if sharedCodex && sharedFounder {
+			if err := managed.recordNativeOwner(sharedOwner.ownerProcessID()); err != nil {
+				return nil, err
+			}
+		}
+		if err := managed.recordNativeOwner(owner); err != nil {
+			return nil, err
+		}
+	}
 	// Once startup may own a process, only independently joined native cleanup
 	// may authorize removal. A definite failed Open already proves that closure;
 	// recovery-required startup must retain its authentication and lease, except

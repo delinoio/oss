@@ -308,6 +308,11 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		}
 	}
 	phase = compactionLaunch
+	if managed != nil {
+		if err := managed.recordNativeOwner(owner); err != nil {
+			return nil, err
+		}
+	}
 	managedPreNative = false
 	native, err := codex.Open(nativeCtx, nativeConfig)
 	if err != nil {

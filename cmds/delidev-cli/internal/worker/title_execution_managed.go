@@ -148,6 +148,9 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 		ManagedAuthentication: true, ManagedTitle: true,
 		Process: process.Config{Directory: processRoot, OwnerID: jobID, Executable: resolved, Cwd: workdir, Env: env, Logger: config.Logger},
 	}
+	if err := managed.recordNativeOwner(jobID); err != nil {
+		return nil, err
+	}
 	native, err := codex.Open(ctx, nativeConfig)
 	if err != nil {
 		managedHelperRetained = codex.NativeJoinedHelperRetirementFailed(err)

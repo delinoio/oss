@@ -233,6 +233,33 @@ func (l *managedSubscriptionLease) recordAuthenticationHome(home string) error {
 	return nil
 }
 
+// recordNativeOwner creates the durable process index of one native process owner
+// and journals the owner before any credentialed native process of that owner can
+// start, so recovery can tell an owner that never launched (no journaled owner)
+// from one whose index was lost (journaled owner, missing index). A failure means
+// no native process of the owner started.
+func (l *managedSubscriptionLease) recordNativeOwner(owner domain.ID) error {
+	if err := owner.Validate(); err != nil {
+		return subscription.Invalid()
+	}
+	processes := filepath.Join(filepath.Dir(filepath.Dir(l.journalPath)), "processes")
+	if err := security.PrivateDir(processes); err != nil {
+		return subscription.Invalid()
+	}
+	if err := security.PrivateDir(filepath.Join(processes, string(owner))); err != nil {
+		return subscription.Invalid()
+	}
+	if slices.Contains(l.journal.NativeOwners, owner) {
+		return nil
+	}
+	l.journal.NativeOwners = append(l.journal.NativeOwners, owner)
+	if err := writeJSON(l.journalPath, l.journal); err != nil {
+		l.journal.NativeOwners = l.journal.NativeOwners[:len(l.journal.NativeOwners)-1]
+		return subscription.Invalid()
+	}
+	return nil
+}
+
 // cleanupAuthentication synchronizes the protected capture of the latest
 // validated bundle and only then deletes the transient authentication and scans
 // the retained history. A capture that cannot be confirmed keeps the file in
@@ -481,11 +508,23 @@ func runCodexRecovery(ctx context.Context, config Config, client delidevv1connec
 	// Reconcile every original process owner through the process journals, never
 	// by PID guesses, before the home is touched.
 	for _, owner := range recoveryProcessOwners(lease, state) {
-		// The durable process index precedes every native process. An owner that
-		// never created one never started a process; an index that exists is
-		// reconciled and never read as proof of completion when it is damaged.
+		// The durable process index precedes every credentialed native process and
+		// is journaled before it. A missing index proves that no process ran only
+		// when the owner's retained journal proves it was never launched; a lost
+		// index of a journaled owner (or of a journal that proves nothing) is never
+		// read as proof of completion. An index that exists is reconciled and never
+		// read as proof of completion when it is damaged.
 		if _, err := os.Lstat(filepath.Join(config.Root, "processes", string(owner))); errors.Is(err, fs.ErrNotExist) {
-			continue
+			if recoveryOwnerNeverLaunched(config, accountID, lease, state, evidence.journal, owner) {
+				continue
+			}
+			reason := domain.RecoveryOwnershipEvidenceInvalid
+			if journal.AuthHome == "" {
+				reason = domain.RecoveryCredentialProofUnavailable
+			}
+			logCodexRecovery(logger, ctx, slog.LevelWarn, "codex_recovery_blocked", "account_id", accountID, "lease_id", lease.ID, "reason", reason, "stage", "process-index-missing")
+			reportRecoveryBlock(ctx, client, credential, instance, accountID, lease, reason)
+			return recoveryBlocked(reason)
 		}
 		if err := process.ReconcileOwnerContext(ctx, filepath.Join(config.Root, "processes"), owner); err != nil {
 			logCodexRecovery(logger, ctx, slog.LevelWarn, "codex_recovery_blocked", "account_id", accountID, "lease_id", lease.ID, "reason", domain.RecoveryCleanupUnconfirmed, "code", domain.SafeError(err).Code)
@@ -621,6 +660,35 @@ func recoveryCredentials(ctx context.Context, config Config, client delidevv1con
 	}
 	logCodexRecovery(config.Logger, ctx, slog.LevelInfo, "codex_recovery_legacy_capture_synced", "account_id", accountID, "lease_id", lease.ID, "capture_id", synced.Msg.CaptureId)
 	return raw, nil, nil, pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE, nil
+}
+
+// recoveryOwnerNeverLaunched reports whether the retained journal of the lease or
+// member that governs a process owner proves that the owner never launched a
+// credentialed native process: the journal was written by a Worker that journals
+// every owner before its launch, and it does not name this owner. Any journal
+// that cannot be read or bound proves nothing.
+func recoveryOwnerNeverLaunched(config Config, accountID domain.ID, lease domain.SubscriptionLease, state *domain.SubscriptionState, original managedSubscriptionJournal, owner domain.ID) bool {
+	governing := original
+	if owner != lease.OperationID && owner != lease.ID {
+		member, ok := domain.SubscriptionMember{}, false
+		for _, candidate := range state.Members {
+			if candidate.OperationID == owner {
+				member, ok = candidate, true
+				break
+			}
+		}
+		if !ok {
+			return false
+		}
+		if member.LeaseID != lease.ID {
+			raw, err := security.ReadPrivate(filepath.Join(config.Root, "managed-auth", string(member.LeaseID)+".json"), 16<<10)
+			governing = managedSubscriptionJournal{}
+			if err != nil || domain.Decode(raw, &governing) != nil || governing.Version != 1 || governing.Account != accountID || governing.Lease != member.LeaseID || governing.Operation != member.OperationID || governing.OwnerLease != lease.ID {
+				return false
+			}
+		}
+	}
+	return governing.NativeOwnerEvidence && !slices.Contains(governing.NativeOwners, owner)
 }
 
 // recoveryProcessOwners lists every process owner the original lease started:

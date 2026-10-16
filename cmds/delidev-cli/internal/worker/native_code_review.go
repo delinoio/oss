@@ -399,6 +399,11 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 			}
 		}()
 		nativeJoined = false
+		if managed != nil {
+			if err := managed.recordNativeOwner(owner); err != nil {
+				return err
+			}
+		}
 		managedStarted = managed != nil
 		native, err = codex.Open(nativeCtx, nativeConfig)
 		if err != nil {

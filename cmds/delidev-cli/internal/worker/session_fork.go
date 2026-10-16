@@ -389,6 +389,11 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		}
 		nativeConfig.API, nativeConfig.ManagedAuthentication = nil, true
 	}
+	if managed != nil {
+		if err := managed.recordNativeOwner(owner); err != nil {
+			return nil, err
+		}
+	}
 	preNative = false
 	client, err := codex.Open(ctx, nativeConfig)
 	if err != nil {
