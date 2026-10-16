@@ -172,23 +172,64 @@ func sealGrokExecutionExit(home subscription.GrokHome, server, account, generati
 	return sealed, true, true
 }
 
+// grokCleanupRetry is what a Grok lease keeps after a Finish whose private home
+// cleanup was not confirmed: the original credential the exit is verified
+// against and the outcome the native operation reached. The bound home stays on
+// the lease, so the retry removes the credential only in the directory it was
+// materialized in.
+type grokCleanupRetry struct {
+	original subscription.GrokBundle
+	success  bool
+}
+
 // finishGrok settles one Grok lease: it prepares the outcome from the native
 // file and reports it through the generic protected Finish. refresh is true only
-// for a refresh whose native process already exited.
+// for a refresh whose native process already exited. When the private cleanup is
+// not confirmed the lease keeps its bound home and the original credential, and
+// retryGrokCleanup (the original owner only) reports the cleanup again.
 func (l *managedSubscriptionLease) finishGrok(original subscription.GrokBundle, success bool) error {
+	return l.settleGrok(original, success, false)
+}
+
+// retryGrokCleanup retries the private cleanup of a lease whose Finish reported
+// it unconfirmed. The retry uses a fresh Finish request identity, because the
+// first Finish committed under the old one, and runs on the same lease owner
+// only: the server refuses it from any other Worker device or instance.
+func (l *managedSubscriptionLease) retryGrokCleanup() error {
+	retry := l.grokRetry
+	if retry == nil {
+		return subscription.Invalid()
+	}
+	l.finishID = domain.NewID()
+	l.journal.Finish = l.finishID
+	return l.settleGrok(retry.original, retry.success, true)
+}
+
+func (l *managedSubscriptionLease) settleGrok(original subscription.GrokBundle, success, retried bool) error {
+	retained := original
 	defer original.Clear()
-	// The bound home is released once this Finish has settled its credential.
-	defer func() {
-		_ = l.grokHome.Close()
-		l.grokHome = subscription.GrokHome{}
-	}()
 	action := l.journal.Action
 	outcome := prepareGrokFinish(l.grokHome, l.credential.ServerID, l.account, l.finishID, action, original, success)
+	if outcome.Cleanup {
+		// The bound home is released once the credential is confirmed removed.
+		defer func() {
+			_ = l.grokHome.Close()
+			l.grokHome = subscription.GrokHome{}
+			l.grokRetry = nil
+			retained.Clear()
+		}()
+	} else {
+		// The home stays bound for the original owner's retry.
+		l.grokRetry = &grokCleanupRetry{original: retained, success: success}
+	}
 	refresh := outcome.Success && (action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH || outcome.Refreshed)
 	if l.logger != nil {
-		attrs := []slog.Attr{slog.String("account_id", string(l.account)), slog.String("lease_id", l.response.LeaseId), slog.String("action", action.String()), slog.Bool("success", outcome.Success), slog.Bool("refreshed", outcome.Refreshed), slog.Bool("cleanup_confirmed", outcome.Cleanup)}
+		attrs := []slog.Attr{slog.String("account_id", string(l.account)), slog.String("lease_id", l.response.LeaseId), slog.String("action", action.String()), slog.Bool("success", outcome.Success), slog.Bool("refreshed", outcome.Refreshed), slog.Bool("cleanup_confirmed", outcome.Cleanup), slog.Bool("retried", retried)}
 		if refresh {
 			attrs = append(attrs, slog.String("phase", "REFRESH"))
+		}
+		if !outcome.Cleanup || retried {
+			attrs = append(attrs, slog.String("cleanup_phase", "CLEANUP"))
 		}
 		l.logger.LogAttrs(context.Background(), slog.LevelInfo, "grok_subscription_finish", attrs...)
 	}
