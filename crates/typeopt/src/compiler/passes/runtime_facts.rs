@@ -20,6 +20,7 @@ use super::super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer};
 use crate::compiler::api::*;
 
 mod intrinsic_exposure;
+mod local_receiver;
 pub(in crate::compiler) use intrinsic_exposure::IntrinsicExposure;
 
 /// Possible runtime kinds of a value.
@@ -276,6 +277,12 @@ enum Member {
 #[derive(Default)]
 struct Patches {
     records: HashSet<(Owner, Member)>,
+    /// Members written through a receiver that is not provably a local
+    /// object (a parameter, a property read, a call result). The receiver may
+    /// be an intrinsic that a caller supplied, so the write is a possible
+    /// patch of that member on any owner. Only the array model consults these
+    /// (see [`local_receiver`]); other passes keep their own evidence.
+    unproven: HashSet<Member>,
 }
 
 impl Patches {
@@ -292,6 +299,16 @@ impl Patches {
             .flat_map(|o| [(o.clone(), member.clone()), (o.clone(), Member::Any)])
             .filter(|record| self.records.contains(record))
             .map(|(owner, member)| describe_record(&owner, &member))
+            .min()
+    }
+
+    /// The first unproven write (see [`Patches::unproven`]) of `member`, or of
+    /// an unknown member, in a stable textual form.
+    fn unproven_record(&self, member: &str) -> Option<String> {
+        [Member::Named(member.to_owned()), Member::Any]
+            .iter()
+            .filter(|record| self.unproven.contains(record))
+            .map(|record| describe_record(&Owner::Any, record))
             .min()
     }
 
@@ -320,6 +337,15 @@ impl Patches {
                     }
             })
             .map(|(owner, member)| describe_record(owner, member))
+            .chain(
+                self.unproven
+                    .iter()
+                    .filter(|member| match member {
+                        Member::Any => true,
+                        Member::Named(name) => name == "__proto__" || numeric_like_key(name),
+                    })
+                    .map(|member| describe_record(&Owner::Any, member)),
+            )
             .min()
     }
 }
@@ -959,10 +985,19 @@ impl Facts {
         self.patches(ctx).record(&owner, member)
     }
 
+    /// The unproven write of `member` (see [`Patches::unproven`]), if any.
+    pub fn unproven_record(&mut self, ctx: &mut Ctx, member: &str) -> Option<String> {
+        self.patches(ctx).unproven_record(member)
+    }
+
     fn patches(&mut self, ctx: &mut Ctx) -> &Patches {
         if self.patches.is_none() {
             let patches = scan_patches(ctx);
-            tracing::debug!(records = patches.records.len(), "intrinsic patch scan");
+            tracing::debug!(
+                records = patches.records.len(),
+                unproven = patches.unproven.len(),
+                "intrinsic patch scan"
+            );
             self.patches = Some(patches);
         }
         self.patches.as_ref().unwrap()
@@ -1490,7 +1525,9 @@ impl PatchView {
     /// The record that lets application code replace `Array.prototype`
     /// member `member` (or the `Array` constructor's), if any.
     pub fn array_member(&mut self, ctx: &mut Ctx, member: &str) -> Option<String> {
-        self.facts.patch_record(ctx, Some("Array"), member)
+        self.facts
+            .patch_record(ctx, Some("Array"), member)
+            .or_else(|| self.facts.unproven_record(ctx, member))
     }
 
     /// The record that could change the meaning of element reads and writes
@@ -1714,6 +1751,9 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                 }
             }
             WriteOwner::Opaque => patches.add(Owner::Any, member),
+            WriteOwner::Unproven => {
+                patches.unproven.insert(member);
+            }
         }
     }
     patches
@@ -2306,6 +2346,9 @@ const AUGMENTED: [(&str, &str); 14] = [
 enum WriteOwner {
     /// An application object; built-ins are unaffected.
     App,
+    /// A receiver that is not provably a local object (a parameter, a
+    /// property read, a call result): a possible patch of any intrinsic.
+    Unproven,
     Owner(Owner),
     /// May be any built-in that escapes as a value.
     Unknown,
@@ -2388,8 +2431,12 @@ fn write_owner(ctx: &mut Ctx, target: Node) -> WriteOwner {
         None => {
             if chain_mentions_prototype(ctx, target) {
                 WriteOwner::Unknown
-            } else {
+            } else if local_receiver::provably_local(ctx, target) {
                 WriteOwner::App
+            } else {
+                // A parameter, a property read, a call result or a reassigned
+                // variable may hold an intrinsic that a caller supplied.
+                WriteOwner::Unproven
             }
         }
     }

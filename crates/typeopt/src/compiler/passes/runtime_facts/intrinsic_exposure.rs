@@ -78,6 +78,12 @@
 //!   write replaces them.
 //! - The strict-mode `this` (class bodies, modules and `"use strict"` code).
 //!
+//! The allowlist covers handles that the program names. A write through a value
+//! of unknown origin (a parameter that an importer fills with
+//! `Array.prototype`) is covered by the receiver rule in
+//! [`super::local_receiver`]: only a provably local receiver is ignored by the
+//! patch scan; every other write is a possible patch of its key.
+//!
 //! Residuals. The rule is about the language's own routes. Routes through the
 //! host stay open: a module loader (`require("vm")`, `process.binding`), DOM
 //! script injection (`document.write`, a script element) and an `import()` of a
@@ -746,8 +752,9 @@ fn global_member_exposure(
         // Inherited from `Object.prototype`: also intact there and on the
         // global object.
         facts.patch_record(ctx, Some("Object"), key).is_none()
+            && facts.unproven_record(ctx, key).is_none()
     } else {
-        GLOBAL_FUNCTIONS.contains(&key)
+        GLOBAL_FUNCTIONS.contains(&key) && facts.unproven_record(ctx, key).is_none()
     };
     let intact = intact && facts.patch_record(ctx, None, key).is_none();
     (!intact).then_some(IntrinsicExposure::GlobalMemberCall)

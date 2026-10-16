@@ -5158,6 +5158,9 @@ fn keeps_names_for_every_intrinsic_spelling() {
 const LIST_TAIL: &str =
     "const list=[new Item(1)];list.push(new Item(2));console.log(list.length,list[0].readItem());";
 
+/// A tracked array whose `slice` allocates through its `constructor`.
+const SLICE_TAIL: &str = "const list=[new Item(1)];console.log(list.slice(0)[0].readItem());";
+
 /// Whether the tracked `Item` names survive in the optimized `body`.
 fn item_names_kept(body: &str) -> bool {
     array_chunk(body).1.contains("itemValue")
@@ -5248,6 +5251,13 @@ fn keeps_names_beside_calls_of_global_object_members() {
             ),
         ),
         (
+            "hasOwnProperty replaced through a parameter",
+            format!(
+                "function swap(o){{o.hasOwnProperty=function(){{return \
+                 true}}}}swap({{}});globalThis.hasOwnProperty(\"x\");{LIST_TAIL}"
+            ),
+        ),
+        (
             "parseInt replaced",
             format!(
                 "globalThis.parseInt=function(){{return 1}};globalThis.parseInt(\"1\");{LIST_TAIL}"
@@ -5279,6 +5289,326 @@ fn keeps_names_beside_calls_of_global_object_members() {
         .iter()
         .filter(|fixture| item_names_kept(&format!("{fixture}{LIST_TAIL}")))
         .copied()
+        .collect();
+    assert!(kept.is_empty(), "names kept beside: {kept:?}");
+}
+
+/// A property write, deletion or define-like call through a receiver that is
+/// not provably a local object may patch an intrinsic that a caller supplied
+/// (`install(Array.prototype, hostile)` from an importer), whatever the
+/// binding spelling. The write is recorded for its key, so `pop` stops being
+/// modeled and the tracked array that pops keeps its element names.
+#[test]
+fn keeps_names_for_writes_through_unproven_receivers() {
+    let hostile = "function(){return 7}";
+    let cases: Vec<(&str, String)> = vec![
+        // Parameters of exported and ordinary functions.
+        (
+            "exported function parameter",
+            format!("export function install(p){{p.pop={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "exported arrow parameter",
+            format!("export const install=p=>{{p.pop={hostile}}};install({{}});{POP_TAIL}"),
+        ),
+        (
+            "internal function parameter",
+            format!("function install(p){{p.pop={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "default parameter",
+            format!("function install(p={{}}){{p.pop={hostile}}}install();{POP_TAIL}"),
+        ),
+        (
+            "object-destructured parameter",
+            format!(
+                "function install({{target}}){{target.pop={hostile}}}install({{target:{{}}}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        (
+            "array-destructured parameter",
+            format!("function install([t]){{t.pop={hostile}}}install([{{}}]);{POP_TAIL}"),
+        ),
+        (
+            "rest parameter",
+            format!("function install(...ps){{ps[0].pop={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "arguments object",
+            format!("function install(){{arguments[0].pop={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "closure over a parameter",
+            format!(
+                "function make(p){{return function(){{p.pop={hostile}}}}}make({{}})();{POP_TAIL}"
+            ),
+        ),
+        // Callbacks that unknown callers fill.
+        (
+            "callback parameter",
+            format!("setTimeout(p=>{{p.pop={hostile}}},0,{{}});{POP_TAIL}"),
+        ),
+        (
+            "callback stored for unknown callers",
+            format!("const cb=p=>{{p.pop={hostile}}};cb({{}});export{{cb}};{POP_TAIL}"),
+        ),
+        (
+            "iteration variable",
+            format!("for(const p of [{{}}]){{p.pop={hostile}}}{POP_TAIL}"),
+        ),
+        // Class methods and `this` chosen by the caller.
+        (
+            "class method parameter",
+            format!(
+                "class Installer{{install(p){{p.pop={hostile}}}}}new \
+                 Installer().install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "class method this",
+            format!("class Patcher{{run(){{this.pop={hostile}}}}}new Patcher().run();{POP_TAIL}"),
+        ),
+        (
+            "static method this",
+            format!("class Patcher{{static run(){{this.pop={hostile}}}}}Patcher.run();{POP_TAIL}"),
+        ),
+        (
+            "accessor this",
+            format!(
+                "class Patcher{{set value(v){{this.pop={hostile}}}}}new \
+                 Patcher().value=1;{POP_TAIL}"
+            ),
+        ),
+        (
+            "function this",
+            format!("function run(){{\"use strict\";this.pop={hostile}}}run.call({{}});{POP_TAIL}"),
+        ),
+        (
+            "object method this",
+            format!("const o={{run(){{this.pop={hostile}}}}};o.run();{POP_TAIL}"),
+        ),
+        // Receivers read from other values or returned by calls.
+        (
+            "property read",
+            format!("const holder={{p:{{}}}};holder.p.pop={hostile};{POP_TAIL}"),
+        ),
+        (
+            "call result",
+            format!("JSON.parse(\"{{}}\").pop={hostile};{POP_TAIL}"),
+        ),
+        (
+            "reassigned variable",
+            format!("let o={{}};o=Object.create(null);o.pop={hostile};{POP_TAIL}"),
+        ),
+        (
+            "alias of a parameter",
+            format!("function install(p){{const q=p;q.pop={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "conditional with a parameter",
+            format!(
+                "function install(p){{const q=p||{{}};q.pop={hostile}}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        // Every write shape.
+        (
+            "bracket write",
+            format!("function install(p){{p[\"pop\"]={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "computed write",
+            format!("function install(p,k){{p[k]={hostile}}}install({{}},\"x\");{POP_TAIL}"),
+        ),
+        (
+            "compound write",
+            format!("function install(p){{p.pop||={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "destructuring assignment target",
+            format!("function install(p){{({{a:p.pop}}={{a:{hostile}}})}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "delete",
+            format!("function install(p){{delete p.pop}}install({{pop:1}});{POP_TAIL}"),
+        ),
+        (
+            "defineProperty",
+            format!(
+                "function install(p){{Object.defineProperty(p,\"pop\",{{value:\
+                 {hostile}}})}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "Object.assign",
+            format!(
+                "function install(p){{Object.assign(p,{{pop:{hostile}}})}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "Reflect.set",
+            format!(
+                "function install(p){{Reflect.set(p,\"pop\",{hostile})}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "Reflect.deleteProperty",
+            format!(
+                "function install(p){{Reflect.deleteProperty(p,\"pop\")}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        // Keys that change the meaning of element reads and writes turn the
+        // whole model off, not one method.
+        (
+            "numeric key",
+            format!("function install(p){{p[0]=1}}install({{}});{LIST_TAIL}"),
+        ),
+        (
+            "unknown key",
+            format!("function install(p,k){{p[k]=1}}install({{}},\"x\");{LIST_TAIL}"),
+        ),
+        (
+            "__proto__ key",
+            format!("function install(p){{p.__proto__={{}}}}install({{}});{LIST_TAIL}"),
+        ),
+        (
+            "setPrototypeOf",
+            format!(
+                "function install(p){{Object.setPrototypeOf(p,null)}}install({{}});{LIST_TAIL}"
+            ),
+        ),
+        (
+            "Object.assign with spread keys",
+            format!("function install(p,s){{Object.assign(p,s)}}install({{}},{{}});{LIST_TAIL}"),
+        ),
+        // Other members the array model relies on.
+        (
+            "push",
+            format!("function install(p){{p.push={hostile}}}install({{}});{LIST_TAIL}"),
+        ),
+        (
+            "constructor",
+            format!("function install(p){{p.constructor={hostile}}}install({{}});{SLICE_TAIL}"),
+        ),
+        (
+            "next",
+            format!(
+                "function install(p){{p.next={hostile}}}install({{}});for(const x of [new \
+                 Item(1)])console.log(x.readItem());"
+            ),
+        ),
+    ];
+    let renamed: Vec<&str> = cases
+        .iter()
+        .filter(|(_, body)| !item_names_kept(body))
+        .map(|(label, _)| *label)
+        .collect();
+    assert!(renamed.is_empty(), "names renamed for: {renamed:?}");
+}
+
+/// Writes whose receiver is provably a fresh local object, and writes through
+/// any receiver whose key no array operation relies on, leave the model on.
+#[test]
+fn renames_beside_writes_through_provably_local_receivers() {
+    let hostile = "function(){return 7}";
+    let cases: Vec<(&str, String)> = vec![
+        (
+            "object literal variable",
+            format!("const o={{}};o.pop={hostile};o[\"k\"+1]=2;delete o.pop;"),
+        ),
+        (
+            "array literal variable",
+            format!("const a=[];a.pop={hostile};a[0]=1;a[a.length]=2;"),
+        ),
+        (
+            "let variable never reassigned",
+            format!("let o={{}};o.pop={hostile};"),
+        ),
+        (
+            "alias chain",
+            format!("const a={{}};const b=a;const c=b;c.pop={hostile};c[\"x\"+1]=1;"),
+        ),
+        (
+            "conditional of locals",
+            format!("const o=Math.random()>2?{{}}:[];o.pop={hostile};"),
+        ),
+        (
+            "logical of locals",
+            format!("const o=null||{{}};o.pop={hostile};"),
+        ),
+        (
+            "function statics",
+            format!("function helper(){{}}helper.pop={hostile};helper[\"k\"+1]=1;"),
+        ),
+        (
+            "class statics",
+            format!("class Registry{{}}Registry.pop={hostile};Registry[\"k\"+1]=1;"),
+        ),
+        (
+            "new of an application class",
+            format!("const it=new Item(2);it.pop={hostile};"),
+        ),
+        (
+            "new of a library class",
+            format!("const m=new Map();m.pop={hostile};m[\"k\"+1]=1;"),
+        ),
+        (
+            "constructor this",
+            format!(
+                "class Box{{constructor(){{this.pop={hostile};this[\"k\"+1]=1;Object.assign(this,\
+                 {{boxValue:1}})}}}}new Box();"
+            ),
+        ),
+        (
+            "field initializer this",
+            "class Box{field=(this[\"k\"+1]=1)}new Box();".to_owned(),
+        ),
+        (
+            "static block this",
+            "class Box{static{this[\"k\"+1]=1}}".to_owned(),
+        ),
+        (
+            "derived constructor this",
+            "class Base{}class Derived extends Base{constructor(){super();this[\"k\"+1]=1}}new \
+             Derived();"
+                .to_owned(),
+        ),
+        (
+            "Object.assign onto a local",
+            "const o={};Object.assign(o,{a:1},{b:2});".to_owned(),
+        ),
+        (
+            "defineProperty onto a local",
+            format!("const o={{}};Object.defineProperty(o,\"pop\",{{value:{hostile}}});"),
+        ),
+        // A parameter write with a key that no array operation relies on is a
+        // possible patch of that key only.
+        (
+            "benign key on a parameter",
+            "function label(o,n){o.label=n}label({},1);".to_owned(),
+        ),
+        (
+            "benign key on this of a method",
+            "class Counter{count=0;bump(){this.count=this.count+1}}new Counter().bump();"
+                .to_owned(),
+        ),
+        (
+            "benign key on a property read",
+            "const holder={inner:{}};holder.inner.tag=1;".to_owned(),
+        ),
+        (
+            "benign key through Object.defineProperty on a parameter",
+            "function tag(o){Object.defineProperty(o,\"tag\",{value:1})}tag({});".to_owned(),
+        ),
+        (
+            "delete of a benign key",
+            "function drop(o){delete o.tag}drop({tag:1});".to_owned(),
+        ),
+    ];
+    let kept: Vec<&str> = cases
+        .iter()
+        .filter(|(_, fixture)| item_names_kept(&format!("{fixture}{LIST_TAIL}")))
+        .map(|(label, _)| *label)
         .collect();
     assert!(kept.is_empty(), "names kept beside: {kept:?}");
 }
