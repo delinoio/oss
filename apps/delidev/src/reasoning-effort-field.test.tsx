@@ -1,14 +1,51 @@
 // SPDX-License-Identifier: Apache-2.0
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { useState } from "react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { useState, type ReactNode } from "react";
 import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { pressEnter } from "./test-form-enter";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import {
   ReasoningEffortField,
   claudeEffortSuggestions,
   codexEffortSuggestions,
 } from "./reasoning-effort-field";
+
+afterEach(() => {
+  delete (HTMLElement.prototype as { showPopover?: unknown }).showPopover;
+  delete (HTMLElement.prototype as { hidePopover?: unknown }).hidePopover;
+});
+function stubPopover() {
+  const show = vi.fn(),
+    hide = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "showPopover", {
+    configurable: true,
+    value: show,
+  });
+  Object.defineProperty(HTMLElement.prototype, "hidePopover", {
+    configurable: true,
+    value: hide,
+  });
+  return { show, hide };
+}
+// Everything outside the popup, with typed values removed, is the surrounding
+// layout. Opening, filtering and dismissing must leave it byte-for-byte equal.
+function surrounding(container: HTMLElement) {
+  const clone = container.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll(".reasoning-effort-popup").forEach((node) => {
+    node.remove();
+  });
+  return clone.innerHTML
+    .replace(/ value="[^"]*"/g, "")
+    .replace(/ aria-(expanded|controls|activedescendant)="[^"]*"/g, "")
+    .replace(/ aria-label="(Show|Hide) /g, ' aria-label="Toggle ');
+}
 
 function mount(
   initial?: string,
@@ -295,4 +332,200 @@ it("lets the open suggestion list consume Enter before an enclosing form owner a
   // With the list closed, the next plain Enter is an ordinary submission.
   expect(pressEnter(input)).toBe(1);
   expect(submitted).toHaveBeenCalledTimes(1);
+});
+
+it("overlays the suggestions and empty status in a top-layer popup that reserves no layout", () => {
+  const { show, hide } = stubPopover();
+  const changed = vi.fn();
+  function Host({ value }: { value: string }) {
+    return (
+      <form>
+        <p>Before</p>
+        <ReasoningEffortField
+          label="Reasoning effort"
+          value={value}
+          suggestions={codexEffortSuggestions}
+          change={changed}
+        />
+        <button>Following control</button>
+      </form>
+    );
+  }
+  const { container, rerender } = render(<Host value="" />);
+  const input = screen.getByRole("combobox") as HTMLInputElement;
+  const before = surrounding(container);
+  expect(container.querySelector(".reasoning-effort-popup")).toBeNull();
+  fireEvent.focus(input);
+  const popup = container.querySelector<HTMLElement>(
+    ".reasoning-effort-popup",
+  )!;
+  expect(popup.getAttribute("popover")).toBe("manual");
+  expect(popup.classList.contains("anchored-popup")).toBe(true);
+  // The popup stays in the field subtree and owns both the listbox and status.
+  expect(popup.closest(".reasoning-effort-field")).not.toBeNull();
+  expect(popup.contains(screen.getByRole("listbox"))).toBe(true);
+  expect(input.getAttribute("aria-controls")).toBe(
+    screen.getByRole("listbox").id,
+  );
+  expect(show).toHaveBeenCalledOnce();
+  expect(surrounding(container)).toBe(before);
+  // Filtering to no candidates keeps the status inside the popup.
+  rerender(<Host value="no-such-effort" />);
+  expect(popup.contains(screen.getByRole("status"))).toBe(true);
+  expect(surrounding(container)).toBe(before);
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(container.querySelector(".reasoning-effort-popup")).toBeNull();
+  expect(hide).toHaveBeenCalled();
+  expect(surrounding(container)).toBe(before);
+  expect(changed).not.toHaveBeenCalled();
+});
+
+it("keeps the typed draft and suggestion selection unchanged by opening, filtering and every dismissal path", () => {
+  stubPopover();
+  const { input, changed, submitted } = mount("x-draft");
+  const dismissals: Array<() => void> = [
+    () => fireEvent.keyDown(input, { key: "Escape" }),
+    () => fireEvent.keyDown(input, { key: "Tab" }),
+    () =>
+      fireEvent.blur(input, {
+        relatedTarget: screen.getByRole("button", { name: "Save" }),
+      }),
+    () => fireEvent.keyDown(input, { key: "Enter" }),
+    () =>
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Hide Reasoning effort suggestions",
+        }),
+      ),
+  ];
+  for (const dismiss of dismissals) {
+    fireEvent.focus(input);
+    fireEvent.click(input);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+    dismiss();
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(input.value).toBe("x-draft");
+  }
+  expect(changed).not.toHaveBeenCalled();
+  expect(submitted).not.toHaveBeenCalled();
+  // Selecting consumes Enter before the owning form submits.
+  fireEvent.focus(input);
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
+  expect(changed).toHaveBeenCalledTimes(1);
+  expect(submitted).not.toHaveBeenCalled();
+});
+
+it("keeps pointer presses inside the popup from taking focus away from the input", () => {
+  stubPopover();
+  const { input, changed } = mount();
+  act(() => input.focus());
+  const popup = screen.getByRole("listbox").parentElement!;
+  // A scrollbar press targets the popup itself rather than an option.
+  expect(fireEvent.mouseDown(popup)).toBe(false);
+  expect(fireEvent.mouseDown(screen.getAllByRole("option")[0]!)).toBe(false);
+  expect(screen.getByRole("listbox")).toBeTruthy();
+  expect(document.activeElement).toBe(input);
+  expect(changed).not.toHaveBeenCalled();
+});
+
+it("hides the popup and releases document listeners on unmount while open", () => {
+  const { hide } = stubPopover();
+  const added = vi.spyOn(document, "addEventListener"),
+    removed = vi.spyOn(document, "removeEventListener");
+  const view = render(
+    <ReasoningEffortField
+      label="Reasoning effort"
+      value=""
+      suggestions={codexEffortSuggestions}
+      change={() => {}}
+    />,
+  );
+  const count = (spy: typeof added) =>
+    spy.mock.calls.filter(([type]) => type === "scroll").length;
+  act(() => screen.getByRole("combobox").focus());
+  expect(count(added)).toBe(1);
+  view.unmount();
+  expect(count(removed)).toBe(1);
+  expect(hide).toHaveBeenCalled();
+  added.mockRestore();
+  removed.mockRestore();
+});
+
+const hosts: Array<[string, (children: ReactNode) => ReactNode]> = [
+  [
+    "a page host",
+    (children) => (
+      <main className="settings-content">
+        <div className="settings-task-body">{children}</div>
+      </main>
+    ),
+  ],
+  [
+    "a Settings task dialog host",
+    (children) => (
+      <dialog open className="settings-task-dialog">
+        <div className="settings-task-body">{children}</div>
+      </dialog>
+    ),
+  ],
+];
+it.each(hosts)(
+  "presents and dismisses the popup for primary and subagent fields inside %s",
+  (_name, wrap) => {
+    const { show } = stubPopover();
+    const changed = vi.fn();
+    const { container } = render(
+      wrap(
+        <fieldset>
+          <ReasoningEffortField
+            label="Reasoning effort"
+            value=""
+            suggestions={codexEffortSuggestions}
+            change={changed}
+          />
+          <ReasoningEffortField
+            label="Subagent effort"
+            value="seed"
+            suggestions={codexEffortSuggestions}
+            change={changed}
+          />
+        </fieldset>,
+      ),
+    );
+    for (const name of ["Reasoning effort", "Subagent effort"]) {
+      const input = screen.getByRole("combobox", { name });
+      act(() => input.focus());
+      expect(
+        container.querySelectorAll(".reasoning-effort-popup"),
+      ).toHaveLength(1);
+      expect(
+        screen.getByRole("listbox", { name: `${name} suggestions` }),
+      ).toBeTruthy();
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(container.querySelector(".reasoning-effort-popup")).toBeNull();
+    }
+    expect(show).toHaveBeenCalledTimes(2);
+    expect(changed).not.toHaveBeenCalled();
+  },
+);
+
+it("closes the popup when its Settings task dialog closes while open", async () => {
+  stubPopover();
+  const { container } = render(
+    <dialog open className="settings-task-dialog">
+      <div className="settings-task-body">
+        <ReasoningEffortField
+          label="Reasoning effort"
+          value=""
+          suggestions={codexEffortSuggestions}
+          change={() => {}}
+        />
+      </div>
+    </dialog>,
+  );
+  act(() => screen.getByRole("combobox").focus());
+  expect(screen.getByRole("listbox")).toBeTruthy();
+  container.querySelector("dialog")!.removeAttribute("open");
+  await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
 });

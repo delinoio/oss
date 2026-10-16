@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useId, useRef, useState } from "react";
+import { useAnchoredPopup } from "./anchored-popup";
 import { text } from "./documents";
 import { copy, useLocale } from "./localization";
 import "./reasoning-effort-field.css";
@@ -46,6 +47,7 @@ export function ReasoningEffortField({
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
+  const overlay = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [navigation, setNavigation] = useState<{
     value: string;
@@ -82,6 +84,17 @@ export function ReasoningEffortField({
   // listbox rows need the same lock as native controls, including after commit.
   useEffect(() => {
     if (open && !available()) close();
+  });
+  // The suggestions overlay the surrounding form in the top layer, so opening,
+  // filtering or showing the empty status never reserves space. Dismissal and
+  // selection semantics stay in this component.
+  useAnchoredPopup({
+    open: popup,
+    anchor: input,
+    popup: overlay,
+    onInvalid: close,
+    boundary: (anchor) =>
+      anchor.closest<HTMLElement>(".settings-task-body, .settings-content"),
   });
   useEffect(() => {
     if (activeIndex >= 0)
@@ -185,7 +198,12 @@ export function ReasoningEffortField({
         </button>
       </div>
       {popup ? (
-        <>
+        <div
+          ref={overlay}
+          popover="manual"
+          className="anchored-popup reasoning-effort-popup"
+          onMouseDown={(event) => event.preventDefault()}
+        >
           <ul
             ref={list}
             id={listId}
@@ -203,7 +221,6 @@ export function ReasoningEffortField({
                     ? activeIndex === index
                     : current === candidate
                 }
-                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => pick(index)}
               >
                 {candidate || copy("reasoning-effort.useNativeDefault")}
@@ -217,7 +234,7 @@ export function ReasoningEffortField({
                 : copy("reasoning-effort.noEffortSuggestions")}
             </p>
           ) : null}
-        </>
+        </div>
       ) : null}
       <p id={`${id}-help`} className="reasoning-effort-help">
         {copy("reasoning-effort.chooseSuggestionOrType")}

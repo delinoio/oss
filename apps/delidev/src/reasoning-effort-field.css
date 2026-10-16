@@ -41,16 +41,14 @@
 .reasoning-effort-control > button.reasoning-effort-toggle:hover {
   background: var(--surface-hover);
 }
-.reasoning-effort-field > ul.reasoning-effort-suggestions {
+/* The suggestions and the empty status overlay the form as an anchored
+   top-layer popup (see anchored-popup.css). Width, position and max-height come
+   from the hook; nothing in this popup takes part in the field's layout. */
+.reasoning-effort-popup > ul.reasoning-effort-suggestions {
   margin: 0;
   padding: 0;
   list-style: none;
   min-width: 0;
-  max-height: 280px;
-  overflow: auto;
-  border: 1px solid var(--control-border);
-  border-radius: 8px;
-  background: var(--surface);
 }
 .reasoning-effort-suggestions > li[role="option"] {
   margin: 0;
@@ -65,15 +63,18 @@
   color: var(--selected-text);
 }
 .reasoning-effort-field > p.reasoning-effort-help,
-.reasoning-effort-field > p.reasoning-effort-status {
+.reasoning-effort-popup > p.reasoning-effort-status {
   margin: 0;
   font-size: 12px;
   line-height: 18px;
   color: var(--muted);
 }
+.reasoning-effort-popup > p.reasoning-effort-status {
+  padding: 10px 16px;
+}
 .settings-content[aria-label] .reasoning-effort-field > p.reasoning-effort-help,
 .settings-content[aria-label]
-  .reasoning-effort-field
+  .reasoning-effort-popup
   > p.reasoning-effort-status {
   font-size: 12px;
   line-height: 18px;
