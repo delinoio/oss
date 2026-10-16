@@ -1773,6 +1773,7 @@ fn function_or_class_keyword_len(
     let before = &source[..index];
     if after.chars().next().is_some_and(is_identifier_part)
         || before.chars().next_back().is_some_and(is_identifier_part)
+        || starts_with_identifier_escape(after)
     {
         return None;
     }
@@ -1780,6 +1781,38 @@ fn function_or_class_keyword_len(
         Token::Punct("." | "#") => None,
         _ => Some(length),
     }
+}
+
+/// Decodes the Unicode escape (`\uXXXX` or `\u{X...}`) at the start of `text`
+/// and returns the character with the escape's byte length.
+fn decode_identifier_escape(text: &str) -> Option<(char, usize)> {
+    let rest = text.strip_prefix("\\u")?;
+    let (digits, length) = if let Some(braced) = rest.strip_prefix('{') {
+        let close = braced.find('}')?;
+        (&braced[..close], 3 + close + 1)
+    } else {
+        (rest.get(..4)?, 6)
+    };
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    // Leading zeros are allowed in the braced form; a value above U+10FFFF
+    // overflows six significant digits and is rejected.
+    let significant = digits.trim_start_matches('0');
+    let value = if significant.is_empty() {
+        0
+    } else if significant.len() > 6 {
+        return None;
+    } else {
+        u32::from_str_radix(significant, 16).ok()?
+    };
+    char::from_u32(value).map(|character| (character, length))
+}
+
+/// True when `text` starts with a valid identifier-continuation escape, so a
+/// word that ends right before it continues (`function\u0061l`).
+fn starts_with_identifier_escape(text: &str) -> bool {
+    decode_identifier_escape(text).is_some_and(|(character, _)| is_identifier_part(character))
 }
 
 /// End of an expression-bodied arrow function whose body starts at `from`:
@@ -8448,6 +8481,34 @@ y=/process.env.F/.test(z),process.env.G"#;
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn an_identifier_escape_continues_a_word_that_starts_with_a_keyword() {
+        for terminator in LINE_TERMINATORS {
+            // `function\u0061l` is the identifier `functional`, so the line
+            // break ends the arrow body and the call is outside it.
+            for operand in [
+                "function\\u0061l",
+                "class\\u{79}",
+                "function\\u{0061}",
+                "\\u{63}lass",
+            ] {
+                for line_break in [format!("/*{terminator}*/"), terminator.to_string()] {
+                    let source = format!("const f = (eval) => {operand} {line_break} eval(code)");
+                    assert_eq!(
+                        direct_eval_offsets(&source),
+                        vec![source.rfind("eval(code)").unwrap()],
+                        "{source:?}"
+                    );
+                }
+            }
+            // An escape that is not an identifier character leaves the
+            // keyword alone, and the function body still guards the call.
+            let source =
+                format!("const f = (eval) => function /*{terminator}*/ () {{ eval(code) }}");
+            assert!(direct_eval_offsets(&source).is_empty(), "{source:?}");
         }
     }
 
