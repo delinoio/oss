@@ -1723,10 +1723,12 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         // An exported member is visible in every declaration that merges into
         // the same namespace symbol; other declarations stay local to their
         // own body.
-        if exported_declaration(&code, found.start())
-            && let Some(namespace) = namespaces
-                .iter()
-                .find(|namespace| namespace.body == enclosing(found.start()))
+        // An ambient body without export declarations exports every member
+        // implicitly.
+        if let Some(namespace) = namespaces
+            .iter()
+            .find(|namespace| namespace.body == enclosing(found.start()))
+            && (namespace.export_context || exported_declaration(&code, found.start()))
         {
             scopes.extend(
                 namespaces
@@ -2027,6 +2029,12 @@ const NON_NAMESPACE_WORDS: [&str; 3] = ["in", "instanceof", "of"];
 struct NamespaceBody {
     key: String,
     body: (usize, usize),
+    /// Declared with `declare`, quoted, or nested in an ambient namespace.
+    ambient: bool,
+    /// TypeScript's export context: an ambient body without an export
+    /// declaration (`export {}`, `export * from`, `export =`) in which every
+    /// declaration is implicitly exported, with or without `export`.
+    export_context: bool,
 }
 
 /// Finds TypeScript namespace and module bodies, including dotted names,
@@ -2038,6 +2046,12 @@ struct NamespaceBody {
 /// extends the key of its enclosing namespace, while any other nested
 /// declaration gets a block-local key because it cannot merge with outer
 /// declarations.
+///
+/// A body is ambient when its declaration has a `declare` modifier, when its
+/// name is a quoted module name (TypeScript accepts those only as ambient
+/// modules) or when it sits directly in an ambient namespace. An ambient body
+/// without an export declaration is an export context ([`NamespaceBody`]):
+/// its members, nested namespaces included, are exported implicitly.
 fn namespace_bodies(
     source: &str,
     code: &str,
@@ -2110,19 +2124,32 @@ fn namespace_bodies(
             .iter()
             .filter(|(start, end)| *start < found.start() && found.start() < *end)
             .min_by_key(|(start, end)| end - start);
+        let outer = parent.and_then(|parent| namespaces.iter().find(|outer| outer.body == *parent));
+        let ambient = declaration_prefix(code, found.start()).declared
+            || name.starts_with('\'')
+            || outer.is_some_and(|outer| outer.ambient);
         let key = match parent {
             None => name,
             // Only an exported nested namespace is a member of its parent
-            // symbol; any other nested declaration merges only inside its
-            // own enclosing body.
-            Some(parent) => match namespaces.iter().find(|outer| outer.body == *parent) {
-                Some(outer) if exported_declaration(code, found.start()) => {
+            // symbol, explicitly or through the parent's export context; any
+            // other nested declaration merges only inside its own enclosing
+            // body.
+            Some(parent) => match outer {
+                Some(outer)
+                    if exported_declaration(code, found.start()) || outer.export_context =>
+                {
                     format!("{}.{name}", outer.key)
                 }
                 _ => format!("@{}.{name}", parent.0),
             },
         };
-        namespaces.push(NamespaceBody { key, body });
+        let export_context = ambient && !has_export_declaration(code, blocks, body);
+        namespaces.push(NamespaceBody {
+            key,
+            body,
+            ambient,
+            export_context,
+        });
     }
     namespaces
 }
@@ -2156,32 +2183,136 @@ fn same_line_trivia_end(source: &str, ignored: &[(usize, usize)], from: usize) -
     (cursor > from).then_some(cursor)
 }
 
-/// Modifiers that can sit between `export` and a declaration keyword, for
-/// example `export declare var` or `export async function`.
+/// Modifiers that can sit between `export` and a declaration, for example
+/// `export declare var` or `export async function`.
 const DECLARATION_MODIFIERS: [&str; 2] = ["declare", "async"];
 
-/// Whether the declaration starting at `start` is directly preceded by
-/// `export`, optionally followed by any of `DECLARATION_MODIFIERS` in any
-/// order. Comments are masked in `code`, so they count as whitespace.
-fn exported_declaration(code: &str, start: usize) -> bool {
+/// The modifiers in front of a declaration, see [`declaration_prefix`].
+struct DeclarationPrefix {
+    /// Directly preceded by `export`, optionally followed by any of
+    /// [`DECLARATION_MODIFIERS`] in any order.
+    exported: bool,
+    /// Preceded by a `declare` modifier that sits on the same line as the next
+    /// token: TypeScript reads `declare` followed by a line break as an
+    /// identifier.
+    declared: bool,
+}
+
+/// Reads the `export`/`declare`/`async` modifiers in front of the declaration
+/// starting at `start`. Comments are masked in `code`, so they count as
+/// whitespace.
+fn declaration_prefix(code: &str, start: usize) -> DeclarationPrefix {
     let word_boundary = |before: &str| {
         before.chars().next_back().is_none_or(|character| {
             !(character.is_alphanumeric() || character == '_' || character == '$')
         })
     };
     let mut prefix = code[..start].trim_end();
+    let mut declared = false;
     'modifiers: loop {
         for modifier in DECLARATION_MODIFIERS {
             if let Some(before) = prefix.strip_suffix(modifier)
                 && word_boundary(before)
             {
+                // Whitespace separates the modifier from the next token, so a
+                // line terminator in that gap ends the modifier's line.
+                let after = &code[before.len() + modifier.len()..];
+                let gap = after
+                    .find(|character: char| !character.is_whitespace())
+                    .map_or(after, |offset| &after[..offset]);
+                let line_break = gap.contains(['\n', '\r', '\u{2028}', '\u{2029}']);
+                if modifier == "declare" && !line_break {
+                    declared = true;
+                }
                 prefix = before.trim_end();
                 continue 'modifiers;
             }
         }
         break;
     }
-    prefix.strip_suffix("export").is_some_and(word_boundary)
+    DeclarationPrefix {
+        exported: prefix.strip_suffix("export").is_some_and(word_boundary),
+        declared,
+    }
+}
+
+/// Whether the declaration starting at `start` is directly preceded by
+/// `export`, optionally followed by any of `DECLARATION_MODIFIERS` in any
+/// order. Comments are masked in `code`, so they count as whitespace.
+fn exported_declaration(code: &str, start: usize) -> bool {
+    declaration_prefix(code, start).exported
+}
+
+/// Whether the namespace body contains an export declaration or export
+/// assignment among its own statements (`export {}`, `export { a }`,
+/// `export * from "m"`, `export type { T }`, `export = value`,
+/// `export default value`). TypeScript stops exporting an ambient body's
+/// declarations implicitly once it has one.
+fn has_export_declaration(code: &str, blocks: &[(usize, usize)], body: (usize, usize)) -> bool {
+    let export =
+        Regex::new(r"\bexport\s*(?:type\s*)?([{*=])|\bexport\s+default\s+([A-Za-z_$][\w$]*)?")
+            .expect("static regex");
+    export
+        .captures_iter(&code[body.0 + 1..body.1])
+        .filter_map(|captures| {
+            let whole = captures.get(0)?;
+            let start = body.0 + 1 + whole.start();
+            // Only the body's own statements count, not nested blocks.
+            let own = blocks
+                .iter()
+                .filter(|(open, close)| *open < start && start < *close)
+                .min_by_key(|(open, close)| close - open)
+                .is_some_and(|block| *block == body);
+            // A property named `export` (`x.export`, `x. export`,
+            // `x.\n/* note */ export`) or an identifier that merely ends in
+            // `$export` is not a statement. Comments are masked, so the
+            // previous significant byte is the previous non-whitespace byte.
+            let before = &code[..start];
+            let member =
+                before.bytes().next_back() == Some(b'$') || before.trim_end().ends_with('.');
+            if !own || member {
+                return None;
+            }
+            // `export default class {}` and friends declare; any other
+            // `export default` operand is an export assignment.
+            let offset = body.0 + 1;
+            let declaring = match (captures.get(1), captures.get(2)) {
+                (None, Some(word)) => {
+                    default_export_word_declares(code, word.as_str(), offset + word.end())
+                }
+                // A decorator starts a class declaration.
+                (None, None) => code[offset + whole.end()..].starts_with('@'),
+                // `export {`, `export *` and `export =` are never declarations.
+                (Some(_), _) => false,
+            };
+            Some(!declaring)
+        })
+        .any(|assignment| assignment)
+}
+
+/// Whether the word after `export default` starts a declaration. `class`,
+/// `function`, `interface` and `enum` always do. `abstract` and `async` are
+/// contextual: they declare only when `class` or `function` follows on the
+/// same line, as in TypeScript's `export default` grammar. Otherwise they are
+/// identifier expressions, so `export default async;` is an export
+/// assignment. Comments are masked in `code`, and a comment that contains a
+/// line terminator keeps it, so it counts as a line break.
+fn default_export_word_declares(code: &str, word: &str, word_end: usize) -> bool {
+    let next = match word {
+        "class" | "function" | "interface" | "enum" => return true,
+        "abstract" => "class",
+        "async" => "function",
+        _ => return false,
+    };
+    let after = &code[word_end..];
+    let rest = after.trim_start_matches(|character: char| {
+        character.is_whitespace() && !matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+    });
+    rest.strip_prefix(next).is_some_and(|tail| {
+        tail.chars()
+            .next()
+            .is_none_or(|character| !is_identifier_part(character))
+    })
 }
 
 /// Finds a block-bodied function or arrow body after a parameter list.
@@ -6487,6 +6618,281 @@ y=/process.env.F/.test(z),process.env.G"#;
                  namespace M { eval(code); } }",
                 Some((1, 28)),
             ),
+            // Members of an ambient namespace are exported implicitly, so a
+            // binding without `export` is visible in every merged body.
+            (
+                "declare namespace N { var eval: any; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare module N { var eval: any; }\nmodule N { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; }\nmodule N { eval(code); }",
+                None,
+            ),
+            (
+                "export declare namespace N { var eval: any; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { export var eval: any; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "namespace N { eval(code); }\ndeclare namespace N { var eval: any; }",
+                None,
+            ),
+            (
+                "declare /* c */ namespace N { var eval: any; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { let eval: any; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { const eval: any; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { function eval(): void; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace A.B { var eval: any; }\nnamespace A.B { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace A.B { var eval: any; }\nnamespace A { export namespace B { \
+                 eval(code); } }",
+                None,
+            ),
+            // Both declarations may be ambient.
+            (
+                "declare namespace N { var eval: any; }\ndeclare namespace N { function f(): \
+                 typeof eval; }\nnamespace N { eval(code); }",
+                None,
+            ),
+            // Quoted module names are ambient modules, with or without
+            // `declare`.
+            (
+                "declare module \"pkg\" { var eval: any }\ndeclare module 'pkg' { eval(code); }",
+                None,
+            ),
+            (
+                "module \"pkg\" { var eval: any }\nmodule \"pkg\" { eval(code); }",
+                None,
+            ),
+            // A nested namespace of an ambient namespace is ambient, and it is
+            // exported implicitly, so it merges with the same-named nested
+            // namespace of another declaration only when that one is exported
+            // or ambient too.
+            (
+                "declare namespace A { namespace B { var eval: any } }\nnamespace A { export \
+                 namespace B { eval(code); } }",
+                None,
+            ),
+            (
+                "declare namespace A { namespace B { var eval: any } }\ndeclare namespace A { \
+                 namespace B { eval(code); } }",
+                None,
+            ),
+            (
+                "declare namespace A { namespace B { var eval: any } }\nnamespace A { namespace B \
+                 { eval(code); } }",
+                Some((1, 28)),
+            ),
+            (
+                "declare namespace A { namespace B { var eval: any } }\nnamespace A { eval(code); \
+                 }",
+                Some((1, 14)),
+            ),
+            // A `declare` inside a plain namespace is ambient for its own body.
+            (
+                "namespace A { declare namespace N { var eval: any } namespace N { eval(code); } }",
+                None,
+            ),
+            // The merge stays inside the namespace symbol.
+            (
+                "declare namespace N { var eval: any; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "declare namespace N { var eval: any; }\nnamespace M { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare module N { var eval: any; }\nmodule M { eval(code); }",
+                Some((1, 11)),
+            ),
+            (
+                "declare module \"a\" { var eval: any }\ndeclare module \"b\" { eval(code); }",
+                Some((1, 21)),
+            ),
+            (
+                "declare namespace N { var eval: any; }\nnamespace N { }\neval(code);",
+                Some((2, 0)),
+            ),
+            (
+                "declare namespace N { var eval: any; }\nfunction f() { namespace N { eval(code); \
+                 } }",
+                Some((1, 29)),
+            ),
+            // Without `declare` a binding is private, as before.
+            (
+                "namespace N { var eval: any; }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            // `declare` followed by a line break is an identifier, not a
+            // modifier, so the namespace is not ambient.
+            (
+                "declare\nnamespace N { var eval: any; }\nnamespace N { eval(code); }",
+                Some((2, 14)),
+            ),
+            (
+                "declare /*\n*/ namespace N { var eval: any; }\nnamespace N { eval(code); }",
+                Some((2, 14)),
+            ),
+            (
+                "export declare\nnamespace N { var eval: any; }\nnamespace N { eval(code); }",
+                Some((2, 14)),
+            ),
+            // An export declaration turns the implicit export off; an explicit
+            // `export` modifier still exports.
+            (
+                "declare namespace N { var eval: any; export {}; }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { export {}; var eval: any; }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export { a }; }\nnamespace N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export type { T }; }\nnamespace N { \
+                 eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export * from \"m\"; }\nnamespace N { \
+                 eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export = value; }\nnamespace N { \
+                 eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export default value; }\nnamespace N { \
+                 eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { export var eval: any; export {}; }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            // `export default class {}` declares and keeps the implicit export.
+            (
+                "declare namespace N { var eval: any; export default class {} }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            // `async` and `abstract` declare only before `function` or `class`
+            // on the same line; otherwise they are identifier expressions in
+            // an export assignment.
+            (
+                "declare namespace N { var eval: any; export default async; }\nnamespace N { \
+                 eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export default abstract; }\nnamespace N { \
+                 eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export default async\nfunction f() {} \
+                 }\nnamespace N { eval(code); }",
+                Some((2, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export default abstract /*\n*/ class {} \
+                 }\nnamespace N { eval(code); }",
+                Some((2, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export default async classes; }\nnamespace \
+                 N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export default async /* note */ function \
+                 f() {} }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; export default abstract class {} \
+                 }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; export default @dec class {} }\nnamespace N \
+                 { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; export default interface I {} }\nnamespace \
+                 N { eval(code); }",
+                None,
+            ),
+            // A member property named `export` is not a statement, with
+            // trivia or a line break after the dot.
+            (
+                "declare namespace N { var eval: any; x. export = 1; }\nnamespace N { eval(code); \
+                 }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; x.\n export = 1; }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; x. /* note */ export default 1; \
+                 }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; x?.\n export = 1; }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            // A statement after a complete one is not a member access.
+            (
+                "declare namespace N { var eval: any; x;\n export = 1; }\nnamespace N { \
+                 eval(code); }",
+                Some((2, 14)),
+            ),
+            // A property named `export` is not an export declaration.
+            (
+                "declare namespace N { var eval: any; var a: { x.export = 1 } }\nnamespace N { \
+                 eval(code); }",
+                None,
+            ),
+            // The nested namespace is not exported implicitly when its parent
+            // has an export declaration.
+            (
+                "declare namespace A { namespace B { var eval: any } export {}; }\nnamespace A { \
+                 export namespace B { eval(code); } }",
+                Some((1, 35)),
+            ),
         ];
         for (source, expected) in cases {
             assert_eq!(direct_eval_line(source), *expected, "{source}");
@@ -6536,6 +6942,41 @@ y=/process.env.F/.test(z),process.env.G"#;
             // alone does not produce a finding.
             assert!(eval_rule_drafts(&shadowed, true).is_empty());
         }
+    }
+
+    #[test]
+    fn ambient_namespace_members_reach_the_mangling_rule() {
+        let prefix = "const longLocalName = 1;\n";
+        for keyword in ["namespace", "module"] {
+            // The implicitly exported binding shadows the merged body's call.
+            let shadowed = format!(
+                "{prefix}declare {keyword} N {{ var eval: any; }}\n{keyword} N {{ eval(code); }}"
+            );
+            assert!(eval_rule_drafts(&shadowed, false).is_empty());
+            // The emitted chunk holds no call either, so the engine report
+            // alone does not produce a finding.
+            assert!(eval_rule_drafts(&shadowed, true).is_empty());
+            // A call outside the namespace is still reported.
+            let outside = format!(
+                "{prefix}declare {keyword} N {{ var eval: any; }}\n{keyword} N {{ eval(code); \
+                 }}\neval(code);"
+            );
+            let drafts = eval_rule_drafts(&outside, false);
+            assert_eq!(drafts.len(), 1);
+            assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+            assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+            // A different namespace is reported.
+            let other = format!(
+                "{prefix}declare {keyword} N {{ var eval: any; }}\n{keyword} M {{ eval(code); }}"
+            );
+            let drafts = eval_rule_drafts(&other, false);
+            assert_eq!(drafts.len(), 1);
+            assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+        }
+        // A private non-ambient binding does not leak into the merged body.
+        let private =
+            format!("{prefix}namespace N {{ var eval: any; }}\nnamespace N {{ eval(code); }}");
+        assert_eq!(eval_rule_drafts(&private, false).len(), 1);
     }
 
     #[test]
