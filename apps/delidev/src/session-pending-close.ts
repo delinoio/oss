@@ -707,7 +707,11 @@ export class PendingCloseRegistry {
     this.stopHeartbeat();
   }
 
-  private forgetSent(map: Map<string, Set<object>>, key: string, owner: object) {
+  private forgetSent(
+    map: Map<string, Set<object>>,
+    key: string,
+    owner: object,
+  ) {
     const owners = map.get(key);
     if (!owners) return;
     owners.delete(owner);

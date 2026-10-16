@@ -976,10 +976,12 @@ describe("pending Close ownership across product windows", () => {
       const ownerWindow = lifecycle();
       const siblingWindow = lifecycle();
       const owner = ownerWindow.inside(
-        () => new PendingCloseRegistry({ channel: bus.endpoint(), window: "o" }),
+        () =>
+          new PendingCloseRegistry({ channel: bus.endpoint(), window: "o" }),
       );
       const sibling = siblingWindow.inside(
-        () => new PendingCloseRegistry({ channel: bus.endpoint(), window: "s" }),
+        () =>
+          new PendingCloseRegistry({ channel: bus.endpoint(), window: "s" }),
       );
       return { owner, sibling, ownerWindow, siblingWindow };
     };
