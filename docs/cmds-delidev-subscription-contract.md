@@ -1233,7 +1233,14 @@ released, the recovery fence and a `recovery_settlement` checkpoint remain), the
 protected references are then retired completely, and only the final receipt
 under the recovery request clears the fence. An incomplete deletion keeps the
 checkpoint and the fence, admits no execution or login, and the original request
-resumes the same retirement; an exact receipt replay mutates nothing. A report of
+resumes the same retirement; an exact receipt replay mutates nothing. Because only the original Worker device can resume it, `RemoveWorker`
+refuses the machine with the existing conflict result while any account holds a
+`recovery_settlement` naming it; removal succeeds once the settlement finishes.
+A positive credential decision needs positive evidence: an unparsable or
+identity-changed capture, or a stored generation that is absent or unrecoverable
+in the vault, settles the account disconnected, while any other vault read
+failure (for example an unavailable vault) is returned and keeps the fence so a
+later attempt can decide. A report of
 blocked cleanup, unsettled members or active credential users records the closed
 reason in `recovery_block` on the account document and settles nothing. Closed
 reasons are `credential-proof-unavailable`, `cleanup-unconfirmed`,
