@@ -309,8 +309,19 @@ read-only contract and never merge saved records.
 The collector uses the revision-pinned official Codex `models-manager/models.json`
 (public visibility and nonempty subscription plans), official Codex retirement
 notices, Claude Code family/selection instructions plus the current official
-model table, and the Grok Build recommended coding default. API-only inventory,
-hidden models and arbitrary configuration examples are excluded. A failed or
+model table, and a reviewed static Grok inventory. The Grok Build documentation
+(`docs/build/settings.md` on docs.x.ai) names only an example default, so it cannot
+enumerate models: the collector requires its recommended-coding default structure
+to be present (otherwise extraction is fatal) and keeps it as the digest-pinned
+`grok-build` provenance source, while the Grok model IDs come from the reviewed
+list printed by `grok models`: `grok-4.7`, `grok-4.7-build-fast`, `grok-4.6` and
+`grok-4.5`, in that order, with display names derived from the ID (for example
+"Grok 4.7") and contiguous order 0 to 3. The documentation example `grok-build`
+is not a listed native model and is not suggested. Changing the Grok inventory
+requires editing the reviewed list in the collector and its fixtures together with
+the bundled `catalog.json`. The catalog stays advisory: listed IDs gain no extra
+authority and unlisted well-formed native IDs remain accepted by Agent routes.
+API-only inventory, hidden models and arbitrary configuration examples are excluded. A failed or
 empty extraction is fatal. Source-only/date-only reads preserve reviewed bytes;
 changes to IDs, display names, order or model metadata produce a review PR under
 [the workflow contract](repository-workflow-contract.md#delidev-known-model-catalog).

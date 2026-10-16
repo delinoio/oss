@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "catalog_version": "sha256:43a88b2f70272e893e30fa802ea679632a84d73512af775a65152e322fc7a460",
-  "updated_at": "2026-10-06",
+  "catalog_version": "sha256:9d839c69eb4156da9cada0faac5df0fe306b56aef8236bb819b90634652564c8",
+  "updated_at": "2026-10-16",
   "sources": [
     {
       "key": "codex",
@@ -139,10 +139,28 @@
       "service": "grok",
       "models": [
         {
-          "native_id": "grok-build",
-          "display_name": "Grok Build",
+          "native_id": "grok-4.7",
+          "display_name": "Grok 4.7",
           "source_keys": ["grok-build"],
           "order": 0
+        },
+        {
+          "native_id": "grok-4.7-build-fast",
+          "display_name": "Grok 4.7 Build Fast",
+          "source_keys": ["grok-build"],
+          "order": 1
+        },
+        {
+          "native_id": "grok-4.6",
+          "display_name": "Grok 4.6",
+          "source_keys": ["grok-build"],
+          "order": 2
+        },
+        {
+          "native_id": "grok-4.5",
+          "display_name": "Grok 4.5",
+          "source_keys": ["grok-build"],
+          "order": 3
         }
       ]
     }
