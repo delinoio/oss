@@ -78,6 +78,12 @@ func TestBackupRestoreRequiresSettledClaudeUsageOwnership(t *testing.T) {
 			s.Read = domain.ClaudeLimitRead{Phase: domain.ClaudeLimitReadRefreshing, ID: domain.NewID(), Epoch: domain.NewID(), StartedAt: &started, ConnectionID: domain.NewID(), Generation: s.Generation, Actor: domain.Principal{Type: domain.OwnerDevice}}
 		},
 		"cleanup pending": func(s *domain.ClaudeLimitState) { s.CleanupPending = true },
+		"retired reference owed a deletion": func(s *domain.ClaudeLimitState) {
+			s.RetiredCredentials = []domain.ID{domain.NewID()}
+		},
+		"login awaiting identity confirmation": func(s *domain.ClaudeLimitState) {
+			s.Operation = &domain.ClaudeLimitOperation{ID: domain.NewID(), Epoch: domain.NewID(), Generation: domain.NewID(), Actor: domain.Principal{Type: domain.OwnerDevice}, State: domain.ClaudeLimitLoginConfirming, CredentialID: domain.NewID(), Identity: &domain.ClaudeLimitIdentity{Email: "new@example.com", Plan: "max", Commitment: strings.Repeat("c", 64)}, StartedAt: started, ExpiresAt: started.Add(time.Minute)}
+		},
 		"live login": func(s *domain.ClaudeLimitState) {
 			s.Operation = &domain.ClaudeLimitOperation{ID: domain.NewID(), Epoch: domain.NewID(), Generation: domain.NewID(), Actor: domain.Principal{Type: domain.OwnerDevice}, State: domain.ClaudeLimitLoginWaiting, NativeStarted: true, StartedAt: started, ExpiresAt: started.Add(time.Minute)}
 		},

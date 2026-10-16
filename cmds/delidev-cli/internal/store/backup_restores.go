@@ -645,7 +645,8 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
          COALESCE(json_extract(body,'$.subscription.claude_usage.cleanup_pending'),0)<>0 OR
          json_extract(body,'$.subscription.claude_usage.read.phase') IN ('fetching','refreshing') OR
          COALESCE(json_extract(body,'$.subscription.claude_usage.operation.native_started'),0)<>0 OR
-         json_extract(body,'$.subscription.claude_usage.operation.state') IN ('preparing','waiting','recovery-required') OR
+         json_extract(body,'$.subscription.claude_usage.operation.state') IN ('preparing','waiting','confirming','recovery-required') OR
+         COALESCE(json_array_length(json_extract(body,'$.subscription.claude_usage.retired_credentials')),0)>0 OR
 		 COALESCE(json_extract(body,'$.subscription.recovery_required'),0)<>0)) OR
 		 (kind='integration' AND json_extract(body,'$.pending') IS NOT NULL) OR
 		 (kind='forward' AND (COALESCE(json_extract(body,'$.state'),'')<>'stopped' OR
