@@ -249,3 +249,19 @@ func TestSubscriptionInitializationAdvertisementIsEnforced(t *testing.T) {
 		})
 	}
 }
+
+func TestSubscriptionWorkspaceMustStayOutsideThePrivateRoot(t *testing.T) {
+	config, _, calls := fixtureSubscriptionConfig(t, "valid")
+	// The credential lives in the private home; a workspace that contains it (or
+	// sits inside it) could expose it to native tools.
+	config.Workspace = filepath.Dir(config.Probe.Home)
+	if _, err := openAPI(context.Background(), config); err == nil || *calls != 0 {
+		t.Fatal("a workspace containing the private credential home was accepted")
+	}
+	config, _, calls = fixtureSubscriptionConfig(t, "valid")
+	inside := filepath.Join(filepath.Dir(config.Probe.Home), "tmp")
+	config.Workspace = inside
+	if _, err := openAPI(context.Background(), config); err == nil || *calls != 0 {
+		t.Fatal("a workspace inside the private root was accepted")
+	}
+}

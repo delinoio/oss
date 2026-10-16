@@ -225,7 +225,9 @@ func (l *managedSubscriptionLease) settleGrok(original subscription.GrokBundle, 
 	refresh := outcome.Success && (action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH || outcome.Refreshed)
 	if l.logger != nil {
 		attrs := []slog.Attr{slog.String("account_id", string(l.account)), slog.String("lease_id", l.response.LeaseId), slog.String("action", action.String()), slog.Bool("success", outcome.Success), slog.Bool("refreshed", outcome.Refreshed), slog.Bool("cleanup_confirmed", outcome.Cleanup), slog.Bool("retried", retried)}
-		if refresh {
+		if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE {
+			attrs = append(attrs, slog.String("phase", grokExecutionPhase))
+		} else if refresh {
 			attrs = append(attrs, slog.String("phase", "REFRESH"))
 		}
 		if !outcome.Cleanup || retried {

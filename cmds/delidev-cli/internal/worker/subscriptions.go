@@ -71,6 +71,11 @@ type managedSubscriptionJournal struct {
 	LeaseRevision   uint64    `json:"lease_revision,omitempty"`
 	Version         uint32    `json:"version"`
 	NativeProfileID domain.ID `json:"native_profile_id,omitempty"`
+	// GrokHome is the private $GROK_HOME a Grok execution lease materializes its
+	// credential in. It is recorded before the credential is written, so a crash or
+	// restart can retire the credential in exactly that directory. The path lives
+	// only in this private journal and is never logged.
+	GrokHome string `json:"grok_home,omitempty"`
 	// OwnerLease names the shared account owner a joined execution member
 	// belongs to. A founding or singleton lease omits it.
 	OwnerLease                                              domain.ID `json:"owner_lease,omitempty"`
@@ -329,12 +334,12 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			continue
 		}
 		var account domain.Account
-		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) {
+		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) && !grokExecutionRecovery(account) {
 			return subscription.Invalid()
 		}
 		var op domain.SubscriptionOperation
 		var observation *domain.SubscriptionObservationOperation
-		if account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil {
+		if account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil || grokExecutionRecovery(account) {
 			op = domain.SubscriptionOperation{ID: account.Subscription.Lease.OperationID}
 		} else if account.Subscription.Observation != nil && account.Subscription.Observation.Phase == domain.SubscriptionObservationQueued {
 			observation = account.Subscription.Observation
@@ -362,6 +367,9 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 						return nil
 					}
 					return err
+				}
+				if grokExecutionRecovery(account) {
+					return runGrokRecovery(ctx, config, client, credential, domain.ID(r.Id), account)
 				}
 				if account.SubscriptionService == domain.SubscriptionClaude {
 					if account.Subscription.RecoveryRequired {
@@ -397,6 +405,13 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 		}()
 	}
 	return stream.Err()
+}
+
+// grokExecutionRecovery reports whether the account holds a fenced Grok execute
+// lease whose private home its original Worker still has to retire.
+func grokExecutionRecovery(account domain.Account) bool {
+	state := account.Subscription
+	return account.Type == domain.SubscriptionAccount && account.SubscriptionService == domain.SubscriptionGrok && state != nil && state.RecoveryRequired && state.Lease != nil && state.Lease.Action == domain.SubscriptionExecute
 }
 
 func runManagedAccount(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account domain.ID, revision uint64, op domain.SubscriptionOperation) (returned error) {
@@ -842,7 +857,7 @@ func managedSubscriptionCapability(resource *pb.Resource) bool {
 
 func slicesContainManagedCapability(values []domain.WorkerCapability) bool {
 	for _, v := range values {
-		if v == domain.ManagedCodexSubscriptionsV1 || v == domain.NativeClaudeSubscriptionsV1 || v == domain.ManagedClaudeExecutionV1 {
+		if v == domain.ManagedCodexSubscriptionsV1 || v == domain.NativeClaudeSubscriptionsV1 || v == domain.ManagedClaudeExecutionV1 || v == domain.ManagedGrokSubscriptionsV1 {
 			return true
 		}
 	}
