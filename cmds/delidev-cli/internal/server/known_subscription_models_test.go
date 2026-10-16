@@ -27,6 +27,20 @@ func TestKnownSubscriptionModelsReadOnlyAndWorkerDenied(t *testing.T) {
 			t.Fatalf("invalid known catalog: %+v", response.Msg)
 		}
 	}
+	grok, err := client.ListKnownSubscriptionModels(ctx, ownerRequest(f.identity, &pb.ListKnownSubscriptionModelsRequest{SubscriptionService: pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_GROK}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantGrok := []string{"grok-4.7", "grok-4.7-build-fast", "grok-4.6", "grok-4.5"}
+	wantNames := []string{"Grok 4.7", "Grok 4.7 Build Fast", "Grok 4.6", "Grok 4.5"}
+	if len(grok.Msg.Models) != len(wantGrok) {
+		t.Fatalf("grok models: %+v", grok.Msg.Models)
+	}
+	for index, id := range wantGrok {
+		if model := grok.Msg.Models[index]; model.NativeId != id || model.DisplayName != wantNames[index] || model.Order != uint32(index) {
+			t.Fatalf("grok model %d: %+v", index, grok.Msg.Models[index])
+		}
+	}
 	after, err := f.config.ExportConfiguration(ctx, ownerRequest(f.identity, &pb.ExportConfigurationRequest{}))
 	if err != nil {
 		t.Fatal(err)

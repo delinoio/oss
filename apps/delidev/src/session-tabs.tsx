@@ -363,6 +363,11 @@ export class SessionTabsStore {
       owner,
     );
   }
+  /** Records that `owner`'s native Close was dispatched, so its hold is
+   * restored after a bfcache return. */
+  markPendingCloseSent(profile: string, pageId: string, owner: object) {
+    this.pendingCloses.markSent(this.pendingCloseKey(profile, pageId), owner);
+  }
   /** Releases one holder once its Close settled, was rejected or was abandoned. */
   releasePendingClose(profile: string, pageId: string, owner: object) {
     this.pendingCloses.release(this.pendingCloseKey(profile, pageId), owner);

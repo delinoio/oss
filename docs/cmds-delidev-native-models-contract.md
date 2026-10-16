@@ -146,6 +146,13 @@ implementation needs a schema change, record its version in the feature PR and
 preserve the complete preceding sequence, backup-first atomic upgrades and historical records. A protocol
 reservation cannot authorize a database version or an empty migration.
 
+Known Grok subscription model suggestions (`grok-4.7`, `grok-4.7-build-fast`,
+`grok-4.6`, `grok-4.5`; defined by the
+[catalog contract](cmds-delidev-catalog-contract.md#known-subscription-model-suggestions))
+mirror `grok models` output but are advisory. They are separate from native model
+discovery, account entitlement and execution authority, and `grok-build` is not a
+suggested model ID.
+
 ## Security
 
 API discovery runs in a fresh private credential-free native profile. It receives
