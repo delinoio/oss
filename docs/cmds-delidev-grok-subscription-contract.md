@@ -592,8 +592,13 @@ A restart marks an active logout recovery (`initializeServerSubscriptions`) and
 never claims it again. The original actor may retry a logout that ended
 RECOVERY_REQUIRED with the credential still stored (rejected, uncertain or
 interrupted revocation) by sending a new LOGOUT request: the retry replaces the
-unfinished operation and sends the idempotent revocation again. Another actor, a
-Worker lease or any other recovery fence is refused.
+unfinished operation and sends the idempotent revocation again. When the
+original actor is a client device that was revoked, the owner takes over that
+retry. Another actor, a Worker lease or any other recovery fence is refused.
+Revoking the client device that queued a logout behind a Worker lease does not
+cancel it (`cancelQueuedSubscriptionInitiator` skips a queued server-owned Grok
+logout): the logout owes the provider a revocation that needs no initiator, so
+it stays queued and runs after the original execution exits.
 
 Fault injection (`Service.grokLogoutCrash`, tests only) simulates a process death
 after the revocation claim, after the confirmed revocation and after the
@@ -1627,8 +1632,8 @@ owner's active operation:
   cleanup is also unconfirmed. An unconfirmed native cleanup is the `cleanup` /
   `recovery_required` diagnostic only after a success or a cancellation.
   Progress reports `recovery-required` while the account is fenced.
-- Canceling a queued, unclaimed operation (initiator device revocation, or the
-  shared `cancelPendingLogin` body that `CancelSubscription` applies once Grok
+- Canceling a queued, unclaimed operation (initiator device revocation, which
+  spares a queued logout, or the shared `cancelPendingLogin` body that `CancelSubscription` applies once Grok
   login can be requested; the RPC still refuses Grok accounts today) removes the
   pending operation and settles `cancelServerOperation`'s record as `canceled`.
   A Grok operation has no server record until it settles, so a cancellation

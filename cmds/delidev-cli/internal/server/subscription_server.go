@@ -60,7 +60,7 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 		// The original actor may retry a Grok logout that ended uncertain: the
 		// retry replaces the unfinished operation and sends the idempotent
 		// revocation again.
-		retry := action == domain.SubscriptionLogout && grokLogoutRetryable(a, actor)
+		retry := action == domain.SubscriptionLogout && grokLogoutRetryableBy(tx, a, actor)
 		if state.ServerObservationActive() || state.Pending != nil && !retry || state.RecoveryRequired && !retry || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
 			return nil, subscriptionDenied()
 		}

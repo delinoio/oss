@@ -146,6 +146,9 @@ func cancelPendingLogin(a *domain.Account, epoch domain.ID, now time.Time) error
 // Queued lifecycle requests have not granted native authority. Settle them in
 // the same transaction as client revocation, without releasing independent or
 // claimed leases and without undoing logout's accepted execution revocation.
+// A queued server-owned Grok logout is the exception: it owes the provider a
+// token revocation that no initiator is needed to perform, so it stays queued
+// and its runner revokes the token after the original execution exits.
 func cancelQueuedSubscriptionInitiator(tx *store.Tx, device, epoch domain.ID) error {
 	accounts, err := all(tx, domain.AccountKind)
 	if err != nil {
@@ -158,6 +161,9 @@ func cancelQueuedSubscriptionInitiator(tx *store.Tx, device, epoch domain.ID) er
 		}
 		state := account.Subscription
 		if state == nil || state.Pending == nil || state.Pending.Actor.DeviceID != device || state.Pending.Phase != domain.SubscriptionQueued {
+			continue
+		}
+		if grokAccountLoggingOut(account) {
 			continue
 		}
 		cancelServerOperation(&account, epoch, time.Now().UTC())

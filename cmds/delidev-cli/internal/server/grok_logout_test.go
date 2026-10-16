@@ -522,6 +522,100 @@ func TestGrokLogoutRetryByTheOriginalActorOnly(t *testing.T) {
 	}
 }
 
+// attributeToClient makes a client device the initiator of the pending logout.
+func (g *grokLogoutRun) attributeToClient(device domain.ID) {
+	g.t.Helper()
+	g.f.mutateAccount(g.t, func(a *domain.Account) {
+		actor := domain.Principal{Type: domain.ClientDevice, DeviceID: device}
+		a.Subscription.Pending.Actor, a.Subscription.ServerOperation.Actor = actor, actor
+	})
+}
+
+// revokeClient runs the queued-initiator cleanup that revoking a client device
+// performs in the same transaction.
+func (g *grokLogoutRun) revokeClient(device domain.ID) {
+	g.t.Helper()
+	if _, err := g.f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.revoke", nil, func(tx *store.Tx) (any, error) {
+		return nil, cancelQueuedSubscriptionInitiator(tx, device, g.f.service.subscriptionServerEpoch())
+	}); err != nil {
+		g.t.Fatal(err)
+	}
+}
+
+// A logout owes the provider a token revocation that no initiator is needed to
+// perform. Revoking the client that queued it behind a Worker lease must not
+// cancel it, or the account would stay connected and health-revoked forever.
+func TestGrokLogoutQueuedBehindALeaseSurvivesRevocationOfItsClient(t *testing.T) {
+	g := newGrokLogout(t)
+	g.executionLease()
+	g.request()
+	device := domain.NewID()
+	g.attributeToClient(device)
+	g.revokeClient(device)
+	a := g.account()
+	if a.Subscription.Pending == nil || !grokAccountLoggingOut(a) || a.Subscription.ServerOperation.State != domain.SubscriptionPreparing {
+		t.Fatal("revoking the initiating client canceled the queued logout")
+	}
+	g.releaseLease()
+	g.scan(2 * time.Second)
+	if a := g.account(); a.Subscription.ServerOperation.State != domain.SubscriptionSucceeded {
+		t.Fatalf("operation after the exit = %v", a.Subscription.ServerOperation.State)
+	}
+	if a := g.account(); g.idp.RevokeRequests != 1 || len(g.f.references()) != 0 || a.Connection != nil || a.Subscription.Pending != nil {
+		t.Fatal("the queued logout did not revoke the token and remove the bundle after the client was revoked")
+	}
+}
+
+// Revoking the initiator still cancels the other queued server operations.
+func TestGrokClientRevocationStillCancelsQueuedRefresh(t *testing.T) {
+	g := newGrokLogout(t)
+	response, err := g.f.grokLoginRequest(t, func(r *pb.RequestSubscriptionRequest) { r.Action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH })
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := domain.NewID()
+	g.f.mutateAccount(t, func(a *domain.Account) {
+		actor := domain.Principal{Type: domain.ClientDevice, DeviceID: device}
+		a.Subscription.Pending.Actor, a.Subscription.ServerOperation.Actor = actor, actor
+	})
+	g.revokeClient(device)
+	if a := g.account(); a.Subscription.Pending != nil || a.Subscription.ServerOperation.ID != domain.ID(response.OperationId) || a.Subscription.ServerOperation.State != domain.SubscriptionCanceled {
+		t.Fatal("a queued refresh survived the revocation of its client")
+	}
+}
+
+// A logout that stayed queued after its client was revoked and then ended
+// uncertain can be retried by the owner, because its original actor can no
+// longer act. Another client still cannot take it over.
+func TestGrokLogoutOfARevokedClientIsRetriedByTheOwner(t *testing.T) {
+	g := newGrokLogout(t)
+	g.idp.RevokeStatus = http.StatusInternalServerError
+	g.request()
+	device := domain.NewID()
+	g.attributeToClient(device)
+	g.revokeClient(device)
+	g.run()
+	if a := g.account(); a.Subscription.ServerOperation.State != domain.SubscriptionRecovery || !a.Subscription.RecoveryRequired {
+		t.Fatalf("operation = %v", a.Subscription.ServerOperation.State)
+	}
+	retry := func(ctx context.Context) error {
+		r, _ := g.f.record()
+		_, err := g.f.service.requestGrokSubscription(ctx, connect.NewRequest(&pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(g.f.input.AccountID), ExpectedRevision: r.Revision}, Action: grokLogoutAction}))
+		return err
+	}
+	if err := retry(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.ClientDevice, DeviceID: domain.NewID()})); err == nil {
+		t.Fatal("another client took over the logout of a revoked client")
+	}
+	g.idp.RevokeStatus = 0
+	if err := retry(g.ownerContext()); err != nil {
+		t.Fatalf("the owner could not retry the logout of a revoked client: %v", err)
+	}
+	g.run()
+	if a := g.account(); g.idp.RevokeRequests != 2 || len(g.f.references()) != 0 || a.Connection != nil || a.Subscription.RecoveryRequired {
+		t.Fatal("the owner's retry did not complete the logout")
+	}
+}
+
 func TestGrokLogoutSerializesWithLoginAndRefreshOnOneAccount(t *testing.T) {
 	g := newGrokLogout(t)
 	gate := make(chan struct{})

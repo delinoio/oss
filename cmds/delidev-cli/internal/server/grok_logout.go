@@ -127,6 +127,22 @@ func grokLogoutRetryable(a domain.Account, actor domain.Principal) bool {
 	return st.Pending == nil || st.Pending.ID == o.ID && st.Pending.MachineID == ""
 }
 
+// grokLogoutRetryableBy extends grokLogoutRetryable for a logout whose original
+// actor can no longer act, because its client device was revoked while the logout
+// stayed queued: the owner takes over the retry, since nobody else could finish
+// the unfinished logout. A different client never qualifies.
+func grokLogoutRetryableBy(tx *store.Tx, a domain.Account, actor domain.Principal) bool {
+	if grokLogoutRetryable(a, actor) {
+		return true
+	}
+	st := a.Subscription
+	if actor.Type != domain.OwnerDevice || st == nil || st.ServerOperation == nil {
+		return false
+	}
+	original := st.ServerOperation.Actor
+	return original.Type == domain.ClientDevice && subscriptionActorValid(tx, original) != nil && grokLogoutRetryable(a, original)
+}
+
 // grokLogoutOutcome is the decided result of the revocation step.
 type grokLogoutOutcome struct {
 	// revoked is true only after a confirmed revocation.
