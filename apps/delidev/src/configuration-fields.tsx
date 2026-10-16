@@ -834,11 +834,15 @@ export function ResourceChoice({
   emptyInventoryActionPending = false,
   presentation = ResourceChoicePresentation.Popup,
   inlineAction,
+  createAction,
 }: {
   selectionResetToken?: number;
   presentation?: ResourceChoicePresentation;
   // Icon button beside the label; applies to the Inline presentation only.
   inlineAction?: InlineChoiceAction;
+  // Optional final picker row that opens a creation flow. It is a navigation
+  // action, never a resource choice, and is not read through the exact-ID path.
+  createAction?: { label: string; name: string; invoke: () => void };
   emptyInventoryAction?: { label: string; invoke: () => void };
   // True while the caller still restores a retained Agent selection, so the
   // empty-inventory creation entry must not be offered yet.
@@ -1429,6 +1433,10 @@ export function ResourceChoice({
           autoFocus={autoFocus}
           markRequired={markRequired}
           triggerRef={pickerTrigger}
+          // No creation entry may be offered for the whole restoration wait:
+          // the caller's pending flag withholds the dropdown action while the
+          // inventory is loading, populated or proven empty alike.
+          action={emptyInventoryActionPending ? undefined : createAction}
         />
       )}
       {needsProviderCapability && active && !ready ? (

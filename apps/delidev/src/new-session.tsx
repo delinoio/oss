@@ -1280,6 +1280,14 @@ export function NewSession({
                         resolvedChoice={agentChoice}
                         change={editAgent}
                         emptyInventoryActionPending={agentRestorationPending}
+                        createAction={{
+                          label: copy("new-session.newAgentWorkerAction"),
+                          name: copy("new-session.newAgentWorkerActionName"),
+                          invoke: () =>
+                            openSettings(
+                              SettingsEntryDestination.NewAgentWorker,
+                            ),
+                        }}
                         emptyInventoryAction={{
                           label: copy("new-session.createAgentWorker"),
                           invoke: () =>

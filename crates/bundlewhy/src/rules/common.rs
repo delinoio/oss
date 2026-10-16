@@ -212,9 +212,10 @@ const REGEX_KEYWORDS: [&str; 16] = [
 
 /// Keywords that cannot end an expression: a line terminator after them never
 /// starts a new statement. Every entry is also in [`REGEX_KEYWORDS`]; the
-/// restricted productions `return` and `throw` are left out because a line
-/// terminator after them does end the statement.
-const OPEN_KEYWORDS: [&str; 9] = [
+/// restricted productions `return`, `throw` and `yield` are left out because a
+/// line terminator after them always ends the production (`yield` is also a
+/// plain identifier in sloppy-mode scripts, where it can end an expression).
+const OPEN_KEYWORDS: [&str; 8] = [
     "in",
     "instanceof",
     "typeof",
@@ -223,7 +224,6 @@ const OPEN_KEYWORDS: [&str; 9] = [
     "new",
     "of",
     "await",
-    "yield",
 ];
 
 /// True when the range is a comment rather than a string, template or regular
@@ -277,9 +277,7 @@ fn previous_significant_token<'a>(
             || (before.ends_with('.')
                 && !before.ends_with("...")
                 // `1. in x`: the dot belongs to a number literal.
-                && !trailing_word(&before[..before.len() - 1]).starts_with(|character: char| {
-                    character.is_ascii_digit()
-                }));
+                && !dot_ends_decimal_integer(&before[..before.len() - 1]));
         return Token::Word { text, member };
     }
     for operator in ["...", "++", "--"] {
@@ -288,6 +286,87 @@ fn previous_significant_token<'a>(
         }
     }
     Token::Punct(&prefix[end - last.len_utf8()..])
+}
+
+/// Whether a `.` that directly follows `head` is the last character of a
+/// decimal integer literal (`1.`, `0.`) instead of a property dot.
+///
+/// `head` is the code before the dot. Only a decimal integer literal can take
+/// the dot as its fraction separator. A literal that is already complete
+/// leaves the dot as a property access: a hexadecimal, binary or octal
+/// literal (`0x1.eval`), a legacy octal literal (`017.eval`), a BigInt
+/// (`1n.eval`), a literal with an exponent (`1e3.eval`, `1e+3.eval`,
+/// `1.e+3.eval`), one with a fraction (`1.5.eval`, `.5.eval`) and `1..eval`,
+/// whose first dot is the fraction separator. A dot after anything else that
+/// ends in a digit is part of the number (`1.`, `1_0.`, `08.`).
+fn dot_ends_decimal_integer(head: &str) -> bool {
+    let word = trailing_word(head);
+    if !word.starts_with(|character: char| character.is_ascii_digit()) {
+        return false;
+    }
+    let bytes = word.as_bytes();
+    let is_digits = |text: &str| {
+        text.bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'_')
+    };
+    if bytes.len() > 1
+        && bytes[0] == b'0'
+        && matches!(bytes[1], b'x' | b'X' | b'b' | b'B' | b'o' | b'O')
+    {
+        return false;
+    }
+    if word.ends_with('n') {
+        // A BigInt has no fraction: `1n.eval`.
+        return false;
+    }
+    if bytes.len() > 1 && bytes[0] == b'0' && bytes.iter().all(|byte| matches!(byte, b'0'..=b'7')) {
+        // `017.eval`: a legacy octal literal never takes a fraction.
+        return false;
+    }
+    if !is_digits(word) {
+        // An exponent (`1e3`, `1E3`) completes the literal.
+        return false;
+    }
+    let before_word = &head[..head.len() - word.len()];
+    if before_word.ends_with('.') {
+        // The fraction of `1.5` or `.5` is complete.
+        return false;
+    }
+    if let Some(sign_free) = before_word
+        .strip_suffix('+')
+        .or_else(|| before_word.strip_suffix('-'))
+    {
+        // `1e+3.eval`: the signed exponent completes the literal. Another
+        // word before the sign (`x1e + 3.`) is not a decimal exponent.
+        let exponent_base = trailing_word(sign_free);
+        let mantissa = exponent_base
+            .strip_suffix('e')
+            .or_else(|| exponent_base.strip_suffix('E'));
+        if let Some(mantissa) = mantissa {
+            let is_decimal_digits = |text: &str| {
+                !text.is_empty()
+                    && is_digits(text)
+                    && text.starts_with(|character: char| character.is_ascii_digit())
+            };
+            if is_decimal_digits(mantissa) {
+                return false;
+            }
+            // `1.e+3.eval`: an integer and its bare fraction dot are also a
+            // mantissa. The dot must belong to that integer (`1..e+3` and
+            // `.5.e+3` read `e` as a property name).
+            let stem = &sign_free[..sign_free.len() - 1];
+            if mantissa.is_empty()
+                && let Some(integer_part) = stem.strip_suffix('.')
+            {
+                let integer = trailing_word(integer_part);
+                let before_integer = &integer_part[..integer_part.len() - integer.len()];
+                if is_decimal_digits(integer) && !before_integer.ends_with('.') {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }
 
 /// The first significant token at or after `start`, with its position:
@@ -529,7 +608,8 @@ fn statement_boundary(
     block_starts_statement: bool,
     await_word: AwaitWord,
 ) -> bool {
-    let ends_expression = match previous_significant_token(code, terminator, ignored) {
+    let previous = previous_significant_token(code, terminator, ignored);
+    let ends_expression = match previous {
         Token::Word { text, member } => {
             member
                 || !OPEN_KEYWORDS.contains(&text)
@@ -542,6 +622,21 @@ fn statement_boundary(
         return false;
     }
     let (position, next) = next_significant_token(code, after, ignored);
+    // `yield` is a plain identifier in a sloppy-mode script, so a slash on the
+    // next line is a division that continues the expression. In a generator
+    // the same slash starts a regular expression; the scan cannot tell them
+    // apart without a parse, so it keeps the body open, as it did before
+    // `yield` became a restricted production.
+    if matches!(
+        previous,
+        Token::Word {
+            text: "yield",
+            member: false
+        }
+    ) && code[position..].starts_with('/')
+    {
+        return false;
+    }
     !match next {
         Token::Word { text, .. } => matches!(text, "in" | "instanceof"),
         Token::Template => true,
@@ -643,7 +738,7 @@ pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, us
     match last {
         ')' => class_heading_precedes(code, prefix.len(), ignored),
         ';' | '{' | '}' => false,
-        ':' => !is_case_label(prefix),
+        ':' => !is_case_label(prefix, ignored),
         _ if is_identifier_part(last) => match trailing_word(prefix) {
             "else" | "try" | "do" | "finally" | "static" => false,
             word if OBJECT_VALUE_KEYWORDS.contains(&word) => true,
@@ -1613,13 +1708,15 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
                 .min_by_key(|(open, close)| close - open)
                 .copied()
                 .unwrap_or((0, bytes.len())),
-            "function" if named_function_is_expression(&code, found.start()) => function_bodies
-                .iter()
-                .find(|(start, _)| *start == found.start())
-                .map_or_else(
-                    || enclosing(found.start()),
-                    |(_, body)| (found.start(), body.1),
-                ),
+            "function" if named_function_is_expression(source, &code, ignored, found.start()) => {
+                function_bodies
+                    .iter()
+                    .find(|(start, _)| *start == found.start())
+                    .map_or_else(
+                        || enclosing(found.start()),
+                        |(_, body)| (found.start(), body.1),
+                    )
+            }
             _ => enclosing(found.start()),
         };
         scopes.push(scope);
@@ -1704,6 +1801,70 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
 const UNICODE_IDENTIFIER: &str =
     r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*";
 
+/// A Unicode escape sequence inside an identifier: `\uXXXX` or `\u{X...}`.
+/// The syntax is matched here; the decoded code point is validated separately
+/// by `escaped_identifier_is_valid` because a regex cannot check it.
+const IDENTIFIER_ESCAPE: &str = r"\\u(?:[0-9A-Fa-f]{4}|\{[0-9A-Fa-f]+\})";
+
+/// Namespace name pattern: [`UNICODE_IDENTIFIER`] that may also spell
+/// characters as Unicode escape sequences, as ECMAScript identifiers allow.
+/// Kept separate from [`UNICODE_IDENTIFIER`] so other recognizers, such as
+/// the single-parameter arrow function check, keep their literal-only
+/// behavior.
+fn namespace_identifier_pattern() -> String {
+    format!(
+        r"(?:\p{{ID_Start}}|[$_]|{IDENTIFIER_ESCAPE})(?:\p{{ID_Continue}}|[$_\u{{200C}}\u{{200D}}]|{IDENTIFIER_ESCAPE})*"
+    )
+}
+
+/// Validates the code points spelled by Unicode escapes in one identifier
+/// segment (no dots): each escape must decode to a scalar value that is a
+/// valid identifier character at its position. Literal characters were
+/// already checked by the recognizer pattern.
+fn escaped_identifier_is_valid(segment: &str, start: &Regex, part: &Regex) -> bool {
+    let mut rest = segment;
+    let mut first = true;
+    while let Some(character) = rest.chars().next() {
+        let (decoded, length) = if rest.starts_with("\\u{") {
+            let Some(close) = rest.find('}') else {
+                return false;
+            };
+            let digits = rest[3..close].trim_start_matches('0');
+            let value = if digits.is_empty() {
+                Some(0)
+            } else if digits.len() > 6 {
+                None
+            } else {
+                u32::from_str_radix(digits, 16).ok()
+            };
+            (value.and_then(char::from_u32), close + 1)
+        } else if rest.starts_with("\\u") {
+            let Some(digits) = rest.get(2..6) else {
+                return false;
+            };
+            (
+                u32::from_str_radix(digits, 16)
+                    .ok()
+                    .and_then(char::from_u32),
+                6,
+            )
+        } else {
+            (Some(character), character.len_utf8())
+        };
+        let Some(decoded) = decoded else {
+            return false;
+        };
+        let mut buffer = [0u8; 4];
+        let text: &str = decoded.encode_utf8(&mut buffer);
+        if !(if first { start } else { part }).is_match(text) {
+            return false;
+        }
+        first = false;
+        rest = &rest[length..];
+    }
+    true
+}
+
 /// Words that can follow `module`/`namespace` in expressions such as
 /// `module in {}`; they are never namespace names.
 const NON_NAMESPACE_WORDS: [&str; 3] = ["in", "instanceof", "of"];
@@ -1731,10 +1892,12 @@ fn namespace_bodies(
     blocks: &[(usize, usize)],
 ) -> Vec<NamespaceBody> {
     let keyword = Regex::new(r"\b(namespace|module)").expect("static regex");
-    let path = Regex::new(&format!(
-        r"^({UNICODE_IDENTIFIER}(?:\s*\.\s*{UNICODE_IDENTIFIER})*)\s*\{{"
-    ))
-    .expect("static regex");
+    let identifier = namespace_identifier_pattern();
+    let path = Regex::new(&format!(r"^({identifier}(?:\s*\.\s*{identifier})*)\s*\{{"))
+        .expect("static regex");
+    let escape_start = Regex::new(r"^(?:\p{ID_Start}|[$_])$").expect("static regex");
+    let escape_part =
+        Regex::new(r"^(?:\p{ID_Continue}|[$_\u{200C}\u{200D}])$").expect("static regex");
     let mut namespaces: Vec<NamespaceBody> = Vec::new();
     for found in keyword.find_iter(code) {
         let kind = found.as_str();
@@ -1762,6 +1925,13 @@ fn namespace_bodies(
                 .map(str::trim)
                 .collect::<Vec<_>>()
                 .join(".");
+            if name.contains('\\')
+                && !name.split('.').all(|segment| {
+                    escaped_identifier_is_valid(segment, &escape_start, &escape_part)
+                })
+            {
+                continue;
+            }
             if NON_NAMESPACE_WORDS.contains(&name.as_str()) {
                 continue;
             }
@@ -1971,14 +2141,26 @@ fn function_body_block(
 /// A type is expected where the previous token is `:` (the annotation colon or
 /// the `: B` branch of a conditional type), `?` (the `A ? { .. } : B` branch),
 /// an opener or separator (`<`, `(`, `[`, `,`), a type operator (`|`, `&`,
-/// `=>`) or one of the keywords `extends` and `is` (`T extends { a: 1 } ? X :
-/// Y`, `v is { a: 1 }`). Any other previous token (`)`, `]`, `>`, a type name
-/// such as `void`) ends the type, so the brace is the body.
+/// `=>`) or one of the keywords `extends`, `is` and `keyof` (`T extends { a: 1
+/// } ? X : Y`, `v is { a: 1 }`, `keyof { a: 1 }`). Any other previous token
+/// (`)`, `]`, `>`, a type name such as `void`) ends the type, so the brace is
+/// the body.
+///
+/// A keyword counts only as a standalone type operator. A member name after a
+/// dot (`typeof obj.keyof {`) is part of a qualified name, which ends the
+/// type, so the brace is the body. A spread (`[...keyof { a: 1 }]`) is not a
+/// member access.
 fn opens_type_literal(code: &str, open: usize) -> bool {
     let before = code[..open].trim_end();
-    before.ends_with(['<', '|', '&', ',', '[', '(', ':', '?'])
-        || before.ends_with("=>")
-        || matches!(trailing_word(before), "extends" | "is")
+    if before.ends_with(['<', '|', '&', ',', '[', '(', ':', '?']) || before.ends_with("=>") {
+        return true;
+    }
+    let word = trailing_word(before);
+    if !matches!(word, "extends" | "is" | "keyof") {
+        return false;
+    }
+    let preceding = before[..before.len() - word.len()].trim_end();
+    !preceding.ends_with('.') || preceding.ends_with("...")
 }
 
 /// The offset of the `{` that opens a function or method body, given the
@@ -2069,7 +2251,15 @@ const TYPE_OPERATOR_KEYWORDS: [&str; 7] = [
     "extends", "keyof", "typeof", "infer", "unique", "readonly", "is",
 ];
 
-fn named_function_is_expression(code: &str, start: usize) -> bool {
+/// `source` and `code` are the same text; `code` has every non-code range in
+/// `ignored` masked. The raw `source` is needed to tell a `case` label whose
+/// expression is a literal (`case"a":`) from a property named `case`.
+fn named_function_is_expression(
+    source: &str,
+    code: &str,
+    ignored: &[(usize, usize)],
+    start: usize,
+) -> bool {
     let raw_prefix = &code[..start];
     let prefix = raw_prefix.trim_end();
     let prefix = prefix.strip_suffix("async").unwrap_or(prefix).trim_end();
@@ -2077,7 +2267,7 @@ fn named_function_is_expression(code: &str, start: usize) -> bool {
         return true;
     }
     let preceding = prefix.as_bytes().last().copied();
-    if preceding == Some(b':') && is_case_label(prefix) {
+    if preceding == Some(b':') && is_case_label(&source[..prefix.len()], ignored) {
         return false;
     }
     if preceding.is_some_and(|byte| b"=([,:?!+-*/%&|^~".contains(&byte)) {
@@ -2115,18 +2305,60 @@ fn matching_delimiter(bytes: &[u8], open: usize, opening: u8, closing: u8) -> Op
     None
 }
 
-fn is_case_label(prefix: &str) -> bool {
-    let label = prefix.strip_suffix(':').unwrap_or(prefix);
-    let statement = label
-        .rsplit_once(|character: char| {
-            matches!(character, '{' | '}') || is_statement_end(character)
+/// Whether `prefix`, which ends with the `:` of a label or property, ends a
+/// `case` clause head or a `default` clause. `prefix` is the start of the
+/// source and `ignored` holds its non-code ranges.
+///
+/// The statement head is read with comments as blanks and every other
+/// non-code range (a string, template or regular expression literal) as one
+/// opaque operand, so trivia between `case` and its expression
+/// (`case/*c*/1:`, `case/*c*/ 1:`, `case/*;*/"a":`) never changes the
+/// decision and `case"a":` and `case(1):` are labels. `case` must be followed
+/// by a character that cannot continue an identifier and by an expression, so
+/// `casey:` and a property named `case` (`{ case: 1 }`, `{ case/*c*/: 1 }`)
+/// are not labels.
+fn is_case_label(prefix: &str, ignored: &[(usize, usize)]) -> bool {
+    let head = statement_head_for_label(prefix, ignored);
+    let head = head.trim();
+    head == "default"
+        || head.strip_prefix("case").is_some_and(|rest| {
+            rest.chars()
+                .next()
+                .is_some_and(|next| !is_identifier_part(next))
+                && !rest.trim().is_empty()
         })
-        .map_or(label, |(_, rest)| rest)
-        .trim();
-    statement == "default"
-        || statement
-            .strip_prefix("case")
-            .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
+}
+
+/// The statement that ends `prefix` (after its last `{`, `}`, `;` or line
+/// terminator outside a non-code range), without the trailing `:`. Comments
+/// read as a blank and other non-code ranges as one `"` each.
+fn statement_head_for_label(prefix: &str, ignored: &[(usize, usize)]) -> String {
+    let label = prefix.strip_suffix(':').unwrap_or(prefix);
+    let mut reversed = Vec::new();
+    let mut last_literal = None;
+    for (position, character) in label.char_indices().rev() {
+        let range = ignored
+            .partition_point(|(start, _)| *start <= position)
+            .checked_sub(1)
+            .map(|found| ignored[found])
+            .filter(|(_, stop)| position < *stop);
+        match range {
+            Some((start, _))
+                if label[start..].starts_with("/*") || label[start..].starts_with("//") =>
+            {
+                reversed.push(' ');
+            }
+            Some((start, _)) => {
+                if last_literal != Some(start) {
+                    reversed.push('"');
+                    last_literal = Some(start);
+                }
+            }
+            None if matches!(character, '{' | '}') || is_statement_end(character) => break,
+            None => reversed.push(character),
+        }
+    }
+    reversed.iter().rev().collect()
 }
 
 /// Whether the `?` at `index` of masked code is the question mark of a
@@ -2363,7 +2595,8 @@ impl<'a> MemberScan<'a> {
 
     /// Whether the offset starts a member in the body of a `kind` brace: the
     /// previous token (past any modifiers and a generator `*`) ends an earlier
-    /// member or opens the body.
+    /// member or opens the body. The scan is one backward loop; it never
+    /// recurses, whatever precedes the offset.
     fn at_member_position(&self, name_start: usize, kind: BraceKind) -> bool {
         let mut member_start = name_start;
         loop {
@@ -2385,6 +2618,15 @@ impl<'a> MemberScan<'a> {
                 } if METHOD_MODIFIERS.contains(&text) => {
                     member_start = token_end - text.len();
                 }
+                // The `accessor` modifier of an auto-accessor field
+                // (`accessor typeof`) allows no line break before the name;
+                // `accessor` + line break is a field named `accessor`.
+                Token::Word {
+                    text: text @ "accessor",
+                    member: false,
+                } if !self.new_line_between(token_end, member_start) => {
+                    member_start = token_end - text.len();
+                }
                 Token::Punct("*") => member_start = token_end - 1,
                 Token::Punct("{" | "}" | ";") => return true,
                 Token::Punct(",") => return kind == BraceKind::ObjectLiteral,
@@ -2401,12 +2643,26 @@ impl<'a> MemberScan<'a> {
                 // A name ends a field or signature, a member access
                 // (`x = a.b`) and a private name (`#state`) included; only an
                 // expression keyword (`x = typeof`) leaves the member open.
+                // A keyword that itself starts a member (`class C { typeof`)
+                // is a field name, not an operator, and ends that member. The
+                // line break before this member is required first, then the
+                // scan continues from the keyword to see whether it starts one.
                 Token::Word { text, member } => {
-                    return kind == BraceKind::ClassBody
-                        && (member
-                            || !REGEX_KEYWORDS.contains(&text)
-                            || self.void_ends_type(token_end, text))
-                        && self.new_line_between(token_end, member_start);
+                    if kind != BraceKind::ClassBody
+                        || !self.new_line_between(token_end, member_start)
+                    {
+                        return false;
+                    }
+                    if member
+                        || !REGEX_KEYWORDS.contains(&text)
+                        || self.void_ends_type(token_end, text)
+                    {
+                        return true;
+                    }
+                    // The keyword may be a field name: keep scanning backward
+                    // from it instead of recursing, so a long run of
+                    // semicolon-less keyword fields cannot exhaust the stack.
+                    member_start = token_end - text.len();
                 }
                 _ => return false,
             }
@@ -3930,6 +4186,31 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "class C { eval(v): void }\nconst o = { run() {} };",
                 "eval(v)",
             ),
+            // `keyof` takes an object type, which is not a body.
+            (
+                "abstract class C { abstract eval(): keyof { a: 1 }; run() {} }",
+                "eval()",
+            ),
+            (
+                "abstract class C { abstract eval(): keyof { a: 1 }\n run() {} }",
+                "eval()",
+            ),
+            (
+                "abstract class C { abstract eval(): keyof\n { a: 1 }; run() {} }",
+                "eval()",
+            ),
+            (
+                "abstract class C { abstract eval(): keyof\n { a: 1 }\n run() {} }",
+                "eval()",
+            ),
+            (
+                "declare class C { eval(): keyof { a: 1 } }\nfunction later() {}",
+                "eval()",
+            ),
+            (
+                "class C { eval(): keyof { a: 1 }; eval(): string { return \"a\"; } }",
+                "eval()",
+            ),
         ] {
             assert_reports_at(source, marker);
         }
@@ -3990,6 +4271,28 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn type_operator_names_in_qualified_return_types_do_not_open_a_type_literal() {
+        // A member named like a type operator (`obj.keyof`) is part of a
+        // qualified name, so the brace after it is the function body and the
+        // expression-local `eval` name shadows only that body.
+        for member in ["keyof", "extends", "is"] {
+            let source =
+                format!("const f = function eval(): typeof obj.{member} {{}}; eval(code);");
+            assert_reports_at(&source, "eval(code)");
+            let spaced =
+                format!("const f = function eval(): typeof obj . {member} {{}}; eval(code);");
+            assert_reports_at(&spaced, "eval(code)");
+            let method = format!("class C {{ eval(): typeof obj.{member} {{ return 1; }} }}");
+            assert_eq!(direct_eval_line(&method), None, "{method:?}");
+        }
+        // A spread element in a tuple type still takes an object type.
+        assert_eq!(
+            direct_eval_line("class C { eval(): [...keyof { a: 1 }] { return []; } }"),
+            None
+        );
+    }
+
+    #[test]
     fn multi_line_signatures_with_a_body_stay_method_declarations() {
         for source in [
             "class C { eval(v): void { } }",
@@ -4006,6 +4309,10 @@ y=/process.env.F/.test(z),process.env.G"#;
             "class C { eval(v): Promise<\n  { a: number }\n> { } }",
             "class C { eval(v): { a: number;\n b: string } { } }",
             "class C { eval(v): { a: number; b: string } { } }",
+            "class C { eval(): keyof { a: 1 } { return \"a\"; } }",
+            "class C { eval(): keyof\n { a: 1 } { return \"a\"; } }",
+            "class C { eval(): keyof { a: 1 }\n { return \"a\"; } }",
+            "const o = { eval(): keyof { a: 1 } { return \"a\"; } };",
             "class C { eval(v): A extends B\n ? C : D { } }",
             "class C { eval(v): A[\n] { } }",
             "class C { eval(v) // c\n  { } }",
@@ -4323,6 +4630,18 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn long_runs_of_keyword_fields_are_scanned_without_recursion() {
+        // Each semicolon-less keyword field is checked back to the class
+        // brace, which used to take one stack frame per field.
+        let fields = "typeof\n".repeat(30_000);
+        let declared = format!("class C {{\n{fields}eval(value) {{}} }}");
+        assert_all_declarations(&[declared.as_str()]);
+        // An initializer in front of the run keeps the finding.
+        let initializer = format!("class C {{\nx = typeof\n{fields}eval(value) {{}} }}");
+        assert_all_reported(&[(initializer.as_str(), "eval(value)")]);
+    }
+
+    #[test]
     fn private_and_member_fields_complete_a_class_member() {
         assert_all_declarations(&[
             "class C { #state\n eval(value) {} }",
@@ -4346,6 +4665,30 @@ y=/process.env.F/.test(z),process.env.G"#;
             "class C { #state\n @dec() eval(value) {} }",
             "class C { #a\n #b\n eval(value) {} }",
             "class C { #state\u{2028} eval(value) {} }",
+            // A keyword-named field starts its own member, so it is a name.
+            "class C { typeof\n eval(value) {} }",
+            "class C { void\n eval(value) {} }",
+            "class C { return\n eval(value) {} }",
+            "class C { delete\n eval(value) {} }",
+            "class C { in\n eval(value) {} }",
+            "class C { new\n eval(value) {} }",
+            "class C { default\n eval(value) {} }",
+            "class C { await\n eval(value) {} }",
+            "class C { typeof;\n eval(value) {} }",
+            "class C { typeof; eval(value) {} }",
+            "class C { state\n eval(value) {} }",
+            "class C { a\n typeof\n eval(value) {} }",
+            "class C { x = 1\n typeof\n eval(value) {} }",
+            "class C { a = b;\n typeof\n eval(value) {} }",
+            "class C { static typeof\n eval(value) {} }",
+            "class C { @dec typeof\n eval(value) {} }",
+            "class C { typeof\n static eval(value) {} }",
+            // The `accessor` modifier of an auto-accessor field keeps a keyword name a name.
+            "class C { accessor typeof\n eval(value) {} }",
+            "class C { static accessor void\n eval(value) {} }",
+            "class C { accessor\n eval(value) {} }",
+            "class C { accessor typeof\n accessor await\n eval(value) {} }",
+            "class C { typeof // c\n eval(value) {} }",
         ]);
         assert_all_reported(&[
             // No line break: the next token continues the field expression.
@@ -4357,6 +4700,14 @@ y=/process.env.F/.test(z),process.env.G"#;
             ("class C { x!\n eval(value) {} }", "eval(value)"),
             // A keyword that cannot end a field leaves the member open.
             ("class C { x = typeof\n eval(value) {} }", "eval(value)"),
+            ("class C { x = void\n eval(value) {} }", "eval(value)"),
+            ("class C { x = delete\n eval(value) {} }", "eval(value)"),
+            ("class C { x = await\n eval(value) {} }", "eval(value)"),
+            ("class C { typeof eval(value) {} }", "eval(value)"),
+            (
+                "class C { x = accessor typeof\n eval(value) {} }",
+                "eval(value)",
+            ),
             ("class C { x = a.b +\n eval(value) {} }", "eval(value)"),
             // An object literal needs a comma, never a line break.
             ("const o = { a: b\n eval(value) {} };", "eval(value)"),
@@ -5774,6 +6125,77 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "module caf\u{e9} { var eval = helper }\neval(code);",
                 Some((1, 0)),
             ),
+            // Escaped namespace names are declarations too.
+            (
+                "namespace \\u004e { var eval = helper; } eval(code);",
+                Some((0, 40)),
+            ),
+            (
+                "namespace \\u{4e} { var eval = helper; } eval(code);",
+                Some((0, 40)),
+            ),
+            (
+                "module \\u{0004E} { var eval = helper; } eval(code);",
+                Some((0, 40)),
+            ),
+            (
+                "namespace A.\\u{4e}x { var eval = helper; } eval(code);",
+                Some((0, 43)),
+            ),
+            (
+                "namespace \\u0041$ { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            ("namespace \\u004e { var eval = helper; eval(code); }", None),
+            ("namespace \\u{4e} { var eval = helper; eval(code); }", None),
+            // ECMAScript ID_Start characters that the stricter XID_Start set
+            // excludes (U+037A), spelled with an escape or literally.
+            (
+                "namespace \\u037a { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "namespace A\\u037a { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "namespace \u{37a} { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            // Escapes of ID_Start, ID_Continue, ZWNJ and ZWJ characters.
+            (
+                "namespace \\u{3a9}\\u{200c}\\u0031 { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            // Invalid escapes leave an ordinary block, so the `var` keeps the
+            // whole-source boundary.
+            ("namespace \\u004 { var eval = helper; }\neval(code);", None),
+            ("namespace \\u{} { var eval = helper; }\neval(code);", None),
+            (
+                "namespace \\u{110000} { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace \\ud800 { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace \\u0031 { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace \\u0020 { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace N\\u0020M { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace A.\\u{2e}B { var eval = helper; }\neval(code);",
+                None,
+            ),
+            ("namespace N\\x { var eval = helper; }\neval(code);", None),
             // The keyword and the name share a line; otherwise automatic
             // semicolon insertion leaves an ordinary block.
             ("module\nN\n{ var eval = helper; }\neval(code);", None),
@@ -6561,6 +6983,20 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn yield_is_a_restricted_production_and_not_an_open_keyword() {
+        assert!(!OPEN_KEYWORDS.contains(&"yield"));
+        // `yield` still starts a regular expression operand.
+        assert!(REGEX_KEYWORDS.contains(&"yield"));
+        let read = "process.env.FLAG";
+        for terminator in LINE_TERMINATORS {
+            // A line terminator after `yield` ends the production, so a read
+            // on the next line is its own statement and keeps its own guard.
+            let code = format!("function* g() {{ x = yield{terminator}{read} && run() }}");
+            assert_eq!(keyword_guard(&code, read), Some(AND_GUARD), "{code:?}");
+        }
+    }
+
+    #[test]
     fn a_statement_boundary_ends_an_expression_bodied_arrow_for_guards() {
         let read = "process.env.FLAG";
         for terminator in LINE_TERMINATORS {
@@ -6890,6 +7326,16 @@ y=/process.env.F/.test(z),process.env.G"#;
                 ("this.#new|".to_string(), word("new", true)),
                 ("x = ...of|".to_string(), word("of", false)),
                 ("1. in|".to_string(), word("in", false)),
+                ("1.\u{a0}in|".to_string(), word("in", false)),
+                ("1..in|".to_string(), word("in", true)),
+                ("1 .in|".to_string(), word("in", true)),
+                ("0x1.in|".to_string(), word("in", true)),
+                ("1e3.in|".to_string(), word("in", true)),
+                ("1.e+3.in|".to_string(), word("in", true)),
+                ("1.5.e+3. in|".to_string(), word("in", false)),
+                ("1n.in|".to_string(), word("in", true)),
+                ("1.5.in|".to_string(), word("in", true)),
+                ("x = 1_0. in|".to_string(), word("in", false)),
                 (format!("x.a{terminator}return|"), word("return", false)),
                 (format!("x = 12{terminator}|"), Token::Number),
                 (format!("x = 1.5 // c{terminator}|"), Token::Number),
@@ -7058,6 +7504,111 @@ y=/process.env.F/.test(z),process.env.G"#;
             "éeval(code)",
         ] {
             assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn member_calls_on_complete_numeric_literals_are_never_direct() {
+        for source in [
+            "0x1.eval(code)",
+            "0XFF.eval(code)",
+            "0x1e.eval(code)",
+            "0x1n.eval(code)",
+            "0b1.eval(code)",
+            "0B1.eval(code)",
+            "0o7.eval(code)",
+            "0O7.eval(code)",
+            "017.eval(code)",
+            "1e3.eval(code)",
+            "1E3.eval(code)",
+            "1e+3.eval(code)",
+            "1E-3.eval(code)",
+            "1.5e+3.eval(code)",
+            "1.e+3.eval(code)",
+            "1.E-3.eval(code)",
+            "1_0.e+3.eval(code)",
+            "1_0e1_0.eval(code)",
+            "1n.eval(code)",
+            "1_0n.eval(code)",
+            "1.5.eval(code)",
+            ".5.eval(code)",
+            "1..eval(code)",
+            "1.e3.eval(code)",
+            "1 .eval(code)",
+            "1.5?.eval(code)",
+            "x = 0x1.eval(code)",
+            "f(1e3.eval(code))",
+            "0x1.\n  eval(code)",
+            "1e3. // c\n  eval(code)",
+            "1n. /* c */ eval(code)",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+        // The same literals do not hide a real call next to them.
+        for source in [
+            "0x1.eval(a); eval(code)",
+            "1e3.eval(a); eval(code)",
+            "1n.eval(a)\neval(code)",
+            "x = 1. + eval(code)",
+            "x = 1.\n+ eval(code)",
+            "1. in x; eval(code)",
+            "f(...eval(code))",
+            "eval(code)",
+            "x = 08. + eval(code)",
+            "x = 1e+3 + eval(code)",
+            "x = 0x1e+3. + eval(code)",
+            "x = 1.5.e+3. + eval(code)",
+            "x = 1..e+3. + eval(code)",
+        ] {
+            assert!(direct_eval_line(source).is_some(), "{source:?}");
+        }
+        assert_eq!(direct_eval_line("0x1.eval(a); eval(code)"), Some((0, 13)));
+    }
+
+    #[test]
+    fn dot_after_a_decimal_integer_belongs_to_the_number() {
+        for head in ["1", "0", "12", "1_0", "08", "09", "x = 1", "x + 7", "[1, 2"] {
+            assert!(dot_ends_decimal_integer(head), "{head:?}");
+        }
+        for head in [
+            "", "x", "x1", "obj", "1.", "1.5", ".5", "1.0", "1e3", "1E3", "1e+3", "1e-3", "1.5e+3",
+            "1.e+3", "1.E-3", "1_0.e+3", "0x1", "0xF", "0X1e", "0b1", "0o7", "017", "00", "1n",
+            "0n", "1_0n", "1 ", "\u{e9}1x",
+        ] {
+            assert!(!dot_ends_decimal_integer(head), "{head:?}");
+        }
+        // A sign after a name or a hexadecimal literal is an addition, so the
+        // number after it takes the dot.
+        for head in [
+            "e+3", "x1e+3", "0x1e+3", "1x+3", "a - 3", "1+3", ".e+3", "x1.e+3", "1.5.e+3", "1..e+3",
+        ] {
+            assert!(dot_ends_decimal_integer(head), "{head:?}");
+        }
+    }
+
+    #[test]
+    fn numeric_member_eval_calls_are_not_rule_blockers() {
+        // A control call proves that the source below would be reported.
+        let control = "const longLocalName = 1;\neval(longLocalName);\n";
+        assert_eq!(eval_rule_drafts(control, false).len(), 1);
+        for call in [
+            "0x1.eval(longLocalName)",
+            "0b1.eval(longLocalName)",
+            "0o7.eval(longLocalName)",
+            "1e3.eval(longLocalName)",
+            "1e+3.eval(longLocalName)",
+            "1.e+3.eval(longLocalName)",
+            "1n.eval(longLocalName)",
+            "1_0.5.eval(longLocalName)",
+        ] {
+            let source = format!("const longLocalName = 1;\n{call};\n");
+            let drafts = eval_rule_drafts(&source, false);
+            assert!(drafts.is_empty(), "{source:?}");
+            // A real call after the member call is still the finding.
+            let source = format!("const longLocalName = 1;\n{call};\neval(longLocalName);\n");
+            let drafts = eval_rule_drafts(&source, false);
+            assert_eq!(drafts.len(), 1, "{source:?}");
+            assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 3);
         }
     }
 
@@ -7425,6 +7976,7 @@ y=/process.env.F/.test(z),process.env.G"#;
 
     const AWAIT_READ: &str = "process.env.FLAG";
     const AWAIT_CONDITION: &str = "the retained read is in an if condition";
+    const CONDITIONAL: &str = "the retained read controls a conditional (?:) branch";
 
     fn await_guard(code: &str) -> Option<&'static str> {
         let start = code.find(AWAIT_READ).unwrap();
@@ -7696,6 +8248,54 @@ y=/process.env.F/.test(z),process.env.G"#;
     ];
 
     #[test]
+    fn a_yield_identifier_ends_a_concise_async_arrow_at_a_line_break() {
+        // Issue 4111: `yield` is an identifier in a sloppy-mode script, so a
+        // line break after it is an automatic semicolon and the `await(` of
+        // the next statement is a call, not an operator.
+        let gate = await_gate();
+        for terminator in LINE_TERMINATORS {
+            for comment in ["", " // c", " /* c */", " /* a\nb */"] {
+                let code = format!(
+                    "var yield = 1;{terminator}const g = async () => \
+                     yield{comment}{terminator}{gate}"
+                );
+                assert!(await_operators_in(&code).is_empty(), "{code:?}");
+                assert_await_is_a_call(&code);
+            }
+            // An explicit semicolon and a renamed identifier already ended
+            // the arrow body.
+            for prelude in [
+                "var yield = 1;{t}const g = async () => yield;",
+                "var value = 1;{t}const g = async () => value",
+            ] {
+                let code = format!("{}{terminator}{gate}", prelude.replace("{t}", terminator));
+                assert_await_is_a_call(&code);
+            }
+        }
+        // A continuation after `yield` keeps the arrow body open, including a
+        // slash that the scan also reads as the start of a regular expression
+        // (`yield` is an identifier in a script, so the slash divides).
+        for code in [
+            "var yield=16; const g=async()=>yield\n/2/await(x)",
+            "var yield=16; const g=async()=>yield\n/ 2 / await(x)",
+            "var yield=16; const g=async()=>yield // c\n/* d */ /2/ await(x)",
+            "const g = async () => yield\n  + await(x)",
+            "const g = async () => yield\n  ?? await(x)",
+            "const g = async () => yield + await(x)",
+            "const g = async () => await(x) && yield",
+        ] {
+            assert_eq!(await_operators_in(code).len(), 1, "{code:?}");
+        }
+        // A real async function body and a module keep the operator reading.
+        for code in [
+            "async function f() { yield\n{gate} }",
+            "export {}\nyield\n{gate}",
+        ] {
+            assert_await_is_an_operator(&code.replace("{gate}", &gate));
+        }
+    }
+
+    #[test]
     fn each_line_start_continuation_keeps_a_concise_async_arrow_open() {
         for operator in LINE_START_CONTINUATIONS {
             // The operand must be valid after every operator, so wrap it in
@@ -7878,6 +8478,234 @@ y=/process.env.F/.test(z),process.env.G"#;
             format!("class C {{ async *while(a) {{ {gate} }} }}"),
         ] {
             assert_await_is_an_operator(&code);
+        }
+    }
+
+    /// A comment, a literal or a parenthesis right after `case` (or after
+    /// `default`) still makes the clause a statement block, so the enclosing
+    /// `async` function reaches the `await` operator and its `if` guard.
+    #[test]
+    fn case_labels_skip_comments_and_keep_the_async_context() {
+        let reported = format!(
+            "async function \
+             outer(x){{switch(x){{case/*c*/1:{{if(x){{if(await({AWAIT_READ}))run()}}}}}}}}"
+        );
+        assert_await_is_an_operator(&reported);
+        assert_eq!(await_operators_in(&reported).len(), 1, "{reported:?}");
+        let gate = await_gate();
+        for label in [
+            // Controls that already worked.
+            "case 1:",
+            "case /*c*/1:",
+            "case\t1:",
+            "default:",
+            "default :",
+            // Trivia between `case` and the expression.
+            "case/*c*/1:",
+            "case/*c*/ 1:",
+            "case /*c*/ 1:",
+            "case/*a*//*b*/1:",
+            "case/*a*/ /*b*/1:",
+            "case/*{*/1:",
+            "case/*}*/1:",
+            "case/*;*/1:",
+            "case/*: {*/1:",
+            "case/*a\nb*/1:",
+            "case/*a\u{2028}b*/1:",
+            "case/*c*/1/*d*/:",
+            "case 1/*c*/:",
+            // Literal and parenthesized expressions need no whitespace.
+            "case\"a\":",
+            "case'a':",
+            "case`a`:",
+            "case(1):",
+            "case/*c*/\"a\":",
+            "case/*c*/(1):",
+            "case-1:",
+            "case[1]:",
+            "case+x:",
+            "case/*;*/\"a;{\":",
+            // `default` with trivia.
+            "default/*c*/:",
+            "default/*{*/:",
+            "default /*c*/ :",
+        ] {
+            let code =
+                format!("async function outer(x){{switch(x){{{label}{{if(x){{{gate}}}}}}}}}");
+            assert_await_is_an_operator(&code);
+            assert_eq!(await_operators_in(&code).len(), 1, "{code:?}");
+            let repeated = format!(
+                "async function outer(x){{switch(x){{case 0:{{}}{label}{{if(x){{{gate}}}}}}}}}"
+            );
+            assert_await_is_an_operator(&repeated);
+        }
+    }
+
+    /// A name that only starts with `case` and a property named `case` are not
+    /// clause labels, so a block after them keeps holding members and an `if`
+    /// there is a method, not a statement.
+    #[test]
+    fn case_lookalikes_are_not_case_labels() {
+        let gate = await_gate();
+        for head in [
+            "casey:",
+            "case_:",
+            "case$:",
+            "case1:",
+            "case\u{3bb}:",
+            "defaulty:",
+            "default1:",
+            "case:",
+            "case/*c*/:",
+            "case /*c*/ :",
+            "\"case\":",
+            "'case':",
+            "a:",
+            "a/*c*/:",
+            "obj.case:",
+        ] {
+            let code = format!("async function outer(x){{const o={{{head}{{if(x){{{gate}}}}}}}}}");
+            assert_eq!(await_guard(&code), None, "{code:?}");
+            assert_eq!(await_operators_in(&code).len(), 0, "{code:?}");
+        }
+        // A genuine call argument is never a guard, with or without a label.
+        for code in [
+            format!("function outer(x){{switch(x){{case/*c*/1:{{if(x){{{gate}}}}}}}}}"),
+            format!(
+                "async function \
+                 outer(x){{switch(x){{case/*c*/1:{{if(x)run(await({AWAIT_READ}))}}}}}}"
+            ),
+        ] {
+            assert_eq!(await_guard(&code), None, "{code:?}");
+        }
+    }
+
+    /// Known limit: the clause head is read back only to the previous line
+    /// terminator, so a line break between `case` and its expression is not
+    /// recognized and the block is read as holding members.
+    #[test]
+    fn case_labels_split_by_a_line_break_are_a_known_limit() {
+        let gate = await_gate();
+        for label in ["case\n1:", "case // c\n1:", "case 1 +\n2:"] {
+            let code =
+                format!("async function outer(x){{switch(x){{{label}{{if(x){{{gate}}}}}}}}}");
+            assert_eq!(await_guard(&code), None, "{code:?}");
+        }
+    }
+
+    /// The same label rule decides whether a named function expression or a
+    /// declaration is bound after a clause label.
+    #[test]
+    fn eval_declared_after_a_case_label_with_trivia_is_a_declaration() {
+        for label in [
+            "case 0:",
+            "case/*c*/0:",
+            "case/*c*/ 0:",
+            "case\"a\":",
+            "case(0):",
+            "default/*c*/:",
+        ] {
+            let source = format!(
+                "switch (value) {{ {label} function eval(x) {{ return x; }} eval(code); }}"
+            );
+            assert_eq!(direct_eval_line(&source), None, "{source:?}");
+        }
+        // After a property colon the same function is an expression, so its
+        // name is not bound outside it and the call stays reported.
+        for head in ["case/*c*/:", "casey:", "a:"] {
+            let source = format!("o = {{ {head} function eval(x) {{ return x; }} }}; eval(code);");
+            assert!(direct_eval_line(&source).is_some(), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn plain_function_parameters_reset_the_await_context() {
+        let gate = await_gate();
+        let read = AWAIT_READ;
+        let default = format!("x = await({read}) ? 1 : 2");
+        // The parameter list of a plain function is not an async context, even
+        // inside an async function, so `await(` is a call there.
+        for header in [
+            "function inner",
+            "function",
+            "function* inner",
+            "function *inner",
+            "function*",
+            "function /* c */ inner",
+        ] {
+            for body in ["{}", "{ run() }"] {
+                for (definition, outer) in [
+                    (
+                        format!("{header}({default}) {body}"),
+                        "async function outer()",
+                    ),
+                    (
+                        format!("const f = {header}({default}) {body}"),
+                        "async function outer()",
+                    ),
+                    (format!("run({header}({default}) {body})"), "async () =>"),
+                    (
+                        format!("const o = {{ m: {header}({default}) {body} }}"),
+                        "async function* outer()",
+                    ),
+                ] {
+                    let code = format!("var await = x => x; {outer} {{ {definition} }}");
+                    assert_eq!(await_guard(&code), None, "{code:?}");
+                }
+            }
+        }
+        // Nested parentheses and brackets in the default initializer.
+        for default in [
+            format!("x = (await({read}) ? 1 : 2)"),
+            format!("x = [await({read}) ? 1 : 2]"),
+            format!("x = f((await({read}) ? 1 : 2))"),
+            format!("{{ a = await({read}) ? 1 : 2 }} = {{}}"),
+        ] {
+            let code = format!("async function outer() {{ function inner({default}) {{}} }}");
+            assert_eq!(await_guard(&code), None, "{code:?}");
+        }
+        // The async context returns after the nested function, and an async
+        // function nested in a plain one is async again.
+        for code in [
+            format!("async function outer() {{ function inner(x = 1) {{}} {gate} }}"),
+            format!(
+                "async function outer() {{ function inner(x = await({read}) ? 1 : 2) {{}} {gate} \
+                 }}"
+            ),
+            format!(
+                "async function outer() {{ run(function inner(x = 1) {{}}, await({read}) ? 1 : 2) \
+                 }}"
+            ),
+            format!("async function outer() {{ async function inner(x = 1) {{ {gate} }} }}"),
+            format!("async function outer() {{ async function* inner(x = 1) {{ {gate} }} }}"),
+            format!("async function outer() {{ return await({read}) ? 1 : 2; }}"),
+        ] {
+            // The last read is the one after the nested function.
+            let start = code.rfind(read).unwrap();
+            let guard = env_guard(&code, start, start + read.len(), &non_code_ranges(&code))
+                .map(EnvGuard::evidence);
+            assert!(guard.is_some(), "{code:?}");
+        }
+        // The body of a plain function is not async either.
+        let code = format!("async function outer() {{ function inner(x = 1) {{ {gate} }} }}");
+        assert_eq!(await_guard(&code), None, "{code:?}");
+        // A property named `function` is not the keyword, so its call keeps
+        // the enclosing async context.
+        for code in [
+            format!("async function outer() {{ obj.function(); {gate} }}"),
+            format!("async function outer() {{ obj?.function(x = 1); {gate} }}"),
+        ] {
+            assert_await_is_an_operator(&code);
+        }
+        let code = format!("async function outer() {{ obj.function(await({read}) ? 1 : 2) }}");
+        assert_eq!(await_guard(&code), Some(CONDITIONAL), "{code:?}");
+        // Real guards inside default initializers stay detectable.
+        for code in [
+            format!("async function outer() {{ function inner(x = {read} ? 1 : 2) {{}} }}"),
+            format!("function inner(x = {read} ? 1 : 2) {{}}"),
+            format!("async function outer() {{ async function inner(x = {read} ? 1 : 2) {{}} }}"),
+        ] {
+            assert_eq!(await_guard(&code), Some(CONDITIONAL), "{code:?}");
         }
     }
 

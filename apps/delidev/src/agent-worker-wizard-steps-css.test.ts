@@ -159,6 +159,44 @@ describe("Agent Worker step labels", () => {
     },
   );
 
+  it.each([ViewportKind.Wide, ViewportKind.Narrow])(
+    "keeps every label atomic: nowrap, never broken inside a word (%s viewport)",
+    (viewport) => {
+      installStyles(viewport);
+      mountSteps(2, 3);
+      for (const label of document.querySelectorAll<HTMLElement>(
+        ".worker-step-target > span:last-child",
+      )) {
+        const style = getComputedStyle(label);
+        expect(style.whiteSpace).toBe("nowrap");
+        expect(style.overflowWrap).toBe("normal");
+        expect(style.wordBreak).toBe("normal");
+      }
+    },
+  );
+
+  it("sizes the padded step button to its content below every host width cap", () => {
+    // Each host caps controls with max-width: 100% at a different selector
+    // specificity (shared wizard, Settings dialog, Settings page). The cap
+    // excludes the 16px of padding the negative margins give back, which
+    // squeezed the label until it broke inside words. min-width always beats
+    // max-width, so it holds in every host without a specificity race. Real
+    // line geometry is covered by scripts/test-worker-steps-layout.mjs.
+    expect(WIZARD_CSS).toMatch(
+      /\.worker-steps button\.worker-step-target \{[^}]*min-width: max-content;/,
+    );
+    for (const host of [
+      "src/wizard-presentation.css",
+      "src/settings-task.css",
+      "src/settings-presentation.css",
+    ]) {
+      expect(readFileSync(host, "utf8"), host).toContain("max-width: 100%");
+    }
+    // The fix must not be an !important override or a shared-control change.
+    expect(WIZARD_CSS).not.toMatch(/!important/);
+    expect(PRESENTATION_CSS).not.toContain("max-content");
+  });
+
   it("scopes the hover surface and focus ring to enabled step buttons", () => {
     const flat = flattenMedia(WIZARD_CSS, ViewportKind.Narrow);
     expect(flat).toMatch(

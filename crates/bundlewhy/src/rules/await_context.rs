@@ -338,6 +338,23 @@ impl Scan<'_> {
         }
     }
 
+    /// The `function` keyword whose parameter list opens at `open`, for
+    /// `function (`, `function name (`, `function* (` and `function* name (`.
+    /// A property named `function` (`obj.function(`) is not a keyword.
+    fn function_keyword_before_params(&self, open: usize) -> Option<usize> {
+        let mut head = open.checked_sub(1)?;
+        if self.is_word(head, "function") {
+            return Some(head);
+        }
+        if self.tokens[head].kind == Kind::Word && !self.is_member(head) {
+            head = head.checked_sub(1)?;
+        }
+        if self.is_punct(head, b'*') {
+            head = head.checked_sub(1)?;
+        }
+        self.is_word(head, "function").then_some(head)
+    }
+
     /// True when the line break before the token at `index` ends the
     /// statement by automatic semicolon insertion. The decision is the shared
     /// one that the environment scan uses for its statement boundaries
@@ -407,11 +424,22 @@ impl Scan<'_> {
                         frames.pop();
                     }
                 }
-                Kind::Punct(b'(' | b'[') => frames.push(Frame {
-                    kind: FrameKind::Group,
-                    is_async: enclosing_async,
-                    opener: Some(index),
-                }),
+                Kind::Punct(b'(' | b'[') => {
+                    // The parameter list of a plain `function` is not an
+                    // async context, even inside an async function, so
+                    // `await(` in a default initializer is a call.
+                    let is_async = if token.kind == Kind::Punct(b'(') {
+                        self.function_keyword_before_params(index)
+                            .map_or(enclosing_async, |function| self.async_before(function))
+                    } else {
+                        enclosing_async
+                    };
+                    frames.push(Frame {
+                        kind: FrameKind::Group,
+                        is_async,
+                        opener: Some(index),
+                    });
+                }
                 Kind::Punct(b'{') => {
                     let enclosing = frames.last().and_then(|frame| frame.opener);
                     let is_async = self

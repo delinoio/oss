@@ -82,5 +82,7 @@
   "new-session.noMatchingBranches": "일치하는 브랜치가 없습니다. 올바른 이름을 직접 입력할 수 있습니다.",
   "new-session.createAgentWorker": "에이전트 워커 생성",
   "new-session.projectGeneralChat": "일반 채팅",
-  "new-session.newProject": "새 프로젝트"
+  "new-session.newProject": "새 프로젝트",
+  "new-session.newAgentWorkerAction": "새로 만들기",
+  "new-session.newAgentWorkerActionName": "에이전트 워커 새로 만들기"
 }
