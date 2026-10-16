@@ -810,7 +810,12 @@ accepted logout keeps the account revoked after the release and starts only then
 fenced Grok execute lease (`WatchSubscription`, Worker capability 21 required).
 `runGrokRecovery` reads the retained journal, joins the supervised process of the
 job, retires `auth.json`, its lock and temporaries in exactly the journaled home and
-sends the cleanup-only Finish. A refresh the interrupted process had already
+sends the cleanup-only Finish. The durable claim precedes the protected delivery, so
+a journal that never recorded a generation, lease revision or home (the Take
+response was lost after the server committed the lease) is the accepted
+pre-delivery claim: the Finish names the generation and revision of the
+authenticated server lease. A journal that recorded any of them must agree with
+that lease. A refresh the interrupted process had already
 written is lost by design: without the original bundle in memory its identity cannot
 be verified, so recovery never reads, seals or returns the credential. If the
 credential cannot be proven removed nothing is reported and the lease stays fenced.

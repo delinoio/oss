@@ -568,6 +568,69 @@ func TestGrokRecoveryOfALeaseThatNeverWroteACredentialStillReports(t *testing.T)
 	}
 }
 
+// The durable claim precedes the protected delivery. A Take response lost after
+// the server committed the lease leaves a journal without generation or lease
+// revision; the original Worker still reports the cleanup-only Finish, naming the
+// generation and revision from the authenticated server lease, instead of
+// leaving the account fenced forever.
+func TestGrokRecoveryOfALeaseWhoseTakeResponseWasLostStillReports(t *testing.T) {
+	f := newGrokExecutionFixture(t)
+	account, _ := f.grokRecoveryAccount(t, managedSubscriptionJournal{})
+	path := filepath.Join(f.config.Root, "managed-auth", string(f.lease)+".json")
+	raw, err := security.ReadPrivate(path, 16<<10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var journal managedSubscriptionJournal
+	if err := json.Unmarshal(raw, &journal); err != nil {
+		t.Fatal(err)
+	}
+	journal.Generation, journal.LeaseRevision = "", 0
+	if err := writeJSON(path, journal); err != nil {
+		t.Fatal(err)
+	}
+	client := delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.credential.Endpoint)
+	if err := runGrokRecovery(context.Background(), f.config, client, f.credential, f.account, account); err != nil {
+		t.Fatal(err)
+	}
+	finish := f.onlyFinish(t)
+	if !finish.CleanupConfirmed || finish.Succeeded || finish.LeaseId != string(f.lease) || finish.GenerationId != string(f.generation) || finish.Mutation.ExpectedRevision != account.Subscription.Lease.Revision {
+		t.Fatal("recovery did not report a cleanup-only Finish from the authenticated server lease")
+	}
+	// Once a field was persisted it must agree with the server lease, and a
+	// journal that already named a home is no pre-delivery claim.
+	for name, edit := range map[string]func(*managedSubscriptionJournal){
+		"foreign generation": func(j *managedSubscriptionJournal) { j.Generation = domain.NewID() },
+		"foreign revision":   func(j *managedSubscriptionJournal) { j.Generation, j.LeaseRevision = "", 99 },
+		"named home":         func(j *managedSubscriptionJournal) { j.Generation, j.GrokHome = "", f.home },
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := newGrokExecutionFixture(t)
+			other, _ := g.grokRecoveryAccount(t, managedSubscriptionJournal{})
+			p := filepath.Join(g.config.Root, "managed-auth", string(g.lease)+".json")
+			r, err := security.ReadPrivate(p, 16<<10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var j managedSubscriptionJournal
+			if err := json.Unmarshal(r, &j); err != nil {
+				t.Fatal(err)
+			}
+			edit(&j)
+			if err := writeJSON(p, j); err != nil {
+				t.Fatal(err)
+			}
+			c := delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, g.credential.Endpoint)
+			if err := runGrokRecovery(context.Background(), g.config, c, g.credential, g.account, other); err == nil {
+				t.Fatal("recovery trusted a journal that disagrees with the server lease")
+			}
+			if len(g.finishes) != 0 {
+				t.Fatal("recovery reported from an untrusted journal")
+			}
+		})
+	}
+}
+
 // Follow-up input resumes no native history of a managed account: a continuation
 // or fork never takes a lease and never receives the bundle.
 func TestGrokExecutionNeverTakesALeaseForAContinuationOrFork(t *testing.T) {

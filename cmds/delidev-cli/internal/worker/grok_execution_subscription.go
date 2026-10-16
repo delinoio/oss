@@ -219,7 +219,18 @@ func runGrokRecovery(ctx context.Context, config Config, client delidevv1connect
 	path := filepath.Join(config.Root, "managed-auth", string(original.ID)+".json")
 	raw, err := security.ReadPrivate(path, 16<<10)
 	var journal managedSubscriptionJournal
-	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.Lease != original.ID || journal.Account != accountID || journal.Operation != original.OperationID || journal.Instance != original.InstanceID || journal.Finish.Validate() != nil || journal.Generation != original.Generation || journal.Action != pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE {
+	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.Lease != original.ID || journal.Account != accountID || journal.Operation != original.OperationID || journal.Instance != original.InstanceID || journal.Finish.Validate() != nil || journal.Action != pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE {
+		return subscription.Invalid()
+	}
+	// The durable claim precedes the protected delivery. When the Take response was
+	// lost, or its fields could not be persisted, the journal still has no
+	// generation or lease revision and never named a home or started a native
+	// process, while the authenticated server lease carries the settled
+	// generation and revision the cleanup-only Finish uses. That exact original
+	// claim is accepted; once any field was persisted it must agree with the
+	// server lease.
+	preDelivery := journal.Generation == "" && journal.LeaseRevision == 0 && journal.GrokHome == "" && !journal.NativeStarted
+	if !preDelivery && journal.Generation != original.Generation || journal.LeaseRevision != 0 && journal.LeaseRevision != original.Revision {
 		return subscription.Invalid()
 	}
 	// A lease that never named a home never wrote a credential. Otherwise the
@@ -249,7 +260,7 @@ func runGrokRecovery(ctx context.Context, config Config, client delidevv1connect
 	}
 	lease := &managedSubscriptionLease{logger: logger, client: client, credential: credential, instance: original.InstanceID, account: accountID, finishID: journal.CleanupFinish, journalPath: path, journal: journal, response: &pb.TakeSubscriptionResponse{LeaseId: string(original.ID), GenerationId: string(original.Generation), LeaseRevision: original.Revision}}
 	if logger != nil {
-		logger.InfoContext(ctx, "grok_subscription_recovery_cleanup_confirmed", "phase", grokExecutionPhase, "account_id", accountID, "lease_id", original.ID)
+		logger.InfoContext(ctx, "grok_subscription_recovery_cleanup_confirmed", "phase", grokExecutionPhase, "account_id", accountID, "lease_id", original.ID, "pre_delivery", preDelivery)
 	}
 	return lease.finish(nil, true, false, false)
 }
