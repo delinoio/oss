@@ -741,10 +741,9 @@ func (s *Service) finishGrokLogin(ctx context.Context, id domain.ID, o domain.Se
 		s.retireUnpublishedGrokGeneration(ctx, vault, id, o.ID, o.FinishID)
 	}
 	if final == domain.SubscriptionSucceeded {
-		if err := cleanupSubscriptionReferences(ctx, vault, id, o.FinishID); err != nil {
-			s.logger.WarnContext(ctx, "grok_login_cleanup_pending", "phase", grokLoginPhase, "operation_id", o.ID, "correlation_id", o.ID, "code", domain.SafeError(err).Code)
-			return err
-		}
+		// Superseded generations are retained: the published generation is the
+		// sole authority and only explicit logout or deletion removes the rest.
+		s.logger.InfoContext(ctx, "server_credential_retained", "account_id", id, "operation_id", o.ID, "action", o.Action, "state", final)
 	}
 	s.logger.InfoContext(ctx, "grok_login_finished", "phase", grokLoginPhase, "account_id", id, "operation_id", o.ID, "correlation_id", o.ID, "state", final, "reason", out.reason, "shutting_down", shuttingDown, "cancel_observed", canceledSeen)
 	return nil

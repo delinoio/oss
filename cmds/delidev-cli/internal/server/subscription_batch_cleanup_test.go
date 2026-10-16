@@ -186,7 +186,9 @@ func TestFailedSubscriptionCleanupRetainsChangedAndReferencedAccounts(t *testing
 			case "vault":
 				f.secrets.referenceError = domain.Fail(domain.Unavailable, "Fixture vault unavailable.", "Inspect cleanup.")
 			case "protected-intent":
-				_, err := f.secrets.Put(ctx, credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}, []byte("synthetic-protected"))
+				// A protected reference that is not an AccountLogin generation is never
+				// removed by subscription deletion and keeps the account.
+				_, err := f.secrets.Put(ctx, credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountAPI}, []byte("synthetic-protected"))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -475,8 +477,10 @@ func TestDisconnectedSubscriptionCleanupOwnershipAndVault(t *testing.T) {
 			t.Fatal("independent ownership included")
 		}
 	}
-	ref := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
-	if _, err := f.secrets.Put(context.Background(), ref, []byte("synthetic-staged-token")); err != nil {
+	// A non-AccountLogin protected reference is never removed by subscription
+	// deletion and keeps the account.
+	protected := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountAPI}
+	if _, err := f.secrets.Put(context.Background(), protected, []byte("synthetic-protected-token")); err != nil {
 		t.Fatal(err)
 	}
 	accepted := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
@@ -485,8 +489,25 @@ func TestDisconnectedSubscriptionCleanupOwnershipAndVault(t *testing.T) {
 	if result.Job.Deleted != 0 || result.Job.Retained != 1 {
 		t.Fatal("status bypassed credential proof", result)
 	}
-	if _, err := f.secrets.Get(context.Background(), ref); err != nil {
+	if _, err := f.secrets.Get(context.Background(), protected); err != nil {
 		t.Fatal("disconnected metadata deleted protected credentials", err)
+	}
+	// Retained AccountLogin generations are removed by the explicit deletion.
+	if err := f.secrets.Delete(context.Background(), protected); err != nil {
+		t.Fatal(err)
+	}
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
+	if _, err := f.secrets.Put(context.Background(), ref, []byte("synthetic-staged-token")); err != nil {
+		t.Fatal(err)
+	}
+	accepted = acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
+	runFailedCleanup(t, f, accepted.Job.Id)
+	result = readFailedCleanup(t, f, accepted.Job.Id, "")
+	if result.Job.Deleted != 1 || result.Job.Retained != 0 {
+		t.Fatal("explicit deletion kept a retained generation", result)
+	}
+	if _, err := f.secrets.Get(context.Background(), ref); err == nil {
+		t.Fatal("explicit deletion retained the AccountLogin generation")
 	}
 }
 

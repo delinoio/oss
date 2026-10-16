@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -484,7 +485,9 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 	if err == nil && in.Target == subscriptionCleanupFailedLogin && account.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionCredentialCleanupConfirmed {
 		reason = pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_CLEANUP_UNCONFIRMED
 		// Never repeat an interrupted attempt without its durable native checkpoint.
-		// Confirmed checkpoints alone can resume protected cleanup after restart.
+		// A credential fence written by an earlier build marks an uncertain external
+		// attempt that is never repeated; a native-confirmed checkpoint written by
+		// an earlier build resumes the settlement without relaunching anything.
 		if out.CredentialsStarted || out.Started && account.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed {
 			err = failedCleanupUnavailable()
 		} else {
@@ -516,24 +519,6 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 					j.Output, _ = json.Marshal(current)
 					_, err = tx.PutJob(child, r.Revision, "", "", j)
 					out = current
-					return err
-				}, func() error {
-					// Fence the vault attempt before external effects. An uncertain
-					// attempt is retained even if recording its outcome later fails.
-					_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.cleanup.credentials.begin", child, func(tx *store.Tx) (any, error) {
-						r, err := tx.Get(domain.JobKind, child)
-						if err != nil {
-							return nil, err
-						}
-						j, _, current, err := decodeFailedCleanupAccount(r, parent)
-						if err != nil || !current.Started || current.CredentialsStarted {
-							return nil, failedCleanupUnavailable()
-						}
-						current.CredentialsStarted = true
-						j.Output, _ = json.Marshal(current)
-						_, err = tx.PutJob(child, r.Revision, "", "", j)
-						return struct{}{}, err
-					})
 					return err
 				})
 			}
@@ -592,7 +577,8 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 
 func (s *Service) retainFailedSubscriptionCleanupAccount(parentCtx context.Context, parent, child domain.ID, reason pb.FailedSubscriptionCleanupReason, attempt error) error {
 	problem := domain.SafeError(attempt).Code
-	if attempt == protectedAccountDeletion {
+	var removal credentialRemovalFailure
+	if attempt == protectedAccountDeletion || errors.As(attempt, &removal) {
 		reason = pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_CLEANUP_UNCONFIRMED
 	}
 	if problem == domain.Unauthenticated || problem == domain.PermissionDenied {

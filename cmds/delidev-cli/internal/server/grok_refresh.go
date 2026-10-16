@@ -418,12 +418,9 @@ func (s *Service) finishGrokRefresh(ctx context.Context, id domain.ID, o domain.
 		if s.grokRefreshCrashes(grokRefreshAfterPersist) {
 			return true, nil
 		}
-		// Only after the publication is the superseded generation, and with it the
-		// superseded refresh token, removed from the vault.
-		if err := cleanupSubscriptionReferences(ctx, vault, id, o.FinishID); err != nil {
-			s.logger.WarnContext(ctx, "grok_refresh_cleanup_pending", "phase", grokRefreshPhase, "operation_id", o.ID, "correlation_id", o.ID, "code", domain.SafeError(err).Code)
-			return false, err
-		}
+		// The superseded generation is retained: only the published generation
+		// authorizes use, and only explicit logout or deletion removes the rest.
+		s.logger.InfoContext(ctx, "server_credential_retained", "account_id", id, "operation_id", o.ID, "action", o.Action, "state", final)
 	}
 	s.logger.InfoContext(ctx, "grok_refresh_finished", "phase", grokRefreshPhase, "account_id", id, "operation_id", o.ID, "correlation_id", o.ID, "state", final, "reason", out.reason, "shutting_down", shuttingDown)
 	return false, nil

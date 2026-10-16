@@ -201,6 +201,7 @@ const (
 	ReasonDeleteBlocked      Reason = "delete_blocked"
 	ReasonCredentialCleaned  Reason = "credential_cleaned"
 	ReasonCredentialBlocked  Reason = "credential_cleanup_blocked"
+	ReasonCredentialRetained Reason = "credential_retained"
 	ReasonProcessUncertain   Reason = "process_uncertain"
 	ReasonMigrationVerified  Reason = "migration_verified"
 	ReasonMigrationSettled   Reason = "migration_settled"

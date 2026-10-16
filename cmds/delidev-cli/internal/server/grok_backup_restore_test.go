@@ -259,18 +259,28 @@ func TestGrokDisconnectedAccountDeletionIsGatedByVaultAndNeverRequestsNativeLogo
 		return &pb.DeleteConfigurationRequest{Kind: pb.EntityKind_ENTITY_KIND_ACCOUNT, Mutation: &pb.Mutation{Id: string(owner), ExpectedRevision: r.Revision, RequestId: string(domain.NewID())}}
 	}
 	jobs := f.jobCount(t)
+	// A protected reference that is not an AccountLogin generation keeps the
+	// account: subscription deletion never removes another purpose.
+	protected := credentials.Ref{Owner: owner, ID: domain.NewID(), Purpose: credentials.AccountAPI}
+	if _, err := f.secrets.Put(context.Background(), protected, []byte("synthetic-api-key")); err != nil {
+		t.Fatal(err)
+	}
 	err = f.deleteFailedLogin(deletion())
 	if err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict || !strings.Contains(err.Error(), "retains protected credential intents") {
 		t.Fatal("deletion ignored the unremoved vault reference", err)
 	}
-	if refs, err := f.secrets.UnremovedReferences(context.Background(), owner); err != nil || len(refs) != 1 {
+	if refs, err := f.secrets.UnremovedReferences(context.Background(), owner); err != nil || len(refs) != 2 {
 		t.Fatal("refused deletion changed the vault", err)
 	}
-	if err := f.secrets.Delete(context.Background(), ref); err != nil {
+	if err := f.secrets.Delete(context.Background(), protected); err != nil {
 		t.Fatal(err)
 	}
+	// The retained AccountLogin generation is removed by the explicit deletion.
 	if err := f.deleteFailedLogin(deletion()); err != nil {
-		t.Fatal("deletion failed after the vault was clean", err)
+		t.Fatal("deletion failed with only a retained generation", err)
+	}
+	if refs, err := f.secrets.UnremovedReferences(context.Background(), owner); err != nil || len(refs) != 0 {
+		t.Fatal("explicit deletion left a retained generation", err)
 	}
 	if f.jobCount(t) != jobs {
 		t.Fatal("deletion queued a native logout job")

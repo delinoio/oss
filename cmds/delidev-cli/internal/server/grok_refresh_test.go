@@ -215,8 +215,9 @@ func TestGrokRefreshReplacesTheBundleWithoutRotation(t *testing.T) {
 	if len(form) != 3 || form.Get("grant_type") != "refresh_token" || form.Get("client_id") != subscription.GrokClientID || form.Get("refresh_token") != old.RefreshToken() || g.idp.TokenAuthHeaders[0] != "" {
 		t.Fatal("the request is not the public-client refresh_token grant")
 	}
-	// The superseded generation, and its credential, left the vault.
-	if refs := g.f.references(); len(refs) != 1 || !refs[after.Subscription.Generation] {
+	// The superseded generation is retained, not authoritative: only the
+	// published generation authorizes use and explicit logout removes the rest.
+	if refs := g.f.references(); len(refs) != 2 || !refs[after.Subscription.Generation] || !refs[before.Subscription.Generation] {
 		t.Fatalf("vault references = %v", refs)
 	}
 	g.noLeak(old)
@@ -423,8 +424,8 @@ func TestGrokRefreshCrashMatrix(t *testing.T) {
 			if next.RefreshToken() != g.idp.RefreshToken || next.Equal(old) {
 				t.Fatal("the published generation does not hold the rotated credential")
 			}
-			// The superseded generation survived the crash; the next completed
-			// operation removes it.
+			// The superseded generation survived the crash and stays retained; each
+			// later completed refresh retains its predecessor as well.
 			if refs := g.f.references(); len(refs) != 2 {
 				t.Fatalf("vault references after the crash = %v", refs)
 			}
@@ -433,7 +434,7 @@ func TestGrokRefreshCrashMatrix(t *testing.T) {
 			if p := g.settle(); p.State != grokSucceeds || g.idp.RefreshRequests != 2 {
 				t.Fatalf("follow-up refresh = %v", p.State)
 			}
-			if refs := g.f.references(); len(refs) != 1 {
+			if refs := g.f.references(); len(refs) != 3 {
 				t.Fatalf("vault references after the next refresh = %v", refs)
 			}
 		})

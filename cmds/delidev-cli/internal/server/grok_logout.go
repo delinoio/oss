@@ -452,12 +452,11 @@ func (s *Service) finishGrokLogout(ctx context.Context, id domain.ID, o domain.S
 // The caller holds the account gate.
 func (s *Service) cleanupGrokLogoutCredentials(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation) error {
 	s.logger.InfoContext(ctx, "grok_logout_cleanup_started", "phase", grokCleanupPhase, "account_id", id, "operation_id", o.ID, "correlation_id", o.ID)
-	vault, err := s.secrets()
-	if err == nil {
-		cleanupCtx, cancel := grokBookkeepingContext(ctx, grokCleanupTimeout)
-		err = cleanupSubscriptionReferences(cleanupCtx, vault, id, "")
-		cancel()
-	}
+	// Explicit logout removes every protected generation of the account without
+	// the Worker Finish limit. A Grok account owns no native profile or file.
+	cleanupCtx, cancel := grokBookkeepingContext(ctx, grokCleanupTimeout)
+	err := s.removeAccountCredentials(cleanupCtx, id, o.ID, false)
+	cancel()
 	if err != nil {
 		// The recovery shape was committed with the publication, so nothing more
 		// has to be persisted: the account stays fenced for explicit cleanup.

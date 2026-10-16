@@ -1490,23 +1490,46 @@ func uniqueSubscriptionIdentity(tx *store.Tx, owner domain.ID, identity string) 
 	return nil
 }
 
+// workerReferenceRetirementBudget bounds the obsolete references one Worker
+// Finish retires. Server-owned operations retain every superseded generation, so
+// the number of unremoved references is not bounded by the Worker lifecycle. The
+// budget is therefore per-call work, not a refusal limit: a Finish never fails
+// because earlier operations retained generations, and the remaining obsolete
+// generations stay vault-owned (they grant nothing) until a later Finish retires
+// another budget or explicit logout or account deletion removes all of them.
+const workerReferenceRetirementBudget = 256
+
+// cleanupSubscriptionReferences is the Worker Finish retirement of obsolete
+// AccountLogin generations: every reference except keep and protected is
+// deleted, up to workerReferenceRetirementBudget per call. A reference of
+// another owner or purpose denies the call before the first deletion. Server
+// operations and explicit removal never call it; they use the server's own
+// retention and removeAccountLoginReferences.
 func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, owner, keep domain.ID, protected ...domain.ID) error {
 	refs, err := vault.UnremovedReferences(ctx, owner)
 	if err != nil {
 		return err
 	}
-	if len(refs) > 256 {
-		return subscriptionDenied()
-	}
 	for _, ref := range refs {
 		if ref.Owner != owner || ref.Purpose != credentials.AccountLogin {
 			return subscriptionDenied()
 		}
-		if ref.ID != keep && !slices.Contains(protected, ref.ID) {
-			if err := vault.Delete(ctx, ref); err != nil {
-				return err
-			}
+	}
+	retired := 0
+	for _, ref := range refs {
+		if ref.ID == keep || slices.Contains(protected, ref.ID) {
+			continue
 		}
+		if retired == workerReferenceRetirementBudget {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return domain.SafeError(err)
+		}
+		if err := vault.Delete(ctx, ref); err != nil {
+			return err
+		}
+		retired++
 	}
 	return nil
 }

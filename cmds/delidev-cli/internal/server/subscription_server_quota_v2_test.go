@@ -112,8 +112,10 @@ func TestServerQuotaV2ExecutionRotationRetainsCapturedReference(t *testing.T) {
 			}
 			retained, err := f.secrets.Get(ctx, credentials.Ref{Owner: f.input.AccountID, ID: old, Purpose: credentials.AccountLogin})
 			clear(retained)
-			if uncertain && err != nil || !uncertain && (err == nil || domain.SafeError(err).Code != domain.NotFound) {
-				t.Fatal("captured reference did not follow independent cleanup", err)
+			// The obsolete captured reference is retained in both outcomes: it grants
+			// nothing and only explicit logout or deletion removes it.
+			if err != nil {
+				t.Fatal("captured reference was retired by routine settlement", err)
 			}
 			current, err := f.secrets.Get(ctx, credentials.Ref{Owner: f.input.AccountID, ID: after.Subscription.Generation, Purpose: credentials.AccountLogin})
 			clear(current)

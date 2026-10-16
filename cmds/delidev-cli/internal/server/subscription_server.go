@@ -799,17 +799,16 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 	if err != nil {
 		return err
 	}
-	keep := o.Generation
-	if success {
-		keep = o.FinishID
-		if operation.Action == domain.SubscriptionLogout {
-			keep = ""
-		}
-	}
-	if cleanup {
-		if err := cleanupSubscriptionReferences(ctx, vault, id, keep); err != nil {
+	// Only an explicit logout removes retained credentials. Login and refresh
+	// settlement retains the account-owned credential file and every protected
+	// generation: the published generation is the sole authority and obsolete
+	// generations grant nothing.
+	if cleanup && success && operation.Action == domain.SubscriptionLogout {
+		if err := s.removeAccountCredentials(ctx, id, o.ID, true); err != nil {
 			return err
 		}
+	} else if cleanup {
+		s.logger.InfoContext(ctx, "server_credential_retained", "account_id", id, "operation_id", o.ID, "action", operation.Action, "state", result)
 	}
 	if success && cleanup && operation.Action != domain.SubscriptionLogout {
 		_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.server.quota.ready", struct{ Account, Generation domain.ID }{id, o.FinishID}, func(tx *store.Tx) (any, error) {

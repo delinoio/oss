@@ -38,6 +38,11 @@ const (
 	CleanupNotRegular  CleanupReason = "non-regular"
 	CleanupFileLimit   CleanupReason = "file-limit"
 	CleanupByteLimit   CleanupReason = "byte-limit"
+	// CleanupPendingTemporary marks the target-attributed temporary of an
+	// interrupted credential write. CleanupUnsafe marks a retained credential
+	// file whose owner or permissions are not the current user's private ones.
+	CleanupPendingTemporary CleanupReason = "pending-temporary"
+	CleanupUnsafe           CleanupReason = "unsafe-permissions"
 )
 
 // RuntimeCleanupError retains only closed classifications and bounded counters.
@@ -290,6 +295,55 @@ func CredentialFilePresent(root string) (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+// InspectRetainedCredentials admits the account-owned credential files that a
+// completed operation retained in a persistent auth profile. It reports whether
+// at least one credential file is present. A retained regular file with private
+// permissions owned by the current user is admitted. Anything else is an
+// integrity failure: a symlink or other non-regular entry, a file that other
+// users can access or that another user owns, and the target-attributed
+// temporary of an interrupted credential write (which may hold a partial or
+// plaintext bundle under a name other than the final path). Admission is not
+// authority: a retained file never authorizes use; only the published vault
+// generation does.
+func InspectRetainedCredentials(root string) (bool, error) {
+	present := false
+	for _, name := range CredentialFiles {
+		real, err := credentialParentReal(root, name)
+		if err != nil {
+			return false, err
+		}
+		if !real {
+			continue
+		}
+		temporaries, _, err := credentialTemporaries(root, name)
+		if err != nil {
+			return false, err
+		}
+		if len(temporaries) != 0 {
+			return false, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupPendingTemporary}
+		}
+		path := filepath.Join(root, filepath.FromSlash(name))
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return false, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return false, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupSymlink}
+		}
+		if !info.Mode().IsRegular() {
+			return false, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupNotRegular}
+		}
+		if err := security.RegularPrivate(path); err != nil {
+			return false, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupUnsafe}
+		}
+		present = true
+	}
+	return present, nil
 }
 
 // RetireCredentialFiles removes only the listed transient credential files and
