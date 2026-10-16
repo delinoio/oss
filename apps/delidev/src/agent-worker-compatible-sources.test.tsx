@@ -2,7 +2,7 @@
 // Agent Worker API source choices are the server-filtered saved providers that
 // own a selectable account compatible with the harness protocol.
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -56,6 +56,8 @@ interface Options {
   /** The page token the server hands out after the first page. */
   nextPageToken?: string;
   initial?: Resource;
+  /** Handles inventory reads after the first so a refresh can stall or fail. */
+  later?: (request: ListProviderInventoryRequest) => Promise<never> | void;
 }
 
 function fixture(options: Options = {}) {
@@ -92,6 +94,10 @@ function fixture(options: Options = {}) {
   const requests: ListProviderInventoryRequest[] = [];
   const inventory = vi.fn((request: ListProviderInventoryRequest) => {
     requests.push(request);
+    if (requests.length > 1) {
+      const pending = options.later?.(request);
+      if (pending) return pending;
+    }
     const ids = eligible(request.compatibleAccountApiProtocol);
     return {
       entries: (filtered || request.pageToken === ""
@@ -159,7 +165,7 @@ function fixture(options: Options = {}) {
       </QueryClientProvider>
     </TransportProvider>,
   );
-  return { providers, requests, inventory, get, saved };
+  return { providers, requests, inventory, get, saved, client };
 }
 
 async function openSource(harness: string) {
@@ -270,4 +276,38 @@ it("keeps a saved API source that no longer qualifies as a retained source", asy
   expect(globalThis.document.body.textContent).toContain("retained source");
   // The draft is never switched or cleared by the filtered read.
   expect(f.saved).not.toHaveBeenCalled();
+});
+
+it("hides the empty guidance while a refresh of an empty list is pending", async () => {
+  let release: () => void = () => {};
+  const f = fixture({
+    eligible: () => [],
+    later: () =>
+      new Promise<never>((_, reject) => {
+        release = () => reject(new ConnectError("stalled", Code.Unavailable));
+      }),
+  });
+  await openSource("Codex");
+  await screen.findByText(/No enabled API provider has a connected account/);
+  void f.client.invalidateQueries();
+  await waitFor(() => expect(f.requests.length).toBeGreaterThan(1));
+  expect(screen.queryByText(/No enabled API provider/)).toBeNull();
+  release();
+  await waitFor(() => expect(f.inventory).toHaveBeenCalled());
+});
+
+it("hides the empty guidance when a refresh of an empty list fails", async () => {
+  const f = fixture({
+    eligible: () => [],
+    later: () => {
+      throw new ConnectError("unavailable", Code.Unavailable);
+    },
+  });
+  await openSource("Codex");
+  await screen.findByText(/No enabled API provider has a connected account/);
+  void f.client.invalidateQueries();
+  await waitFor(() => expect(f.requests.length).toBeGreaterThan(1));
+  await waitFor(() =>
+    expect(screen.queryByText(/No enabled API provider/)).toBeNull(),
+  );
 });

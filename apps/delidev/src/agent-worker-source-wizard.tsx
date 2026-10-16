@@ -656,7 +656,10 @@ function SourceGroup({
               <p role="status">
                 {copy("agent-worker-wizard.updateServerCompatibleApiSources")}
               </p>
-            ) : providers.loaded && entries.length === 0 ? (
+            ) : providers.loaded &&
+              !providers.isFetching &&
+              !providers.error &&
+              entries.length === 0 ? (
               <p>{copy("agent-worker-wizard.noApiSources")}</p>
             ) : null}
           </div>
