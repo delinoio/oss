@@ -87,6 +87,15 @@ const (
 	// SubscriptionServiceFinishSubscriptionProcedure is the fully-qualified name of the
 	// SubscriptionService's FinishSubscription RPC.
 	SubscriptionServiceFinishSubscriptionProcedure = "/delidev.v1.SubscriptionService/FinishSubscription"
+	// SubscriptionServiceSyncSubscriptionRecoveryCaptureProcedure is the fully-qualified name of the
+	// SubscriptionService's SyncSubscriptionRecoveryCapture RPC.
+	SubscriptionServiceSyncSubscriptionRecoveryCaptureProcedure = "/delidev.v1.SubscriptionService/SyncSubscriptionRecoveryCapture"
+	// SubscriptionServiceReadSubscriptionRecoveryCaptureProcedure is the fully-qualified name of the
+	// SubscriptionService's ReadSubscriptionRecoveryCapture RPC.
+	SubscriptionServiceReadSubscriptionRecoveryCaptureProcedure = "/delidev.v1.SubscriptionService/ReadSubscriptionRecoveryCapture"
+	// SubscriptionServiceRecoverSubscriptionProcedure is the fully-qualified name of the
+	// SubscriptionService's RecoverSubscription RPC.
+	SubscriptionServiceRecoverSubscriptionProcedure = "/delidev.v1.SubscriptionService/RecoverSubscription"
 )
 
 // SubscriptionServiceClient is a client for the delidev.v1.SubscriptionService service.
@@ -109,6 +118,12 @@ type SubscriptionServiceClient interface {
 	TakeSubscription(context.Context, *connect.Request[v1.TakeSubscriptionRequest]) (*connect.Response[v1.TakeSubscriptionResponse], error)
 	PublishSubscriptionProgress(context.Context, *connect.Request[v1.PublishSubscriptionProgressRequest]) (*connect.Response[v1.PublishSubscriptionProgressResponse], error)
 	FinishSubscription(context.Context, *connect.Request[v1.FinishSubscriptionRequest]) (*connect.Response[v1.FinishSubscriptionResponse], error)
+	// Worker-only managed ChatGPT execution recovery, negotiated by Worker
+	// capability MANAGED_CODEX_RECOVERY_V1. None of these operations delivers a
+	// credential generation, admits a Take or replaces the original Finish receipt.
+	SyncSubscriptionRecoveryCapture(context.Context, *connect.Request[v1.SyncSubscriptionRecoveryCaptureRequest]) (*connect.Response[v1.SyncSubscriptionRecoveryCaptureResponse], error)
+	ReadSubscriptionRecoveryCapture(context.Context, *connect.Request[v1.ReadSubscriptionRecoveryCaptureRequest]) (*connect.Response[v1.ReadSubscriptionRecoveryCaptureResponse], error)
+	RecoverSubscription(context.Context, *connect.Request[v1.RecoverSubscriptionRequest]) (*connect.Response[v1.RecoverSubscriptionResponse], error)
 }
 
 // NewSubscriptionServiceClient constructs a client for the delidev.v1.SubscriptionService service.
@@ -230,29 +245,50 @@ func NewSubscriptionServiceClient(httpClient connect.HTTPClient, baseURL string,
 			connect.WithSchema(subscriptionServiceMethods.ByName("FinishSubscription")),
 			connect.WithClientOptions(opts...),
 		),
+		syncSubscriptionRecoveryCapture: connect.NewClient[v1.SyncSubscriptionRecoveryCaptureRequest, v1.SyncSubscriptionRecoveryCaptureResponse](
+			httpClient,
+			baseURL+SubscriptionServiceSyncSubscriptionRecoveryCaptureProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("SyncSubscriptionRecoveryCapture")),
+			connect.WithClientOptions(opts...),
+		),
+		readSubscriptionRecoveryCapture: connect.NewClient[v1.ReadSubscriptionRecoveryCaptureRequest, v1.ReadSubscriptionRecoveryCaptureResponse](
+			httpClient,
+			baseURL+SubscriptionServiceReadSubscriptionRecoveryCaptureProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("ReadSubscriptionRecoveryCapture")),
+			connect.WithClientOptions(opts...),
+		),
+		recoverSubscription: connect.NewClient[v1.RecoverSubscriptionRequest, v1.RecoverSubscriptionResponse](
+			httpClient,
+			baseURL+SubscriptionServiceRecoverSubscriptionProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("RecoverSubscription")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // subscriptionServiceClient implements SubscriptionServiceClient.
 type subscriptionServiceClient struct {
-	setAutomaticResetCreditConsent *connect.Client[v1.SetAutomaticResetCreditConsentRequest, v1.SetAutomaticResetCreditConsentResponse]
-	cleanupFailedSubscriptions     *connect.Client[v1.CleanupFailedSubscriptionsRequest, v1.CleanupFailedSubscriptionsResponse]
-	getFailedSubscriptionCleanup   *connect.Client[v1.GetFailedSubscriptionCleanupRequest, v1.GetFailedSubscriptionCleanupResponse]
-	requestSubscriptionObservation *connect.Client[v1.RequestSubscriptionObservationRequest, v1.RequestSubscriptionObservationResponse]
-	refreshAllSubscriptionQuotas   *connect.Client[v1.RefreshAllSubscriptionQuotasRequest, v1.RefreshAllSubscriptionQuotasResponse]
-	reconcileSubscriptionCredit    *connect.Client[v1.ReconcileSubscriptionCreditRequest, v1.ReconcileSubscriptionCreditResponse]
-	claimSubscriptionObservation   *connect.Client[v1.ClaimSubscriptionObservationRequest, v1.ClaimSubscriptionObservationResponse]
-	publishSubscriptionObservation *connect.Client[v1.PublishSubscriptionObservationRequest, v1.PublishSubscriptionObservationResponse]
-	requestSubscription            *connect.Client[v1.RequestSubscriptionRequest, v1.RequestSubscriptionResponse]
-	cancelSubscription             *connect.Client[v1.CancelSubscriptionRequest, v1.CancelSubscriptionResponse]
-	getSubscriptionProgress        *connect.Client[v1.GetSubscriptionProgressRequest, v1.GetSubscriptionProgressResponse]
-	submitSubscriptionLoginCode    *connect.Client[v1.SubmitSubscriptionLoginCodeRequest, v1.SubmitSubscriptionLoginCodeResponse]
-	takeSubscriptionLoginCode      *connect.Client[v1.TakeSubscriptionLoginCodeRequest, v1.TakeSubscriptionLoginCodeResponse]
-	forwardSubscriptionCallback    *connect.Client[v1.ForwardSubscriptionCallbackRequest, v1.ForwardSubscriptionCallbackResponse]
-	watchSubscription              *connect.Client[v1.WatchSubscriptionRequest, v1.WatchSubscriptionResponse]
-	takeSubscription               *connect.Client[v1.TakeSubscriptionRequest, v1.TakeSubscriptionResponse]
-	publishSubscriptionProgress    *connect.Client[v1.PublishSubscriptionProgressRequest, v1.PublishSubscriptionProgressResponse]
-	finishSubscription             *connect.Client[v1.FinishSubscriptionRequest, v1.FinishSubscriptionResponse]
+	setAutomaticResetCreditConsent  *connect.Client[v1.SetAutomaticResetCreditConsentRequest, v1.SetAutomaticResetCreditConsentResponse]
+	cleanupFailedSubscriptions      *connect.Client[v1.CleanupFailedSubscriptionsRequest, v1.CleanupFailedSubscriptionsResponse]
+	getFailedSubscriptionCleanup    *connect.Client[v1.GetFailedSubscriptionCleanupRequest, v1.GetFailedSubscriptionCleanupResponse]
+	requestSubscriptionObservation  *connect.Client[v1.RequestSubscriptionObservationRequest, v1.RequestSubscriptionObservationResponse]
+	refreshAllSubscriptionQuotas    *connect.Client[v1.RefreshAllSubscriptionQuotasRequest, v1.RefreshAllSubscriptionQuotasResponse]
+	reconcileSubscriptionCredit     *connect.Client[v1.ReconcileSubscriptionCreditRequest, v1.ReconcileSubscriptionCreditResponse]
+	claimSubscriptionObservation    *connect.Client[v1.ClaimSubscriptionObservationRequest, v1.ClaimSubscriptionObservationResponse]
+	publishSubscriptionObservation  *connect.Client[v1.PublishSubscriptionObservationRequest, v1.PublishSubscriptionObservationResponse]
+	requestSubscription             *connect.Client[v1.RequestSubscriptionRequest, v1.RequestSubscriptionResponse]
+	cancelSubscription              *connect.Client[v1.CancelSubscriptionRequest, v1.CancelSubscriptionResponse]
+	getSubscriptionProgress         *connect.Client[v1.GetSubscriptionProgressRequest, v1.GetSubscriptionProgressResponse]
+	submitSubscriptionLoginCode     *connect.Client[v1.SubmitSubscriptionLoginCodeRequest, v1.SubmitSubscriptionLoginCodeResponse]
+	takeSubscriptionLoginCode       *connect.Client[v1.TakeSubscriptionLoginCodeRequest, v1.TakeSubscriptionLoginCodeResponse]
+	forwardSubscriptionCallback     *connect.Client[v1.ForwardSubscriptionCallbackRequest, v1.ForwardSubscriptionCallbackResponse]
+	watchSubscription               *connect.Client[v1.WatchSubscriptionRequest, v1.WatchSubscriptionResponse]
+	takeSubscription                *connect.Client[v1.TakeSubscriptionRequest, v1.TakeSubscriptionResponse]
+	publishSubscriptionProgress     *connect.Client[v1.PublishSubscriptionProgressRequest, v1.PublishSubscriptionProgressResponse]
+	finishSubscription              *connect.Client[v1.FinishSubscriptionRequest, v1.FinishSubscriptionResponse]
+	syncSubscriptionRecoveryCapture *connect.Client[v1.SyncSubscriptionRecoveryCaptureRequest, v1.SyncSubscriptionRecoveryCaptureResponse]
+	readSubscriptionRecoveryCapture *connect.Client[v1.ReadSubscriptionRecoveryCaptureRequest, v1.ReadSubscriptionRecoveryCaptureResponse]
+	recoverSubscription             *connect.Client[v1.RecoverSubscriptionRequest, v1.RecoverSubscriptionResponse]
 }
 
 // SetAutomaticResetCreditConsent calls
@@ -348,6 +384,23 @@ func (c *subscriptionServiceClient) FinishSubscription(ctx context.Context, req 
 	return c.finishSubscription.CallUnary(ctx, req)
 }
 
+// SyncSubscriptionRecoveryCapture calls
+// delidev.v1.SubscriptionService.SyncSubscriptionRecoveryCapture.
+func (c *subscriptionServiceClient) SyncSubscriptionRecoveryCapture(ctx context.Context, req *connect.Request[v1.SyncSubscriptionRecoveryCaptureRequest]) (*connect.Response[v1.SyncSubscriptionRecoveryCaptureResponse], error) {
+	return c.syncSubscriptionRecoveryCapture.CallUnary(ctx, req)
+}
+
+// ReadSubscriptionRecoveryCapture calls
+// delidev.v1.SubscriptionService.ReadSubscriptionRecoveryCapture.
+func (c *subscriptionServiceClient) ReadSubscriptionRecoveryCapture(ctx context.Context, req *connect.Request[v1.ReadSubscriptionRecoveryCaptureRequest]) (*connect.Response[v1.ReadSubscriptionRecoveryCaptureResponse], error) {
+	return c.readSubscriptionRecoveryCapture.CallUnary(ctx, req)
+}
+
+// RecoverSubscription calls delidev.v1.SubscriptionService.RecoverSubscription.
+func (c *subscriptionServiceClient) RecoverSubscription(ctx context.Context, req *connect.Request[v1.RecoverSubscriptionRequest]) (*connect.Response[v1.RecoverSubscriptionResponse], error) {
+	return c.recoverSubscription.CallUnary(ctx, req)
+}
+
 // SubscriptionServiceHandler is an implementation of the delidev.v1.SubscriptionService service.
 type SubscriptionServiceHandler interface {
 	SetAutomaticResetCreditConsent(context.Context, *connect.Request[v1.SetAutomaticResetCreditConsentRequest]) (*connect.Response[v1.SetAutomaticResetCreditConsentResponse], error)
@@ -368,6 +421,12 @@ type SubscriptionServiceHandler interface {
 	TakeSubscription(context.Context, *connect.Request[v1.TakeSubscriptionRequest]) (*connect.Response[v1.TakeSubscriptionResponse], error)
 	PublishSubscriptionProgress(context.Context, *connect.Request[v1.PublishSubscriptionProgressRequest]) (*connect.Response[v1.PublishSubscriptionProgressResponse], error)
 	FinishSubscription(context.Context, *connect.Request[v1.FinishSubscriptionRequest]) (*connect.Response[v1.FinishSubscriptionResponse], error)
+	// Worker-only managed ChatGPT execution recovery, negotiated by Worker
+	// capability MANAGED_CODEX_RECOVERY_V1. None of these operations delivers a
+	// credential generation, admits a Take or replaces the original Finish receipt.
+	SyncSubscriptionRecoveryCapture(context.Context, *connect.Request[v1.SyncSubscriptionRecoveryCaptureRequest]) (*connect.Response[v1.SyncSubscriptionRecoveryCaptureResponse], error)
+	ReadSubscriptionRecoveryCapture(context.Context, *connect.Request[v1.ReadSubscriptionRecoveryCaptureRequest]) (*connect.Response[v1.ReadSubscriptionRecoveryCaptureResponse], error)
+	RecoverSubscription(context.Context, *connect.Request[v1.RecoverSubscriptionRequest]) (*connect.Response[v1.RecoverSubscriptionResponse], error)
 }
 
 // NewSubscriptionServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -485,6 +544,24 @@ func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...conne
 		connect.WithSchema(subscriptionServiceMethods.ByName("FinishSubscription")),
 		connect.WithHandlerOptions(opts...),
 	)
+	subscriptionServiceSyncSubscriptionRecoveryCaptureHandler := connect.NewUnaryHandler(
+		SubscriptionServiceSyncSubscriptionRecoveryCaptureProcedure,
+		svc.SyncSubscriptionRecoveryCapture,
+		connect.WithSchema(subscriptionServiceMethods.ByName("SyncSubscriptionRecoveryCapture")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionServiceReadSubscriptionRecoveryCaptureHandler := connect.NewUnaryHandler(
+		SubscriptionServiceReadSubscriptionRecoveryCaptureProcedure,
+		svc.ReadSubscriptionRecoveryCapture,
+		connect.WithSchema(subscriptionServiceMethods.ByName("ReadSubscriptionRecoveryCapture")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionServiceRecoverSubscriptionHandler := connect.NewUnaryHandler(
+		SubscriptionServiceRecoverSubscriptionProcedure,
+		svc.RecoverSubscription,
+		connect.WithSchema(subscriptionServiceMethods.ByName("RecoverSubscription")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.SubscriptionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SubscriptionServiceSetAutomaticResetCreditConsentProcedure:
@@ -523,6 +600,12 @@ func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...conne
 			subscriptionServicePublishSubscriptionProgressHandler.ServeHTTP(w, r)
 		case SubscriptionServiceFinishSubscriptionProcedure:
 			subscriptionServiceFinishSubscriptionHandler.ServeHTTP(w, r)
+		case SubscriptionServiceSyncSubscriptionRecoveryCaptureProcedure:
+			subscriptionServiceSyncSubscriptionRecoveryCaptureHandler.ServeHTTP(w, r)
+		case SubscriptionServiceReadSubscriptionRecoveryCaptureProcedure:
+			subscriptionServiceReadSubscriptionRecoveryCaptureHandler.ServeHTTP(w, r)
+		case SubscriptionServiceRecoverSubscriptionProcedure:
+			subscriptionServiceRecoverSubscriptionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -602,4 +685,16 @@ func (UnimplementedSubscriptionServiceHandler) PublishSubscriptionProgress(conte
 
 func (UnimplementedSubscriptionServiceHandler) FinishSubscription(context.Context, *connect.Request[v1.FinishSubscriptionRequest]) (*connect.Response[v1.FinishSubscriptionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.FinishSubscription is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) SyncSubscriptionRecoveryCapture(context.Context, *connect.Request[v1.SyncSubscriptionRecoveryCaptureRequest]) (*connect.Response[v1.SyncSubscriptionRecoveryCaptureResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.SyncSubscriptionRecoveryCapture is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) ReadSubscriptionRecoveryCapture(context.Context, *connect.Request[v1.ReadSubscriptionRecoveryCaptureRequest]) (*connect.Response[v1.ReadSubscriptionRecoveryCaptureResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.ReadSubscriptionRecoveryCapture is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) RecoverSubscription(context.Context, *connect.Request[v1.RecoverSubscriptionRequest]) (*connect.Response[v1.RecoverSubscriptionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.RecoverSubscription is not implemented"))
 }

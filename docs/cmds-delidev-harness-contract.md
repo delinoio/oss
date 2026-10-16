@@ -3722,3 +3722,16 @@ Claude image delivery uses the independently negotiated System 106 / Worker 71 p
 ## Codex subagent display names
 
 `threadWire.agentNickname` stays raw observation JSON. The descendant inventory and child `thread/started` handling accept it only as a non-blank JSON string of at most 256 Unicode characters without control characters, judged on the raw JSON so a malformed or lone surrogate escape is rejected instead of decoding to U+FFFD; other values are ignored without failing the child inventory. A name is staged while the thread is inspected and retained only when the same batch passes ownership validation for a known child with a matching parent, so a notification for an unproven, reparented or rejected thread retains nothing. The client retains the last valid name per native child and returns names beside each `SubagentEvent` as `SubagentNames` entries keyed by the original product child ID. They are not part of `SubagentObservation`. See the [subagent contract](cmds-delidev-subagents-contract.md#native-display-names).
+
+## Managed ChatGPT authentication cleanup scan
+
+After a managed ChatGPT execution joins its native tree, the Worker removes the
+transient `auth.json` only when it equals the latest validated bundle, and then
+proves with a complete streaming scan of the retained native history that no raw or
+Base64 token of the original or latest bundle remains. The scan has no file-count,
+file-size or aggregate limit and bounded memory; pending entries, special files,
+unreadable entries, remnants and a changed root identity fail closed without
+deleting history, sessions, caches or helper links. A negotiated Worker first
+synchronizes the protected recovery capture, so a failed cleanup is recovered
+automatically by the original Worker (see the
+[subscription contract](cmds-delidev-subscription-contract.md#automatic-managed-chatgpt-execution-recovery)).

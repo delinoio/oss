@@ -143,6 +143,27 @@ func cancelPendingLogin(a *domain.Account, epoch domain.ID, now time.Time) error
 	return nil
 }
 
+// retireQueuedLifecycle settles the account's queued lifecycle operation as
+// canceled and clears it. The operation was accepted but never claimed, so no
+// native authority is released; its server record, when it has one, settles
+// with it. A queued login that never owned a generation also releases its
+// reserved native profile and owner.
+func retireQueuedLifecycle(account *domain.Account, epoch domain.ID, now time.Time) {
+	state := account.Subscription
+	if state == nil || state.Pending == nil {
+		return
+	}
+	cancelServerOperation(account, epoch, now)
+	if o := state.NativeOperation; o != nil && o.ID == state.Pending.ID {
+		o.State = domain.SubscriptionCanceled
+		if state.Pending.Action == domain.SubscriptionLogin && state.Lease == nil && state.Generation == "" {
+			state.NativeProfileID = ""
+			state.OwnerMachineID = ""
+		}
+	}
+	state.Pending = nil
+}
+
 // Queued lifecycle requests have not granted native authority. Settle them in
 // the same transaction as client revocation, without releasing independent or
 // claimed leases and without undoing logout's accepted execution revocation.
@@ -166,15 +187,7 @@ func cancelQueuedSubscriptionInitiator(tx *store.Tx, device, epoch domain.ID) er
 		if grokAccountLoggingOut(account) {
 			continue
 		}
-		cancelServerOperation(&account, epoch, time.Now().UTC())
-		if o := state.NativeOperation; o != nil && o.ID == state.Pending.ID {
-			o.State = domain.SubscriptionCanceled
-			if state.Pending.Action == domain.SubscriptionLogin && state.Lease == nil && state.Generation == "" {
-				state.NativeProfileID = ""
-				state.OwnerMachineID = ""
-			}
-		}
-		state.Pending = nil
+		retireQueuedLifecycle(&account, epoch, time.Now().UTC())
 		if _, err := tx.Put(domain.AccountKind, record.ID, record.Revision, "", "", account); err != nil {
 			return err
 		}
@@ -436,8 +449,13 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 	}()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	// recoveryCursor rotates the fenced managed ChatGPT accounts this stream
+	// offers, so more fenced accounts than the lane bound cannot starve each other.
+	// otherCursor does the same for the ordinary rows that share the bound.
+	recoveryCursor, otherCursor := 0, 0
 	for {
 		var records []store.Record
+		var recovery []store.Record
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := tx.Authorize(); err != nil {
 				return err
@@ -475,9 +493,6 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 						continue
 					}
 					records = append(records, r)
-					if len(records) == 4 {
-						break
-					}
 					continue
 				}
 				// Grok lifecycle work is server-owned and is never pushed to a Worker. A
@@ -487,9 +502,6 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 				if a.SubscriptionService == domain.SubscriptionGrok {
 					if state := a.Subscription; slices.Contains(machine.WorkerCapabilities, domain.ManagedGrokSubscriptionsV1) && state != nil && state.RecoveryRequired && state.Lease != nil && state.Lease.Action == domain.SubscriptionExecute && state.Lease.MachineID == domain.ID(req.Msg.MachineId) {
 						records = append(records, r)
-						if len(records) == 4 {
-							break
-						}
 					}
 					continue
 				}
@@ -497,27 +509,26 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 					continue
 				}
 				state := a.Subscription
+				// A fenced managed ChatGPT EXECUTE lease is offered only to its original
+				// Worker, and only after both sides negotiated the recovery capability.
+				// Older peers keep the existing fence.
+				if a.SubscriptionService == domain.SubscriptionChatGPT && chatGPTRecoveryOffer(a, machine, domain.ID(req.Msg.MachineId)) {
+					recovery = append(recovery, r)
+					continue
+				}
 				if state != nil && a.SubscriptionService == domain.SubscriptionClaude && state.RecoveryRequired && state.Lease != nil && state.Lease.MachineID == domain.ID(req.Msg.MachineId) {
 					records = append(records, r)
-					if len(records) == 4 {
-						break
-					}
 					continue
 				}
 				if state != nil && state.Observation != nil && state.Observation.Phase == domain.SubscriptionObservationQueued && state.Observation.MachineID == domain.ID(req.Msg.MachineId) && !state.RecoveryRequired && (state.Lease == nil || state.Lease.Action == domain.SubscriptionExecute && state.Lease.InstanceID == domain.ID(req.Msg.InstanceId)) {
 					records = append(records, r)
-					if len(records) == 4 {
-						break
-					}
 					continue
 				}
 				if state != nil && state.Pending != nil && state.Pending.MachineID == domain.ID(req.Msg.MachineId) && state.Pending.Phase == domain.SubscriptionQueued && state.Lease == nil && !state.RecoveryRequired {
 					records = append(records, r)
-					if len(records) == 4 {
-						break
-					}
 				}
 			}
+			records, otherCursor, recoveryCursor = mergeRecoveryRows(records, recovery, otherCursor, recoveryCursor)
 			return nil
 		})
 		if err != nil {
@@ -537,6 +548,52 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 		case <-ticker.C:
 		}
 	}
+}
+
+// subscriptionWatchLaneBound is the number of accounts one Worker lane serves at
+// a time.
+const subscriptionWatchLaneBound = 4
+
+// chatGPTRecoveryOffer reports whether a managed ChatGPT account holds a fenced
+// EXECUTE lease of this machine, or a committed recovery settlement awaiting its
+// protected-reference retirement, and the machine negotiated recovery.
+func chatGPTRecoveryOffer(a domain.Account, machine domain.Machine, id domain.ID) bool {
+	state := a.Subscription
+	if a.Type != domain.SubscriptionAccount || a.ProviderID != "" || state == nil || !recoveryMachineSupported(machine) {
+		return false
+	}
+	if state.RecoverySettlement != nil {
+		return state.RecoverySettlement.Machine == id
+	}
+	return state.RecoveryRequired && state.Lease != nil && state.Lease.Action == domain.SubscriptionExecute && state.Lease.MachineID == id
+}
+
+// mergeRecoveryRows combines the ordinary rows with rotating windows of the
+// recovery rows under the single lane bound. Without recovery rows every
+// ordinary row is offered, as before. Otherwise recovery rows keep at least one
+// slot, and both windows advance by the rows they offered, so every fenced
+// account and every ordinary account is offered in turn instead of the stable
+// head of either list.
+func mergeRecoveryRows(others, recovery []store.Record, otherCursor, recoveryCursor int) (rows []store.Record, nextOther, nextRecovery int) {
+	if len(recovery) == 0 {
+		return others, 0, 0
+	}
+	reserved := min(len(recovery), max(1, subscriptionWatchLaneBound-len(others)))
+	slots := subscriptionWatchLaneBound - reserved
+	if len(others) <= slots {
+		rows = append(rows, others...)
+	} else if slots > 0 {
+		start := otherCursor % len(others)
+		for i := 0; i < slots; i++ {
+			rows = append(rows, others[(start+i)%len(others)])
+		}
+		nextOther = (start + slots) % len(others)
+	}
+	start := recoveryCursor % len(recovery)
+	for i := 0; i < reserved; i++ {
+		rows = append(rows, recovery[(start+i)%len(recovery)])
+	}
+	return rows, nextOther, (start + reserved) % len(recovery)
 }
 
 // subscriptionLease resolves the stored owner-scoped lease: a historical
@@ -1285,11 +1342,13 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			} else if lease.Action == domain.SubscriptionLogout {
 				keep = ""
 			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedGenerations(original.Subscription)...); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedWorkerReferences(original.Subscription)...); err != nil {
 				return nil, rpc.Error(err, c)
 			}
 		}
+		var releasedCapture *domain.SubscriptionRecoveryCapture
 		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.finish", input, func(tx *store.Tx) (any, error) {
+			releasedCapture = nil
 			if err := tx.Authorize(); err != nil {
 				return nil, err
 			}
@@ -1336,8 +1395,10 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			} else {
 				state.Lease = nil
 				// Owner retirement settles every retained member's cleanup ownership
-				// together with the owner's confirmed containment.
+				// together with the owner's confirmed containment. The protected
+				// recovery capture belongs to the released lease and is retired with it.
 				state.Members = nil
+				releasedCapture, state.RecoveryCapture, state.RecoveryBlock = state.RecoveryCapture, nil, nil
 				if state.Pending != nil && state.Pending.ID == lease.OperationID {
 					state.Pending = nil
 				}
@@ -1406,6 +1467,9 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			}
 
 			receipt := accountReceipt{ID: r.ID}
+			if releasedCapture != nil {
+				receipt.RetiredCapture = recoveryCaptureReferences(releasedCapture)
+			}
 			if usable && input.Cleanup && lease.Action == domain.SubscriptionExecute && lease.ForkRevision != 0 {
 				jr, err := tx.Get(domain.JobKind, lease.OperationID)
 				if err != nil {
@@ -1453,7 +1517,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			if lease.Action == domain.SubscriptionLogout {
 				keep = ""
 			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedGenerations(original.Subscription)...); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedWorkerReferences(original.Subscription)...); err != nil {
 				// The owned-error defer records recovery after releasing accountGate.
 				return nil, rpc.Error(err, c)
 			}
@@ -1462,6 +1526,9 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	// Ownership mutation and the last vault cleanup are settled. A canceled
 	// response-resource read cannot turn that committed receipt into recovery.
 	owned = false
+	if err := s.confirmFinishCaptureRetirement(ctx, input.Account, input.Lease, result); err != nil {
+		return nil, rpc.Error(err, c)
+	}
 	r, err := s.accountRecord(ctx, input.Account)
 	if err != nil {
 		s.logger.WarnContext(ctx, "subscription_completion_presentation_unavailable", "account_id", input.Account, "lease_id", input.Lease, "replayed", replayed, "code", domain.SafeError(err).Code)
@@ -1471,6 +1538,29 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	// The explicit logout cleanup removes every owned reference before success.
 	s.logger.InfoContext(ctx, "subscription_operation_finished", "account_id", input.Account, "lease_id", input.Lease, "cleanup_confirmed", input.Cleanup, "replayed", replayed, "finish_scope", input.Scope)
 	return connect.NewResponse(&pb.FinishSubscriptionResponse{Account: rpc.Resource(r), Replayed: result.Replayed}), nil
+}
+
+// confirmFinishCaptureRetirement deletes the protected recovery references that
+// a committed Finish released with its lease. The lease is already settled, so a
+// failed deletion is returned as a retryable error without fencing the account;
+// the Worker resends the same Finish and the exact replay deletes again from the
+// receipt. The success response is therefore withheld until no captured original
+// or latest credential bundle remains in the vault.
+func (s *Service) confirmFinishCaptureRetirement(ctx context.Context, account, lease domain.ID, result store.Result) error {
+	var receipt accountReceipt
+	if len(result.Data) == 0 || domain.Decode(result.Data, &receipt) != nil || len(receipt.RetiredCapture) == 0 {
+		return nil
+	}
+	vault, err := s.secrets()
+	if err != nil {
+		return err
+	}
+	if err := s.confirmRecoveryReferencesRetired(ctx, vault, account, receipt.RetiredCapture); err != nil {
+		s.logger.WarnContext(ctx, "subscription_recovery_capture_retirement_pending", "phase", subscriptionRecoveryPhase, "account_id", account, "lease_id", lease, "references", len(receipt.RetiredCapture), "code", domain.SafeError(err).Code)
+		return domain.Fail(domain.Unavailable, "The released recovery capture could not be removed yet.", "Resend the same Finish request; the receipt repeats the removal.")
+	}
+	s.logger.InfoContext(ctx, "subscription_recovery_capture_retired", "phase", subscriptionRecoveryPhase, "account_id", account, "lease_id", lease, "references", len(receipt.RetiredCapture))
+	return nil
 }
 
 func uniqueSubscriptionIdentity(tx *store.Tx, owner domain.ID, identity string) error {
@@ -1691,6 +1781,20 @@ func managedSidechatLease(tx *store.Tx, lease domain.SubscriptionLease) (*domain
 		return nil, err
 	}
 	return &fork, nil
+}
+
+// protectedWorkerReferences extends protectedGenerations with the protected
+// recovery capture of a held lease. The Worker Finish retirement never deletes it
+// before the lease it belongs to settles.
+func protectedWorkerReferences(st *domain.SubscriptionState) []domain.ID {
+	protected := protectedGenerations(st)
+	if st != nil && st.RecoveryCapture != nil {
+		protected = append(protected, st.RecoveryCapture.ID)
+		if st.RecoveryCapture.OriginalCaptured {
+			protected = append(protected, st.RecoveryCapture.OriginalID())
+		}
+	}
+	return protected
 }
 
 // Access-only quota and credit readers own their captured references

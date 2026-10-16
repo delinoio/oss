@@ -454,7 +454,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		defer func() {
 			if managedPreNativeCleanup {
 				var authErr error
-				managedCleanup, authErr = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
+				managedCleanup, authErr = managed.cleanupUnusedAuthentication(config.cleanupContext(), nativeHome, managed.response.Bundle, managedHelperRetained)
 				if managedHelperRetained {
 					// The original native tree was joined, so authentication cleanup
 					// runs independently; unretired helpers still retain the lease.
@@ -504,6 +504,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				if _, statErr := os.Lstat(filepath.Join(nativeHome, "auth.json")); !errors.Is(statErr, os.ErrNotExist) {
 					return nil, subscription.Invalid()
 				}
+			}
+			if err := managed.recordAuthenticationHome(nativeHome); err != nil {
+				return nil, err
 			}
 			if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
 				return nil, subscription.Invalid()
@@ -610,6 +613,18 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		nativeConfig.ManagedAuthentication = true
 		nativeConfig.QuotaObserver = managed.publishRollingQuota
 	}
+	if managed != nil {
+		// Journal every native process owner's index before the credentialed
+		// launch, so recovery never reads a lost index as proof of no process.
+		if sharedCodex && sharedFounder {
+			if err := managed.recordNativeOwner(sharedOwner.ownerProcessID()); err != nil {
+				return nil, err
+			}
+		}
+		if err := managed.recordNativeOwner(owner); err != nil {
+			return nil, err
+		}
+	}
 	// Once startup may own a process, only independently joined native cleanup
 	// may authorize removal. A definite failed Open already proves that closure;
 	// recovery-required startup must retain its authentication and lease, except
@@ -688,7 +703,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			// The original process join authorizes the independent final auth
 			// comparison/removal and complete retained-file scan. A failed helper
 			// owner must not skip that work or release the credential lease.
-			authErr := cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle)
+			authErr := managed.cleanupAuthentication(config.cleanupContext(), nativeHome, managedLatest, managed.response.Bundle)
 			managedCleanup = helperErr == nil && authErr == nil
 			logExecutionAuthenticationCleanup(config.Logger, owner, authErr)
 			if !managedCleanup || !managedSuccess {

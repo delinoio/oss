@@ -52,6 +52,10 @@ type managedSubscriptionLease struct {
 	// grokRetry is set while a Grok Finish reported its private cleanup as
 	// unconfirmed; the original owner's retry consumes it.
 	grokRetry *grokCleanupRetry
+	// recoveryCapture is set when the current attach negotiated managed ChatGPT
+	// recovery: the lease then synchronizes a protected capture of the latest
+	// validated bundle before deleting its transient authentication.
+	recoveryCapture bool
 }
 
 type managedJournalState string
@@ -106,6 +110,43 @@ type managedSubscriptionJournal struct {
 	// opened, so the final settlement keeps the account connected instead of
 	// confirming a logout cleanup. It survives an interrupted recovery.
 	AccountPreserved bool `json:"account_preserved,omitempty"`
+	// Server is the stable server identity the lease was granted by. Recovery
+	// accepts only evidence recorded for the same server; journals written before
+	// this field existed omit it.
+	Server domain.ID `json:"server,omitempty"`
+	// NativeOwnerEvidence marks a journal written by a Worker that creates and
+	// journals every native process owner's index (NativeOwners) before any native
+	// process holding the credential can start. Only such a journal can prove that
+	// an owner without a process index never started a process; a journal without
+	// the marker proves nothing. It is set with the durable claim.
+	NativeOwnerEvidence bool `json:"native_owner_evidence,omitempty"`
+	// NativeOwners lists the process owners whose index directory was created, and
+	// journaled here, immediately before the credentialed native launch of this
+	// lease (the job and, for a shared owner, the owner lease itself).
+	NativeOwners []domain.ID `json:"native_owners,omitempty"`
+	// AuthHome is the canonical native directory the lease's transient
+	// authentication was written to. It is recorded before the credential is
+	// written, lives only in this private journal and is never logged.
+	AuthHome string `json:"auth_home,omitempty"`
+	// CaptureRequest is the durable identity of the protected recovery capture of
+	// the latest validated bundle, CaptureDigest the digest of the captured bundle
+	// and CaptureSynced whether the server confirmed it.
+	CaptureRequest domain.ID `json:"capture_request,omitempty"`
+	CaptureDigest  string    `json:"capture_digest,omitempty"`
+	CaptureSynced  bool      `json:"capture_synced,omitempty"`
+	// Recovery* retain the durable recovery request once the original cleanup was
+	// proven, so a crash or lost response resends exactly the same request.
+	RecoveryRequest domain.ID `json:"recovery_request,omitempty"`
+	RecoveryCapture domain.ID `json:"recovery_capture,omitempty"`
+	RecoveryReport  int32     `json:"recovery_report,omitempty"`
+	RecoveryCleaned bool      `json:"recovery_cleaned,omitempty"`
+	// RecoveryNoCredential is the durable decision, recorded before the retained
+	// authentication file is deleted, that the file was the proven absence of usable
+	// credentials (unparsable, or positively rejected by the server). The file is
+	// then the only evidence of that decision, so the decision outlives it: a crash,
+	// a lost response or a server-side block never turns it into an unprovable
+	// absence of evidence.
+	RecoveryNoCredential bool `json:"recovery_no_credential,omitempty"`
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {
@@ -117,7 +158,17 @@ func subscriptionRPC(ctx context.Context, config Config, credential Credential) 
 	if err != nil {
 		return nil, nil, err
 	}
-	return delidevv1connect.NewSubscriptionServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(128<<10), connect.WithSendMaxBytes(128<<10)), closeHTTP, nil
+	return delidevv1connect.NewSubscriptionServiceClient(httpClient, credential.Endpoint, subscriptionRPCOptions()...), closeHTTP, nil
+}
+
+// subscriptionRPCMaxBytes bounds one subscription message in either direction.
+// A recovery capture request or response carries both the original and the latest
+// maximum-size bundle plus protobuf framing and the mutation and ownership
+// fields, so the bound covers two maximum bundles with generous overhead.
+const subscriptionRPCMaxBytes = 2*subscription.MaxBundle + 64<<10
+
+func subscriptionRPCOptions() []connect.ClientOption {
+	return []connect.ClientOption{connect.WithReadMaxBytes(subscriptionRPCMaxBytes), connect.WithSendMaxBytes(subscriptionRPCMaxBytes)}
 }
 
 func takeManagedSubscription(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account, operation domain.ID, revision uint64, action pb.SubscriptionAction) (*managedSubscriptionLease, error) {
@@ -152,7 +203,7 @@ func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client 
 	}
 	// A durable claim precedes the protected delivery and every native side
 	// effect. Reconnect never regenerates this claim or replays the login.
-	claim := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: account, Operation: operation, Instance: instance, Finish: domain.NewID(), Action: action, State: managedClaimed, InstallationRetention: true}
+	claim := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: account, Operation: operation, Instance: instance, Finish: domain.NewID(), Action: action, State: managedClaimed, InstallationRetention: true, NativeOwnerEvidence: true, Server: credential.ServerID}
 	journalPath := filepath.Join(root, string(leaseID)+".json")
 	if err := writeJSON(journalPath, claim); err != nil {
 		return nil, release, subscription.Invalid()
@@ -252,11 +303,15 @@ func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client 
 		clear(response.Msg.Bundle)
 		return nil, release, &managedExecutionUncertain{subscription.Invalid()}
 	}
-	return &managedSubscriptionLease{paidCredits: config.paidCredits, logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, release, nil
+	if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE {
+		codexLeasesInFlight.Store(string(leaseID), struct{}{})
+	}
+	return &managedSubscriptionLease{paidCredits: config.paidCredits, recoveryCapture: config.codexRecovery && action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE, logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, release, nil
 }
 
 func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, success bool) error {
 	defer clear(bundle)
+	codexLeasesInFlight.Delete(l.response.LeaseId)
 	l.journal.State = managedClosed
 	l.journal.Cleanup = cleanup
 	l.journal.Refresh = refresh
@@ -316,8 +371,8 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 	}
 	defer stream.Close()
 	var wg sync.WaitGroup
-	var mu sync.Mutex
-	active := map[domain.ID]bool{}
+	slots := newWatchSlots()
+	recoveries := newCodexRecoveryLane()
 	failures := make(chan error, 1)
 	defer func() {
 		cancel()
@@ -334,8 +389,41 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			continue
 		}
 		var account domain.Account
-		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) && !grokExecutionRecovery(account) {
+		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) && !grokExecutionRecovery(account) && !codexRecoveryRow(account) {
 			return subscription.Invalid()
+		}
+		if codexRecoveryRow(account) {
+			// A fenced managed ChatGPT EXECUTE lease is reconciled by its original
+			// Worker only after both sides negotiated recovery. One in-flight attempt
+			// per account within the lane bound; the lane retries with backoff and
+			// never blocks the other accounts.
+			if !config.codexRecovery {
+				continue
+			}
+			key, obligation := codexRecoveryKey(account), codexRecoveryObligation(account)
+			if !recoveries.due(key, obligation) {
+				continue
+			}
+			if !slots.acquire(key, watchSlotRecovery) {
+				continue
+			}
+			accountID := domain.ID(r.Id)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer slots.release(key)
+				result := runCodexRecovery(ctx, config, client, credential, instance, accountID, account)
+				if result.disposition == recoverySettled {
+					recoveries.success(key)
+					return
+				}
+				if ctx.Err() != nil {
+					return
+				}
+				delay := recoveries.failure(key, obligation, result.disposition == recoveryTerminal)
+				logCodexRecovery(config.Logger, ctx, slog.LevelInfo, "codex_recovery_retry_scheduled", "account_id", accountID, "lease_id", key, "disposition", result.disposition, "reason", result.reason, "retry_delay", delay.String())
+			}()
+			continue
 		}
 		var op domain.SubscriptionOperation
 		var observation *domain.SubscriptionObservationOperation
@@ -349,17 +437,19 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 		} else {
 			continue
 		}
-		mu.Lock()
-		if active[op.ID] || len(active) >= 4 {
-			mu.Unlock()
+		// Fenced Claude and Grok executions are recovery obligations: they use
+		// the reserved recovery slots so an ordinary backlog cannot starve them.
+		class := watchSlotOrdinary
+		if account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil || grokExecutionRecovery(account) {
+			class = watchSlotRecovery
+		}
+		if !slots.acquire(op.ID, class) {
 			continue
 		}
-		active[op.ID] = true
-		mu.Unlock()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer func() { mu.Lock(); delete(active, op.ID); mu.Unlock() }()
+			defer slots.release(op.ID)
 			run := func() error {
 				if observation != nil && account.Subscription.Lease != nil {
 					handled, err := config.observations.run(ctx, domain.ID(r.Id), *observation)
@@ -594,18 +684,18 @@ func retireManagedCredentials(config Config, profile *nativeprofile.Lease, opera
 // Only the caller's pre-native barrier permits an unpublished auth destination.
 // A failed atomic write still needs a durable absence and the complete retained
 // file scan: a leftover temporary credential file cannot release the lease.
-func cleanupUnusedExecutionAuthentication(home string, original []byte) error {
+func cleanupUnusedExecutionAuthentication(ctx context.Context, home string, original []byte) error {
 	if err := security.CheckPrivateDir(home); err != nil {
 		return subscription.Invalid()
 	}
 	path := filepath.Join(home, "auth.json")
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
-		return cleanupExecutionAuthentication(home, original, original)
+		return cleanupExecutionAuthentication(ctx, home, original, original)
 	}
 	if err := security.SyncParent(path); err != nil {
 		return subscription.Invalid()
 	}
-	if err := scanExecutionAuthentication(home, original, original); err != nil {
+	if err := scanExecutionAuthentication(ctx, home, original, original); err != nil {
 		return err
 	}
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
@@ -618,9 +708,22 @@ func cleanupUnusedExecutionAuthentication(home string, original []byte) error {
 // authentication cleanup for a failed native startup. A joined original tree
 // authorizes that cleanup even when execution-helper retirement failed, but
 // unretired helpers keep the credential lease unconfirmed.
-func cleanupPreNativeAuthentication(home string, original []byte, helperRetained bool) (confirmed bool, err error) {
-	err = cleanupUnusedExecutionAuthentication(home, original)
+func cleanupPreNativeAuthentication(ctx context.Context, home string, original []byte, helperRetained bool) (confirmed bool, err error) {
+	err = cleanupUnusedExecutionAuthentication(ctx, home, original)
 	return err == nil && !helperRetained, err
+}
+
+// cleanupUnusedAuthentication is the pre-native cleanup of a managed lease. The
+// delivered original bundle is the only credential evidence the fenced lease can
+// later be recovered from, so a negotiated recovery capture of it is
+// synchronized before the file is deleted. A capture that cannot be confirmed
+// keeps the file in place and leaves the cleanup unconfirmed, exactly like the
+// post-native cleanup.
+func (l *managedSubscriptionLease) cleanupUnusedAuthentication(ctx context.Context, home string, original []byte, helperRetained bool) (confirmed bool, err error) {
+	if err := l.captureBeforeCleanup(ctx, original, original); err != nil {
+		return false, err
+	}
+	return cleanupPreNativeAuthentication(ctx, home, original, helperRetained)
 }
 
 type executionAuthenticationStage string
@@ -635,7 +738,8 @@ const (
 	executionAuthIdentity   executionAuthenticationReason = "identity-changed"
 	executionAuthPending    executionAuthenticationReason = "pending-file"
 	executionAuthSpecial    executionAuthenticationReason = "non-regular-file"
-	executionAuthLimit      executionAuthenticationReason = "inventory-limit"
+	executionAuthCanceled   executionAuthenticationReason = "canceled"
+	executionAuthCapture    executionAuthenticationReason = "capture-unsynchronized"
 	executionAuthRemnant    executionAuthenticationReason = "credential-remnant"
 )
 
@@ -664,20 +768,15 @@ func logExecutionAuthenticationCleanup(logger *slog.Logger, owner domain.ID, err
 	if errors.As(err, &observed) {
 		failure = observed
 	}
-	logger.Warn("execution_authentication_cleanup", "owner_id", owner, "stage", failure.stage, "reason", failure.reason, "file_count", failure.count, "observed_bytes", failure.bytes, "file_limit", 2048, "byte_limit", 64<<20)
+	logger.Warn("execution_authentication_cleanup", "owner_id", owner, "stage", failure.stage, "reason", failure.reason, "file_count", failure.count, "observed_bytes", failure.bytes)
 }
 
-func cleanupExecutionAuthentication(home string, latest, original []byte) error {
-	return cleanupExecutionAuthenticationMode(home, latest, original, false)
-}
-
-// Shared account history accumulates across owner lifetimes. Scan it with
-// bounded memory, without treating ordinary history growth as failed cleanup.
-func cleanupSharedExecutionAuthentication(home string, latest, original []byte) error {
-	return cleanupExecutionAuthenticationMode(home, latest, original, true)
-}
-
-func cleanupExecutionAuthenticationMode(home string, latest, original []byte, shared bool) error {
+// cleanupExecutionAuthentication removes the transient authentication file
+// after comparing it with the latest validated bundle and then proves, with a
+// complete streaming inspection of the retained native history, that no
+// credential remnant survives. The inspection observes ctx between files and
+// chunks.
+func cleanupExecutionAuthentication(ctx context.Context, home string, latest, original []byte) error {
 	if err := security.CheckPrivateDir(home); err != nil {
 		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
 	}
@@ -697,30 +796,23 @@ func cleanupExecutionAuthenticationMode(home string, latest, original []byte, sh
 	if err := security.SyncParent(filepath.Join(home, "auth.json")); err != nil {
 		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
 	}
-	return scanExecutionAuthenticationMode(home, latest, original, shared)
+	return scanRetainedAuthentication(ctx, home, authenticationNeedles(latest, original))
 }
 
-func scanExecutionAuthentication(home string, latest, original []byte) error {
-	return scanExecutionAuthenticationMode(home, latest, original, false)
+func scanExecutionAuthentication(ctx context.Context, home string, latest, original []byte) error {
+	return scanRetainedAuthentication(ctx, home, authenticationNeedles(latest, original))
 }
 
-func scanExecutionAuthenticationMode(home string, latest, original []byte, shared bool) error {
-	count, total := 0, int64(0)
-	fail := func(reason executionAuthenticationReason) error {
-		return &executionAuthenticationFailure{stage: executionAuthScan, reason: reason, count: count, bytes: total}
-	}
-	// Native history is retained for resume. Check the bounded original tree
-	// rather than claiming credential cleanup merely from auth.json absence.
+// authenticationNeedles returns the raw and Base64 encodings of every token of
+// the supplied bundles. A nil result for an unparsable bundle is reported by
+// the caller as a bundle mismatch.
+func authenticationNeedles(bundles ...[]byte) [][]byte {
 	var needles [][]byte
-	defer func() {
-		for _, n := range needles {
-			clear(n)
-		}
-	}()
-	for _, raw := range [][]byte{original, latest} {
+	for _, raw := range bundles {
 		b, _, err := subscription.Parse(raw)
 		if err != nil {
-			return fail(executionAuthBundle)
+			clear2D(needles)
+			return nil
 		}
 		for _, v := range []string{b.Tokens.ID, b.Tokens.Access, b.Tokens.Refresh} {
 			plain := []byte(v)
@@ -733,6 +825,39 @@ func scanExecutionAuthenticationMode(home string, latest, original []byte, share
 				needles = append(needles, encoded)
 			}
 		}
+	}
+	return needles
+}
+
+func clear2D(values [][]byte) {
+	for _, v := range values {
+		clear(v)
+	}
+}
+
+// scanRetainedAuthentication inspects every regular file of the retained native
+// history without a file-count, file-size or aggregate-size limit. Memory stays
+// bounded because each file is streamed through a fixed window that overlaps by
+// the longest needle, so a token split across chunk boundaries is still found.
+// Pending entries, special files, unreadable entries, a credential remnant and a
+// changed root identity all fail closed and never delete history. Native-created
+// symbolic links are ordinary retained data: they are never followed or read.
+func scanRetainedAuthentication(ctx context.Context, home string, needles [][]byte) error {
+	return scanRetainedAuthenticationSkipping(ctx, home, needles, "")
+}
+
+// scanRetainedAuthenticationSkipping is scanRetainedAuthentication that leaves
+// one regular file, named relative to the home, out of the inspection. Recovery
+// uses it to prove the rest of the retained history clean while the only copy of
+// a rejected legacy credential file stays in place until the scan has passed.
+func scanRetainedAuthenticationSkipping(ctx context.Context, home string, needles [][]byte, skip string) error {
+	count, total := 0, int64(0)
+	fail := func(reason executionAuthenticationReason) error {
+		return &executionAuthenticationFailure{stage: executionAuthScan, reason: reason, count: count, bytes: total}
+	}
+	defer clear2D(needles)
+	if len(needles) == 0 {
+		return fail(executionAuthBundle)
 	}
 	root, err := os.OpenRoot(home)
 	if err != nil {
@@ -747,10 +872,10 @@ func scanExecutionAuthenticationMode(home string, latest, original []byte, share
 		if err != nil {
 			return fail(executionAuthFilesystem)
 		}
+		if err := ctx.Err(); err != nil {
+			return fail(executionAuthCanceled)
+		}
 		if entry.Type()&os.ModeSymlink != 0 {
-			// Native-created helper links are ordinary retained profile data. They
-			// are never followed and never read for token matching, and they do not
-			// block cleanup of the transient credential file.
 			return nil
 		}
 		// WriteAtomic owns this temporary namespace. A failed write/removal can
@@ -762,6 +887,9 @@ func scanExecutionAuthenticationMode(home string, latest, original []byte, share
 		if entry.IsDir() {
 			return nil
 		}
+		if skip != "" && path == skip {
+			return nil
+		}
 		count++
 		info, err := entry.Info()
 		if err != nil {
@@ -770,44 +898,29 @@ func scanExecutionAuthenticationMode(home string, latest, original []byte, share
 		if !info.Mode().IsRegular() {
 			return fail(executionAuthSpecial)
 		}
-		if !shared && (count > 2048 || info.Size() > 16<<20) {
-			return fail(executionAuthLimit)
-		}
 		total += info.Size()
-		if !shared && total > 64<<20 {
-			return fail(executionAuthLimit)
-		}
 		file, err := root.Open(path)
 		if err != nil {
 			return fail(executionAuthFilesystem)
 		}
-		if shared {
-			found, scanErr := scanAuthenticationStream(file, needles)
-			closeErr := file.Close()
-			if scanErr != nil || closeErr != nil {
-				return fail(executionAuthFilesystem)
-			}
-			if found {
-				return fail(executionAuthRemnant)
-			}
-		} else {
-			raw, readErr := io.ReadAll(io.LimitReader(file, (16<<20)+1))
-			closeErr := file.Close()
-			if readErr != nil || closeErr != nil || len(raw) > 16<<20 {
-				clear(raw)
-				return fail(executionAuthFilesystem)
-			}
-			defer clear(raw)
-			for _, needle := range needles {
-				if bytes.Contains(raw, needle) {
-					return fail(executionAuthRemnant)
-				}
-			}
+		found, scanErr := scanAuthenticationStream(ctx, file, needles)
+		closeErr := file.Close()
+		if errors.Is(scanErr, context.Canceled) || errors.Is(scanErr, context.DeadlineExceeded) {
+			return fail(executionAuthCanceled)
+		}
+		if scanErr != nil || closeErr != nil {
+			return fail(executionAuthFilesystem)
+		}
+		if found {
+			return fail(executionAuthRemnant)
 		}
 		return nil
 	})
 	if err != nil {
 		return err
+	}
+	if scanIdentityCheckpoint != nil {
+		scanIdentityCheckpoint()
 	}
 	current, err := os.Stat(home)
 	if err != nil || !os.SameFile(originalInfo, current) {
@@ -816,7 +929,11 @@ func scanExecutionAuthenticationMode(home string, latest, original []byte, share
 	return nil
 }
 
-func scanAuthenticationStream(file *os.File, needles [][]byte) (bool, error) {
+// scanIdentityCheckpoint is a test seam that runs after the walk and before the
+// final root identity comparison.
+var scanIdentityCheckpoint func()
+
+func scanAuthenticationStream(ctx context.Context, file *os.File, needles [][]byte) (bool, error) {
 	maxNeedle := 0
 	for _, needle := range needles {
 		maxNeedle = max(maxNeedle, len(needle))
@@ -826,6 +943,9 @@ func scanAuthenticationStream(file *os.File, needles [][]byte) (bool, error) {
 	defer clear(buffer)
 	overlap := 0
 	for {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
 		n, err := file.Read(buffer[overlap : overlap+chunkSize])
 		window := buffer[:overlap+n]
 		for _, needle := range needles {

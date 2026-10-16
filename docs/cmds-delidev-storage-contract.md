@@ -1682,3 +1682,18 @@ deletion. See the
 ## Retired machine marker
 
 The Machine document has an additive optional `retired` boolean written only by Worker removal, together with `disabled`. Earlier records omit it and read as not retired, so no schema-version bump or data conversion is needed (schema 32 is unchanged). Machine list, snapshot and count queries filter on the marker inside SQL before pagination; exact reads do not. Backup restore carries the field with the entity body. A retired Machine resource, whether returned by `RemoveWorker`, a replayed receipt or an exact read, stays at resource schema 1: only the historical retired-configuration envelope that wraps an `original_document` projects at schema 2 for the Machine kind.
+
+## Managed ChatGPT recovery state
+
+Account documents of a managed ChatGPT account may carry three optional,
+non-secret recovery extensions: `recovery_capture` (capture identity, lease,
+generation, identity commitment, sync time and whether the original was captured),
+`recovery_settlement` (the durable checkpoint of a committed recovery decision whose
+protected references are still being retired) and `recovery_block` (the latest
+closed blocked reason). Historical documents omit them and keep their
+representation; no SQLite migration is added. The Worker's private
+`managed-auth/<lease>.json` journal additionally records the stable server
+identity, the canonical authentication home, the capture identity and digest and the
+durable recovery request. The journal never holds credential bytes, and the home
+path is never logged. See the
+[subscription contract](cmds-delidev-subscription-contract.md#automatic-managed-chatgpt-execution-recovery).

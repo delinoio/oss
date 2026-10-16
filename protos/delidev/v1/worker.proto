@@ -185,6 +185,12 @@ enum WorkerCapability {
   // Claude original image input, native preprocessing replay and retained history.
   // Requires capability 25.
   WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1 = 71;
+  // Worker-only managed ChatGPT execution recovery: the Worker synchronizes a
+  // protected capture of the latest validated bundle before deleting transient
+  // authentication, and the original Worker settles a fenced EXECUTE lease with
+  // a distinct durable recovery request. Requires capability 3. Older peers keep
+  // the existing recovery fence.
+  WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1 = 72;
   WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1 = 26;
   WORKER_CAPABILITY_NATIVE_SKILLS_V1 = 24;
   WORKER_CAPABILITY_IMAGE_INPUTS_V1 = 25;

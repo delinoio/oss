@@ -75,7 +75,7 @@ func (s *Service) authorizeRequest(r *http.Request) (*http.Request, func(), erro
 	}
 	if actor.Type == domain.WorkerDevice {
 		switch r.URL.Path {
-		case delidevv1connect.WorkerServicePublishNativeCodeReviewProcedure, delidevv1connect.AttachmentServiceWatchAttachmentTransfersProcedure, delidevv1connect.AttachmentServiceReportAttachmentTransferProcedure, delidevv1connect.SubscriptionServiceTakeSubscriptionLoginCodeProcedure, delidevv1connect.InstallationServicePollWorkerUpdateProcedure, delidevv1connect.InstallationServiceClaimWorkerUpdateProcedure, delidevv1connect.InstallationServiceReportWorkerUpdateProcedure, delidevv1connect.WorkerServiceSyncWorkerNetworkProcedure, delidevv1connect.WorkerServiceReportWorkerNativeRouteProcedure, delidevv1connect.SubscriptionServiceClaimSubscriptionObservationProcedure, delidevv1connect.SubscriptionServicePublishSubscriptionObservationProcedure, delidevv1connect.SubscriptionServiceWatchSubscriptionProcedure, delidevv1connect.SubscriptionServiceTakeSubscriptionProcedure, delidevv1connect.SubscriptionServicePublishSubscriptionProgressProcedure, delidevv1connect.SubscriptionServiceFinishSubscriptionProcedure, delidevv1connect.WorkerServiceWatchTerminalsProcedure, delidevv1connect.WorkerServiceClaimTerminalProcedure, delidevv1connect.WorkerServiceReportTerminalProcedure, delidevv1connect.WorkerServicePublishTerminalOutputProcedure, delidevv1connect.WorkerServiceListSessionDeletionWorkProcedure, delidevv1connect.WorkerServiceReportSessionDeletionProcedure, delidevv1connect.WorkerServiceWatchForwardRequestsProcedure, delidevv1connect.ForwardServiceClaimForwardProcedure, delidevv1connect.ForwardServiceWatchForwardProcedure, delidevv1connect.ForwardServiceSendForwardProcedure, delidevv1connect.ForwardServiceReportForwardCleanupProcedure, delidevv1connect.WorkerServiceWatchWorkspaceReadsProcedure, delidevv1connect.WorkerServiceReportWorkspaceReadProcedure, delidevv1connect.WorkerServiceAttachWorkerProcedure, delidevv1connect.WorkerServiceWatchWorkProcedure, delidevv1connect.WorkerServiceWatchAuxiliaryWorkProcedure, delidevv1connect.WorkerServiceReportWorkProcedure, delidevv1connect.WorkerServiceReportExecutionStartupProcedure, delidevv1connect.WorkerServiceReportSessionStartupProgressProcedure, delidevv1connect.WorkerServiceRegisterExecutionProcedure, delidevv1connect.WorkerServicePublishExecutionProcedure, delidevv1connect.WorkerServiceClaimQuestionResponseProcedure, delidevv1connect.WorkerServiceClaimApprovalResponseProcedure, delidevv1connect.WorkerServiceClaimSteerInputProcedure, delidevv1connect.SystemServiceGetStatusProcedure:
+		case delidevv1connect.WorkerServicePublishNativeCodeReviewProcedure, delidevv1connect.AttachmentServiceWatchAttachmentTransfersProcedure, delidevv1connect.AttachmentServiceReportAttachmentTransferProcedure, delidevv1connect.SubscriptionServiceTakeSubscriptionLoginCodeProcedure, delidevv1connect.InstallationServicePollWorkerUpdateProcedure, delidevv1connect.InstallationServiceClaimWorkerUpdateProcedure, delidevv1connect.InstallationServiceReportWorkerUpdateProcedure, delidevv1connect.WorkerServiceSyncWorkerNetworkProcedure, delidevv1connect.WorkerServiceReportWorkerNativeRouteProcedure, delidevv1connect.SubscriptionServiceClaimSubscriptionObservationProcedure, delidevv1connect.SubscriptionServicePublishSubscriptionObservationProcedure, delidevv1connect.SubscriptionServiceWatchSubscriptionProcedure, delidevv1connect.SubscriptionServiceTakeSubscriptionProcedure, delidevv1connect.SubscriptionServicePublishSubscriptionProgressProcedure, delidevv1connect.SubscriptionServiceFinishSubscriptionProcedure, delidevv1connect.SubscriptionServiceSyncSubscriptionRecoveryCaptureProcedure, delidevv1connect.SubscriptionServiceReadSubscriptionRecoveryCaptureProcedure, delidevv1connect.SubscriptionServiceRecoverSubscriptionProcedure, delidevv1connect.WorkerServiceWatchTerminalsProcedure, delidevv1connect.WorkerServiceClaimTerminalProcedure, delidevv1connect.WorkerServiceReportTerminalProcedure, delidevv1connect.WorkerServicePublishTerminalOutputProcedure, delidevv1connect.WorkerServiceListSessionDeletionWorkProcedure, delidevv1connect.WorkerServiceReportSessionDeletionProcedure, delidevv1connect.WorkerServiceWatchForwardRequestsProcedure, delidevv1connect.ForwardServiceClaimForwardProcedure, delidevv1connect.ForwardServiceWatchForwardProcedure, delidevv1connect.ForwardServiceSendForwardProcedure, delidevv1connect.ForwardServiceReportForwardCleanupProcedure, delidevv1connect.WorkerServiceWatchWorkspaceReadsProcedure, delidevv1connect.WorkerServiceReportWorkspaceReadProcedure, delidevv1connect.WorkerServiceAttachWorkerProcedure, delidevv1connect.WorkerServiceWatchWorkProcedure, delidevv1connect.WorkerServiceWatchAuxiliaryWorkProcedure, delidevv1connect.WorkerServiceReportWorkProcedure, delidevv1connect.WorkerServiceReportExecutionStartupProcedure, delidevv1connect.WorkerServiceReportSessionStartupProgressProcedure, delidevv1connect.WorkerServiceRegisterExecutionProcedure, delidevv1connect.WorkerServicePublishExecutionProcedure, delidevv1connect.WorkerServiceClaimQuestionResponseProcedure, delidevv1connect.WorkerServiceClaimApprovalResponseProcedure, delidevv1connect.WorkerServiceClaimSteerInputProcedure, delidevv1connect.SystemServiceGetStatusProcedure:
 		default:
 			return nil, nil, domain.Fail(domain.PermissionDenied, "Worker credentials cannot invoke owner product operations.", "Use an owner or paired client credential.")
 		}
@@ -330,6 +330,20 @@ func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[pb.Revo
 		if err != nil {
 			return nil, err
 		}
+		// Revocation is the emergency credential cut-off and is never refused. When
+		// this Worker device is the one an account state waits for, that state stays
+		// fenced and loses its only recovery principal, so the operator log names it.
+		if device.Type == domain.WorkerDevice && device.MachineID != "" && !device.Revoked {
+			held, _, err := workerRecoveryHoldsForMachine(tx, device.MachineID)
+			if err != nil {
+				return nil, err
+			}
+			for _, hold := range held {
+				if hold.Device == record.ID {
+					s.logger.Warn("worker_device_revoked_with_recovery_pending", "phase", subscriptionRecoveryPhase, "request_id", meta.RequestId, "device_id", record.ID, "machine_id", device.MachineID, "account_id", hold.Account, "hold", hold.Kind)
+				}
+			}
+		}
 		now := time.Now().UTC()
 		device.Revoked = true
 		device.RevokedAt = &now
@@ -441,6 +455,21 @@ func (s *Service) RemoveWorker(ctx context.Context, req *connect.Request[pb.Remo
 		}
 		if record.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "This Worker changed after the confirmation was opened.", "Review the current Runner Device and confirm removal again.")
+		}
+		// Several managed subscription states are completed only by this machine's
+		// original Worker device: a live EXECUTE lease, a fenced lease and a
+		// committed recovery settlement. Removal revokes that credential, so it
+		// waits for them (see workerRecoveryHoldKind).
+		held, orphaned, err := workerRecoveryHoldsForMachine(tx, record.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, hold := range orphaned {
+			s.logger.Warn("worker_removal_orphaned_recovery", "phase", subscriptionRecoveryPhase, "request_id", meta.RequestId, "machine_id", record.ID, "account_id", hold.Account, "device_id", hold.Device, "hold", hold.Kind, "reason", "original_device_unusable")
+		}
+		if len(held) != 0 {
+			s.logger.Warn("worker_removal_blocked", "phase", subscriptionRecoveryPhase, "request_id", meta.RequestId, "machine_id", record.ID, "account_id", held[0].Account, "hold", held[0].Kind, "held_accounts", len(held), "reason", "original_worker_recovery_pending")
+			return nil, domain.Fail(domain.Conflict, "This Worker is still finishing a credential recovery or a managed account execution.", "Keep the Worker online until it settles, then remove it. To abandon a lost Worker, revoke its device first.")
 		}
 		devices, err := tx.WorkerDevicesForMachine(record.ID)
 		if err != nil {

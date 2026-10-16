@@ -827,3 +827,28 @@ func TestClaudeRefreshStaysDeniedBehindExclusiveLease(t *testing.T) {
 		t.Fatal("a refresh was accepted behind an exclusive singleton lease")
 	}
 }
+
+// A shared owner never retains more members than one recovery settlement request
+// can carry, so every valid fenced owner stays recoverable.
+func TestSharedMemberAdmissionStopsAtTheRecoverySettlementBound(t *testing.T) {
+	service := &Service{}
+	machine, instance, device := domain.NewID(), domain.NewID(), domain.NewID()
+	generation := domain.NewID()
+	lease := &domain.SubscriptionLease{ID: domain.NewID(), MachineID: machine, InstanceID: instance, DeviceID: device, Epoch: service.subscriptionServerEpoch(), Generation: generation, Action: domain.SubscriptionExecute, Shared: true}
+	state := &domain.SubscriptionState{Generation: generation, Lease: lease}
+	for i := 0; i < domain.MaxSubscriptionMembers-1; i++ {
+		state.AdmitMember(domain.SubscriptionMember{LeaseID: domain.NewID(), OperationID: domain.NewID(), Revision: 1, State: domain.SubscriptionMemberRunning})
+	}
+	if err := service.sharedMemberAdmissible(state, machine, instance, device, domain.NewID()); err != nil {
+		t.Fatal("a member below the bound was refused", err)
+	}
+	state.AdmitMember(domain.SubscriptionMember{LeaseID: domain.NewID(), OperationID: domain.NewID(), Revision: 1, State: domain.SubscriptionMemberRetained})
+	state.Members[0].State = domain.SubscriptionMemberRunning
+	err := service.sharedMemberAdmissible(state, machine, instance, device, domain.NewID())
+	if domain.SafeError(err).Code != domain.ResourceExhausted {
+		t.Fatal("a member beyond the settlement bound was admitted", err)
+	}
+	if maxRecoveryMembers != domain.MaxSubscriptionMembers {
+		t.Fatal("recovery and admission bounds diverged")
+	}
+}

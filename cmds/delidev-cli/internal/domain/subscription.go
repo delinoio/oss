@@ -50,6 +50,16 @@ type SubscriptionState struct {
 	// Members are the execution members of a shared owner lease. Historical
 	// singleton accounts omit them.
 	Members []SubscriptionMember `json:"members,omitempty"`
+	// RecoveryCapture is the non-secret reference to the protected capture of the
+	// latest validated bundle of the held managed ChatGPT EXECUTE lease.
+	RecoveryCapture *SubscriptionRecoveryCapture `json:"recovery_capture,omitempty"`
+	// RecoverySettlement is the durable retirement checkpoint of a recovery whose
+	// credential decision was committed. It exists only while the account stays
+	// fenced for protected-reference retirement.
+	RecoverySettlement *SubscriptionRecoverySettlement `json:"recovery_settlement,omitempty"`
+	// RecoveryBlock is the latest closed reason a recovery attempt left the
+	// fenced lease protected.
+	RecoveryBlock *SubscriptionRecoveryBlock `json:"recovery_block,omitempty"`
 }
 type SubscriptionOperation struct {
 	ID         ID                 `json:"id"`
@@ -131,6 +141,9 @@ func (s SubscriptionState) Validate(account Account) error {
 		return invalid()
 	}
 	if err := s.validateNativeClaude(account); err != nil {
+		return err
+	}
+	if err := s.validateRecovery(account); err != nil {
 		return err
 	}
 	// Database restore disconnects accounts without restoring their external

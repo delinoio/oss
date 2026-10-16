@@ -745,6 +745,11 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 		if account.Health != domain.AccountDisconnected || account.Connection != nil || account.Removal != nil || account.Subscription != nil && (account.Subscription.ServerObservationActive() || account.Subscription.Pending != nil || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Generation != "" || account.Subscription.NativeProfileID != "" || account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.OwnerMachineID != "") {
 			return domain.Fail(domain.Conflict, "Connected accounts require credential and device cleanup before deletion.", "Disconnect the account and complete its protected-resource cleanup first.")
 		}
+		// A state only the original Worker can complete also blocks deletion, so a
+		// future relaxation of the fields above cannot drop its protected references.
+		if _, held := accountWorkerRecoveryHold(existing.ID, account); held {
+			return domain.Fail(domain.Conflict, "Connected accounts require credential and device cleanup before deletion.", "Disconnect the account and complete its protected-resource cleanup first.")
+		}
 	}
 	return validateDeletionReferences(tx, kind, id)
 }

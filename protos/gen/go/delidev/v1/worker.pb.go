@@ -68,7 +68,13 @@ const (
 	WorkerCapability_WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1 WorkerCapability = 70
 	// Claude original image input, native preprocessing replay and retained history.
 	// Requires capability 25.
-	WorkerCapability_WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1         WorkerCapability = 71
+	WorkerCapability_WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1 WorkerCapability = 71
+	// Worker-only managed ChatGPT execution recovery: the Worker synchronizes a
+	// protected capture of the latest validated bundle before deleting transient
+	// authentication, and the original Worker settles a fenced EXECUTE lease with
+	// a distinct durable recovery request. Requires capability 3. Older peers keep
+	// the existing recovery fence.
+	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1      WorkerCapability = 72
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1      WorkerCapability = 26
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1               WorkerCapability = 24
 	WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1                WorkerCapability = 25
@@ -129,6 +135,7 @@ var (
 		69: "WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1",
 		70: "WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1",
 		71: "WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1",
+		72: "WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1",
 		26: "WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1",
 		24: "WORKER_CAPABILITY_NATIVE_SKILLS_V1",
 		25: "WORKER_CAPABILITY_IMAGE_INPUTS_V1",
@@ -183,6 +190,7 @@ var (
 		"WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1": 69,
 		"WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1":                70,
 		"WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1":                  71,
+		"WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1":               72,
 		"WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1":               26,
 		"WORKER_CAPABILITY_NATIVE_SKILLS_V1":                        24,
 		"WORKER_CAPABILITY_IMAGE_INPUTS_V1":                         25,
@@ -4775,7 +4783,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12_cache_write_inputB\t\n" +
 	"\a_outputB\x13\n" +
 	"\x11_reasoning_outputB\b\n" +
-	"\x06_total*\xa1\x14\n" +
+	"\x06_total*\xd2\x14\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x121\n" +
 	"-WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1\x10)\x12,\n" +
@@ -4803,6 +4811,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"9WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1\x10E\x12.\n" +
 	"*WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1\x10F\x12,\n" +
 	"(WORKER_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1\x10G\x12/\n" +
+	"+WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1\x10H\x12/\n" +
 	"+WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1\x10\x1a\x12&\n" +
 	"\"WORKER_CAPABILITY_NATIVE_SKILLS_V1\x10\x18\x12%\n" +
 	"!WORKER_CAPABILITY_IMAGE_INPUTS_V1\x10\x19\x120\n" +

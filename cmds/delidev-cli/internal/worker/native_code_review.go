@@ -232,7 +232,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		if !managedStarted {
 			// A joined tree with failed helper retirement still authorizes the
 			// independent authentication cleanup but keeps the lease retained.
-			managedClosed, _ = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
+			managedClosed, _ = managed.cleanupUnusedAuthentication(config.cleanupContext(), nativeHome, managed.response.Bundle, managedHelperRetained)
 			if managedClosed {
 				latest = bytes.Clone(managed.response.Bundle)
 				managedUnused = true
@@ -267,6 +267,9 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		}
 		protected = append(protected, values...)
 		if err := validateManagedAuthenticationHome(nativeHome, manifest.WorkspaceRoots()); err != nil {
+			return nil, err
+		}
+		if err := managed.recordAuthenticationHome(nativeHome); err != nil {
 			return nil, err
 		}
 		if subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle) != nil {
@@ -369,13 +372,13 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 			if managed != nil && len(failures) == 0 {
 				var e error
 				if !managedStarted {
-					_, e = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
+					_, e = managed.cleanupUnusedAuthentication(config.cleanupContext(), nativeHome, managed.response.Bundle, managedHelperRetained)
 					if e == nil && !managedHelperRetained {
 						latest = bytes.Clone(managed.response.Bundle)
 						managedUnused = true
 					}
 				} else {
-					e = cleanupExecutionAuthentication(nativeHome, latest, managed.response.Bundle)
+					e = managed.cleanupAuthentication(config.cleanupContext(), nativeHome, latest, managed.response.Bundle)
 				}
 				if e != nil {
 					failures = append(failures, e)
@@ -396,6 +399,11 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 			}
 		}()
 		nativeJoined = false
+		if managed != nil {
+			if err := managed.recordNativeOwner(owner); err != nil {
+				return err
+			}
+		}
 		managedStarted = managed != nil
 		native, err = codex.Open(nativeCtx, nativeConfig)
 		if err != nil {

@@ -49,6 +49,11 @@ type SubscriptionMember struct {
 	AdmittedAt  time.Time               `json:"admitted_at"`
 }
 
+// MaxSubscriptionMembers bounds the execution members one shared owner retains,
+// in any state. Admission refuses a further member at this bound, so the complete
+// member set always fits one recovery settlement request.
+const MaxSubscriptionMembers = 256
+
 // SharedOwner reports whether the lease uses the versioned account-owner plus
 // execution-member representation.
 func (s SubscriptionState) SharedOwner() bool {

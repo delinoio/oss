@@ -57,10 +57,15 @@ type Config struct {
 	// codexMembers is negotiated only after the server echoes the shared owner
 	// capability and the account's managed native installation is verified.
 	codexMembers bool
-	codexOwners  *codexOwnerRegistry
-	terminals    *terminalManager
-	Root         string
-	StartupID    domain.ID
+	// codexRecovery is the negotiated ManagedCodexRecoveryV1 capability of the
+	// current attach. Only then does a managed ChatGPT execution synchronize a
+	// protected capture before deleting authentication, and only then does the
+	// recovery lane run.
+	codexRecovery bool
+	codexOwners   *codexOwnerRegistry
+	terminals     *terminalManager
+	Root          string
+	StartupID     domain.ID
 	// DesktopClientID enables proof only for authenticated ordinary desktop admission.
 	DesktopClientID domain.ID
 	Logger          *slog.Logger
@@ -74,6 +79,19 @@ type Config struct {
 	approvalControls <-chan *pb.ApprovalResponseControl
 	steerControls    <-chan *pb.SteerInputControl
 }
+
+// cleanupContext is the Worker-lifetime context that credential cleanup scans
+// observe. It is the shutdown context, never a per-request context: a stopped
+// execution still completes its cleanup, while a shutting-down Worker cancels a
+// scan of a very large retained profile and leaves the lease fail-closed for the
+// recovery lane.
+func (c Config) cleanupContext() context.Context {
+	if c.executionContext != nil {
+		return c.executionContext
+	}
+	return context.Background()
+}
+
 type journalState string
 
 const (
@@ -349,6 +367,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		claudeCapabilityExpected := false
 		managedClaudeExpected := false
 		managedGrokExpected := false
+		codexRecoveryExpected := false
 		metadataExpected := false
 		namedDirectoriesExpected := false
 		remoteCloneExpected := false
@@ -412,6 +431,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			// until the opt-in real-account run has verified it: the Worker reports
 			// capability 21 only when its own switch is on and the server echoed it.
 			managedGrokExpected = grokManagedExecutionEnabled && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1)
+			// Recovery is advertised only with managed ChatGPT support and only after
+			// the original server echoed it; older servers keep the existing fence.
+			codexRecoveryExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1)
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
 			}
@@ -456,6 +478,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if managedGrokExpected {
 				profile += "\x00managed-grok-subscriptions-v1"
+			}
+			if codexRecoveryExpected {
+				profile += "\x00managed-codex-recovery-v1"
 			}
 			if verifiedTitleProfile {
 				profile += "\x00verified"
@@ -608,6 +633,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				if config.paidCredits {
 					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1)
 				}
+				if codexRecoveryExpected {
+					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1)
+				}
 			}
 			if claudeCapabilityExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
@@ -712,6 +740,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.claudeMembers = claudeCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1) && machineCapability(attached.Msg.Machine, domain.ClaudeDeviceOwnedMembersV1)
 			config.openCodeForkReasoning = runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1) && machineCapability(attached.Msg.Machine, domain.OpenCodeGeneralChatForkV1) && machineCapability(attached.Msg.Machine, domain.OpenCodeGeneralChatForkReasoningV1)
 			config.parallelSessions = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) && machineCapability(attached.Msg.Machine, domain.ParallelSessionsV1)
+			config.codexRecovery = managedCapabilityExpected && codexRecoveryExpected && machineCapability(attached.Msg.Machine, domain.ManagedCodexRecoveryV1)
 			config.codexMembers = managedCapabilityExpected && config.parallelSessions && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1) && machineCapability(attached.Msg.Machine, domain.SharedSubscriptionOwnerV1)
 			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)
 			config.namedWorkspaceDirectories = namedDirectoriesExpected && machineCapability(attached.Msg.Machine, domain.NamedWorkspaceDirectoriesV1)

@@ -75,7 +75,7 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 			defer closeManagedRPC()
 		}
 		if managed != nil && managedPreNative {
-			managedCleanup, _ = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
+			managedCleanup, _ = managed.cleanupUnusedAuthentication(config.cleanupContext(), nativeHome, managed.response.Bundle, managedHelperRetained)
 			if managedCleanup {
 				managedLatest = bytes.Clone(managed.response.Bundle)
 				managedUnused = true
@@ -137,6 +137,9 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 	// Install pre-native cleanup before the atomic write: even a synchronization
 	// error may leave the owned plaintext file committed.
 	managedPreNative = true
+	if err := managed.recordAuthenticationHome(nativeHome); err != nil {
+		return nil, err
+	}
 	if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
 		return nil, subscription.Invalid()
 	}
@@ -144,6 +147,9 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 		Mode: codex.ThreadProtocol, Version: input.NativeVersion, Home: nativeHome,
 		ManagedAuthentication: true, ManagedTitle: true,
 		Process: process.Config{Directory: processRoot, OwnerID: jobID, Executable: resolved, Cwd: workdir, Env: env, Logger: config.Logger},
+	}
+	if err := managed.recordNativeOwner(jobID); err != nil {
+		return nil, err
 	}
 	native, err := codex.Open(ctx, nativeConfig)
 	if err != nil {
@@ -169,7 +175,7 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 			return errors.Join(nativeErr, helperErr)
 		}
 		closed = true
-		authErr := cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle)
+		authErr := managed.cleanupAuthentication(config.cleanupContext(), nativeHome, managedLatest, managed.response.Bundle)
 		managedCleanup = helperErr == nil && authErr == nil
 		logExecutionAuthenticationCleanup(config.Logger, jobID, authErr)
 		if helperErr != nil {

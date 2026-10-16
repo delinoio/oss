@@ -2,6 +2,7 @@
 package worker
 
 import (
+	"context"
 	"encoding/base64"
 	"os"
 	"path/filepath"
@@ -77,10 +78,10 @@ func TestManagedUnusedAuthenticationRequiresAbsentOrIdenticalFileAndCleanHome(t 
 					t.Fatal(err)
 				}
 			}
-			if mode == "absent-clean" && cleanupExecutionAuthentication(home, bundle, bundle) == nil {
+			if mode == "absent-clean" && cleanupExecutionAuthentication(context.Background(), home, bundle, bundle) == nil {
 				t.Fatal("native-owned cleanup accepted an absent captured authentication file")
 			}
-			err := cleanupUnusedExecutionAuthentication(home, bundle)
+			err := cleanupUnusedExecutionAuthentication(context.Background(), home, bundle)
 			wantClean := mode == "absent-clean" || mode == "published-identical" || mode == "absent-symlink"
 			if (err == nil) != wantClean {
 				t.Fatal("unused authentication cleanup lost its original ownership or remnant barrier", err)
@@ -128,7 +129,7 @@ func TestPreNativeAuthenticationCleanupKeepsLeaseAfterJoinedHelperFailure(t *tes
 			if err := security.WriteAtomic(auth, written); err != nil {
 				t.Fatal(err)
 			}
-			confirmed, err := cleanupPreNativeAuthentication(home, bundle, tc.helperRetained)
+			confirmed, err := cleanupPreNativeAuthentication(context.Background(), home, bundle, tc.helperRetained)
 			if confirmed != tc.confirmed || (err != nil) != tc.failed {
 				t.Fatal("unexpected pre-native cleanup outcome", confirmed, err)
 			}
