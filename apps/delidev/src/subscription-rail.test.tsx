@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport, Code, ConnectError } from "@connectrpc/connect";
-import { TransportProvider } from "@connectrpc/connect-query";
+import {
+  TransportProvider,
+  createConnectQueryKey,
+} from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -14,6 +17,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   EntityKind,
+  ResourceQuery,
   ResourceSchema,
   ResourceService,
   SystemCapability,
@@ -29,6 +33,7 @@ import {
   type RailWindow,
 } from "./subscription-rail-data";
 import { SubscriptionRail } from "./subscription-rail";
+import { subscriptionInventoryRequest } from "./subscription-inventory";
 const now = Date.now();
 const window = (
   remaining: number,
@@ -418,6 +423,31 @@ it("rereads accepted saved ranges every thirty seconds only while the app is in 
   });
   expect(f.requests).toHaveBeenCalledTimes(4);
   focus.mockRestore();
+});
+it("rereads only accepted ranges when saved subscription inventory is invalidated", async () => {
+  const personal = resource("Personal"),
+    work = resource("Work");
+  let values = [personal, work];
+  const f = mount((token) => ({
+    resources: values,
+    nextPageToken: token === "" ? "tail" : "",
+  }));
+  await screen.findByRole("button", { name: /Work/ });
+  // The first page only: no unseen tail is read by default.
+  expect(f.requests.mock.calls.map((call) => call[0])).toEqual([""]);
+  values = [resource("Newcomer"), personal, work];
+  await act(async () => {
+    await f.client.invalidateQueries({
+      queryKey: createConnectQueryKey({
+        schema: ResourceQuery.listResources,
+        input: subscriptionInventoryRequest(""),
+        cardinality: "finite",
+      }),
+      refetchType: "active",
+    });
+  });
+  await screen.findByRole("button", { name: /Newcomer/ });
+  expect(f.requests.mock.calls.every((call) => call[0] === "")).toBe(true);
 });
 it("keeps retained badges unconfirmed during a deferred retry", async () => {
   const first = resource("Personal");
