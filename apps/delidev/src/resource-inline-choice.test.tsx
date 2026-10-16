@@ -214,6 +214,23 @@ it("keeps natural height for five rows or fewer", async () => {
   const list = screen.getByRole("listbox", { name: "Project" });
   await waitFor(() => expect(names(list)).toHaveLength(5));
   expect(list.parentElement!.style.maxHeight).toBe("");
+  // The stylesheet's five-row cap is lifted for short lists so a wrapped row
+  // never pushes the last row behind a scrollbar.
+  expect(list.parentElement!.hasAttribute("data-short")).toBe(true);
+});
+
+it("restores the scroll cap once a short list grows past five rows", async () => {
+  const value = fixture(projects(["one", "two", "three", "four", "five"]), [
+    projects(["one", "two", "three", "four"]),
+    projects(["five", "six"]),
+  ]);
+  render(value.view(""));
+  const list = screen.getByRole("listbox", { name: "Project" });
+  await waitFor(() => expect(names(list)).toHaveLength(5));
+  expect(list.parentElement!.hasAttribute("data-short")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Load more Project" }));
+  await waitFor(() => expect(names(list)).toHaveLength(7));
+  expect(list.parentElement!.hasAttribute("data-short")).toBe(false);
 });
 
 it("keeps an off-page accepted identity selected, loads more pages and retries failures", async () => {

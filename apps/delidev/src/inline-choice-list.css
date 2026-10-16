@@ -47,6 +47,10 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+/* Five rows or fewer never scroll, even when a wrapped row exceeds 44px. */
+.inline-choice-viewport[data-short] {
+  max-height: none;
+}
 .inline-choice [role="option"] {
   display: flex;
   min-height: 44px;

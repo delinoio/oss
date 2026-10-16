@@ -96,6 +96,9 @@ export function InlineChoiceList({
     enabled[0]
   )?.id;
   const rowCount = options.length;
+  // A short list never scrolls: it keeps its natural height even when a wrapped
+  // row makes five rows taller than the stylesheet's five-row fallback cap.
+  const short = rowCount <= inlineChoiceVisibleRows;
   // Size the viewport to the first five rendered rows so wrapped names grow
   // their own rows instead of being clipped. Layout-less environments report 0
   // and keep the stylesheet fallback.
@@ -206,7 +209,10 @@ export function InlineChoiceList({
         <div
           ref={viewport}
           className="inline-choice-viewport"
-          style={limit === undefined ? undefined : { maxHeight: limit }}
+          data-short={short || undefined}
+          style={
+            short || limit === undefined ? undefined : { maxHeight: limit }
+          }
         >
           <div
             ref={list}
