@@ -665,8 +665,8 @@ func TestGrokCapabilitiesAreAdvertisedOnlyBehindTheSwitch(t *testing.T) {
 	if !containsSystemCapability(status(), grokSystemExecutionReservation) {
 		t.Fatal("System 40 is not advertised once the switch is on")
 	}
-	if containsSystemCapability(status(), grokSystemLoginReservation) {
-		t.Fatal("the switch for execution advertised System 39")
+	if !containsSystemCapability(status(), grokSystemLoginReservation) {
+		t.Fatal("the execution switch disabled independent server CLI login")
 	}
 }
 

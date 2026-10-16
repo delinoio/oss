@@ -41,6 +41,9 @@ func boundGrokBundle(t *testing.T, idp *grokidptest.IdP) subscription.GrokBundle
 	raw, err := json.Marshal(map[string]any{subscription.GrokScopeKey: map[string]any{
 		"key": idp.AccessToken, "auth_mode": "oidc", "create_time": created.Format(time.RFC3339Nano), "expires_at": created.Add(6 * time.Hour).Format(time.RFC3339Nano),
 		"user_id": idp.Subject, "principal_type": idp.PrincipalType, "principal_id": idp.PrincipalID, "email": idp.Email, "refresh_token": idp.RefreshToken,
+		// Retain the native identity's team binding, just as the fake IdP's
+		// token and userinfo responses do. Refresh verifies all present bindings.
+		"team_id":     idp.TeamID,
 		"oidc_issuer": subscription.GrokIssuer, "oidc_client_id": subscription.GrokClientID,
 	}})
 	if err != nil {
@@ -212,7 +215,7 @@ func TestGrokRefreshReplacesTheBundleWithoutRotation(t *testing.T) {
 		t.Fatalf("token requests = %d", g.idp.TokenRequests)
 	}
 	form := g.idp.RefreshForms[0]
-	if len(form) != 3 || form.Get("grant_type") != "refresh_token" || form.Get("client_id") != subscription.GrokClientID || form.Get("refresh_token") != old.RefreshToken() || g.idp.TokenAuthHeaders[0] != "" {
+	if len(form) != 5 || form.Get("grant_type") != "refresh_token" || form.Get("client_id") != subscription.GrokClientID || form.Get("refresh_token") != old.RefreshToken() || form.Get("principal_type") != old.Identity().PrincipalType || form.Get("principal_id") != old.Identity().PrincipalID || g.idp.TokenAuthHeaders[0] != "" {
 		t.Fatal("the request is not the public-client refresh_token grant")
 	}
 	// The superseded generation is retained, not authoritative: only the

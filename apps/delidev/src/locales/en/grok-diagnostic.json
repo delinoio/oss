@@ -39,5 +39,6 @@
   "grok-diagnostic.label.notReported": "Not reported",
   "grok-diagnostic.copyReference": "Copy reference",
   "grok-diagnostic.copied": "Reference copied.",
-  "grok-diagnostic.copyFailed": "The reference could not be copied."
+  "grok-diagnostic.copyFailed": "The reference could not be copied.",
+  "grok-diagnostic.guidance.server": "Grok sign-in runs on the DeliDev server. Keep the original account and operation. Check the Grok Build installation on that server before retrying."
 }
