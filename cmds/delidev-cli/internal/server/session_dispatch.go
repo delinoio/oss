@@ -249,6 +249,11 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 	if err != nil {
 		return empty, err
 	}
+	// New Grok execution is refused with the typed unavailable problem while a
+	// server-owned logout holds the account, before the generic readiness checks.
+	if c.Subscription && c.Harness == domain.GrokBuild && grokAccountLoggingOut(account) {
+		return empty, grokLoggingOutProblem()
+	}
 	managed := c.Subscription && account.Type == domain.SubscriptionAccount && account.SubscriptionService == c.SubscriptionService && c.SubscriptionService.Harness() == c.Harness && account.ProviderID == "" && c.ProviderID == "" && account.Subscription != nil && account.Subscription.Generation != "" && !account.Subscription.RecoveryRequired && (account.Subscription.Pending == nil || c.Harness == domain.Codex && account.Subscription.Pending.Action == domain.SubscriptionRefresh) && account.Connection != nil && account.Connection.Authentication == domain.SubscriptionAuth
 	keySubscription := c.IsOpenCodeGo() && account.IsOpenCodeGo() && account.Validate() == nil
 	if keySubscription && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGoSubscriptionsV1) {
@@ -256,6 +261,11 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 	}
 	if managed {
 		capability := domain.ManagedCodexSubscriptionsV1
+		if c.Harness == domain.GrokBuild {
+			// A managed Grok account is not bound to one Runner; only the
+			// independently negotiated adapter capability makes a Worker eligible.
+			capability = domain.ManagedGrokSubscriptionsV1
+		}
 		if c.Harness == domain.ClaudeCode {
 			capability = domain.NativeClaudeSubscriptionsV1
 			if account.Subscription.ManagedClaude() {

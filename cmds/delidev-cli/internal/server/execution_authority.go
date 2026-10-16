@@ -152,7 +152,7 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 	if err != nil || !account.Enabled || account.Health != domain.AccountReady || account.Removal != nil || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.Configuration.ProviderID {
 		return empty, executionDenied()
 	}
-	managed := input.Configuration.Subscription && input.Configuration.SubscriptionService.Harness() == input.Configuration.Harness && account.Type == domain.SubscriptionAccount && account.SubscriptionService == input.Configuration.SubscriptionService && account.ProviderID == "" && (input.Configuration.Harness == domain.Codex || input.Configuration.Harness == domain.ClaudeCode)
+	managed := input.Configuration.Subscription && input.Configuration.SubscriptionService.Harness() == input.Configuration.Harness && account.Type == domain.SubscriptionAccount && account.SubscriptionService == input.Configuration.SubscriptionService && account.ProviderID == "" && (input.Configuration.Harness == domain.Codex || input.Configuration.Harness == domain.ClaudeCode || input.Configuration.Harness == domain.GrokBuild)
 	if account.ConfirmedExhausted {
 		managedCodex := managed && input.Configuration.Harness == domain.Codex && account.SubscriptionService == domain.SubscriptionChatGPT
 		if !managedCodex {
@@ -213,6 +213,11 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 				return empty, executionDenied()
 			}
 		} else if input.Configuration.Harness == domain.ClaudeCode && (state.OwnerMachineID != grant.MachineID || state.NativeProfileID == "" || !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1)) {
+			return empty, executionDenied()
+		}
+		if input.Configuration.Harness == domain.GrokBuild && (!slices.Contains(machine.WorkerCapabilities, domain.ManagedGrokSubscriptionsV1) || input.Continuation != nil || input.Fork != nil) {
+			// Managed Grok execution needs the negotiated adapter capability and
+			// never acquires resume authority.
 			return empty, executionDenied()
 		}
 		lease, owned := state.LeaseForOperation(grant.JobID)

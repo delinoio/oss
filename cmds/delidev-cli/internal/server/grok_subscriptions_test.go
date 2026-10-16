@@ -379,7 +379,7 @@ func TestGrokRefreshRequiresSameIdentityAndRotation(t *testing.T) {
 func TestGrokTakeRefusesUnsupportedAndUnverifiedWork(t *testing.T) {
 	f := newGrokFixture(t)
 	f.login("synthetic-principal-1")
-	// Execution is a separate contract and has no Grok lease yet.
+	// A Worker without the managed Grok capability never receives an execute lease.
 	if _, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT), pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE); err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
 		t.Fatal("Grok execute Take was not refused")
 	}

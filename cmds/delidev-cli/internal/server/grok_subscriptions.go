@@ -54,19 +54,20 @@ func grokBookkeepingContext(ctx context.Context, timeout time.Duration) (context
 }
 
 // Grok Take/Finish carries the lifecycle (login, refresh, logout) of a
-// service-native Grok account. The credential moves only as the sealed
+// service-native Grok account and, for an execute Take, the managed execution
+// lease of grok_execution.go. The credential moves only as the sealed
 // subscription.GrokBundle envelope under credentials.AccountLogin, bound to this
-// server, the account and one credential generation. Execution is a separate
-// contract: a Grok execute Take is refused here, and the Codex lifecycle keeps
+// server, the account and one credential generation. The Codex lifecycle keeps
 // refusing every Grok account through subscriptionAccount.
 
-// grokLifecycleActions are the only actions a Grok lease can carry today.
+// grokLifecycleAction reports the lifecycle actions of the pending-operation
+// lease; execution is handled before this check.
 func grokLifecycleAction(action domain.SubscriptionAction) bool {
 	return action == domain.SubscriptionLogin || action == domain.SubscriptionRefresh || action == domain.SubscriptionLogout
 }
 
 func grokUnsupported() *domain.Error {
-	return domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Use login, refresh or logout; Grok execution is not activated.")
+	return domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Use login, refresh or logout; managed Grok execution needs a Worker that negotiated its capability.")
 }
 
 func (s *Service) isGrokSubscription(ctx context.Context, id string) (bool, error) {
@@ -202,6 +203,11 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 	}
 	actor, _ := domain.PrincipalFrom(ctx)
 	action := subscriptionAction(req.Msg.Action)
+	if action == domain.SubscriptionExecute {
+		// Execution is keyed by the claimed job, not by a pending account
+		// operation, and has its own admission (grok_execution.go).
+		return s.takeGrokExecution(ctx, req)
+	}
 	input := struct {
 		Account, Lease, Machine, Instance, Operation domain.ID
 		Revision                                     uint64
@@ -481,6 +487,13 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 	defer clear(req.Msg.Bundle)
 	if len(req.Msg.Bundle) > subscription.MaxGrokBundleEnvelope {
 		return nil, rpc.Error(subscription.GrokBundleInvalid(), c)
+	}
+	// An execute lease has its own settlement. A lease that is already released
+	// falls through so a replayed Finish reaches the shared receipt replay.
+	if execute, err := s.grokExecuteLease(ctx, m.Id, req.Msg.LeaseId); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if execute {
+		return s.finishGrokExecution(ctx, req)
 	}
 	input := subscriptionFinishInput{domain.ID(m.Id), domain.ID(req.Msg.LeaseId), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), domain.ID(req.Msg.GenerationId), s.accountCommitment(domain.ID(m.RequestId), req.Msg.Bundle), m.ExpectedRevision, req.Msg.CleanupConfirmed, req.Msg.RefreshConfirmed, req.Msg.Succeeded, domain.SubscriptionFinishLegacy}
 	unlock, err := s.lockAccounts(ctx)
