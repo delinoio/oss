@@ -45,5 +45,5 @@
 
 - Resolve every native home through `internal/nativeprofile`; do not allocate per-execution or temporary native homes. Keep the fresh `runtimes/<id>` or `title-runtimes/<job>` directory only as the operation journal.
 - Explicit account deletion removes all server-owned profiles of the account before it is acknowledged (`deleteAccountNativeProfiles` in `resources.go`).
-- Retire only transient credential files after a joined operation; retain history, caches and native-created helper links, and delete profiles only through explicit session, account or storage deletion.
+- Retain history, caches and native-created helper links, and delete profiles only through explicit session, account or storage deletion. Credential-file retention and removal follow the contract below.
 - Follow the [persistent native profiles contract](../../../../docs/cmds-delidev-harness-contract.md#persistent-native-profiles).

@@ -15,7 +15,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 )
 
-func TestServerSubscriptionRuntimeCleanupLogsSafeFailure(t *testing.T) {
+func TestServerSubscriptionRuntimeVerificationLogsSafeFailure(t *testing.T) {
 	for _, scenario := range []struct {
 		name   string
 		stage  subscription.CleanupStage
@@ -24,7 +24,6 @@ func TestServerSubscriptionRuntimeCleanupLogsSafeFailure(t *testing.T) {
 		{"matched", "", ""},
 		{"mismatch", subscription.CleanupAuthFile, subscription.CleanupMismatch},
 		{"missing", subscription.CleanupAuthFile, subscription.CleanupReadFailed},
-		{"special", subscription.CleanupAuthFile, subscription.CleanupNotRegular},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			home := filepath.Join(t.TempDir(), "private-path-sentinel")
@@ -33,12 +32,7 @@ func TestServerSubscriptionRuntimeCleanupLogsSafeFailure(t *testing.T) {
 			}
 			latest := []byte("synthetic-token-sentinel")
 			auth := filepath.Join(home, "codex", "auth.json")
-			if scenario.name == "special" {
-				// A non-regular entry cannot be proven to be removable credential state.
-				if err := os.MkdirAll(auth, 0700); err != nil {
-					t.Fatal(err)
-				}
-			} else if scenario.name != "missing" {
+			if scenario.name != "missing" {
 				written := latest
 				if scenario.name == "mismatch" {
 					written = []byte("synthetic-other-token-sentinel")
@@ -47,7 +41,7 @@ func TestServerSubscriptionRuntimeCleanupLogsSafeFailure(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			// Ordinary retained native data must never block credential cleanup.
+			// Ordinary retained native data must never block credential verification.
 			cache := filepath.Join(home, "codex", "tmp", "arg0", "native-helpers")
 			if err := os.MkdirAll(cache, 0700); err != nil {
 				t.Fatal(err)
@@ -59,23 +53,19 @@ func TestServerSubscriptionRuntimeCleanupLogsSafeFailure(t *testing.T) {
 			var logs bytes.Buffer
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			owner := domain.NewID()
-			compare := latest
-			if scenario.name == "special" {
-				compare = nil
-			}
-			err := cleanupServerSubscriptionRuntime(home, owner, logger, compare)
+			err := verifyServerSubscriptionRuntime(home, owner, logger, latest)
 			if _, statErr := os.Lstat(helper); statErr != nil {
-				t.Fatal("cleanup removed a retained helper link")
+				t.Fatal("verification removed a retained helper link")
 			}
 			if scenario.name == "matched" {
 				if err != nil || logs.Len() != 0 {
 					t.Fatal("confirmed cleanup was classified as a failure")
 				}
-				if _, err := os.Lstat(auth); !os.IsNotExist(err) {
-					t.Fatal("transient credential file remained")
+				if retained, err := os.ReadFile(auth); err != nil || !bytes.Equal(retained, latest) {
+					t.Fatal("verification did not retain the account-owned credential file")
 				}
 				if _, err := os.Stat(home); err != nil {
-					t.Fatal("confirmed cleanup removed the persistent profile")
+					t.Fatal("confirmed verification removed the persistent profile")
 				}
 				return
 			}

@@ -5,7 +5,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -153,55 +152,17 @@ func (s *Service) retireServerQuotaReference(ctx context.Context, id domain.ID, 
 	if err != nil || !original.AccessOnly || current == original.Generation {
 		return err
 	}
-	return s.deleteCapturedReference(ctx, id, original.Generation, current, "server_quota_reference_retired", original.ID)
+	return s.retainCapturedReference(ctx, id, original.Generation, current, "server_quota_reference_retained", original.ID)
 }
 
-// deleteCapturedReference removes only the obsolete captured AccountLogin
-// reference after confirming the current generation's reference exists, then
-// independently enumerates the completed removal.
-func (s *Service) deleteCapturedReference(ctx context.Context, id, generation, current domain.ID, event string, operation domain.ID) error {
-	vault, err := s.secrets()
-	if err != nil {
-		return err
-	}
-	refs, err := vault.UnremovedReferences(ctx, id)
-	if err != nil {
-		return err
-	}
-	if len(refs) > 256 {
-		return subscriptionDenied()
-	}
-	captured := credentials.Ref{Owner: id, ID: generation, Purpose: credentials.AccountLogin}
-	found, currentFound := false, false
-	for _, ref := range refs {
-		if ref.Owner != id || ref.Purpose != credentials.AccountLogin || ref.ID.Validate() != nil {
-			return subscriptionDenied()
-		}
-		found = found || ref == captured
-		currentFound = currentFound || ref.ID == current
-	}
-	if !found {
-		return nil
-	} // A durable prior deletion needs no second native send.
-	if !currentFound {
-		return subscriptionDenied()
-	}
-	if err = vault.Delete(ctx, captured); err != nil {
-		return err
-	}
-	refs, err = vault.UnremovedReferences(ctx, id)
-	if err != nil {
-		return err
-	}
-	if len(refs) > 256 {
-		return subscriptionDenied()
-	}
-	for _, ref := range refs {
-		if ref == captured || ref.Owner != id || ref.Purpose != credentials.AccountLogin || ref.ID.Validate() != nil {
-			return subscriptionDenied()
-		}
-	}
-	s.logger.InfoContext(ctx, event, "operation_id", operation)
+// retainCapturedReference settles the obsolete captured AccountLogin reference
+// of a rotated frozen operation. The reference is retained, not deleted: only
+// the current published generation authorizes use, so the captured generation
+// grants nothing, and explicit logout or account deletion removes every
+// remaining generation. No vault work happens, so a vault failure can neither
+// fail the settlement nor leave a deletion-only fence.
+func (s *Service) retainCapturedReference(ctx context.Context, id, generation, current domain.ID, event string, operation domain.ID) error {
+	s.logger.InfoContext(ctx, event, "account_id", id, "operation_id", operation, "result", "retained")
 	return nil
 }
 
@@ -228,7 +189,7 @@ func (s *Service) retireSettledServerQuotaReference(ctx context.Context, id doma
 	if err != nil || current == original.Generation {
 		return err
 	}
-	return s.deleteCapturedReference(ctx, id, original.Generation, current, "server_quota_reference_retired", original.ID)
+	return s.retainCapturedReference(ctx, id, original.Generation, current, "server_quota_reference_retained", original.ID)
 }
 
 // completeServerQuotaRetirement finishes the checked retirement of a settled

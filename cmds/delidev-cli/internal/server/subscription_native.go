@@ -35,9 +35,10 @@ type serverSubscriptionNative interface {
 	Close([]byte) error
 }
 
-// A non-recovery opener error proves joined native and transient credential
-// cleanup. A recovery error retains the original operation for inspection; the
-// persistent profile is never removed by either outcome.
+// An opener error leaves the persistent profile and every account-owned
+// credential file it holds in place: routine server operations retain
+// credentials, and only explicit logout or account deletion removes them. A
+// recovery error retains the original operation for inspection.
 type serverSubscriptionOpener func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error)
 
 type serverCodexRuntime struct {
@@ -60,15 +61,23 @@ func acquireAccountProfile(ctx context.Context, scope nativeScope, harnessKind d
 	return scope.Profiles.Acquire(ctx, nativeprofile.Key{Harness: harnessKind, Purpose: purpose, Account: scope.Account})
 }
 
-// profileCredentialBlock proves that no transient credential file survives in a
-// retained profile before a new operation may write its own.
-func profileCredentialBlock(scope nativeScope, lease *nativeprofile.Lease, owner domain.ID, logger *slog.Logger, forbidManaged bool) error {
-	present, err := subscription.CredentialFilePresent(lease.Root)
-	if err != nil || present && forbidManaged {
+// profileCredentialAdmission admits the credential files that earlier
+// operations retained in the account's own auth profile. A regular, private file
+// owned by the current user is admitted and reported as retained; a symlink,
+// unsafe permissions, a foreign owner or an interrupted credential write block
+// with a specific cause. Admission is never authority: the caller must not read
+// a retained file as proof of a login or of the published generation.
+func profileCredentialAdmission(scope nativeScope, lease *nativeprofile.Lease, owner domain.ID, logger *slog.Logger) (bool, error) {
+	retained, err := subscription.InspectRetainedCredentials(lease.Root)
+	if err != nil {
+		logSubscriptionRuntimeCleanup(logger, owner, err)
 		nativeprofile.Log(logger, "native_profile_blocked", lease.Key, lease.ID, nativeprofile.ReasonCredentialPresent, "operation_id", owner)
-		return nativeprofile.Failure(domain.RecoveryRequired, nativeprofile.ReasonCredentialPresent, "A transient credential file remains in the retained native profile.", "Reconcile the original operation before retrying.")
+		return false, nativeprofile.Failure(domain.RecoveryRequired, nativeprofile.ReasonCredentialPresent, "The retained credential file in the native profile is not safe to reuse.", "Inspect the retained profile before retrying.")
 	}
-	return nil
+	if retained {
+		nativeprofile.Log(logger, "native_profile_credential_retained", lease.Key, lease.ID, nativeprofile.ReasonCredentialRetained, "operation_id", owner)
+	}
+	return retained, nil
 }
 
 func openServerSubscription(ctx context.Context, scope nativeScope, owner domain.ID, bundle []byte, logger *slog.Logger) (returned serverSubscriptionNative, err error) {
@@ -83,21 +92,15 @@ func openServerSubscription(ctx context.Context, scope nativeScope, owner domain
 	released := false
 	defer func() {
 		if err != nil && !released {
-			// Retire only the transient credential file this operation may have
-			// written. The profile, its history and caches stay.
-			if domain.SafeError(err).Code != domain.RecoveryRequired {
-				if cleanupErr := subscription.RetireCredentialFiles(home); cleanupErr != nil {
-					logSubscriptionRuntimeCleanup(logger, owner, cleanupErr)
-					nativeprofile.Log(logger, "native_profile_credential_cleanup", lease.Key, lease.ID, nativeprofile.ReasonCredentialBlocked, "operation_id", owner)
-					err = domain.CodexRecoveryFailure(version, phase, err, subscriptionDenied())
-				}
-			}
+			// The profile, its credential file, history and caches all stay.
 			_ = lease.Close()
 		}
 	}()
-	// A surviving transient credential file from an earlier operation blocks
-	// with a specific cause until that operation's reconciliation retires it.
-	if e := profileCredentialBlock(scope, lease, owner, logger, true); e != nil {
+	// A retained credential file of an earlier operation is admitted, never used
+	// as authority. A symlink, unsafe permissions, a foreign owner or an
+	// interrupted credential write blocks with a specific cause.
+	retained, e := profileCredentialAdmission(scope, lease, owner, logger)
+	if e != nil {
 		return nil, e
 	}
 	env, e := harness.PrivateRuntimeEnvironment(home)
@@ -132,13 +135,8 @@ func openServerSubscription(ctx context.Context, scope nativeScope, owner domain
 		return nil, subscriptionDenied()
 	}
 	nativeHome := filepath.Join(home, "codex")
-	if len(bundle) != 0 {
-		if _, _, e := subscription.Parse(bundle); e != nil {
-			return nil, e
-		}
-		if e := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), bundle); e != nil {
-			return nil, subscriptionDenied()
-		}
+	if e := stageServerAuthentication(home, bundle, retained, owner, logger, lease); e != nil {
+		return nil, e
 	}
 	native, e := codex.Open(ctx, codex.Config{Version: installation.Version, Mode: codex.SubscriptionProtocol, ManagedAuthentication: true, Home: nativeHome, Process: process.Config{Directory: filepath.Join(runtimeRoot, "processes"), OwnerID: owner, Executable: installation.ResolvedPath, Cwd: home, Env: env, Logger: logger}})
 	if e != nil {
@@ -146,6 +144,32 @@ func openServerSubscription(ctx context.Context, scope nativeScope, owner domain
 	}
 	released = true
 	return &serverCodexRuntime{Client: native, home: home, lease: lease, owner: owner, logger: logger}, nil
+}
+
+// stageServerAuthentication prepares the account's auth profile for one native
+// operation. A refresh writes the exact published generation, replacing any
+// retained file. A new login has no published generation: a retained file is not
+// authority and must not be mistaken for the new login's result, so the
+// profile-owned removal replaces it before the native login starts.
+func stageServerAuthentication(home string, bundle []byte, retained bool, owner domain.ID, logger *slog.Logger, lease *nativeprofile.Lease) error {
+	if len(bundle) != 0 {
+		if _, _, e := subscription.Parse(bundle); e != nil {
+			return e
+		}
+		if e := subscription.WriteCredentialFile(filepath.Join(home, "codex", "auth.json"), bundle); e != nil {
+			return subscriptionDenied()
+		}
+		return nil
+	}
+	if !retained {
+		return nil
+	}
+	if e := subscription.RetireCredentialFiles(home); e != nil {
+		logSubscriptionRuntimeCleanup(logger, owner, e)
+		return subscriptionDenied()
+	}
+	nativeprofile.Log(logger, "native_profile_credential_replaced", lease.Key, lease.ID, nativeprofile.ReasonCredentialRetained, "operation_id", owner)
+	return nil
 }
 
 func (r *serverCodexRuntime) StartManagedLogin(ctx context.Context, device bool) (codex.ManagedLoginProgress, error) {
@@ -180,19 +204,21 @@ func (r *serverCodexRuntime) Close(latest []byte) error {
 		logSubscriptionCleanup(r.logger, r.owner, subscription.CleanupNativeProcess, subscription.CleanupUnconfirmed, 0, 0)
 		return subscriptionDenied()
 	}
-	err = cleanupServerSubscriptionRuntime(r.home, r.owner, r.logger, latest)
-	reason := nativeprofile.ReasonCredentialCleaned
+	err = verifyServerSubscriptionRuntime(r.home, r.owner, r.logger, latest)
+	reason := nativeprofile.ReasonCredentialRetained
 	if err != nil {
 		reason = nativeprofile.ReasonCredentialBlocked
 	}
-	nativeprofile.Log(r.logger, "native_profile_credential_cleanup", r.lease.Key, r.lease.ID, reason, "operation_id", r.owner)
+	nativeprofile.Log(r.logger, "native_profile_credential_retained", r.lease.Key, r.lease.ID, reason, "operation_id", r.owner)
 	return err
 }
 
 // The caller has already joined the original native process and descendants.
-// Cleanup verifies and retires only the transient credential file; the
-// persistent profile, native history, caches and helper files are retained.
-func cleanupServerSubscriptionRuntime(home string, owner domain.ID, logger *slog.Logger, latest []byte) error {
+// The final credential bytes are compared with the expected bundle when one is
+// given. The credential file, the persistent profile, native history, caches and
+// helper files are all retained; only explicit logout or account deletion
+// removes them.
+func verifyServerSubscriptionRuntime(home string, owner domain.ID, logger *slog.Logger, latest []byte) error {
 	if len(latest) > 0 {
 		closed, readErr := security.ReadPrivate(filepath.Join(home, "codex", "auth.json"), subscription.MaxBundle)
 		equal := readErr == nil && bytes.Equal(closed, latest)
@@ -205,11 +231,6 @@ func cleanupServerSubscriptionRuntime(home string, owner domain.ID, logger *slog
 			logSubscriptionCleanup(logger, owner, subscription.CleanupAuthFile, reason, 0, 0)
 			return subscriptionDenied()
 		}
-	}
-	err := subscription.RetireCredentialFiles(home)
-	logSubscriptionRuntimeCleanup(logger, owner, err)
-	if err != nil {
-		return subscriptionDenied()
 	}
 	return nil
 }

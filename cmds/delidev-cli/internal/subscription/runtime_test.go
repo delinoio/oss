@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -396,4 +397,73 @@ func TestCredentialCleanupValidatesParentBeforeAbsentSync(t *testing.T) {
 			t.Fatalf("non-directory parent lost its validation error: %v", err)
 		}
 	})
+}
+
+func TestInspectRetainedCredentialsAdmitsOnlySafeRegularFiles(t *testing.T) {
+	for _, name := range CredentialFiles {
+		t.Run(name, func(t *testing.T) {
+			profile := t.TempDir()
+			if present, err := InspectRetainedCredentials(profile); err != nil || present {
+				t.Fatalf("an empty profile was not clean: %v %v", present, err)
+			}
+			target := filepath.Join(profile, filepath.FromSlash(name))
+			if err := security.PrivateDir(filepath.Dir(target)); err != nil {
+				t.Fatal(err)
+			}
+			if err := WriteCredentialFile(target, []byte(`{"tokens":{"access_token":"secret"}}`)); err != nil {
+				t.Fatal(err)
+			}
+			// A retained regular private file is admitted and left untouched.
+			if present, err := InspectRetainedCredentials(profile); err != nil || !present {
+				t.Fatalf("a retained private file was rejected: %v %v", present, err)
+			}
+			if raw, err := os.ReadFile(target); err != nil || !strings.Contains(string(raw), "secret") {
+				t.Fatal("inspection changed the retained file", err)
+			}
+			// The target-attributed temporary of an interrupted write is rejected.
+			remnant := credentialRemnant(t, profile, name)
+			if _, err := InspectRetainedCredentials(profile); !hasReason(err, CleanupPendingTemporary) {
+				t.Fatalf("a pending temporary was admitted: %v", err)
+			}
+			if err := os.Remove(remnant); err != nil {
+				t.Fatal(err)
+			}
+			if runtime.GOOS != "windows" {
+				if err := os.Chmod(target, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := InspectRetainedCredentials(profile); !hasReason(err, CleanupUnsafe) {
+					t.Fatalf("a world-readable file was admitted: %v", err)
+				}
+				if err := os.Chmod(target, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(target); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(filepath.Join(t.TempDir(), "elsewhere"), target); err != nil {
+					t.Skip("symlinks unavailable")
+				}
+				if _, err := InspectRetainedCredentials(profile); !hasReason(err, CleanupSymlink) {
+					t.Fatalf("a symlinked credential file was admitted: %v", err)
+				}
+				if err := os.Remove(target); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Remove(target); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(target, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := InspectRetainedCredentials(profile); !hasReason(err, CleanupNotRegular) {
+				t.Fatalf("a directory in place of the credential file was admitted: %v", err)
+			}
+		})
+	}
+}
+
+func hasReason(err error, reason CleanupReason) bool {
+	var failure *RuntimeCleanupError
+	return errors.As(err, &failure) && failure.Reason == reason
 }

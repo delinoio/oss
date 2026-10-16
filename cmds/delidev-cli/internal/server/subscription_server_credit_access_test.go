@@ -214,8 +214,8 @@ func TestAccessCreditGenerationRotationBeforeSendCancelsWithZeroSpend(t *testing
 	if n.count() != 0 || n.opens != 0 || o.Phase != domain.SubscriptionObservationFailed || o.ErrorCode != domain.Canceled || o.EverSent || !o.CleanupConfirmed {
 		t.Fatal("rotation before send spent or left a live claim", o)
 	}
-	if referenceExists(t, f, captured) || !referenceExists(t, f, a.Subscription.Generation) {
-		t.Fatal("captured reference was not retired exactly")
+	if !referenceExists(t, f, captured) || !referenceExists(t, f, a.Subscription.Generation) {
+		t.Fatal("settlement retired the captured reference instead of retaining it")
 	}
 	if a.Subscription.RecoveryRequired || a.Health != domain.AccountReady || a.Subscription.Lease != nil {
 		t.Fatal("canceled credit changed Execute settlement")
@@ -270,8 +270,8 @@ func TestAccessCreditPossibleSendSurvivesRotationAndReconcilesWithCapturedGenera
 	if n.count() != 2 || n.sends[1].ID != old.ID || n.sends[1].CreditID != old.CreditID || o.Phase != domain.SubscriptionObservationSucceeded || o.Outcome != domain.SubscriptionAlreadyRedeemed {
 		t.Fatal("reconciliation changed key or selection", o)
 	}
-	if referenceExists(t, f, captured) || !referenceExists(t, f, a.Subscription.Generation) {
-		t.Fatal("settled credit did not retire exactly its captured reference")
+	if !referenceExists(t, f, captured) || !referenceExists(t, f, a.Subscription.Generation) {
+		t.Fatal("settled credit retired its captured reference instead of retaining it")
 	}
 	if replay, err := f.client.ReconcileSubscriptionCredit(context.Background(), subscriptionRequest(f.service.Identity.Token, reconcile)); err != nil || !replay.Msg.Replayed {
 		t.Fatal("reconcile receipt replay failed", err)
@@ -337,8 +337,8 @@ func TestAccessCreditRestartBeforeSendCancelsAndRetiresReference(t *testing.T) {
 	if n.count() != 0 || n.opens != 0 || o.Phase != domain.SubscriptionObservationFailed || o.ErrorCode != domain.Canceled || o.EverSent {
 		t.Fatal("restart sent a queued claim", o)
 	}
-	if referenceExists(t, f, before.Subscription.Generation) || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady {
-		t.Fatal("restart left the obsolete reference or failed Execute settlement")
+	if !referenceExists(t, f, before.Subscription.Generation) || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady {
+		t.Fatal("restart retired the obsolete reference or failed Execute settlement")
 	}
 }
 

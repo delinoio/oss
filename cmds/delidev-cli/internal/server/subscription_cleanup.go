@@ -71,15 +71,21 @@ func (s *Service) recoverFailedServerLogin(ctx context.Context, id, operation do
 }
 
 // Called under accountGate after the original native runner has joined. The
-// native checkpoint precedes vault work, so an interrupted cleanup can resume
-// without replaying login, callback forwarding or credential publication.
+// settlement of a failed initial login proves original native closure and then
+// publishes the failed/disconnected outcome in one transaction. It never touches
+// the protected vault or any retained credential file: routine server cleanup
+// does not exist, and explicit logout or account deletion owns that removal.
+// State written by earlier builds (a native-confirmed checkpoint, or the
+// credential-pending interim of the removed routine retirement) is released by
+// the same transition after the same proof, without relaunching login or
+// callbacks and without promoting health.
 func (s *Service) cleanupFailedServerLoginLocked(ctx context.Context, id, operation domain.ID, nativeConfirmed bool, result domain.SubscriptionLoginState, diagnostic *domain.CodexDiagnostic) (domain.SubscriptionLoginState, error) {
-	return s.cleanupFailedServerLoginCheckpointLocked(ctx, id, operation, nativeConfirmed, result, diagnostic, nil, nil)
+	return s.cleanupFailedServerLoginCheckpointLocked(ctx, id, operation, nativeConfirmed, result, diagnostic, nil)
 }
 
 // A batch checkpoint advances its original expected revision in the same
-// transaction as account cleanup. Unrelated edits never become delete authority.
-func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, id, operation domain.ID, nativeConfirmed bool, result domain.SubscriptionLoginState, diagnostic *domain.CodexDiagnostic, checkpoint func(*store.Tx, store.Record, store.Record) error, credentialAttempt func() error) (domain.SubscriptionLoginState, error) {
+// transaction as account settlement. Unrelated edits never become delete authority.
+func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, id, operation domain.ID, nativeConfirmed bool, result domain.SubscriptionLoginState, diagnostic *domain.CodexDiagnostic, checkpoint func(*store.Tx, store.Record, store.Record) error) (domain.SubscriptionLoginState, error) {
 	var a domain.Account
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
@@ -99,74 +105,32 @@ func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, 
 		return "", err
 	}
 	o := a.Subscription.ServerOperation
+	legacyTransition := o.CleanupPhase == domain.SubscriptionNativeCleanupConfirmed
 	if !nativeConfirmed {
 		result = o.State
 	}
 	result = failedServerLoginOutcome(a, result)
-	if o.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed {
-		if !nativeConfirmed {
-			if err := reconcileFailedServerLoginRuntime(ctx, s.scopeFor(id), *o); err != nil {
-				return "", err
-			}
-		}
-		_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.server.cleanup.native", struct{ Account, Operation domain.ID }{id, operation}, func(tx *store.Tx) (any, error) {
-			r, current, err := subscriptionAccount(tx, id, 0)
-			if err != nil {
-				return nil, err
-			}
-			if !failedServerLoginOwner(current, operation) {
-				return nil, subscriptionDenied()
-			}
-			st := current.Subscription
-			st.ServerOperation.CleanupPhase = domain.SubscriptionNativeCleanupConfirmed
-			st.ServerOperation.State = result
-			if st.ServerOperation.Diagnostic == nil {
-				st.ServerOperation.Diagnostic = diagnostic
-			}
-			st.RecoveryRequired = true
-			if st.Pending == nil {
-				st.Pending = operationPlaceholder(st.ServerOperation)
-			}
-			// Preserve cancellation through a restart of the cleanup itself.
-			if result == domain.SubscriptionCanceled {
-				st.Pending.Canceled = true
-			}
-			current.Health = domain.AccountFailed
-			updated, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", current)
-			if err == nil && checkpoint != nil {
-				err = checkpoint(tx, r, updated)
-			}
-			return struct{}{}, err
-		})
-		if err != nil {
-			return "", err
-		}
-		s.logger.InfoContext(ctx, "server_subscription_cleanup_confirmed", "operation_id", operation, "phase", domain.SubscriptionNativeCleanupConfirmed)
-	}
-	if credentialAttempt != nil {
-		if err := credentialAttempt(); err != nil {
+	if !nativeConfirmed && !legacyTransition {
+		if err := reconcileFailedServerLoginRuntime(ctx, s.scopeFor(id), *o); err != nil {
+			s.logger.WarnContext(ctx, "server_subscription_legacy_transition", "operation_id", operation, "result", credentialRemovalRetained, "code", domain.SafeError(err).Code)
 			return "", err
 		}
 	}
-	vault, err := s.secrets()
-	if err != nil {
-		return "", err
-	}
-	if err := cleanupSubscriptionReferences(ctx, vault, id, ""); err != nil {
-		return "", err
-	}
-	_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.server.cleanup.credentials", struct{ Account, Operation domain.ID }{id, operation}, func(tx *store.Tx) (any, error) {
+	_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.server.cleanup.settle", struct{ Account, Operation domain.ID }{id, operation}, func(tx *store.Tx) (any, error) {
 		r, current, err := subscriptionAccount(tx, id, 0)
 		if err != nil {
 			return nil, err
 		}
-		if !failedServerLoginOwner(current, operation) || current.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed {
+		if !failedServerLoginOwner(current, operation) || current.Subscription.ServerOperation.CleanupPhase == domain.SubscriptionCredentialCleanupConfirmed {
 			return nil, subscriptionDenied()
 		}
 		st := current.Subscription
 		st.ServerOperation.CleanupPhase = domain.SubscriptionCredentialCleanupConfirmed
 		st.ServerOperation.NativeStarted = false
 		st.ServerOperation.State = failedServerLoginOutcome(current, result)
+		if st.ServerOperation.Diagnostic == nil {
+			st.ServerOperation.Diagnostic = diagnostic
+		}
 		st.Pending = nil
 		st.RecoveryRequired = false
 		current.Health = domain.AccountDisconnected
@@ -182,6 +146,9 @@ func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, 
 		return "", err
 	}
 	delete(s.subscriptionProgress, operation)
+	if o.CleanupPhase != "" {
+		s.logger.InfoContext(ctx, "server_subscription_legacy_transition", "operation_id", operation, "result", credentialRemovalConfirmed, "previous_phase", o.CleanupPhase)
+	}
 	s.logger.InfoContext(ctx, "server_subscription_cleanup_confirmed", "operation_id", operation, "phase", domain.SubscriptionCredentialCleanupConfirmed)
 	return result, nil
 }

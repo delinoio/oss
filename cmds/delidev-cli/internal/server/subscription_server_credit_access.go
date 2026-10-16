@@ -493,5 +493,5 @@ func (s *Service) retireServerCreditReference(ctx context.Context, id domain.ID,
 	if err != nil || current == original.Generation {
 		return err
 	}
-	return s.deleteCapturedReference(ctx, id, original.Generation, current, "server_credit_reference_retired", original.ID)
+	return s.retainCapturedReference(ctx, id, original.Generation, current, "server_credit_reference_retained", original.ID)
 }

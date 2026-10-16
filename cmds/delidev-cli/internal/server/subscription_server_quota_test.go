@@ -264,7 +264,10 @@ func TestServerQuotaRestartNeverReplaysClaims(t *testing.T) {
 	}
 }
 
-func TestServerQuotaWaitsForFinalLoginReferenceCleanup(t *testing.T) {
+// Routine login publication performs no protected-reference enumeration or
+// deletion, so a vault reference failure cannot delay quota readiness or set a
+// deletion-only recovery fence.
+func TestServerLoginPublicationGrantsQuotaDespiteVaultReferenceFailure(t *testing.T) {
 	f := newSubscriptionFixture(t)
 	f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
 	n := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: subscriptionTestBundle("cleanup-fenced-server-account", "first", time.Now().UTC())}
@@ -274,8 +277,11 @@ func TestServerQuotaWaitsForFinalLoginReferenceCleanup(t *testing.T) {
 	close(n.finish)
 	awaitServerFixture(t, done)
 	_, a := f.record()
-	if a.Subscription.ServerQuotaGeneration != "" || serverQuotaReady(a) || !a.Subscription.RecoveryRequired {
-		t.Fatal("login publication granted quota before protected cleanup")
+	if a.Subscription.ServerQuotaGeneration != a.Subscription.Generation || a.Subscription.Generation == "" || !serverQuotaReady(a) || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady {
+		t.Fatal("a vault reference failure delayed login publication or fenced the account")
+	}
+	if f.secrets.deletes != 0 {
+		t.Fatal("routine login publication deleted a protected reference")
 	}
 }
 func TestServerQuotaShutdownJoinsAndSettlesCanceledRead(t *testing.T) {

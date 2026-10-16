@@ -270,7 +270,9 @@ Lifecycle of one runner:
    shutdown that appears after the claim wins as RECOVERY_REQUIRED and the
    staged generation is retired. The publication decision is made inside the
    settlement transaction from the state at commit time, so a flow that decided
-   success just before the deadline or shutdown never publishes.
+   success just before the deadline or shutdown never publishes. A successful
+   login retains earlier generations of the account (`server_credential_retained`)
+   instead of removing them; only the published generation authorizes use.
 6. The listener is closed and its goroutine joined on every exit path before the
    outcome settles. The PKCE verifier is overwritten. A server restart marks an
    active operation recovery (`initializeServerSubscriptions`) and never binds a
@@ -483,10 +485,11 @@ Lifecycle of one runner:
    (`finishGrokRefresh`): the keyed identity commitment must equal the stored one
    and the account must still reference the frozen generation; the sealed
    `GrokBundle` envelope is staged as a new `AccountLogin` generation in the
-   protected vault, one transaction publishes it, and only afterwards the
-   superseded generation, with the superseded refresh token, is removed. A
-   cancellation of the initiator after the claim does not discard the answer. An
-   unconfirmed removal fences the account like the Take/Finish path. A restart
+   protected vault and one transaction publishes it. The superseded generation is
+   retained, not removed: only the published generation authorizes use, and only
+   explicit logout or account deletion removes the rest (see
+   [Server credential retention and explicit removal](cmds-delidev-subscription-contract.md#server-credential-retention-and-explicit-removal)).
+   A cancellation of the initiator after the claim does not discard the answer. A restart
    marks an active operation recovery (`initializeServerSubscriptions`) and never
    starts a refresh again.
 
@@ -496,7 +499,8 @@ the tested stage) and the restart settles RECOVERY_REQUIRED; a crash after the
 response leaves exactly one request and the restart settles RECOVERY_REQUIRED with
 the old bundle; a crash after the persist leaves exactly one request and a
 published new generation, which needs no recovery (the superseded generation
-stays vault-owned until the next completed operation removes it). A shutdown while
+stays vault-owned and non-authoritative until explicit logout or deletion removes
+it). A shutdown while
 the request is in flight is covered the same way and also leaves exactly one
 request.
 
@@ -504,7 +508,7 @@ Structured `slog` records use `phase=REFRESH` and the operation id as
 `correlation_id`: `grok_refresh_started`, `grok_refresh_claimed`,
 `grok_refresh_claim_refused`, `grok_refresh_bundle_unavailable`,
 `grok_refresh_rejected`, `grok_refresh_outcome_uncertain`,
-`grok_refresh_verification_failed`, `grok_refresh_cleanup_pending` and
+`grok_refresh_verification_failed`, `server_credential_retained` and
 `grok_refresh_finished` (closed state and reason values only). The acceptance of a
 login or refresh logs `grok_operation_accepted` with the phase. They never contain
 a token, the refresh request, a path or an identity field, and no event or error
@@ -593,8 +597,9 @@ Lifecycle of one runner:
    removal therefore leaves a recoverable shape that explicit account deletion
    consumes, never a disconnected `succeeded` account whose credential reference
    blocks deletion.
-6. Only after the publication are the protected vault generations removed
-   (`cleanupSubscriptionReferences`, the vault generation path). A confirmed
+6. Only after the publication are the protected vault generations removed by the
+   explicit removal (`removeAccountCredentials`: every generation, no count
+   limit, owner and purpose validated first, cancellation observed per item). A confirmed
    removal settles the account in a second transaction: health `disconnected`,
    the operation `succeeded`, the cleanup diagnostic and the recovery fence
    cleared, so a client may observe RECOVERY_REQUIRED for the short interval
@@ -681,8 +686,9 @@ generation or a connection, and a Grok login fenced for recovery is not adopted
 by the Codex failed-login cleanup (`failedServerLoginOwner` stays ChatGPT-only;
 a failed Grok login stores no bundle, because a staged generation is retired
 when its publication fails). A disconnected Grok account is a batch cleanup
-target only when the vault holds no unremoved reference
-(`protectedAccountDeletion`); the retained logout-cleanup shape is never created
+target only when the vault holds no protected reference of another purpose
+(`protectedAccountDeletion`); its retained `account-login` generations are removed
+by the explicit deletion. The retained logout-cleanup shape is never created
 by the batch. Backup images carry no bundle material and restore quarantines the
 account (see [Grok backup and restore](#grok-backup-and-restore)). Diagnostics
 (`doctor`) never read a Grok account's protected storage in any state.
@@ -1700,8 +1706,9 @@ managed subscription (the quarantine is service-agnostic):
   Worker, and Take, Finish and execution admission are refused until a new login.
 - Deleting the account never starts a native logout on a Worker that lacks the
   original home. Deletion stays refused by the recovery fence and, once that is
-  cleared, by `protectedAccountDeletion` while the vault holds unremoved
-  references. A restored account is disconnected, so the logout-before-delete
+  cleared, by `protectedAccountDeletion` while the vault holds a protected
+  reference of another purpose; explicit deletion removes the retained
+  `account-login` generations itself. A restored account is disconnected, so the logout-before-delete
   step of [Server-owned logout](#server-owned-logout) does not apply to it and
   never sends a revocation on its own.
 - A server-owned logout that was queued, claimed or fenced when the image was

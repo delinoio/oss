@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -91,7 +92,7 @@ func TestAccountProfilesAreSeparateAndSurviveEveryOperation(t *testing.T) {
 	}
 }
 
-func TestAuthProfileBlocksOnUnremovedCredentialUntilReconciled(t *testing.T) {
+func TestAuthProfileAdmitsRetainedCredentialAndBlocksUnsafeOnes(t *testing.T) {
 	scope := testNativeScope(t, t.TempDir())
 	ctx := context.Background()
 	lease, err := acquireAccountProfile(ctx, scope, domain.Codex, nativeprofile.PurposeAuth)
@@ -101,25 +102,47 @@ func TestAuthProfileBlocksOnUnremovedCredentialUntilReconciled(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(lease.Root, "codex"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(lease.Root, "codex", "auth.json"), []byte("{}"), 0600); err != nil {
+	auth := filepath.Join(lease.Root, "codex", "auth.json")
+	if err := os.WriteFile(auth, []byte("{}"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	_ = lease.Close()
 	owner := domain.NewID()
+	// No native installation is discoverable, so every open stops after admission.
+	t.Setenv("PATH", t.TempDir())
+	// A retained regular private file is admitted: whatever stops the open later
+	// (here no verified native installation) is not a credential-presence block.
 	var logs bytes.Buffer
 	_, err = openServerSubscription(ctx, scope, owner, nil, slog.New(slog.NewJSONHandler(&logs, nil)))
-	if domain.SafeError(err).Code != domain.RecoveryRequired || !strings.Contains(logs.String(), `"reason":"credential_file_present"`) || strings.Contains(logs.String(), scope.Root) {
-		t.Fatalf("an unremoved credential file did not block with its specific safe cause: %v %s", err, logs.String())
+	if strings.Contains(logs.String(), `"reason":"credential_file_present"`) || !strings.Contains(logs.String(), `"reason":"credential_retained"`) || strings.Contains(logs.String(), scope.Root) {
+		t.Fatalf("a retained credential file was not admitted with its safe log: %v %s", err, logs.String())
 	}
-	// The failed open released its lock; reconciliation retires only the file.
+	if _, statErr := os.Lstat(auth); statErr != nil {
+		t.Fatal("the failed open retired the retained credential file", statErr)
+	}
+	if runtime.GOOS != "windows" {
+		// A file other users can read is unsafe and blocks with the closed cause.
+		if err := os.Chmod(auth, 0644); err != nil {
+			t.Fatal(err)
+		}
+		logs.Reset()
+		_, err = openServerSubscription(ctx, scope, owner, nil, slog.New(slog.NewJSONHandler(&logs, nil)))
+		if domain.SafeError(err).Code != domain.RecoveryRequired || !strings.Contains(logs.String(), `"reason":"credential_file_present"`) || strings.Contains(logs.String(), scope.Root) {
+			t.Fatalf("an unsafe credential file did not block with its specific safe cause: %v %s", err, logs.String())
+		}
+		if err := os.Chmod(auth, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Only the explicit lifecycle retires the file, never the profile.
 	if err := retireServerLoginCredentials(ctx, scope, filepath.Join(scope.Root, "subscription-runtime", "auth", string(owner)), owner); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Lstat(filepath.Join(lease.Root, "codex", "auth.json")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(auth); !os.IsNotExist(err) {
 		t.Fatal("credential file was not retired")
 	}
 	if _, err := os.Stat(lease.Root); err != nil {
-		t.Fatal("reconciliation removed the persistent profile")
+		t.Fatal("explicit removal removed the persistent profile")
 	}
 }
 

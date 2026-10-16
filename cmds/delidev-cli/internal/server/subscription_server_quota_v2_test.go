@@ -112,8 +112,10 @@ func TestServerQuotaV2ExecutionRotationRetainsCapturedReference(t *testing.T) {
 			}
 			retained, err := f.secrets.Get(ctx, credentials.Ref{Owner: f.input.AccountID, ID: old, Purpose: credentials.AccountLogin})
 			clear(retained)
-			if uncertain && err != nil || !uncertain && (err == nil || domain.SafeError(err).Code != domain.NotFound) {
-				t.Fatal("captured reference did not follow independent cleanup", err)
+			// The obsolete captured reference is retained in both outcomes: it grants
+			// nothing and only explicit logout or deletion removes it.
+			if err != nil {
+				t.Fatal("captured reference was retired by routine settlement", err)
 			}
 			current, err := f.secrets.Get(ctx, credentials.Ref{Owner: f.input.AccountID, ID: after.Subscription.Generation, Purpose: credentials.AccountLogin})
 			clear(current)
@@ -214,7 +216,7 @@ func TestServerQuotaV2RestartReconcilesOnlyOriginalCleanup(t *testing.T) {
 	}
 }
 
-func TestServerQuotaV2RetirementFailureAndRestart(t *testing.T) {
+func TestServerQuotaV2RotationRetainsCapturedReferenceDespiteDeleteFailure(t *testing.T) {
 	f := newQuotaFixture(t)
 	lease := takeSubscriptionExecutionFixture(t, f)
 	n := installV2QuotaFixture(f)
@@ -235,65 +237,41 @@ func TestServerQuotaV2RetirementFailureAndRestart(t *testing.T) {
 			t.Fatal(err)
 		}
 		f.secrets.mu.Lock()
-		f.secrets.deleteError = errors.New("synthetic retirement failure")
+		f.secrets.deleteError = errors.New("synthetic deletion failure")
 		f.secrets.mu.Unlock()
 	}
 	f.service.runServerQuota(ctx, f.input.AccountID)
 	_, after := f.record()
 	current := after.Subscription.Generation
-	assertRefs := func(oldPresent bool) {
+	assertRefs := func() {
 		t.Helper()
-		raw, err := f.secrets.Get(ctx, captured)
-		clear(raw)
-		if oldPresent != (err == nil) {
-			t.Fatal("captured reference retirement mismatch", err)
-		}
-		for _, ref := range []credentials.Ref{unrelated, {Owner: f.input.AccountID, ID: current, Purpose: credentials.AccountLogin}} {
+		for _, ref := range []credentials.Ref{captured, unrelated, {Owner: f.input.AccountID, ID: current, Purpose: credentials.AccountLogin}} {
 			raw, err := f.secrets.Get(ctx, ref)
 			clear(raw)
 			if err != nil {
-				t.Fatal("unrelated/current generation was retired", err)
+				t.Fatal("a generation was removed by routine settlement", err)
 			}
 		}
 	}
-	assertRefs(true)
-	if after.Subscription.ServerQuota.Phase != domain.SubscriptionObservationSending || !after.Subscription.ServerQuota.CleanupConfirmed || len(protectedGenerations(after.Subscription)) != 1 || protectedGenerations(after.Subscription)[0] != captured.ID || after.Subscription.RecoveryRequired || after.Health != domain.AccountReady || after.Subscription.Lease != nil {
-		t.Fatal("retirement failure lost independent ownership")
+	assertRefs()
+	o := after.Subscription.ServerQuota
+	if o.Active() || o.ReferenceRetirementPending || after.Subscription.RecoveryRequired || after.Health != domain.AccountReady || after.Subscription.Lease != nil || !serverQuotaReady(after) {
+		t.Fatal("a vault failure fenced the settled quota operation", o)
 	}
-	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.quota.retirement.restart", nil, func(tx *store.Tx) (any, error) {
-		r, a, err := subscriptionAccount(tx, f.input.AccountID, 0)
-		if err != nil {
-			return nil, err
-		}
-		a.Subscription.ServerQuota.Epoch = domain.NewID()
-		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
-		return struct{}{}, err
-	})
-	if err != nil {
+	if f.secrets.deletes != 0 {
+		t.Fatal("routine settlement called the vault Delete")
+	}
+	// A restart replays no native work and removes nothing.
+	if err := f.service.initializeServerQuotas(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err = f.service.initializeServerQuotas(ctx); err != nil {
-		t.Fatal(err)
-	}
-	assertRefs(true)
-	_, after = f.record()
-	if after.Subscription.ServerQuota.Phase != domain.SubscriptionObservationUncertain || serverQuotaReady(after) {
-		t.Fatal("failed restart retirement released fence")
-	}
-	f.secrets.mu.Lock()
-	f.secrets.deleteError = nil
-	f.secrets.mu.Unlock()
-	if err = f.service.initializeServerQuotas(ctx); err != nil {
-		t.Fatal(err)
-	}
-	assertRefs(false)
-	_, after = f.record()
-	if after.Subscription.ServerQuota.Phase != domain.SubscriptionObservationFailed || after.Subscription.Generation != current || after.Subscription.RecoveryRequired || n.reads.Load() != 1 {
-		t.Fatal("restart replayed native work or replaced execution")
+	assertRefs()
+	if n.reads.Load() != 1 {
+		t.Fatal("restart replayed native work")
 	}
 }
 
-func TestServerQuotaV2RejectedQueuedRotationRetiresOnlyCapture(t *testing.T) {
+func TestServerQuotaV2RejectedQueuedRotationRetainsTheCapture(t *testing.T) {
 	f := newQuotaFixture(t)
 	lease := takeSubscriptionExecutionFixture(t, f)
 	n := installV2QuotaFixture(f)
@@ -311,7 +289,7 @@ func TestServerQuotaV2RejectedQueuedRotationRetiresOnlyCapture(t *testing.T) {
 	_, after := f.record()
 	old, err := f.secrets.Get(ctx, credentials.Ref{Owner: f.input.AccountID, ID: before.Subscription.Generation, Purpose: credentials.AccountLogin})
 	clear(old)
-	if domain.SafeError(err).Code != domain.NotFound || n.reads.Load() != 0 || after.Subscription.ServerQuota.Phase != domain.SubscriptionObservationFailed || after.Subscription.RecoveryRequired {
-		t.Fatal("rejected queue leaked reference or launched native work", err)
+	if err != nil || n.reads.Load() != 0 || after.Subscription.ServerQuota.Phase != domain.SubscriptionObservationFailed || after.Subscription.RecoveryRequired {
+		t.Fatal("rejected queue removed the retained reference or launched native work", err)
 	}
 }

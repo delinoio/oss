@@ -333,8 +333,8 @@ func TestAutomaticCreditWorkerFinishAfterAdmissionDoesNotRevokeFrozenClaim(t *te
 	if n.count() != 1 || n.sends[0].ID != original.ID || o.Phase != domain.SubscriptionObservationSucceeded || !reflect.DeepEqual(o.Automatic, original.Automatic) {
 		t.Fatal("Worker cleanup revoked the admitted claim", o)
 	}
-	if referenceExists(t, f, captured) || !referenceExists(t, f, a.Subscription.Generation) {
-		t.Fatal("captured reference was not retired exactly after settlement")
+	if !referenceExists(t, f, captured) || !referenceExists(t, f, a.Subscription.Generation) {
+		t.Fatal("settlement retired the captured reference instead of retaining it")
 	}
 }
 

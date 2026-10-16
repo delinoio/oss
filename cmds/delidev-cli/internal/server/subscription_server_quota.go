@@ -396,11 +396,6 @@ func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original 
 			st.QuotaState = domain.ObservationFailed
 		}
 		o.ErrorCode = code
-		if automatic && o.AccessOnly {
-			// Persist the reference fence with the terminal result so a crash or
-			// a failed retirement below cannot leave an unowned obsolete reference.
-			o.ReferenceRetirementPending = true
-		}
 		if code == "" && automatic {
 			s.admitAutomaticCreditAfterRefresh(tx, &a, original.ID)
 		}
@@ -420,13 +415,10 @@ func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original 
 		}
 		return accountReceipt{ID: id}, nil
 	})
-	if err == nil && automatic {
-		// Retire the obsolete captured reference unless the credit admitted above
-		// (or any other owner) still holds that generation. A failure keeps the
-		// durable fence for startup reconciliation.
-		if retireErr := s.completeServerQuotaRetirement(ctx, id, original); retireErr != nil {
-			s.logger.WarnContext(ctx, "server_quota_reference_cleanup_retained", "operation_id", original.ID, "code", domain.SafeError(retireErr).Code)
-		}
+	if err == nil && automatic && original.AccessOnly {
+		// The obsolete captured reference is retained, not retired: no durable
+		// fence is written and no vault work follows the terminal result.
+		s.logger.InfoContext(ctx, "server_quota_reference_retained", "operation_id", original.ID, "result", "retained")
 	}
 	return err
 }
@@ -473,12 +465,11 @@ func (s *Service) initializeServerQuotaGenerations(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		// Confirm the immutable current reference exists before retiring old refs.
+		// Confirm the immutable current reference exists before the quota lane
+		// adopts the generation. Obsolete generations are retained: they grant
+		// nothing and only explicit logout or account deletion removes them.
 		bundle, err := vault.Get(ctx, credentials.Ref{Owner: r.ID, ID: a.Subscription.Generation, Purpose: credentials.AccountLogin})
 		clear(bundle)
-		if err == nil {
-			err = cleanupSubscriptionReferences(ctx, vault, r.ID, a.Subscription.Generation)
-		}
 		if err != nil {
 			s.logger.WarnContext(ctx, "server_quota_upgrade_unavailable", "account_id", r.ID, "code", domain.SafeError(err).Code)
 			continue

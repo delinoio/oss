@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -633,7 +634,9 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 		return err
 	}
 	if !replayed {
-		var keyless bool
+		var keyless, subscriptionOwner bool
+		var subscriptionService domain.SubscriptionService
+		var legacyOperation domain.ID
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := tx.Authorize(); err != nil {
 				return err
@@ -648,6 +651,11 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 				return err
 			}
 			keyless, err = accountWithoutCredentials(tx, account)
+			subscriptionOwner = account.Type == domain.SubscriptionAccount
+			subscriptionService = account.SubscriptionService
+			if account.Subscription != nil && account.Subscription.ServerOperation != nil {
+				legacyOperation = account.Subscription.ServerOperation.ID
+			}
 			return err
 		})
 		if err != nil {
@@ -657,13 +665,31 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 			phase(configurationDeleteCredentials)
 			vault, err := s.secrets()
 			if err != nil {
+				if subscriptionOwner {
+					return credentialRemovalFailure{err}
+				}
 				return err
 			}
 			refs, err := vault.UnremovedReferences(ctx, domain.ID(id))
 			if err != nil {
+				if subscriptionOwner {
+					return credentialRemovalFailure{err}
+				}
 				return err
 			}
-			if len(refs) != 0 {
+			if subscriptionOwner {
+				// Explicit deletion of a subscription account owns the final
+				// removal of its retained AccountLogin generations and credential
+				// files. Any other protected reference keeps the account.
+				for _, ref := range refs {
+					if ref.Purpose != credentials.AccountLogin {
+						return protectedAccountDeletion
+					}
+				}
+				if err := s.removeAccountCredentials(ctx, domain.ID(id), legacyOperation, subscriptionService != domain.SubscriptionGrok); err != nil {
+					return credentialRemovalFailure{err}
+				}
+			} else if len(refs) != 0 {
 				return protectedAccountDeletion
 			}
 		}

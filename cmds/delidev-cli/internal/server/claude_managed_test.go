@@ -831,7 +831,28 @@ func TestManagedClaudeDisconnectWaitsForOriginalWorkerThenDeletesVault(t *testin
 	}
 }
 
-func TestManagedClaudeLoginKeepsSettledStateAndRetriesStaleCleanupFromCheckpoint(t *testing.T) {
+// seedManagedClaudeLegacyCheckpoint writes the credential-pending checkpoint that
+// earlier builds recorded with a settled login, so the legacy transition can be
+// exercised without the removed routine retirement.
+func seedManagedClaudeLegacyCheckpoint(t *testing.T, f *managedFixture) {
+	t.Helper()
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claude.legacy.checkpoint", nil, func(tx *store.Tx) (any, error) {
+		r, account, err := managedClaudeAccount(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		account.Subscription.ServerOperation.CleanupPhase = domain.SubscriptionCredentialCleanupPending
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", account)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A settled login retains every stale generation: it records no deletion
+// checkpoint and a vault deletion failure cannot affect the connected account.
+func TestManagedClaudeLoginRetainsStaleReferencesWithoutACheckpoint(t *testing.T) {
 	f := newManagedClaudeFixture(t)
 	stale := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
 	f.secrets.values[stale] = []byte("stale-generation")
@@ -841,26 +862,77 @@ func TestManagedClaudeLoginKeepsSettledStateAndRetriesStaleCleanupFromCheckpoint
 	_, account := f.record()
 	o := account.Subscription.ServerOperation
 	if account.Connection == nil || account.Health != domain.AccountReady || account.Subscription.RecoveryRequired || account.Subscription.Pending != nil || account.Subscription.Generation != generation {
-		t.Fatal("failed stale-reference cleanup unsettled the connected account")
+		t.Fatal("a retained stale reference unsettled the connected account")
 	}
-	if o.State != domain.SubscriptionSucceeded || o.CleanupPhase != domain.SubscriptionCredentialCleanupPending || !managedClaudeNeedsRecovery(account) {
-		t.Fatal("failed stale-reference cleanup left no durable retry checkpoint")
+	if o.State != domain.SubscriptionSucceeded || o.CleanupPhase != "" || managedClaudeNeedsRecovery(account) {
+		t.Fatal("login settlement recorded a deletion checkpoint")
 	}
 	if len(f.secrets.values[stale]) == 0 || len(f.secrets.values[current]) == 0 {
-		t.Fatal("cleanup fixture changed unexpectedly")
+		t.Fatal("login settlement removed a protected generation")
 	}
-	f.secrets.deleteError = nil
+	if f.secrets.deletes != 0 {
+		t.Fatal("login settlement called the vault Delete")
+	}
+}
+
+// A settled login written by an earlier build still carries the removed
+// checkpoint. The transition releases only the checkpoint after the account,
+// operation and generation match, and deletes nothing.
+func TestManagedClaudeLegacyLoginCheckpointReleasesWithoutDeletion(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	stale := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
+	f.secrets.values[stale] = []byte("stale-generation")
+	generation := f.connect()
+	current := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+	seedManagedClaudeLegacyCheckpoint(t, f)
+	_, account := f.record()
+	o := account.Subscription.ServerOperation
+	if !managedClaudeNeedsRecovery(account) {
+		t.Fatal("the legacy checkpoint is not selected for the transition")
+	}
+	f.secrets.deleteError = errors.New("vault deletion unavailable")
 	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
-	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, o.ID); err != nil {
-		t.Fatalf("checkpoint recovery failed: %v", err)
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, o.ID); attempt == 0 && err != nil {
+			t.Fatalf("legacy transition failed: %v", err)
+		}
 	}
 	_, account = f.record()
-	if len(f.secrets.values[stale]) != 0 || len(f.secrets.values[current]) == 0 {
-		t.Fatal("recovery did not retire only the stale reference")
-	}
 	o = account.Subscription.ServerOperation
 	if account.Connection == nil || account.Health != domain.AccountReady || account.Subscription.Generation != generation || account.Subscription.RecoveryRequired || o.State != domain.SubscriptionSucceeded || o.CleanupPhase != "" || managedClaudeNeedsRecovery(account) {
-		t.Fatal("checkpoint recovery did not preserve the settled generation and clear the checkpoint")
+		t.Fatal("the legacy transition did not preserve the settled generation and clear the checkpoint")
+	}
+	if len(f.secrets.values[stale]) == 0 || len(f.secrets.values[current]) == 0 || f.secrets.deletes != 0 {
+		t.Fatal("the legacy transition deleted a protected generation")
+	}
+}
+
+// A legacy checkpoint whose generation no longer matches the settled operation
+// is stale and releases without deleting anything.
+func TestManagedClaudeLegacyLoginCheckpointWithChangedGenerationDeletesNothing(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.connect()
+	seedManagedClaudeLegacyCheckpoint(t, f)
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claude.changed.generation", nil, func(tx *store.Tx) (any, error) {
+		r, account, err := managedClaudeAccount(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		account.Subscription.Generation = domain.NewID()
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", account)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, account := f.record()
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, account.Subscription.ServerOperation.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, account = f.record()
+	if account.Subscription.ServerOperation.CleanupPhase != "" || f.secrets.deletes != 0 {
+		t.Fatal("a stale checkpoint deleted a reference")
 	}
 }
 
@@ -1113,9 +1185,9 @@ func TestManagedClaudeAmbiguousFinishCommitKeepsThePublishedToken(t *testing.T) 
 	if len(f.secrets.values[current]) == 0 {
 		t.Fatal("the published token was deleted after an ambiguous commit error")
 	}
-	// Reconciliation continues the normal retirement of obsolete references.
-	if len(f.secrets.values[stale]) != 0 || o.CleanupPhase != "" || managedClaudeNeedsRecovery(account) {
-		t.Fatal("a confirmed publication did not retire stale references")
+	// Reconciliation retains obsolete references and records no checkpoint.
+	if len(f.secrets.values[stale]) == 0 || o.CleanupPhase != "" || managedClaudeNeedsRecovery(account) {
+		t.Fatal("a confirmed publication retired stale references or recorded a checkpoint")
 	}
 	raw := f.secrets.values[current]
 	opened, err := subscription.OpenClaudeToken(raw, f.service.Identity.ServerID, f.input.AccountID, generation)
@@ -1452,10 +1524,9 @@ func TestManagedClaudeRestoredGenerationWithCheckpointRetiresEveryReference(t *t
 	f := newManagedClaudeFixture(t)
 	stale := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
 	f.secrets.values[stale] = []byte("stale-generation")
-	f.secrets.deleteError = errors.New("vault deletion unavailable")
 	generation := f.connect()
 	ref := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
-	f.secrets.deleteError = nil
+	seedManagedClaudeLegacyCheckpoint(t, f)
 	f.restoreManagedClaudeImage()
 	_, account := f.record()
 	if !managedClaudeCredentialCleanupPending(account) || !managedClaudeRestoredGeneration(account) {

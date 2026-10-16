@@ -16,11 +16,11 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 )
 
-// reconcileFailedServerLoginRuntime joins the original native process of one
-// failed server login and retires its transient credential file. The permanent
-// account profile (and any historical per-operation runtime) is retained: only
-// the credential file is removed, and a process or credential uncertainty keeps
-// the operation fenced with a specific cause.
+// reconcileFailedServerLoginRuntime proves that the original native process of
+// one server operation is closed. It never removes a credential file: retained
+// account-owned credentials are only removed by the explicit logout and account
+// deletion lifecycle (removeAccountCredentials). A process uncertainty keeps the
+// operation fenced with a specific cause.
 func reconcileFailedServerLoginRuntime(ctx context.Context, scope nativeScope, o domain.ServerSubscriptionOperation) error {
 	runtimeRoot := filepath.Join(scope.Root, "subscription-runtime")
 	home := filepath.Join(runtimeRoot, "auth", string(o.ID))
@@ -51,22 +51,42 @@ func reconcileFailedServerLoginRuntime(ctx context.Context, scope nativeScope, o
 	if err := cleanupFailedServerLoginProbes(ctx, runtimeRoot, o.ID, true); err != nil {
 		return err
 	}
-	return retireServerLoginCredentials(ctx, scope, home, o.ID)
+	// A historical per-operation runtime is retained as ordinary data, but it must
+	// still be a real private directory: a link or foreign entry contradicts the
+	// original ownership proof.
+	return checkLegacyRuntimeHome(home)
 }
 
-// retireServerLoginCredentials removes the transient credential files of the
-// account's permanent auth profiles and of a historical per-operation runtime.
-// It never removes a directory and never follows a link.
-func retireServerLoginCredentials(ctx context.Context, scope nativeScope, legacyHome string, owner domain.ID) error {
-	if info, err := os.Lstat(legacyHome); err == nil {
-		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || security.CheckPrivateDir(legacyHome) != nil {
-			return subscriptionDenied()
-		}
-		if err := subscription.RetireCredentialFiles(legacyHome); err != nil {
-			return subscriptionDenied()
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
+// checkLegacyRuntimeHome inspects, without following links or removing anything,
+// the historical per-operation auth home of one server operation.
+func checkLegacyRuntimeHome(home string) error {
+	info, err := os.Lstat(home)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || security.CheckPrivateDir(home) != nil {
 		return subscriptionDenied()
+	}
+	return nil
+}
+
+// retireServerLoginCredentials removes the credential files of the account's
+// permanent auth profiles and of a historical per-operation runtime. It is part
+// of the explicit logout and account deletion lifecycle only, and never removes
+// a directory or follows a link. An empty legacyHome selects no historical
+// runtime.
+func retireServerLoginCredentials(ctx context.Context, scope nativeScope, legacyHome string, owner domain.ID) error {
+	if legacyHome != "" {
+		if info, err := os.Lstat(legacyHome); err == nil {
+			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || security.CheckPrivateDir(legacyHome) != nil {
+				return subscriptionDenied()
+			}
+			if err := subscription.RetireCredentialFiles(legacyHome); err != nil {
+				return subscriptionDenied()
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return subscriptionDenied()
+		}
 	}
 	if scope.Profiles == nil {
 		return subscriptionDenied()

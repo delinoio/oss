@@ -179,7 +179,7 @@ func TestLegacyCreditRetainedFileScanControlsSettlement(t *testing.T) {
 				if exists || credit.CleanupConfirmed || credit.Phase != domain.SubscriptionObservationUncertain || !referenceExists(t, f, before.Subscription.Generation) {
 					t.Fatalf("unsafe retained file released the credit fence: receipt=%+v credit=%+v", receipt, credit)
 				}
-			} else if !exists || receipt.Step != nativeprofile.ReceiptSettled || !credit.CleanupConfirmed || credit.Phase != domain.SubscriptionObservationFailed || referenceExists(t, f, before.Subscription.Generation) || !referenceExists(t, f, after.Subscription.Generation) {
+			} else if !exists || receipt.Step != nativeprofile.ReceiptSettled || !credit.CleanupConfirmed || credit.Phase != domain.SubscriptionObservationFailed || !referenceExists(t, f, before.Subscription.Generation) || !referenceExists(t, f, after.Subscription.Generation) {
 				t.Fatalf("benign retained file blocked credit settlement: receipt=%+v credit=%+v", receipt, credit)
 			}
 			assertLegacyRetainedBytes(t, path, tc.content, aliases)

@@ -11,10 +11,10 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-// A settled frozen automatic refresh that declines to admit a credit must keep a
-// durable fence when its checked reference retirement fails, and clear it once a
-// retry retires exactly the obsolete captured reference.
-func TestAutomaticServerQuotaRetirementFailureKeepsDurableFence(t *testing.T) {
+// A settled frozen automatic refresh that declines to admit a credit retains the
+// obsolete captured reference: it writes no durable fence, performs no vault
+// work and a vault Delete failure cannot affect the result.
+func TestAutomaticServerQuotaSettlementRetainsCapturedReferenceWithoutFence(t *testing.T) {
 	f, b, n, quota := automaticServerFixture(t, true, true)
 	admitFixture(t, f, &b, "")
 	r, a := f.record()
@@ -46,33 +46,59 @@ func TestAutomaticServerQuotaRetirementFailureKeepsDurableFence(t *testing.T) {
 	if a.Subscription.ServerCredit != nil || n.count() != 0 {
 		t.Fatal("a credit was admitted from a non-exhausted inventory")
 	}
-	if !o.ReferenceRetirementPending || !referenceExists(t, f, captured) {
-		t.Fatal("failed retirement lost its durable fence", o)
+	if o.ReferenceRetirementPending || !referenceExists(t, f, captured) || !referenceExists(t, f, a.Subscription.Generation) {
+		t.Fatal("settlement wrote a retirement fence or removed a generation", o)
 	}
-	if got := protectedGenerations(a.Subscription); len(got) != 1 || got[0] != captured {
-		t.Fatal("fenced reference is not protected from rotation cleanup", got)
-	}
-	if serverQuotaReady(a) {
-		t.Fatal("a new server read was admitted while the obsolete reference was fenced")
-	}
-	// A retry while deletion still fails keeps the fence.
-	if err := f.service.reconcilePendingServerQuotaRetirements(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	_, a = f.record()
-	if !a.Subscription.ServerQuota.ReferenceRetirementPending || !referenceExists(t, f, captured) {
-		t.Fatal("failed retry released the fence")
-	}
-	f.secrets.deleteError = nil
-	if err := f.service.reconcilePendingServerQuotaRetirements(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	_, a = f.record()
-	if a.Subscription.ServerQuota.ReferenceRetirementPending || referenceExists(t, f, captured) || !referenceExists(t, f, a.Subscription.Generation) {
-		t.Fatal("retry did not retire exactly the captured reference and release the fence", a.Subscription.ServerQuota)
+	if got := protectedGenerations(a.Subscription); len(got) != 0 {
+		t.Fatal("a settled read still protects its obsolete reference", got)
 	}
 	if !serverQuotaReady(a) {
-		t.Fatal("released fence still blocks server reads")
+		t.Fatal("a vault Delete failure blocked server reads")
+	}
+	if f.secrets.deletes != 0 {
+		t.Fatal("settlement called the vault Delete")
+	}
+}
+
+// A retirement fence written by an earlier build is released by the legacy
+// transition without deleting the retained captured reference.
+func TestLegacyServerQuotaRetirementFenceReleasesWithoutDeletion(t *testing.T) {
+	f, b, _, quota := automaticServerFixture(t, true, true)
+	admitFixture(t, f, &b, "")
+	r, a := f.record()
+	captured := a.Subscription.Generation
+	one := 1.0
+	quota.observed.Windows[0].Remaining = &one
+	quota.duringRead = func() {
+		_, current := f.record()
+		l := current.Subscription.Lease
+		lease := &pb.TakeSubscriptionResponse{LeaseId: string(l.ID), LeaseRevision: l.Revision, GenerationId: string(l.Generation)}
+		bundle, err := f.secrets.Get(context.Background(), credentials.Ref{Owner: r.ID, ID: l.Generation, Purpose: credentials.AccountLogin})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer clear(bundle)
+		if _, err = f.finish(lease, bundle, true, false, true); err != nil {
+			t.Error(err)
+		}
+	}
+	f.service.runServerQuota(creditContext(), f.input.AccountID)
+	mutateCreditAccount(t, f, func(a *domain.Account) { a.Subscription.ServerQuota.ReferenceRetirementPending = true })
+	if _, a = f.record(); serverQuotaReady(a) {
+		t.Fatal("the seeded fence did not block server reads")
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := f.service.reconcilePendingServerQuotaRetirements(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, a = f.record()
+	if a.Subscription.ServerQuota.ReferenceRetirementPending || !referenceExists(t, f, captured) || !referenceExists(t, f, a.Subscription.Generation) || !serverQuotaReady(a) {
+		t.Fatal("the legacy fence was not released without deletion", a.Subscription.ServerQuota)
+	}
+	if f.secrets.deletes != 0 {
+		t.Fatal("the legacy transition called the vault Delete")
 	}
 }
 

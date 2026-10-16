@@ -195,12 +195,9 @@ func (s *Service) cleanupServerLogoutLocked(ctx context.Context, parent, child d
 		retain(serverLogoutCleanupPhaseCredentials, err)
 		return out, err
 	}
-	vault, err := s.secrets()
-	if err != nil {
-		retain(serverLogoutCleanupPhaseCredentials, err)
-		return out, err
-	}
-	if err := cleanupSubscriptionReferences(ctx, vault, in.AccountID, ""); err != nil {
+	// Explicit logout owns the complete removal of the retained credential files
+	// and of every AccountLogin generation, without the Worker Finish limit.
+	if err := s.removeAccountCredentials(ctx, in.AccountID, in.OperationID, account.SubscriptionService != domain.SubscriptionGrok); err != nil {
 		retain(serverLogoutCleanupPhaseCredentials, err)
 		if account.SubscriptionService == domain.SubscriptionGrok {
 			logger.WarnContext(ctx, "grok_logout_cleanup_pending", "phase", grokCleanupPhase, "code", domain.SafeError(err).Code)

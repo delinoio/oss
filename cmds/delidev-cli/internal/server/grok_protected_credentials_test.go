@@ -99,29 +99,37 @@ func TestFailedLoginCleanupDoesNotAdoptAFencedGrokLogin(t *testing.T) {
 	}
 }
 
-// A disconnected Grok account whose protected bundle is still in the vault is
-// retained by the batch cleanup; only after the vault entry is gone is it deleted.
-func TestFailedLoginCleanupBatchRetainsADisconnectedGrokAccountWithAProtectedBundle(t *testing.T) {
+// A disconnected Grok account keeps a protected reference of another purpose,
+// but its retained AccountLogin generation is removed by the explicit batch
+// deletion.
+func TestFailedLoginCleanupBatchRemovesRetainedGrokBundleAndKeepsOtherPurposes(t *testing.T) {
 	f := unreferencedInitialSubscription(t)
 	excludeUnrelatedBatchFixture(t, f)
 	ref := putGrokBundle(t, f, f.input.AccountID)
+	protected := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountAPI}
+	if _, err := f.secrets.Put(context.Background(), protected, []byte("synthetic-api-key")); err != nil {
+		t.Fatal(err)
+	}
 	setGrokService(t, f, nil)
 	accepted := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
 	runFailedCleanup(t, f, accepted.Job.Id)
 	result := readFailedCleanup(t, f, accepted.Job.Id, "")
 	if result.Job.Deleted != 0 || result.Job.Retained != 1 {
-		t.Fatal("status bypassed the Grok credential proof", result)
+		t.Fatal("status bypassed the protected-reference proof", result)
 	}
-	if _, err := f.secrets.Get(context.Background(), ref); err != nil {
-		t.Fatal("batch cleanup deleted a protected Grok bundle", err)
+	if _, err := f.secrets.Get(context.Background(), protected); err != nil {
+		t.Fatal("batch cleanup deleted a protected reference of another purpose", err)
 	}
-	if err := f.secrets.Delete(context.Background(), ref); err != nil {
+	if err := f.secrets.Delete(context.Background(), protected); err != nil {
 		t.Fatal(err)
 	}
 	accepted = acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
 	runFailedCleanup(t, f, accepted.Job.Id)
 	if result := readFailedCleanup(t, f, accepted.Job.Id, ""); result.Job.Deleted != 1 {
-		t.Fatal("a clean disconnected Grok account was not deleted", result)
+		t.Fatal("a disconnected Grok account with a retained generation was not deleted", result)
+	}
+	if _, err := f.secrets.Get(context.Background(), ref); err == nil {
+		t.Fatal("explicit deletion retained the Grok bundle")
 	}
 }
 
