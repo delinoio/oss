@@ -1693,6 +1693,70 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
 const UNICODE_IDENTIFIER: &str =
     r"(?:\p{XID_Start}|[$_])(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])*";
 
+/// A Unicode escape sequence inside an identifier: `\uXXXX` or `\u{X...}`.
+/// The syntax is matched here; the decoded code point is validated separately
+/// by `escaped_identifier_is_valid` because a regex cannot check it.
+const IDENTIFIER_ESCAPE: &str = r"\\u(?:[0-9A-Fa-f]{4}|\{[0-9A-Fa-f]+\})";
+
+/// Namespace name pattern: [`UNICODE_IDENTIFIER`] that may also spell
+/// characters as Unicode escape sequences, as ECMAScript identifiers allow.
+/// Kept separate from [`UNICODE_IDENTIFIER`] so other recognizers, such as
+/// the single-parameter arrow function check, keep their literal-only
+/// behavior.
+fn namespace_identifier_pattern() -> String {
+    format!(
+        r"(?:\p{{XID_Start}}|[$_]|{IDENTIFIER_ESCAPE})(?:\p{{XID_Continue}}|[$_\u{{200C}}\u{{200D}}]|{IDENTIFIER_ESCAPE})*"
+    )
+}
+
+/// Validates the code points spelled by Unicode escapes in one identifier
+/// segment (no dots): each escape must decode to a scalar value that is a
+/// valid identifier character at its position. Literal characters were
+/// already checked by the recognizer pattern.
+fn escaped_identifier_is_valid(segment: &str, start: &Regex, part: &Regex) -> bool {
+    let mut rest = segment;
+    let mut first = true;
+    while let Some(character) = rest.chars().next() {
+        let (decoded, length) = if rest.starts_with("\\u{") {
+            let Some(close) = rest.find('}') else {
+                return false;
+            };
+            let digits = rest[3..close].trim_start_matches('0');
+            let value = if digits.is_empty() {
+                Some(0)
+            } else if digits.len() > 6 {
+                None
+            } else {
+                u32::from_str_radix(digits, 16).ok()
+            };
+            (value.and_then(char::from_u32), close + 1)
+        } else if rest.starts_with("\\u") {
+            let Some(digits) = rest.get(2..6) else {
+                return false;
+            };
+            (
+                u32::from_str_radix(digits, 16)
+                    .ok()
+                    .and_then(char::from_u32),
+                6,
+            )
+        } else {
+            (Some(character), character.len_utf8())
+        };
+        let Some(decoded) = decoded else {
+            return false;
+        };
+        let mut buffer = [0u8; 4];
+        let text: &str = decoded.encode_utf8(&mut buffer);
+        if !(if first { start } else { part }).is_match(text) {
+            return false;
+        }
+        first = false;
+        rest = &rest[length..];
+    }
+    true
+}
+
 /// Words that can follow `module`/`namespace` in expressions such as
 /// `module in {}`; they are never namespace names.
 const NON_NAMESPACE_WORDS: [&str; 3] = ["in", "instanceof", "of"];
@@ -1720,10 +1784,12 @@ fn namespace_bodies(
     blocks: &[(usize, usize)],
 ) -> Vec<NamespaceBody> {
     let keyword = Regex::new(r"\b(namespace|module)").expect("static regex");
-    let path = Regex::new(&format!(
-        r"^({UNICODE_IDENTIFIER}(?:\s*\.\s*{UNICODE_IDENTIFIER})*)\s*\{{"
-    ))
-    .expect("static regex");
+    let identifier = namespace_identifier_pattern();
+    let path = Regex::new(&format!(r"^({identifier}(?:\s*\.\s*{identifier})*)\s*\{{"))
+        .expect("static regex");
+    let escape_start = Regex::new(r"^(?:\p{XID_Start}|[$_])$").expect("static regex");
+    let escape_part =
+        Regex::new(r"^(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])$").expect("static regex");
     let mut namespaces: Vec<NamespaceBody> = Vec::new();
     for found in keyword.find_iter(code) {
         let kind = found.as_str();
@@ -1751,6 +1817,13 @@ fn namespace_bodies(
                 .map(str::trim)
                 .collect::<Vec<_>>()
                 .join(".");
+            if name.contains('\\')
+                && !name.split('.').all(|segment| {
+                    escaped_identifier_is_valid(segment, &escape_start, &escape_part)
+                })
+            {
+                continue;
+            }
             if NON_NAMESPACE_WORDS.contains(&name.as_str()) {
                 continue;
             }
@@ -5709,6 +5782,63 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "module caf\u{e9} { var eval = helper }\neval(code);",
                 Some((1, 0)),
             ),
+            // Escaped namespace names are declarations too.
+            (
+                "namespace \\u004e { var eval = helper; } eval(code);",
+                Some((0, 40)),
+            ),
+            (
+                "namespace \\u{4e} { var eval = helper; } eval(code);",
+                Some((0, 40)),
+            ),
+            (
+                "module \\u{0004E} { var eval = helper; } eval(code);",
+                Some((0, 40)),
+            ),
+            (
+                "namespace A.\\u{4e}x { var eval = helper; } eval(code);",
+                Some((0, 43)),
+            ),
+            (
+                "namespace \\u0041$ { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            ("namespace \\u004e { var eval = helper; eval(code); }", None),
+            ("namespace \\u{4e} { var eval = helper; eval(code); }", None),
+            // Escapes of ID_Start, ID_Continue, ZWNJ and ZWJ characters.
+            (
+                "namespace \\u{3a9}\\u{200c}\\u0031 { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            // Invalid escapes leave an ordinary block, so the `var` keeps the
+            // whole-source boundary.
+            ("namespace \\u004 { var eval = helper; }\neval(code);", None),
+            ("namespace \\u{} { var eval = helper; }\neval(code);", None),
+            (
+                "namespace \\u{110000} { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace \\ud800 { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace \\u0031 { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace \\u0020 { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace N\\u0020M { var eval = helper; }\neval(code);",
+                None,
+            ),
+            (
+                "namespace A.\\u{2e}B { var eval = helper; }\neval(code);",
+                None,
+            ),
+            ("namespace N\\x { var eval = helper; }\neval(code);", None),
             // The keyword and the name share a line; otherwise automatic
             // semicolon insertion leaves an ordinary block.
             ("module\nN\n{ var eval = helper; }\neval(code);", None),
