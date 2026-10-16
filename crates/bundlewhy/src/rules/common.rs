@@ -2782,6 +2782,59 @@ impl EmittedEvalScan {
             EmittedEval::Unverified(unverified.join("; "))
         }
     }
+
+    /// The declared `names` of the module that the chunk at `chunk_index` still
+    /// spells. With a usable source map, only occurrences in code that the map
+    /// attributes to the module's resource count, so a name that a sibling
+    /// module of a shared chunk spells the same way, or that no mapping
+    /// covers, never supports the finding. A chunk without a usable map cannot
+    /// attribute anything: the whole chunk counts, which is exact for the only
+    /// module that lists the chunk and unverified for a shared chunk (the
+    /// finding is then Inferred, as for its calls).
+    fn retained_names(
+        &self,
+        context: &Context<'_>,
+        module: &CollectedModule,
+        chunk_index: usize,
+        names: &[String],
+    ) -> Vec<String> {
+        let Some(path) = module.path.as_deref() else {
+            return Vec::new();
+        };
+        let identity = ResourceIdentity::from_module(&module.id, path);
+        let chunk = &context.chunks[chunk_index];
+        let attributed_by_map = chunk.map.is_some();
+        names
+            .iter()
+            .filter(|name| {
+                let pattern = Regex::new(&format!(
+                    r"(?:^|[^\w$])({})(?:[^\w$]|$)",
+                    regex::escape(name)
+                ))
+                .expect("escaped regex");
+                // Search from the end of each name, not of its trailing
+                // delimiter, so adjacent occurrences (`name,name`) are found.
+                let mut from = 0;
+                while let Some(found) = pattern
+                    .captures_at(&chunk.code, from)
+                    .and_then(|captures| captures.get(1))
+                {
+                    if !attributed_by_map {
+                        return true;
+                    }
+                    let (line, column) = chunk.position(found.start());
+                    if chunk.original(line, column).is_some_and(|(source, _, _)| {
+                        ResourceIdentity::from_source_path(&source) == identity
+                    }) {
+                        return true;
+                    }
+                    from = found.end();
+                }
+                false
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
@@ -2849,7 +2902,8 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         };
         // Retained names count only in chunks that hold an emitted call of
         // the module; without an attributed call, in every chunk of the
-        // module.
+        // module. Within a chunk, only occurrences in code that the chunk
+        // attributes to the module count.
         let mut call_chunks: Vec<usize> = calls.iter().map(|call| call.chunk).collect();
         call_chunks.sort_unstable();
         call_chunks.dedup();
@@ -2865,13 +2919,7 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         let mut chunk_files = Vec::new();
         for index in &call_chunks {
             chunk_files.push(context.chunks[*index].file.clone());
-            for name in &names {
-                let pattern = Regex::new(&format!(r"(^|[^\w$]){}([^\w$]|$)", regex::escape(name)))
-                    .expect("escaped regex");
-                if pattern.is_match(&context.chunks[*index].code) {
-                    retained.insert(name.clone());
-                }
-            }
+            retained.extend(scan.retained_names(context, module, *index, &names));
         }
         if retained.is_empty() {
             // Names were mangled despite eval, so nothing is blocked.
@@ -4792,6 +4840,75 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(location.kind, LocationKind::Original);
         assert_eq!(location.line, 4);
         assert_eq!(drafts[0].located.generated.as_ref().unwrap().line, 2);
+    }
+
+    const MANGLED_OWNER_SOURCE: &str =
+        "export function run(c) {\n  const longLocalName = 1;\n  return eval(c);\n}\n";
+    const SIBLING_SOURCE: &str = "export const longLocalName = 2;\n";
+
+    #[test]
+    fn retained_names_of_a_sibling_module_do_not_block_the_evaluated_module() {
+        let modules = [
+            ("src/owner.js", MANGLED_OWNER_SOURCE),
+            ("src/sibling.js", SIBLING_SOURCE),
+        ];
+        // The owner's own local was mangled; only the sibling spells the name.
+        let mangled = [
+            (0, "export function run(c) { const a = 1; return eval(c); }"),
+            (1, "export const longLocalName = 2;"),
+        ];
+        for engine_reports_eval in [false, true] {
+            let drafts = eval_rule_drafts_with_chunk(&modules, &mangled, true, engine_reports_eval);
+            assert!(drafts.is_empty(), "engine={engine_reports_eval}");
+        }
+        // The sibling comes first in the chunk: the order does not matter.
+        let reordered = [mangled[1], mangled[0]];
+        let drafts = eval_rule_drafts_with_chunk(&modules, &reordered, true, true);
+        assert!(drafts.is_empty());
+        // The owner keeps the name in its own code: the finding is reported
+        // and lists the name, whether or not the sibling spells it too.
+        let kept = [
+            (
+                0,
+                "export function run(c) { const longLocalName = 1; return eval(c); }",
+            ),
+            (1, "export const longLocalName = 2;"),
+        ];
+        let drafts = eval_rule_drafts_with_chunk(&modules, &kept, true, true);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].status, EvidenceStatus::Confirmed);
+        let names = evidence(&drafts[0], "generated chunk text").unwrap();
+        assert!(names.detail.contains("longLocalName"), "{}", names.detail);
+    }
+
+    #[test]
+    fn retained_names_are_attributed_per_occurrence_inside_one_line() {
+        // One generated line holds two spellings of the name, back to back:
+        // the first belongs to the sibling, the second to the owner.
+        let modules = [
+            ("src/owner.js", MANGLED_OWNER_SOURCE),
+            ("src/sibling.js", SIBLING_SOURCE),
+        ];
+        let code = "const pair = [longLocalName,longLocalName];\nexport function run(c) { return \
+                    eval(c); }\n";
+        let first = code.find("longLocalName").unwrap() as u32;
+        let second = first + "longLocalName,".len() as u32;
+        let eval_column = code.lines().nth(1).unwrap().find("eval").unwrap() as u32;
+        let tokens = |second_owner: usize| -> Vec<MapToken> {
+            vec![
+                (0, 0, 1, 0, 0),
+                (0, first, 1, 0, 0),
+                (0, second, second_owner, 1, 8),
+                (1, 0, 0, 0, 0),
+                (1, eval_column, 0, 2, 9),
+            ]
+        };
+        // The second spelling is the owner's: the name is retained.
+        let drafts = eval_rule_drafts_with_tokens(&modules, code, Some(&tokens(0)), true);
+        assert_eq!(drafts.len(), 1);
+        // Both spellings are the sibling's: nothing is blocked.
+        let drafts = eval_rule_drafts_with_tokens(&modules, code, Some(&tokens(1)), true);
+        assert!(drafts.is_empty());
     }
 
     #[test]
