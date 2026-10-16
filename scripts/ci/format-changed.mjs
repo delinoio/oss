@@ -167,6 +167,14 @@ export function runFormatter(cwd, paths, mode = Mode.Check) {
   return status;
 }
 
+// CI is enabled when the variable is set to anything except an empty value or
+// an explicit, case-insensitive "false". Other values, including "0", stay
+// enabled so ambiguous CI environments keep the stricter comparison rules.
+export function ciEnabled(env = process.env) {
+  const value = env.CI?.trim().toLowerCase();
+  return value !== undefined && value !== "" && value !== "false";
+}
+
 export function main(env = process.env) {
   const { values } = parseArgs({
     options: {
@@ -178,16 +186,17 @@ export function main(env = process.env) {
     },
   });
   const cwd = process.cwd();
+  const ci = ciEnabled(env);
   const explicit =
     values.base !== undefined ||
     values.head !== undefined ||
     env.TURBO_SCM_BASE !== undefined ||
     env.TURBO_SCM_HEAD !== undefined;
-  if (values.staged && (env.CI || values.all || explicit))
+  if (values.staged && (ci || values.all || explicit))
     throw new Error(
       "Staged formatting requires local execution without a comparison or --all",
     );
-  if (env.CI && !explicit)
+  if (ci && !explicit)
     throw new Error("CI formatting requires the planner comparison");
   const head = values.staged
     ? null
@@ -199,8 +208,7 @@ export function main(env = process.env) {
     : explicit
       ? (values.base ?? env.TURBO_SCM_BASE)
       : git(cwd, "merge-base", "origin/main", head).trim();
-  if (values.all && env.CI)
-    throw new Error("CI formatting must use changed files");
+  if (values.all && ci) throw new Error("CI formatting must use changed files");
   const paths = values.staged
     ? stagedFormatFiles(cwd)
     : values.all
