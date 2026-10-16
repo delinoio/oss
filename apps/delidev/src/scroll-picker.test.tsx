@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { useEntranceActivation } from "./entrance-motion";
@@ -298,4 +300,35 @@ it("keeps the action reachable when no choice is enabled and ignores it while in
   result.rerender(view(false));
   fireEvent.click(action);
   expect(invoke).toHaveBeenCalledTimes(1);
+});
+
+it("reserves scroll clearance for the pinned action only when one is present", () => {
+  const css = readFileSync(join(__dirname, "scroll-picker.css"), "utf8");
+  expect(css).toMatch(
+    /\.scroll-picker-popup\[data-has-action\]\s*\{[^}]*scroll-padding-bottom:\s*41px/,
+  );
+  const view = (withAction: boolean) => (
+    <ScrollPicker
+      options={options}
+      label="Runner"
+      value="a"
+      change={() => {}}
+      query={query()}
+      active
+      action={
+        withAction
+          ? { label: "New", name: "New runner", invoke() {} }
+          : undefined
+      }
+    />
+  );
+  const result = render(view(true));
+  fireEvent.click(screen.getByRole("combobox", { name: "Runner" }));
+  expect(screen.getByRole("listbox").hasAttribute("data-has-action")).toBe(
+    true,
+  );
+  result.rerender(view(false));
+  expect(screen.getByRole("listbox").hasAttribute("data-has-action")).toBe(
+    false,
+  );
 });

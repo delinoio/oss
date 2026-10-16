@@ -1024,7 +1024,9 @@ presentation are unchanged. While the caller's restoration wait is pending
 (the creation preference read, retained Agent read, project eligibility read or
 pending restoration is unsettled), the selector omits the action whether the
 inventory is still loading, populated or proven empty, so no creation entry is
-offered before restoration settles. The action joins keyboard traversal after the enabled
+offered before restoration settles. The popup reserves 41px of bottom
+`scroll-padding` while the action is present so keyboard-highlighted choices are
+never left under the pinned action. The action joins keyboard traversal after the enabled
 choices (ArrowUp/ArrowDown/Home/End, Enter/Space) and works when no choice is
 enabled. Activation closes the popup, restores focus to the trigger and calls the
 caller's callback exactly once; it never changes the picker value, never reads an

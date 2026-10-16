@@ -380,6 +380,7 @@ export function ScrollPicker({
           ref={attachRoot}
           popover="manual"
           className="scroll-picker-popup"
+          data-has-action={action ? "" : undefined}
           id={`${id}-choices`}
           role="listbox"
           aria-labelledby={`${id}-label`}
