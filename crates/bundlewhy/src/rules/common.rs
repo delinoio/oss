@@ -2548,13 +2548,20 @@ fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
             Token::Word { member: true, .. }
         );
         // Comments and line terminators may separate the name and `(`; a
-        // balanced type-parameter list may sit between them (`eval<T>(x)`).
+        // balanced type-parameter list may be attached to the name
+        // (`eval<T>(x)`).
         let called = match next_significant_token(source, end, &ignored).1 {
             Token::Punct("(") => true,
-            Token::Punct("<") => declarations
-                .get_or_insert_with(|| MemberScan::new(source, &ignored))
-                .parameters_open(end)
-                .is_some(),
+            // A `<` that follows the name after whitespace or a comment is a
+            // comparison (`eval < value > (code)`), as for every other
+            // type-argument list in these scans.
+            Token::Punct("<") => {
+                source[end..].starts_with('<')
+                    && declarations
+                        .get_or_insert_with(|| MemberScan::new(source, &ignored))
+                        .parameters_open(end)
+                        .is_some()
+            }
             _ => false,
         };
         let shadowed = shadows
@@ -3587,6 +3594,22 @@ y=/process.env.F/.test(z),process.env.G"#;
             ("const f = () => {{ eval(code) {} }};", "eval(code)"),
             ("if (x) {{ eval(code) {} }}", "eval(code)"),
         ]);
+    }
+
+    #[test]
+    fn spaced_angle_brackets_after_eval_are_comparisons() {
+        for source in [
+            "const result = eval < value > (code);",
+            "const result = eval <value> (code);",
+            "const result = eval\n< value >\n(code);",
+            "const result = eval /* c */ < value > (code);",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+            let with_call = format!("{source}\neval(fresh);");
+            assert_reports_at(&with_call, "eval(fresh)");
+        }
+        // An attached list keeps the documented generic-call reading.
+        assert_all_reported(&[("const r = eval<string>(code);", "eval<string>")]);
     }
 
     #[test]
