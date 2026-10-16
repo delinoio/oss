@@ -57,6 +57,30 @@ export function allFormatFiles(cwd) {
     });
 }
 
+export function stagedFormatFiles(cwd) {
+  return git(
+    cwd,
+    "diff",
+    "--cached",
+    "--name-only",
+    "--no-renames",
+    "--diff-filter=ACMRT",
+    "-z",
+    "--",
+  )
+    .split("\0")
+    .filter((name) => {
+      if (!extensions.has(extname(name))) return false;
+      try {
+        return lstatSync(resolve(cwd, name)).isFile();
+      } catch (error) {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      }
+    })
+    .sort();
+}
+
 export function changedFormatFiles(cwd, base, head, local = false) {
   revision(cwd, base);
   revision(cwd, head);
@@ -148,6 +172,7 @@ export function main(env = process.env) {
     options: {
       write: { type: "boolean" },
       all: { type: "boolean" },
+      staged: { type: "boolean" },
       base: { type: "string" },
       head: { type: "string" },
     },
@@ -158,26 +183,39 @@ export function main(env = process.env) {
     values.head !== undefined ||
     env.TURBO_SCM_BASE !== undefined ||
     env.TURBO_SCM_HEAD !== undefined;
+  if (values.staged && (env.CI || values.all || explicit))
+    throw new Error(
+      "Staged formatting requires local execution without a comparison or --all",
+    );
   if (env.CI && !explicit)
     throw new Error("CI formatting requires the planner comparison");
-  const head = explicit
-    ? (values.head ?? env.TURBO_SCM_HEAD)
-    : git(cwd, "rev-parse", "HEAD").trim();
-  const base = explicit
-    ? (values.base ?? env.TURBO_SCM_BASE)
-    : git(cwd, "merge-base", "origin/main", head).trim();
+  const head = values.staged
+    ? null
+    : explicit
+      ? (values.head ?? env.TURBO_SCM_HEAD)
+      : git(cwd, "rev-parse", "HEAD").trim();
+  const base = values.staged
+    ? null
+    : explicit
+      ? (values.base ?? env.TURBO_SCM_BASE)
+      : git(cwd, "merge-base", "origin/main", head).trim();
   if (values.all && env.CI)
     throw new Error("CI formatting must use changed files");
-  const paths = values.all
-    ? allFormatFiles(cwd)
-    : changedFormatFiles(cwd, base, head, !explicit);
+  const paths = values.staged
+    ? stagedFormatFiles(cwd)
+    : values.all
+      ? allFormatFiles(cwd)
+      : changedFormatFiles(cwd, base, head, !explicit);
   const mode = values.write ? Mode.Write : Mode.Check;
   console.log(
     JSON.stringify({
       event: "ci_format",
       base,
       head,
-      validationRevision: git(cwd, "rev-parse", "HEAD").trim(),
+      validationRevision: values.staged
+        ? null
+        : git(cwd, "rev-parse", "HEAD").trim(),
+      staged: values.staged ?? false,
       mode,
       candidates: paths.length,
       local: !explicit,
