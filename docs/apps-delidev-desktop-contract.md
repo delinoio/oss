@@ -1020,9 +1020,11 @@ filtering, so a project that excludes existing workers still offers it.
 that is distinct from resource choices and absent for every other consumer.
 `ResourceChoice` forwards the optional `createAction` to its popup selector only;
 the proven-empty **Create agent worker** shortcut and the inline project
-presentation are unchanged. While that shortcut is withheld because retained
-Agent restoration is still pending, the selector omits the action as well, so
-no creation entry is offered before restoration settles. The action joins keyboard traversal after the enabled
+presentation are unchanged. While the caller's restoration wait is pending
+(the creation preference read, retained Agent read, project eligibility read or
+pending restoration is unsettled), the selector omits the action whether the
+inventory is still loading, populated or proven empty, so no creation entry is
+offered before restoration settles. The action joins keyboard traversal after the enabled
 choices (ArrowUp/ArrowDown/Home/End, Enter/Space) and works when no choice is
 enabled. Activation closes the popup, restores focus to the trigger and calls the
 caller's callback exactly once; it never changes the picker value, never reads an

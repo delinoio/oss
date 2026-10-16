@@ -1382,10 +1382,10 @@ export function ResourceChoice({
           autoFocus={autoFocus}
           markRequired={markRequired}
           triggerRef={pickerTrigger}
-          // A proven-empty inventory whose retained Agent restoration is still
-          // pending keeps the existing withholding gate: no creation entry may
-          // be offered until restoration settles.
-          action={awaitingRestoration ? undefined : createAction}
+          // No creation entry may be offered for the whole restoration wait:
+          // the caller's pending flag withholds the dropdown action while the
+          // inventory is loading, populated or proven empty alike.
+          action={emptyInventoryActionPending ? undefined : createAction}
         />
       )}
       {needsProviderCapability && active && !ready ? (

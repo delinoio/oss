@@ -593,6 +593,23 @@ it("withholds the dropdown New action while a proven-empty inventory awaits rest
   expect(f.newInvoke).not.toHaveBeenCalled();
 });
 
+it("withholds the dropdown New action for a populated inventory until restoration settles", async () => {
+  const f = fixture(() => ({ resources: [worker()] }));
+  const view = render(<f.View pending withNew />);
+  const picker = screen.getByRole("combobox", { name: "Agent Worker" });
+  await waitFor(() => expect(picker).toHaveProperty("disabled", false));
+  fireEvent.click(picker);
+  expect(await screen.findByRole("option", { name: /Worker/ })).toBeTruthy();
+  expect(screen.queryByRole("option", { name: "New agent worker" })).toBeNull();
+  // Settling restoration offers the action on the same populated picker.
+  view.rerender(<f.View withNew />);
+  fireEvent.click(
+    await screen.findByRole("option", { name: "New agent worker" }),
+  );
+  expect(f.newInvoke).toHaveBeenCalledTimes(1);
+  expect(f.change).not.toHaveBeenCalled();
+});
+
 it("keeps the dropdown New action for a populated or project-filtered inventory", async () => {
   const f = fixture(() => ({ resources: [worker()] }));
   render(<f.View allowed={[newRequestId()]} withNew />);
