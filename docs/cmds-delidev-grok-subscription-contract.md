@@ -9,9 +9,10 @@ partial and nothing is advertised. Implemented: the protocol identifiers below
 generations, the protected Take/Finish lease handlers on the server, the
 Worker-side credential custody described under Storage and the server-owned
 browser login described under [Server-owned browser login](#server-owned-browser-login),
-including its remote callback forwarding. Not activated: the capability
-advertisement, device-code login, refresh and logout, Worker-side watch dispatch
-and Grok execution.
+including its remote callback forwarding, and the server-owned device-code login
+described under [Server-owned device-code login](#server-owned-device-code-login).
+Not activated: the capability advertisement, refresh and logout, Worker-side
+watch dispatch and Grok execution.
 The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and gates protected Take admission of a Grok lease; no capability, discovery or execution path references it. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); Grok Build 1.0.52 inspection is accepted when its optional `experiments` inventory is an empty array (see `cmds-delidev-harness-contract.md`), which does not change these baselines. Reservation support is separate
 from implemented support and actual account/platform acceptance.
 
@@ -200,9 +201,9 @@ against a server that does not advertise it.
 
 `RequestSubscription` for a Grok account with action LOGIN, `device_code` false
 and no machine ID creates the server-owned operation (`ServerOperation` plus a
-`Pending` operation without a Runner Device, 15-minute expiry). Device code,
-refresh, logout and any request that names a machine stay `unsupported` until
-their own changes. The scanner (`runServerSubscriptions`) claims the operation in
+`Pending` operation without a Runner Device, 15-minute expiry). Refresh, logout and any request that names a machine stay `unsupported` until
+their own changes. LOGIN with `device_code` true takes the device-code lane
+described under [Server-owned device-code login](#server-owned-device-code-login). The scanner (`runServerSubscriptions`) claims the operation in
 the current server epoch and starts exactly one runner (`grok_login.go`); a Grok
 account never reaches the Codex runner.
 
@@ -297,6 +298,101 @@ until it is recorded the single switch `grokSubscriptionLoginAdvertised`
 desktop keeps the Grok row in its disabled state. Tests use the in-process fake
 authorization server `internal/grokidptest` (discovery, authorize, token, JWKS and
 userinfo for the real issuer host, without network access).
+
+### Server-owned device-code login
+
+`RequestSubscription` for a Grok account with action LOGIN, `device_code` true
+and no machine ID creates the same server-owned operation as the browser login;
+the choice is stored on the `Pending` operation and the scanner starts the
+device runner (`grok_device_login.go`) in place of the browser runner. A login
+never switches method: a device login that fails never opens a listener or
+publishes an authorization URL, and a browser login never requests a device code.
+Replaying the same mutation id returns the original operation. Refresh, logout
+and any request that names a machine stay `unsupported`. Capability 39 stays
+under the single shared switch `grokSubscriptionLoginAdvertised`
+(`server_status.go`), which stays false; no separate device capability exists.
+
+The client is `internal/subscription/grok_device.go` (RFC 8628) on top of the
+profile, discovery, token parsing and bundle mapping of `grok_oauth.go`.
+Discovery additionally reads `device_authorization_endpoint` (https on the issuer
+origin) and requires the `urn:ietf:params:oauth:grant-type:device_code` entry of
+`grant_types_supported`; when either is missing the browser login is unaffected
+and the device login fails with `UNAVAILABLE`.
+
+Lifecycle of one device runner:
+
+1. Discovery and the signing keys are read first, before any device code
+   exists. The runner POSTs `client_id` (the browser-flow public client) and
+   `scope` (the browser-flow scope list, space separated) as a form to the
+   discovered `device_authorization_endpoint`, without client authentication.
+2. The answer must carry `device_code`, `user_code` matching `[A-Z0-9-]{4,32}`, a
+   verification address, a positive `expires_in` of at most 24 hours and an
+   optional `interval` (default 5 seconds, at most 5 minutes; a larger value fails
+   closed). The verification address must be exactly the fixed
+   `https://accounts.x.ai/oauth2/device`, either plain or as the complete form
+   carrying a single `user_code` equal to the answer's code; the complete form is
+   preferred, anything else is refused and the login fails.
+3. The runner moves the operation to WAITING and publishes the address and user
+   code only through the in-memory progress map. `GetSubscriptionProgress` serves
+   them as `url` and `user_code` while the operation is WAITING in the current
+   epoch and before its 15-minute deadline, to the initiating principal only. The
+   device code, user code and address are never stored in a document, logged,
+   put in an event or returned in an error; `ForwardSubscriptionCallback` refuses
+   a device login.
+4. Polling sends `grant_type=urn:ietf:params:oauth:grant-type:device_code`,
+   `client_id` and `device_code` to the token endpoint, first one interval after
+   the presentation and then every interval, never faster. `authorization_pending`
+   continues; `slow_down` adds 5 seconds to the interval for all later polls;
+   `access_denied` settles FAILED with `PERMISSION_DENIED` (the denied terminal
+   state); `expired_token` and the local deadline settle EXPIRED. The local
+   deadline is `expires_in` from the answer capped by the operation's 15-minute
+   expiry, and no request is sent at or after it. Any other 4xx answer settles
+   FAILED. The poll loop takes an injectable clock (`GrokDeviceClock`) so tests
+   run on virtual time.
+5. Every token request may consume the device code, so the durable exchange claim
+   (`exchange_claimed`) is committed before each request. A definitive answer that
+   proves the code was not consumed (pending, slow-down, denial, expiry or another
+   4xx) clears the claim again before the next wait; the claim of a success is
+   never cleared. An unanswered request (transport error, timeout, 5xx,
+   cancellation or shutdown while in flight) leaves the claim standing, so the
+   operation settles RECOVERY_REQUIRED and the code is never sent again. A
+   restart marks every active operation of an older epoch RECOVERY_REQUIRED
+   (`initializeServerSubscriptions`) and the device code, which exists only in the
+   runner's memory, is gone. If clearing the claim fails the runner stops with
+   recovery for the same reason.
+6. Cancellation is distinct at each phase: while queued, during the device
+   authorization request or between two polls (no claim stands) it settles
+   CANCELED with no credential; while a token request is in flight it is
+   RECOVERY_REQUIRED, exactly like a cancellation after the browser exchange claim.
+7. The first success keeps its claim and builds the bundle through
+   `subscription.CompleteGrokLogin`, the one function both methods call: ID token
+   validation (ES256, `kid`, issuer, audience, expiry), the userinfo subject
+   check and `BuildGrokBundle`. The device grant sends no nonce, so the device
+   method skips only the nonce comparison (`VerifyGrokDeviceIDToken`). Settlement
+   is the browser login's Finish-equivalent transaction (sealed bundle, identity
+   uniqueness, generation and commitment). Equal tokens, identity and time
+   produce equal bundles for both methods.
+
+Structured `slog` records use `phase=LOGIN`, the operation id as
+`correlation_id` and `method` (`browser` or `device_code`):
+`grok_login_started`, `grok_login_waiting` (interval and lifetime in
+milliseconds), `grok_login_device_polled` (poll number, closed outcome and
+interval), `grok_login_claim_refused`, `grok_login_claim_release_failed` and
+`grok_login_finished`. They never contain the device code, user code,
+verification address, a token or the authorization URL.
+
+Unverified assumptions (no real device grant was captured; the opt-in
+real-account run records them): the device request carries exactly the browser
+profile's client id and scope list; the answer uses the RFC 8628 members with the
+fixed verification page and an uppercase user code; the pending, slow-down,
+denial and expiry answers are HTTP 4xx documents with the RFC `error` values;
+the provider adds no nonce to a device-grant ID token; the provider honors the
+5-second default and the interval it returns. The constants live in
+`grok_device.go` (`GrokDeviceDefaultInterval`, `GrokDeviceSlowDownStep`,
+`GrokDeviceMaxInterval`). Tests use `internal/grokidptest`, which now also serves
+the device authorization endpoint, scripted device_code answers
+(`DeviceScript`) and a virtual `Clock`; the requirement set is covered by
+`grok_device_test.go` (client) and `grok_device_login_test.go` (server).
 
 ### Desktop browser sign-in state machine
 
@@ -1400,7 +1496,10 @@ builds and remove them from the final worktree. Apply the Windows Worker/workspa
 45-minute fixture watchdog independently of product deadlines.
 
 Cover callback/state/nonce errors, cancellation races, expiry, duplicate delivery,
-client disposal, server restart and uncertain exchange/refresh. Cover identity
+client disposal, server restart and uncertain exchange/refresh. The device-code
+lane adds fake-IdP cases for pending, slow-down, denial, expiry, the local
+deadline, per-phase cancellation, restart during polling and request spacing on
+a virtual clock. Cover identity
 duplication, account serialization, separate accounts, logout during execution,
 cleanup failures, deletion and backup/restore. Exercise General Chat, single and
 multiple repositories, Local/Worktree, Execute/Plan, native interactions, follow-up,
