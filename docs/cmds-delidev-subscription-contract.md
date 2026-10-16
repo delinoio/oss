@@ -1181,6 +1181,14 @@ joined through the process journals before the home is touched; shared-owner
 members must each be retained members of the owner, and the owner Finish
 equivalent waits until the request lists every member the server holds. Dependent
 credential users (access-only quota or credit readers) block owner retirement.
+The journaled authentication home must be an absolute, clean, canonical directory
+inside the Worker root. A home that no longer exists proves cleanup only when its
+path is lexically contained in that root, its nearest existing ancestor is a real
+directory of the root (never a symlink) and the Worker's own native profile
+registry no longer registers the home, which is what an explicit session or
+storage deletion leaves. A home the registry still names but the filesystem no
+longer shows, or an unbound path, never proves cleanup: the former retries as
+`cleanup-unconfirmed`, the latter is `ownership-evidence-invalid`.
 A shared owner retains at most 256 members in any state; admission refuses a
 further member with the existing exclusive-lease busy result, so the complete
 member set always fits one recovery request and every valid fenced owner stays

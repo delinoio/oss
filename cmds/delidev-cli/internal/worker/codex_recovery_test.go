@@ -17,6 +17,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -384,6 +385,92 @@ func TestCodexRecoveryLegacyCaptureRefusalKeepsTheCredentialUnlessTheBundleIsRej
 			}
 		})
 	}
+}
+
+// A journaled home that no longer exists proves cleanup only when the absence is
+// bound to the Worker root and to a profile the registry no longer names.
+func TestCodexRecoveryMissingHomeAbsenceIsBoundToTheWorkerRootAndRegistry(t *testing.T) {
+	missing := func(f *recoveryWorkerFixture, home string) {
+		f.server.capture = &pb.ReadSubscriptionRecoveryCaptureResponse{CaptureId: string(domain.NewID()), Original: f.original, Latest: f.latest}
+		f.journal.AuthHome = home
+		f.writeJournal()
+	}
+	rejected := func(t *testing.T, f *recoveryWorkerFixture, reason domain.SubscriptionRecoveryBlockedReason) {
+		t.Helper()
+		result := f.run()
+		if result.reason != reason || result.disposition == recoverySettled || len(f.server.settling()) != 0 || !f.authExists() {
+			t.Fatal("an unbound missing home gained cleanup authority", result)
+		}
+	}
+	t.Run("outside the root", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		missing(f, filepath.Join(t.TempDir(), "nowhere", "codex"))
+		rejected(t, f, domain.RecoveryOwnershipEvidenceInvalid)
+	})
+	t.Run("not canonical", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		missing(f, f.home+"/../gone/codex")
+		rejected(t, f, domain.RecoveryOwnershipEvidenceInvalid)
+	})
+	t.Run("relative", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		missing(f, "native-profiles/p/gone/codex")
+		rejected(t, f, domain.RecoveryOwnershipEvidenceInvalid)
+	})
+	t.Run("through a symlinked ancestor", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		outside := t.TempDir()
+		link := filepath.Join(filepath.Dir(filepath.Dir(f.home)), "link")
+		if err := os.Symlink(outside, link); err != nil {
+			t.Fatal(err)
+		}
+		missing(f, filepath.Join(link, "gone", "codex"))
+		rejected(t, f, domain.RecoveryOwnershipEvidenceInvalid)
+	})
+	t.Run("still registered", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		registry, err := nativeProfiles(f.config, f.credential.MachineID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		root, err := filepath.EvalSymlinks(f.config.Root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		history := domain.NewID()
+		relative := "runtimes/" + string(history)
+		registered := filepath.Join(root, "runtimes", string(history))
+		if err := security.PrivateDir(filepath.Dir(registered)); err != nil {
+			t.Fatal(err)
+		}
+		if err := security.PrivateDir(registered); err != nil {
+			t.Fatal(err)
+		}
+		key := nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeConversation, Account: f.accountID, Conversation: history}
+		if _, err := registry.RegisterLegacy(context.Background(), key, relative, history); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.RemoveAll(registered); err != nil {
+			t.Fatal(err)
+		}
+		f.journal.AuthHome = registered
+		f.writeJournal()
+		f.server.capture = &pb.ReadSubscriptionRecoveryCaptureResponse{CaptureId: string(domain.NewID()), Original: f.original, Latest: f.latest}
+		result := f.run()
+		if result.disposition != recoveryRetry || result.reason != domain.RecoveryCleanupUnconfirmed || len(f.server.settling()) != 0 {
+			t.Fatal("a home the registry still names was accepted as removed", result)
+		}
+	})
+	t.Run("explicitly deleted profile", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		f.server.capture = &pb.ReadSubscriptionRecoveryCaptureResponse{CaptureId: string(domain.NewID()), Original: f.original, Latest: f.latest}
+		if err := os.RemoveAll(f.home); err != nil {
+			t.Fatal(err)
+		}
+		if result := f.run(); result.disposition != recoverySettled {
+			t.Fatal("a removed, unregistered home did not settle", result)
+		}
+	})
 }
 
 func TestCodexRecoveryRejectsForeignOrRestoredEvidence(t *testing.T) {

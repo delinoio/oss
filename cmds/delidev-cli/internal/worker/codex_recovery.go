@@ -313,25 +313,69 @@ func loadRecoveryEvidence(config Config, credential Credential, accountID domain
 	return recoveryEvidence{path: path, journal: journal}, true
 }
 
-// recoveryHome verifies the journaled authentication home: an absolute canonical
-// directory inside this Worker's root. A home that no longer exists holds no
-// credential file.
-func recoveryHome(config Config, home string) (string, bool, bool) {
-	if home == "" || !filepath.IsAbs(home) {
-		return "", false, false
+// recoveryHome verifies the journaled authentication home: an absolute, clean
+// canonical directory inside this Worker's root. The reason is empty when the
+// home is usable and otherwise closes the diagnostic.
+//
+// A home that no longer exists holds no credential file only when the absence is
+// itself bound to retained evidence: the journaled path is lexically contained
+// in the Worker root, its nearest existing ancestor is a canonical directory of
+// that root (never a symlinked or foreign location), and the Worker's own profile
+// registry no longer registers that home. An explicit session or storage
+// deletion removes the whole profile directory, credential included, and its
+// registry entry. A home the registry still names but the filesystem no longer
+// shows was moved away with its credential and stays unconfirmed.
+func recoveryHome(config Config, machine domain.ID, home string) (canonicalHome string, missing bool, reason domain.SubscriptionRecoveryBlockedReason) {
+	if home == "" {
+		return "", false, domain.RecoveryCredentialProofUnavailable
+	}
+	if !filepath.IsAbs(home) || filepath.Clean(home) != home {
+		return "", false, domain.RecoveryOwnershipEvidenceInvalid
 	}
 	root, err := filepath.EvalSymlinks(config.Root)
 	if err != nil {
-		return "", false, false
+		return "", false, domain.RecoveryOwnershipEvidenceInvalid
+	}
+	if !strings.HasPrefix(home, root+string(filepath.Separator)) {
+		return "", false, domain.RecoveryOwnershipEvidenceInvalid
 	}
 	canonical, err := filepath.EvalSymlinks(home)
 	if errors.Is(err, fs.ErrNotExist) {
-		return home, true, true
+		if !recoveryMissingAncestor(root, home) {
+			return "", false, domain.RecoveryOwnershipEvidenceInvalid
+		}
+		registry, err := nativeProfiles(config, machine)
+		if err != nil {
+			return "", false, domain.RecoveryCleanupUnconfirmed
+		}
+		registered, err := registry.HomeRegistered(home)
+		if err != nil || registered {
+			return "", false, domain.RecoveryCleanupUnconfirmed
+		}
+		return home, true, ""
 	}
-	if err != nil || canonical != home || !strings.HasPrefix(canonical, root+string(filepath.Separator)) || security.CheckPrivateDir(canonical) != nil {
-		return "", false, false
+	if err != nil || canonical != home || security.CheckPrivateDir(canonical) != nil {
+		return "", false, domain.RecoveryOwnershipEvidenceInvalid
 	}
-	return canonical, false, true
+	return canonical, false, ""
+}
+
+// recoveryMissingAncestor proves that a missing home sits below a real
+// directory chain of the Worker root: its nearest existing ancestor is a
+// directory strictly inside the root that resolves to itself.
+func recoveryMissingAncestor(root, home string) bool {
+	for ancestor := filepath.Dir(home); strings.HasPrefix(ancestor, root+string(filepath.Separator)); ancestor = filepath.Dir(ancestor) {
+		info, err := os.Lstat(ancestor)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil || !info.IsDir() {
+			return false
+		}
+		canonical, err := filepath.EvalSymlinks(ancestor)
+		return err == nil && canonical == ancestor
+	}
+	return false
 }
 
 // recoverAuthentication removes the transient authentication of an interrupted
@@ -455,12 +499,8 @@ func runCodexRecovery(ctx context.Context, config Config, client delidevv1connec
 		reportRecoveryBlock(ctx, client, credential, instance, accountID, lease, domain.RecoveryOwnershipEvidenceInvalid)
 		return recoveryBlocked(domain.RecoveryOwnershipEvidenceInvalid)
 	}
-	home, missingHome, ok := recoveryHome(config, journal.AuthHome)
-	if !ok {
-		reason := domain.RecoveryCredentialProofUnavailable
-		if journal.AuthHome != "" {
-			reason = domain.RecoveryOwnershipEvidenceInvalid
-		}
+	home, missingHome, reason := recoveryHome(config, credential.MachineID, journal.AuthHome)
+	if reason != "" {
 		logCodexRecovery(logger, ctx, slog.LevelWarn, "codex_recovery_blocked", "account_id", accountID, "lease_id", lease.ID, "reason", reason)
 		reportRecoveryBlock(ctx, client, credential, instance, accountID, lease, reason)
 		return recoveryBlocked(reason)
