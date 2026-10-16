@@ -451,6 +451,47 @@ func TestGrokExecutionUnconfirmedCleanupIsRetriedByTheOriginalOwnerOnly(t *testi
 	}
 }
 
+// A server restart changes the epoch but leaves the unconfirmed-cleanup flag of a
+// retained lease set. The pre-restart owner is then held to cleanup-only recovery:
+// it cannot publish a rotated bundle or report success.
+func TestGrokExecutionStaleEpochRetryOfAnUnconfirmedCleanupIsCleanupOnly(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+	lease, err := f.takeExecution(w, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, true, false, false); err != nil {
+		t.Fatal(err)
+	}
+	f.service.subscriptionServerEpoch()
+	f.service.subscriptionEpoch = domain.NewID()
+	if err := f.service.retainLostSubscriptionLeases("", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, a := f.record(); !a.Subscription.Lease.CleanupUnconfirmed || !a.Subscription.RecoveryRequired {
+		t.Fatal("the restart cleared the unconfirmed-cleanup fence")
+	}
+	rotated := domain.NewID()
+	if _, err := f.finishExecution(w, lease, rotated, f.grokRotatedEnvelope(rotated), true, true, true); err == nil {
+		t.Fatal("a pre-restart owner published a rotated bundle")
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, true, false, true); err == nil {
+		t.Fatal("a pre-restart owner reported success")
+	}
+	if _, a := f.record(); a.Subscription.Lease == nil || a.Subscription.Generation != generation {
+		t.Fatal("a refused stale report changed the account")
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err != nil {
+		t.Fatalf("the cleanup-only report was refused: %v", err)
+	}
+	_, a := f.record()
+	if a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Subscription.Generation != generation {
+		t.Fatal("cleanup-only recovery did not release the lease on the original generation")
+	}
+}
+
 func TestGrokExecutionCleanupOnlyRecoveryCrossesAnUnconfirmedCleanupFence(t *testing.T) {
 	f := newGrokFixture(t)
 	generation := f.login("synthetic-principal-1")

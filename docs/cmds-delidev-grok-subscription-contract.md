@@ -803,8 +803,13 @@ verify the file) and any report without confirmed cleanup keeps the lease and fe
 (new server epoch) or a lost Worker instance fences the lease too
 (`retainLostSubscriptionLeases`); the fence accepts only a cleanup-only report
 from the original Runner Device and Worker device (no success, no refresh, no
-bundle), and readiness returns only if the stored generation still opens. An
-accepted logout keeps the account revoked after the release and starts only then.
+bundle), and readiness returns only if the stored generation still opens. A lease
+fenced by its own unconfirmed cleanup is retried with the ordinary report only
+inside the epoch that granted it: once a restart made that epoch stale, the same
+cleanup-only restriction applies even though the lease still carries its
+unconfirmed-cleanup flag, so a pre-restart Worker can neither publish a rotated
+bundle nor report success. An accepted logout keeps the account revoked after the
+release and starts only then.
 
 **Recovery on the original Worker.** The subscription watch offers a Worker its own
 fenced Grok execute lease (`WatchSubscription`, Worker capability 21 required).

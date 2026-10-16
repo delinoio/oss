@@ -281,7 +281,8 @@ func (s *Service) grokCredentialUsable(ctx context.Context, id, generation domai
 //     the lease is kept and the account fenced for recovery. The same Worker then
 //     reports a cleanup-only recovery Finish.
 //   - Cleanup not confirmed: the lease is kept, the account is fenced and only
-//     the original owner may report again.
+//     the original owner may report again. After a server restart (the lease
+//     epoch is no longer current) that report is cleanup-only as well.
 //   - A recovery fence (server restart or lost Worker) accepts only a cleanup-only
 //     report from the original Runner and Worker device: it never carries a bundle
 //     or success, and readiness returns only if the stored generation still opens.
@@ -326,7 +327,12 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 		// that owner (its recovery runner, after the in-process retries gave up) also
 		// crosses it.
 		cleanupOnly := input.Cleanup && !input.Success && !input.Refresh && len(req.Msg.Bundle) == 0
-		recoveryFence := state.RecoveryRequired && (!lease.CleanupUnconfirmed || cleanupOnly)
+		// A lease from before a server restart carries an older epoch even when its
+		// own unconfirmed-cleanup flag is still set: its owner no longer holds a live
+		// lease, so it is held to the cleanup-only recovery like any other fence and
+		// can neither publish a rotated bundle nor report success.
+		staleEpoch := lease.Epoch != s.subscriptionServerEpoch()
+		recoveryFence := state.RecoveryRequired && (!lease.CleanupUnconfirmed || cleanupOnly || staleEpoch)
 		if state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision || recoveryFence && (!input.Cleanup || input.Success || input.Refresh || len(req.Msg.Bundle) != 0) {
 			s.logger.WarnContext(ctx, "grok_subscription_finish_refused", "phase", grokExecutionPhase, "account_id", input.Account, "lease_id", input.Lease, "recovery_fence", recoveryFence)
 			return nil, rpc.Error(subscriptionDenied(), c)
