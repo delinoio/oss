@@ -45,6 +45,10 @@ type IdP struct {
 	SignWithOtherKey bool
 	IDTokenIssuer    string
 	IDTokenAudience  string
+	// IDTokenAudiences replaces the single audience with a list, and
+	// IDTokenAuthorizedParty adds an azp claim.
+	IDTokenAudiences       []string
+	IDTokenAuthorizedParty string
 	// TokenBody replaces the successful token response body verbatim, after the
 	// code was consumed, so a truncated or malformed success can be injected.
 	TokenBody       string
@@ -233,7 +237,14 @@ func (i *IdP) idToken(nonce string) string {
 		signer = i.rogue
 	}
 	now := time.Now()
-	claims := map[string]any{"iss": issuer, "sub": i.Subject, "aud": audience, "iat": now.Add(-time.Minute).Unix(), "exp": now.Add(i.IDTokenLifetime).Unix(), "nonce": nonce, "email": i.Email}
+	var aud any = audience
+	if len(i.IDTokenAudiences) > 0 {
+		aud = i.IDTokenAudiences
+	}
+	claims := map[string]any{"iss": issuer, "sub": i.Subject, "aud": aud, "iat": now.Add(-time.Minute).Unix(), "exp": now.Add(i.IDTokenLifetime).Unix(), "nonce": nonce, "email": i.Email}
+	if i.IDTokenAuthorizedParty != "" {
+		claims["azp"] = i.IDTokenAuthorizedParty
+	}
 	payload, _ := json.Marshal(claims)
 	options := (&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", KeyID)
 	sig, _ := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: signer}, options)

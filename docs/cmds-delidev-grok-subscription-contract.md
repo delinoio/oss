@@ -215,7 +215,8 @@ issuer; every endpoint https on the issuer origin; PKCE method list exactly
 S256/state/nonce generation (43 characters from `[A-Za-z0-9_-]`), the
 public-client token exchange (no client secret, no client authentication header)
 and ID-token validation (ES256 only, key selected by `kid` from the discovery
-`jwks_uri`, issuer, audience equal to the client id, nonce, expiry). Its pieces
+`jwks_uri`, issuer, audience exactly the client id with no additional audience,
+an `azp` claim equal to the client id whenever present, nonce, expiry). Its pieces
 are issue-neutral so device login, refresh and logout reuse them.
 
 Lifecycle of one runner:

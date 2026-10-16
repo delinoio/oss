@@ -408,6 +408,22 @@ func (a *grokAudience) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
+// grokAudienceTrusted applies the OIDC Core ID-token audience rules for a public
+// client with no configured trusted-audience set: the audience is exactly the
+// client id (an additional audience is untrusted and rejected), and an
+// authorized party that is present must be the client id.
+func grokAudienceTrusted(audience grokAudience, authorizedParty, clientID string) bool {
+	if clientID == "" || len(audience) == 0 || authorizedParty != "" && authorizedParty != clientID {
+		return false
+	}
+	for _, entry := range audience {
+		if entry != clientID {
+			return false
+		}
+	}
+	return true
+}
+
 type grokIDTokenClaims struct {
 	Issuer        string       `json:"iss"`
 	Subject       string       `json:"sub"`
@@ -457,7 +473,7 @@ func VerifyGrokIDToken(raw string, keys *jose.JSONWebKeySet, profile GrokOAuthPr
 	switch {
 	case claims.Issuer != profile.Issuer:
 		return GrokClaims{}, grokFail(GrokReasonIssuer)
-	case !slices.Contains(claims.Audience, profile.ClientID) || len(claims.Audience) > 1 && claims.AuthorizedBy != profile.ClientID:
+	case !grokAudienceTrusted(claims.Audience, claims.AuthorizedBy, profile.ClientID):
 		return GrokClaims{}, grokFail(GrokReasonAudience)
 	case !now.Before(time.Unix(*claims.Expiry, 0)):
 		return GrokClaims{}, grokFail(GrokReasonExpired)

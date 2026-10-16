@@ -201,6 +201,19 @@ func TestGrokIDTokenValidation(t *testing.T) {
 		{"signature", func(f *grokFlow) { f.idp.SignWithOtherKey = true }, subscription.GrokReasonSignature},
 		{"issuer", func(f *grokFlow) { f.idp.IDTokenIssuer = "https://evil.example" }, subscription.GrokReasonIssuer},
 		{"audience", func(f *grokFlow) { f.idp.IDTokenAudience = "another-client" }, subscription.GrokReasonAudience},
+		{"matching authorized party", func(f *grokFlow) { f.idp.IDTokenAuthorizedParty = subscription.GrokClientID }, ""},
+		{"authorized party of another client", func(f *grokFlow) { f.idp.IDTokenAuthorizedParty = "another-client" }, subscription.GrokReasonAudience},
+		{"extra audience with matching authorized party", func(f *grokFlow) {
+			f.idp.IDTokenAudiences = []string{subscription.GrokClientID, "another-client"}
+			f.idp.IDTokenAuthorizedParty = subscription.GrokClientID
+		}, subscription.GrokReasonAudience},
+		{"extra audience without authorized party", func(f *grokFlow) {
+			f.idp.IDTokenAudiences = []string{subscription.GrokClientID, "another-client"}
+		}, subscription.GrokReasonAudience},
+		{"extra audience with foreign authorized party", func(f *grokFlow) {
+			f.idp.IDTokenAudiences = []string{subscription.GrokClientID, "another-client"}
+			f.idp.IDTokenAuthorizedParty = "another-client"
+		}, subscription.GrokReasonAudience},
 		{"nonce", func(f *grokFlow) { f.idp.NonceOverride = "another-nonce" }, subscription.GrokReasonNonce},
 		{"expired", func(f *grokFlow) { f.idp.IDTokenLifetime = -time.Minute }, subscription.GrokReasonExpired},
 	}
