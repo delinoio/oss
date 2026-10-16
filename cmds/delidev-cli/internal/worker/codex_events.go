@@ -233,6 +233,8 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		return true, c.publishInteraction(ctx, event)
 	case codex.ImageGenerationStartedEvent, codex.ImageGenerationCompletedEvent:
 		return true, c.publishImageGeneration(ctx, event)
+	case codex.WebSearchStartedEvent, codex.WebSearchCompletedEvent:
+		return true, c.publishWebSearch(ctx, event)
 	case codex.ArtifactStartedEvent, codex.ArtifactCompletedEvent, codex.ArtifactDeltaEvent:
 		return true, c.publishArtifact(ctx, event)
 	case codex.TurnPlanEvent, codex.TurnDiffEvent:

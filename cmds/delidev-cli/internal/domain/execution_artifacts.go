@@ -13,6 +13,7 @@ type PlanStepStatus string
 const (
 	OpenCodeRevisionArtifact ArtifactKind = "opencode-revision"
 	ImageGenerationArtifact  ArtifactKind = "image-generation"
+	WebSearchArtifact        ArtifactKind = "web-search"
 	PlanArtifact             ArtifactKind = "plan"
 	ReasoningArtifact        ArtifactKind = "reasoning"
 	ReasoningTextArtifact    ArtifactKind = "reasoning-text"
@@ -38,6 +39,7 @@ const (
 const MaxArtifactParts = 1024
 
 type ArtifactSnapshot struct {
+	WebSearch       *WebSearchObservation       `json:"web_search,omitempty"`
 	ImageGeneration *ImageGenerationObservation `json:"image_generation,omitempty"`
 	Revision        *OpenCodeRevision           `json:"revision,omitempty"`
 	Kind            ArtifactKind                `json:"kind"`
@@ -51,6 +53,7 @@ func (s *ArtifactSnapshot) UnmarshalJSON(raw []byte) error {
 	// which would manufacture native content at an observed reasoning index.
 	var wire struct {
 		ImageGeneration *ImageGenerationObservation `json:"image_generation,omitempty"`
+		WebSearch       *WebSearchObservation       `json:"web_search,omitempty"`
 		Revision        *OpenCodeRevision           `json:"revision,omitempty"`
 		Kind            ArtifactKind                `json:"kind"`
 		Text            *string                     `json:"text"`
@@ -60,7 +63,7 @@ func (s *ArtifactSnapshot) UnmarshalJSON(raw []byte) error {
 	if Decode(raw, &wire) != nil || wire.Text == nil {
 		return invalidArtifact()
 	}
-	*s = ArtifactSnapshot{Kind: wire.Kind, Text: *wire.Text, Revision: wire.Revision, ImageGeneration: wire.ImageGeneration}
+	*s = ArtifactSnapshot{Kind: wire.Kind, Text: *wire.Text, Revision: wire.Revision, ImageGeneration: wire.ImageGeneration, WebSearch: wire.WebSearch}
 	for _, pair := range []struct {
 		source []*string
 		target *[]string
@@ -91,12 +94,18 @@ func invalidArtifact() error {
 
 func (s ArtifactSnapshot) Validate() error {
 	if s.Kind == ImageGenerationArtifact {
-		if s.ImageGeneration == nil || s.ImageGeneration.Validate() != nil || s.Revision != nil || s.Text != "" || s.Summary != nil || s.Content != nil {
+		if s.ImageGeneration == nil || s.WebSearch != nil || s.ImageGeneration.Validate() != nil || s.Revision != nil || s.Text != "" || s.Summary != nil || s.Content != nil {
 			return invalidArtifact()
 		}
 		return nil
 	}
-	if s.ImageGeneration != nil {
+	if s.Kind == WebSearchArtifact {
+		if s.WebSearch == nil || s.WebSearch.Validate() != nil || s.ImageGeneration != nil || s.Revision != nil || s.Text != "" || s.Summary != nil || s.Content != nil {
+			return invalidArtifact()
+		}
+		return nil
+	}
+	if s.ImageGeneration != nil || s.WebSearch != nil {
 		return invalidArtifact()
 	}
 

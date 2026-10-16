@@ -84,7 +84,7 @@ func (s *SharedRuntime) NewMember(config Config) (*Client, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	owner := s.owner
-	if s.closed || config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.Home != owner.home || config.Sidechat != owner.sidechat || config.ManagedTitle != owner.managedTitle || config.FrameProfile != DefaultFrameProfile || config.ModelObservation || config.CodeReviewModel != "" || config.RevertHistory != owner.revertHistory || config.EnableImageGeneration != owner.imageGeneration || config.ManagedForkHistory != owner.managedForkHistory {
+	if s.closed || config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.Home != owner.home || config.Sidechat != owner.sidechat || config.ManagedTitle != owner.managedTitle || config.FrameProfile != DefaultFrameProfile || config.ModelObservation || config.CodeReviewModel != "" || config.RevertHistory != owner.revertHistory || config.EnableImageGeneration != owner.imageGeneration || config.WebSearchMode != owner.webSearchMode || config.ManagedForkHistory != owner.managedForkHistory {
 		return nil, incompatible()
 	}
 	if err := s.events.check(); err != nil {
@@ -110,6 +110,7 @@ func (s *SharedRuntime) NewMember(config Config) (*Client, error) {
 		managedTitle:        owner.managedTitle,
 		revertHistory:       config.RevertHistory,
 		imageGeneration:     config.EnableImageGeneration,
+		webSearchMode:       config.WebSearchMode,
 		imageObservations:   owner.imageObservations,
 		reviewProtected:     security.NewProtectedJSON(config.Process.ProtectedValues),
 	}, nil

@@ -15,6 +15,12 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 	if update == nil {
 		return executionEventConflict()
 	}
+	if update.Snapshot != nil && update.Snapshot.Kind == domain.WebSearchArtifact {
+		// Only the frozen non-disabled execution mode may publish a native search.
+		if mode := input.NativeWebSearchMode; mode == "" || mode == domain.WebSearchDisabled || update.Snapshot.WebSearch == nil || update.Snapshot.WebSearch.Mode != mode || input.Configuration.Harness != domain.Codex {
+			return executionEventConflict()
+		}
+	}
 	if update.Snapshot != nil && update.Snapshot.Kind == domain.ImageGenerationArtifact {
 		if err := publishGeneratedImageMetadata(tx, input, session, event); err != nil {
 			return err

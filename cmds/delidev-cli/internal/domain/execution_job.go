@@ -36,6 +36,8 @@ type ExecutionJobInput struct {
 	// Frozen admission owns all output intents, including unpublished native calls.
 	NativeDynamicTools    bool `json:"native_dynamic_tools,omitempty"`
 	NativeImageGeneration bool `json:"native_image_generation,omitempty"`
+	// NativeWebSearchMode is the frozen native web search mode; empty inherits.
+	NativeWebSearchMode WebSearchMode `json:"native_web_search_mode,omitempty"`
 }
 
 // SharedCodexOwnerEligible identifies native profiles whose process-wide
@@ -43,7 +45,7 @@ type ExecutionJobInput struct {
 // managed Codex profiles retain the existing exclusive lease until their
 // native per-thread configuration and history shape are independently verified.
 func (i ExecutionJobInput) SharedCodexOwnerEligible() bool {
-	return i.Configuration.Harness == Codex && i.Configuration.Subscription && i.Configuration.SidechatPolicy == "" && !i.NativeImageGeneration && i.ContextRevision == 0 && i.Fork == nil && (i.Continuation == nil || i.Continuation.Compaction == nil)
+	return i.Configuration.Harness == Codex && i.Configuration.Subscription && i.Configuration.SidechatPolicy == "" && !i.NativeImageGeneration && i.NativeWebSearchMode == "" && i.ContextRevision == 0 && i.Fork == nil && (i.Continuation == nil || i.Continuation.Compaction == nil)
 }
 
 // ExecutionCompletion proves only a fully published native terminal boundary
@@ -133,6 +135,9 @@ func (i ExecutionJobInput) Validate() error {
 	}
 	if i.NativeImageGeneration && (i.Configuration.Harness != Codex || !i.Configuration.Subscription || i.Configuration.SidechatPolicy != "") {
 		return Fail(Unsupported, "This assignment cannot generate native images.", "Preserve the original managed OpenAI execution profile.")
+	}
+	if i.NativeWebSearchMode != "" && (i.NativeWebSearchMode.Validate() != nil || i.Configuration.Harness != Codex || i.Configuration.SidechatPolicy != "" || !i.Configuration.Subscription && i.NativeWebSearchMode != WebSearchDisabled) {
+		return Fail(Unsupported, "This assignment cannot run native web search.", "Use Disabled, or the original supported managed OpenAI execution profile; no search fallback exists.")
 	}
 	if err := i.ValidateImages(); err != nil {
 		return err

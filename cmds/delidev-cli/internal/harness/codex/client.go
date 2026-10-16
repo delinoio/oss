@@ -35,6 +35,8 @@ type Config struct {
 	OrdinaryTools         executionenv.Ordinary `json:"-"`
 	RevertHistory         bool                  `json:"-"`
 	EnableImageGeneration bool
+	// WebSearchMode freezes native `web_search`; empty inherits native config.
+	WebSearchMode domain.WebSearchMode `json:"-"`
 
 	SkillsRoot     string
 	ImageRoot      string
@@ -109,6 +111,7 @@ type Client struct {
 	executionHelpers     *executionHelpers
 	revertHistory        bool
 	imageGeneration      bool
+	webSearchMode        domain.WebSearchMode
 	imageObservations    bool
 }
 
@@ -223,6 +226,9 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		}
 	}
 	if err := configureImageGeneration(&config); err != nil {
+		return nil, err
+	}
+	if err := configureWebSearch(&config); err != nil {
 		return nil, err
 	}
 	api, err := configureAPI(&config)
@@ -354,7 +360,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version, "image_observations", imageObservations, "frame_profile", config.FrameProfile)
 	}
-	client = &Client{codeReviewModel: config.CodeReviewModel, codeReviewRoot: config.Process.Cwd, reviewProtected: security.NewProtectedJSON(config.Process.ProtectedValues), dynamicToolsEnabled: config.DynamicTools, executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, imageInputDeclared: config.ImageInputDeclared, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat, managedTitle: config.ManagedTitle}
+	client = &Client{codeReviewModel: config.CodeReviewModel, codeReviewRoot: config.Process.Cwd, reviewProtected: security.NewProtectedJSON(config.Process.ProtectedValues), dynamicToolsEnabled: config.DynamicTools, executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, webSearchMode: config.WebSearchMode, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, imageInputDeclared: config.ImageInputDeclared, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat, managedTitle: config.ManagedTitle}
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err

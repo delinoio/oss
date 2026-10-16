@@ -146,6 +146,8 @@ const (
 	ApprovalAcceptedEvent         EventKind = "approval-accepted"
 	ImageGenerationStartedEvent   EventKind = "image-generation-started"
 	ImageGenerationCompletedEvent EventKind = "image-generation-completed"
+	WebSearchStartedEvent         EventKind = "web-search-started"
+	WebSearchCompletedEvent       EventKind = "web-search-completed"
 )
 
 type MessageRole string
@@ -181,6 +183,7 @@ type Event struct {
 	Safety              *ModelSafetyObservation `json:"-"`
 	AutoReview          *domain.AutoReviewObservation
 	ImageGeneration     *ImageGeneration `json:"-"`
+	WebSearch           *WebSearch       `json:"-"`
 	Compaction          *CompactionObservation
 	AgentThreadID       domain.ID
 	Subagents           []domain.SubagentObservation
@@ -712,6 +715,8 @@ func (c *Client) observeMessageLocked(ctx context.Context, native nativewire.Eve
 		return c.observeCodeReviewLocked(native, params.ThreadID, params.TurnID, params.Item, params.StartedAtMS, params.CompletedAtMS)
 	case "imageGeneration":
 		return c.observeImageGeneration(native, params.TurnID, params.Item)
+	case "webSearch":
+		return c.observeWebSearch(native, params.TurnID, params.Item)
 	case "contextCompaction":
 		return c.observeCompactionLocked(native, params.TurnID, params.Item, params.StartedAtMS, params.CompletedAtMS)
 	case "collabAgentToolCall":
