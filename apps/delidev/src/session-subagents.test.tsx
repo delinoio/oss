@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   EntityKind,
@@ -17,7 +17,11 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { document, encode, object } from "./documents";
-import { subagentFixture } from "./subagent-test-fixture";
+import {
+  openSubagentCard,
+  subagentFixture,
+  withSubagentName,
+} from "./subagent-test-fixture";
 import { MutationIntents } from "./mutation";
 import { SessionView } from "./session";
 
@@ -77,6 +81,7 @@ test("large child publications preserve root streaming and refresh only the pagi
     partial: true,
   };
   page.documentJson = encode(record);
+  withSubagentName(page, "Paged agent");
   let published = false,
     childFetches = 0;
   const transport = createRouterTransport((router) => {
@@ -148,7 +153,10 @@ test("large child publications preserve root streaming and refresh only the pagi
     expect(
       await screen.findByText("Root transcript still streams"),
     ).toBeTruthy();
-    expect(await screen.findByText("paged-child")).toBeTruthy();
+    // Idle Info lists only the name; output stays in the hover/focus card.
+    expect(await screen.findByText("Paged agent")).toBeTruthy();
+    expect(screen.queryByText("paged-child")).toBeNull();
+    expect(within(openSubagentCard()).getByText("paged-child")).toBeTruthy();
     expect(childFetches).toBe(0);
     expect(screen.queryByText("Connection requires attention")).toBeNull();
     expect(

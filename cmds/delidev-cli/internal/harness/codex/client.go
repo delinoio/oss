@@ -76,6 +76,7 @@ type Client struct {
 	sidechat             SidechatProfile
 	quotaObserver        func(context.Context, domain.SubscriptionQuotaObservation)
 	subagents            map[string]domain.SubagentObservation
+	subagentNames        map[string]string
 	pendingChildStatuses map[domain.ID]struct{}
 	subagentTurn         domain.ID
 	modelObservation     string
