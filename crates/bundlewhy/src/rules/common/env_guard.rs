@@ -1463,9 +1463,9 @@ impl<'a> Parser<'a> {
                             self.site(EnvGuard::OptionalChain, expr);
                         }
                         if self.is_punct("(") {
-                            expr = self.call(expr);
+                            expr = self.chain_call(expr, short_circuited);
                         } else if self.is_punct("[") {
-                            let selector = self.parse_index();
+                            let selector = self.chain_index(short_circuited);
                             expr = self.chain_member(expr, selector, short_circuited);
                         } else if let Some(name) =
                             self.tok().filter(|name| name.kind == TokenKind::Word)
@@ -1478,12 +1478,12 @@ impl<'a> Parser<'a> {
                     }
                     "[" => {
                         null_base = false;
-                        let selector = self.parse_index();
+                        let selector = self.chain_index(short_circuited);
                         expr = self.chain_member(expr, selector, short_circuited);
                     }
                     "(" => {
                         null_base = false;
-                        expr = self.call(expr);
+                        expr = self.chain_call(expr, short_circuited);
                     }
                     _ => break,
                 },
@@ -1537,6 +1537,29 @@ impl<'a> Parser<'a> {
             return None;
         }
         self.member(object, selector)
+    }
+
+    /// The `[` ... `]` selector of a chain. After a short-circuit the key is
+    /// parsed but never evaluated, so the branch sites it collects (such as
+    /// the `&&` in `null?.[process.env.FLAG && run()]`) are discarded.
+    fn chain_index(&mut self, short_circuited: bool) -> Selector<'a> {
+        let mark = self.sites.len();
+        let selector = self.parse_index();
+        if short_circuited {
+            self.sites.truncate(mark);
+        }
+        selector
+    }
+
+    /// The call of a chain. After a short-circuit the arguments are parsed but
+    /// never evaluated, so the branch sites they collect are discarded.
+    fn chain_call(&mut self, callee: Expr, short_circuited: bool) -> Expr {
+        let mark = self.sites.len();
+        let call = self.call(callee);
+        if short_circuited {
+            self.sites.truncate(mark);
+        }
+        call
     }
 
     fn member(&mut self, object: Expr, selector: Selector<'a>) -> Expr {
@@ -2439,6 +2462,23 @@ mod tests {
                 }
             }
         }
+        // A branch inside a key or argument that is never evaluated collects
+        // no site either.
+        for code in [
+            "null?.[process.env.FLAG&&run()];",
+            "null?.[process.env.FLAG||run()];",
+            "null?.[process.env.FLAG??run()];",
+            "null?.[process.env.FLAG?run():stop()];",
+            "null?.[process.env.FLAG?.x];",
+            "null?.(process.env.FLAG?.x);",
+            "null?.(process.env.FLAG&&run());",
+            "(null)?.a(process.env.FLAG&&run());",
+            "(null)?.a[process.env.FLAG&&run()];",
+            "null?.a.b[x,process.env.FLAG&&run()].c;",
+            "null?.[a]?.[process.env.FLAG&&run()];",
+        ] {
+            assert_eq!(guard(code), None, "{code}");
+        }
         // Unknown bases, ordinary computed access and real reads keep their
         // evidence.
         let and = Some(EnvGuard::ShortCircuitAnd.evidence());
@@ -2454,6 +2494,17 @@ mod tests {
             "process.env.FLAG&&run();",
             "process.env.FLAG&&null?.[other];",
             "null?.[other]&&process.env.FLAG&&run();",
+        ] {
+            assert_eq!(guard(code), and.clone(), "{code}");
+        }
+        // A branch in a key or argument of an unknown base is evaluated.
+        for code in [
+            "obj?.[process.env.FLAG&&run()];",
+            "obj?.(process.env.FLAG&&run());",
+            "obj[process.env.FLAG&&run()];",
+            "null.x?.[process.env.FLAG&&run()];",
+            "null?.[a];obj?.[process.env.FLAG&&run()];",
+            "null?.[a],run(process.env.FLAG&&run());",
         ] {
             assert_eq!(guard(code), and.clone(), "{code}");
         }
