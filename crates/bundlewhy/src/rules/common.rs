@@ -12,7 +12,7 @@ use self::env_guard::env_guards;
 use super::{Context, DiagnosticDraft, RuleId};
 use crate::{
     chunks::ResourceIdentity,
-    collect::CollectedModule,
+    collect::{CollectedModule, MangleSetting},
     model::{Condition, ConditionOutcome, Evidence, EvidenceStatus, LocationKind, SourceLocation},
 };
 
@@ -2824,6 +2824,13 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
     if !collection.minify_enabled || !collection.default_minifier {
         return;
     }
+    // Without mangling, local names stay readable whatever the module
+    // contains, so a direct eval call blocks nothing. An engine EVAL log or a
+    // source-scan candidate never overrides an explicit disabled setting.
+    if collection.mangle == MangleSetting::Disabled {
+        tracing::debug!("skipping direct-eval-blocks-mangling: the build disables name mangling");
+        return;
+    }
     let mut emitted_scan: Option<EmittedEvalScan> = None;
     for module in &collection.modules {
         if context.is_cancelled() {
@@ -3234,6 +3241,24 @@ mod tests {
         listed: Option<&[&str]>,
         engine_reports_eval: bool,
     ) -> Vec<DiagnosticDraft> {
+        eval_rule_drafts_with_mangle(
+            modules,
+            chunks,
+            listed,
+            engine_reports_eval,
+            MangleSetting::Enabled,
+        )
+    }
+
+    /// Like [`eval_rule_drafts_with_listing`], with the collection's mangle
+    /// setting chosen by the test.
+    fn eval_rule_drafts_with_mangle(
+        modules: &[(&str, &str)],
+        chunks: &[TestChunk<'_>],
+        listed: Option<&[&str]>,
+        engine_reports_eval: bool,
+        mangle: MangleSetting,
+    ) -> Vec<DiagnosticDraft> {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let build_dir = root.join("build");
@@ -3294,6 +3319,7 @@ mod tests {
         let collection = crate::collect::Collection {
             default_minifier: true,
             minify_enabled: true,
+            mangle,
             logs: if engine_reports_eval {
                 vec![crate::collect::EngineLog {
                     code: Some("EVAL".to_owned()),
@@ -4687,6 +4713,46 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(drafts.len(), 1);
         assert_eq!(drafts[0].status, EvidenceStatus::Confirmed);
         assert!(evidence(&drafts[0], "emitted chunk scan").is_some());
+    }
+
+    #[test]
+    fn disabled_mangling_suppresses_the_direct_eval_finding_for_every_signal() {
+        let source = "const longLocalName = 1;\nexport function run(value) {\n  return \
+                      eval(value) + longLocalName;\n}\n";
+        let code = source;
+        let tokens: Vec<MapToken> = (0..4u32).map(|line| (line, 0, 0usize, line, 0)).collect();
+        for engine_reports_eval in [false, true] {
+            // Names are retained and the call survives in the emitted chunk,
+            // but the build mangles nothing, so eval blocks nothing.
+            let drafts = eval_rule_drafts_with_mangle(
+                &[("src/main.js", source)],
+                &[("main.js", code, Some(&tokens))],
+                None,
+                engine_reports_eval,
+                MangleSetting::Disabled,
+            );
+            assert!(drafts.is_empty(), "engine reported: {engine_reports_eval}");
+            // The same collection with mangling enabled keeps the finding.
+            let drafts = eval_rule_drafts_with_mangle(
+                &[("src/main.js", source)],
+                &[("main.js", code, Some(&tokens))],
+                None,
+                engine_reports_eval,
+                MangleSetting::Enabled,
+            );
+            assert_eq!(drafts.len(), 1, "engine reported: {engine_reports_eval}");
+            assert!(evidence(&drafts[0], "emitted chunk scan").is_some());
+        }
+    }
+
+    #[test]
+    fn a_collection_without_a_mangle_field_keeps_mangling_enabled() {
+        let collection: crate::collect::Collection =
+            serde_json::from_str(r#"{"minifyEnabled": true}"#).unwrap();
+        assert_eq!(collection.mangle, MangleSetting::Enabled);
+        let collection: crate::collect::Collection =
+            serde_json::from_str(r#"{"mangle": "disabled"}"#).unwrap();
+        assert_eq!(collection.mangle, MangleSetting::Disabled);
     }
 
     #[test]

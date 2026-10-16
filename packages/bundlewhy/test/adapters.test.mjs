@@ -8,8 +8,10 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  MangleSetting,
   normalizeCollectionRoot,
   normalizeViteModule,
+  resolveMangleSetting,
 } from "../../../crates/bundlewhy/adapters/vite.mjs";
 import {
   ExportUsageReason,
@@ -178,6 +180,122 @@ test("vite adapter rejects configurations with several outputs", () => {
     "BW_UNSUPPORTED_BUILD",
   );
 });
+
+const mangleShapes = [
+  { name: "no build options", build: undefined, expected: "enabled" },
+  { name: "default minify", build: {}, expected: "enabled" },
+  { name: "build.minify oxc", build: { minify: "oxc" }, expected: "enabled" },
+  { name: "build.minify true", build: { minify: true }, expected: "enabled" },
+  {
+    name: "build.minify false",
+    build: { minify: false },
+    expected: "disabled",
+  },
+  {
+    name: "output.minify true",
+    build: { rolldownOptions: { output: { minify: true } } },
+    expected: "enabled",
+  },
+  {
+    name: "output.minify false",
+    build: { minify: "oxc", rolldownOptions: { output: { minify: false } } },
+    expected: "disabled",
+  },
+  {
+    name: "output.minify dce-only",
+    build: { rolldownOptions: { output: { minify: "dce-only" } } },
+    expected: "disabled",
+  },
+  {
+    name: "mangle false",
+    build: {
+      minify: "oxc",
+      rolldownOptions: {
+        output: { minify: { compress: true, mangle: false, codegen: true } },
+      },
+    },
+    expected: "disabled",
+  },
+  {
+    name: "mangle true",
+    build: { rolldownOptions: { output: { minify: { mangle: true } } } },
+    expected: "enabled",
+  },
+  {
+    name: "mangle options object",
+    build: {
+      rolldownOptions: { output: { minify: { mangle: { toplevel: true } } } },
+    },
+    expected: "enabled",
+  },
+  {
+    name: "options object without mangle",
+    build: { rolldownOptions: { output: { minify: { compress: false } } } },
+    expected: "enabled",
+  },
+  {
+    name: "output.minify overrides build.minify false",
+    build: { minify: false, rolldownOptions: { output: { minify: true } } },
+    expected: "enabled",
+  },
+  {
+    name: "single-entry output array",
+    build: {
+      rolldownOptions: { output: [{ minify: { mangle: false } }] },
+    },
+    expected: "disabled",
+  },
+  {
+    name: "unknown output.minify shape",
+    build: { rolldownOptions: { output: { minify: "something" } } },
+    expected: "enabled",
+  },
+  {
+    name: "rollupOptions fallback",
+    build: { rollupOptions: { output: { minify: false } } },
+    expected: "disabled",
+  },
+];
+
+for (const shape of mangleShapes) {
+  test(`resolveMangleSetting reads the effective mangle state (${shape.name})`, () => {
+    assert.equal(resolveMangleSetting(shape.build), shape.expected);
+  });
+}
+
+test("MangleSetting values match the collection contract", () => {
+  assert.deepEqual(
+    { ...MangleSetting },
+    { Enabled: "enabled", Disabled: "disabled" },
+  );
+});
+
+for (const [name, minify, expected] of [
+  ["a disabled mangle option", "{ mangle: false }", "disabled"],
+  ["output.minify false", "false", "disabled"],
+  ["output.minify dce-only", '"dce-only"', "disabled"],
+  ["an enabled mangle option", "{ mangle: true }", "enabled"],
+]) {
+  test(`vite adapter reports the effective mangle state in the collection (${name})`, () => {
+    const projectRoot = path.join(root, "fixtures/vite-app");
+    const { dir, file } = writeConfig(
+      "vite.config.mjs",
+      `export default { build: { rolldownOptions: { output: { minify: ${minify} } } } };\n`,
+    );
+    const { status, events, collection } = runAdapter(
+      "vite",
+      "vite-app",
+      path.relative(projectRoot, file),
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+    assert.equal(status, 0, JSON.stringify(events));
+    assert.equal(collection.mangle, expected);
+    assert.equal(
+      collection.configSummary["build.rolldownOptions.output.minify.mangle"],
+      expected,
+    );
+  });
+}
 
 test("unframed JSON printed by project configuration is not a protocol event", () => {
   const projectRoot = path.join(root, "fixtures/vite-app");
