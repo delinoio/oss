@@ -142,6 +142,10 @@ type GrokEndpoints struct {
 	// advertises both the endpoint and the device_code grant, so the browser login
 	// never depends on it.
 	DeviceAuthorization string
+	// Revocation is the RFC 7009 endpoint. It is empty unless discovery advertises
+	// an https endpoint on the issuer origin, so login and refresh never depend on
+	// it; only the logout revocation requires it.
+	Revocation string
 }
 
 type grokDiscoveryDocument struct {
@@ -155,6 +159,7 @@ type grokDiscoveryDocument struct {
 	TokenAuthMethods      []string `json:"token_endpoint_auth_methods_supported"`
 	IDTokenAlgs           []string `json:"id_token_signing_alg_values_supported"`
 	DeviceEndpoint        string   `json:"device_authorization_endpoint"`
+	RevocationEndpoint    string   `json:"revocation_endpoint"`
 	GrantTypes            []string `json:"grant_types_supported"`
 }
 
@@ -195,6 +200,9 @@ func DiscoverGrokEndpoints(ctx context.Context, client *http.Client, profile Gro
 	}
 	if doc.DeviceEndpoint != "" && slices.Contains(doc.GrantTypes, GrokDeviceGrantType) && grokSameOrigin(profile.Issuer, doc.DeviceEndpoint) {
 		endpoints.DeviceAuthorization = doc.DeviceEndpoint
+	}
+	if doc.RevocationEndpoint != "" && grokSameOrigin(profile.Issuer, doc.RevocationEndpoint) {
+		endpoints.Revocation = doc.RevocationEndpoint
 	}
 	return endpoints, nil
 }

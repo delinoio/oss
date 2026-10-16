@@ -103,6 +103,22 @@ type IdP struct {
 	refreshCount      int
 	issuedCredentials []string
 
+	// Revocation knobs. A successful revocation marks the accepted refresh token
+	// revoked, so a later refresh_token grant is answered with invalid_grant.
+	// RevokeStatus forces a failing answer with RevokeError as the OAuth error,
+	// RevokeOmitEndpoint hides revocation_endpoint from discovery and BeforeRevoke
+	// runs inside the revocation handler before it answers.
+	RevokeStatus       int
+	RevokeError        string
+	RevokeOmitEndpoint bool
+	BeforeRevoke       func()
+	// RevokeRequests counts revocation requests; RevokeForms and RevokeAuthHeaders
+	// keep them.
+	RevokeRequests    int
+	RevokeForms       []url.Values
+	RevokeAuthHeaders []string
+	refreshRevoked    bool
+
 	// Observations.
 	// RefreshRequests counts refresh_token grant requests; RefreshForms keeps them.
 	RefreshRequests  int
@@ -224,6 +240,12 @@ func (i *IdP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !omit {
 			document["device_authorization_endpoint"] = Issuer + "/oauth2/device/code"
 		}
+		i.mu.Lock()
+		hideRevoke := i.RevokeOmitEndpoint
+		i.mu.Unlock()
+		if !hideRevoke {
+			document["revocation_endpoint"] = Issuer + "/oauth2/revoke"
+		}
 		writeJSON(w, http.StatusOK, document)
 	case "/.well-known/jwks.json":
 		writeJSON(w, http.StatusOK, jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &i.key.PublicKey, KeyID: KeyID, Algorithm: "ES256", Use: "sig"}}})
@@ -231,6 +253,8 @@ func (i *IdP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		i.token(w, r)
 	case "/oauth2/device/code":
 		i.deviceAuthorization(w, r)
+	case "/oauth2/revoke":
+		i.revoke(w, r)
 	case "/oauth2/userinfo":
 		i.mu.Lock()
 		i.UserinfoCalls++
@@ -315,7 +339,10 @@ func (i *IdP) refresh(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]string{"error": failure})
 		return
 	}
-	if r.Method != http.MethodPost || r.PostForm.Get("client_id") != ClientID || r.PostForm.Get("refresh_token") != accepted || r.PostForm.Has("client_secret") {
+	i.mu.Lock()
+	revoked := i.refreshRevoked
+	i.mu.Unlock()
+	if revoked || r.Method != http.MethodPost || r.PostForm.Get("client_id") != ClientID || r.PostForm.Get("refresh_token") != accepted || r.PostForm.Has("client_secret") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
 		return
 	}
@@ -347,6 +374,49 @@ func (i *IdP) refresh(w http.ResponseWriter, r *http.Request) {
 		answer["id_token"] = i.idToken("")
 	}
 	writeJSON(w, http.StatusOK, answer)
+}
+
+// revoke answers the RFC 7009 revocation endpoint for the public client. The
+// accepted refresh token is revoked with a 200 answer; a token that is already
+// revoked or unknown is answered with invalid_token, and a malformed request
+// with invalid_request.
+func (i *IdP) revoke(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	i.mu.Lock()
+	i.RevokeRequests++
+	i.RevokeForms = append(i.RevokeForms, r.PostForm)
+	i.RevokeAuthHeaders = append(i.RevokeAuthHeaders, r.Header.Get("Authorization"))
+	hook, status, failure := i.BeforeRevoke, i.RevokeStatus, i.RevokeError
+	i.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	if status != 0 {
+		if failure == "" {
+			failure = "fake_failure"
+		}
+		writeJSON(w, status, map[string]string{"error": failure})
+		return
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if r.Method != http.MethodPost || r.PostForm.Get("client_id") != ClientID || r.PostForm.Get("token_type_hint") != "refresh_token" || r.PostForm.Has("client_secret") || r.PostForm.Get("token") == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		return
+	}
+	if i.refreshRevoked || r.PostForm.Get("token") != i.RefreshToken {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_token"})
+		return
+	}
+	i.refreshRevoked = true
+	w.WriteHeader(http.StatusOK)
+}
+
+// RefreshRevoked reports whether the accepted refresh token was revoked.
+func (i *IdP) RefreshRevoked() bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.refreshRevoked
 }
 
 // DeviceGrantType is the RFC 8628 token endpoint grant type.
