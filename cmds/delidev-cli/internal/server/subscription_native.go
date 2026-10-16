@@ -135,23 +135,8 @@ func openServerSubscription(ctx context.Context, scope nativeScope, owner domain
 		return nil, subscriptionDenied()
 	}
 	nativeHome := filepath.Join(home, "codex")
-	if len(bundle) != 0 {
-		if _, _, e := subscription.Parse(bundle); e != nil {
-			return nil, e
-		}
-		// The exact published generation replaces any retained file.
-		if e := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), bundle); e != nil {
-			return nil, subscriptionDenied()
-		}
-	} else if retained {
-		// A new login has no published generation. A retained file is not
-		// authority and must not be mistaken for the new login's result, so the
-		// profile-owned write replaces it before the native login starts.
-		if e := subscription.RetireCredentialFiles(home); e != nil {
-			logSubscriptionRuntimeCleanup(logger, owner, e)
-			return nil, subscriptionDenied()
-		}
-		nativeprofile.Log(logger, "native_profile_credential_replaced", lease.Key, lease.ID, nativeprofile.ReasonCredentialRetained, "operation_id", owner)
+	if e := stageServerAuthentication(home, bundle, retained, owner, logger, lease); e != nil {
+		return nil, e
 	}
 	native, e := codex.Open(ctx, codex.Config{Version: installation.Version, Mode: codex.SubscriptionProtocol, ManagedAuthentication: true, Home: nativeHome, Process: process.Config{Directory: filepath.Join(runtimeRoot, "processes"), OwnerID: owner, Executable: installation.ResolvedPath, Cwd: home, Env: env, Logger: logger}})
 	if e != nil {
@@ -159,6 +144,32 @@ func openServerSubscription(ctx context.Context, scope nativeScope, owner domain
 	}
 	released = true
 	return &serverCodexRuntime{Client: native, home: home, lease: lease, owner: owner, logger: logger}, nil
+}
+
+// stageServerAuthentication prepares the account's auth profile for one native
+// operation. A refresh writes the exact published generation, replacing any
+// retained file. A new login has no published generation: a retained file is not
+// authority and must not be mistaken for the new login's result, so the
+// profile-owned removal replaces it before the native login starts.
+func stageServerAuthentication(home string, bundle []byte, retained bool, owner domain.ID, logger *slog.Logger, lease *nativeprofile.Lease) error {
+	if len(bundle) != 0 {
+		if _, _, e := subscription.Parse(bundle); e != nil {
+			return e
+		}
+		if e := subscription.WriteCredentialFile(filepath.Join(home, "codex", "auth.json"), bundle); e != nil {
+			return subscriptionDenied()
+		}
+		return nil
+	}
+	if !retained {
+		return nil
+	}
+	if e := subscription.RetireCredentialFiles(home); e != nil {
+		logSubscriptionRuntimeCleanup(logger, owner, e)
+		return subscriptionDenied()
+	}
+	nativeprofile.Log(logger, "native_profile_credential_replaced", lease.Key, lease.ID, nativeprofile.ReasonCredentialRetained, "operation_id", owner)
+	return nil
 }
 
 func (r *serverCodexRuntime) StartManagedLogin(ctx context.Context, device bool) (codex.ManagedLoginProgress, error) {

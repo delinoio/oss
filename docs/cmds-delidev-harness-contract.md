@@ -3516,23 +3516,38 @@ removal.
 ### Completion, credentials and retained data
 
 Process completion, credential cleanup and profile retention are separate. After
-a joined operation the owner retires only the exact transient credential files
-(`codex/auth.json`, `claude/.credentials.json`) and keeps configuration,
-history, caches and native-created helper symlinks. Helper links are never
-followed, are not treated as credential state, and do not block a later Refresh
-or eligible operation. A live or unjoined process, an unremoved credential file
-or an invalid owner still blocks the owning operation with a specific safe
-cause (`process_uncertain`, `credential_file_present`, `owner_invalid`). The
-OS vault stays authoritative; the registry stores no secret.
+a joined Worker operation the Worker retires only the exact transient credential
+files (`codex/auth.json`, `claude/.credentials.json`) and keeps configuration,
+history, caches and native-created helper symlinks. After a joined server-owned
+operation (ChatGPT login, refresh and observation, the Claude setup-token
+lifecycle) the server retains the account-owned credential file as well: it
+verifies the final credential bytes against the expected bundle when one exists
+and deletes nothing, and only explicit logout or account deletion removes the
+file (see
+[server credential retention](cmds-delidev-subscription-contract.md#server-credential-retention-and-explicit-removal)).
+Helper links are never followed, are not treated as credential state, and do not
+block a later Refresh or eligible operation. A live or unjoined process, an
+unsafe retained credential file or an invalid owner still blocks the owning
+operation with a specific safe cause (`process_uncertain`,
+`credential_file_present`, `owner_invalid`). The OS vault stays authoritative and
+a retained file is never authority; the registry stores no secret.
 
 Credential files are written only through `subscription.WriteCredentialFile`,
 whose temporary name is attributed to its target (`.pending-<target>-*`, via
 `security.OwnedTemporaryPrefix`). A crash between the temporary write and the
 rename therefore leaves an attributable plaintext remnant: the presence check
 (`CredentialFilePresent`) reports it as `credential_file_present`, retirement
-(`RetireCredentialFiles`, including account deletion) removes it, a non-regular
-entry with that name blocks without being removed, and the next credential write
-to the same target retires an earlier remnant before writing.
+(`RetireCredentialFiles`, including explicit logout and account deletion) removes
+it, a non-regular entry with that name blocks without being removed, and the next
+credential write to the same target retires an earlier remnant before writing.
+Server admission of a retained credential file uses
+`InspectRetainedCredentials`: a regular, private file owned by the current user is
+admitted (`credential_retained`), while a symlink or other non-regular entry,
+group or world access, a foreign owner and the attributed temporary of an
+interrupted write block with `credential_file_present`. A server login that has
+no published generation replaces a retained file through the profile-owned
+removal before the native login starts, and a refresh overwrites it with the
+exact published generation, so a retained file is never read as authority.
 
 For a validated existing credential parent, an empty attributed-temporary scan
 and an absent credential target each require a successful parent-directory sync
@@ -3616,8 +3631,8 @@ secret-remnant check of every byte of each permitted regular file, within the
 existing cumulative 64 MiB limit (no credential file names, token fields or
 JWT-like content; links are counted but never followed), and unchanged account,
 connection, generation and operation identity. The directory and its helper
-links are left untouched. Only the eligible obsolete captured credential
-reference is retired, balances and timestamps are unchanged, and the old request
+links are left untouched. The obsolete captured credential reference is
+retained, balances and timestamps are unchanged, and the old request
 is never replayed. Missing ownership, process, credential or vault proof, a
 changed identity, an unreadable or size-changed retained file, an exceeded bound,
 or an unreadable receipt keeps the original fence. A later
@@ -3630,7 +3645,7 @@ Profile events use the structured fields `profile_id`, `owner`, `harness`,
 `purpose` and a closed `reason` (`created`, `reused`, `registered_legacy`,
 `history_recorded`, `profile_busy`, `owner_invalid`, `incompatible_version`,
 `registry_invalid`, `credential_file_present`, `credential_cleaned`,
-`credential_cleanup_blocked`, `process_uncertain`, `helper_retained`,
+`credential_retained`, `credential_cleanup_blocked`, `process_uncertain`, `helper_retained`,
 `referenced`, `deleted`, `delete_blocked`, `create_rolled_back`, `migration_verified`,
 `migration_settled`). Logs never contain secrets, native contents or paths.
 
