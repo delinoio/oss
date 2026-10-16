@@ -47,6 +47,7 @@ const (
 	grokHTTPTimeout   = 20 * time.Second
 	grokClockSkew     = 5 * time.Minute
 	grokMaxExpiresIn  = 30 * 24 * 60 * 60
+	grokMaxErrorCode  = 128
 	grokRandomBytes   = 32
 	grokMaxClaimField = 512
 )
@@ -330,13 +331,43 @@ type grokTokenResponse struct {
 	Scope        json.RawMessage `json:"scope,omitempty"`
 }
 
+// grokOAuthRejection reports whether a token endpoint answer is a definitive
+// OAuth error response under RFC 6749 section 5.2: HTTP 400 or 401 with a JSON
+// object whose "error" member is a well-formed error code. Any other 4xx answer
+// (408, 429, an HTML 403 from an intermediary, a 400 with an unstructured body)
+// does not prove that the authorization server rejected the grant, so the
+// caller must keep the recovery fence.
+func grokOAuthRejection(status int, body []byte) bool {
+	if status != http.StatusBadRequest && status != http.StatusUnauthorized {
+		return false
+	}
+	var response struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if grokDecode(body, &response) != nil {
+		return false
+	}
+	var code string
+	if json.Unmarshal(response.Error, &code) != nil || code == "" || len(code) > grokMaxErrorCode {
+		return false
+	}
+	for _, r := range code {
+		// RFC 6749 section 5.2: %x20-21 / %x23-5B / %x5D-7E.
+		if r < 0x20 || r > 0x7e || r == '"' || r == '\\' {
+			return false
+		}
+	}
+	return true
+}
+
 // ExchangeGrokCode sends exactly one authorization-code token request as the
 // public client (no client authentication). The caller must have written its
-// durable exchange claim first. Only an explicit OAuth rejection (a 4xx answer)
-// proves that the code was not consumed. Every other outcome that is not a
-// complete, usable success (transport error, timeout, 3xx or 5xx answer, a
-// success status other than 200, and a 200 whose body is truncated, malformed
-// or incomplete) may have consumed the code and is Uncertain.
+// durable exchange claim first. Only an explicit OAuth error response (HTTP 400
+// or 401 with a structured error body) proves that the code was not consumed.
+// Every other outcome that is not a complete, usable success (transport error,
+// timeout, 3xx or 5xx answer, any other 4xx answer such as 408, 429 or an HTML
+// 403, a success status other than 200, and a 200 whose body is truncated,
+// malformed or incomplete) may have consumed the code and is Uncertain.
 func ExchangeGrokCode(ctx context.Context, client *http.Client, profile GrokOAuthProfile, endpoints GrokEndpoints, code string, verifier []byte, redirectURI string) (GrokTokens, error) {
 	form := url.Values{"grant_type": {"authorization_code"}, "client_id": {profile.ClientID}, "code": {code}, "code_verifier": {string(verifier)}, "redirect_uri": {redirectURI}}
 	payload := []byte(form.Encode())
@@ -346,7 +377,7 @@ func ExchangeGrokCode(ctx context.Context, client *http.Client, profile GrokOAut
 	if err != nil {
 		return GrokTokens{}, &GrokOAuthError{Reason: GrokReasonTokenUncertain, Uncertain: true}
 	}
-	if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+	if grokOAuthRejection(status, body) {
 		return GrokTokens{}, grokFail(GrokReasonTokenRejected)
 	}
 	if status != http.StatusOK {

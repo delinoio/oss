@@ -417,6 +417,8 @@ func TestGrokBrowserLoginFailuresNeverSendASecondTokenRequest(t *testing.T) {
 			g.idp.IDTokenAudiences = []string{subscription.GrokClientID, "another-client"}
 			g.idp.IDTokenAuthorizedParty = subscription.GrokClientID
 		}, state: grokFailedSt, tokens: 1, claimed: true, code: domain.Unauthenticated},
+		{name: "token throttled", prepare: func(g *grokLoginRun) { g.idp.TokenStatus = http.StatusTooManyRequests }, state: grokRecovery, tokens: 1, claimed: true, recovery: true},
+		{name: "token request timeout", prepare: func(g *grokLoginRun) { g.idp.TokenStatus = http.StatusRequestTimeout }, state: grokRecovery, tokens: 1, claimed: true, recovery: true},
 		{name: "token server error", prepare: func(g *grokLoginRun) { g.idp.TokenStatus = http.StatusBadGateway }, state: grokRecovery, tokens: 1, claimed: true, recovery: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {

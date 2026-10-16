@@ -143,9 +143,61 @@ func TestGrokExchangeClassifiesOutcomes(t *testing.T) {
 		f.idp.TokenStatus = http.StatusBadRequest
 		_, err := f.exchange()
 		if reason, uncertain := subscription.GrokOAuthReasonOf(err); reason != subscription.GrokReasonTokenRejected || uncertain {
-			t.Fatalf("a 4xx answer is a definitive rejection: %v", err)
+			t.Fatalf("a 400 OAuth error is a definitive rejection: %v", err)
 		}
 	})
+	t.Run("unauthorized-client", func(t *testing.T) {
+		f := newGrokFlow(t)
+		f.idp.TokenStatus = http.StatusUnauthorized
+		_, err := f.exchange()
+		if reason, uncertain := subscription.GrokOAuthReasonOf(err); reason != subscription.GrokReasonTokenRejected || uncertain {
+			t.Fatalf("a 401 OAuth error is a definitive rejection: %v", err)
+		}
+	})
+	// Only a structured RFC 6749 section 5.2 error response (HTTP 400 or 401
+	// with a JSON "error" code) proves the code was not consumed. Any other 4xx
+	// answer may come from an intermediary after the exchange was received.
+	for name, status := range map[string]int{"request-timeout": http.StatusRequestTimeout, "too-many-requests": http.StatusTooManyRequests, "forbidden": http.StatusForbidden, "not-found": http.StatusNotFound} {
+		t.Run("fenced-"+name, func(t *testing.T) {
+			f := newGrokFlow(t)
+			f.idp.TokenStatus = status
+			_, err := f.exchange()
+			if reason, uncertain := subscription.GrokOAuthReasonOf(err); reason != subscription.GrokReasonTokenUncertain || !uncertain {
+				t.Fatalf("a non-OAuth %d answer must stay uncertain: %v", status, err)
+			}
+		})
+	}
+	for name, serve := range map[string]func(http.ResponseWriter){
+		"html-403": func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusForbidden)
+			fmt.Fprint(w, "<html>blocked</html>")
+		},
+		"html-400":            func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadRequest); fmt.Fprint(w, "<html>bad</html>") },
+		"empty-400":           func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadRequest) },
+		"json-400-no-error":   func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadRequest); fmt.Fprint(w, `{"message":"nope"}`) },
+		"json-400-empty-code": func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadRequest); fmt.Fprint(w, `{"error":""}`) },
+		"json-400-bad-code": func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":"bad\u0000code"}`)
+		},
+		"json-400-non-string": func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"code":1}}`)
+		},
+		"json-429": func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"error":"rate_limited"}`)
+		},
+	} {
+		t.Run("fenced-body-"+name, func(t *testing.T) {
+			f := newGrokFlow(t)
+			client := &http.Client{Transport: roundTrip(func(*http.Request) (*http.Response, error) { return recorded(serve), nil })}
+			_, err := subscription.ExchangeGrokCode(context.Background(), client, f.profile, f.endpoints, "code", f.auth.Verifier(), grokTestRedirect)
+			if reason, uncertain := subscription.GrokOAuthReasonOf(err); reason != subscription.GrokReasonTokenUncertain || !uncertain {
+				t.Fatalf("an unstructured or non-OAuth 4xx answer must stay uncertain: %v", err)
+			}
+		})
+	}
 	t.Run("server-error", func(t *testing.T) {
 		f := newGrokFlow(t)
 		f.idp.TokenStatus = http.StatusBadGateway

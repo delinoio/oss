@@ -239,10 +239,14 @@ Lifecycle of one runner:
    the code. The durable exchange claim (`ServerSubscriptionOperation.exchange_claimed`)
    is then committed, and only after that commit the single token request is
    sent. The claim is never cleared or rewritten.
-4. A definitive answer (HTTP 4xx, invalid ID token, userinfo or mapping failure)
-   settles FAILED with a LOGIN `GrokDiagnostic` and the operation id as
-   correlation id. Only an explicit OAuth rejection (HTTP 4xx) proves the code
-   was not consumed. A transport error, timeout, redirect, 5xx, a success status
+4. A definitive answer (an RFC 6749 section 5.2 OAuth error response, invalid
+   ID token, userinfo or mapping failure) settles FAILED with a LOGIN
+   `GrokDiagnostic` and the operation id as correlation id. Only an explicit
+   OAuth error response proves the code was not consumed: HTTP 400 or 401 whose
+   JSON body carries a well-formed `error` code. Any other 4xx answer (408, 429,
+   an HTML 403 from an intermediary, or a 400/401 without a structured error
+   body) may have followed a received exchange and is treated as an
+   uncertain outcome. A transport error, timeout, redirect, 5xx, a success status
    other than 200, a 200 whose token response is truncated, malformed or
    incomplete, or any interruption after the claim (cancellation, expiry, server
    shutdown, restart) settles RECOVERY_REQUIRED: the account stays fenced and the
