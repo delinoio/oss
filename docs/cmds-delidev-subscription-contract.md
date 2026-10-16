@@ -202,7 +202,11 @@ callback-forwarding lane described under
 implemented without a native Grok process and kept unadvertised (System 39 off).
 The server-owned Grok device-code login (LOGIN, `device_code` true, no machine)
 shares that lane and the single System 39 switch; see
-[Server-owned device-code login](cmds-delidev-grok-subscription-contract.md#server-owned-device-code-login). Mock and build evidence for this model is not real-account,
+[Server-owned device-code login](cmds-delidev-grok-subscription-contract.md#server-owned-device-code-login).
+The server-owned Grok refresh (REFRESH of a connected account, no machine) also
+shares that lane, claims its refresh durably under the account's exclusive server
+lease and never resends an uncertain refresh token; see
+[Server-owned refresh](cmds-delidev-grok-subscription-contract.md#server-owned-refresh). Mock and build evidence for this model is not real-account,
 real-renewal or cross-platform acceptance; that acceptance is future work and is
 not performed.
 
