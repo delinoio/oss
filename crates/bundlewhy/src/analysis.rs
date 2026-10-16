@@ -2958,17 +2958,29 @@ mod tests {
 
     const REGISTER_SOURCE: &str = "src/effects/register.js";
 
+    /// Mappings that attribute all three generated lines of the fixture entry
+    /// chunk (preload helper, bundled code, `sourceMappingURL` comment) to the
+    /// first source. A segment ends with its generated line, so a map that
+    /// covers the whole chunk needs one segment on each line.
+    const FULLY_MAPPED_TO_FIRST_SOURCE: &str = "AAAA;AAAA;AAAA";
+    /// Same coverage, attributed to the second source of the map.
+    const FULLY_MAPPED_TO_SECOND_SOURCE: &str = "ACAA;AAAA;AAAA";
+
     #[test]
     fn vite_side_effect_retained_requires_final_generated_bytes() {
         // Listed in the final map's `sources` but without a generated segment.
-        let listed = vite_with_entry_map(&[REGISTER_SOURCE, "src/main.js"], "ACAA", |_| {});
+        let listed = vite_with_entry_map(
+            &[REGISTER_SOURCE, "src/main.js"],
+            FULLY_MAPPED_TO_SECOND_SOURCE,
+            |_| {},
+        );
         assert_absent(
             &listed.output.analysis.diagnostics,
             "vite/side-effect-retained",
             REGISTER_SOURCE,
         );
         // Absent from the final map's `sources` altogether.
-        let unlisted = vite_with_entry_map(&["src/main.js"], "AAAA", |_| {});
+        let unlisted = vite_with_entry_map(&["src/main.js"], FULLY_MAPPED_TO_FIRST_SOURCE, |_| {});
         assert_absent(
             &unlisted.output.analysis.diagnostics,
             "vite/side-effect-retained",
@@ -3314,7 +3326,7 @@ mod tests {
                 sibling: false,
                 sibling_suffix: None,
                 sources: &[REGISTER_SOURCE, MAIN],
-                mappings: "ACAA",
+                mappings: FULLY_MAPPED_TO_SECOND_SOURCE,
                 expected: Expected::Absent,
             },
             EmissionCell {
@@ -3324,7 +3336,7 @@ mod tests {
                 sibling: false,
                 sibling_suffix: None,
                 sources: &[MAIN],
-                mappings: "AAAA",
+                mappings: FULLY_MAPPED_TO_FIRST_SOURCE,
                 expected: Expected::Absent,
             },
             EmissionCell {

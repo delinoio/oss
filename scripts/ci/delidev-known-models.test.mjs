@@ -106,7 +106,21 @@ test("official-shaped extraction excludes hidden, API-only, retired and arbitrar
   assert.equal(value.services[1].models[2].retirement_date, undefined);
   assert.deepEqual(
     value.services[2].models.map((row) => row.native_id),
-    ["grok-build"],
+    ["grok-4.7", "grok-4.7-build-fast", "grok-4.6", "grok-4.5"],
+  );
+  assert.deepEqual(
+    value.services[2].models.map((row) => [row.display_name, row.order]),
+    [
+      ["Grok 4.7", 0],
+      ["Grok 4.7 Build Fast", 1],
+      ["Grok 4.6", 2],
+      ["Grok 4.5", 3],
+    ],
+  );
+  assert.ok(
+    value.services[2].models.every(
+      (row) => row.source_keys.join() === "grok-build",
+    ),
   );
   assert.equal(
     extractChatGPT(inputs.codex, inputs.openai, "2026-10-14").length,

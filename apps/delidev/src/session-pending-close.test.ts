@@ -950,6 +950,197 @@ describe("pending Close ownership across product windows", () => {
     });
   });
 
+  describe("bfcache hold restoration", () => {
+    /** Product windows have independent lifecycle targets, like real windows. */
+    const lifecycle = () => {
+      const target = new EventTarget();
+      const inside = <T>(run: () => T): T => {
+        const previous = globalThis.window;
+        vi.stubGlobal("window", target);
+        try {
+          return run();
+        } finally {
+          vi.stubGlobal("window", previous);
+        }
+      };
+      const pagehide = () => target.dispatchEvent(new Event("pagehide"));
+      const pageshow = (persisted: boolean) => {
+        const event = new Event("pageshow");
+        Object.defineProperty(event, "persisted", { value: persisted });
+        target.dispatchEvent(event);
+      };
+      return { inside, pagehide, pageshow };
+    };
+    const pair = () => {
+      const bus = new Bus();
+      const ownerWindow = lifecycle();
+      const siblingWindow = lifecycle();
+      const owner = ownerWindow.inside(
+        () =>
+          new PendingCloseRegistry({ channel: bus.endpoint(), window: "o" }),
+      );
+      const sibling = siblingWindow.inside(
+        () =>
+          new PendingCloseRegistry({ channel: bus.endpoint(), window: "s" }),
+      );
+      return { owner, sibling, ownerWindow, siblingWindow };
+    };
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("restores an already-sent hold before a sibling can reconcile after a persisted pageshow", () => {
+      const { owner, sibling, ownerWindow } = pair();
+      const token = {};
+      void owner.hold("k", token);
+      owner.markSent("k", token);
+      expect(sibling.has("k")).toBe(true);
+      ownerWindow.pagehide();
+      expect(sibling.has("k")).toBe(false);
+      expect(owner.holds("k", token)).toBe(false);
+      ownerWindow.pageshow(true);
+      expect(owner.holds("k", token)).toBe(true);
+      expect(owner.has("k")).toBe(true);
+      expect(sibling.has("k")).toBe(true);
+      // The restored hold is the original owner and settles normally.
+      owner.settle("k");
+      expect(owner.has("k")).toBe(false);
+      expect(sibling.has("k")).toBe(false);
+      ownerWindow.pagehide();
+      ownerWindow.pageshow(true);
+      expect(owner.has("k")).toBe(false);
+      owner.dispose();
+      sibling.dispose();
+    });
+
+    it("keeps a sibling's descriptor through reconciliation after restoration", () => {
+      const bus = new Bus();
+      const ownerWindow = lifecycle();
+      const siblingWindow = lifecycle();
+      const owner = new SessionTabsStore(
+        ownerWindow.inside(
+          () =>
+            new PendingCloseRegistry({ channel: bus.endpoint(), window: "o" }),
+        ),
+      );
+      const sibling = new SessionTabsStore(
+        siblingWindow.inside(
+          () =>
+            new PendingCloseRegistry({ channel: bus.endpoint(), window: "s" }),
+        ),
+      );
+      sibling.open("retained", page("p1", "x"));
+      const token = {};
+      void owner.holdPendingClose("x", "p1", token);
+      owner.markPendingCloseSent("x", "p1", token);
+      ownerWindow.pagehide();
+      ownerWindow.pageshow(true);
+      sibling.reconcilePages("retained", "x", []);
+      expect(sibling.snapshot("retained").tabs.map(sessionTabKey)).toContain(
+        sessionTabKey(page("p1", "x")),
+      );
+      owner.releasePendingClose("x", "p1", token);
+      sibling.reconcilePages("retained", "x", []);
+      expect(sibling.snapshot("retained").tabs.map(sessionTabKey)).toEqual([
+        SessionTabKind.Conversation,
+      ]);
+    });
+
+    it("restores only sent holds across several owners and keys", () => {
+      const { owner, sibling, ownerWindow } = pair();
+      const [a, b, c, d] = [{}, {}, {}, {}];
+      void owner.hold("k1", a);
+      void owner.hold("k1", b);
+      void owner.hold("k2", c);
+      void owner.hold("pre-send", d);
+      owner.markSent("k1", a);
+      owner.markSent("k1", b);
+      owner.markSent("k2", c);
+      ownerWindow.pagehide();
+      ownerWindow.pageshow(true);
+      expect(sibling.has("k1")).toBe(true);
+      expect(sibling.has("k2")).toBe(true);
+      expect(sibling.has("pre-send")).toBe(false);
+      expect(owner.holds("pre-send", d)).toBe(false);
+      owner.release("k1", a);
+      expect(sibling.has("k1")).toBe(true);
+      owner.release("k1", b);
+      expect(sibling.has("k1")).toBe(false);
+      expect(sibling.has("k2")).toBe(true);
+      owner.dispose();
+      expect(sibling.has("k2")).toBe(false);
+      sibling.dispose();
+    });
+
+    it("does not revive a hold withdrawn before it was marked sent", () => {
+      const { owner, sibling, ownerWindow } = pair();
+      const token = {};
+      void owner.hold("k", token);
+      ownerWindow.pagehide();
+      // The barrier was withdrawn; a late mark cannot recreate the hold.
+      owner.markSent("k", token);
+      ownerWindow.pageshow(true);
+      expect(owner.holds("k", token)).toBe(false);
+      expect(sibling.has("k")).toBe(false);
+      owner.dispose();
+      sibling.dispose();
+    });
+
+    it("does not restore on a non-persisted pageshow", () => {
+      const { owner, sibling, ownerWindow } = pair();
+      const token = {};
+      void owner.hold("plain", token);
+      owner.markSent("plain", token);
+      ownerWindow.pagehide();
+      ownerWindow.pageshow(false);
+      expect(owner.holds("plain", token)).toBe(false);
+      expect(sibling.has("plain")).toBe(false);
+      owner.dispose();
+      sibling.dispose();
+    });
+
+    it("does not restore a hold released while suspended, but restores its siblings", () => {
+      const { owner, sibling, ownerWindow } = pair();
+      const [released, kept] = [{}, {}];
+      void owner.hold("released", released);
+      owner.markSent("released", released);
+      void owner.hold("kept", kept);
+      owner.markSent("kept", kept);
+      ownerWindow.pagehide();
+      owner.release("released", released);
+      ownerWindow.pageshow(true);
+      expect(sibling.has("released")).toBe(false);
+      expect(sibling.has("kept")).toBe(true);
+      owner.dispose();
+      sibling.dispose();
+    });
+
+    it("does not restore holds after permanent disposal", () => {
+      const { owner, sibling, ownerWindow } = pair();
+      const token = {};
+      void owner.hold("k", token);
+      owner.markSent("k", token);
+      ownerWindow.pagehide();
+      owner.dispose();
+      ownerWindow.pageshow(true);
+      expect(sibling.has("k")).toBe(false);
+      expect(owner.holds("k", token)).toBe(false);
+      sibling.dispose();
+    });
+
+    it("does not resurrect a hold settled while suspended", () => {
+      const { owner, sibling, ownerWindow } = pair();
+      const token = {};
+      void owner.hold("k", token);
+      owner.markSent("k", token);
+      ownerWindow.pagehide();
+      owner.settle("k");
+      ownerWindow.pageshow(true);
+      expect(owner.has("k")).toBe(false);
+      expect(sibling.has("k")).toBe(false);
+      owner.dispose();
+      sibling.dispose();
+    });
+  });
+
   describe("settled Close propagation", () => {
     it("removes the page from a sibling's retained sessions once", () => {
       const { make } = windows();

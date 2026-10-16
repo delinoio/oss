@@ -786,6 +786,13 @@ function NativeSessionBrowser({
           );
           return;
         }
+        // The barrier passed: the native Close is dispatched below, so its
+        // hold must survive a bfcache suspension.
+        tabsStore.markPendingCloseSent(
+          heldClose.current.profile,
+          heldClose.current.page,
+          closeOwner.current,
+        );
       }
       const value = pageInventory(
         await invoke<PageInventory>("browser_pages", {
