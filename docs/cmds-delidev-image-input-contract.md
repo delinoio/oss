@@ -184,3 +184,14 @@ Native/account/platform observations remain separate from automated decoder, aut
 - Last-owner image removal uses original Worker identity after joined native/process cleanup. Image-only plans grant no workspace authority. Persist intent before DELETE; completion and replay require original deletion receipt and absent data/metadata. Reappearing files remain protected. Follow the image-input and storage contracts.
 
 - The feature classifies original image rejection only from the opaque pre-wire adapter proof, exclusive synchronized original assignment/input/request claim and independent confirmed cleanup. Retain claimed uncertainty on missing/changed proof or cleanup, unchanged public receipts and original assignment revisions; never resend by observation. Follow the image-input and direct startup contracts.
+
+### Selected OpenRouter image adapter
+
+The independent [OpenRouter tool contract](cmds-delidev-openrouter-tools-contract.md)
+adds System 108 and Worker 73. These select a native dynamic image backend for
+new original root OpenRouter Responses executions, while 61/35 alone retain
+their managed-subscription boundary. Native built-in image publication and its
+attachment preview remain managed-only. Selected API dynamic PNG results remain
+in protected native history with inert media commitments in the transcript.
+The original assignment retains its enlarged frame profile for continuation,
+Fork inspection and compaction without enabling generation in those readers.

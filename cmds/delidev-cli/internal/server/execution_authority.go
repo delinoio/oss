@@ -203,6 +203,12 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 		}
 		operations = executionAPIOperations(input, provider.Protocol)
 	}
+	if input.NativeOpenRouterTools {
+		if managed || !apiproxy.OpenRouterToolProvider(provider) || !slices.Contains(machine.WorkerCapabilities, domain.CodexOpenRouterToolsV1) {
+			return empty, executionDenied()
+		}
+		operations = append(operations, apiproxy.ImageCreate, apiproxy.ImageEdit, apiproxy.StandaloneSearch)
+	}
 	if managed {
 		state := account.Subscription
 		if state == nil || state.RecoveryRequired || state.Lease == nil {
@@ -239,7 +245,7 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 	if err := tx.RequireCodexSubagentModel(input.Configuration, account); err != nil {
 		return empty, executionDenied()
 	}
-	scope := apiproxy.Scope{ContextRevision: input.ContextRevision, ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, ReviewerNativeModel: input.Configuration.ReviewerNativeModel, ChildModel: input.Configuration.SubagentModel, Harness: input.Configuration.Harness, Provider: provider, Operations: operations}
+	scope := apiproxy.Scope{OpenRouterTools: input.NativeOpenRouterTools, ContextRevision: input.ContextRevision, ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, ReviewerNativeModel: input.Configuration.ReviewerNativeModel, ChildModel: input.Configuration.SubagentModel, Harness: input.Configuration.Harness, Provider: provider, Operations: operations}
 	if keySubscription && session.Execution != nil && session.Execution.ExecutionID == grant.ExecutionID {
 		scope.OpenCodeSession = session.Execution.NativeThreadID
 	}

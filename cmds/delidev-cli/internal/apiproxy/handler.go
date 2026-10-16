@@ -206,7 +206,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream := false
-	if lease.Scope.Purpose == domain.SessionTitleUsage {
+	if operation.openRouterTool() {
+		var projected []byte
+		projected, err = prepareOpenRouterToolRequest(raw, lease.Scope, operation)
+		if err == nil {
+			raw = projected
+			defer clear(raw)
+		}
+	} else if lease.Scope.Purpose == domain.SessionTitleUsage {
 		raw, stream, err = validateTitleRequest(raw, lease.Scope)
 	} else {
 		if lease.BindModel != nil {
@@ -247,6 +254,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	diagnostic := domain.RequestDiagnostic{ID: domain.ID(correlation), CorrelationID: domain.ID(correlation), SessionID: lease.Scope.SessionID, ExecutionID: lease.Scope.ExecutionID, AccountID: lease.Scope.AccountID, ConnectionID: lease.Scope.ConnectionID, ProviderID: lease.Scope.ProviderID, SubscriptionService: lease.Scope.SubscriptionService, ModelID: lease.Scope.ModelID, Attribution: lease.Scope.Attribution, Harness: lease.Scope.Harness, Source: domain.DiagnosticProxyHTTP, Operation: diagnosticOperation(operation), State: domain.DiagnosticInProgress, Purpose: purpose, ObservedAt: started.UTC(), HTTPAttempted: &attempted}
 	observations := diagnosticObservations{value: &diagnostic}
 	publishDiagnostic := func(work context.Context) error {
+		// Dedicated tools have structured HTTP logs. Do not attribute their
+		// requests to the conversation model's inference diagnostic/usage record.
+		if operation.openRouterTool() {
+			return nil
+		}
 		if lease.PublishDiagnostic == nil {
 			return nil
 		}
@@ -456,6 +468,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadGateway, code)
 		return
 	}
+	if operation.openRouterTool() {
+		projected, projectErr := projectOpenRouterToolResponse(result, operation)
+		if projectErr != nil {
+			code = domain.Unsupported
+			fail(http.StatusBadGateway, code)
+			return
+		}
+		clear(result)
+		result = projected
+		defer clear(result)
+		object, err = document(result, guard)
+		if err != nil {
+			code = domain.Unavailable
+			fail(http.StatusBadGateway, code)
+			return
+		}
+	}
 	if operation == ChatCompletion && lease.Scope.Harness == domain.OpenCode && validateForegroundToolResponse(object) != nil {
 		code = domain.Unsupported
 		fail(http.StatusBadGateway, code)
@@ -524,6 +553,12 @@ func upstreamRequest(ctx context.Context, incoming *http.Request, raw []byte, sc
 		return nil, err
 	}
 	base.Path = strings.TrimSuffix(base.Path, "/") + strings.TrimPrefix(incoming.URL.Path, Prefix)
+	if operation == ImageCreate || operation == ImageEdit {
+		base.Path = strings.TrimSuffix(base.Path, strings.TrimPrefix(incoming.URL.Path, Prefix)) + "/images"
+	}
+	if operation == StandaloneSearch {
+		base.Path = strings.TrimSuffix(base.Path, "/alpha/search") + "/responses"
+	}
 	base.RawQuery = incoming.URL.RawQuery
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base.String(), bytes.NewReader(raw))
 	if err != nil {

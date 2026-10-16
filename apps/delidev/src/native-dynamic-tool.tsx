@@ -27,7 +27,7 @@ type Reply = {
   token: string;
   claim_id: string;
   delivery: "not-sent" | "transmitted" | "uncertain";
-  unavailable: true;
+  unavailable: boolean;
 };
 type DynamicTool = {
   snapshot?: Snapshot;
@@ -142,7 +142,7 @@ export function dynamicTool(value: unknown): DynamicTool | undefined {
       !keys(reply, ["token", "claim_id", "delivery", "unavailable"]) ||
       !uuid(reply.token) ||
       !uuid(reply.claim_id) ||
-      reply.unavailable !== true ||
+      typeof reply.unavailable !== "boolean" ||
       !["not-sent", "transmitted", "uncertain"].includes(
         String(reply.delivery),
       ) ||
@@ -181,7 +181,9 @@ export function NativeDynamicTool({ content }: { content: unknown }) {
       </header>
       {tool.reply ? (
         <>
-          <p>{"This dynamic tool is unavailable in DeliDev."}</p>
+          {tool.reply.unavailable ? (
+            <p>{"This dynamic tool is unavailable in DeliDev."}</p>
+          ) : null}
           <p>
             {copy("session.dynamicReplyDelivery")}:{" "}
             {copy(

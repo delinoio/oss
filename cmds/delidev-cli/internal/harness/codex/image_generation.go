@@ -101,7 +101,7 @@ func decodeImageGeneration(raw json.RawMessage, completed bool) (*ImageGeneratio
 func (c *Client) observeImageGeneration(native nativewire.Event, turnID domain.ID, raw json.RawMessage) (Event, error) {
 	// The original managed profile independently verifies built-in OpenAI account,
 	// auth and effective provider. A feature flag or custom proxy is insufficient.
-	if !c.imageGeneration || c.managedHome == "" || c.api != nil || c.sidechat != "" || c.imageRoot == "" || c.imageMachine.Validate() != nil {
+	if !c.imageGeneration || (c.managedHome == "" || c.api != nil) || c.sidechat != "" || c.imageRoot == "" || c.imageMachine.Validate() != nil {
 		return Event{}, domain.Fail(domain.Unsupported, "The selected native provider cannot publish generated images.", "Use the original supported managed OpenAI account; no provider substitution is available.")
 	}
 	turn, known := c.execution.turns[turnID]
@@ -166,7 +166,7 @@ const (
 // imageHistoryProfileAdmitted reports whether the explicit image-history frame
 // request names the closed route above.
 func (config Config) imageHistoryProfileAdmitted() bool {
-	return config.Mode == ThreadProtocol && config.API == nil && config.Sidechat == "" && !config.EnableImageGeneration && !config.ManagedForkHistory && config.ImageRoot != "" && config.ImageMachineID.Validate() == nil
+	return config.Mode == ThreadProtocol && config.Sidechat == "" && !config.EnableImageGeneration && !config.ManagedForkHistory && config.ImageRoot != "" && config.ImageMachineID.Validate() == nil
 }
 
 // Freeze one frame profile before launch for both the transport and decoders.
@@ -180,7 +180,7 @@ func (config Config) imageObservationProfile() bool {
 	if config.FrameProfile == ForkHistoryFrameProfile {
 		return config.Mode == ThreadProtocol && config.ManagedAuthentication && config.ManagedForkHistory && config.API == nil && config.Sidechat == ""
 	}
-	if config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.ImageRoot == "" {
+	if config.Mode != ThreadProtocol || !(config.ManagedAuthentication && config.API == nil || config.API != nil && config.API.OpenRouterTools) || config.ImageRoot == "" {
 		return false
 	}
 	if config.EnableImageGeneration {
@@ -193,11 +193,11 @@ func (config Config) imageObservationProfile() bool {
 // read verifies the request; actual account/provider proof remains independent.
 func configureImageGeneration(config *Config) error {
 	if config.EnableImageGeneration {
-		if config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ImageRoot == "" || config.ImageMachineID.Validate() != nil {
+		if config.Mode != ThreadProtocol || !(config.ManagedAuthentication && config.API == nil || config.API != nil && config.API.OpenRouterTools) || config.Sidechat != "" || config.ImageRoot == "" || config.ImageMachineID.Validate() != nil {
 			return incompatible()
 		}
 		config.Process.Args = append(config.Process.Args, "-c", "features.image_generation=true")
-	} else if config.Mode == ThreadProtocol && config.ManagedAuthentication {
+	} else if config.Mode == ThreadProtocol && (config.ManagedAuthentication || config.API != nil) {
 		config.Process.Args = append(config.Process.Args, "-c", "features.image_generation=false")
 	}
 	return nil

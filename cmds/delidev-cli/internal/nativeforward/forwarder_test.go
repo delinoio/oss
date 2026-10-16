@@ -501,3 +501,35 @@ func TestOpenRejectsInvalidAuthority(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectedOpenRouterToolsAdmitOnlyFixedNativePaths(t *testing.T) {
+	for _, selected := range []bool{false, true} {
+		r := newRelocation(t, closedOrigin(t))
+		f := open(t, Config{Origin: r.retired, Client: r.client(nil), OpenRouterTools: selected})
+		for _, path := range []string{"/images/generations", "/images/edits", "/alpha/search"} {
+			response := post(t, f, apiproxy.Prefix+path, "{}", nil)
+			response.Body.Close()
+			want := 404
+			if selected {
+				want = 200
+			}
+			if response.StatusCode != want {
+				t.Fatal("tool route crossed selected profile", selected, path, response.StatusCode)
+			}
+		}
+		for _, path := range []string{"/images", "/images/generations?extra=1", "/alpha/search/extra"} {
+			response := post(t, f, apiproxy.Prefix+path, "{}", nil)
+			response.Body.Close()
+			if response.StatusCode != 404 {
+				t.Fatal("unselected tool route admitted")
+			}
+		}
+		want := int32(0)
+		if selected {
+			want = 3
+		}
+		if r.business.Load() != want {
+			t.Fatal("unsupported route reached upstream")
+		}
+	}
+}

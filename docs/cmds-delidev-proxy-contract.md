@@ -1,5 +1,10 @@
 # DeliDev native API relay contract
 
+The separately negotiated [Codex OpenRouter tool adapter](cmds-delidev-openrouter-tools-contract.md)
+owns explicit image/search request and response translation. Its fixed tool
+operations do not change ordinary Responses, Messages or Chat Completions
+forwarding, inference model authority or native usage ownership.
+
 ## Original API format authority
 
 Capability 9 account changes do not alter a registered original execution scope.

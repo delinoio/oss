@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -116,5 +117,44 @@ func TestDynamicServerRejectsChangedOriginalOwnershipAndRequestReuse(t *testing.
 		if message.NativeID == "second" && message.DynamicTool.Request != nil {
 			t.Fatal("rejected request mutated retained evidence")
 		}
+	}
+}
+
+func TestDynamicExecutedReplyRequiresSelectedOriginalBackend(t *testing.T) {
+	for _, selected := range []bool{false, true} {
+		t.Run(fmt.Sprint(selected), func(t *testing.T) {
+			f := dynamicPublicationFixture(t)
+			if selected {
+				f.input.NativeOpenRouterTools = true
+				f.input.NativeImageGeneration = true
+				_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.original-image-backend", nil, func(tx *store.Tx) (any, error) {
+					row, err := tx.Get(domain.JobKind, f.job)
+					if err != nil {
+						return nil, err
+					}
+					job, err := store.Decode[domain.Job](row)
+					if err != nil {
+						return nil, err
+					}
+					job.Input, _ = json.Marshal(f.input)
+					return tx.Put(domain.JobKind, row.ID, row.Revision, row.SessionID, row.ProjectID, job)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, mapper := bindNativeMapper(t, f, publicationWorkerConfig(t, f))
+			namespace := "delidev_image"
+			identity := domain.DynamicToolIdentity{Tool: "imagegen", Namespace: &namespace, ArgumentsDigest: strings.Repeat("a", 64)}
+			event := codex.Event{Kind: codex.DynamicToolEvent, ThreadID: f.thread, TurnID: f.turn, ItemID: "selected-image", Correlated: true}
+			request := &domain.DynamicToolRequest{Token: domain.NewID(), IDKind: domain.InteractionNumberID, IDValue: "7", Identity: identity}
+			event.DynamicTool = &domain.DynamicToolUpdate{NativeID: event.ItemID, Stage: domain.DynamicRequested, Request: request}
+			publishNativeEvent(t, f, mapper, event)
+			event.DynamicTool = &domain.DynamicToolUpdate{NativeID: event.ItemID, Stage: domain.DynamicReplied, Reply: &domain.DynamicToolReply{Token: request.Token, ClaimID: domain.NewID(), Delivery: domain.DynamicTransmitted, Unavailable: false}}
+			_, err := mapper.PublishCore(context.Background(), event)
+			if (err == nil) != selected {
+				t.Fatal("executed reply escaped original backend admission", err)
+			}
+		})
 	}
 }

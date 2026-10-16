@@ -3234,7 +3234,9 @@ before claiming the reply; persist send intent after the native connection's
 atomic arrival claim and before its pipe write. With no selected backend, the
 only response is `success: false` and one `inputText` item containing
 `This dynamic tool is unavailable in DeliDev.` No handler, registry, arbitrary
-tool backend, automatic input replay or automatic resend is introduced.
+tool backend, automatic input replay or automatic resend is introduced by that baseline.
+The independently negotiated [OpenRouter tool adapter](cmds-delidev-openrouter-tools-contract.md)
+adds one selected native dynamic image backend under the same durable fence.
 
 A dynamic tool shares the Worker's native item identity space and the 10,000
 retained-item bound with messages, tools, artifacts, image generations and
@@ -3261,7 +3263,7 @@ System capability 102 and Worker capability 63 negotiate this additive JSON
 publication. The Worker advertises it only after explicit server support.
 Read-only Sidechat, title and model-observation profiles gain no responder.
 Existing human question and approval controllers retain their separate types
-and ownership. No storage migration or selected backend is added.
+and ownership. No storage migration or selected backend is added by these two allocations.
 
 The immutable original assignment records optional `native_dynamic_tools` only
 for a negotiated root Codex Worker. Legacy and restricted assignments grant no
