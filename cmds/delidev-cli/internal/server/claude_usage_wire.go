@@ -9,10 +9,10 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-// The six usage operations are served only while the single activation switch
-// (claudeServerUsageAdvertised) is on. Until then every operation answers
-// Unimplemented exactly like a server that lacks the capability, so no peer can
-// observe a partial feature and no usage state is ever written.
+// The six usage operations are served exactly while System capability 108 is
+// advertised (claudeUsageActive). A server that deactivates the feature answers
+// every operation with Unimplemented, like a server that lacks the capability,
+// so no peer can observe a partial feature and no usage state is written.
 
 func claudeUsageUnimplemented() error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("Claude usage tracking is not available on this server"))

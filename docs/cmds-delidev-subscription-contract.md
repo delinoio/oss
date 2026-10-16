@@ -265,7 +265,10 @@ the native environment; personal profiles, imported/external tokens,
 Console/API login and API relay authentication are excluded. The original CLI
 owns OAuth exchange, credentials and automatic renewal. DeliDev does not read
 native authentication files or distribute their bytes to the server or another
-machine. Claude quota/credit inspection and redemption remain excluded for these device-owned accounts; server-token accounts follow the separate [server-owned Claude usage tracking](#server-owned-claude-usage-tracking) model.
+machine, with one narrow exception: the server-owned usage adapter reads and
+removes only the credential storage of its own newly created, exclusive usage
+profile (see the [usage profile exception](cmds-delidev-harness-contract.md#claude-usage-profile)).
+Claude quota/credit inspection and redemption remain excluded for these device-owned accounts; server-token accounts follow the separate [server-owned Claude usage tracking](#server-owned-claude-usage-tracking) model.
 
 Server-owned optional Account JSON retains an opaque native profile UUID,
 original owner machine, keyed identity commitment, authentication generation
@@ -1006,7 +1009,7 @@ An expired or rejected token ends the execution explicitly with no API fallback,
 
 System `CLAUDE_SERVER_USAGE_V1 = 109` negotiates an optional, server-owned usage connection of a `server-token` Claude account. The connection is a separate ordinary OAuth login whose credentials can only fetch usage: it is independent of the execution setup token, adds no Runner dependency, implies no identity equality with the setup token and never changes execution readiness. A device-owned Claude account, a ChatGPT account and a Grok account can never hold it.
 
-**Activation status.** The protocol, domain model, parser, protected storage, native profile adapter, the login, confirmation, cancel and disconnect lifecycle and the usage-read owner below are implemented, but the server does not advertise capability 109 (a single `claudeServerUsageAdvertised` switch stays false) and the six usage RPCs return `Unimplemented` while it is false. The capability is activated only together with the complete login, confirmation, refresh, cleanup and client lifecycle, so no peer can observe a partial feature and an unsupported peer keeps the existing behavior.
+**Activation.** The protocol, domain model, parser, protected storage, native profile adapter, the login, confirmation, cancel and disconnect lifecycle, the usage-read owner below and the desktop presentation are one feature and are activated together. A single decision (`claudeServerUsageAdvertised` and `Service.claudeUsageActive`) drives the `GetStatus` advertisement of capability 108, the six usage RPCs, the read owner's maintenance scheduler and the usage branch of the observation request, so the advertisement and the served operations never diverge. A server that deactivates the feature answers the six RPCs with `Unimplemented`, writes no usage state and schedules no read; an older server lacks the capability and the RPCs, and its peers keep the existing behavior with update guidance.
 
 The six typed `SubscriptionService` operations use UUID-v7 request IDs, the original Claude account revision and a server-allocated usage generation: `StartClaudeUsageLogin`, `GetClaudeUsageLoginProgress` (read-only, never relaunches or advances work), `SubmitClaudeUsageApprovalCode` (write-only code), `ConfirmClaudeUsageLink` (echoes the reviewed identity commitment), `CancelClaudeUsageLogin` and `DisconnectClaudeUsage`. Closed `ClaudeUsageLoginState` values are preparing, waiting, awaiting confirmation, linked, canceled, expired, unsupported, recovery required and failed. No response carries authentication bytes.
 

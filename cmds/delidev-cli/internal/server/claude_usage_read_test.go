@@ -780,7 +780,7 @@ func TestClaudeUsageExplicitRefreshIsFencedByTheConfirmedAccountGeneration(t *te
 
 func TestClaudeUsageInactiveFeatureSchedulesAndServesNothing(t *testing.T) {
 	f := newReadFixture(t, nil)
-	f.service.claudeUsageActiveTest = false
+	f.service.claudeUsageDisabledTest = true
 	if admitted := f.schedule(); len(admitted) != 0 {
 		t.Fatalf("an inactive feature scheduled %v", admitted)
 	}
@@ -1551,7 +1551,6 @@ func TestClaudeUsageOtherAccountKindsKeepTheirObservationLane(t *testing.T) {
 	// A ChatGPT quota request keeps its existing validation: the usage owner never
 	// claims an account that holds no usage section.
 	f := newSubscriptionFixture(t)
-	f.service.claudeUsageActiveTest = true
 	request := &pb.RequestSubscriptionObservationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: 1}, Action: pb.SubscriptionObservationAction_SUBSCRIPTION_OBSERVATION_ACTION_QUOTA}
 	if _, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, request)); err == nil {
 		t.Fatal("a disconnected ChatGPT account accepted an observation")

@@ -2,9 +2,11 @@
 package server
 
 // claudeServerUsageAdvertised is the single switch for System capability 109
-// (CLAUDE_SERVER_USAGE_V1). The protocol, domain model and protected storage
-// exist, but the capability stays unadvertised until the complete server-owned
-// usage login, confirmation, refresh and cleanup lifecycle is implemented and
-// activated as one feature. While it is false the six usage RPCs return
-// Unimplemented and no usage state is written.
-const claudeServerUsageAdvertised = false
+// (CLAUDE_SERVER_USAGE_V1). It is on because the complete server-owned usage
+// feature is implemented: the protocol, domain model and protected storage, the
+// login, identity confirmation, cancel and disconnect lifecycle, the usage-read
+// owner with supervised renewal and backoff, and the desktop presentation. The
+// capability and the six usage RPCs are one unit: GetStatus advertises the
+// capability exactly when the RPCs are served (claudeUsageActive), so an older
+// peer never observes a partial feature.
+const claudeServerUsageAdvertised = true

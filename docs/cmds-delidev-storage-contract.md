@@ -1452,7 +1452,8 @@ added and no existing migration/reset reservation is activated.
 
 Worker-private canonical profile ownership and process/lease journals remain
 on the original Runner. The official CLI owns its authentication files and
-secure-store entries. Profile cleanup requires original native logout/status,
+secure-store entries; only the exclusive Claude usage profile adapter may read and
+remove the credential storage it derived for its own newly created profile. Profile cleanup requires original native logout/status,
 joined processes and inode-bound bounded removal. Missing/foreign/symlinked or
 oversized native state is uncertain, never cleanup proof. Server disconnect and
 configuration deletion remain blocked while profile/owner, generation, pending,

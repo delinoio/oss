@@ -198,10 +198,12 @@ func (r *claudeUsageRuns) clearInput(operation domain.ID) {
 // secrets are released so no native child or vault write outlives its owner.
 func (s *Service) closeClaudeUsage() { s.claudeUsage.close() }
 
-// claudeUsageActive reports whether the usage RPCs are served. The single
-// advertisement switch stays off until the complete feature is activated.
+// claudeUsageActive reports whether the usage feature is active: the six RPCs
+// are served, the read owner and its scheduler run and GetStatus advertises
+// System capability 108. It is the single decision behind all of them, so the
+// advertisement and the served operations can never diverge.
 func (s *Service) claudeUsageActive() bool {
-	return claudeServerUsageAdvertised || s.claudeUsageActiveTest
+	return claudeServerUsageAdvertised && !s.claudeUsageDisabledTest
 }
 
 // claudeUsageIdentityCommitment is the keyed commitment of one reviewed OAuth
