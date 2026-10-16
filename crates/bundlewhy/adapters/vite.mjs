@@ -157,8 +157,10 @@ export const MangleSetting = Object.freeze({
 });
 
 /**
- * Resolves whether Rolldown mangles names, from the effective
- * `rolldownOptions.output.minify` option and Vite's `build.minify`.
+ * Resolves whether Rolldown mangles names, from the configured
+ * `rolldownOptions.output.minify` option and Vite's `build.minify`. Plugins'
+ * `outputOptions` hooks can still change the option later; the collector
+ * replaces this value with `resolveNormalizedMangleSetting` in `generateBundle`.
  *
  * Vite builds the output `minify` option from `build.minify` (`'oxc'` or
  * `true` gives `true`, `false` gives `'dce-only'`) and lets an explicit
@@ -178,6 +180,27 @@ export function resolveMangleSetting(buildMinify, output) {
   return settings.every((setting) => setting === MangleSetting.Disabled)
     ? MangleSetting.Disabled
     : MangleSetting.Enabled;
+}
+
+/**
+ * Reads the mangle setting from the normalized `minify` option that a
+ * `generateBundle` hook receives. Plugins' `outputOptions` hooks run after
+ * `configResolved`, so this is the only place that sees what Rolldown applies.
+ * The normalized option is `false`, `'dce-only'` or an options object whose
+ * `mangle` key is only present when mangling runs. Returns `null` for anything
+ * else, so the caller keeps the setting resolved from the configuration.
+ */
+export function resolveNormalizedMangleSetting(normalizedMinify) {
+  if (normalizedMinify === false || normalizedMinify === "dce-only") {
+    return MangleSetting.Disabled;
+  }
+  if (normalizedMinify !== null && typeof normalizedMinify === "object") {
+    const mangle = normalizedMinify.mangle;
+    return mangle === undefined || mangle === null || mangle === false
+      ? MangleSetting.Disabled
+      : MangleSetting.Enabled;
+  }
+  return null;
 }
 
 function resolveMangleOption(buildMinify, outputMinify) {
@@ -380,6 +403,13 @@ function collectorPlugin(state) {
         // keeping only the last one.
         state.outputs += 1;
         if (state.outputs > 1) return;
+        // Plugins' `outputOptions` hooks can replace `output.minify` after
+        // `configResolved`, so the analyzed output's mangle setting is read
+        // from the normalized options this hook receives.
+        const effectiveMangle = resolveNormalizedMangleSetting(options?.minify);
+        if (effectiveMangle !== null && state.resolved) {
+          state.resolved.mangle = effectiveMangle;
+        }
         const modules = new Map();
         const recordModule = (id) => {
           if (modules.has(id)) return modules.get(id);

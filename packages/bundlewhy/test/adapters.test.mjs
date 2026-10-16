@@ -12,6 +12,7 @@ import {
   normalizeCollectionRoot,
   normalizeViteModule,
   resolveMangleSetting,
+  resolveNormalizedMangleSetting,
 } from "../../../crates/bundlewhy/adapters/vite.mjs";
 import {
   ExportUsageReason,
@@ -310,6 +311,76 @@ for (const [name, output, expected] of [
     );
     assert.equal(collection.defaultMinifier, true);
     assert.equal(collection.minifyEnabled, true);
+  });
+}
+
+// The normalized `minify` option that `generateBundle` receives is what
+// Rolldown applies after every plugin's `outputOptions` hook ran: `mangle` is
+// only present when mangling runs.
+for (const [name, normalized, expected] of [
+  ["false", false, MangleSetting.Disabled],
+  ["dce-only", "dce-only", MangleSetting.Disabled],
+  ["object without mangle", { compress: {} }, MangleSetting.Disabled],
+  ["mangle false", { mangle: false }, MangleSetting.Disabled],
+  ["mangle options", { mangle: { toplevel: true } }, MangleSetting.Enabled],
+  ["undefined", undefined, null],
+  ["true", true, null],
+  ["unrecognized string", "full", null],
+]) {
+  test(`vite normalized mangle setting (${name})`, () => {
+    assert.equal(resolveNormalizedMangleSetting(normalized), expected);
+  });
+}
+
+// A plugin's `outputOptions` hook runs after `configResolved`, so the
+// collected mangle setting must come from the options the build applies.
+for (const [name, buildOutput, hookMinify, expected] of [
+  [
+    "hook disables mangle over an enabled config",
+    "{}",
+    "{ mangle: false }",
+    MangleSetting.Disabled,
+  ],
+  [
+    "hook sets minify false",
+    "{}",
+    "false",
+    MangleSetting.Disabled,
+  ],
+  [
+    "hook enables mangle over a disabled config",
+    "{ minify: { mangle: false } }",
+    "{ mangle: true }",
+    MangleSetting.Enabled,
+  ],
+]) {
+  test(`vite adapter reads the mangle setting after outputOptions hooks (${name})`, () => {
+    const projectRoot = path.join(root, "fixtures/vite-app");
+    const { dir, file } = writeConfig(
+      "vite.config.mjs",
+      `export default {
+  build: { minify: 'oxc', rolldownOptions: { output: ${buildOutput} } },
+  plugins: [{
+    name: 'test:set-minify',
+    outputOptions(options) {
+      options.minify = ${hookMinify};
+      return options;
+    },
+  }],
+};\n`,
+    );
+    const { status, events, collection } = runAdapter(
+      "vite",
+      "vite-app",
+      path.relative(projectRoot, file),
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+    assert.equal(status, 0, JSON.stringify(events));
+    assert.equal(collection.mangle, expected);
+    assert.equal(
+      collection.configSummary["build.rolldownOptions.output.minify.mangle"],
+      expected,
+    );
   });
 }
 
