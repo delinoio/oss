@@ -2352,7 +2352,8 @@ impl<'a> MemberScan<'a> {
 
     /// Whether the offset starts a member in the body of a `kind` brace: the
     /// previous token (past any modifiers and a generator `*`) ends an earlier
-    /// member or opens the body.
+    /// member or opens the body. The scan is one backward loop; it never
+    /// recurses, whatever precedes the offset.
     fn at_member_position(&self, name_start: usize, kind: BraceKind) -> bool {
         let mut member_start = name_start;
         loop {
@@ -2400,14 +2401,25 @@ impl<'a> MemberScan<'a> {
                 // (`x = a.b`) and a private name (`#state`) included; only an
                 // expression keyword (`x = typeof`) leaves the member open.
                 // A keyword that itself starts a member (`class C { typeof`)
-                // is a field name, not an operator, and ends that member.
+                // is a field name, not an operator, and ends that member. The
+                // line break before this member is required first, then the
+                // scan continues from the keyword to see whether it starts one.
                 Token::Word { text, member } => {
-                    return kind == BraceKind::ClassBody
-                        && (member
-                            || !REGEX_KEYWORDS.contains(&text)
-                            || self.void_ends_type(token_end, text)
-                            || self.at_member_position(token_end - text.len(), kind))
-                        && self.new_line_between(token_end, member_start);
+                    if kind != BraceKind::ClassBody
+                        || !self.new_line_between(token_end, member_start)
+                    {
+                        return false;
+                    }
+                    if member
+                        || !REGEX_KEYWORDS.contains(&text)
+                        || self.void_ends_type(token_end, text)
+                    {
+                        return true;
+                    }
+                    // The keyword may be a field name: keep scanning backward
+                    // from it instead of recursing, so a long run of
+                    // semicolon-less keyword fields cannot exhaust the stack.
+                    member_start = token_end - text.len();
                 }
                 _ => return false,
             }
@@ -4267,6 +4279,18 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "eval(v): T",
             ),
         ]);
+    }
+
+    #[test]
+    fn long_runs_of_keyword_fields_are_scanned_without_recursion() {
+        // Each semicolon-less keyword field is checked back to the class
+        // brace, which used to take one stack frame per field.
+        let fields = "typeof\n".repeat(30_000);
+        let declared = format!("class C {{\n{fields}eval(value) {{}} }}");
+        assert_all_declarations(&[declared.as_str()]);
+        // An initializer in front of the run keeps the finding.
+        let initializer = format!("class C {{\nx = typeof\n{fields}eval(value) {{}} }}");
+        assert_all_reported(&[(initializer.as_str(), "eval(value)")]);
     }
 
     #[test]
