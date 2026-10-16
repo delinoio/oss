@@ -239,12 +239,21 @@ fn coverage(
                 OptimizationCategory::DeadCodeElimination
                     if !collection.dead_code_elimination_runs() =>
                 {
-                    (
-                        CoverageState::NotApplicable,
+                    // A named minifier (Terser with `compress: false`) turns
+                    // the pass off through its own options, not through the
+                    // Rolldown output option.
+                    let note = if collection.default_minifier {
                         "Dead-code elimination is disabled by the effective output minify \
                          configuration, so the minifier does not remove dead code."
-                            .to_owned(),
-                    )
+                            .to_owned()
+                    } else {
+                        format!(
+                            "Dead-code elimination is disabled by the {} minifier options, so the \
+                             minifier does not remove dead code.",
+                            collection.minifier
+                        )
+                    };
+                    (CoverageState::NotApplicable, note)
                 }
                 OptimizationCategory::DeadCodeElimination | OptimizationCategory::NameMangling
                     if !collection.default_minifier =>
@@ -4719,6 +4728,101 @@ mod tests {
                 has_problem(&fixture, "BW_MINIFICATION_DISABLED"),
                 case.minification_disabled,
                 "{}: minification-disabled problem",
+                case.name
+            );
+        }
+    }
+
+    #[test]
+    fn named_minifier_fine_grained_stages_gate_the_dead_code_detector() {
+        struct Case {
+            name: &'static str,
+            minifier: &'static str,
+            dce: &'static str,
+            compress: &'static str,
+            mangle: &'static str,
+            dead_code: CoverageState,
+            env_finding: bool,
+        }
+        // The adapter reports a named minifier with `minifyEnabled` and no
+        // default minifier, and the stages its own options leave on.
+        let cases = [
+            Case {
+                name: "esbuild minifyIdentifiers: false",
+                minifier: "esbuild",
+                dce: "enabled",
+                compress: "enabled",
+                mangle: "disabled",
+                dead_code: CoverageState::Unavailable,
+                env_finding: true,
+            },
+            Case {
+                name: "esbuild minifySyntax: false",
+                minifier: "esbuild",
+                dce: "enabled",
+                compress: "disabled",
+                mangle: "enabled",
+                dead_code: CoverageState::Unavailable,
+                env_finding: true,
+            },
+            Case {
+                name: "terser mangle: false",
+                minifier: "terser",
+                dce: "enabled",
+                compress: "enabled",
+                mangle: "disabled",
+                dead_code: CoverageState::Unavailable,
+                env_finding: true,
+            },
+            Case {
+                name: "terser compress: false",
+                minifier: "terser",
+                dce: "disabled",
+                compress: "disabled",
+                mangle: "enabled",
+                dead_code: CoverageState::NotApplicable,
+                env_finding: false,
+            },
+        ];
+        for case in cases {
+            let fixture = run_fixture(BundlerChoice::Vite, |value| {
+                vite_minifier_gates(value, case.minifier, "disabled", true, false);
+                value["minifier"] = serde_json::json!(case.minifier);
+                value["deadCodeElimination"] = serde_json::json!(case.dce);
+                value["compress"] = serde_json::json!(case.compress);
+                value["mangle"] = serde_json::json!(case.mangle);
+            });
+            let dce = coverage_state(&fixture, OptimizationCategory::DeadCodeElimination);
+            assert_eq!(
+                dce.state, case.dead_code,
+                "{}: dead-code elimination",
+                case.name
+            );
+            if case.dead_code == CoverageState::NotApplicable {
+                assert!(
+                    dce.note.contains("terser minifier options"),
+                    "{}: {}",
+                    case.name,
+                    dce.note
+                );
+            }
+            // A non-default minifier is never covered for name mangling.
+            let mangling = coverage_state(&fixture, OptimizationCategory::NameMangling).state;
+            assert_ne!(mangling, CoverageState::Covered, "{}: mangling", case.name);
+            assert_eq!(
+                has_env_finding(&fixture),
+                case.env_finding,
+                "{}: env finding",
+                case.name
+            );
+            assert!(
+                has_problem(&fixture, "BW_MINIFIER_NON_DEFAULT"),
+                "{}: non-default problem",
+                case.name
+            );
+            assert!(
+                !has_problem(&fixture, "BW_MINIFICATION_DISABLED"),
+                "{}: a named minifier still minifies",
                 case.name
             );
         }

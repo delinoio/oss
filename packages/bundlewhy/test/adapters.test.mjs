@@ -16,6 +16,7 @@ import {
   resolveMangleSetting,
   resolveMinifierGate,
   resolveMinifyStages,
+  resolveNamedMinifierStages,
   resolveNormalizedMangleSetting,
   resolveNormalizedMinifyStages,
   resolveNormalizedOutputMinifySetting,
@@ -851,6 +852,222 @@ for (const [name, buildMinify] of [
     assert.equal(
       collection.configSummary["build.rolldownOptions.output.minify"],
       "disabled",
+    );
+  });
+}
+
+// A named minifier honors its own fine-grained options. Vite's
+// `resolveEsbuildTranspileOptions` (v8.3.4) defaults the three esbuild switches
+// to `true` once any of them is set; Terser skips the compressor or the name
+// mangler when its option is falsy.
+const namedMinifierCases = [
+  ["esbuild without options", "esbuild", {}, ALL_STAGES],
+  [
+    "esbuild with an empty option object",
+    "esbuild",
+    { esbuild: {} },
+    ALL_STAGES,
+  ],
+  ["esbuild option turned off", "esbuild", { esbuild: false }, ALL_STAGES],
+  [
+    "esbuild minifyIdentifiers off",
+    "esbuild",
+    { esbuild: { minifyIdentifiers: false } },
+    { dce: ON, compress: ON, mangle: OFF },
+  ],
+  [
+    "esbuild minifySyntax off",
+    "esbuild",
+    { esbuild: { minifySyntax: false } },
+    { dce: ON, compress: OFF, mangle: ON },
+  ],
+  [
+    "esbuild minifyWhitespace only",
+    "esbuild",
+    { esbuild: { minifyWhitespace: true } },
+    ALL_STAGES,
+  ],
+  [
+    "esbuild minifyWhitespace off only",
+    "esbuild",
+    { esbuild: { minifyWhitespace: false } },
+    ALL_STAGES,
+  ],
+  [
+    "esbuild identifiers and syntax off",
+    "esbuild",
+    { esbuild: { minifyIdentifiers: false, minifySyntax: false } },
+    { dce: ON, compress: OFF, mangle: OFF },
+  ],
+  [
+    "esbuild null switches are unset",
+    "esbuild",
+    { esbuild: { minifyIdentifiers: null, minifySyntax: undefined } },
+    ALL_STAGES,
+  ],
+  [
+    "esbuild minifyIdentifiers on keeps syntax on",
+    "esbuild",
+    { esbuild: { minifyIdentifiers: true } },
+    ALL_STAGES,
+  ],
+  ["terser without options", "terser", {}, ALL_STAGES],
+  ["terser with empty options", "terser", { terserOptions: {} }, ALL_STAGES],
+  [
+    "terser mangle off",
+    "terser",
+    { terserOptions: { mangle: false } },
+    { dce: ON, compress: ON, mangle: OFF },
+  ],
+  [
+    "terser compress off",
+    "terser",
+    { terserOptions: { compress: false } },
+    { dce: OFF, compress: OFF, mangle: ON },
+  ],
+  [
+    "terser compress and mangle off",
+    "terser",
+    { terserOptions: { compress: false, mangle: false } },
+    NO_STAGES,
+  ],
+  [
+    "terser option objects",
+    "terser",
+    { terserOptions: { compress: { passes: 2 }, mangle: { toplevel: true } } },
+    ALL_STAGES,
+  ],
+  [
+    "terser true switches",
+    "terser",
+    { terserOptions: { compress: true, mangle: true } },
+    ALL_STAGES,
+  ],
+  [
+    "terser single compressor passes stay on",
+    "terser",
+    { terserOptions: { compress: { dead_code: false, unused: false } } },
+    ALL_STAGES,
+  ],
+  ["an unknown named minifier", "swc", {}, ALL_STAGES],
+];
+for (const [name, buildMinify, options, expected] of namedMinifierCases) {
+  test(`vite named minifier stages (${name})`, () => {
+    assert.deepEqual(
+      resolveNamedMinifierStages(buildMinify, options),
+      expected,
+    );
+  });
+}
+
+for (const buildMinify of [false, true, "oxc"]) {
+  test(`vite named minifier stages are absent for build.minify ${buildMinify}`, () => {
+    assert.equal(
+      resolveNamedMinifierStages(buildMinify, {
+        esbuild: { minifyIdentifiers: false },
+        terserOptions: { mangle: false },
+      }),
+      null,
+    );
+  });
+}
+
+test("vite minifier gate combines the named minifier stages with the Rolldown stages", () => {
+  const namedStages = { dce: ON, compress: ON, mangle: OFF };
+  assert.deepEqual(resolveMinifierGate("esbuild", NO_STAGES, namedStages), {
+    minifyEnabled: true,
+    minifierName: "esbuild",
+    defaultMinifier: false,
+    stages: namedStages,
+  });
+  // A Rolldown stage that an explicit `output.minify` turns on still counts.
+  assert.deepEqual(
+    resolveMinifierGate(
+      "esbuild",
+      { dce: ON, compress: ON, mangle: ON },
+      namedStages,
+    ).stages,
+    ALL_STAGES,
+  );
+  // The named stages do not apply to Oxc.
+  assert.deepEqual(
+    resolveMinifierGate("oxc", NO_STAGES, ALL_STAGES).stages,
+    NO_STAGES,
+  );
+  // Without named stages every stage of a named minifier runs.
+  assert.deepEqual(resolveMinifierGate("terser", NO_STAGES).stages, ALL_STAGES);
+});
+
+for (const shape of [
+  {
+    name: "esbuild minifyIdentifiers off",
+    minify: "esbuild",
+    extra: "esbuild: { minifyIdentifiers: false },",
+    stages: { dce: ON, compress: ON, mangle: OFF },
+  },
+  {
+    name: "esbuild minifySyntax off",
+    minify: "esbuild",
+    extra: "esbuild: { minifySyntax: false },",
+    stages: { dce: ON, compress: OFF, mangle: ON },
+  },
+  {
+    name: "terser mangle off",
+    minify: "terser",
+    inBuild: "terserOptions: { mangle: false },",
+    stages: { dce: ON, compress: ON, mangle: OFF },
+  },
+  {
+    name: "terser compress off",
+    minify: "terser",
+    inBuild: "terserOptions: { compress: false },",
+    stages: { dce: OFF, compress: OFF, mangle: ON },
+  },
+  {
+    name: "terser compress and mangle off",
+    minify: "terser",
+    inBuild: "terserOptions: { compress: false, mangle: false },",
+    stages: NO_STAGES,
+  },
+]) {
+  test(`vite adapter reads the fine-grained options of a named minifier (${shape.name})`, () => {
+    const projectRoot = path.join(root, "fixtures/vite-app");
+    const { dir, file } = writeConfig(
+      "vite.config.mjs",
+      `export default {
+  ${shape.extra ?? ""}
+  build: { minify: '${shape.minify}', ${shape.inBuild ?? ""} },
+};\n`,
+    );
+    const { status, events, collection } = runAdapter(
+      "vite",
+      "vite-app",
+      path.relative(projectRoot, file),
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+    assert.equal(status, 0, JSON.stringify(events));
+    // A named minifier still minifies and is never the default one.
+    assert.equal(collection.minifyEnabled, true);
+    assert.equal(collection.defaultMinifier, false);
+    assert.equal(collection.minifier, shape.minify);
+    assert.equal(collection.deadCodeElimination, shape.stages.dce);
+    assert.equal(collection.compress, shape.stages.compress);
+    assert.equal(collection.mangle, shape.stages.mangle);
+    assert.equal(
+      collection.configSummary["build.rolldownOptions.output.minify"],
+      "disabled",
+    );
+    assert.equal(
+      collection.configSummary["build.rolldownOptions.output.minify.dce"],
+      shape.stages.dce,
+    );
+    assert.equal(
+      collection.configSummary["build.rolldownOptions.output.minify.compress"],
+      shape.stages.compress,
+    );
+    assert.equal(
+      collection.configSummary["build.rolldownOptions.output.minify.mangle"],
+      shape.stages.mangle,
     );
   });
 }

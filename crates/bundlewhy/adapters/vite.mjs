@@ -332,10 +332,70 @@ function isExternalMinifierName(buildMinify) {
 }
 
 /**
+ * Resolves which stages a named minifier (`build.minify: 'terser'` or
+ * `'esbuild'`) runs, from the fine-grained options Vite hands to it. The named
+ * minifier runs in a Vite plugin, outside Rolldown. Returns `null` when
+ * `buildMinify` names no minifier other than Oxc.
+ *
+ * - `'esbuild'`: Vite's `resolveEsbuildTranspileOptions` (v8.3.4) reads the
+ *   `esbuild` option. When any of `minifyIdentifiers`, `minifySyntax` or
+ *   `minifyWhitespace` is set (not `null` or `undefined`), each of them
+ *   defaults to `true` and the others stay independent; otherwise esbuild
+ *   minifies everything. `minifyIdentifiers` is name mangling and
+ *   `minifySyntax` is compression. Vite always sets `treeShaking: true` for
+ *   this minifier, so dead-code elimination is never turned off.
+ * - `'terser'`: Vite forwards `build.terserOptions` to Terser. Terser skips the
+ *   compressor when `compress` is falsy and the name mangler when `mangle` is
+ *   falsy (an options object, `true` or an omitted option runs them). The
+ *   compressor includes dead-code removal, so a falsy `compress` also turns
+ *   dead-code elimination off.
+ * - Any other name: every stage counts as running, because bundlewhy cannot
+ *   read that minifier's options.
+ *
+ * Known limits: an options object that turns off single compressor passes
+ * (Terser `dead_code`, `unused`, ...) or single esbuild passes still counts as
+ * running dead-code elimination, and `minifyWhitespace` is not a tracked stage.
+ * A finding is only exempted by an explicit setting, never by a guess.
+ */
+export function resolveNamedMinifierStages(buildMinify, options = {}) {
+  if (!isExternalMinifierName(buildMinify)) return null;
+  if (buildMinify === "esbuild") {
+    const esbuild = options?.esbuild || {};
+    const fineGrained =
+      esbuild.minifyIdentifiers != null ||
+      esbuild.minifySyntax != null ||
+      esbuild.minifyWhitespace != null;
+    if (!fineGrained) return ENABLED_STAGES;
+    return {
+      dce: StageSetting.Enabled,
+      compress: stageSetting(esbuild.minifySyntax ?? true),
+      mangle: stageSetting(esbuild.minifyIdentifiers ?? true),
+    };
+  }
+  if (buildMinify === "terser") {
+    const terser = options?.terserOptions ?? {};
+    const compress = isTerserStageEnabled(terser.compress);
+    return {
+      dce: stageSetting(compress),
+      compress: stageSetting(compress),
+      mangle: stageSetting(isTerserStageEnabled(terser.mangle)),
+    };
+  }
+  return ENABLED_STAGES;
+}
+
+/** Terser runs a stage unless its option is set to a falsy value. */
+function isTerserStageEnabled(stage) {
+  return stage === undefined || Boolean(stage);
+}
+
+/**
  * Derives the minifier gates of the collection from `build.minify` and the
  * effective Rolldown stages. The returned `stages` are the effective facts of
  * the whole build: a named minifier such as `'terser'` compresses, mangles and
- * removes dead code outside Rolldown, so every stage counts as running.
+ * removes dead code outside Rolldown, so a stage counts as running when
+ * Rolldown runs it or when the named minifier's own options leave it on
+ * (`namedStages`, see `resolveNamedMinifierStages`; every stage when omitted).
  *
  * - `minifyEnabled`: compression or name mangling runs (including when only an
  *   `output.minify` option or an `outputOptions` hook enables it over
@@ -347,7 +407,11 @@ function isExternalMinifierName(buildMinify) {
  * - `minifierName`: with no minifier running it is `"false"`, so the report
  *   never claims a minifier that did not run.
  */
-export function resolveMinifierGate(buildMinify, rolldownStages) {
+export function resolveMinifierGate(
+  buildMinify,
+  rolldownStages,
+  namedStages = ENABLED_STAGES,
+) {
   const external = isExternalMinifierName(buildMinify);
   const rolldownMinifies =
     rolldownStages.compress === StageSetting.Enabled ||
@@ -355,7 +419,10 @@ export function resolveMinifierGate(buildMinify, rolldownStages) {
   const rolldownRuns =
     rolldownMinifies || rolldownStages.dce === StageSetting.Enabled;
   const effective = (key) =>
-    stageSetting(external || rolldownStages[key] === StageSetting.Enabled);
+    stageSetting(
+      (external && namedStages[key] === StageSetting.Enabled) ||
+        rolldownStages[key] === StageSetting.Enabled,
+    );
   return {
     minifyEnabled: rolldownMinifies || external,
     minifierName: external ? buildMinify : rolldownRuns ? "oxc" : "false",
@@ -509,6 +576,10 @@ function collectorPlugin(state) {
       state.resolved = {
         minify: config.build.minify,
         stages: resolveMinifyStages(config.build.minify, outputOption),
+        namedStages: resolveNamedMinifierStages(config.build.minify, {
+          esbuild: config.esbuild,
+          terserOptions: config.build.terserOptions,
+        }),
         sourcemap: config.build.sourcemap,
         lib: Boolean(config.build.lib),
         ssr: Boolean(config.build.ssr),
@@ -857,6 +928,7 @@ await runAdapter(async (request) => {
   const gate = resolveMinifierGate(
     minify === true || minify === undefined ? "oxc" : minify,
     rolldownStages,
+    resolved.namedStages ?? ENABLED_STAGES,
   );
   const { minifyEnabled, minifierName, stages } = gate;
   const configSummary = {
