@@ -82,3 +82,7 @@ func RevokeGrokRefreshToken(ctx context.Context, client *http.Client, profile Gr
 		return "", &GrokOAuthError{Reason: GrokReasonRevocationUncertain, Uncertain: true}
 	}
 }
+
+// RevocationEndpointMissing is the failure of a revocation that cannot start
+// because discovery advertised no usable revocation endpoint.
+func RevocationEndpointMissing() error { return grokFail(GrokReasonRevocationEndpoint) }

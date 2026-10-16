@@ -727,11 +727,20 @@ func TestGrokBrowserLoginRequestValidation(t *testing.T) {
 	f := newGrokFixture(t)
 	for name, edit := range map[string]func(*pb.RequestSubscriptionRequest){
 		"machine": func(r *pb.RequestSubscriptionRequest) { r.MachineId = string(f.input.MachineID) },
-		"logout":  func(r *pb.RequestSubscriptionRequest) { r.Action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT },
+		"logout machine": func(r *pb.RequestSubscriptionRequest) {
+			r.Action, r.MachineId = pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT, string(f.input.MachineID)
+		},
+		"logout device code": func(r *pb.RequestSubscriptionRequest) {
+			r.Action, r.DeviceCode = pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT, true
+		},
 	} {
 		if _, err := f.grokLoginRequest(t, edit); err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
 			t.Fatalf("%s was not refused as unsupported: %v", name, err)
 		}
+	}
+	// A logout needs a connected account: this one has no credential yet.
+	if _, err := f.grokLoginRequest(t, func(r *pb.RequestSubscriptionRequest) { r.Action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT }); err == nil {
+		t.Fatal("a logout of an unconnected account was accepted")
 	}
 	// A refresh needs a connected account: this one has no credential yet.
 	if _, err := f.grokLoginRequest(t, func(r *pb.RequestSubscriptionRequest) { r.Action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH }); err == nil {

@@ -83,6 +83,12 @@ type SubscriptionLease struct {
 	// owner and SubscriptionState.Members holds its execution members. A
 	// historical singleton lease omits it and keeps exclusive execution.
 	Shared bool `json:"shared,omitempty"`
+	// CleanupUnconfirmed is set when the lease owner's Finish reported that its
+	// private credential cleanup was not confirmed. The lease then stays held and
+	// the account is fenced for recovery, and only the original owner (the same
+	// Runner Device, Worker device and instance) may report a retried Finish.
+	// Historical leases omit it.
+	CleanupUnconfirmed bool `json:"cleanup_unconfirmed,omitempty"`
 }
 
 func (s SubscriptionState) Validate(account Account) error {
@@ -197,7 +203,7 @@ func (s SubscriptionState) Validate(account Account) error {
 		if o.GrokDiagnostic != nil && (account.SubscriptionService != SubscriptionGrok || o.Diagnostic != nil || o.GrokDiagnostic.Validate() != nil || o.GrokDiagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionCanceled || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
 			return invalid()
 		}
-		if o.ExchangeClaimed && (account.SubscriptionService != SubscriptionGrok || o.Action != SubscriptionLogin && o.Action != SubscriptionRefresh || !o.NativeStarted && o.State != SubscriptionSucceeded && o.State != SubscriptionFailed && o.State != SubscriptionRecovery) {
+		if o.ExchangeClaimed && (account.SubscriptionService != SubscriptionGrok || !o.NativeStarted && o.State != SubscriptionSucceeded && o.State != SubscriptionFailed && o.State != SubscriptionRecovery) {
 			return invalid()
 		}
 		if o.CleanupPhase == SubscriptionCredentialCleanupPending && !account.ManagedClaudeAccount() {
@@ -236,7 +242,9 @@ type ServerSubscriptionOperation struct {
 	// ExchangeClaimed is the durable Grok token-exchange claim. It is written
 	// before the one authorization-code (login) or refresh_token (refresh) token
 	// request is sent and is never cleared, so an uncertain or interrupted
-	// exchange can never resend the code or the refresh token.
+	// exchange can never resend the code or the refresh token. For a Grok logout
+	// it records that the revocation request was attempted; revocation is
+	// idempotent, so an explicit retry by the original actor may send it again.
 	// Historical operations omit it.
 	ExchangeClaimed bool `json:"exchange_claimed,omitempty"`
 	// Optional server-owned Claude setup-token fields. Historical Codex server

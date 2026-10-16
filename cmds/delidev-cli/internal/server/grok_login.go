@@ -816,19 +816,22 @@ func grokLoginCandidate(a domain.Account) bool {
 
 // requestGrokSubscription admits the server-owned Grok operations: LOGIN with no
 // machine, by browser (device_code false) or by device code (device_code true),
-// and REFRESH of a connected account with no machine. The login choice is stored
-// on the pending operation and never changes. Logout has no server-owned Grok
-// path yet and stays unsupported, as does any request that names a Runner Device.
+// REFRESH of a connected account with no machine and LOGOUT of a connected
+// account with no machine. The login choice is stored on the pending operation
+// and never changes. A request that names a Runner Device stays unsupported.
 func (s *Service) requestGrokSubscription(ctx context.Context, req *connect.Request[pb.RequestSubscriptionRequest]) (*connect.Response[pb.RequestSubscriptionResponse], error) {
 	action := subscriptionAction(req.Msg.Action)
-	if req.Msg.MachineId != "" || action != domain.SubscriptionLogin && action != domain.SubscriptionRefresh {
-		return nil, rpc.Error(domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Start the Grok login or refresh without a Runner Device; logout is not available."), req.Header().Get(rpc.CorrelationHeader))
+	if req.Msg.MachineId != "" || action != domain.SubscriptionLogin && action != domain.SubscriptionRefresh && action != domain.SubscriptionLogout || action == domain.SubscriptionLogout && req.Msg.DeviceCode {
+		return nil, rpc.Error(domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Start the Grok login, refresh or logout without a Runner Device."), req.Header().Get(rpc.CorrelationHeader))
 	}
 	response, err := s.requestServerSubscription(ctx, req)
 	if err == nil {
 		phase := grokLoginPhase
-		if action == domain.SubscriptionRefresh {
+		switch action {
+		case domain.SubscriptionRefresh:
 			phase = grokRefreshPhase
+		case domain.SubscriptionLogout:
+			phase = grokLogoutPhase
 		}
 		s.logger.InfoContext(ctx, "grok_operation_accepted", "phase", phase, "action", action, "account_id", req.Msg.Mutation.Id, "operation_id", req.Msg.Mutation.RequestId, "correlation_id", req.Msg.Mutation.RequestId, "device_code", req.Msg.DeviceCode, "replayed", response.Msg.Replayed)
 	}

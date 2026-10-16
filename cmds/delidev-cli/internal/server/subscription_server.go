@@ -57,7 +57,11 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 			a.Subscription = &domain.SubscriptionState{}
 		}
 		state := a.Subscription
-		if state.ServerObservationActive() || state.Pending != nil || state.RecoveryRequired || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
+		// The original actor may retry a Grok logout that ended uncertain: the
+		// retry replaces the unfinished operation and sends the idempotent
+		// revocation again.
+		retry := action == domain.SubscriptionLogout && grokLogoutRetryable(a, actor)
+		if state.ServerObservationActive() || state.Pending != nil && !retry || state.RecoveryRequired && !retry || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
 			return nil, subscriptionDenied()
 		}
 		if action == domain.SubscriptionLogin && (a.Connection != nil || state.Generation != "" || state.Lease != nil) {
@@ -82,7 +86,17 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 			}
 		}
 		now := time.Now().UTC()
-		state.ServerOperation = &domain.ServerSubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, Epoch: s.subscriptionServerEpoch(), FinishID: domain.NewID(), Actor: actor, State: domain.SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(15 * time.Minute)}
+		window := 15 * time.Minute
+		if a.SubscriptionService == domain.SubscriptionGrok && action == domain.SubscriptionLogout {
+			// A Grok logout waits for the original execution exit and never expires
+			// on the short login window.
+			window = grokLogoutWindow
+		}
+		if retry {
+			state.RecoveryRequired = false
+			state.Pending = nil
+		}
+		state.ServerOperation = &domain.ServerSubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, Epoch: s.subscriptionServerEpoch(), FinishID: domain.NewID(), Actor: actor, State: domain.SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(window)}
 		state.Pending = &domain.SubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, Actor: actor, DeviceCode: input.DeviceCode, Phase: domain.SubscriptionQueued}
 		if action == domain.SubscriptionLogout {
 			a.Health = domain.AccountRevoked
@@ -235,6 +249,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			claude             bool
 			grok               bool
 			grokRefresh        bool
+			grokLogout         bool
 		}
 		var candidates []candidate
 		eligible := map[domain.ID]bool{}
@@ -262,6 +277,8 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					candidates = append(candidates, candidate{account: r.ID, grok: true})
 				} else if grokRefreshCandidate(a) && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() {
 					candidates = append(candidates, candidate{account: r.ID, grokRefresh: true})
+				} else if grokLogoutCandidate(a) && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() {
+					candidates = append(candidates, candidate{account: r.ID, grokLogout: true})
 				} else if a.SubscriptionService == domain.SubscriptionGrok {
 					continue
 				} else if a.Subscription != nil && !a.Subscription.RecoveryRequired && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.State == domain.SubscriptionPreparing && !a.Subscription.ServerOperation.NativeStarted && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() && a.Subscription.Pending != nil && a.Subscription.Pending.Phase == domain.SubscriptionQueued && a.Subscription.Lease == nil {
@@ -294,7 +311,9 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			go func() {
 				defer workers.Done()
 				result := serverSubscriptionResult{account: next.account, operation: next.operation, cleanup: next.cleanup}
-				if next.grokRefresh {
+				if next.grokLogout {
+					s.runGrokLogout(child, next.account)
+				} else if next.grokRefresh {
 					s.runGrokRefresh(child, next.account)
 				} else if next.grok {
 					s.runGrokLogin(child, next.account)
