@@ -172,6 +172,7 @@ function fixture(loginURL = url) {
       loginURL = value;
     },
     view,
+    changed,
     save,
     login,
     progress,
@@ -289,6 +290,19 @@ it("suggests a name only after verified success, retains edits and saves current
   expect(f.save).toHaveBeenCalledTimes(2);
   expect(f.login).toHaveBeenCalledTimes(1);
   expect(f.cancel).not.toHaveBeenCalled();
+});
+it("publishes one saved-inventory invalidation for every account-change notice", async () => {
+  const f = fixture();
+  const invalidate = vi.spyOn(f.client, "invalidateQueries");
+  await start(f);
+  f.success();
+  await screen.findByLabelText("Account name", {}, { timeout: 3000 });
+  fireEvent.click(screen.getByRole("button", { name: "Save account name" }));
+  await screen.findByRole("button", { name: "Add account" });
+  expect(f.changed.mock.calls.length).toBeGreaterThan(0);
+  expect(invalidate).toHaveBeenCalledTimes(f.changed.mock.calls.length);
+  for (const [filters] of invalidate.mock.calls)
+    expect(JSON.stringify(filters?.queryKey)).toContain("ListResources");
 });
 it("Later retains the default account name and accepted login", async () => {
   const f = fixture();

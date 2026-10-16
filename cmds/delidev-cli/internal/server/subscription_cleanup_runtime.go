@@ -91,7 +91,7 @@ func retireServerLoginCredentials(ctx context.Context, scope nativeScope, legacy
 	if scope.Profiles == nil {
 		return subscriptionDenied()
 	}
-	for _, kind := range []domain.Harness{domain.Codex, domain.ClaudeCode} {
+	for _, kind := range []domain.Harness{domain.Codex, domain.ClaudeCode, domain.GrokBuild} {
 		key := nativeprofile.Key{Harness: kind, Purpose: nativeprofile.PurposeAuth, Account: scope.Account}
 		info, ok, err := scope.Profiles.Lookup(ctx, key)
 		if err != nil {
@@ -104,7 +104,16 @@ func retireServerLoginCredentials(ctx context.Context, scope nativeScope, legacy
 		if err != nil {
 			return err
 		}
-		err = subscription.RetireCredentialFiles(info.Root)
+		if kind == domain.GrokBuild {
+			var home subscription.GrokHome
+			home, err = subscription.BindGrokHome(filepath.Join(info.Root, "grok"))
+			if err == nil {
+				err = home.RetireAuthFile()
+				_ = home.Close()
+			}
+		} else {
+			err = subscription.RetireCredentialFiles(info.Root)
+		}
 		_ = lease.Close()
 		if err != nil {
 			return subscriptionDenied()

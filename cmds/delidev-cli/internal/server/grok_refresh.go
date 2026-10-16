@@ -195,7 +195,7 @@ func (s *Service) performGrokRefresh(ctx context.Context, id domain.ID, original
 	}
 	// From here on the request may reach the provider: only a definitive
 	// rejection proves the refresh token was not consumed.
-	tokens, err := subscription.RefreshGrokTokens(ctx, client, profile, endpoints, bound.RefreshToken())
+	tokens, err := subscription.RefreshGrokTokens(ctx, client, profile, endpoints, bound.RefreshToken(), bound.Identity())
 	defer tokens.Clear()
 	if err != nil {
 		reason, uncertain := subscription.GrokOAuthReasonOf(err)

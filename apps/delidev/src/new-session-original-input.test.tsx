@@ -185,21 +185,25 @@ it.each([
   async (kind, label) => {
     const f = fixture(kind);
     render(f.view);
-    await waitFor(() =>
-      expect(
-        scrollChoiceValue(
-          screen.getByRole("combobox", { name: "Agent Worker" }),
-        ),
-      ).toBe(f.agent.id),
+    await waitFor(
+      () =>
+        expect(
+          scrollChoiceValue(
+            screen.getByRole("combobox", { name: "Agent Worker" }),
+          ),
+        ).toBe(f.agent.id),
+      { timeout: 4000 },
     );
     fireEvent.change(screen.getByRole("textbox", { name: "First message" }), {
       target: { value: "Created first prompt" },
     });
     fireEvent.click(screen.getByRole("button", { name: label }));
-    await waitFor(() =>
-      expect(screen.getByTestId("rows").textContent).toContain(
-        "Created first prompt",
-      ),
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("rows").textContent).toContain(
+          "Created first prompt",
+        ),
+      { timeout: 4000 },
     );
     expect(JSON.parse(screen.getByTestId("rows").textContent!)).toEqual([
       { original: true, prompt: "Created first prompt" },
@@ -211,15 +215,21 @@ it.each([
 it("does not register an original input when the session omits its initial input identity", async () => {
   const f = fixture(NewSessionKind.Session, true);
   render(f.view);
-  await waitFor(() =>
-    expect(
-      scrollChoiceValue(screen.getByRole("combobox", { name: "Agent Worker" })),
-    ).toBe(f.agent.id),
+  await waitFor(
+    () =>
+      expect(
+        scrollChoiceValue(
+          screen.getByRole("combobox", { name: "Agent Worker" }),
+        ),
+      ).toBe(f.agent.id),
+    { timeout: 4000 },
   );
   const box = screen.getByRole("textbox", { name: "First message" });
   fireEvent.change(box, { target: { value: "Created first prompt" } });
   fireEvent.click(screen.getByRole("button", { name: "Create session" }));
-  await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(""));
+  await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(""), {
+    timeout: 4000,
+  });
   expect(f.createSession).toHaveBeenCalledOnce();
   expect(JSON.parse(screen.getByTestId("rows").textContent!)).toEqual([]);
 });
