@@ -66,6 +66,7 @@ interface Options {
 function fixture(rows: Resource[], options: Options = {}) {
   const current = new Map(rows.map((row) => [row.id, row]));
   const removals: RemoveWorkerRequest[] = [];
+  const reject: { next?: Error } = {};
   const transport = createRouterTransport((router) => {
     router.service(ResourceService, {
       listResources: () => ({
@@ -89,6 +90,11 @@ function fixture(rows: Resource[], options: Options = {}) {
     router.service(DeviceService, {
       removeWorker: async (request) => {
         removals.push(request);
+        if (reject.next) {
+          const error = reject.next;
+          reject.next = undefined;
+          throw error;
+        }
         const resource =
           (await options.remove?.(request)) ??
           create(ResourceSchema, {
@@ -128,7 +134,7 @@ function fixture(rows: Resource[], options: Options = {}) {
     </TransportProvider>,
   );
   fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
-  return { removals, current };
+  return { removals, current, reject };
 }
 const tone = (button: HTMLElement) => button.getAttribute("data-action-tone");
 const inventory = () =>
@@ -363,6 +369,33 @@ it("requires explicit fresh confirmation after a stale revision", async () => {
   fireEvent.click(confirm);
   await screen.findByText(/Deleted Worker Stale helper/);
   expect(value.removals).toHaveLength(2);
+  expect(value.removals[1].mutation?.requestId).not.toBe(
+    value.removals[0].mutation?.requestId,
+  );
+});
+
+it("refetches the exact Worker before accepting conflict review", async () => {
+  const row = machine("Advanced helper", 3n);
+  const value = fixture([row], { local: async () => newRequestId() });
+  const opener = await deleteButton("Advanced helper");
+  await waitFor(() => expect(opener.disabled).toBe(false));
+  fireEvent.click(opener);
+  const dialog = await screen.findByRole("dialog", { name: "Delete Worker?" });
+  const confirm = await ready(dialog);
+  // The server advances after the dialog read; the cached read stays at 3.
+  value.current.set(row.id, create(ResourceSchema, { ...row, revision: 4n }));
+  value.reject.next = conflict();
+  fireEvent.click(confirm);
+  fireEvent.click(
+    await within(dialog).findByRole("button", {
+      name: "Review current Worker",
+    }),
+  );
+  fireEvent.click(await ready(dialog));
+  await screen.findByText(/Deleted Worker Advanced helper/);
+  expect(value.removals).toHaveLength(2);
+  expect(value.removals[0].mutation?.expectedRevision).toBe(3n);
+  expect(value.removals[1].mutation?.expectedRevision).toBe(4n);
   expect(value.removals[1].mutation?.requestId).not.toBe(
     value.removals[0].mutation?.requestId,
   );

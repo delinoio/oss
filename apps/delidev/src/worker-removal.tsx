@@ -136,11 +136,16 @@ export function WorkerRemovalDialog({
       schemaVersion: 1,
     });
   };
-  const review = () => {
-    if (!latest || pending) return;
+  const review = async () => {
+    if (pending || current.isFetching) return;
+    // The cached read can predate the revision that rejected the request, so
+    // bind the next confirmation only to an authoritative exact read.
+    const fresh = await current.refetch();
+    const resource = fresh.data?.resource;
+    if (!alive.current || !resource) return;
     mutation.clearRejected();
     setVerification(Verification.Idle);
-    setTarget(latest);
+    setTarget(resource);
   };
   // Closing never cancels or resubmits an accepted request.
   const dismiss = () => {
@@ -170,8 +175,8 @@ export function WorkerRemovalDialog({
           <SettingsActionButton
             icon={SettingsActionIcon.Refresh}
             type="button"
-            disabled={pending || !latest}
-            onClick={review}
+            disabled={pending || !latest || current.isFetching}
+            onClick={() => void review()}
           >
             {copy("worker-removal.review")}
           </SettingsActionButton>
