@@ -14,7 +14,7 @@ import { useConversationPages } from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef } from "react";
 
 import {
   EntityKind,
@@ -26,10 +26,17 @@ import { items, object, text } from "./documents";
 import { Failure, Problem } from "./ui";
 import {
   SubagentHarness,
+  subagentRowDisplayName,
   subagentSafeRow,
   validateSubagentPage,
   type SubagentRow,
 } from "./subagent-record";
+import {
+  HoverSide,
+  SessionHoverCard,
+  SessionHoverProvider,
+  useSessionHover,
+} from "./session-hover-card";
 
 const unavailable = () => (
   <p>{copy("subagents.theRetainedChildPageIsUnavailable_e2dd4a")}</p>
@@ -37,13 +44,40 @@ const unavailable = () => (
 export function SubagentRows({
   rows,
   sessionId,
-  technical = true,
   labels,
+  names,
+  enabled = true,
 }: {
   rows: readonly Resource[];
   sessionId: string;
-  technical?: boolean;
   labels?: Map<string, number>;
+  names?: Map<string, string>;
+  enabled?: boolean;
+}) {
+  return (
+    <SessionHoverProvider enabled={enabled} scope={sessionId}>
+      <SubagentList
+        rows={rows}
+        sessionId={sessionId}
+        labels={labels}
+        names={names}
+      />
+    </SessionHoverProvider>
+  );
+}
+
+// Validates one resident payload page before presenting any of its children.
+// It must render beneath a hover provider that the section owns.
+function SubagentList({
+  rows,
+  sessionId,
+  labels,
+  names,
+}: {
+  rows: readonly Resource[];
+  sessionId: string;
+  labels?: Map<string, number>;
+  names?: Map<string, string>;
 }) {
   useLocale();
   const accepted = useMemo(
@@ -51,7 +85,7 @@ export function SubagentRows({
     [rows, sessionId],
   );
   return accepted ? (
-    <ChildRows rows={accepted} technical={technical} labels={labels} />
+    <ChildList rows={accepted} labels={labels} names={names} />
   ) : (
     unavailable()
   );
@@ -167,249 +201,190 @@ export function SubagentSourceRows({
   );
 }
 
-function ChildRows({
+// Ordinary Info shows only a plain list of agent names. Every detail appears in
+// a noninteractive hover/focus card built from the resident validated payload,
+// so opening it sends no request and cannot mutate or control a child.
+function ChildList({
   rows,
-  technical = true,
   labels,
+  names,
 }: {
   rows: readonly SubagentRow[];
-  technical?: boolean;
   labels?: Map<string, number>;
+  names?: Map<string, string>;
 }) {
-  const productLabel = useProductLabels();
   useLocale();
+  // Native names are optional display metadata. The stable ordinal remains the
+  // fallback and the only label for Claude and OpenCode children.
+  const fallback = (key: string) =>
+    copy("session-name.subagent", { number: labels?.get(key) ?? "—" });
+  const label = (execution: unknown, native: unknown) => {
+    const key = `${execution}:${native}`;
+    return names?.get(key) ?? fallback(key);
+  };
   return (
-    <table aria-label={copy("subagents.nativeChildAgentHierarchy_212425")}>
-      <thead>
-        <tr>
-          <th>{copy("subagents.child_805332")}</th>
-          <th>{copy("subagents.parent_5f7953")}</th>
-          <th>{copy("subagents.status_920e41")}</th>
-          <th>{copy("subagents.model_5e2c61")}</th>
-          <th>{copy("subagents.recentOutput_4bafa7")}</th>
-          <th>{copy("subagents.usageObservation_9c75b9")}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map(({ resource: row, record, child }) => {
-          const output = object(child.output),
-            usage = object(child.usage);
-          const blocks = items(output.blocks).map(object);
-          return (
-            <tr key={row.id}>
-              {technical ? (
-                <td>
-                  <code>{text(child.native_id)}</code>
-                  <section>
-                    <h4>{copy("subagents.sourceCoverage_0b8649")}</h4>
-                    <p>
-                      {text(record.harness)} {text(record.native_version)}
-                    </p>
-                    <p>
-                      <LocalizedText
-                        id="subagents.execution_2ce365"
-                        components={{
-                          s0: (
-                            <>
-                              {productLabel(
-                                PresentationKind.Execution,
-                                text(record.execution_id),
-                              )}
-                            </>
-                          ),
-                        }}
-                      />
-                    </p>
-                    <p>
-                      <LocalizedText
-                        id="subagents.parentTool_5586e7"
-                        components={{
-                          s0: (
-                            <>
-                              {text(child.parent_tool_id) ||
-                                copy("subagents.extra.ca1844969742")}
-                            </>
-                          ),
-                        }}
-                      />
-                    </p>
-                    <ul>
-                      {items(record.sources)
-                        .map(object)
-                        .map((source, index) => (
-                          <li key={index}>
-                            <LocalizedText
-                              id="subagents.sequence_440e77"
-                              components={{
-                                s0: <>{text(source.source)}</>,
-                                s1: <>{text(source.source_id)}</>,
-                                s2: (
-                                  <>
-                                    {String(
-                                      source.sequence ??
-                                        copy("subagents.extra.ca1844969742"),
-                                    )}
-                                  </>
-                                ),
-                                s3: (
-                                  <>
-                                    {text(
-                                      object(source.usage).native_report,
-                                    ) ? (
-                                      <pre>
-                                        {text(
-                                          object(source.usage).native_report,
-                                        )}
-                                      </pre>
-                                    ) : null}
-                                  </>
-                                ),
-                              }}
-                            />
-                          </li>
-                        ))}
-                    </ul>
-                  </section>
-                </td>
-              ) : (
-                <td>
-                  {copy("session-name.subagent", {
-                    number:
-                      labels?.get(
-                        `${record.execution_id}:${child.native_id}`,
-                      ) ?? "—",
-                  })}
-                </td>
-              )}
-              <td>
-                {technical ? (
-                  <code>{text(child.parent_id)}</code>
-                ) : child.parent_id === record.root_id ? (
-                  copy("subagents.rootSession_6cdfaa")
-                ) : labels?.has(`${record.execution_id}:${child.parent_id}`) ? (
-                  copy("session-name.subagent", {
-                    number: labels.get(
-                      `${record.execution_id}:${child.parent_id}`,
-                    )!,
-                  })
-                ) : (
-                  copy("subagents.unavailable_ca1844")
-                )}
-              </td>
-              <td>
-                {text(child.status) || copy("subagents.extra.ca1844969742")}
-              </td>
-              <td>
+    <ul
+      className="subagent-name-list"
+      aria-label={copy("subagents.agentNames")}
+    >
+      {rows.map((row) => {
+        const { record, child } = row;
+        const key = `${record.execution_id}:${child.native_id}`;
+        return (
+          <ChildName
+            key={row.resource.id}
+            row={row}
+            name={subagentRowDisplayName(row) ?? fallback(key)}
+            parent={
+              child.parent_id === record.root_id
+                ? copy("subagents.rootSession_6cdfaa")
+                : labels?.has(`${record.execution_id}:${child.parent_id}`)
+                  ? label(record.execution_id, child.parent_id)
+                  : copy("subagents.unavailable_ca1844")
+            }
+          />
+        );
+      })}
+    </ul>
+  );
+}
+
+function ChildName({
+  row,
+  name,
+  parent,
+}: {
+  row: SubagentRow;
+  name: string;
+  parent: string;
+}) {
+  const anchor = useRef<HTMLSpanElement>(null);
+  const hover = useSessionHover(anchor);
+  const cardId = useId();
+  return (
+    <li className="subagent-name-item">
+      <span
+        ref={anchor}
+        className="subagent-name"
+        tabIndex={0}
+        aria-describedby={hover.visible ? cardId : undefined}
+        onPointerEnter={hover.onPointerEnter}
+        onPointerLeave={hover.onPointerLeave}
+        onFocus={hover.onFocus}
+        onBlur={hover.onBlur}
+      >
+        {name}
+      </span>
+      {hover.visible ? (
+        <SessionHoverCard hover={hover} id={cardId} side={HoverSide.Left}>
+          <ChildDetails row={row} name={name} parent={parent} />
+        </SessionHoverCard>
+      ) : null}
+    </li>
+  );
+}
+
+function ChildDetails({
+  row: { child },
+  name,
+  parent,
+}: {
+  row: SubagentRow;
+  name: string;
+  parent: string;
+}) {
+  useLocale();
+  const output = object(child.output),
+    usage = object(child.usage);
+  const blocks = items(output.blocks).map(object);
+  const missing = () => copy("subagents.extra.ca1844969742");
+  return (
+    <>
+      <p className="sidebar-session-card-title">{name}</p>
+      <dl className="subagent-card-details">
+        <dt>{copy("subagents.parent_5f7953")}</dt>
+        <dd>{parent}</dd>
+        <dt>{copy("subagents.status_920e41")}</dt>
+        <dd>{text(child.status) || missing()}</dd>
+        <dt>{copy("subagents.model_5e2c61")}</dt>
+        <dd>
+          <p>
+            <LocalizedText
+              id="subagents.observed_ae32e4"
+              components={{
+                s0: <>{text(child.observed_model) || missing()}</>,
+              }}
+            />
+          </p>
+          <p>
+            <LocalizedText
+              id="subagents.requested_a7d830"
+              components={{
+                s0: <>{text(child.requested_model) || missing()}</>,
+              }}
+            />
+          </p>
+        </dd>
+        <dt>{copy("subagents.recentOutput_4bafa7")}</dt>
+        <dd>
+          {child.output == null ? (
+            copy("subagents.unavailable_ca1844")
+          ) : (
+            <>
+              <p>
+                {output.partial === true
+                  ? copy("subagents.partialNativeOutput_731a58")
+                  : copy("subagents.observedNativeOutput_37d11c")}
+              </p>
+              {text(output.text) ? <pre>{text(output.text)}</pre> : null}
+              {blocks.map((block, index) => (
+                <div key={index}>
+                  <small>{text(block.kind)}</small>
+                  {block.text == null ? (
+                    <p>{copy("subagents.contentUnavailable_e9f250")}</p>
+                  ) : (
+                    <pre>{text(block.text)}</pre>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+        </dd>
+        <dt>{copy("subagents.usageObservation_9c75b9")}</dt>
+        <dd>
+          {child.usage == null ? (
+            copy("subagents.unavailable_ca1844")
+          ) : (
+            <>
+              <p>{text(usage.scope)}</p>
+              <p>
                 <LocalizedText
-                  id="subagents.observed_ae32e4"
-                  components={{
-                    s0: (
-                      <>
-                        {text(child.observed_model) ||
-                          copy("subagents.extra.ca1844969742")}
-                      </>
-                    ),
-                  }}
+                  id="subagents.total_dc9841"
+                  components={{ s0: <>{text(usage.total) || missing()}</> }}
                 />
-                <p>
-                  <LocalizedText
-                    id="subagents.requested_a7d830"
-                    components={{
-                      s0: (
-                        <>
-                          {text(child.requested_model) ||
-                            copy("subagents.extra.ca1844969742")}
-                        </>
-                      ),
-                    }}
-                  />
-                </p>
-              </td>
-              <td>
-                {child.output == null ? (
-                  copy("subagents.unavailable_ca1844")
-                ) : (
-                  <>
-                    <p>
-                      {output.partial === true
-                        ? copy("subagents.partialNativeOutput_731a58")
-                        : copy("subagents.observedNativeOutput_37d11c")}
-                    </p>
-                    {technical ? (
-                      <code>{text(output.native_message_id)}</code>
-                    ) : null}
-                    {text(output.text) ? <pre>{text(output.text)}</pre> : null}
-                    {blocks.map((block, index) => (
-                      <div key={index}>
-                        <small>{text(block.kind)}</small>
-                        {block.text == null ? (
-                          <p>{copy("subagents.contentUnavailable_e9f250")}</p>
-                        ) : (
-                          <pre>{text(block.text)}</pre>
-                        )}
-                      </div>
-                    ))}
-                  </>
+              </p>
+              <p>
+                <LocalizedText
+                  id="subagents.input_f51d4a"
+                  components={{ s0: <>{text(usage.input) || missing()}</> }}
+                />
+              </p>
+              <p>
+                <LocalizedText
+                  id="subagents.output_296ead"
+                  components={{ s0: <>{text(usage.output) || missing()}</> }}
+                />
+              </p>
+              <p>
+                {copy(
+                  "subagents.observationOnlyExcludedFromAdditiveBilling_23cc58",
                 )}
-              </td>
-              <td>
-                {child.usage == null ? (
-                  copy("subagents.unavailable_ca1844")
-                ) : (
-                  <>
-                    <p>{text(usage.scope)}</p>
-                    <p>
-                      <LocalizedText
-                        id="subagents.total_dc9841"
-                        components={{
-                          s0: (
-                            <>
-                              {text(usage.total) ||
-                                copy("subagents.extra.ca1844969742")}
-                            </>
-                          ),
-                        }}
-                      />
-                    </p>
-                    <p>
-                      <LocalizedText
-                        id="subagents.input_f51d4a"
-                        components={{
-                          s0: (
-                            <>
-                              {text(usage.input) ||
-                                copy("subagents.extra.ca1844969742")}
-                            </>
-                          ),
-                        }}
-                      />
-                    </p>
-                    <p>
-                      <LocalizedText
-                        id="subagents.output_296ead"
-                        components={{
-                          s0: (
-                            <>
-                              {text(usage.output) ||
-                                copy("subagents.extra.ca1844969742")}
-                            </>
-                          ),
-                        }}
-                      />
-                    </p>
-                    <p>
-                      {copy(
-                        "subagents.observationOnlyExcludedFromAdditiveBilling_23cc58",
-                      )}
-                    </p>
-                  </>
-                )}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+              </p>
+            </>
+          )}
+        </dd>
+      </dl>
+    </>
   );
 }
 
@@ -419,10 +394,19 @@ function ChildRows({
 export function retainSubagentLabels(
   labels: Map<string, number>,
   rows: readonly SubagentRow[],
+  names?: Map<string, string>,
 ) {
   for (const row of rows) {
     const key = `${row.record.execution_id}:${row.child.native_id}`;
     if (!labels.has(key)) labels.set(key, labels.size + 1);
+    // Names only decorate the stable ordinal so a parent shown in a card keeps
+    // the same label as its list row after its own page leaves the window. A
+    // row observed now is authoritative: missing, foreign, blank, oversized,
+    // control-bearing or non-Codex metadata clears a stale name instead of
+    // leaving an older one. Entries of rows that left the window stay retained.
+    const name = subagentRowDisplayName(row);
+    if (name !== undefined) names?.set(key, name);
+    else names?.delete(key);
   }
 }
 
@@ -489,7 +473,8 @@ export function Subagents({
       : undefined;
   }, [query.loaded, query.payloadPages, sessionId]);
   const labels = useRef(new Map<string, number>());
-  retainSubagentLabels(labels.current, rows ?? []);
+  const names = useRef(new Map<string, string>());
+  retainSubagentLabels(labels.current, rows ?? [], names.current);
   // The section is hidden only for a confirmed complete empty result: a
   // supported owner holds an accepted, current, single-page empty snapshot. A
   // healthy background Refresh over that snapshot keeps it hidden, so every
@@ -541,7 +526,6 @@ export function Subagents({
     !openCodeSupported;
   return (
     <div ref={root} className="conversation-page-scroll">
-      <p>{copy("subagents.readOnlyNativeHierarchyParentCompletion_036e57")}</p>
       {status.isPending ? (
         <p role="status">{copy("subagents.checkingCapability")}</p>
       ) : null}
@@ -562,7 +546,7 @@ export function Subagents({
       {needsOpenCodeUpdate ? (
         <p>{copy("subagents.updateTheServerAndRunnerDevice_ac66cd")}</p>
       ) : supported && rows && rows.length > 0 ? (
-        <div>
+        <SessionHoverProvider enabled={active && visible} scope={sessionId}>
           <ScrollPayloadWindow
             identity={paginationIdentity}
             revision={paginationRevision}
@@ -572,11 +556,11 @@ export function Subagents({
           >
             {(payload) => (
               <>
-                <SubagentRows
+                <SubagentList
                   rows={payload}
                   sessionId={sessionId}
-                  technical={false}
                   labels={labels.current}
+                  names={names.current}
                 />
                 {diagnosticsTarget
                   ? createPortal(
@@ -593,7 +577,7 @@ export function Subagents({
               </>
             )}
           </ScrollPayloadWindow>
-        </div>
+        </SessionHoverProvider>
       ) : null}
       {query.error ? (
         <button

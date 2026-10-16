@@ -1,6 +1,5 @@
 {
   "subagents.theRetainedChildPageIsUnavailable_e2dd4a": "The retained child page is unavailable or inconsistent.",
-  "subagents.nativeChildAgentHierarchy_212425": "Native child-agent hierarchy",
   "subagents.child_805332": "Child",
   "subagents.parent_5f7953": "Parent",
   "subagents.status_920e41": "Status",
@@ -23,7 +22,6 @@
   "subagents.output_296ead": "Output: <s0/>",
   "subagents.observationOnlyExcludedFromAdditiveBilling_23cc58": "Observation only; excluded from additive billing totals.",
   "subagents.subagents_88296a": "Subagents",
-  "subagents.readOnlyNativeHierarchyParentCompletion_036e57": "Read-only native hierarchy. Parent completion does not complete running children. Codex, Claude and OpenCode API observations are supported for installations at or above their baselines; unavailable telemetry stays explicit.",
   "subagents.thisServerDoesNotSupportChild_0baf88": "This server does not support child-agent observations.",
   "subagents.loadingChildObservations_0a8d53": "Loading child observations…",
   "subagents.noNativeChildObservationsAreAvailable_8c2be5": "No native child observations are available.",
@@ -32,5 +30,6 @@
   "subagents.firstChildPage_6cf629": "First child page",
   "subagents.nextChildPage_a95c32": "Next child page",
   "subagents.extra.ca1844969742": "Unavailable",
-  "subagents.checkingCapability": "Checking child observation availability…"
+  "subagents.checkingCapability": "Checking child observation availability…",
+  "subagents.agentNames": "Subagent names"
 }

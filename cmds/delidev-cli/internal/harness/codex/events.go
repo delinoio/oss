@@ -184,6 +184,7 @@ type Event struct {
 	Compaction          *CompactionObservation
 	AgentThreadID       domain.ID
 	Subagents           []domain.SubagentObservation
+	SubagentNames       []domain.SubagentDisplayName
 	Kind                EventKind
 	ThreadID            domain.ID
 	TurnID              domain.ID

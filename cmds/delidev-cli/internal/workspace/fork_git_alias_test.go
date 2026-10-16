@@ -97,7 +97,7 @@ func TestForkDistinctGitCaseNameRemainsContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := copy.verify(context.Background(), Git{}); err != nil {
+	if err := copy.verify(context.Background(), Git{}, soloLiveProofBytes(copy)); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(target, ".GIT"))
@@ -308,7 +308,7 @@ func TestForkFinalVerificationRejectsLateGitAlias(t *testing.T) {
 			if side == "source" {
 				code = domain.Conflict
 			}
-			if domain.SafeError(copy.verify(context.Background(), Git{})).Code != code {
+			if domain.SafeError(copy.verify(context.Background(), Git{}, soloLiveProofBytes(copy))).Code != code {
 				t.Fatal("late native administration accepted")
 			}
 		})

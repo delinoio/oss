@@ -35,6 +35,11 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 	if err := domain.Decode(req.Msg.EventJson, &event); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
+	// Display names are additive protobuf metadata beside the closed event JSON.
+	// Validation joins them to the event's original child IDs below.
+	for _, name := range req.Msg.SubagentNames {
+		event.SubagentNames = append(event.SubagentNames, domain.SubagentDisplayName{ID: domain.ID(name.GetChildId()), Name: name.GetName()})
+	}
 	if err := event.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
@@ -43,7 +48,10 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		Job, Machine, Instance, Device domain.ID
 		Revision                       uint64
 		Event                          domain.ExecutionEvent
-	}{domain.ID(meta.Id), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), actor.DeviceID, meta.ExpectedRevision, event}
+		// Exact name bytes belong to the receipt identity, so replaying a
+		// request with changed names conflicts instead of mutating retention.
+		SubagentNames []domain.SubagentDisplayName `json:"subagent_names,omitempty"`
+	}{domain.ID(meta.Id), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), actor.DeviceID, meta.ExpectedRevision, event, event.SubagentNames}
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "execution.publish", identity, func(tx *store.Tx) (any, error) {
 		if err := currentInstance(tx, identity.Machine, identity.Instance); err != nil {
 			return nil, err

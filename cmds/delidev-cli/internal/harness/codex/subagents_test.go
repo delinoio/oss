@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -18,6 +19,9 @@ func openSubagentFixture(t *testing.T, mode string) (*Client, string) {
 	config.Mode = ThreadProtocol
 	capture := filepath.Join(t.TempDir(), "requests.jsonl")
 	config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_CAPTURE="+capture)
+	if nicknames := os.Getenv("DELIDEV_CODEX_NICKNAME_FILE"); nicknames != "" {
+		config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_NICKNAME_FILE="+nicknames)
+	}
 	// This fixture performs several independent history round trips under the
 	// race detector. Its lifetime must include all reads and explicit cleanup.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -61,6 +65,21 @@ func (f *threadFixture) handleSubagentRead(id json.RawMessage, method string, ra
 			a["parentThreadId"] = f.thread["id"]
 			b["parentThreadId"] = a["id"]
 			f.subagents = []map[string]any{b, a}
+		}
+		// DELIDEV_CODEX_NICKNAME_FILE maps a child position to raw agentNickname
+		// JSON; an absent position omits the field. Tests rewrite it between reads.
+		if path := os.Getenv("DELIDEV_CODEX_NICKNAME_FILE"); path != "" {
+			var nicknames map[string]json.RawMessage
+			if data, err := os.ReadFile(path); err != nil || json.Unmarshal(data, &nicknames) != nil {
+				os.Exit(75)
+			}
+			for i, child := range f.subagents {
+				if raw, ok := nicknames[strconv.Itoa(i)]; ok {
+					child["agentNickname"] = raw
+				} else {
+					delete(child, "agentNickname")
+				}
+			}
 		}
 		write(id, map[string]any{"data": f.subagents, "nextCursor": nil, "backwardsCursor": nil})
 		return true

@@ -356,3 +356,7 @@ The `tailscale` catalog localizes the Settings > Tailscale category in English a
 ## Worker removal catalog
 
 The `worker-removal` catalog localizes the saved Worker deletion row action, confirmation, protection and failure copy in English and Korean. Worker names come from the server record unchanged; no catalog text selects, matches or authorizes a Worker.
+
+## Subagent name list copy
+
+The `subagents` catalog localizes the Info list accessible name (`Subagent names` / Korean equivalent) and the hover/focus card labels (Parent, Status, Model, Recent output, Usage observation and their markers) in English and Korean. Native agent names are inert untranslated product data, and the stable `Subagent N` fallback uses the `session-name.subagent` template. The former explanatory paragraph and table caption are removed from ordinary Info.

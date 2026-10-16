@@ -32,7 +32,7 @@ func subagentStatus(status string) (domain.SubagentStatus, error) {
 	return "", incompatible()
 }
 
-func (c *Client) childEvent(batch []domain.SubagentObservation) (Event, error) {
+func (c *Client) childEvent(batch []domain.SubagentObservation, staged map[string]string) (Event, error) {
 	state := domain.SubagentState{}
 	for id, o := range c.subagents {
 		state[id] = domain.SubagentOwner{ID: o.ID, ParentID: o.ParentID, Status: o.Status}
@@ -72,8 +72,51 @@ func (c *Client) childEvent(batch []domain.SubagentObservation) (Event, error) {
 			o.Usage = prior.Usage
 		}
 		c.subagents[o.NativeID] = o
+		// Retain a staged name only now: the batch passed ownership validation
+		// and the child is known with a proven parent.
+		if name, ok := staged[o.NativeID]; ok {
+			if c.subagentNames == nil {
+				c.subagentNames = map[string]string{}
+			}
+			c.subagentNames[o.NativeID] = name
+		}
 	}
-	return Event{Kind: SubagentEvent, ThreadID: c.thread, TurnID: turn, Correlated: true, Subagents: batch}, nil
+	return Event{Kind: SubagentEvent, ThreadID: c.thread, TurnID: turn, Correlated: true, Subagents: batch, SubagentNames: c.displayNames(batch)}, nil
+}
+
+// stageNickname accepts a native agentNickname only as a non-blank, well-formed
+// JSON string of at most domain.MaxSubagentDisplayNameRunes characters, judged
+// on the raw JSON so malformed surrogate escapes cannot become U+FFFD text.
+// Missing, null, blank or invalid values are ignored without invalidating the
+// rest of the child telemetry. The name is only staged: childEvent retains it
+// after the child's ownership and parent are proven, so an unproven or rejected
+// thread never leaves a retained name. A later valid observation of a known
+// child replaces its retained name; the name is inert display text and never
+// substitutes roles, task descriptions, models or identities.
+func (c *Client) stageNickname(staged map[string]string, id domain.ID, raw json.RawMessage) {
+	if len(raw) == 0 {
+		return
+	}
+	name, ok := domain.ParseSubagentDisplayNameJSON(raw)
+	if !ok {
+		if c.logger != nil {
+			c.logger.Debug("Codex agent nickname ignored", "owner_id", c.ownerID, "child_id", id)
+		}
+		return
+	}
+	staged[string(id)] = name
+}
+
+// displayNames reports the retained native name of each child in a batch by
+// original product child ID. Children without an accepted name are omitted.
+func (c *Client) displayNames(batch []domain.SubagentObservation) []domain.SubagentDisplayName {
+	var names []domain.SubagentDisplayName
+	for _, o := range batch {
+		if name, ok := c.subagentNames[o.NativeID]; ok {
+			names = append(names, domain.SubagentDisplayName{ID: o.ID, Name: name})
+		}
+	}
+	return names
 }
 
 // Consume only original canonical collab items. Requested model is independent
@@ -147,7 +190,7 @@ func (c *Client) observeCollaboration(item json.RawMessage, sender domain.ID, tu
 			return Event{}, incompatible()
 		}
 	}
-	return c.childEvent(batch)
+	return c.childEvent(batch, nil)
 }
 
 func (c *Client) observeSubagentActivity(item json.RawMessage, turn domain.ID) (Event, error) {
@@ -185,7 +228,7 @@ func (c *Client) ObserveResolvedActivity(ctx context.Context, event Event) (Even
 	}
 	child.Source, child.SourceID = domain.CodexActivitySource, event.ItemID
 	child.Usage, child.Output, child.ObservedModel, child.RequestedModel = nil, nil, nil, nil
-	return c.childEvent([]domain.SubagentObservation{child})
+	return c.childEvent([]domain.SubagentObservation{child}, nil)
 }
 
 // InspectDescendants uses only read operations. It does not load/resume children
@@ -205,6 +248,7 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 	batch := []domain.SubagentObservation{}
 	cursor := ""
 	seen := map[string]bool{}
+	staged := map[string]string{}
 	for page := 0; page < 16; page++ {
 		response, err := c.call(ctx, domain.NewID(), "thread/list", struct {
 			Ancestor    domain.ID `json:"ancestorThreadId"`
@@ -243,6 +287,7 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 			if o.ParentID != string(*t.ParentThreadID) {
 				return Event{}, incompatible()
 			}
+			c.stageNickname(staged, t.ID, t.AgentNickname)
 			o.Usage, o.Output, o.ObservedModel = nil, nil, nil
 			o, err = c.readChildHistory(ctx, o, t.ID)
 			if err != nil {
@@ -276,7 +321,7 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 			return Event{}, incompatible()
 		}
 	}
-	event, err := c.childEvent(batch)
+	event, err := c.childEvent(batch, staged)
 	if err != nil {
 		return Event{}, err
 	}
@@ -306,7 +351,9 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			}
 			o.Source, o.SourceID = domain.CodexHistorySource, string(t.ID)
 			o.Usage, o.Output, o.ObservedModel = nil, nil, nil
-			e, err := c.childEvent([]domain.SubagentObservation{o})
+			staged := map[string]string{}
+			c.stageNickname(staged, t.ID, t.AgentNickname)
+			e, err := c.childEvent([]domain.SubagentObservation{o}, staged)
 			return e, true, err
 		}
 	}
@@ -448,7 +495,7 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 		// absence remains explicit in partial output/model/usage coverage.
 		return c.childMetadata(), true, nil
 	}
-	e, err := c.childEvent([]domain.SubagentObservation{o})
+	e, err := c.childEvent([]domain.SubagentObservation{o}, nil)
 	return e, true, err
 }
 

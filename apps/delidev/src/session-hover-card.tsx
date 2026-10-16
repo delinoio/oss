@@ -12,8 +12,18 @@ import {
 import { createPortal } from "react-dom";
 import { settleEnclosingEntrances } from "./entrance-motion";
 
+/**
+ * Preferred horizontal side of the source for a card. The sidebar prefers the
+ * right of its rail; the right-hand Session information rail prefers the left.
+ * Either side falls back to a vertical placement and clamps to the viewport.
+ */
+export enum HoverSide {
+  Right = "right",
+  Left = "left",
+}
+
 interface HoverTarget {
-  anchor: RefObject<HTMLButtonElement | null>;
+  anchor: RefObject<HTMLElement | null>;
   pointer: boolean;
   focus: boolean;
   card: boolean;
@@ -177,7 +187,10 @@ export function SessionHoverProvider({
   );
 }
 
-export function useSessionHover(anchor: RefObject<HTMLButtonElement | null>) {
+// The controller is shared by every hover owner: the sidebar provider and the
+// Session information Subagents section each mount their own provider, so one
+// owner's timers, listeners and active card never leak into another.
+export function useSessionHover(anchor: RefObject<HTMLElement | null>) {
   const controller = useContext(HoverContext);
   if (!controller)
     throw new Error("Session hover requires its sidebar provider");
@@ -220,9 +233,15 @@ export function useSessionHover(anchor: RefObject<HTMLButtonElement | null>) {
 export function SessionHoverCard({
   hover,
   children,
+  id,
+  side = HoverSide.Right,
+  className,
 }: {
   hover: ReturnType<typeof useSessionHover>;
   children: ReactNode;
+  id?: string;
+  side?: HoverSide;
+  className?: string;
 }) {
   const card = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ left: number; top: number }>();
@@ -260,12 +279,26 @@ export function SessionHoverCard({
       const maximumLeft = Math.max(edge, window.innerWidth - box.width - edge);
       const maximumTop = Math.max(edge, window.innerHeight - box.height - edge);
       const right = source.right + gap;
+      const leftward = source.left - gap - box.width;
+      const fitsRight = right + box.width <= window.innerWidth - edge;
+      const fitsLeft = leftward >= edge;
+      // Prefer the requested side, then the opposite side, then below/above.
+      const horizontal =
+        side === HoverSide.Left
+          ? fitsLeft
+            ? leftward
+            : fitsRight
+              ? right
+              : undefined
+          : fitsRight
+            ? right
+            : undefined;
       const left =
-        right + box.width <= window.innerWidth - edge
-          ? right
+        horizontal !== undefined
+          ? horizontal
           : Math.min(source.left, maximumLeft);
       const top =
-        right + box.width <= window.innerWidth - edge
+        horizontal !== undefined
           ? source.top
           : source.bottom + gap + box.height <= window.innerHeight - edge
             ? source.bottom + gap
@@ -291,11 +324,16 @@ export function SessionHoverCard({
       resize?.disconnect();
       if (supportsPopover && node.matches(":popover-open")) node.hidePopover();
     };
-  }, [anchor, hover.controller, supportsPopover]);
+  }, [anchor, hover.controller, supportsPopover, side]);
   return createPortal(
     <div
       ref={card}
-      className="sidebar-session-tooltip"
+      id={id}
+      className={
+        className
+          ? `sidebar-session-tooltip ${className}`
+          : "sidebar-session-tooltip"
+      }
       role="tooltip"
       popover={supportsPopover ? "manual" : undefined}
       style={{

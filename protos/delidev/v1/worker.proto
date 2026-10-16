@@ -95,6 +95,9 @@ message PublishExecutionRequest {
   string instance_id = 3;
   // Closed normalized event, never a raw native extension or credential.
   bytes event_json = 4;
+  // Optional server-private display names for the children in event_json. Each
+  // entry joins by original product child ID; event_json never carries a name.
+  repeated SubagentDisplayName subagent_names = 5;
 }
 
 message PublishExecutionResponse {

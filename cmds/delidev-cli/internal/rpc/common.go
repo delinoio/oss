@@ -44,6 +44,10 @@ func Resource(record store.Record) *pb.Resource {
 	if record.Kind == domain.SessionKind {
 		document, startupTiming = sessionStartupTimingDocument(document)
 	}
+	var subagentDisplay *pb.SubagentDisplayName
+	if record.Kind == domain.SubagentKind {
+		document, subagentDisplay = subagentDisplayDocument(record.ID, document)
+	}
 	if record.Kind == domain.ProviderKind {
 		if p, err := store.Decode[domain.Provider](record); err == nil {
 			if raw, err := json.Marshal(providers.WithAPIFormats(p)); err == nil {
@@ -72,7 +76,7 @@ func Resource(record store.Record) *pb.Resource {
 		document = nativeModelJobDocument(document)
 		document = nativeReviewJobDocument(document)
 	}
-	return &pb.Resource{Id: string(record.ID), Kind: WireKind(record.Kind), Revision: record.Revision, SessionId: string(record.SessionID), ProjectId: string(record.ProjectID), SchemaVersion: ResourceSchemaVersion(record.Kind, document), DocumentJson: document, CreatedAt: record.CreatedAt.Format(time.RFC3339Nano), UpdatedAt: record.UpdatedAt.Format(time.RFC3339Nano), StartupTiming: startupTiming}
+	return &pb.Resource{Id: string(record.ID), Kind: WireKind(record.Kind), Revision: record.Revision, SessionId: string(record.SessionID), ProjectId: string(record.ProjectID), SchemaVersion: ResourceSchemaVersion(record.Kind, document), DocumentJson: document, CreatedAt: record.CreatedAt.Format(time.RFC3339Nano), UpdatedAt: record.UpdatedAt.Format(time.RFC3339Nano), StartupTiming: startupTiming, SubagentDisplay: subagentDisplay}
 }
 func Error(err error, correlation string) error {
 	if err == nil {

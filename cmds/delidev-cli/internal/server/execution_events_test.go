@@ -90,7 +90,15 @@ func (f *publicationFixture) requestEvent(t *testing.T, e domain.ExecutionEvent)
 	if revision == 0 {
 		revision = 1
 	}
-	return &pb.PublishExecutionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.job), ExpectedRevision: revision}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), EventJson: raw}
+	return &pb.PublishExecutionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.job), ExpectedRevision: revision}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), EventJson: raw, SubagentNames: displayNamesToProto(e.SubagentNames)}
+}
+
+func displayNamesToProto(names []domain.SubagentDisplayName) []*pb.SubagentDisplayName {
+	var result []*pb.SubagentDisplayName
+	for _, name := range names {
+		result = append(result, &pb.SubagentDisplayName{ChildId: string(name.ID), Name: name.Name})
+	}
+	return result
 }
 
 func (f *publicationFixture) call(req *pb.PublishExecutionRequest) (*connect.Response[pb.PublishExecutionResponse], error) {
