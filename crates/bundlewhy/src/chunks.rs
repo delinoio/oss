@@ -850,7 +850,7 @@ mod tests {
                 .map(|(name, bytes)| ((*name).to_owned(), *bytes))
                 .collect();
             assert_eq!(actual, expected, "{}", case.name);
-            assert_eq!(unmapped, case.unmapped, "{}", case.name);
+            assert_eq!(*unmapped, case.unmapped, "{}", case.name);
             let total: u32 = per_source.values().sum::<u32>() + unmapped;
             assert_eq!(total as usize, case.code.len(), "{}", case.name);
         }
