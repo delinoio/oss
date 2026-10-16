@@ -314,6 +314,14 @@ it("blocks selection while locked or inactive but keeps the identity visible", a
   await act(async () => {});
   expect(value.change).not.toHaveBeenCalled();
   expect(list.dataset.value).toBe("");
+  // Navigation keys are not consumed, move no focus and keep the tab stop.
+  const general = within(list).getByRole("option", { name: "General Chat" });
+  general.focus();
+  for (const key of ["ArrowDown", "ArrowUp", "Home", "End"])
+    expect(fireEvent.keyDown(general, { key })).toBe(true);
+  expect(document.activeElement).toBe(general);
+  expect(general.tabIndex).toBe(0);
+  expect(within(list).getByRole("option", { name: "oss" }).tabIndex).toBe(-1);
   view.rerender(value.view("", false, false));
   expect(screen.getByRole("button", { name: "New project" })).toHaveProperty(
     "disabled",

@@ -135,6 +135,9 @@ export function InlineChoiceList({
     if (option.id !== value) change(option.id);
   };
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // A locked or inactive list ignores every key: focus and the roving tab stop
+    // stay where they were so they are still correct once the lock clears.
+    if (!available) return;
     if (
       event.nativeEvent.isComposing ||
       event.nativeEvent.keyCode === 229 ||
