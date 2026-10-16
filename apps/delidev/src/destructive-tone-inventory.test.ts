@@ -31,9 +31,10 @@ const expected: Record<string, number> = {
   "schedules.tsx": 3,
   "session-pull-requests.tsx": 2,
   "session-storage.tsx": 5,
-  "settings.tsx": 1,
+  "settings.tsx": 2,
   "ssh-setup.tsx": 1,
   "subscription-settings.tsx": 2,
+  "worker-removal.tsx": 2,
 };
 
 // Modules that invoke a destructive-named operation but render no Danger

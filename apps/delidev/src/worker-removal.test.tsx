@@ -130,6 +130,7 @@ function fixture(rows: Resource[], options: Options = {}) {
   fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
   return { removals, current };
 }
+const tone = (button: HTMLElement) => button.getAttribute("data-action-tone");
 const inventory = () =>
   screen.getByRole("region", { name: "Saved runner devices" });
 async function ready(dialog: HTMLElement) {
@@ -226,6 +227,13 @@ it("confirms with focus on Cancel, restores the opener on Escape and sends nothi
   ).toBeTruthy();
   expect(document.activeElement).toBe(
     within(dialog).getByRole("button", { name: "Cancel" }),
+  );
+  expect(tone(opener)).toBe("danger");
+  expect(
+    tone(within(dialog).getByRole("button", { name: "Delete Worker" })),
+  ).toBe("danger");
+  expect(tone(within(dialog).getByRole("button", { name: "Cancel" }))).not.toBe(
+    "danger",
   );
   fireEvent(dialog, new Event("cancel", { cancelable: true }));
   await waitFor(() =>
@@ -392,9 +400,11 @@ it("replays only the exact original request after an uncertain result", async ()
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
-  fireEvent.click(
-    within(dialog).getByRole("button", { name: "Retry original deletion" }),
-  );
+  const retry = within(dialog).getByRole("button", {
+    name: "Retry original deletion",
+  });
+  expect(tone(retry)).toBe("danger");
+  fireEvent.click(retry);
   await screen.findByText(/Deleted Worker Lost response/);
   expect(value.removals).toHaveLength(2);
   expect(value.removals[1].mutation?.requestId).toBe(

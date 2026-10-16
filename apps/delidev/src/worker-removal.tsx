@@ -209,6 +209,7 @@ export function WorkerRemovalDialog({
           actions={
             mutation.uncertain ? (
               <SettingsActionButton
+                tone={SettingsActionTone.Danger}
                 icon={SettingsActionIcon.Retry}
                 type="button"
                 disabled={mutation.busy}
