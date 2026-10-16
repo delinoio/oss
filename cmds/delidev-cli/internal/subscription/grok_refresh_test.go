@@ -163,7 +163,11 @@ func TestGrokRefreshOutcomesAreClassified(t *testing.T) {
 	}{
 		{"invalid_grant", func(i *grokidptest.IdP) { i.RefreshStatus, i.RefreshError = http.StatusBadRequest, "invalid_grant" }, subscription.GrokReasonInvalidGrant, false},
 		{"other client error", func(i *grokidptest.IdP) { i.RefreshStatus, i.RefreshError = http.StatusUnauthorized, "invalid_client" }, subscription.GrokReasonTokenRejected, false},
-		{"rate limited", func(i *grokidptest.IdP) { i.RefreshStatus = http.StatusTooManyRequests }, subscription.GrokReasonTokenRejected, false},
+		// Only an RFC 6749 section 5.2 error response (400 or 401 with a structured
+		// error) proves the token was not consumed; every other 4xx stays uncertain.
+		{"rate limited", func(i *grokidptest.IdP) { i.RefreshStatus = http.StatusTooManyRequests }, subscription.GrokReasonTokenUncertain, true},
+		{"request timeout", func(i *grokidptest.IdP) { i.RefreshStatus = http.StatusRequestTimeout }, subscription.GrokReasonTokenUncertain, true},
+		{"forbidden", func(i *grokidptest.IdP) { i.RefreshStatus = http.StatusForbidden }, subscription.GrokReasonTokenUncertain, true},
 		{"server error", func(i *grokidptest.IdP) { i.RefreshStatus = http.StatusInternalServerError }, subscription.GrokReasonTokenUncertain, true},
 		{"bad gateway", func(i *grokidptest.IdP) { i.RefreshStatus = http.StatusBadGateway }, subscription.GrokReasonTokenUncertain, true},
 		{"malformed body", func(i *grokidptest.IdP) { i.RefreshMalformed = true }, subscription.GrokReasonTokenResponse, true},
@@ -183,6 +187,33 @@ func TestGrokRefreshOutcomesAreClassified(t *testing.T) {
 			}
 			if strings.Contains(err.Error(), f.bound.RefreshToken()) {
 				t.Fatal("the error leaked the refresh token")
+			}
+		})
+	}
+}
+
+// A 4xx answer without a structured OAuth error body may come from an
+// intermediary after the refresh token was received, so it keeps the claim.
+func TestGrokRefreshUnstructuredClientErrorsStayUncertain(t *testing.T) {
+	for name, serve := range map[string]func(http.ResponseWriter){
+		"html 403": func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusForbidden)
+			fmt.Fprint(w, "<html>blocked</html>")
+		},
+		"empty 400":    func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadRequest) },
+		"html 400":     func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadRequest); fmt.Fprint(w, "<html>bad</html>") },
+		"400 no error": func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadRequest); fmt.Fprint(w, `{"message":"nope"}`) },
+		"throttled json": func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"error":"invalid_grant"}`)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newRefreshFixture(t)
+			client := &http.Client{Transport: roundTrip(func(*http.Request) (*http.Response, error) { return recorded(serve), nil })}
+			_, err := f.refresh(client)
+			if reason, uncertain := reasonOf(t, err); reason != subscription.GrokReasonTokenUncertain || !uncertain {
+				t.Fatalf("outcome = %s uncertain=%v", reason, uncertain)
 			}
 		})
 	}

@@ -258,6 +258,8 @@ func TestGrokRefreshFailuresNeverReplaceTheBundleOrResend(t *testing.T) {
 	}{
 		{"invalid_grant", func(i *grokidptest.IdP) { i.RefreshStatus, i.RefreshError = http.StatusBadRequest, "invalid_grant" }, grokFailedSt, false},
 		{"client error", func(i *grokidptest.IdP) { i.RefreshStatus, i.RefreshError = http.StatusUnauthorized, "invalid_client" }, grokFailedSt, false},
+		{"throttled", func(i *grokidptest.IdP) { i.RefreshStatus = http.StatusTooManyRequests }, grokRecovery, true},
+		{"forbidden", func(i *grokidptest.IdP) { i.RefreshStatus = http.StatusForbidden }, grokRecovery, true},
 		{"server error", func(i *grokidptest.IdP) { i.RefreshStatus = http.StatusInternalServerError }, grokRecovery, true},
 		{"bad gateway", func(i *grokidptest.IdP) { i.RefreshStatus = http.StatusBadGateway }, grokRecovery, true},
 		{"malformed body", func(i *grokidptest.IdP) { i.RefreshMalformed = true }, grokRecovery, true},

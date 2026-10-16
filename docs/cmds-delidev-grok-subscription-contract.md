@@ -448,13 +448,15 @@ Lifecycle of one runner:
    `grant_type=refresh_token`, the public `client_id` and the bound
    `refresh_token` to the discovered token endpoint, with no client secret and no
    authentication header. The claim is never cleared or rewritten.
-4. A 4xx answer is a definitive rejection that did not consume the token:
-   `invalid_grant` and every other 4xx settle FAILED with a REFRESH
+4. An RFC 6749 section 5.2 error response (HTTP 400 or 401 with a JSON `error`
+   code) is a definitive rejection that did not consume the token: `invalid_grant`
+   and every other structured error settle FAILED with a REFRESH
    `GrokDiagnostic` (`UNAUTHENTICATED`), the stored bundle untouched and the
    account usable, so a new explicit request may try again. Everything else after
    the claim is uncertain and settles RECOVERY_REQUIRED: a transport error, a
-   timeout, an oversized, truncated or malformed body, a 5xx answer, a non-200
-   success status, an interruption (shutdown, deadline) and a restart. The old
+   timeout, an oversized, truncated or malformed body, a 5xx answer, any other 4xx
+   answer (408, 429, an HTML 403 from an intermediary or an unstructured body), a
+   non-200 success status, an interruption (shutdown, deadline) and a restart. The old
    token is never sent again, because a rotated token the server did not record
    is unrecoverable; the account stays fenced and the user must sign in again.
 5. A 200 answer carries `access_token`, `token_type` `Bearer` and a positive

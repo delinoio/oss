@@ -72,11 +72,13 @@ func grokRefreshUncertain(reason GrokOAuthReason) error {
 }
 
 // RefreshGrokTokens sends exactly one refresh_token grant as the public client
-// (no client authentication). A 4xx answer is a definitive rejection that did
+// (no client authentication). Only an RFC 6749 section 5.2 error response (HTTP
+// 400 or 401 with a structured JSON error) is a definitive rejection that did
 // not consume the token (`invalid_grant` is named separately). Every other
 // failure is Uncertain, because the provider may have rotated the refresh token
 // without this caller recording it: a transport error, a timeout, a truncated
-// or oversized body, a 5xx answer and an unusable success answer.
+// or oversized body, a 5xx answer, any other 4xx answer (408, 429, an HTML 403
+// from an intermediary or an unstructured body) and an unusable success answer.
 func RefreshGrokTokens(ctx context.Context, client *http.Client, profile GrokOAuthProfile, endpoints GrokEndpoints, refreshToken string) (GrokRefreshTokens, error) {
 	form := url.Values{"grant_type": {GrokRefreshGrantType}, "client_id": {profile.ClientID}, "refresh_token": {refreshToken}}
 	payload := []byte(form.Encode())
@@ -88,7 +90,7 @@ func RefreshGrokTokens(ctx context.Context, client *http.Client, profile GrokOAu
 		return GrokRefreshTokens{}, grokRefreshUncertain(GrokReasonTokenUncertain)
 	case status == http.StatusOK:
 		return parseGrokRefresh(body)
-	case status >= 400 && status < 500:
+	case grokOAuthRejection(status, body):
 		var answer grokTokenError
 		if grokDecode(body, &answer) == nil && answer.Error == "invalid_grant" {
 			return GrokRefreshTokens{}, grokFail(GrokReasonInvalidGrant)
