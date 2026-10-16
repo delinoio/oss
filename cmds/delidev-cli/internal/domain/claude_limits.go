@@ -158,6 +158,12 @@ func ClaudeLimitFailureOf(err error) ClaudeLimitFailure {
 
 func usageFailure(f ClaudeLimitFailure) error { return &ClaudeLimitFailureError{Failure: f} }
 
+// NewClaudeLimitFailure returns the error that carries one closed usage failure.
+// A positive retryAfter is the provider-requested suppression.
+func NewClaudeLimitFailure(f ClaudeLimitFailure, retryAfter time.Duration) error {
+	return &ClaudeLimitFailureError{Failure: f, RetryAfter: retryAfter}
+}
+
 // ClaudeLimitWindow is one normalized, accepted window. Remaining is the
 // fraction left (0..1); ResetAt is nil when the provider reported null.
 type ClaudeLimitWindow struct {

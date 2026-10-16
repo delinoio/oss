@@ -888,7 +888,8 @@ func keyFor(purpose Purpose, harness domain.Harness, account, conversation domai
 }
 
 // Every purpose is checked against every harness through every registry entry
-// point. The registered-only shared owner purpose is defined for Codex alone;
+// point. The registered-only shared owner purpose is defined for Codex alone and
+// the usage-tracking purpose for Claude Code alone;
 // it is never created by Acquire, but an entry registered in place is locked
 // and looked up like any other profile.
 func TestPurposeHarnessMatrixAcrossAcquireRegisterLegacyAndLookup(t *testing.T) {
@@ -901,7 +902,7 @@ func TestPurposeHarnessMatrixAcrossAcquireRegisterLegacyAndLookup(t *testing.T) 
 				root := testRoot(t)
 				r, _ := workerRegistry(t, root, nil)
 				key := keyFor(purpose, harness, domain.NewID(), domain.NewID())
-				defined := purpose != PurposeSharedOwner || harness == domain.Codex
+				defined := (purpose != PurposeSharedOwner || harness == domain.Codex) && (purpose != PurposeUsage || harness == domain.ClaudeCode)
 				relative := "retained/" + string(purpose) + "-" + string(harness)
 				home := filepath.Join(root, filepath.FromSlash(relative))
 				if err := security.PrivateDir(home); err != nil {

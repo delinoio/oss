@@ -286,6 +286,10 @@ type loginOutput struct {
 	data     []byte
 	progress AuthLoginProgress
 	problem  error
+	// validate overrides the URL grammar of the login. The default accepts the
+	// original profile with either callback; the usage login accepts only the
+	// manual approval-code callback.
+	validate func(string) error
 }
 
 func (w *loginOutput) Write(p []byte) (int, error) {
@@ -309,7 +313,11 @@ func (w *loginOutput) Write(p []byte) (int, error) {
 			continue
 		}
 		value := string(raw)
-		if err := ValidateLoginURL(value); err != nil {
+		validate := ValidateLoginURL
+		if w.validate != nil {
+			validate = w.validate
+		}
+		if err := validate(value); err != nil {
 			w.problem = err
 			return 0, err
 		}
@@ -335,14 +343,19 @@ type AuthLogin struct {
 }
 
 func StartSubscriptionLogin(ctx context.Context, config AuthConfig) (*AuthLogin, error) {
-	if config.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Process.Executable) {
-		return nil, authProblem()
-	}
 	env, err := authEnvironment(config)
 	if err != nil {
 		return nil, err
 	}
-	output := &loginOutput{}
+	return launchAuthLogin(ctx, config, env, &loginOutput{})
+}
+
+// launchAuthLogin starts `claude auth login --claudeai` with a fully prepared
+// environment and output parser. The caller must Close the login.
+func launchAuthLogin(ctx context.Context, config AuthConfig, env []string, output *loginOutput) (*AuthLogin, error) {
+	if config.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Process.Executable) {
+		return nil, authProblem()
+	}
 	prepared := config.Process
 	prepared.Env = env
 	prepared.Args = []string{"auth", "login", "--claudeai"}

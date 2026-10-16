@@ -32,6 +32,11 @@ const (
 	PurposeQuota             Purpose = "quota"
 	PurposeCredit            Purpose = "credit"
 	PurposeSubscriptionProbe Purpose = "subscription_probe"
+	// PurposeUsage is the exclusive persistent Claude usage-tracking login
+	// profile of one account. It is valid only for the Claude harness, holds the
+	// read-only usage login and its native credentials, and is never an
+	// execution, setup-token or personal profile.
+	PurposeUsage Purpose = "usage"
 	// PurposeSharedOwner is the account-wide Codex history home shared by the
 	// members of one managed Codex account owner. It is valid only for the Codex
 	// harness, is registered in place at its fixed per-account path through
@@ -59,7 +64,7 @@ const (
 
 var purposeScopes = map[Purpose]Scope{
 	PurposeDiscovery: ScopeSystem, PurposeModelObservation: ScopeSystem, PurposeTitleProbe: ScopeSystem,
-	PurposeAuth: ScopeAccount, PurposeQuota: ScopeAccount, PurposeCredit: ScopeAccount, PurposeSubscriptionProbe: ScopeAccount, PurposeSharedOwner: ScopeAccount,
+	PurposeAuth: ScopeAccount, PurposeQuota: ScopeAccount, PurposeCredit: ScopeAccount, PurposeSubscriptionProbe: ScopeAccount, PurposeSharedOwner: ScopeAccount, PurposeUsage: ScopeAccount,
 	PurposeConversation: ScopeConversation, PurposeFork: ScopeConversation, PurposeCompaction: ScopeConversation,
 	PurposeRevert: ScopeConversation, PurposeSidechat: ScopeConversation, PurposeTitle: ScopeConversation, PurposeReview: ScopeConversation,
 }
@@ -77,6 +82,9 @@ func (p Purpose) RegisteredOnly() bool { return p == PurposeSharedOwner }
 func (p Purpose) harnessAllowed(h domain.Harness) bool {
 	if p == PurposeSharedOwner {
 		return h == domain.Codex
+	}
+	if p == PurposeUsage {
+		return h == domain.ClaudeCode
 	}
 	return true
 }

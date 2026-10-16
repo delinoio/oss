@@ -30,8 +30,12 @@ const maxRecordBytes = 100 << 10
 type Purpose string
 
 const (
-	AccountAPI          Purpose = "account-api"
-	AccountLogin        Purpose = "account-login"
+	AccountAPI   Purpose = "account-api"
+	AccountLogin Purpose = "account-login"
+	// ClaudeUsage holds the read-only Claude usage login bundle of one server
+	// account and usage generation. It is never an execution AccountLogin
+	// reference and never reaches a Worker.
+	ClaudeUsage         Purpose = "claude-usage"
 	NetworkProxy        Purpose = "network-proxy"
 	WorkerSSH           Purpose = "worker-ssh"
 	WorkerNetworkKey    Purpose = "worker-network-key"
@@ -40,7 +44,7 @@ const (
 
 func (p Purpose) valid() bool {
 	switch p {
-	case AccountAPI, AccountLogin, NetworkProxy, WorkerSSH, WorkerNetworkKey, WorkerNetworkConfig:
+	case AccountAPI, AccountLogin, ClaudeUsage, NetworkProxy, WorkerSSH, WorkerNetworkKey, WorkerNetworkConfig:
 		return true
 	default:
 		return false
@@ -299,7 +303,7 @@ func (v *Vault) log(operation string, r Ref, err error) {
 	attributes := []any{"operation", operation, "owner_id", r.Owner, "purpose", r.Purpose}
 	// AccountLogin IDs are private subscription generations. In particular,
 	// Doctor may read them without exposing its request-local selector in logs.
-	if operation != "get" || r.Purpose != AccountLogin {
+	if operation != "get" || r.Purpose != AccountLogin && r.Purpose != ClaudeUsage {
 		attributes = append(attributes, "credential_id", r.ID)
 	}
 	if err != nil {
