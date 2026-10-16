@@ -195,6 +195,30 @@ func TestSubscriptionLaunchDoesNotMaterializeBeforeInspection(t *testing.T) {
 	}
 }
 
+// A direct startup assignment carries no installation version, so the version
+// the credential-free inspection reports is the only gate before the login is
+// written: an unsupported executable never receives the account credential.
+func TestSubscriptionOldInspectedVersionNeverReceivesTheCredential(t *testing.T) {
+	config, _, calls := fixtureSubscriptionConfig(t, "sub-old-inspect-version")
+	api, err := openAPI(context.Background(), config)
+	if err == nil {
+		_ = api.Close()
+		t.Fatal("an executable below the subscription baseline was launched")
+	}
+	if domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatalf("unexpected result: %v", err)
+	}
+	if *calls != 0 {
+		t.Fatal("the credential hook ran for an unsupported native version")
+	}
+	if _, statErr := os.Stat(filepath.Join(config.Probe.Home, "auth.json")); !os.IsNotExist(statErr) {
+		t.Fatal("an unsupported native version found a login in its private home")
+	}
+	if err := process.ReconcileOwner(config.Probe.Process.Directory, config.Probe.Process.OwnerID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSubscriptionCredentialFailureStopsTheLaunch(t *testing.T) {
 	config, _, _ := fixtureSubscriptionConfig(t, "valid")
 	config.Credential = func() error { return domain.Fail(domain.Internal, "Credential unavailable.", "") }

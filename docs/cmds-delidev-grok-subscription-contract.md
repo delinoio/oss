@@ -825,6 +825,11 @@ the three loopback endpoint blocks, the owned configuration with the relay
   `GROK_MODELS_LIST_URL` are not set, so the native process uses its own
   subscription endpoints; every other isolation variable and the
   `GROK_{CLAUDE,CURSOR}_*_ENABLED=0` set remain. No execution key variable is set.
+- Credential gate: a direct startup assignment carries no installation version,
+  so the version reported by the credential-free `inspect` (identical in the
+  runtime and the workspace inspection) must already be at or above the
+  subscription baseline before the credential hook runs; an older executable is
+  refused as `unsupported` and never receives the account login.
 - Authentication: `initialize` must advertise `cached_token` then `grok.com`
   with default method `cached_token` or unset; the process must report a version at
   or above the subscription baseline; then `authenticate` uses `methodId`

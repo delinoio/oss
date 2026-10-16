@@ -299,6 +299,7 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	if writeErr != nil || syncErr != nil || closeErr != nil || profile.check() != nil {
 		return nil, apiConfigurationError()
 	}
+	var inspectedVersion string
 	for index, cwd := range []string{prepared.Cwd, config.Workspace} {
 		phase = runtimeInspectPhase
 		if index == 1 {
@@ -306,9 +307,14 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 		}
 		inspection := prepared
 		inspection.Cwd = cwd
-		if err := inspectProfile(ready, inspection, profile); err != nil {
+		version, err := inspectProfileVersion(ready, inspection, profile)
+		if err != nil {
 			return nil, err
 		}
+		if index > 0 && version != inspectedVersion {
+			return nil, incompatible()
+		}
+		inspectedVersion = version
 	}
 	if err := profile.check(); err != nil {
 		return nil, err
@@ -318,7 +324,13 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	env = config.OrdinaryTools.Apply(env)
 	if config.subscription() {
 		// The login is materialized only now, after every credential-free
-		// inspection, and the process receives no execution key at all.
+		// inspection, and the process receives no execution key at all. A direct
+		// startup assignment carries no installation version, so the version the
+		// credential-free inspection reported must meet the subscription baseline
+		// before any login is written for the executable.
+		if !domain.GrokSubscriptionVersionAllowed(inspectedVersion) {
+			return nil, incompatible()
+		}
 		prepared.Env = append(env, "GROK_DEFAULT_MODEL="+selectedModel)
 		phase = authenticatePhase
 		if err := config.Credential(); err != nil {

@@ -1024,7 +1024,9 @@ private environment (`GROK_XAI_API_BASE_URL`, `GROK_MODELS_BASE_URL`,
 `GROK_{CLAUDE,CURSOR}_*_ENABLED=0` set, sets no execution key, and writes an owned
 `config.toml` that selects the native model through the local selector without a
 relay `base_url`, `env_key` or `api_backend`. All credential-free inspections run
-first against the empty private home; the hook then runs once, immediately before
+first against the empty private home; the version they report must be at or above
+`domain.GrokSubscriptionBaselineVersion` before the hook runs, so an older
+executable never receives the login; the hook then runs once, immediately before
 launch, so a leftover `auth.json` is refused like any user-authored file and a hook
 failure aborts the launch. Initialization must advertise `cached_token` then
 `grok.com` with default method `cached_token` or unset and must report a version at

@@ -48,6 +48,15 @@ func apiFixtureProcess() {
 		if mode == "managed" {
 			report["permissions"].(map[string]any)["managedSettingsActive"] = true
 		}
+		// A managed-subscription launch runs without the loopback endpoint blocks
+		// even before any login exists. Its credential-free inspection reports the
+		// native version the subscription baseline is checked against.
+		if os.Getenv("GROK_XAI_API_BASE_URL") == "" {
+			report["grokVersion"] = "1.0.46"
+			if mode == "sub-old-inspect-version" {
+				report["grokVersion"] = "1.0.45"
+			}
+		}
 		_ = json.NewEncoder(os.Stdout).Encode(report)
 		os.Exit(0)
 	}
