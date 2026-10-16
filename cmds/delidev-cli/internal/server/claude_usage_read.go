@@ -172,7 +172,7 @@ func (s *Service) admitClaudeUsageRead(ctx context.Context, account, operation d
 		return nil, err
 	}
 	read := &claudeUsageRead{run: run, ctx: runCtx, account: account, operation: operation, trigger: trigger, actor: actor, epoch: s.subscriptionServerEpoch()}
-	_, err = s.Store.Mutate(ctx, operation, "claude.usage.read.claim", receipt, func(tx *store.Tx) (any, error) {
+	claimed, err := s.Store.Mutate(ctx, operation, "claude.usage.read.claim", receipt, func(tx *store.Tx) (any, error) {
 		r, a, err := claudeUsageAccountTx(tx, account, 0)
 		if err != nil {
 			return nil, err
@@ -216,6 +216,11 @@ func (s *Service) admitClaudeUsageRead(ctx context.Context, account, operation d
 	if err != nil {
 		s.claudeUsage.release(run)
 		return nil, err
+	}
+	if claimed.Replayed {
+		// The original request already claimed its read: nothing is read again.
+		s.claudeUsage.release(run)
+		return nil, errClaudeUsageBusy
 	}
 	go s.runClaudeUsageRead(read)
 	s.logger.InfoContext(ctx, "claude_usage_read_claimed", "account_id", account, "operation_id", operation, "trigger", trigger)
