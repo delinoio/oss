@@ -23,13 +23,13 @@ Each optimization category has a coverage state for the run.
 | State          | Meaning                                                                    |
 | -------------- | -------------------------------------------------------------------------- |
 | Covered        | Verified detectors ran for this category.                                  |
-| Not applicable | The category does not apply to the selected engine.                        |
+| Not applicable | The category does not apply to the selected engine or build settings.      |
 | Unavailable    | The category applies, but no evidence could be collected.                  |
 | Partial        | Detectors ran on incomplete input, for example after a partial collection. |
 
 "No findings" in a covered category means the detectors ran and found nothing. That is different from "no coverage": an unavailable or not-applicable category says nothing about your build. bundlewhy never presents missing coverage as a clean result.
 
-Vite dead-code elimination coverage is partial when a mapped source cannot be read or its build-time text is unavailable, or when a guarded environment candidate sits in a part of the generated code that the source map does not map to any source file, including text before the first mapping of its line. An unresolved environment-variable finding may be missing because bundlewhy cannot confirm the generated expression against the original build source. Disabled minification remains not applicable, and a non-default minifier remains unavailable. Rspack's environment-variable detector does not require that Vite-specific source confirmation.
+Vite dead-code elimination coverage is partial when a mapped source cannot be read or its build-time text is unavailable, or when a guarded environment candidate sits in a part of the generated code that the source map does not map to any source file, including text before the first mapping of its line. An unresolved environment-variable finding may be missing because bundlewhy cannot confirm the generated expression against the original build source. Disabled minification remains not applicable, and a non-default minifier remains unavailable. For Vite, name mangling is also not applicable when the build turns mangling off (`output.minify: false`, `'dce-only'` or `{ mangle: false }`, including values a plugin sets in its `outputOptions` hook), because the name-mangling detector does not run. Rspack's environment-variable detector does not require that Vite-specific source confirmation.
 
 ## Rules
 
