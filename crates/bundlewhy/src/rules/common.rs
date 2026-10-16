@@ -1759,19 +1759,20 @@ fn function_or_class_keyword_len(
     index: usize,
     ignored: &[(usize, usize)],
 ) -> Option<usize> {
+    // The caller scans byte by byte, so `index` can fall inside a multi-byte
+    // character. A keyword never starts there, and slicing would panic.
+    if !source.is_char_boundary(index) {
+        return None;
+    }
     let rest = &source[index..];
     let length = ["function", "class"]
         .into_iter()
         .find(|keyword| rest.starts_with(keyword))?
         .len();
-    if rest[length..]
-        .chars()
-        .next()
-        .is_some_and(is_identifier_part)
-        || source[..index]
-            .chars()
-            .next_back()
-            .is_some_and(is_identifier_part)
+    let after = &rest[length..];
+    let before = &source[..index];
+    if after.chars().next().is_some_and(is_identifier_part)
+        || before.chars().next_back().is_some_and(is_identifier_part)
     {
         return None;
     }
@@ -8384,6 +8385,32 @@ y=/process.env.F/.test(z),process.env.G"#;
                 );
             }
         }
+    }
+
+    #[test]
+    fn non_ascii_text_in_a_concise_arrow_body_does_not_panic() {
+        // The body scan advances byte by byte; a keyword lookup must not slice
+        // inside a multi-byte character.
+        for body in [
+            "λ + eval(code)",
+            "'é' + λ",
+            "/* λ */ λ, eval(code)",
+            "𝒳 + 𝒴",
+        ] {
+            for head in ["(eval) =>", "eval =>", "(a, eval) =>"] {
+                let source = format!("const f = {head} {body}");
+                let _ = direct_eval_offsets(&source);
+            }
+        }
+        // The arrow still binds `eval` inside its body, and a later call after
+        // the body is reported.
+        let source = "const f = (eval) => λ + eval(code); eval(code)";
+        assert_eq!(
+            direct_eval_offsets(source),
+            vec![source.rfind("eval(code)").unwrap()],
+            "{source:?}"
+        );
+        assert!(direct_eval_offsets("const f = (eval) => λ + eval(code)").is_empty());
     }
 
     #[test]
