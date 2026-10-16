@@ -7,8 +7,9 @@
  "minifierVersion": "1.2.13",
  "defaultMinifier": true,
  "minifyEnabled": true,
+ "mangle": "enabled",
  "adapterId": "bundlewhy-collector-vite",
- "adapterVersion": "2",
+ "adapterVersion": "3",
  "engineDetails": {
   "rolldownVersion": "1.2.13"
  },
@@ -23,6 +24,7 @@
  "context": "/__bundlewhy_project__",
  "configSummary": {
   "build.minify": "oxc",
+  "build.rolldownOptions.output.minify.mangle": "enabled",
   "build.target": "[array of 5]",
   "build.rolldownOptions.treeshake": "undefined",
   "build.lib": "false",

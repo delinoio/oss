@@ -31,7 +31,7 @@ bundlewhy never substitutes another engine. The diagnostic build always uses you
 
 - The build writes to a separate output directory inside the bundlewhy run directory, not to your normal output directory.
 - Source maps are enabled.
-- For Vite, a collector plugin records the build information and keeps the configured relative or absolute root for the diagnostic build. Without a configured root, Vite uses the selected project directory.
+- For Vite, a collector plugin records the build information and keeps the configured relative or absolute root for the diagnostic build. Without a configured root, Vite uses the selected project directory. The collection also records whether the output mangles names (`build.rolldownOptions.output.minify.mangle` in the report configuration), read from the options the build applies after your plugins' `outputOptions` hooks ran. The Vite adapter that records it is adapter version `3`.
 - For Rspack, production mode is forced and an observation-only `RsdoctorPlugin` is appended to your plugins to report export usage. It does not change the build output, and bundlewhy skips it (and shows export usage as unavailable) when your Rspack has no such plugin or your configuration already uses one.
 
 Findings describe that diagnostic build. Its output is not guaranteed to be equivalent to your normal build. The UI shows the exact engine, adapter and override details for each run.
