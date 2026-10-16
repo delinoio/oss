@@ -116,9 +116,10 @@ fn local(ctx: &mut Ctx, node: Node, depth: usize, replaced: &Replaced) -> bool {
     match node.kind() {
         SyntaxKind::ObjectLiteralExpression
         | SyntaxKind::ArrayLiteralExpression
-        | SyntaxKind::ClassExpression
         | SyntaxKind::FunctionExpression
         | SyntaxKind::ArrowFunction => true,
+        // A class decorator may replace the class with any value.
+        SyntaxKind::ClassExpression => node.decorators().is_empty(),
         SyntaxKind::NewExpression => new_is_fresh(ctx, node, depth, replaced),
         SyntaxKind::ThisKeyword | SyntaxKind::SuperKeyword => {
             this_is_fresh(ctx, node, depth, replaced)
@@ -169,7 +170,9 @@ fn identifier_is_local(ctx: &mut Ctx, node: Node, depth: usize, replaced: &Repla
                     && declaration.initializer().is_some()
                     && local(ctx, declaration.initializer(), depth + 1, replaced)
             }
-            SyntaxKind::FunctionDeclaration | SyntaxKind::ClassDeclaration => true,
+            SyntaxKind::FunctionDeclaration => true,
+            // A class decorator may replace the binding with any value.
+            SyntaxKind::ClassDeclaration => declaration.decorators().is_empty(),
             _ => false,
         }
     })
@@ -235,6 +238,11 @@ fn class_is_fresh(ctx: &mut Ctx, class: Node, depth: usize, replaced: &Replaced)
             SyntaxKind::ClassDeclaration | SyntaxKind::ClassExpression
         )
     {
+        return false;
+    }
+    // A class decorator may replace the class with a constructor that returns
+    // an arbitrary object, which the constructor chain below cannot show.
+    if !class.decorators().is_empty() {
         return false;
     }
     for member in class.members().iter() {

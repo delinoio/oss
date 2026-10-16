@@ -5613,6 +5613,15 @@ fn renames_beside_writes_through_provably_local_receivers() {
     assert!(kept.is_empty(), "names kept beside: {kept:?}");
 }
 
+/// Whether the tracked `Item` names survive in `body`, optimized without
+/// running it: fixtures with syntax that Node 24 cannot execute (decorators).
+fn item_names_kept_unrun(body: &str) -> bool {
+    let code = format!("{ITEM}{body}export{{}};");
+    let temp = bundle(&[("index.js", &code)]);
+    optimize(temp.path(), &[]);
+    out(temp.path(), "index.js").contains("itemValue")
+}
+
 /// The labels of `cases` whose tracked names `kept` reports as renamed, and
 /// the labels where they survived.
 fn partition_by_kept(
@@ -5903,6 +5912,95 @@ fn keeps_names_beside_writes_through_replaced_library_constructors() {
         ),
     ];
     let (survived, _) = partition_by_kept(&accepted, item_names_kept);
+    assert!(survived.is_empty(), "names kept beside: {survived:?}");
+}
+
+/// A class decorator may replace the declaration with any constructor, so the
+/// original constructor chain does not show what `new C()` returns. A
+/// decorated class, and every class built on one, is not a fresh receiver.
+#[test]
+fn keeps_names_beside_writes_through_decorated_classes() {
+    let hostile = "function(){return 7}";
+    let setter = "let held;export function supply(v){held=v}";
+    let decorator = "function wrap(C){return function(){return held}}";
+    let cases: Vec<(&str, String)> = vec![
+        (
+            "instance of a decorated class",
+            format!(
+                "{setter}{decorator}@wrap class Box{{}}const p=new \
+                 Box();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "decorated class with a decorator factory",
+            format!(
+                "{setter}{decorator}function tag(){{return wrap}}@tag() class Box{{}}const p=new \
+                 Box();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "static write on a decorated class",
+            format!("{setter}{decorator}@wrap class Box{{}}Box.pop={hostile};{POP_TAIL}"),
+        ),
+        (
+            "class extending a decorated class",
+            format!(
+                "{setter}{decorator}@wrap class Base{{}}class Box extends Base{{}}const p=new \
+                 Box();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "constructor this of a decorated class",
+            format!(
+                "{setter}{decorator}@wrap class Box{{constructor(){{this.pop={hostile}}}}}new \
+                 Box();{POP_TAIL}"
+            ),
+        ),
+        (
+            "decorated class expression",
+            format!(
+                "{setter}{decorator}const Box=@wrap class{{}};const p=new \
+                 Box();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "write on a decorated class expression",
+            format!("{setter}{decorator}const Box=@wrap class{{}};Box.pop={hostile};{POP_TAIL}"),
+        ),
+    ];
+    let (survived, renamed) = partition_by_kept(&cases, item_names_kept_unrun);
+    assert_eq!(survived.len(), cases.len(), "renamed for: {renamed:?}");
+    // Neighbors: classes without a class decorator stay fresh receivers, and
+    // so do classes whose members, not the class itself, are decorated.
+    let accepted: Vec<(&str, String)> = vec![
+        (
+            "plain class",
+            format!("class Box{{}}const p=new Box();p.pop={hostile};{LIST_TAIL}"),
+        ),
+        (
+            "class with a decorated method",
+            format!(
+                "function mark(m){{return m}}class Box{{@mark go(){{}}}}const p=new \
+                 Box();p.pop={hostile};{LIST_TAIL}"
+            ),
+        ),
+        (
+            "class with a decorated field",
+            format!(
+                "function mark(){{}}class Box{{@mark field=1}}const p=new \
+                 Box();p.pop={hostile};{LIST_TAIL}"
+            ),
+        ),
+        (
+            "class extending a plain class",
+            format!("class Base{{}}class Box extends Base{{}}new Box().pop={hostile};{LIST_TAIL}"),
+        ),
+        (
+            "plain class expression",
+            format!("const Box=class{{}};Box.pop={hostile};{LIST_TAIL}"),
+        ),
+    ];
+    let (survived, _) = partition_by_kept(&accepted, item_names_kept_unrun);
     assert!(survived.is_empty(), "names kept beside: {survived:?}");
 }
 
