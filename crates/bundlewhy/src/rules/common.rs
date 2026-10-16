@@ -2374,6 +2374,15 @@ impl<'a> MemberScan<'a> {
                 } if METHOD_MODIFIERS.contains(&text) => {
                     member_start = token_end - text.len();
                 }
+                // The `accessor` modifier of an auto-accessor field
+                // (`accessor typeof`) allows no line break before the name;
+                // `accessor` + line break is a field named `accessor`.
+                Token::Word {
+                    text: text @ "accessor",
+                    member: false,
+                } if !self.new_line_between(token_end, member_start) => {
+                    member_start = token_end - text.len();
+                }
                 Token::Punct("*") => member_start = token_end - 1,
                 Token::Punct("{" | "}" | ";") => return true,
                 Token::Punct(",") => return kind == BraceKind::ObjectLiteral,
@@ -4302,6 +4311,11 @@ y=/process.env.F/.test(z),process.env.G"#;
             "class C { static typeof\n eval(value) {} }",
             "class C { @dec typeof\n eval(value) {} }",
             "class C { typeof\n static eval(value) {} }",
+            // The `accessor` modifier of an auto-accessor field keeps a keyword name a name.
+            "class C { accessor typeof\n eval(value) {} }",
+            "class C { static accessor void\n eval(value) {} }",
+            "class C { accessor\n eval(value) {} }",
+            "class C { accessor typeof\n accessor await\n eval(value) {} }",
             "class C { typeof // c\n eval(value) {} }",
         ]);
         assert_all_reported(&[
@@ -4318,6 +4332,10 @@ y=/process.env.F/.test(z),process.env.G"#;
             ("class C { x = delete\n eval(value) {} }", "eval(value)"),
             ("class C { x = await\n eval(value) {} }", "eval(value)"),
             ("class C { typeof eval(value) {} }", "eval(value)"),
+            (
+                "class C { x = accessor typeof\n eval(value) {} }",
+                "eval(value)",
+            ),
             ("class C { x = a.b +\n eval(value) {} }", "eval(value)"),
             // An object literal needs a comma, never a line break.
             ("const o = { a: b\n eval(value) {} };", "eval(value)"),
