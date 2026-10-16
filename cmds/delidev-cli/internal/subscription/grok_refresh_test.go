@@ -257,6 +257,7 @@ func TestGrokRefreshTransportFailuresAreUncertain(t *testing.T) {
 
 func TestGrokRefreshIdentityMismatchNeverBuildsABundle(t *testing.T) {
 	cases := map[string]func(*grokidptest.IdP){
+		"team id":          func(i *grokidptest.IdP) { i.TeamID = "another-team" },
 		"principal id":     func(i *grokidptest.IdP) { i.PrincipalID = "another-principal" },
 		"principal type":   func(i *grokidptest.IdP) { i.PrincipalType = "service" },
 		"id token subject": func(i *grokidptest.IdP) { i.Subject = "another-user"; i.UserinfoSubject = "fake-user-1" },
