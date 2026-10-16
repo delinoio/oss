@@ -234,8 +234,10 @@ over every committed account and provider, before the managed-preset/custom
 ordering and the page limit: managed presets are filtered in memory and custom
 providers by an `id IN (eligible ids)` clause ahead of `LIMIT`, so a qualifying
 provider after any number of ineligible ones is reachable and a page is never
-filtered after the fact. An unreadable account or provider record fails the
-request; it is never treated as proof that no account exists. The filter joins the
+filtered after the fact. Every stored account record is decoded before any
+eligibility test, so an account whose field has the wrong JSON type fails the
+request instead of being skipped; an unreadable account or provider record is
+never treated as proof that no account exists. The filter joins the
 signed cursor scope only when set, and the cursor epoch (latest provider/account
 event) already expires continuations after any provider or account change, so a
 token cannot cross filters or survive the loss of an eligible provider's last

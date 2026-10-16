@@ -234,17 +234,14 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 }
 
 // selectableAccountProviders returns every provider ID that owns at least one
-// API account selectable for protocol. It scans connected, non-removed,
-// ready/unverified API accounts in bounded id-ordered batches (a cheap SQL
-// prefilter), then applies the shared Go predicate so the result matches the
-// account picker and ResolveAccountProfile rather than a SQL approximation.
+// API account selectable for protocol. It scans every stored account in bounded
+// id-ordered batches and decodes each record before any eligibility test, so an
+// account with a wrong-typed field fails the read instead of being silently
+// discarded by a SQL approximation. The shared Go predicate then matches the
+// account picker and ResolveAccountProfile.
 func selectableAccountProviders(tx *Tx, protocol domain.APIProtocol) (map[domain.ID]bool, error) {
 	const batch = 256
-	const accountQuery = "SELECT " + recordColumns + " FROM entities WHERE kind='account' AND id>? " +
-		"AND json_extract(CAST(body AS TEXT),'$.type')='api' " +
-		"AND json_type(CAST(body AS TEXT),'$.connection')='object' " +
-		"AND COALESCE(json_type(CAST(body AS TEXT),'$.removal'),'null')='null' " +
-		"AND json_extract(CAST(body AS TEXT),'$.health') IN ('ready','unverified') ORDER BY id LIMIT ?"
+	const accountQuery = "SELECT " + recordColumns + " FROM entities WHERE kind='account' AND id>? ORDER BY id LIMIT ?"
 	eligible := map[domain.ID]bool{}
 	// A nil entry records a provider that does not exist, so each is read once.
 	known := map[domain.ID]*domain.Provider{}
@@ -260,7 +257,9 @@ func selectableAccountProviders(tx *Tx, protocol domain.APIProtocol) (map[domain
 			if err != nil {
 				return nil, err
 			}
-			if account.ProviderID == "" || eligible[account.ProviderID] {
+			// Cheap account-only checks run first so a provider is loaded only for
+			// accounts that could be selectable; every record was already decoded.
+			if account.ProviderID == "" || eligible[account.ProviderID] || !providers.AccountConnectedForSelection(account) {
 				continue
 			}
 			provider, seen := known[account.ProviderID]

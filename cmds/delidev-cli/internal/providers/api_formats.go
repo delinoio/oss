@@ -128,17 +128,24 @@ func ResolveAccountProfile(p domain.Provider, a domain.Account) (domain.Provider
 	return p, p.Validate()
 }
 
-// AccountSelectableForProtocol mirrors the Agent Worker account picker: an API
-// account is a selectable choice for protocol when it is connected (a
-// connection object), has no pending removal, is ready or unverified, and its
-// resolved API profile uses protocol. Resolution reuses ResolveAccountProfile so
-// explicit account formats and legacy provider tuples agree with admission.
-// Enabled flags, quota and entitlement state are deliberately not considered.
-func AccountSelectableForProtocol(p domain.Provider, a domain.Account, protocol domain.APIProtocol) bool {
+// AccountConnectedForSelection reports the provider-independent part of the
+// Agent Worker account picker: an API account that is connected (a connection
+// object), has no pending removal, and is ready or unverified.
+func AccountConnectedForSelection(a domain.Account) bool {
 	if a.Type != domain.APIAccount || a.Connection == nil || a.Removal != nil {
 		return false
 	}
-	if a.Health != domain.AccountReady && a.Health != domain.AccountUnverified {
+	return a.Health == domain.AccountReady || a.Health == domain.AccountUnverified
+}
+
+// AccountSelectableForProtocol mirrors the Agent Worker account picker: an API
+// account is a selectable choice for protocol when it satisfies
+// AccountConnectedForSelection and its resolved API profile uses protocol.
+// Resolution reuses ResolveAccountProfile so explicit account formats and legacy
+// provider tuples agree with admission. Enabled flags, quota and entitlement
+// state are deliberately not considered.
+func AccountSelectableForProtocol(p domain.Provider, a domain.Account, protocol domain.APIProtocol) bool {
+	if !AccountConnectedForSelection(a) {
 		return false
 	}
 	resolved, err := ResolveAccountProfile(p, a)
