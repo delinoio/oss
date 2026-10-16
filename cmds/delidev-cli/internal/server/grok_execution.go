@@ -445,6 +445,10 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 		if err != nil {
 			return nil, rpc.Error(err, c)
 		}
+		// The settlement is committed. From here on a failure must not apply the
+		// lease-recovery fence: the lease is already released (or fenced by the
+		// commit itself), and the account is valid with its published generation.
+		owned = false
 		s.logger.InfoContext(ctx, "grok_subscription_execution_settled", "phase", grokExecutionPhase, "account_id", input.Account, "lease_id", input.Lease, "released", released, "success", input.Success, "refreshed", input.Refresh && usable, "cleanup_confirmed", input.Cleanup, "recovery_cleanup", recoveryFence)
 		// Only after the commit are the unreferenced generations removed: the
 		// superseded one after a refresh publication.
@@ -453,8 +457,12 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 			err := cleanupSubscriptionReferences(cleanupCtx, vault, input.Account, committed, protectedGenerations(original.Subscription)...)
 			cancelCleanup()
 			if err != nil {
+				// A superseded generation that cannot be removed now stays vault-owned:
+				// it is unreferenced, never granted (Take reads only the referenced
+				// generation) and removed by the next cleanup. The committed Finish is
+				// reported as success so the Worker does not treat a settled lease as
+				// uncertain, and no fence is applied to a lease that no longer exists.
 				s.logger.WarnContext(ctx, "grok_subscription_cleanup_failed", "phase", grokCleanupPhase, "account_id", input.Account, "lease_id", input.Lease, "code", domain.SafeError(err).Code)
-				return nil, rpc.Error(err, c)
 			}
 		}
 	}

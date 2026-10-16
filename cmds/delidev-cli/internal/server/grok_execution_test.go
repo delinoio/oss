@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -325,6 +326,58 @@ func TestGrokExecutionRefreshReturnsTheRotatedBundleOnlyAfterIdentityVerificatio
 	}
 	if _, err := f.finishExecution(w, next, domain.NewID(), nil, true, false, true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The settlement commit releases the lease before the superseded generation is
+// removed. A removal failure after that commit must not fence the account: it
+// holds no lease, so the fence would have no recovery path. The committed
+// publication stands, the superseded generation stays vault-owned and is never
+// granted, and the next execution receives the published generation.
+func TestGrokExecutionPostCommitCleanupFailureNeitherFencesNorStrandsTheAccount(t *testing.T) {
+	f := newGrokFixture(t)
+	logs := f.captureLogs()
+	generation := f.login("synthetic-principal-1")
+	w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+	lease, err := f.takeExecution(w, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.secrets.afterPut = func() {
+		f.secrets.mu.Lock()
+		f.secrets.deleteError = domain.Fail(domain.Unavailable, "The vault removal failed.", "")
+		f.secrets.mu.Unlock()
+	}
+	rotated := domain.NewID()
+	if _, err := f.finishExecution(w, lease, rotated, f.grokRotatedEnvelope(rotated), true, true, true); err != nil {
+		t.Fatalf("a failed removal of the superseded generation failed a committed settlement: %v", err)
+	}
+	_, a := f.record()
+	if a.Subscription.Generation != rotated || a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady {
+		t.Fatal("the committed publication was not kept or a settled lease was fenced")
+	}
+	if refs := f.references(); !refs[rotated] || !refs[generation] {
+		t.Fatal("the published generation was retired, or the superseded generation vanished despite the failed removal")
+	}
+	logs.mu.Lock()
+	text := logs.buf.String()
+	logs.mu.Unlock()
+	if !strings.Contains(text, "grok_subscription_cleanup_failed") {
+		t.Fatal("the failed removal was not logged")
+	}
+	// The vault recovers; the account runs again on the published generation.
+	f.secrets.mu.Lock()
+	f.secrets.deleteError = nil
+	f.secrets.mu.Unlock()
+	next, err := f.takeExecution(w, domain.NewID())
+	if err != nil || next.GenerationId != string(rotated) {
+		t.Fatal("the next execution did not receive the published generation", err)
+	}
+	if _, err := f.finishExecution(w, next, domain.NewID(), nil, true, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if refs := f.references(); len(refs) != 1 || !refs[rotated] {
+		t.Fatalf("the next completed operation did not remove the superseded generation: %v", refs)
 	}
 }
 
