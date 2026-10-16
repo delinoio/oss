@@ -68,7 +68,14 @@
 //!   is not replaced.
 //! - `x.constructor` and `x.__proto__` as an operand of `typeof` or an equality
 //!   comparison, and `x.constructor.name`.
-//! - A global-object member that is not a guarded name (`globalThis.hook`).
+//! - A global-object member that is not a guarded name (`globalThis.hook`),
+//!   read, written, compared or constructed with `new`, but **not called**: a
+//!   call passes the global object as `this`, and the global object inherits
+//!   `Object.prototype`, so `globalThis.valueOf()` returns the global object.
+//!   Only the boolean predicates (`hasOwnProperty`, `isPrototypeOf`,
+//!   `propertyIsEnumerable`) and the primitive-returning global functions
+//!   (`parseInt`, `isNaN`, `encodeURIComponent`, …) may be called, while no
+//!   write replaces them.
 //! - The strict-mode `this` (class bodies, modules and `"use strict"` code).
 //!
 //! Residuals. The rule is about the language's own routes. Routes through the
@@ -102,6 +109,9 @@ pub(in crate::compiler) enum IntrinsicExposure {
     Destructuring,
     /// A handle passed to a callee that is not the verified reflection writer.
     UnverifiedWriter,
+    /// A call of a member of the global object outside the handle-free
+    /// allowlist (`globalThis.valueOf()` returns the global object itself).
+    GlobalMemberCall,
     /// A sloppy-mode `this` that can be the global object.
     ThisBinding,
     /// Code that evaluates a string or rebinds names (`with`, a timer string,
@@ -121,6 +131,9 @@ impl IntrinsicExposure {
             IntrinsicExposure::Destructuring => "pattern takes a reflection or unproven key",
             IntrinsicExposure::UnverifiedWriter => {
                 "prototype passed to an unverified reflection writer"
+            }
+            IntrinsicExposure::GlobalMemberCall => {
+                "call of a global-object member outside the allowlist"
             }
             IntrinsicExposure::ThisBinding => "sloppy this can be the global object",
             IntrinsicExposure::DynamicCode => "dynamic code evaluation",
@@ -187,6 +200,26 @@ const REFLECT_FUNCTIONS: [&str; 10] = [
     "deleteProperty",
     "set",
     "setPrototypeOf",
+];
+
+/// Inherited `Object.prototype` predicates of the global object that return a
+/// boolean. Every other inherited method (`valueOf`, `toString`,
+/// `toLocaleString`, `constructor`, `__lookupGetter__`, …) can return `this`
+/// or a handle and is rejected when called.
+const GLOBAL_PREDICATES: [&str; 3] = ["hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable"];
+
+/// Global functions of the language that return a primitive.
+const GLOBAL_FUNCTIONS: [&str; 10] = [
+    "parseInt",
+    "parseFloat",
+    "isNaN",
+    "isFinite",
+    "encodeURI",
+    "encodeURIComponent",
+    "decodeURI",
+    "decodeURIComponent",
+    "escape",
+    "unescape",
 ];
 
 /// The classes of guarded global, by what they allow.
@@ -658,7 +691,7 @@ fn member_exposure(
         // ordinary property of the global object.
         return match guarded_by_name(&key) {
             Some(member) => check_reference(ctx, member, access, facts),
-            None => None,
+            None => global_member_exposure(ctx, access, &key, facts),
         };
     }
     let function = |names: &[&str]| names.contains(&key.as_str()) && !written(access);
@@ -681,6 +714,43 @@ fn member_exposure(
         }
         _ => Some(IntrinsicExposure::Global),
     }
+}
+
+/// `access` reads the member `key` of the global object, which is not a
+/// guarded name. Reading, writing and comparing it is harmless: a handle never
+/// reaches a variable, so nothing can use the value to change an intrinsic.
+/// *Calling* it is not: the callee receives the global object as `this`, and an
+/// ordinary global-object member includes the inherited `Object.prototype`
+/// methods, so `globalThis.valueOf()` returns the global object itself and
+/// `globalThis.m()` runs a function that can return its `this`. A call is
+/// therefore rejected unless the member is on a short list of functions that
+/// return neither a handle nor `this` and nothing replaces them. `new` is
+/// harmless because the callee gets a fresh `this`.
+fn global_member_exposure(
+    ctx: &mut Ctx,
+    access: Node,
+    key: &str,
+    facts: &mut Facts,
+) -> Option<IntrinsicExposure> {
+    let outer = walk_up_outer(access);
+    let parent = outer.parent();
+    let called = match parent.kind() {
+        SyntaxKind::CallExpression => parent.expression() == outer,
+        SyntaxKind::TaggedTemplateExpression => parent.tag() == outer,
+        _ => false,
+    };
+    if !called {
+        return None;
+    }
+    let intact = if GLOBAL_PREDICATES.contains(&key) {
+        // Inherited from `Object.prototype`: also intact there and on the
+        // global object.
+        facts.patch_record(ctx, Some("Object"), key).is_none()
+    } else {
+        GLOBAL_FUNCTIONS.contains(&key)
+    };
+    let intact = intact && facts.patch_record(ctx, None, key).is_none();
+    (!intact).then_some(IntrinsicExposure::GlobalMemberCall)
 }
 
 /// A timer call runs a string as code unless its first argument is a function.

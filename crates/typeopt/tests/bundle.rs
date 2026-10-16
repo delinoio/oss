@@ -5154,6 +5154,135 @@ fn keeps_names_for_every_intrinsic_spelling() {
     assert!(renamed.is_empty(), "names renamed for: {renamed:?}");
 }
 
+/// A tracked array that only `push` and an index read touch.
+const LIST_TAIL: &str =
+    "const list=[new Item(1)];list.push(new Item(2));console.log(list.length,list[0].readItem());";
+
+/// Whether the tracked `Item` names survive in the optimized `body`.
+fn item_names_kept(body: &str) -> bool {
+    array_chunk(body).1.contains("itemValue")
+}
+
+/// A call of a member of the global object passes the global object as
+/// `this`. The inherited `Object.prototype` methods return it (`valueOf`), so
+/// `globalThis.valueOf()` is a handle to the global object and, through
+/// `.Array.prototype`, to every built-in. Only a short list of functions that
+/// return a primitive may be called, and only while nothing replaces them.
+#[test]
+fn keeps_names_beside_calls_of_global_object_members() {
+    let patch_through = |call: &str| {
+        format!("const g={call};const P=g.Array.prototype;P.pop={HOSTILE_POP};{POP_TAIL}")
+    };
+    let rejected: Vec<(&str, String)> = vec![
+        // The reviewed spelling and its aliases of the global object.
+        ("valueOf", patch_through("globalThis.valueOf()")),
+        (
+            "valueOf bracket",
+            patch_through("globalThis[\"valueOf\"]()"),
+        ),
+        ("valueOf global", patch_through("global.valueOf()")),
+        (
+            "valueOf parenthesized",
+            patch_through("(globalThis.valueOf)()"),
+        ),
+        (
+            "valueOf optional call",
+            patch_through("globalThis.valueOf?.()"),
+        ),
+        (
+            "valueOf window",
+            patch_through("(typeof window===\"undefined\"?globalThis:window).valueOf()"),
+        ),
+        // Every other inherited method, without a hostile payload: the call
+        // alone turns modeling off.
+        ("toString", format!("globalThis.toString();{LIST_TAIL}")),
+        (
+            "toLocaleString",
+            format!("globalThis.toLocaleString();{LIST_TAIL}"),
+        ),
+        (
+            "constructor",
+            format!("globalThis.constructor();{LIST_TAIL}"),
+        ),
+        (
+            "__lookupGetter__",
+            format!("globalThis.__lookupGetter__(\"x\");{LIST_TAIL}"),
+        ),
+        (
+            "__lookupSetter__",
+            format!("globalThis.__lookupSetter__(\"x\");{LIST_TAIL}"),
+        ),
+        (
+            "valueOf in statement position",
+            format!("globalThis.valueOf();{LIST_TAIL}"),
+        ),
+        (
+            "valueOf tagged template",
+            format!("globalThis.valueOf``;{LIST_TAIL}"),
+        ),
+        // A member that application code defines can return its `this`.
+        (
+            "application function",
+            format!("globalThis.helper=function(){{return 1}};globalThis.helper();{LIST_TAIL}"),
+        ),
+        (
+            "strict application function",
+            format!(
+                "globalThis.helper=function(){{\"use strict\";return \
+                 this}};globalThis.helper();{LIST_TAIL}"
+            ),
+        ),
+        // The allowlisted names stop being handle-free once replaced.
+        (
+            "hasOwnProperty replaced on the prototype",
+            format!(
+                "Object.prototype.hasOwnProperty=function(){{return \
+                 true}};globalThis.hasOwnProperty(\"x\");{LIST_TAIL}"
+            ),
+        ),
+        (
+            "hasOwnProperty replaced on the global object",
+            format!(
+                "globalThis.hasOwnProperty=function(){{return \
+                 true}};globalThis.hasOwnProperty(\"x\");{LIST_TAIL}"
+            ),
+        ),
+        (
+            "parseInt replaced",
+            format!(
+                "globalThis.parseInt=function(){{return 1}};globalThis.parseInt(\"1\");{LIST_TAIL}"
+            ),
+        ),
+    ];
+    let renamed: Vec<&str> = rejected
+        .iter()
+        .filter(|(_, body)| !item_names_kept(body))
+        .map(|(label, _)| *label)
+        .collect();
+    assert!(renamed.is_empty(), "names renamed for: {renamed:?}");
+
+    // Handle-free calls and reads of the global object do not stop the model.
+    let allowed = [
+        "globalThis.hasOwnProperty(\"x\");",
+        "globalThis.isPrototypeOf({});",
+        "globalThis.propertyIsEnumerable(\"x\");",
+        "globalThis[\"hasOwnProperty\"](\"x\");",
+        "console.log(globalThis.parseInt(\"1\"),globalThis.isNaN(1),globalThis.\
+         encodeURIComponent(\"a\"));",
+        "globalThis.console.log(1);",
+        "console.log(typeof globalThis.valueOf,globalThis.valueOf===undefined);",
+        "const read=globalThis.toString;console.log(typeof read);",
+        "console.log(new globalThis.Date(0).getTime());",
+        "globalThis.flag=1;console.log(globalThis.flag);",
+    ];
+    let kept: Vec<&str> = allowed
+        .iter()
+        .filter(|fixture| item_names_kept(&format!("{fixture}{LIST_TAIL}")))
+        .copied()
+        .collect();
+    assert!(kept.is_empty(), "names kept beside: {kept:?}");
+}
+
 /// The property that the hostile payloads of the unchecked-chunk fixtures read,
 /// spelled so that the chunk does not mention it (an excluded chunk that
 /// mentions `itemValue` would keep the name for that reason alone) and does not
