@@ -1,18 +1,5 @@
 # Repository Workflow Contract
 
-## Batch Mode skill
-
-The repository-local skill at `.agents/skills/batch-mode/SKILL.md` adds CI
-instructions only when a human explicitly invokes `$batch-mode` or requests
-Batch Mode. Its `agents/openai.yaml` disables implicit invocation.
-
-For that task, use the existing PR's automatic CI. Do not start manual CI or
-trigger `workflow_dispatch`; retrying a failed CI run is allowed. Never modify
-`.github/workflows/CI.yml` while Batch Mode applies.
-
-The skill does not start batch work or create a PR. These restrictions do not
-change the CI policy for tasks where Batch Mode was not explicitly invoked.
-
 ## GitHub issue language
 
 Write GitHub issue titles and explanatory body text in English, including new

@@ -57,10 +57,6 @@
 - `packaging/`: Package-manager template assets for release automation.
 - `.agents/skills/`: Workspace-local Codex skills and reusable agent workflows.
 
-## Explicitly invoked skills
-
-- Apply `.agents/skills/batch-mode/SKILL.md` only when a human explicitly invokes `$batch-mode` or requests Batch Mode. Its CI restrictions apply to that task, not to ordinary repository work. See `docs/repository-workflow-contract.md` for its scope.
-
 ## Canonical Directory Map
 
 - `docs/project-bundlewhy.md`: bundlewhy bundler optimization debugger project index (Rust core, web UI, protocol, adapters).
