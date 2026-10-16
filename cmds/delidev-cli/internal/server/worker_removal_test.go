@@ -140,6 +140,11 @@ func TestRemoveWorkerRetiresRevokedWorkersWithReplayAndEffects(t *testing.T) {
 	if err != nil || !replay.Msg.Replayed || replay.Msg.Machine.Revision != removed.Msg.Machine.Revision {
 		t.Fatalf("original request did not recover its receipt: %v", err)
 	}
+	// The retained machine keeps the additive schema-1 contract in the response
+	// and in the replayed receipt.
+	if removed.Msg.Machine.SchemaVersion != 1 || replay.Msg.Machine.SchemaVersion != 1 {
+		t.Fatalf("retired machine left schema 1: %d %d", removed.Msg.Machine.SchemaVersion, replay.Msg.Machine.SchemaVersion)
+	}
 	for stream.Receive() {
 	}
 	if _, err := workers.AttachWorker(ctx, ownerRequest(online, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: onlineDevice.Machine.Id, InstanceId: string(domain.NewID()), Version: rpc.Version})); connect.CodeOf(err) != connect.CodeUnauthenticated {
@@ -202,6 +207,9 @@ func TestRemoveWorkerRetiresRevokedWorkersWithReplayAndEffects(t *testing.T) {
 		if err != nil || exact.Msg.Resource.Id != id {
 			t.Fatalf("exact read of retired Worker failed: %v", err)
 		}
+		if exact.Msg.Resource.SchemaVersion != 1 {
+			t.Fatalf("exact read of retired Worker left schema 1: %d", exact.Msg.Resource.SchemaVersion)
+		}
 	}
 	snapshot, err := resources.GetSnapshot(ctx, ownerRequest(owner, &pb.GetSnapshotRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_MACHINE, PageSize: 50}}))
 	if err != nil {
@@ -210,6 +218,16 @@ func TestRemoveWorkerRetiresRevokedWorkersWithReplayAndEffects(t *testing.T) {
 	for _, resource := range snapshot.Msg.Resources {
 		if resource.Id == onlineDevice.Machine.Id {
 			t.Fatal("snapshot resurrected a retired Worker")
+		}
+	}
+	// Active Workers that remain listed keep schema 1 on the list path.
+	remaining, err := resources.ListResources(ctx, ownerRequest(owner, &pb.ListResourcesRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_MACHINE, PageSize: 50}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, resource := range remaining.Msg.Resources {
+		if resource.SchemaVersion != 1 {
+			t.Fatalf("listed machine %s left schema 1: %d", resource.Id, resource.SchemaVersion)
 		}
 	}
 }

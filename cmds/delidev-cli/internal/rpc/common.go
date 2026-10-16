@@ -159,6 +159,7 @@ func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
 		SourceKind              domain.ModelSourceKind     `json:"source_kind"`
 		ReconfigurationRequired bool                       `json:"reconfiguration_required"`
 		Retired                 bool                       `json:"retired"`
+		OriginalDocument        json.RawMessage            `json:"original_document"`
 	}
 	if json.Unmarshal(raw, &identity) == nil && (kind == domain.AccountKind && identity.Type == domain.APIAccount && identity.APIProtocol.API() || kind == domain.ProviderKind && len(identity.APIFormats) > 0) {
 		return 3
@@ -166,10 +167,21 @@ func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
 	if json.Unmarshal(raw, &identity) == nil && kind == domain.AgentKind && len(identity.Routes) > 0 {
 		return 3
 	}
-	if json.Unmarshal(raw, &identity) == nil && ((kind == domain.AccountKind && identity.Type == domain.SubscriptionAccount) || (kind == domain.ModelKind && identity.SourceKind == domain.SubscriptionModel) || identity.ReconfigurationRequired || identity.Retired) {
+	if json.Unmarshal(raw, &identity) == nil && ((kind == domain.AccountKind && identity.Type == domain.SubscriptionAccount) || (kind == domain.ModelKind && identity.SourceKind == domain.SubscriptionModel) || identity.ReconfigurationRequired || retiredEnvelope(kind, identity.Retired, identity.OriginalDocument)) {
 		return 2
 	}
 	return 1
+}
+
+// retiredEnvelope reports whether a retired marker denotes the schema-2 retired
+// configuration envelope. A retired Worker machine is an ordinary schema-1
+// machine record that keeps its own retained fields, so only the historical
+// envelope that wraps an original document counts for the machine kind.
+func retiredEnvelope(kind domain.Kind, retired bool, original json.RawMessage) bool {
+	if !retired {
+		return false
+	}
+	return kind != domain.MachineKind || len(original) > 0
 }
 
 func APIProtocol(v pb.ApiProtocol) domain.APIProtocol {
