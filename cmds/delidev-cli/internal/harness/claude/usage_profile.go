@@ -288,7 +288,8 @@ func (s UsageStore) Present(ctx context.Context) (bool, error) {
 
 // Read returns the native credential record of the profile. On macOS the exact
 // Keychain item is preferred and the documented file fallback is used only when
-// that item is absent; Linux and Windows read the profile-owned file. Windows
+// that item is absent. An item and a file that are both populated are ambiguous
+// storage and fail closed as an unsafe profile; Linux and Windows read the profile-owned file. Windows
 // storage that is not the profile file fails explicitly. Callers must clear the
 // returned bytes.
 func (s UsageStore) Read(ctx context.Context) ([]byte, error) {
@@ -298,6 +299,15 @@ func (s UsageStore) Read(ctx context.Context) ([]byte, error) {
 			return nil, err
 		}
 		if found {
+			// Two populated stores leave the unique source of the credentials
+			// unestablished, so the profile fails closed instead of choosing one.
+			if filePresent, fileErr := s.filePresent(); fileErr != nil || filePresent {
+				clear(record)
+				if fileErr != nil {
+					return nil, fileErr
+				}
+				return nil, storageFailure(domain.ClaudeLimitFailureProfileUnsafe)
+			}
 			return record, nil
 		}
 	}

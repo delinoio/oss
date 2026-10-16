@@ -388,6 +388,11 @@ func TestUsageStoreReadsOnlyTheExactDerivedKeychainItemThenTheProfileFile(t *tes
 	if raw, err = store.Read(ctx); err != nil || !bytes.Contains(raw, []byte(usageFixtureAccess)) {
 		t.Fatalf("file fallback: %v", err)
 	}
+	// Both stores populated is ambiguous: the unique source is not established.
+	records[service] = string(usageFixtureRecord(usageFixtureRefresh))
+	if raw, err = store.Read(ctx); err == nil || domain.ClaudeLimitFailureOf(err) != domain.ClaudeLimitFailureProfileUnsafe || raw != nil {
+		t.Fatalf("ambiguous storage must fail closed, got %v", err)
+	}
 	if err := store.Remove(ctx); err != nil {
 		t.Fatal(err)
 	}
