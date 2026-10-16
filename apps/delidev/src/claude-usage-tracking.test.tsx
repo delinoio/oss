@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -485,7 +485,7 @@ it("keeps loading, waiting, stale, failed, backoff, cleanup and reconnect states
       revision: 3n,
       usage,
     };
-    mount(server);
+    const { calls } = mount(server);
     await screen.findByText(message);
     // Failures never change the execution account's presentation.
     expect(screen.getByText(/· Connected/)).toBeTruthy();
@@ -499,6 +499,19 @@ it("keeps loading, waiting, stale, failed, backoff, cleanup and reconnect states
       expect(
         screen.getByRole("button", { name: "Reconnect usage account" }),
       ).toBeTruthy();
+    if (name === "reconnect" || name === "cleanup") {
+      // The server rejects usage reads for an unreadable connection, so the
+      // shared footer must not advertise or send a usage refresh.
+      const footer = await screen.findByRole("button", {
+        name: /Refresh account status/,
+      });
+      await waitFor(() =>
+        expect((footer as HTMLButtonElement).disabled).toBe(false),
+      );
+      fireEvent.click(footer);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(calls.observe).not.toHaveBeenCalled();
+    }
     cleanup();
   }
 });
@@ -564,6 +577,182 @@ it("styles with semantic tokens, 8px corners, wrapping and a stacked narrow layo
   );
   expect(css).toContain("var(--surface)");
   expect(css).toContain("var(--warning-border)");
+});
+
+it("shows the confirmation for a reconnect even though the old connection stays linked", async () => {
+  const operation = newRequestId();
+  const server: Server = {
+    quota: [],
+    connection: newRequestId(),
+    revision: 3n,
+    usage: linkedUsage({
+      operation: {
+        id: operation,
+        generation: operation,
+        state: "confirming",
+        credential_id: newRequestId(),
+        identity: {
+          email: "new@example.com",
+          organization: "Example Org",
+          plan: "max",
+          commitment: "ef".repeat(32),
+        },
+      },
+    }),
+  };
+  const { calls } = mount(server);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "View usage sign-in" }),
+  );
+  await screen.findByRole("heading", { name: "Confirm usage account" });
+  fireEvent.click(screen.getByRole("button", { name: "Link usage account" }));
+  await waitFor(() => expect(calls.confirm).toHaveBeenCalledTimes(1));
+  expect(calls.confirm.mock.calls[0][0].operationId).toBe(operation);
+});
+
+it("opens a later login under a fresh native opening after the earlier one is disposed", async () => {
+  const operation = newRequestId();
+  const server: Server = {
+    quota: [],
+    connection: newRequestId(),
+    revision: 3n,
+    usage: {
+      operation: { id: operation, generation: operation, state: "waiting" },
+    },
+  };
+  const { calls, native } = mount(server, undefined, () => ({
+    state: ClaudeUsageLoginState.WAITING,
+    url: authorization(MANUAL),
+    codeRequested: true,
+  }));
+  calls.cancel.mockImplementation(() => {
+    server.revision += 1n;
+    server.usage = {
+      operation: { id: operation, generation: operation, state: "canceled" },
+    };
+    return {};
+  });
+  const opens = () =>
+    native.mock.calls.filter(
+      (call) => call[1] === OAuthNativeAction.ClaudeSubscriptionOpen,
+    );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "View usage sign-in" }),
+  );
+  await waitFor(() => expect(opens().length).toBe(1));
+  const first = opens()[0][0];
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+  await waitFor(() =>
+    expect(
+      native.mock.calls.some(
+        (call) => call[1] === OAuthNativeAction.Dispose && call[0] === first,
+      ),
+    ).toBe(true),
+  );
+  const connect = await screen.findByRole("button", {
+    name: "Connect usage account",
+  });
+  await waitFor(() =>
+    expect((connect as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(connect);
+  await waitFor(() => expect(opens().length).toBe(2));
+  expect(opens()[1][0]).not.toBe(first);
+});
+
+it("reports a rejected first browser open", async () => {
+  const operation = newRequestId();
+  const server: Server = {
+    quota: [],
+    connection: newRequestId(),
+    revision: 3n,
+    usage: {
+      operation: { id: operation, generation: operation, state: "waiting" },
+    },
+  };
+  const { native } = mount(server, undefined, () => ({
+    state: ClaudeUsageLoginState.WAITING,
+    url: authorization(MANUAL),
+    codeRequested: true,
+  }));
+  native.mockImplementation(async (_opening: string, action: string) => {
+    if (action === OAuthNativeAction.ClaudeSubscriptionOpen)
+      throw new Error("browser unavailable");
+    return { generation: "" };
+  });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "View usage sign-in" }),
+  );
+  expect(
+    await screen.findByText(
+      "The browser could not be opened. Try Open browser again.",
+    ),
+  ).toBeTruthy();
+});
+
+it("does not offer to retry an approval-code submission whose bytes were erased", async () => {
+  const operation = newRequestId();
+  const server: Server = {
+    quota: [],
+    connection: newRequestId(),
+    revision: 3n,
+    usage: {
+      operation: { id: operation, generation: operation, state: "waiting" },
+    },
+  };
+  const { calls } = mount(server, undefined, () => ({
+    state: ClaudeUsageLoginState.WAITING,
+    url: authorization(MANUAL),
+    codeRequested: true,
+  }));
+  calls.submit.mockImplementationOnce(() => {
+    throw new ConnectError("offline", Code.Unavailable);
+  });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "View usage sign-in" }),
+  );
+  const input = (await screen.findByLabelText(
+    "Approval code",
+  )) as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "approval#code" } });
+  fireEvent.click(screen.getByRole("button", { name: "Submit code" }));
+  await waitFor(() => expect(calls.submit).toHaveBeenCalledTimes(1));
+  await screen.findAllByText(/last approval-code submission is unknown/);
+  expect(
+    screen.queryByRole("button", { name: "Retry original request" }),
+  ).toBeNull();
+});
+
+it("retries a disconnect that needs credential cleanup with the original request", async () => {
+  const usage = linkedUsage({ last_success_at: iso(-30_000) });
+  const server: Server = {
+    quota: windows(Date.now() - 30_000),
+    connection: newRequestId(),
+    revision: 3n,
+    usage,
+  };
+  const { calls } = mount(server);
+  calls.disconnect.mockImplementationOnce(() => {
+    throw new ConnectError("cleanup pending", Code.FailedPrecondition);
+  });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Disconnect usage" }),
+  );
+  await screen.findByRole("heading", { name: "Disconnect usage?" });
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Disconnect usage" }).at(-1)!,
+  );
+  await waitFor(() => expect(calls.disconnect).toHaveBeenCalledTimes(1));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Retry original request" }),
+  );
+  await waitFor(() => expect(calls.disconnect).toHaveBeenCalledTimes(2));
+  const [first, second] = calls.disconnect.mock.calls.map(
+    (call) =>
+      (call[0] as unknown as { mutation: { requestId: string } }).mutation
+        .requestId,
+  );
+  expect(second).toBe(first);
 });
 
 function document_activeElement() {

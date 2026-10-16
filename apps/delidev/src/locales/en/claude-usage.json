@@ -47,6 +47,7 @@
   "claude-usage.state.failed": "The usage sign-in failed. Nothing was linked.",
   "claude-usage.state.unsupported": "This server cannot complete a usage sign-in. Nothing was linked.",
   "claude-usage.state.recovery": "The server is cleaning up the usage sign-in. Try again after it finishes.",
+  "claude-usage.codeUnconfirmed": "The result of the last approval-code submission is unknown. Check the sign-in progress, then enter the code again if it is still requested.",
   "claude-usage.requestUnconfirmed": "The result of the last request is unknown. Retry the original request; no new request is sent.",
   "claude-usage.retry": "Retry original request",
   "claude-usage.failure.timeout": "The usage service did not answer in time.",

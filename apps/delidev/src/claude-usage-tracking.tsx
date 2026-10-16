@@ -204,9 +204,19 @@ export function claudeUsageWindowLabel(id: string): string | undefined {
       : undefined;
 }
 
+interface UsageRunOptions {
+  /** False when the request owned secret bytes that cannot be replayed. */
+  retryable?: boolean;
+  /** Message shown instead of the retry guidance when it cannot be retried. */
+  unreplayable?: MessageKey;
+  /** Failure codes that must be replayed with the original request. */
+  recoverable?: FailureCode[];
+}
+
 interface UsageMutation {
   kind: string;
   send: () => Promise<void>;
+  options: UsageRunOptions;
 }
 
 /**
@@ -276,8 +286,12 @@ export function useClaudeUsageTracking({
 
   const dispose = () => {
     binding.current = { operation: "", url: "", generation: "" };
+    // The native host permanently records a disposed opening scope, so the
+    // next login or reconnect must open under a fresh opening identity.
+    const disposed = opening.current;
+    opening.current = newRequestId();
     if (native)
-      void native(opening.current, OAuthNativeAction.Dispose, "", "", "").catch(
+      void native(disposed, OAuthNativeAction.Dispose, "", "", "").catch(
         () => undefined,
       );
   };
@@ -315,6 +329,7 @@ export function useClaudeUsageTracking({
     kind: string,
     send: () => Promise<void>,
     failure: MessageKey,
+    options: UsageRunOptions = {},
   ) => {
     if (inflight.current) return;
     inflight.current = true;
@@ -325,14 +340,28 @@ export function useClaudeUsageTracking({
       setRetry(undefined);
       requests.current.delete(kind);
     } catch (error) {
-      const uncertain = [
-        FailureCode.Unavailable,
-        FailureCode.ServerUnavailable,
-        FailureCode.Canceled,
-        FailureCode.Internal,
-      ].includes(clientFailure(error).code);
-      setProblem(uncertain ? "claude-usage.requestUnconfirmed" : failure);
-      if (uncertain) setRetry({ kind, send });
+      const code = clientFailure(error).code;
+      // A recoverable code (for example a disconnect whose credential cleanup
+      // must be replayed with the exact original request) is retried with the
+      // retained request identity instead of being treated as final.
+      const uncertain =
+        [
+          FailureCode.Unavailable,
+          FailureCode.ServerUnavailable,
+          FailureCode.Canceled,
+          FailureCode.Internal,
+        ].includes(code) || (options.recoverable ?? []).includes(code);
+      setProblem(
+        uncertain
+          ? options.retryable === false
+            ? (options.unreplayable ?? "claude-usage.requestUnconfirmed")
+            : "claude-usage.requestUnconfirmed"
+          : failure,
+      );
+      // A request whose secret bytes were already zeroed cannot be replayed;
+      // the user re-enters the value instead of retrying with a dead buffer.
+      if (uncertain && options.retryable !== false)
+        setRetry({ kind, send, options });
       else requests.current.delete(kind);
     } finally {
       inflight.current = false;
@@ -432,6 +461,7 @@ export function useClaudeUsageTracking({
         setDisconnecting(false);
       },
       "claude-usage.state.failed",
+      { recoverable: [FailureCode.RecoveryRequired] },
     );
   };
   const submitCode = (value: string) => {
@@ -461,6 +491,7 @@ export function useClaudeUsageTracking({
         }
       },
       "claude-usage.state.failed",
+      { retryable: false, unreplayable: "claude-usage.codeUnconfirmed" },
     );
   };
   const reopen = () => {
@@ -495,6 +526,7 @@ export function useClaudeUsageTracking({
             (binding.current.url && binding.current.url !== result.url)
           )
             throw new Error("Invalid original native URL");
+          let openFailed = false;
           if (!binding.current.url && native) {
             binding.current = {
               operation: operation.id,
@@ -512,15 +544,23 @@ export function useClaudeUsageTracking({
               if (!stopped && isEntityId(opened.generation))
                 binding.current.generation = opened.generation;
             } catch {
-              if (!stopped)
-                setProgress((p) => (p ? { ...p, browserFailed: true } : p));
+              openFailed = true;
             }
           }
+          if (stopped) return;
+          setProgress((previous) => ({
+            operation: operation.id,
+            url: result.url,
+            codeRequested: result.codeRequested,
+            canceled: result.canceled,
+            browserFailed: previous?.browserFailed === true || openFailed,
+          }));
+          return;
         }
         setProgress((previous) => ({
           operation: operation.id,
-          url: waiting ? result.url : "",
-          codeRequested: waiting && result.codeRequested,
+          url: "",
+          codeRequested: false,
           canceled: result.canceled,
           browserFailed: previous?.browserFailed === true,
         }));
@@ -536,13 +576,14 @@ export function useClaudeUsageTracking({
     };
   }, [active, live, operation?.id, operation?.phase, hidden, clients, native]);
 
+  // Every confirming operation shows the confirmation view first, including a
+  // reconnect whose previous connection is intentionally still linked.
   const view = !account
     ? ClaudeUsageView.Loading
-    : usage.linked &&
-        !(live && operation?.phase !== ClaudeUsageLoginPhase.Confirming)
-      ? ClaudeUsageView.Linked
-      : operation?.phase === ClaudeUsageLoginPhase.Confirming
-        ? ClaudeUsageView.Confirmation
+    : operation?.phase === ClaudeUsageLoginPhase.Confirming
+      ? ClaudeUsageView.Confirmation
+      : usage.linked && !live
+        ? ClaudeUsageView.Linked
         : live
           ? ClaudeUsageView.Progress
           : !settled
@@ -556,9 +597,14 @@ export function useClaudeUsageTracking({
                 : ClaudeUsageView.Unlinked;
   const health = claudeUsageHealth(usage, now);
   const backoff = health === ClaudeUsageHealth.Backoff;
+  /** The server only reads usage for a connection that is neither pending reconnection nor cleanup. */
+  const unreadable =
+    health === ClaudeUsageHealth.ReconnectRequired ||
+    health === ClaudeUsageHealth.Cleanup;
   /** The shared Manage Refresh footer reads usage through this action. */
   const refresh = async () => {
-    if (!account || !usage.linked || !supported || backoff) return;
+    if (!account || !usage.linked || !supported || backoff || unreadable)
+      return;
     const current = await fresh();
     await clients.subscription.requestSubscriptionObservation({
       mutation: {
@@ -585,7 +631,13 @@ export function useClaudeUsageTracking({
       problem={problem}
       retry={
         retry
-          ? () => void run(retry.kind, retry.send, "claude-usage.state.failed")
+          ? () =>
+              void run(
+                retry.kind,
+                retry.send,
+                "claude-usage.state.failed",
+                retry.options,
+              )
           : undefined
       }
       dialogHidden={live && hidden}
@@ -615,7 +667,12 @@ export function useClaudeUsageTracking({
         retry={
           retry
             ? () =>
-                void run(retry.kind, retry.send, "claude-usage.state.failed")
+                void run(
+                  retry.kind,
+                  retry.send,
+                  "claude-usage.state.failed",
+                  retry.options,
+                )
             : undefined
         }
       />
@@ -665,7 +722,8 @@ export function useClaudeUsageTracking({
     usage,
     linked: usage.linked,
     /** Whether the shared footer may send a usage refresh now. */
-    refreshAvailable: usage.linked && supported && settled && !backoff,
+    refreshAvailable:
+      usage.linked && supported && settled && !backoff && !unreadable,
     /** Whether an active provider backoff disables the footer refresh. */
     paused: usage.linked && backoff,
     refresh,
