@@ -315,7 +315,7 @@ immutable even if their response is lost.
 
 Logout runs the official CLI, independently proves disconnected status and then
 removes only the canonical, inode-bound owned profile under the existing
-2,048-file/64 MiB cleanup bound. Oversized, symlinked, replaced or uncertain
+2,048-file/64 MiB cleanup bound (this bound belongs to profile removal, not to the execution authentication scan). Oversized, symlinked, replaced or uncertain
 profiles retain recovery; they are not reported as removed. Account deletion
 requires confirmed native logout/profile cleanup and no retained owner,
 generation, lease or operation. Session checkpoints retain a digest-bound
@@ -528,7 +528,7 @@ Settings Add account is an explicit event that creates a default service-named a
 
 - Server subscription failures retain actual Codex version and the first safe native failure separately from cleanup/recovery. Login logs use original operation correlation without account identifiers. Publish diagnostics only to the original authenticated actor/operation and preserve uncertain ownership without resending work. Follow the subscription and protocol contracts.
 
-- Subscription cleanup failures log only closed native-process/auth-file/runtime stage and reason enums, the original operation reference and bounded inventory counters/limits. Preserve the public recovery classification, auth-file comparison, original process joins, directory identity, symlink refusal and existing 2,048-file/64 MiB limits. Runtime diagnostics contain no paths, native output, file content or credentials; they cannot clear existing recovery fences.
+- Subscription cleanup failures log only closed native-process/auth-file/runtime stage and reason enums, the original operation reference and bounded inventory counters/limits. Preserve the public recovery classification, auth-file comparison, original process joins, directory identity and symlink refusal. The execution authentication scan has no inventory limit; profile removal keeps its 2,048-file/64 MiB bound. Runtime diagnostics contain no paths, native output, file content or credentials; they cannot clear existing recovery fences.
 
 - Claude subscription business logic belongs in claude_subscriptions.go under System 38, which serves existing device-owned accounts and operations accepted before the retirement of machine-bound LOGIN/REFRESH (new sign-in is server-owned under System 67 in claude_managed.go, and that lane reports the same typed `Unsupported` retirement result for a machine-bound LOGIN or REFRESH on an existing server-token account). Bind original owner/client operation and Worker/device/instance/lease, claim codes before memory retention and consumption before once-only release. Idle progress/code polling is read-only. Cancel/revocation/expiry wins before connection publication; wrong Runner fails before input consumption. Retain uncertain ownership and admit original cleanup-only recovery without login/code replay. No Claude bundles, credential files, raw identity, URL/code persistence or quota inference.
 
@@ -1096,7 +1096,8 @@ non-authoritative until a later Finish retires another budget or explicit logout
 or account deletion removes them. A reference of another owner or purpose still
 denies the call before its first deletion. Worker credential cleanup, protocol
 wire fields, capability IDs and the shared Worker recovery enum values are
-unchanged.
+unchanged; the protected recovery capture is protected from this helper while its
+lease is held and is retired with the lease.
 
 Legacy transition. Cleanup-only state written by earlier builds is released
 idempotently under the account gate: the `native-confirmed` checkpoint and the
@@ -1120,6 +1121,108 @@ only, never credential bytes, native text or paths: `server_credential_retained`
 `server_subscription_legacy_transition` (`result` is `confirmed` or `retained`)
 and `server_credential_removal` (`result` is `confirmed` or `retained`, with the
 closed `stage` `files` or `references`).
+
+## Automatic managed ChatGPT execution recovery
+
+A managed ChatGPT EXECUTE lease whose Finish reported unconfirmed authentication
+cleanup stays retained and fences the account (`recovery_required`): ordinary
+Finish refuses the fence and a Take must never redistribute the old refresh-token
+generation. Worker capability `MANAGED_CODEX_RECOVERY_V1 = 72` negotiates an
+automatic, Worker-only reconciliation path. It requires
+`MANAGED_CODEX_SUBSCRIPTIONS_V1` and is advertised by the Worker only after the
+server echoed it in `AttachWorkerResponse.supported_worker_capabilities`.
+Older peers keep the existing fence, and the original Take and Finish requests,
+digests and receipts are unchanged.
+
+Protected capture. Before a negotiated managed execution deletes its transient
+authentication, the Worker calls `SyncSubscriptionRecoveryCapture` with a durable
+capture identity (its request ID), the exact unused original bundle and the latest
+validated bundle. The server accepts it only for the exact live (or fenced) lease
+of the authenticated Worker device, requires the original to equal the delivered
+generation, the latest to keep the account's immutable identity commitment and to
+be the original or a valid refresh of it, and stores both bundles as
+`account-login` vault references (`SubscriptionRecoveryCapture`: the latest under
+the capture ID, the original under a deterministic derived ID). SQLite stores only
+non-secret metadata. The capture grants no readiness, Take, quota access or
+redistribution: Take reads only the published generation, and the Worker Finish
+retirement protects the capture (`protectedWorkerReferences`) while its lease is
+held and retires it with the lease. A replayed request (crash or lost response)
+reuses the same capture; a newer capture replaces and retires the previous one.
+If the capture cannot be confirmed the Worker keeps the authentication file in
+place, so the fenced lease can still be recovered from it. The Worker journals
+the exact authentication home before any credential is written, the stable
+server identity, the capture identity and its digest; the journal never holds
+secret bytes and the home path is never logged.
+
+Offer and lane. `WatchSubscription` offers a fenced ChatGPT EXECUTE row
+(`RecoveryRequired`, lease action execute, matching machine) or a committed
+recovery settlement only to its original Worker and only with capability 72.
+Recovery rows share the four-account lane bound with ordinary rows, keep at least
+one slot, and are offered through a rotating window so more than four fenced
+accounts cannot starve each other. The Worker starts at most one in-flight
+attempt per account and retries transient failures after 1, 2, 4, 8 and 16
+seconds and then every 30 seconds. Missing or foreign proof is terminal for the
+current obligation: it is not retried until the lease, generation or settlement
+changes or the Worker reconnects. Attempts run inside the lane's wait group and
+are cancelled and joined on shutdown.
+
+Evidence binding. The Worker accepts only its own retained original journal for
+the same server, account, lease, operation, generation, lease revision and
+original instance. A replacement instance of the same original Worker may
+reconcile only that journal; the server requires the authenticated Worker device
+and machine to equal the lease, the original instance to equal the lease
+instance, the caller to be the machine's current instance and the lease to be
+fenced. Another Worker, a revoked device, a replaced generation, restored or
+foreign journals and a live execution of the same lease in the running process
+are rejected. Every original process owner (job, shared owner and members) is
+joined through the process journals before the home is touched; shared-owner
+members must each be retained members of the owner, and the owner Finish
+equivalent waits until the request lists every member the server holds. Dependent
+credential users (access-only quota or credit readers) block owner retirement.
+
+Reconciliation. The Worker reads its capture, removes only the original transient
+`auth.json` (when it equals the captured latest bundle), proves the retained
+history with the complete streaming scan and journals the cleanup and one durable
+recovery request before reporting. History, sessions, caches and helper links are
+preserved and no input is replayed. Legacy journals written before capture
+support that still hold a valid retained `auth.json` first capture that latest
+bundle (without an original) and then settle; retained authentication that is not
+a usable bundle is the proven absence of usable credentials; no evidence at all
+stays protected with the closed diagnostic `credential-proof-unavailable` and no
+fabricated receipt.
+
+Settlement. `RecoverSubscription` uses a recovery request identity distinct from
+the original Take and Finish requests. With a valid capture the server publishes
+one immutable generation named by the recovery request and, after the original
+references are retired, restores readiness. With cleanup proven but no usable
+credentials it denies and retires every original reference and settles the
+account disconnected, so only the existing explicit login can reconnect it; no
+login starts automatically. The decision is committed first (the lease is
+released, the recovery fence and a `recovery_settlement` checkpoint remain), the
+protected references are then retired completely, and only the final receipt
+under the recovery request clears the fence. An incomplete deletion keeps the
+checkpoint and the fence, admits no execution or login, and the original request
+resumes the same retirement; an exact receipt replay mutates nothing. A report of
+blocked cleanup, unsettled members or active credential users records the closed
+reason in `recovery_block` on the account document and settles nothing. Closed
+reasons are `credential-proof-unavailable`, `cleanup-unconfirmed`,
+`ownership-evidence-invalid`, `members-unsettled`, `credential-users-active` and
+`active-owner`. There is no new screen, CLI retry or automatic login; the existing
+account observation exposes the state and reason.
+
+Retained history scan. The authentication cleanup scan of execution history has no
+file-count, file-size or aggregate limit, for the singleton and the shared path.
+Every regular file streams through a fixed window that overlaps by the longest
+token encoding, so raw and Base64 remnants across chunk boundaries are found with
+bounded memory. Pending entries, special files, unreadable entries, remnants and a
+changed root identity still fail closed without deleting history, and the scan
+observes cancellation.
+
+Logging. Structured records use the phase `subscription-recovery` on the server
+and `codex-recovery` on the Worker with opaque account, lease, request and capture
+identifiers, counts, the closed blocked reason, the retry delay and the cleanup
+stage and reason; they never contain credentials, bundle digests, paths or native
+output.
 
 ## Claude native version admission and diagnostics
 

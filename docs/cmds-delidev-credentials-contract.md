@@ -318,3 +318,19 @@ System 101 credit consumption reads the exact sealed AccountLogin generation cap
 ## Claude setup-token envelope
 
 A server-owned Claude token is stored as one `AccountLogin` vault object owned by the account under its settled generation ID. The closed version-1 JSON envelope carries kind `claude-setup-token`, server ID, account ID, generation ID and the token; unknown or duplicate fields, a different kind, version, server, account or generation, a Codex bundle and a malformed token fail with a secret-free recovery error. Decoded token buffers are cleared after use. The envelope is bounded to 4 KiB, appears only in the vault and the protected Take response, and never in SQLite, logs, resources, progress or checkpoints. The account stores only the keyed token commitment.
+
+## Managed ChatGPT recovery capture
+
+The protected recovery capture of a held managed ChatGPT EXECUTE lease is stored as
+`account-login` references of the account: the latest validated bundle under the
+capture identity and, when the lease took one, the unused original bundle under an
+identifier derived deterministically from it. Both are bounded by the vault secret
+limit, are written only through `SyncSubscriptionRecoveryCapture` by the exact
+authenticated Worker lease, never enter SQLite, journals, jobs, logs or ordinary
+resources, and are read back only by `ReadSubscriptionRecoveryCapture` for the same
+lease. The capture authorizes nothing: Take reads only the published generation, the
+Worker Finish retirement helper protects the capture while its lease is held and
+retires it with the lease, and recovery settlement retires every original reference
+through the complete enumeration used by explicit removal. Deletion keeps the vault
+tombstone order, so a failed deletion is resumed by the original recovery request.
+See the [subscription contract](cmds-delidev-subscription-contract.md#automatic-managed-chatgpt-execution-recovery).

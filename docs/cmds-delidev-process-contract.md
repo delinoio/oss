@@ -165,3 +165,15 @@ file blocks only the owning operation with a specific safe cause. Discovery,
 model observation and title probes reconcile their own owner index and release
 their persistent accountless profile. Native process control sockets keep their
 separate lifecycle. See the [harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).
+
+## Managed ChatGPT recovery process reconciliation
+
+Automatic recovery of a fenced managed ChatGPT EXECUTE lease reconciles every
+original process owner (the execution job, a shared account owner and each shared
+member job) through the existing per-owner process index, never through PID
+guesses. An owner whose index directory does not exist never started a process; an
+existing index is always reconciled and a damaged one is never read as proof of
+completion. Reconciliation must finish before the retained authentication home is
+touched, and a live execution of the same lease in the running process defers the
+recovery instead of racing it. See the
+[subscription contract](cmds-delidev-subscription-contract.md#automatic-managed-chatgpt-execution-recovery).

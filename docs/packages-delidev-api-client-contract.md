@@ -569,3 +569,14 @@ The generated Go and TypeScript bindings expose `DeviceService.RemoveWorker` (in
 ## Subagent display names
 
 Generated `Resource.subagentDisplay` (`SubagentDisplayName` with `childId` and `name`) and `PublishExecutionRequest.subagentNames` expose the additive [display-name metadata](protos-delidev-v1-contract.md#subagent-display-name-metadata). Consumers join the name to the Resource by the original child ID, accept at most 256 Unicode characters of non-blank, control-free text and otherwise fall back to the stable localized ordinal. Only Codex children use a name. Child `document_json` and its closed validators are unchanged.
+
+## Managed ChatGPT recovery declarations
+
+Generated `SubscriptionService` declarations export the Worker-only
+`syncSubscriptionRecoveryCapture`, `readSubscriptionRecoveryCapture` and
+`recoverSubscription` queries, the closed `SubscriptionRecoveryReport`,
+`SubscriptionRecoveryOutcome` and `SubscriptionRecoveryBlockedReason` enums and
+`WorkerCapability.MANAGED_CODEX_RECOVERY_V1 = 72`. Product clients never call them
+and add no screen, retry control or capability gate; the account document exposes the
+recovery state and closed blocked reason. See the
+[protocol contract](protos-delidev-v1-contract.md#managed-chatgpt-recovery-allocation).
