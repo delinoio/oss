@@ -1,0 +1,5 @@
+interface:
+  display_name: "Batch Mode"
+
+policy:
+  allow_implicit_invocation: false
