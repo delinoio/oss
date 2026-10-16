@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -100,13 +101,13 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	var destination string
+	var destination, authority string
 	var original domain.ServerSubscriptionOperation
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
 			return err
 		}
-		_, a, err := subscriptionAccount(tx, account, 0)
+		_, a, err := serverLoginAccount(tx, account, 0)
 		if err != nil {
 			return err
 		}
@@ -118,6 +119,22 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 			return subscriptionDenied()
 		}
 		p := s.subscriptionProgress[o.ID]
+		if a.SubscriptionService == domain.SubscriptionGrok {
+			// The Grok relay targets the dynamic loopback port bound for this very
+			// login and the state it carries; a claimed exchange never accepts one.
+			port, state, ok := grokAuthorizationTarget(p.URL)
+			if !ok || p.UserCode != "" || o.ExchangeClaimed {
+				return subscriptionDenied()
+			}
+			query, ok := subscriptionCallbackQuery(req.Msg.CallbackQuery, state)
+			if !ok {
+				return subscriptionDenied()
+			}
+			authority = "127.0.0.1:" + strconv.Itoa(port)
+			destination = "http://" + authority + "/callback?" + query
+			original = *o
+			return nil
+		}
 		callback, state, ok := serverLoginCallback(p.URL)
 		if !ok || p.UserCode != "" {
 			return subscriptionDenied()
@@ -126,6 +143,7 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 		if !ok {
 			return subscriptionDenied()
 		}
+		authority = "127.0.0.1:1457"
 		destination = callback + "?" + query
 		original = *o
 		return nil
@@ -134,7 +152,7 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 		// Synchronize dispatch ownership before HTTP. A lost response, duplicate or
 		// restart can inspect progress but can never repeat this code delivery.
 		_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.server.callback", struct{ Account, Operation domain.ID }{account, operation}, func(tx *store.Tx) (any, error) {
-			_, a, err := subscriptionAccount(tx, account, 0)
+			_, a, err := serverLoginAccount(tx, account, 0)
 			if err != nil {
 				return nil, err
 			}
@@ -142,7 +160,7 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 			if o == nil || o.ID != original.ID || o.CallbackForwarded || o.Epoch != original.Epoch || o.State != domain.SubscriptionWaiting || a.Subscription.RecoveryRequired || a.Subscription.Pending == nil || a.Subscription.Pending.Canceled || subscriptionActorValid(tx, actor) != nil {
 				return nil, subscriptionDenied()
 			}
-			r, _, err := subscriptionAccount(tx, account, 0)
+			r, _, err := serverLoginAccount(tx, account, 0)
 			if err != nil {
 				return nil, err
 			}
@@ -172,7 +190,7 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 		// Resolve no remote hostname and inherit no proxy. The original native
 		// callback is IPv4-only; retain its exact registered HTTP authority.
 		request.Host = request.URL.Host
-		request.URL.Host = "127.0.0.1:1457"
+		request.URL.Host = authority
 		response, e := client.Do(request)
 		err = e
 		if response != nil {

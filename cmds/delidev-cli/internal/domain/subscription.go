@@ -197,6 +197,9 @@ func (s SubscriptionState) Validate(account Account) error {
 		if o.GrokDiagnostic != nil && (account.SubscriptionService != SubscriptionGrok || o.Diagnostic != nil || o.GrokDiagnostic.Validate() != nil || o.GrokDiagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionCanceled || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
 			return invalid()
 		}
+		if o.ExchangeClaimed && (account.SubscriptionService != SubscriptionGrok || o.Action != SubscriptionLogin || !o.NativeStarted && o.State != SubscriptionSucceeded && o.State != SubscriptionFailed && o.State != SubscriptionRecovery) {
+			return invalid()
+		}
 		if o.CleanupPhase == SubscriptionCredentialCleanupPending && !account.ManagedClaudeAccount() {
 			return invalid()
 		}
@@ -230,6 +233,11 @@ type ServerSubscriptionOperation struct {
 	State             SubscriptionLoginState `json:"state"`
 	NativeStarted     bool                   `json:"native_started"`
 	CallbackForwarded bool                   `json:"callback_forwarded"`
+	// ExchangeClaimed is the durable Grok token-exchange claim. It is written
+	// before the one authorization-code token request is sent and is never
+	// cleared, so an uncertain or interrupted exchange can never resend the code.
+	// Historical operations omit it.
+	ExchangeClaimed bool `json:"exchange_claimed,omitempty"`
 	// Optional server-owned Claude setup-token fields. Historical Codex server
 	// operations omit them and retain their representation.
 	LoginMethod      SubscriptionLoginMethod       `json:"login_method,omitempty"`

@@ -193,9 +193,13 @@ acceptance.
 model and stays exclusive: it delivers a static server-held token inside one
 protected Take response, which conflicts with the rule that no member receives
 authentication bytes. OpenCode Go keeps its independent key-backed relay. Grok
-Build is not activated; its bound credential bundle library and identity
+Build is not advertised; its bound credential bundle library and identity
 commitment are owned by [the Grok contract](cmds-delidev-grok-subscription-contract.md#grok-bundle)
-and grant no login or execution. Mock and build evidence for this model is not real-account,
+and grant no execution. The server-owned Grok browser login (LOGIN, `device_code`
+false, no machine) runs in the server-owned request, progress, cancel and
+callback-forwarding lane described under
+[Server-owned browser login](cmds-delidev-grok-subscription-contract.md#server-owned-browser-login),
+implemented without a native Grok process and kept unadvertised (System 39 off). Mock and build evidence for this model is not real-account,
 real-renewal or cross-platform acceptance; that acceptance is future work and is
 not performed.
 

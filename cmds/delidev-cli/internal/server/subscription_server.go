@@ -49,7 +49,7 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 	}
 	defer unlock()
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.server.request", input, func(tx *store.Tx) (any, error) {
-		r, a, err := subscriptionAccount(tx, input.ID, input.Revision)
+		r, a, err := serverLoginAccount(tx, input.ID, input.Revision)
 		if err != nil {
 			return nil, err
 		}
@@ -227,6 +227,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			account, operation domain.ID
 			cleanup            bool
 			claude             bool
+			grok               bool
 		}
 		var candidates []candidate
 		eligible := map[domain.ID]bool{}
@@ -249,6 +250,10 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, claude: true})
 					}
 				} else if a.ManagedClaudeAccount() {
+					continue
+				} else if grokLoginCandidate(a) && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() {
+					candidates = append(candidates, candidate{account: r.ID, grok: true})
+				} else if a.SubscriptionService == domain.SubscriptionGrok {
 					continue
 				} else if a.Subscription != nil && !a.Subscription.RecoveryRequired && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.State == domain.SubscriptionPreparing && !a.Subscription.ServerOperation.NativeStarted && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() && a.Subscription.Pending != nil && a.Subscription.Pending.Phase == domain.SubscriptionQueued && a.Subscription.Lease == nil {
 					candidates = append(candidates, candidate{account: r.ID})
@@ -280,7 +285,9 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			go func() {
 				defer workers.Done()
 				result := serverSubscriptionResult{account: next.account, operation: next.operation, cleanup: next.cleanup}
-				if next.claude {
+				if next.grok {
+					s.runGrokLogin(child, next.account)
+				} else if next.claude {
 					if next.cleanup {
 						if err := s.recoverManagedClaude(child, next.account, next.operation); err != nil && child.Err() == nil {
 							result.failed = true
