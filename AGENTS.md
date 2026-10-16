@@ -176,6 +176,7 @@
 ## Formatting Rules
 
 - Use the pinned Rstack CLI through root `pnpm format` and `pnpm format:check` for changed JS/TS, CSS, JSON, YAML and Markdown files. Keep shared options and exclusions in `rstack.config.ts`.
+- The Lefthook pre-commit hook must automatically format staged Rstack-supported files and stage the fixes in the same commit while preserving unstaged edits. Use the shared formatter's local `--staged --write` mode; keep CI checks on the exact planner comparison.
 - CI must check the exact planner comparison without rewriting sources or expanding to a repository-wide formatting migration. Preserve Rust, Go and Protobuf format checks. Follow `docs/repository-workflow-contract.md`.
 
 ## Logging Rules

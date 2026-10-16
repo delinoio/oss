@@ -12,22 +12,35 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   allFormatFiles,
   changedFormatFiles,
   runFormatter,
+  stagedFormatFiles,
 } from "./format-changed.mjs";
 import { Event, planJobs } from "./plan.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
-function fixture(t) {
+const require = createRequire(import.meta.url);
+const lefthook = require("lefthook/get-exe.js").getExePath();
+function fixture(t, initialCommit = true) {
   const cwd = mkdtempSync(join(tmpdir(), "rstack-format-"));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const env = { ...process.env, LEFTHOOK_BIN: lefthook };
+  delete env.CI;
+  delete env.TURBO_SCM_BASE;
+  delete env.TURBO_SCM_HEAD;
+  env.PATH = [
+    dirname(process.execPath),
+    join(root, "node_modules/.bin"),
+    env.PATH,
+  ].join(delimiter);
   const git = (...args) =>
-    execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+    execFileSync("git", args, { cwd, env, encoding: "utf8" }).trim();
   git("init", "--quiet");
   git("config", "user.email", "fixture@example.invalid");
   git("config", "user.name", "Formatting fixture");
@@ -49,8 +62,140 @@ function fixture(t) {
     git("commit", "--quiet", "-m", "fixture");
     return git("rev-parse", "HEAD");
   };
-  return { cwd, write, git, commit, base: commit() };
+  const installHook = () => {
+    copyFileSync(join(root, "lefthook.yml"), join(cwd, "lefthook.yml"));
+    write(
+      "scripts/ci/format-changed.mjs",
+      readFileSync(join(root, "scripts/ci/format-changed.mjs"), "utf8"),
+    );
+    git("config", "--unset", "core.hooksPath");
+    execFileSync(lefthook, ["install"], { cwd, env, encoding: "utf8" });
+  };
+  return {
+    cwd,
+    write,
+    git,
+    commit,
+    installHook,
+    env,
+    base: initialCommit ? commit() : null,
+  };
 }
+
+test("pre-commit formats and stages initial-commit files with literal paths", (t) => {
+  const f = fixture(t, false);
+  f.installHook();
+  const names = [
+    "space name.tsx",
+    "한글[1].ts",
+    "-flag.ts",
+    "!negation.ts",
+    "apps/example/src/desktop.test.tsx",
+  ];
+  if (process.platform !== "win32") names.push("line\nname.ts", "star*.ts");
+  for (const name of names) f.write(name, "const value={answer:42}\n");
+  f.write("vendor/ignored.ts", "deliberately invalid {{{\n");
+  f.write("untracked.ts", "const untracked={answer:42}\n");
+  f.git("add", "--", ...names, "vendor/ignored.ts");
+  assert.deepEqual(
+    stagedFormatFiles(f.cwd),
+    [...names, "vendor/ignored.ts"].sort(),
+  );
+  f.git("commit", "--quiet", "-m", "initial formatted sources");
+  for (const name of names) {
+    assert.equal(
+      f.git("show", `HEAD:${name}`),
+      "const value = { answer: 42 };",
+    );
+    assert.equal(
+      readFileSync(join(f.cwd, name), "utf8"),
+      "const value = { answer: 42 };\n",
+    );
+  }
+  assert.equal(
+    f.git("show", "HEAD:vendor/ignored.ts"),
+    "deliberately invalid {{{",
+  );
+  assert.equal(
+    readFileSync(join(f.cwd, "untracked.ts"), "utf8"),
+    "const untracked={answer:42}\n",
+  );
+  assert.equal(f.git("diff", "--name-only"), "");
+});
+
+test("pre-commit preserves unstaged edits in a partially staged file", (t) => {
+  const f = fixture(t);
+  const padding = Array.from(
+    { length: 15 },
+    (_, index) => `// Separator ${index}\n`,
+  ).join("");
+  const original = `const value = { answer: 1 };\n${padding}const tail = 1;\n`;
+  f.write("partial.ts", original);
+  f.commit();
+  f.installHook();
+  const staged = `const value={answer:42}\n${padding}const tail = 1;\n`;
+  f.write("partial.ts", staged);
+  f.git("add", "partial.ts");
+  f.write("partial.ts", staged.replace("const tail = 1;", "const tail = 2;"));
+  f.git("commit", "--quiet", "-m", "format only staged content");
+  const formatted = `const value = { answer: 42 };\n${padding}const tail = 1;\n`;
+  assert.equal(f.git("show", "HEAD:partial.ts"), formatted.trim());
+  assert.equal(
+    readFileSync(join(f.cwd, "partial.ts"), "utf8"),
+    formatted.replace("const tail = 1;", "const tail = 2;"),
+  );
+  assert.equal(f.git("diff", "--cached", "--name-only"), "");
+  assert.equal(f.git("diff", "--name-only"), "partial.ts");
+});
+
+test("pre-commit skips deletion-only and unsupported-file commits", (t) => {
+  const f = fixture(t);
+  f.write("removed.ts", "const value = 1;\n");
+  f.commit();
+  f.installHook();
+  f.git("rm", "removed.ts");
+  assert.deepEqual(stagedFormatFiles(f.cwd), []);
+  f.git("commit", "--quiet", "-m", "delete source");
+  f.write("notes.txt", "plain text\n");
+  f.git("add", "notes.txt");
+  assert.deepEqual(stagedFormatFiles(f.cwd), []);
+  f.git("commit", "--quiet", "-m", "unsupported source");
+  assert.equal(f.git("show", "HEAD:notes.txt"), "plain text");
+});
+
+test("pre-commit rejects parser errors without creating a commit", (t) => {
+  const f = fixture(t);
+  f.installHook();
+  f.write("broken.ts", "const broken = ;\n");
+  f.git("add", "broken.ts");
+  const result = spawnSync(
+    "git",
+    ["commit", "--quiet", "-m", "invalid source"],
+    {
+      cwd: f.cwd,
+      env: f.env,
+      encoding: "utf8",
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.equal(f.git("rev-parse", "HEAD"), f.base);
+  assert.match(result.stdout + result.stderr, /ci_format_result/);
+  assert.equal(f.git("show", ":broken.ts"), "const broken = ;");
+});
+
+test(
+  "staged selection skips symlinks and unstaged deletions",
+  { skip: process.platform === "win32" },
+  (t) => {
+    const f = fixture(t);
+    f.write("target.ts", "const value = 1;\n");
+    symlinkSync("target.ts", join(f.cwd, "linked.ts"));
+    f.git("add", "target.ts", "linked.ts");
+    assert.deepEqual(stagedFormatFiles(f.cwd), ["target.ts"]);
+    rmSync(join(f.cwd, "target.ts"));
+    assert.deepEqual(stagedFormatFiles(f.cwd), []);
+  },
+);
 
 test("real Rstack checks whole changed files without rewriting, then fixes them", (t) => {
   const f = fixture(t);
@@ -190,6 +335,7 @@ test("CLI rejects incomplete comparisons and CI-wide formatting", (t) => {
     [],
     ["--base", f.base],
     ["--all", "--base", f.base, "--head", f.base],
+    ["--staged"],
   ]) {
     const result = spawnSync(process.execPath, [script, ...args], {
       cwd: f.cwd,
@@ -199,4 +345,24 @@ test("CLI rejects incomplete comparisons and CI-wide formatting", (t) => {
     assert.equal(result.status, 2);
     assert.match(result.stderr, /ci_format_error/);
   }
+});
+
+test("CLI rejects staged selection with other selection modes", (t) => {
+  const f = fixture(t);
+  const script = join(root, "scripts/ci/format-changed.mjs");
+  for (const args of [["--all"], ["--base", f.base, "--head", f.base]]) {
+    const result = spawnSync(process.execPath, [script, "--staged", ...args], {
+      cwd: f.cwd,
+      env: f.env,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /Staged formatting requires local execution/);
+  }
+  const result = spawnSync(process.execPath, [script, "--staged"], {
+    cwd: f.cwd,
+    env: { ...f.env, TURBO_SCM_BASE: f.base, TURBO_SCM_HEAD: f.base },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 2);
 });
