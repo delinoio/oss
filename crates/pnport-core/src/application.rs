@@ -42,17 +42,13 @@ fn join(base: &[u16], rest: &[u16]) -> Vec<u16> {
     joined
 }
 
-/// Length of the `\\server\share` prefix of a UNC path, when present.
-fn unc_root(path: &[u16]) -> Option<usize> {
-    if path.len() < 2 || !separator(path[0]) || !separator(path[1]) {
-        return None;
-    }
-    let mut index = 2;
-    let server = index;
+/// Scan `server\share` starting at `start` and return the end of the share.
+fn server_share_end(path: &[u16], start: usize) -> Option<usize> {
+    let mut index = start;
     while index < path.len() && !separator(path[index]) {
         index += 1;
     }
-    if index == server || index == path.len() {
+    if index == start || index == path.len() {
         return None;
     }
     index += 1;
@@ -64,6 +60,58 @@ fn unc_root(path: &[u16]) -> Option<usize> {
         return None;
     }
     Some(index)
+}
+
+fn eq_ascii(unit: u16, expected: u8) -> bool {
+    u8::try_from(unit).is_ok_and(|byte| byte.eq_ignore_ascii_case(&expected))
+}
+
+/// Length of the `\\?\` or `\\.\` namespace prefix, when present.
+fn namespace_prefix(path: &[u16]) -> Option<usize> {
+    match path {
+        [first, second, marker, last, ..]
+            if *first == BACKSLASH
+                && *second == BACKSLASH
+                && (*marker == u16::from(b'?') || *marker == u16::from(b'.'))
+                && *last == BACKSLASH =>
+        {
+            Some(4)
+        }
+        _ => None,
+    }
+}
+
+/// Length of the root of an absolute caller directory: `C:`, `\\?\C:`,
+/// `\\server\share` or `\\?\UNC\server\share`.
+fn root_prefix(path: &[u16]) -> Option<usize> {
+    if let Some(prefix) = namespace_prefix(path) {
+        let rest = &path[prefix..];
+        if drive_of(rest).is_some() {
+            return Some(prefix + 2);
+        }
+        if rest.len() > 4
+            && eq_ascii(rest[0], b'U')
+            && eq_ascii(rest[1], b'N')
+            && eq_ascii(rest[2], b'C')
+            && rest[3] == BACKSLASH
+        {
+            return server_share_end(path, prefix + 4);
+        }
+        return None;
+    }
+    if drive_of(path).is_some() {
+        return Some(2);
+    }
+    if path.len() < 2 || !separator(path[0]) || !separator(path[1]) {
+        return None;
+    }
+    server_share_end(path, 2)
+}
+
+/// Drive letter of the caller directory, including its `\\?\C:` spelling.
+fn caller_drive(caller: &[u16]) -> Option<u16> {
+    let prefix = namespace_prefix(caller).unwrap_or(0);
+    drive_of(&caller[prefix..])
 }
 
 /// Resolve `application` the way native process creation would for a caller
@@ -93,7 +141,7 @@ pub fn resolve_application(
         // Drive-relative `C:name`: use the caller directory on the same
         // drive, otherwise the remembered per-drive directory or that
         // drive's root.
-        if drive_of(caller).is_some_and(|current| same_drive(current, drive)) {
+        if caller_drive(caller).is_some_and(|current| same_drive(current, drive)) {
             return Some(join(caller, rest));
         }
         return Some(match drive_directory(drive) {
@@ -103,12 +151,7 @@ pub fn resolve_application(
     }
     if separator(application[0]) {
         // Root-relative `\name`: current drive or UNC share root.
-        let root = if let Some(drive) = drive_of(caller) {
-            vec![drive, COLON]
-        } else {
-            caller[..unc_root(caller)?].to_vec()
-        };
-        let mut resolved = root;
+        let mut resolved = caller[..root_prefix(caller)?].to_vec();
         resolved.extend_from_slice(application);
         return Some(resolved);
     }
@@ -183,6 +226,50 @@ mod tests {
         );
         assert_eq!(resolve(r"\tools\worker.exe", r"\\server"), None);
         assert_eq!(resolve(r"\tools\worker.exe", ""), None);
+    }
+
+    #[test]
+    fn root_relative_paths_parse_verbatim_caller_roots() {
+        assert_eq!(
+            resolve(r"\tools\worker.exe", r"\\?\UNC\server\share\caller").unwrap(),
+            r"\\?\UNC\server\share\tools\worker.exe"
+        );
+        assert_eq!(
+            resolve(r"\tools\worker.exe", r"\\?\unc\server\share").unwrap(),
+            r"\\?\unc\server\share\tools\worker.exe"
+        );
+        assert_eq!(
+            resolve(r"\tools\worker.exe", r"\\.\UNC\server\share\caller").unwrap(),
+            r"\\.\UNC\server\share\tools\worker.exe"
+        );
+        assert_eq!(
+            resolve(r"\tools\worker.exe", r"\\?\E:\caller\deep").unwrap(),
+            r"\\?\E:\tools\worker.exe"
+        );
+        // A missing share or an unsupported namespace has no usable root.
+        assert_eq!(resolve(r"\tools\worker.exe", r"\\?\UNC\server"), None);
+        assert_eq!(resolve(r"\tools\worker.exe", r"\\?\UNC\server\"), None);
+        assert_eq!(resolve(r"\tools\worker.exe", r"\\?\UNC\"), None);
+        assert_eq!(
+            resolve(r"\tools\worker.exe", r"\\?\Volume{0000}\caller"),
+            None
+        );
+    }
+
+    #[test]
+    fn relative_paths_join_verbatim_caller_directories() {
+        assert_eq!(
+            resolve(r"bin\worker.exe", r"\\?\UNC\server\share\caller").unwrap(),
+            r"\\?\UNC\server\share\caller\bin\worker.exe"
+        );
+        assert_eq!(
+            resolve(r"C:bin\worker.exe", r"\\?\C:\caller").unwrap(),
+            r"\\?\C:\caller\bin\worker.exe"
+        );
+        assert_eq!(
+            resolve(r"D:bin\worker.exe", r"\\?\C:\caller").unwrap(),
+            r"D:\work\sub\bin\worker.exe"
+        );
     }
 
     #[test]
