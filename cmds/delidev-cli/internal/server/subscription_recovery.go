@@ -372,21 +372,42 @@ func (s *Service) SyncSubscriptionRecoveryCapture(ctx context.Context, req *conn
 	return connect.NewResponse(&pb.SyncSubscriptionRecoveryCaptureResponse{CaptureId: string(capture), Replayed: result.Replayed}), nil
 }
 
-// retireRecoveryReferences removes the protected references of one capture. A
-// failed deletion is only logged: the references are unreferenced vault entries
-// that never grant authority and are retired by the next settlement.
-func (s *Service) retireRecoveryReferences(ctx context.Context, vault accountSecrets, account domain.ID, capture *domain.SubscriptionRecoveryCapture) {
-	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer cancel()
+// recoveryCaptureReferences lists the vault references of one capture.
+func recoveryCaptureReferences(capture *domain.SubscriptionRecoveryCapture) []domain.ID {
 	ids := []domain.ID{capture.ID}
 	if capture.OriginalCaptured {
 		ids = append(ids, capture.OriginalID())
 	}
+	return ids
+}
+
+// retireRecoveryReferences removes the protected references of one capture. A
+// failed deletion is only logged: the references are unreferenced vault entries
+// that never grant authority and are retired by the next checked retirement or
+// settlement. Use confirmRecoveryReferencesRetired when no later retirement is
+// guaranteed.
+func (s *Service) retireRecoveryReferences(ctx context.Context, vault accountSecrets, account domain.ID, capture *domain.SubscriptionRecoveryCapture) {
+	if err := s.confirmRecoveryReferencesRetired(ctx, vault, account, recoveryCaptureReferences(capture)); err != nil {
+		s.logger.WarnContext(ctx, "subscription_recovery_capture_retirement_deferred", "phase", subscriptionRecoveryPhase, "account_id", account, "capture_id", capture.ID, "code", domain.SafeError(err).Code)
+	}
+}
+
+// confirmRecoveryReferencesRetired deletes every listed capture reference and
+// returns the first failure after attempting all of them. Deleting a reference
+// that is already removed succeeds, so a repeated confirmation is safe.
+func (s *Service) confirmRecoveryReferencesRetired(ctx context.Context, vault accountSecrets, account domain.ID, ids []domain.ID) error {
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	var first error
 	for _, id := range ids {
-		if err := vault.Delete(cleanup, credentials.Ref{Owner: account, ID: id, Purpose: credentials.AccountLogin}); err != nil {
-			s.logger.WarnContext(ctx, "subscription_recovery_capture_retirement_deferred", "phase", subscriptionRecoveryPhase, "account_id", account, "capture_id", capture.ID, "code", domain.SafeError(err).Code)
+		if err := id.Validate(); err != nil {
+			return subscriptionDenied()
+		}
+		if err := vault.Delete(cleanup, credentials.Ref{Owner: account, ID: id, Purpose: credentials.AccountLogin}); err != nil && first == nil {
+			first = err
 		}
 	}
+	return first
 }
 
 func (s *Service) ReadSubscriptionRecoveryCapture(ctx context.Context, req *connect.Request[pb.ReadSubscriptionRecoveryCaptureRequest]) (*connect.Response[pb.ReadSubscriptionRecoveryCaptureResponse], error) {

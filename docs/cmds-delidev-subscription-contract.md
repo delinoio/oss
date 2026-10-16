@@ -1213,6 +1213,15 @@ withdrawn capability, stale lease evidence or a changed current instance, says
 nothing about the bundle: the Worker keeps the only surviving `auth.json` and
 retries.
 
+Retirement of a released capture. A successful Finish that releases the lease
+drops the capture metadata and records the capture's vault references in its
+receipt. The success is acknowledged only after those references are deleted
+(deleting an already removed reference succeeds). A failed deletion returns the
+retryable `unavailable` result without fencing the settled account, the Worker
+resends the same Finish, and the exact receipt replay deletes again, so no
+captured original or latest bundle outlives the lease when the account performs
+no later credential operation.
+
 Settlement. `RecoverSubscription` uses a recovery request identity distinct from
 the original Take and Finish requests. With a valid capture the server publishes
 one immutable generation named by the recovery request and, after the original

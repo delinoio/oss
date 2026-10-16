@@ -330,7 +330,9 @@ authenticated Worker lease, never enter SQLite, journals, jobs, logs or ordinary
 resources, and are read back only by `ReadSubscriptionRecoveryCapture` for the same
 lease. The capture authorizes nothing: Take reads only the published generation, the
 Worker Finish retirement helper protects the capture while its lease is held and
-retires it with the lease, and recovery settlement retires every original reference
+retires it with the lease (the Finish receipt lists the references and the
+success is acknowledged only after their deletion is confirmed; a replay confirms
+it again), and recovery settlement retires every original reference
 through the complete enumeration used by explicit removal. Deletion keeps the vault
 tombstone order, so a failed deletion is resumed by the original recovery request.
 See the [subscription contract](cmds-delidev-subscription-contract.md#automatic-managed-chatgpt-execution-recovery).

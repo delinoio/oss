@@ -139,6 +139,10 @@ type accountReceipt struct {
 	ManagedTitle    *domain.SubscriptionTitleFinish `json:"managed_title,omitempty"`
 	ID              domain.ID                       `json:"id"`
 	CompletionID    domain.ID                       `json:"completion_id,omitempty"`
+	// RetiredCapture lists the protected recovery references that the Finish
+	// receipt released with its lease. Their vault deletion is confirmed before
+	// the receipt is acknowledged, and an exact replay confirms it again.
+	RetiredCapture []domain.ID `json:"retired_capture,omitempty"`
 }
 
 // Request receipts must remain comparable after a credential has been deleted.

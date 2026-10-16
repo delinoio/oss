@@ -1454,6 +1454,9 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			}
 
 			receipt := accountReceipt{ID: r.ID}
+			if releasedCapture != nil {
+				receipt.RetiredCapture = recoveryCaptureReferences(releasedCapture)
+			}
 			if usable && input.Cleanup && lease.Action == domain.SubscriptionExecute && lease.ForkRevision != 0 {
 				jr, err := tx.Get(domain.JobKind, lease.OperationID)
 				if err != nil {
@@ -1494,12 +1497,6 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 		if original.Subscription.Pending != nil {
 			delete(s.subscriptionProgress, original.Subscription.Pending.ID)
 		}
-		if releasedCapture != nil {
-			// The lease settled, so its protected capture can no longer be used. A
-			// deletion that cannot finish now leaves an unreferenced vault entry that
-			// never grants authority and is retired by the next checked retirement.
-			s.retireRecoveryReferences(ctx, vault, input.Account, releasedCapture)
-		}
 		// Cancellation can win during vault staging. Take remains blocked by the
 		// account gate until the unpublished new generation is tombstoned too.
 		if !usable && input.Cleanup {
@@ -1516,6 +1513,9 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	// Ownership mutation and the last vault cleanup are settled. A canceled
 	// response-resource read cannot turn that committed receipt into recovery.
 	owned = false
+	if err := s.confirmFinishCaptureRetirement(ctx, input.Account, input.Lease, result); err != nil {
+		return nil, rpc.Error(err, c)
+	}
 	r, err := s.accountRecord(ctx, input.Account)
 	if err != nil {
 		s.logger.WarnContext(ctx, "subscription_completion_presentation_unavailable", "account_id", input.Account, "lease_id", input.Lease, "replayed", replayed, "code", domain.SafeError(err).Code)
@@ -1525,6 +1525,29 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	// The explicit logout cleanup removes every owned reference before success.
 	s.logger.InfoContext(ctx, "subscription_operation_finished", "account_id", input.Account, "lease_id", input.Lease, "cleanup_confirmed", input.Cleanup, "replayed", replayed, "finish_scope", input.Scope)
 	return connect.NewResponse(&pb.FinishSubscriptionResponse{Account: rpc.Resource(r), Replayed: result.Replayed}), nil
+}
+
+// confirmFinishCaptureRetirement deletes the protected recovery references that
+// a committed Finish released with its lease. The lease is already settled, so a
+// failed deletion is returned as a retryable error without fencing the account;
+// the Worker resends the same Finish and the exact replay deletes again from the
+// receipt. The success response is therefore withheld until no captured original
+// or latest credential bundle remains in the vault.
+func (s *Service) confirmFinishCaptureRetirement(ctx context.Context, account, lease domain.ID, result store.Result) error {
+	var receipt accountReceipt
+	if len(result.Data) == 0 || domain.Decode(result.Data, &receipt) != nil || len(receipt.RetiredCapture) == 0 {
+		return nil
+	}
+	vault, err := s.secrets()
+	if err != nil {
+		return err
+	}
+	if err := s.confirmRecoveryReferencesRetired(ctx, vault, account, receipt.RetiredCapture); err != nil {
+		s.logger.WarnContext(ctx, "subscription_recovery_capture_retirement_pending", "phase", subscriptionRecoveryPhase, "account_id", account, "lease_id", lease, "references", len(receipt.RetiredCapture), "code", domain.SafeError(err).Code)
+		return domain.Fail(domain.Unavailable, "The released recovery capture could not be removed yet.", "Resend the same Finish request; the receipt repeats the removal.")
+	}
+	s.logger.InfoContext(ctx, "subscription_recovery_capture_retired", "phase", subscriptionRecoveryPhase, "account_id", account, "lease_id", lease, "references", len(receipt.RetiredCapture))
+	return nil
 }
 
 func uniqueSubscriptionIdentity(tx *store.Tx, owner domain.ID, identity string) error {

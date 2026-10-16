@@ -29,7 +29,7 @@ type accountTestSecrets struct {
 	values                                map[credentials.Ref][]byte
 	removed                               map[credentials.Ref]bool
 	putError, deleteError, referenceError error
-	getErrors                             map[credentials.Ref]error
+	getErrors, deleteErrors               map[credentials.Ref]error
 	enumerations                          int
 	afterPut                              func()
 	puts, deletes                         int
@@ -60,6 +60,9 @@ func (v *accountTestSecrets) Delete(ctx context.Context, ref credentials.Ref) er
 	v.deletes++
 	if v.deleteError != nil {
 		return v.deleteError
+	}
+	if err := v.deleteErrors[ref]; err != nil {
+		return err
 	}
 	delete(v.values, ref)
 	v.removed[ref] = true

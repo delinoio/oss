@@ -402,6 +402,51 @@ func TestRecoveryOrdinaryFinishRetiresOrKeepsTheCaptureWithItsLease(t *testing.T
 	}
 }
 
+func TestRecoveryFinishConfirmsCaptureRetirementBeforeAcknowledging(t *testing.T) {
+	f := newCodexRecoveryFixture(t)
+	defer clear(f.original)
+	rotated := f.latest("rotated")
+	defer clear(rotated)
+	capture := domain.NewID()
+	if _, err := f.sync(capture, f.original, rotated); err != nil {
+		t.Fatal(err)
+	}
+	original := credentials.Ref{Owner: f.input.AccountID, ID: domain.RecoveryOriginalReference(capture), Purpose: credentials.AccountLogin}
+	f.secrets.mu.Lock()
+	f.secrets.deleteErrors = map[credentials.Ref]error{original: domain.Fail(domain.Unavailable, "Simulated vault outage.", "")}
+	f.secrets.mu.Unlock()
+	request := &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: f.lease.LeaseRevision}, LeaseId: f.lease.LeaseId, GenerationId: f.lease.GenerationId, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Bundle: bytes.Clone(rotated), Succeeded: true, RefreshConfirmed: true, CleanupConfirmed: true}
+	finish := func() (*pb.FinishSubscriptionResponse, error) {
+		response, err := f.client.FinishSubscription(context.Background(), subscriptionRequest(f.workerToken, request))
+		if err != nil {
+			return nil, err
+		}
+		return response.Msg, nil
+	}
+	// The lease settles, but the success is not acknowledged while a captured
+	// bundle remains. The account is not fenced and a replay repeats the removal.
+	if _, err := finish(); err == nil || recoveryCode(err) != domain.Unavailable {
+		t.Fatal("a Finish acknowledged success with a captured bundle still in the vault", err)
+	}
+	_, account := f.record()
+	if account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.RecoveryCapture != nil || account.Health != domain.AccountReady {
+		t.Fatal("a failed capture removal fenced the settled account")
+	}
+	if !f.references()[domain.RecoveryOriginalReference(capture)] {
+		t.Fatal("the simulated outage did not retain the captured original")
+	}
+	f.secrets.mu.Lock()
+	f.secrets.deleteErrors = nil
+	f.secrets.mu.Unlock()
+	response, err := finish()
+	if err != nil || !response.Replayed {
+		t.Fatal("the exact Finish replay did not complete", err)
+	}
+	if refs := f.references(); refs[capture] || refs[domain.RecoveryOriginalReference(capture)] {
+		t.Fatal("the replay left captured bundles in the vault", refs)
+	}
+}
+
 func TestRecoveryBlockedReportsKeepTheFenceAndExposeTheReason(t *testing.T) {
 	f := newCodexRecoveryFixture(t)
 	defer clear(f.original)
