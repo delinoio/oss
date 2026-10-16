@@ -671,6 +671,23 @@ fn class_heading_scan(
     ignored: &[(usize, usize)],
     stop_at_assignment: bool,
 ) -> bool {
+    class_keyword_scan(code, end, ignored, stop_at_assignment).is_some()
+}
+
+/// The offset of the `class` keyword that starts the head ending at `end`, or
+/// `None` when the head holds none. The scan is described on
+/// [`class_heading_precedes`].
+///
+/// A class expression in the heritage clause (`class C extends class {} {`)
+/// has a body of its own. When a top-level `}` closes the body of a class
+/// expression whose `class` keyword follows `extends`, the scan jumps to that
+/// keyword and keeps reading the outer head. Any other `}` ends the head.
+fn class_keyword_scan(
+    code: &str,
+    end: usize,
+    ignored: &[(usize, usize)],
+    stop_at_assignment: bool,
+) -> Option<usize> {
     let mut depth = 0usize;
     // End offset of the identifier-like word being read backwards.
     let mut word_end: Option<usize> = None;
@@ -696,29 +713,61 @@ fn class_heading_scan(
             && depth == 0
             && is_class(position + width, finish)
         {
-            return true;
+            return Some(position + width);
         }
         if in_ranges(ignored, position) {
             continue;
         }
         match character {
             ')' | ']' => depth += 1,
-            '(' | '[' => match depth.checked_sub(1) {
-                Some(next) => depth = next,
-                None => return false,
-            },
+            '(' | '[' => depth = depth.checked_sub(1)?,
             // The `>` of an arrow (`=>`) never closes a type-argument list.
             '>' if depth == 0 && !code[..position].ends_with('=') => {
                 if let Some(open) = type_arguments_open(code, position, ignored) {
                     position = open;
                 }
             }
-            '{' | '}' | ';' if depth == 0 => return false,
-            '=' if depth == 0 && stop_at_assignment => return false,
+            '}' if depth == 0 => {
+                position = heritage_class_expression_start(code, position, ignored)?;
+            }
+            '{' | ';' if depth == 0 => return None,
+            '=' if depth == 0 && stop_at_assignment => return None,
             _ => {}
         }
     }
-    word_end.is_some_and(|finish| depth == 0 && is_class(0, finish))
+    word_end
+        .filter(|finish| depth == 0 && is_class(0, *finish))
+        .map(|_| 0)
+}
+
+/// The offset of the `class` keyword of the class expression whose body ends
+/// with the `}` at `close`, when that keyword directly follows `extends`
+/// (`class C extends class { ... } {`). `None` for any other brace pair.
+fn heritage_class_expression_start(
+    code: &str,
+    close: usize,
+    ignored: &[(usize, usize)],
+) -> Option<usize> {
+    let mut nesting = 0usize;
+    let mut position = close;
+    let open = loop {
+        let character = code[..position].chars().next_back()?;
+        position -= character.len_utf8();
+        if in_ranges(ignored, position) {
+            continue;
+        }
+        match character {
+            '}' => nesting += 1,
+            '{' => match nesting.checked_sub(1) {
+                Some(next) => nesting = next,
+                None => break position,
+            },
+            _ => {}
+        }
+    };
+    let keyword = class_keyword_scan(code, open, ignored, true)?;
+    let before = strip_comments_for_prefix(code, keyword, ignored);
+    (trailing_word(before) == "extends").then_some(keyword)
 }
 
 /// The offset of the `<` that opens the type-argument list closed by the `>` at
@@ -3433,6 +3482,29 @@ y=/process.env.F/.test(z),process.env.G"#;
         ] {
             assert_eq!(direct_eval_line(source), None, "{source:?}");
         }
+    }
+
+    #[test]
+    fn heritage_class_expressions_do_not_hide_the_outer_class_body() {
+        assert_all_declarations(&[
+            "class C extends class {} { eval(value) {} }",
+            "class C extends class { run() {} } { eval(value) {} }",
+            "class C extends class extends class {} {} { eval(value) {} }",
+            "class C extends class B { x = { a: 1 } } { eval(value) {} }",
+            "const D = class C extends class {} { eval(value) {} };",
+            "class C extends class<T extends { a: 1 }> {} { eval(value) {} }",
+            "class C extends class { eval(v) {} } { eval(value) {} }",
+        ]);
+        // A class expression that is not the heritage ends the head, so the
+        // block after it keeps its finding.
+        assert_all_reported(&[
+            ("const D = class {}\n{ eval(code) {} }", "eval(code)"),
+            ("class C extends B {}\n{ eval(code) {} }", "eval(code)"),
+            (
+                "const D = class extends B {};\nif (x) { eval(code) {} }",
+                "eval(code)",
+            ),
+        ]);
     }
 
     #[test]
