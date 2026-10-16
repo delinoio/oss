@@ -1,5 +1,11 @@
 # Project: DeliDev
 
+Grok sign-in runs `grok login --device-auth` directly on the server, through its
+owned-process and permanent per-account profile lifecycle, with no Runner
+registration or selection. The existing device-code UI observes the original
+Connect operation. Login activation and real-account acceptance remain separate
+from Grok execution under the [Grok subscription contract](cmds-delidev-grok-subscription-contract.md#current-server-owned-cli-login).
+
 The desktop owns shared scroll-continuation state and presentation with domain
 adapters retaining response-validation, initial-read, payload-disposal and
 mutation authority. See the [shared desktop pagination contract](apps-delidev-desktop-contract.md#shared-scroll-continuation).

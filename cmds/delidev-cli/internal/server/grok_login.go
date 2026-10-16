@@ -56,7 +56,7 @@ const (
 
 // grokSubscriptionLoginAdvertised is the single switch for System capability 39
 // (GROK_SUBSCRIPTION_LOGIN_V1). It stays false until the opt-in real-account run
-// has recorded the token-to-bundle mapping and the loopback-port acceptance.
+// has verified server-owned CLI login, credential persistence and logout.
 const grokSubscriptionLoginAdvertised = false
 
 var (
@@ -377,10 +377,10 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 		}
 	}()
 	var out grokLoginOutcome
-	if method == subscription.GrokLoginDeviceCode {
-		out = s.performGrokDeviceLogin(ctx, id, original, &cancelSeen)
+	if s.grokLoginPerform != nil {
+		out = s.grokLoginPerform(ctx, id, original, &cancelSeen)
 	} else {
-		out = s.performGrokLogin(ctx, id, original, &cancelSeen)
+		out = s.performGrokCLILogin(ctx, id, original, &cancelSeen)
 	}
 	cancel()
 	<-watched
@@ -820,6 +820,9 @@ func grokLoginCandidate(a domain.Account) bool {
 // and never changes. A request that names a Runner Device stays unsupported.
 func (s *Service) requestGrokSubscription(ctx context.Context, req *connect.Request[pb.RequestSubscriptionRequest]) (*connect.Response[pb.RequestSubscriptionResponse], error) {
 	action := subscriptionAction(req.Msg.Action)
+	if action == domain.SubscriptionLogin && !req.Msg.DeviceCode && s.grokLoginPerform == nil {
+		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Grok login uses a device code on this server.", "Use the device-code login with no Runner Device."), req.Header().Get(rpc.CorrelationHeader))
+	}
 	if req.Msg.MachineId != "" || action != domain.SubscriptionLogin && action != domain.SubscriptionRefresh && action != domain.SubscriptionLogout || action == domain.SubscriptionLogout && req.Msg.DeviceCode {
 		return nil, rpc.Error(domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Start the Grok login, refresh or logout without a Runner Device."), req.Header().Get(rpc.CorrelationHeader))
 	}

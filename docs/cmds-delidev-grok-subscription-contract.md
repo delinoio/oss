@@ -1,5 +1,63 @@
 # DeliDev Grok Build subscription contract
 
+## Current server-owned CLI login
+
+The active production login uses the server's installed Grok Build CLI:
+`grok --no-auto-update login --device-auth`. The server owns the process through
+`internal/process`, without registering, selecting or dispatching a Worker.
+Both desktop account-entry actions select the existing device-code presentation.
+Browser-login RPC requests are unsupported; the historical browser and direct
+Device OAuth implementations described below are retained compatibility/test
+primitives and are not production login dispatch targets.
+
+Discovery probes only Grok on the server. Each account acquires its permanent
+`nativeprofile.PurposeAuth` profile. The private environment sets `GROK_HOME`
+below that profile and disables auto-update; it does not inherit the user's
+normal Grok home or provider credentials. Login does not require the ACP
+execution profile. Missing or unsupported CLI installations return a safe error.
+
+Before launching the CLI, the server requires the profile to contain no retained
+credential and records a durable exchange claim. A bounded output filter combines
+separate stdout/stderr lines and publishes only the existing closed xAI device
+verification URL and matching user code. Codes and addresses stay in transient
+operation progress, never logs, account documents or query caches. Other native
+output is discarded. The CLI owns device authorization, polling and exchange.
+Success requires exit zero, confirmed owned-process reconciliation and a new
+valid unexpired `auth.json`, read through the bound-home validator. The server
+seals that native file's existing bundle format into the original account and
+Finish generation; no manually reconstructed OAuth-token mapping grants success.
+
+Cancellation, timeout and shutdown cancel and join the owned native child.
+Because Go cannot observe the CLI's token-send boundary, interruptions after the
+native claim retain recovery rather than proving that no upstream token exists.
+Restart never replays the login. Retained credentials remain for explicit logout
+or account deletion and cannot be adopted as a fresh login. Profiles and their
+ordinary native data remain until explicit deletion.
+
+Refresh retains the existing server-owned grant and identity checks. Logout first
+preserves the existing confirmed provider-revocation guarantee, materializes the
+current protected generation in the same server-owned profile and runs
+`grok --no-auto-update logout`. Native closure and credential/lock-file cleanup
+must succeed before logout is acknowledged. An uncertain cleanup retains recovery.
+
+System capability 39 remains off until real-account acceptance below passes.
+System 40 and Worker 21 retain their independent default-off execution gates.
+No new public RPC, schema allocation or database migration is required.
+
+`TestGrokCLIServerAccountAcceptance` exercises the real Connect handlers,
+installed CLI and OS vault with no registered Runner. It requires an interactive
+terminal and explicit `DELIDEV_NATIVE_GROK_ACCOUNT=1`; run from `cmds/delidev-cli`:
+
+```sh
+DELIDEV_NATIVE_GROK_ACCOUNT=1 go test ./internal/server \
+  -run '^TestGrokCLIServerAccountAcceptance$' -count=1 -v -timeout 12m
+```
+
+Only the validated transient approval pair is printed to the controlling terminal.
+The account owner approves it. The test then verifies protected publication,
+durable store/vault reopen, refresh and native logout. Fixture, native account,
+OS and packaging evidence remain distinct; this run grants no execution support.
+
 ## Scope
 
 This contract owns the Grok Build subscription lifecycle in `cmds/delidev-cli`,
@@ -7,7 +65,7 @@ its Connect interface and the desktop AI Subscription flow. Implementation is
 partial and nothing is advertised. Implemented: the protocol identifiers below
 (declared only), the bound credential bundle library, the protected-vault
 generations, the protected Take/Finish lease handlers on the server, the
-Worker-side credential custody described under Storage and the server-owned
+Worker-side credential custody described under Storage and the historical server-owned
 browser login described under [Server-owned browser login](#server-owned-browser-login),
 including its remote callback forwarding, and the server-owned device-code login
 described under [Server-owned device-code login](#server-owned-device-code-login),
@@ -18,8 +76,9 @@ credential protocol described under [Worker execution exit](#worker-execution-ex
 and managed execution of a Grok session on a subscription account described under
 [Managed execution](#managed-execution) (server lease, Worker supervisor,
 harness profile and recovery), all behind one default-off switch.
-Not activated: the capability advertisement (System 39 and 40, Worker 21), which
-waits for the opt-in real-account run, and the desktop UI.
+The current CLI login amendment above supersedes the historical direct OAuth
+login descriptions below. Capability advertisement (System 39 and 40, Worker 21)
+remains off pending the corresponding real-account acceptance.
 The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and gates protected Take admission of a Grok lease; no capability, discovery or execution path references it. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); Grok Build 1.0.52 inspection is accepted when its optional `experiments` inventory is an empty array (see `cmds-delidev-harness-contract.md`), which does not change these baselines. Reservation support is separate
 from implemented support and actual account/platform acceptance.
 

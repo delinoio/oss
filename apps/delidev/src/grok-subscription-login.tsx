@@ -451,7 +451,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     }
   };
 
-  const begin = (method: GrokLoginMethod = GrokLoginMethod.Browser) => {
+  const begin = (method: GrokLoginMethod = GrokLoginMethod.DeviceCode) => {
     if (!active || pending.current || opening?.disposed) return;
     const p: Pending = {
       opening: newRequestId(),
