@@ -790,15 +790,22 @@ func TestGrokBrowserLoginForwardsARemoteCallbackToTheOriginalListener(t *testing
 	g.noLeak()
 }
 
-func TestGrokSubscriptionLoginCapabilityStaysUnadvertised(t *testing.T) {
+func TestGrokSubscriptionLoginCapabilityDoesNotEnableExecution(t *testing.T) {
 	f := newGrokFixture(t)
 	response, err := f.service.GetStatus(context.Background(), connect.NewRequest(&pb.GetStatusRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
+	login := false
 	for _, capability := range response.Msg.Capabilities {
-		if capability == pb.SystemCapability_SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_LOGIN_V1 || capability == pb.SystemCapability_SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_EXECUTION_V1 {
-			t.Fatal("a Grok capability is advertised before the opt-in real run")
+		if capability == pb.SystemCapability_SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_LOGIN_V1 {
+			login = true
 		}
+		if capability == pb.SystemCapability_SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_EXECUTION_V1 {
+			t.Fatal("login enabled Grok execution")
+		}
+	}
+	if !login {
+		t.Fatal("server-owned Grok CLI login is not advertised")
 	}
 }

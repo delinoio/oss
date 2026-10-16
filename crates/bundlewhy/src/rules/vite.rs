@@ -908,11 +908,22 @@ fn search_static_closure(
 /// A module that lives in one chunk is requested from that chunk. Rolldown's
 /// `inlineCommonChunks` can copy a module into several chunks, and the
 /// `import()` then loads one specific copy, so a static route to any other copy
-/// proves nothing. The requesting chunk's `dynamicImports` name the copies it
-/// loads through a separate request: each of them must itself be reached
-/// statically. Without such an edge the request resolved to a copy that is
-/// already loaded, and any copy counts. `None` means the graph cannot decide
-/// because the dynamic imports of the requesting chunk were not collected.
+/// proves nothing. `OutputChunk.dynamicImports` is a per-chunk list, not a
+/// per-request one, so the association between a request and a copy is only
+/// known for dynamic targets that name a copy directly:
+///
+/// - no collected dynamic import: the request resolved to a copy that is
+///   already loaded, and a route to any copy proves it;
+/// - every dynamic import names a copy: each named copy must itself be reached
+///   statically (one singleton set per copy);
+/// - any dynamic import names no copy (for example a facade chunk that loads a
+///   different copy): the facade closure is not attributed, so the request may
+///   load an unreached copy and the graph cannot decide. This holds even when
+///   other dynamic imports of the chunk do name a copy.
+///
+/// `None` means the graph cannot decide, either because the dynamic imports of
+/// the requesting chunk were not collected or because one of them is not a copy
+/// of the module.
 fn required_target_sets<'a>(
     chunks: &BTreeMap<&str, &crate::collect::CollectedChunk>,
     requester_chunk: &str,
@@ -922,21 +933,31 @@ fn required_target_sets<'a>(
         return Some(vec![module_chunks.clone()]);
     }
     let dynamic_imports = chunks.get(requester_chunk)?.dynamic_imports.as_ref()?;
-    let requested: Vec<&'a str> = module_chunks
-        .iter()
-        .copied()
-        .filter(|copy| dynamic_imports.iter().any(|name| name == copy))
-        .collect();
-    if requested.is_empty() {
-        Some(vec![module_chunks.clone()])
-    } else {
-        Some(
-            requested
-                .into_iter()
-                .map(|copy| BTreeSet::from([copy]))
-                .collect(),
-        )
+    if dynamic_imports.is_empty() {
+        return Some(vec![module_chunks.clone()]);
     }
+    let mut requested: BTreeSet<&'a str> = BTreeSet::new();
+    for name in dynamic_imports {
+        match module_chunks.get(name.as_str()) {
+            Some(copy) => {
+                requested.insert(*copy);
+            }
+            None => {
+                tracing::debug!(
+                    requester_chunk,
+                    dynamic_import = name.as_str(),
+                    "dynamic import names no copy of the module; request stays unknown"
+                );
+                return None;
+            }
+        }
+    }
+    Some(
+        requested
+            .into_iter()
+            .map(|copy| BTreeSet::from([copy]))
+            .collect(),
+    )
 }
 
 /// Classifies one dynamic importer from the searches of all its requesting
@@ -2306,6 +2327,136 @@ mod ineffective_dynamic_import_tests {
                 expected: RequesterOutcome::SeparateChunk,
             },
             Cell {
+                name: "copies: a facade that loads the other copy leaves the request unknown",
+                requesters: &["entry.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("entry.js", &["copy-a.js"], &["lazy.js"]),
+                    chunk("lazy.js", Some(&["copy-b.js"])),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "copies: a facade that loads the same copy is not attributed",
+                requesters: &["entry.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("entry.js", &["copy-a.js"], &["lazy.js"]),
+                    chunk("lazy.js", Some(&["copy-a.js"])),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "copies: a matched copy does not hide an unmatched facade",
+                requesters: &["entry.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("entry.js", &["copy-a.js"], &["copy-a.js", "lazy.js"]),
+                    chunk("lazy.js", Some(&["copy-b.js"])),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "copies: an unmatched facade stays unknown without any static route",
+                requesters: &["entry.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("entry.js", &[], &["lazy.js"]),
+                    chunk("lazy.js", Some(&["copy-b.js"])),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "copies: transitive facades stay unknown",
+                requesters: &["entry.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("entry.js", &["copy-a.js"], &["lazy.js"]),
+                    chunk_with_dynamic("lazy.js", &["deep.js"], &["deeper.js"]),
+                    chunk("deep.js", Some(&["copy-b.js"])),
+                    chunk("deeper.js", Some(&["copy-b.js"])),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "copies: cyclic facades terminate as unknown",
+                requesters: &["entry.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("entry.js", &["copy-a.js"], &["lazy.js"]),
+                    chunk_with_dynamic("lazy.js", &["entry.js", "copy-b.js"], &["entry.js"]),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "copies: a facade next to an uncollected dynamic list of the facade is \
+                       unknown",
+                requesters: &["entry.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("entry.js", &["copy-a.js"], &["lazy.js"]),
+                    CollectedChunk {
+                        dynamic_imports: None,
+                        ..chunk("lazy.js", Some(&["copy-b.js"]))
+                    },
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "copies: a direct import of the copy the entry cannot reach is a separate \
+                       chunk",
+                requesters: &["entry.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("entry.js", &["copy-a.js"], &["copy-b.js"]),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::SeparateChunk,
+            },
+            Cell {
+                name: "copies: a direct import of a copy with a static route to it is proven",
+                requesters: &["entry.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    chunk_with_dynamic("entry.js", &["copy-a.js", "copy-b.js"], &["copy-b.js"]),
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Proven(vec![route(
+                    "entry.js",
+                    &["entry.js", "copy-b.js"],
+                )]),
+            },
+            Cell {
+                name: "copies: the dynamic list of the requester is missing",
+                requesters: &["entry.js"],
+                targets: &["copy-a.js", "copy-b.js"],
+                graph: vec![
+                    CollectedChunk {
+                        dynamic_imports: None,
+                        ..chunk("entry.js", Some(&["copy-a.js"]))
+                    },
+                    chunk("copy-a.js", Some(&[])),
+                    chunk("copy-b.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
                 name: "cycle without the target terminates as a separate chunk",
                 requesters: &["a.js"],
                 targets: &["c.js"],
@@ -2368,6 +2519,61 @@ mod ineffective_dynamic_import_tests {
         assert_eq!(drafts.len(), 1);
         let details = evidence_details(&drafts[0]);
         assert!(details[0].contains("copy-a.js"), "{details:?}");
+    }
+
+    #[test]
+    fn facade_that_loads_another_copy_is_not_a_confirmed_finding() {
+        // `entry.js` loads copy A statically and imports the facade `lazy.js`
+        // dynamically; the facade statically loads copy B. The `import()` of
+        // the shared module can resolve to copy B, so the route to copy A
+        // proves nothing and the importer stays unclassified.
+        let collection = |facade_imports: &[&str], dynamic: &[&str]| Collection {
+            modules: vec![
+                module("src/entry.js", &[], &[], &["entry.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/entry.js"],
+                    &["src/entry.js"],
+                    &["copy-a.js", "copy-b.js"],
+                ),
+            ],
+            chunks: vec![
+                chunk_with_dynamic("entry.js", &["copy-a.js"], dynamic),
+                chunk("lazy.js", Some(facade_imports)),
+                chunk("copy-a.js", Some(&[])),
+                chunk("copy-b.js", Some(&[])),
+            ],
+            ..Collection::default()
+        };
+        for (facade_imports, dynamic) in [
+            (&["copy-b.js"][..], &["lazy.js"][..]),
+            (&["copy-a.js"][..], &["lazy.js"][..]),
+            (&["copy-b.js"][..], &["copy-a.js", "lazy.js"][..]),
+        ] {
+            assert!(
+                run(&collection(facade_imports, dynamic)).is_empty(),
+                "{facade_imports:?} {dynamic:?}"
+            );
+        }
+        // An engine log keeps the engine-reported finding, and the importer is
+        // named as neither reported nor ruled out.
+        let mut with_log = collection(&["copy-b.js"], &["lazy.js"]);
+        with_log.logs.push(engine_log("src/shared.js"));
+        let drafts = run(&with_log);
+        assert_eq!(drafts.len(), 1);
+        let details = evidence_details(&drafts[0]);
+        assert_eq!(details.len(), 1, "{details:?}");
+        assert!(
+            details[0].contains("neither reported nor ruled out"),
+            "{details:?}"
+        );
+        assert!(details[0].contains("src/entry.js"), "{details:?}");
+        let evidence = drafts[0]
+            .evidence
+            .iter()
+            .find(|e| e.provenance == "emitted chunk graph")
+            .unwrap();
+        assert_eq!(evidence.status, EvidenceStatus::Unavailable);
     }
 
     #[test]

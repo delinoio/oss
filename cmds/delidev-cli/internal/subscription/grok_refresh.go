@@ -3,6 +3,7 @@ package subscription
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -79,8 +80,17 @@ func grokRefreshUncertain(reason GrokOAuthReason) error {
 // without this caller recording it: a transport error, a timeout, a truncated
 // or oversized body, a 5xx answer, any other 4xx answer (408, 429, an HTML 403
 // from an intermediary or an unstructured body) and an unusable success answer.
-func RefreshGrokTokens(ctx context.Context, client *http.Client, profile GrokOAuthProfile, endpoints GrokEndpoints, refreshToken string) (GrokRefreshTokens, error) {
+func RefreshGrokTokens(ctx context.Context, client *http.Client, profile GrokOAuthProfile, endpoints GrokEndpoints, refreshToken string, principal ...GrokIdentity) (GrokRefreshTokens, error) {
 	form := url.Values{"grant_type": {GrokRefreshGrantType}, "client_id": {profile.ClientID}, "refresh_token": {refreshToken}}
+	// The native CLI pins the principal on refresh. This preserves the exact
+	// personal/team authority selected at login rather than relying on defaults.
+	if len(principal) > 1 {
+		return GrokRefreshTokens{}, grokFail(GrokReasonIdentity)
+	}
+	if len(principal) == 1 {
+		form.Set("principal_type", principal[0].PrincipalType)
+		form.Set("principal_id", principal[0].PrincipalID)
+	}
 	payload := []byte(form.Encode())
 	defer clear(payload)
 	status, body, err := grokRoundTrip(ctx, client, http.MethodPost, endpoints.Token, payload, map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
@@ -122,8 +132,10 @@ func parseGrokRefresh(body []byte) (GrokRefreshTokens, error) {
 // bundle. The identity of the answer must equal the bound identity: an ID token,
 // when present, must verify (signature, issuer, audience, expiry; no nonce
 // exists for a refresh) and carry the bound subject, and the userinfo read with
-// the new access token must carry the bound subject, principal type and
-// principal ID. The successor keeps every other member of the bound entry,
+// the new access token must carry the bound subject for personal accounts.
+// Principal metadata comes from the authenticated token response's access JWT,
+// with ID-token/userinfo claims checked too when present. Native Team accounts
+// retain their original team principal instead of treating it as a user subject. The successor keeps every other member of the bound entry,
 // takes the new access token and, when rotated, the new refresh token, and moves
 // its creation time and expiry forward. GrokRefreshed then proves a changed
 // credential with a later expiry for the same identity; a bundle that does not
@@ -133,23 +145,41 @@ func CompleteGrokRefresh(ctx context.Context, client *http.Client, profile GrokO
 		return GrokBundle{}, grokFail(GrokReasonMapping)
 	}
 	verified := GrokClaims{Subject: bound.identity.UserID}
+	// Native Team auth stores the team principal as user_id; it is not the
+	// authenticating person's OIDC subject and carries no userinfo scopes.
+	team := bound.identity.PrincipalType == "Team" && bound.identity.UserID == bound.identity.PrincipalID
 	if tokens.IDToken != "" {
 		claims, err := verifyGrokIDToken(tokens.IDToken, keys, profile, "", now)
 		if err != nil {
 			return GrokBundle{}, err
 		}
-		if claims.Subject != bound.identity.UserID {
+		if !team && claims.Subject != bound.identity.UserID {
 			return GrokBundle{}, grokFail(GrokReasonIdentity)
 		}
 		verified = claims
 	}
-	info, err := FetchGrokUserinfo(ctx, client, endpoints, tokens.AccessToken, verified)
+	info := GrokClaims{}
+	if !team {
+		var err error
+		info, err = FetchGrokUserinfo(ctx, client, endpoints, tokens.AccessToken, verified)
+		if err != nil {
+			return GrokBundle{}, err
+		}
+	}
+	access, err := grokRefreshPrincipal(tokens.AccessToken)
 	if err != nil {
 		return GrokBundle{}, err
 	}
-	principalType, principalID := grokFirst(info.PrincipalType, verified.PrincipalType), grokFirst(info.PrincipalID, verified.PrincipalID)
+	principalType, principalID := grokFirst(access.PrincipalType, info.PrincipalType, verified.PrincipalType), grokFirst(access.PrincipalID, info.PrincipalID, verified.PrincipalID)
 	if principalType != bound.identity.PrincipalType || principalID != bound.identity.PrincipalID {
 		return GrokBundle{}, grokFail(GrokReasonIdentity)
+	}
+	// A present claim from any source must agree; precedence cannot hide a
+	// conflicting identity. An absent principal never defaults to the old one.
+	for _, source := range []GrokClaims{access, info, verified} {
+		if source.PrincipalType != "" && source.PrincipalType != principalType || source.PrincipalID != "" && source.PrincipalID != principalID || source.TeamID != "" && source.TeamID != bound.identity.TeamID {
+			return GrokBundle{}, grokFail(GrokReasonIdentity)
+		}
 	}
 	created := now.UTC()
 	entry := bound.entry
@@ -178,3 +208,37 @@ func CompleteGrokRefresh(ctx context.Context, client *http.Client, profile GrokO
 // RefreshToken returns the bound refresh token for the one refresh request. The
 // caller must not retain, log or persist it.
 func (b GrokBundle) RefreshToken() string { return b.entry.RefreshToken }
+
+// grokRefreshPrincipal decodes only principal metadata from an access token
+// returned by the fixed token endpoint over authenticated TLS. It is not an
+// independent JWT verifier and must never authorize a caller-supplied token.
+// Like the native CLI, refresh uses these claims because OIDC ID tokens and
+// userinfo need not contain the principal selected on the consent screen.
+func grokRefreshPrincipal(raw string) (GrokClaims, error) {
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return GrokClaims{}, nil
+	}
+	if len(raw) > grokMaxResponse {
+		return GrokClaims{}, grokFail(GrokReasonIdentity)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return GrokClaims{}, grokFail(GrokReasonIdentity)
+	}
+	defer clear(payload)
+	var claims struct {
+		PrincipalType string `json:"principal_type"`
+		PrincipalID   string `json:"principal_id"`
+		CamelType     string `json:"principalType"`
+		CamelID       string `json:"principalId"`
+		TeamID        string `json:"team_id"`
+	}
+	if grokDecode(payload, &claims) != nil {
+		return GrokClaims{}, grokFail(GrokReasonIdentity)
+	}
+	if claims.PrincipalType != "" && claims.CamelType != "" && claims.PrincipalType != claims.CamelType || claims.PrincipalID != "" && claims.CamelID != "" && claims.PrincipalID != claims.CamelID {
+		return GrokClaims{}, grokFail(GrokReasonIdentity)
+	}
+	return GrokClaims{PrincipalType: grokFirst(claims.PrincipalType, claims.CamelType), PrincipalID: grokFirst(claims.PrincipalID, claims.CamelID), TeamID: claims.TeamID}, nil
+}

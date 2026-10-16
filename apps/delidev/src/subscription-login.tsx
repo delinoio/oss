@@ -227,7 +227,7 @@ export function useSubscriptionLogin(
   const begin = (
     service: SubscriptionServiceId,
     initial?: Resource,
-    grokDeviceCode = false,
+    _grokDeviceCode = false,
   ) => {
     // Claude sign-in is always the server-owned setup-token flow; callers gate
     // it on System capability 67 and no Runner Device ever participates.
@@ -237,11 +237,9 @@ export function useSubscriptionLogin(
     }
     if (service === SubscriptionServiceId.Grok) {
       // Grok keeps its own controller; it never reuses the ChatGPT view.
-      // The method is the user's explicit choice and never switches later.
+      // Grok authentication runs in the server-owned CLI's device-code flow.
       if (!pending.current && !claude.workflow)
-        grok.begin(
-          grokDeviceCode ? GrokLoginMethod.DeviceCode : GrokLoginMethod.Browser,
-        );
+        grok.begin(GrokLoginMethod.DeviceCode);
       return;
     }
     if (claude.workflow || grok.workflow) return;

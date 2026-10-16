@@ -222,7 +222,11 @@ func (s *Service) runGrokLogout(parent context.Context, id domain.ID) {
 	}
 	s.logger.InfoContext(parent, "grok_logout_started", "phase", grokLogoutPhase, "account_id", id, "operation_id", original.ID, "correlation_id", original.ID)
 	ctx, cancel := context.WithTimeout(parent, grokLogoutRunTimeout)
-	out, crashed := s.performGrokLogout(ctx, id, original)
+	perform := s.grokLogoutPerform
+	if perform == nil {
+		perform = s.performGrokCLILogout
+	}
+	out, crashed := perform(ctx, id, original)
 	cancel()
 	if crashed {
 		// A simulated process death: nothing settles, exactly as after a kill.
@@ -453,9 +457,9 @@ func (s *Service) finishGrokLogout(ctx context.Context, id domain.ID, o domain.S
 func (s *Service) cleanupGrokLogoutCredentials(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation) error {
 	s.logger.InfoContext(ctx, "grok_logout_cleanup_started", "phase", grokCleanupPhase, "account_id", id, "operation_id", o.ID, "correlation_id", o.ID)
 	// Explicit logout removes every protected generation of the account without
-	// the Worker Finish limit. A Grok account owns no native profile or file.
+	// the Worker Finish limit, including its server-owned CLI auth files.
 	cleanupCtx, cancel := grokBookkeepingContext(ctx, grokCleanupTimeout)
-	err := s.removeAccountCredentials(cleanupCtx, id, o.ID, false)
+	err := s.removeAccountCredentials(cleanupCtx, id, o.ID, true)
 	cancel()
 	if err != nil {
 		// The recovery shape was committed with the publication, so nothing more
