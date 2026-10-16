@@ -1973,14 +1973,26 @@ fn function_body_block(
 /// A type is expected where the previous token is `:` (the annotation colon or
 /// the `: B` branch of a conditional type), `?` (the `A ? { .. } : B` branch),
 /// an opener or separator (`<`, `(`, `[`, `,`), a type operator (`|`, `&`,
-/// `=>`) or one of the keywords `extends` and `is` (`T extends { a: 1 } ? X :
-/// Y`, `v is { a: 1 }`). Any other previous token (`)`, `]`, `>`, a type name
-/// such as `void`) ends the type, so the brace is the body.
+/// `=>`) or one of the keywords `extends`, `is` and `keyof` (`T extends { a: 1
+/// } ? X : Y`, `v is { a: 1 }`, `keyof { a: 1 }`). Any other previous token
+/// (`)`, `]`, `>`, a type name such as `void`) ends the type, so the brace is
+/// the body.
+///
+/// A keyword counts only as a standalone type operator. A member name after a
+/// dot (`typeof obj.keyof {`) is part of a qualified name, which ends the
+/// type, so the brace is the body. A spread (`[...keyof { a: 1 }]`) is not a
+/// member access.
 fn opens_type_literal(code: &str, open: usize) -> bool {
     let before = code[..open].trim_end();
-    before.ends_with(['<', '|', '&', ',', '[', '(', ':', '?'])
-        || before.ends_with("=>")
-        || matches!(trailing_word(before), "extends" | "is")
+    if before.ends_with(['<', '|', '&', ',', '[', '(', ':', '?']) || before.ends_with("=>") {
+        return true;
+    }
+    let word = trailing_word(before);
+    if !matches!(word, "extends" | "is" | "keyof") {
+        return false;
+    }
+    let preceding = before[..before.len() - word.len()].trim_end();
+    !preceding.ends_with('.') || preceding.ends_with("...")
 }
 
 /// The offset of the `{` that opens a function or method body, given the
@@ -3982,6 +3994,31 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "class C { eval(v): void }\nconst o = { run() {} };",
                 "eval(v)",
             ),
+            // `keyof` takes an object type, which is not a body.
+            (
+                "abstract class C { abstract eval(): keyof { a: 1 }; run() {} }",
+                "eval()",
+            ),
+            (
+                "abstract class C { abstract eval(): keyof { a: 1 }\n run() {} }",
+                "eval()",
+            ),
+            (
+                "abstract class C { abstract eval(): keyof\n { a: 1 }; run() {} }",
+                "eval()",
+            ),
+            (
+                "abstract class C { abstract eval(): keyof\n { a: 1 }\n run() {} }",
+                "eval()",
+            ),
+            (
+                "declare class C { eval(): keyof { a: 1 } }\nfunction later() {}",
+                "eval()",
+            ),
+            (
+                "class C { eval(): keyof { a: 1 }; eval(): string { return \"a\"; } }",
+                "eval()",
+            ),
         ] {
             assert_reports_at(source, marker);
         }
@@ -4042,6 +4079,28 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn type_operator_names_in_qualified_return_types_do_not_open_a_type_literal() {
+        // A member named like a type operator (`obj.keyof`) is part of a
+        // qualified name, so the brace after it is the function body and the
+        // expression-local `eval` name shadows only that body.
+        for member in ["keyof", "extends", "is"] {
+            let source =
+                format!("const f = function eval(): typeof obj.{member} {{}}; eval(code);");
+            assert_reports_at(&source, "eval(code)");
+            let spaced =
+                format!("const f = function eval(): typeof obj . {member} {{}}; eval(code);");
+            assert_reports_at(&spaced, "eval(code)");
+            let method = format!("class C {{ eval(): typeof obj.{member} {{ return 1; }} }}");
+            assert_eq!(direct_eval_line(&method), None, "{method:?}");
+        }
+        // A spread element in a tuple type still takes an object type.
+        assert_eq!(
+            direct_eval_line("class C { eval(): [...keyof { a: 1 }] { return []; } }"),
+            None
+        );
+    }
+
+    #[test]
     fn multi_line_signatures_with_a_body_stay_method_declarations() {
         for source in [
             "class C { eval(v): void { } }",
@@ -4058,6 +4117,10 @@ y=/process.env.F/.test(z),process.env.G"#;
             "class C { eval(v): Promise<\n  { a: number }\n> { } }",
             "class C { eval(v): { a: number;\n b: string } { } }",
             "class C { eval(v): { a: number; b: string } { } }",
+            "class C { eval(): keyof { a: 1 } { return \"a\"; } }",
+            "class C { eval(): keyof\n { a: 1 } { return \"a\"; } }",
+            "class C { eval(): keyof { a: 1 }\n { return \"a\"; } }",
+            "const o = { eval(): keyof { a: 1 } { return \"a\"; } };",
             "class C { eval(v): A extends B\n ? C : D { } }",
             "class C { eval(v): A[\n] { } }",
             "class C { eval(v) // c\n  { } }",
