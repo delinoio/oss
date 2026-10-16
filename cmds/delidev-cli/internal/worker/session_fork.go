@@ -318,7 +318,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	// From this attempt onward the runtime may contain native child state. Even
 	// an Open failure cannot justify deleting it through pre-native rollback.
 	phase = forkChildNativePossible
-	nativeConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, FrameProfile: forkFrameProfile(assignment.Configuration.Subscription, input.Purpose), ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: childHome, API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	nativeConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, FrameProfile: forkFrameProfile(assignment.Configuration.Subscription, input.Purpose), ImageRoot: config.Root, ImageMachineID: job.MachineID, ImageInputDeclared: assignment.Configuration.ImageInputDeclared, Mode: codex.ThreadProtocol, Version: installation.Version, Home: childHome, API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
 	if input.Purpose != domain.SidechatFork {
 		nativeConfig.OrdinaryTools = ordinaryTools
 	}

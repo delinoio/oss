@@ -252,3 +252,35 @@ func assertNoImageRejection(t *testing.T, result TurnResult, err error, request,
 		t.Fatal("model inventory failure was reported as unsupported image input", err)
 	}
 }
+
+func TestCustomAPIImageEligibilityUsesFrozenDeclaration(t *testing.T) {
+	for _, declared := range []bool{true, false} {
+		c, capture, _, _ := boundTurnFixture(t, "ready")
+		c.api = &apiBinding{}
+		c.imageInputDeclared = declared
+		c.imageRoot = t.TempDir()
+		c.imageMachine = domain.NewID()
+		ref := stageImage(t, c.imageRoot, c.imageMachine)
+		request, inputID := domain.NewID(), domain.NewID()
+		input := domain.SessionInput{Prompt: "Look", Mode: domain.ExecuteMode, Attachments: []domain.ImageAttachment{ref}}
+		result, err := c.StartTurn(context.Background(), request, inputID, input)
+		if len(requestsOf(t, capture, "model/list")) != 0 {
+			t.Fatal("custom API image eligibility read the native inventory")
+		}
+		sent := requestsOf(t, capture, "turn/start")
+		if declared {
+			if err != nil || len(sent) != 1 || result.ProvesImageInputNotSent(request, inputID, input.InputDigest()) {
+				t.Fatal(err, len(sent))
+			}
+			parts := sent[0]["input"].([]any)
+			if len(parts) != 2 || parts[1].(map[string]any)["type"] != "localImage" {
+				t.Fatal(parts)
+			}
+			continue
+		}
+		assertCode(t, err, domain.Unsupported)
+		if len(sent) != 0 || !result.ProvesImageInputNotSent(request, inputID, input.InputDigest()) {
+			t.Fatal("undeclared custom API image was not rejected before send")
+		}
+	}
+}

@@ -24,21 +24,32 @@ func (c *Client) nativeImageParts(ctx context.Context, input domain.SessionInput
 	if c.imageRoot == "" || c.imageMachine.Validate() != nil {
 		return nil, unsupportedImageBeforeSend()
 	}
-	models, err := c.readModelList(ctx, true)
-	if err != nil {
-		// An unobserved inventory proves nothing about image support. Return the
-		// original typed failure so it never acquires the pre-send rejection proof.
-		return nil, err
-	}
-	supported := false
-	for _, model := range models {
-		if model.Model == c.execution.settings.Model && slices.Contains(model.Modalities, "image") {
-			supported = true
-			break
+	if c.api != nil {
+		// Codex's bundled inventory is advisory for arbitrary provider models, so
+		// a custom API route trusts only the frozen execution declaration.
+		if c.logger != nil {
+			c.logger.InfoContext(ctx, "Codex custom API image eligibility", "owner_id", c.ownerID, "declared", c.imageInputDeclared)
 		}
-	}
-	if !supported {
-		return nil, unsupportedImageBeforeSend()
+		if !c.imageInputDeclared {
+			return nil, unsupportedImageBeforeSend()
+		}
+	} else {
+		models, err := c.readModelList(ctx, true)
+		if err != nil {
+			// An unobserved inventory proves nothing about image support. Return the
+			// original typed failure so it never acquires the pre-send rejection proof.
+			return nil, err
+		}
+		supported := false
+		for _, model := range models {
+			if model.Model == c.execution.settings.Model && slices.Contains(model.Modalities, "image") {
+				supported = true
+				break
+			}
+		}
+		if !supported {
+			return nil, unsupportedImageBeforeSend()
+		}
 	}
 	paths, err := (imageinput.Manager{Root: c.imageRoot}).Resolve(c.imageMachine, input.Attachments)
 	if err != nil {
