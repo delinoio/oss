@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import {
   EntityKind,
   ResourceSchema,
+  SubagentDisplayNameSchema,
   newRequestId,
+  type Resource,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 
@@ -109,4 +112,34 @@ export function openCodeSubagentFixture(sessionId: string) {
       },
     }),
   });
+}
+
+/** Gives one fixture child an additive native display name like the server. */
+export function withSubagentName<T extends Resource>(row: T, name: string): T {
+  row.subagentDisplay = create(SubagentDisplayNameSchema, {
+    childId: row.id,
+    name,
+  });
+  return row;
+}
+
+export const subagentTriggers = () =>
+  Array.from(
+    globalThis.document.querySelectorAll<HTMLElement>(".subagent-name"),
+  );
+
+/** Focuses one name trigger (immediate keyboard open) and returns its card. */
+export function openSubagentCard(index = 0) {
+  const trigger = subagentTriggers()[index];
+  if (!trigger) throw new Error("No subagent name is mounted");
+  fireEvent.focus(trigger);
+  return screen.getByRole("tooltip");
+}
+
+/** Waits for the loaded list, then opens the card of one child. */
+export async function openLoadedSubagentCard(index = 0) {
+  await waitFor(() => {
+    if (subagentTriggers().length <= index) throw new Error("not loaded");
+  });
+  return openSubagentCard(index);
 }

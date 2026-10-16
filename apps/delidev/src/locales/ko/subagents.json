@@ -1,6 +1,5 @@
 {
   "subagents.theRetainedChildPageIsUnavailable_e2dd4a": "유지된 하위 페이지를 확인할 수 없거나 일관되지 않습니다.",
-  "subagents.nativeChildAgentHierarchy_212425": "네이티브 하위 에이전트 계층",
   "subagents.child_805332": "하위",
   "subagents.parent_5f7953": "상위",
   "subagents.status_920e41": "상태",
@@ -23,7 +22,6 @@
   "subagents.output_296ead": "출력: <s0/>",
   "subagents.observationOnlyExcludedFromAdditiveBilling_23cc58": "관측만 표시하며 합산 청구 총계에서 제외됩니다.",
   "subagents.subagents_88296a": "하위 에이전트",
-  "subagents.readOnlyNativeHierarchyParentCompletion_036e57": "읽기 전용 네이티브 계층입니다. 부모가 완료되어도 실행 중인 자식은 완료되지 않습니다. Codex, Claude, OpenCode의 기준 버전 이상 설치에 대한 API 관측을 지원하며 사용 불가 계측은 명시적으로 표시합니다.",
   "subagents.thisServerDoesNotSupportChild_0baf88": "이 서버는 하위 에이전트 관측을 지원하지 않습니다.",
   "subagents.loadingChildObservations_0a8d53": "하위 관측값을 불러오는 중…",
   "subagents.noNativeChildObservationsAreAvailable_8c2be5": "사용 가능한 네이티브 하위 관측이 없습니다.",
@@ -32,5 +30,6 @@
   "subagents.firstChildPage_6cf629": "첫 하위 항목 페이지",
   "subagents.nextChildPage_a95c32": "다음 하위 항목 페이지",
   "subagents.extra.ca1844969742": "확인할 수 없음",
-  "subagents.checkingCapability": "하위 관찰 사용 가능 여부 확인 중…"
+  "subagents.checkingCapability": "하위 관찰 사용 가능 여부 확인 중…",
+  "subagents.agentNames": "하위 에이전트 이름"
 }

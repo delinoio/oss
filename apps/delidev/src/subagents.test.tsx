@@ -21,6 +21,7 @@ import { validateSubagentPage } from "./subagent-record";
 import { document, encode, object } from "./documents";
 import {
   openCodeSubagentFixture,
+  openSubagentCard,
   subagentFixture,
 } from "./subagent-test-fixture";
 
@@ -49,15 +50,31 @@ test("shows native hierarchy, missing telemetry and exact observed child counter
   object((second.sources as unknown[])[0]).usage = usage;
   one.documentJson = encode(first);
   two.documentJson = encode(second);
-  render(<SubagentRows sessionId={session} rows={[one, two]} />);
-  expect(screen.getByText(nested)).toBeTruthy();
-  expect(screen.getAllByText(parent).length).toBe(2);
-  expect(screen.getByText("Observed: observed-model")).toBeTruthy();
-  expect(screen.getByText("Observed: Unavailable")).toBeTruthy();
-  expect(screen.getByText("Total: 9223372036854775807")).toBeTruthy();
-  expect(screen.getByText("Output: 0")).toBeTruthy();
-  expect(screen.getAllByText("Requested: requested-only").length).toBe(2);
+  const labels = new Map<string, number>();
+  retainSubagentLabels(labels, validateSubagentPage([one, two], session)!);
+  render(<SubagentRows sessionId={session} rows={[one, two]} labels={labels} />);
+  // Idle Info is a plain list of names without any detail or control.
+  expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  expect(screen.queryByText(nested)).toBeNull();
+  expect(screen.queryByText("Total: 9223372036854775807")).toBeNull();
+  expect(screen.queryByRole("table")).toBeNull();
   expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  // The first child has no observed model and no output: markers stay explicit.
+  const first_card = within(openSubagentCard(0));
+  expect(first_card.getByText("Observed: Unavailable")).toBeTruthy();
+  expect(first_card.getByText("Requested: requested-only")).toBeTruthy();
+  expect(first_card.getAllByText("Unavailable").length).toBeGreaterThan(0);
+  expect(first_card.getByText("Root session")).toBeTruthy();
+  // The nested child shows its parent and exact signed 64-bit counters.
+  const second_card = within(openSubagentCard(1));
+  expect(second_card.getByText("Subagent 1")).toBeTruthy();
+  expect(second_card.getByText("Observed: observed-model")).toBeTruthy();
+  expect(second_card.getByText("Total: 9223372036854775807")).toBeTruthy();
+  expect(second_card.getByText("Output: 0")).toBeTruthy();
+  expect(second_card.getByText("Requested: requested-only")).toBeTruthy();
+  expect(second_card.queryByRole("button")).toBeNull();
+  expect(screen.getAllByRole("tooltip")).toHaveLength(1);
 });
 
 test("capability gates original session reads and paging never invokes child controls", async () => {
@@ -183,9 +200,7 @@ test.each(["codex", "opencode", "oversized", "malformed"])(
       </QueryClientProvider>,
     );
     expect(screen.queryByText("Subagents")).toBeNull();
-    const childCount = () =>
-      screen.queryAllByRole("row").filter((row) => row.querySelector("td"))
-        .length;
+    const childCount = () => screen.queryAllByRole("listitem").length;
     await waitFor(() => expect(childCount()).toBe(50));
     const more = screen.getByRole("button", { name: "Load more Subagents" });
     await waitFor(() => expect(more.matches(":disabled")).toBe(false));
@@ -246,9 +261,7 @@ test("keeps the OpenCode update warning after its only child payload page is evi
       </TransportProvider>
     </QueryClientProvider>,
   );
-  const rowCount = () =>
-    screen.queryAllByRole("row").filter((row) => row.querySelector("td"))
-      .length;
+  const rowCount = () => screen.queryAllByRole("listitem").length;
   await waitFor(() => expect(rowCount()).toBe(1));
   for (let loaded = 2; loaded <= pages.length; loaded++) {
     const more = screen.getByRole("button", { name: "Load more Subagents" });
@@ -347,24 +360,15 @@ test("retains friendly identity and parent labels through the full native bound 
   retainSubagentLabels(labels, validateSubagentPage([later], session)!);
   render(
     <>
-      <SubagentRows
-        rows={[children[1023]]}
-        sessionId={session}
-        technical={false}
-        labels={labels}
-      />
-      <SubagentRows
-        rows={[later]}
-        sessionId={session}
-        technical={false}
-        labels={labels}
-      />
+      <SubagentRows rows={[children[1023]]} sessionId={session} labels={labels} />
+      <SubagentRows rows={[later]} sessionId={session} labels={labels} />
     </>,
   );
   expect(screen.getByText("Subagent 1024")).toBeTruthy();
   expect(screen.getByText("Subagent 1025")).toBeTruthy();
-  expect(screen.getByText("Subagent 1")).toBeTruthy();
   expect(screen.queryByText("Subagent —")).toBeNull();
+  // The retained ordinal also labels a parent on an earlier page in its card.
+  expect(within(openSubagentCard(0)).getByText("Subagent 1")).toBeTruthy();
   retainSubagentLabels(
     labels,
     validateSubagentPage([children[1023]], session)!,
@@ -408,13 +412,15 @@ test("keeps child conversation presentation in Info and portals only source meta
       </TransportProvider>
     </QueryClientProvider>,
   );
-  await screen.findByText("Original child conversation content");
+  await screen.findByText("Subagent 1");
+  // Ordinary Info owns the conversation presentation, but only in the card.
   expect(
-    within(mounted.container).getByText("Original child output block"),
-  ).toBeTruthy();
-  expect(
-    within(mounted.container).getByText("Observed: observed-model"),
-  ).toBeTruthy();
+    within(mounted.container).queryByText("Original child conversation content"),
+  ).toBeNull();
+  const card = within(openSubagentCard());
+  expect(card.getByText("Original child conversation content")).toBeTruthy();
+  expect(card.getByText("Original child output block")).toBeTruthy();
+  expect(card.getByText("Observed: observed-model")).toBeTruthy();
   const diagnostics = within(target);
   expect(diagnostics.queryByText(String(record.execution_id))).toBeNull();
   expect(

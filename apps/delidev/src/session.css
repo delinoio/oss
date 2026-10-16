@@ -1392,6 +1392,68 @@
   display: none;
 }
 
+/* Ordinary Info lists only agent names; every other detail lives in the
+   hover/focus card. Names wrap inside the narrow rail and never overflow. */
+.subagent-name-list {
+  display: block;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.subagent-name-item {
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+.subagent-name {
+  display: block;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.subagent-name:hover,
+.subagent-name:focus-visible {
+  background: var(--surface-hover);
+}
+.subagent-name:focus-visible {
+  outline-offset: -2px;
+}
+.subagent-card-details {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px 12px;
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+.subagent-card-details dt {
+  min-width: 0;
+  padding-top: 0;
+  color: var(--muted);
+}
+.subagent-card-details dd {
+  min-width: 0;
+  margin: 0;
+}
+.subagent-card-details p {
+  margin: 0;
+}
+.subagent-card-details pre {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+
 /* Keep the existing panel as scroll owner. Available panel width determines
    Diagnostics reflow beside Session information, independent of window width. */
 .session-diagnostics-panel {

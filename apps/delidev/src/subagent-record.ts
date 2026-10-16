@@ -682,3 +682,26 @@ export function subagentSafeRow(
       : undefined,
   };
 }
+
+/** Native agent names accept at most this many Unicode characters. */
+export const maxSubagentNameCharacters = 256;
+
+/**
+ * Returns the accepted native display name of one validated child resource.
+ * The name is additive Resource metadata joined by the original product child
+ * ID; a missing, foreign, blank, oversized or malformed name yields undefined
+ * so the stable localized ordinal is used without invalidating the child page.
+ */
+export function subagentDisplayName(resource: Resource): string | undefined {
+  const display = resource.subagentDisplay;
+  if (!display || display.childId !== resource.id) return undefined;
+  const name = display.name;
+  if (
+    typeof name !== "string" ||
+    name.trim().length === 0 ||
+    Array.from(name).length > maxSubagentNameCharacters ||
+    /[\p{Cc}\p{Cs}]/u.test(name)
+  )
+    return undefined;
+  return name;
+}

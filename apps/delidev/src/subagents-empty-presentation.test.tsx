@@ -162,7 +162,7 @@ test("reveals a child from an accepted refresh and hides again after a later com
   await waitFor(() => expect(t.hidden()).toBe(false));
   await waitFor(() =>
     expect(
-      screen.queryAllByRole("row").filter((row) => row.querySelector("td")),
+      screen.queryAllByRole("listitem"),
     ).toHaveLength(1),
   );
   t.state.next = {};
