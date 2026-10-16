@@ -1032,7 +1032,7 @@ Server-owned setup-token login, Runner subscription selection and the Worker lif
 
 `NativeSubscriptionDiagnostic.detected_version` carries the observed executable version, including on the server login path, and `phase` carries the real failing native phase. A server login rejected during Claude protocol discovery reports Discovery, not Launch. `required_version` stays in the proto and Go validator as the pinned minimum baseline for wire compatibility; clients must not present it as an exact requirement. An authentication-status failure after successful version validation never advises installing a specific version. Server and Runner messages for unsupported installations do not name a fixed version.
 
-## Claude usage response normalization (issue 4069, first slice)
+## Claude usage response normalization
 
 This slice defines only the pure normalization of the Claude OAuth usage response (`GET https://api.anthropic.com/api/oauth/usage`) in `domain.ParseClaudeUsageQuota`. It adds no login, vault, fetch, scheduling, RPC, capability or UI; the remaining `CLAUDE_SERVER_USAGE_V1` feature stays unimplemented and does not activate Claude quota support.
 
