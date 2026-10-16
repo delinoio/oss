@@ -212,9 +212,10 @@ const REGEX_KEYWORDS: [&str; 16] = [
 
 /// Keywords that cannot end an expression: a line terminator after them never
 /// starts a new statement. Every entry is also in [`REGEX_KEYWORDS`]; the
-/// restricted productions `return` and `throw` are left out because a line
-/// terminator after them does end the statement.
-const OPEN_KEYWORDS: [&str; 9] = [
+/// restricted productions `return`, `throw` and `yield` are left out because a
+/// line terminator after them always ends the production (`yield` is also a
+/// plain identifier in sloppy-mode scripts, where it can end an expression).
+const OPEN_KEYWORDS: [&str; 8] = [
     "in",
     "instanceof",
     "typeof",
@@ -223,7 +224,6 @@ const OPEN_KEYWORDS: [&str; 9] = [
     "new",
     "of",
     "await",
-    "yield",
 ];
 
 /// True when the range is a comment rather than a string, template or regular
@@ -6496,6 +6496,20 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn yield_is_a_restricted_production_and_not_an_open_keyword() {
+        assert!(!OPEN_KEYWORDS.contains(&"yield"));
+        // `yield` still starts a regular expression operand.
+        assert!(REGEX_KEYWORDS.contains(&"yield"));
+        let read = "process.env.FLAG";
+        for terminator in LINE_TERMINATORS {
+            // A line terminator after `yield` ends the production, so a read
+            // on the next line is its own statement and keeps its own guard.
+            let code = format!("function* g() {{ x = yield{terminator}{read} && run() }}");
+            assert_eq!(keyword_guard(&code, read), Some(AND_GUARD), "{code:?}");
+        }
+    }
+
+    #[test]
     fn a_statement_boundary_ends_an_expression_bodied_arrow_for_guards() {
         let read = "process.env.FLAG";
         for terminator in LINE_TERMINATORS {
@@ -7629,6 +7643,49 @@ y=/process.env.F/.test(z),process.env.G"#;
         "%=",
         "^=",
     ];
+
+    #[test]
+    fn a_yield_identifier_ends_a_concise_async_arrow_at_a_line_break() {
+        // Issue 4111: `yield` is an identifier in a sloppy-mode script, so a
+        // line break after it is an automatic semicolon and the `await(` of
+        // the next statement is a call, not an operator.
+        let gate = await_gate();
+        for terminator in LINE_TERMINATORS {
+            for comment in ["", " // c", " /* c */", " /* a\nb */"] {
+                let code = format!(
+                    "var yield = 1;{terminator}const g = async () => \
+                     yield{comment}{terminator}{gate}"
+                );
+                assert!(await_operators_in(&code).is_empty(), "{code:?}");
+                assert_await_is_a_call(&code);
+            }
+            // An explicit semicolon and a renamed identifier already ended
+            // the arrow body.
+            for prelude in [
+                "var yield = 1;{t}const g = async () => yield;",
+                "var value = 1;{t}const g = async () => value",
+            ] {
+                let code = format!("{}{terminator}{gate}", prelude.replace("{t}", terminator));
+                assert_await_is_a_call(&code);
+            }
+        }
+        // A continuation after `yield` keeps the arrow body open.
+        for code in [
+            "const g = async () => yield\n  + await(x)",
+            "const g = async () => yield\n  ?? await(x)",
+            "const g = async () => yield + await(x)",
+            "const g = async () => await(x) && yield",
+        ] {
+            assert_eq!(await_operators_in(code).len(), 1, "{code:?}");
+        }
+        // A real async function body and a module keep the operator reading.
+        for code in [
+            "async function f() { yield\n{gate} }",
+            "export {}\nyield\n{gate}",
+        ] {
+            assert_await_is_an_operator(&code.replace("{gate}", &gate));
+        }
+    }
 
     #[test]
     fn each_line_start_continuation_keeps_a_concise_async_arrow_open() {
