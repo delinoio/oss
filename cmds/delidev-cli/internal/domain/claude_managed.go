@@ -44,6 +44,9 @@ func (s SubscriptionState) validateManagedClaude(account Account) error {
 	if l := s.Lease; l != nil && l.Action != SubscriptionExecute {
 		return invalid()
 	}
+	if s.ClaudeUsage != nil && s.ClaudeUsage.Validate(account) != nil {
+		return invalid()
+	}
 	if o := s.ServerOperation; o != nil {
 		if o.Action != SubscriptionLogin && o.Action != SubscriptionLogout || o.Diagnostic != nil || o.CallbackForwarded {
 			return invalid()

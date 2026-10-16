@@ -73,7 +73,7 @@ func (s SubscriptionState) validateNativeClaude(account Account) error {
 		return Fail(InvalidArgument, "Invalid native Claude subscription ownership.", "Preserve the original Runner, profile, generation and operation.")
 	}
 	if account.SubscriptionService != SubscriptionClaude {
-		if s.NativeProfileID != "" || s.NativeOperation != nil || s.ClaudeCredential != "" {
+		if s.NativeProfileID != "" || s.NativeOperation != nil || s.ClaudeCredential != "" || s.ClaudeUsage != nil {
 			return invalid()
 		}
 		return nil
@@ -81,7 +81,7 @@ func (s SubscriptionState) validateNativeClaude(account Account) error {
 	if s.ClaudeCredential != "" {
 		return s.validateManagedClaude(account)
 	}
-	if s.ServerOperation != nil || s.Observation != nil || s.ResetCredits != nil || s.QuotaState != "" || s.QuotaObservedAt != nil || s.SpendControlReached != nil || s.SpendControlObservedAt != nil {
+	if s.ClaudeUsage != nil || s.ServerOperation != nil || s.Observation != nil || s.ResetCredits != nil || s.QuotaState != "" || s.QuotaObservedAt != nil || s.SpendControlReached != nil || s.SpendControlObservedAt != nil {
 		return invalid()
 	}
 	if (s.NativeProfileID == "") != (s.OwnerMachineID == "") {
