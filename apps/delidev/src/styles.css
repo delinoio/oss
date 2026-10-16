@@ -930,6 +930,9 @@ summary {
   margin: 0;
   font-size: 13px;
 }
+.new-session-content > .resource-choice > .inline-choice {
+  margin-bottom: 9px;
+}
 .new-session-project-note {
   margin: 5px 0 13px;
   color: var(--muted);

@@ -38,11 +38,19 @@ import { useSettingsFixture } from "./settings-test-fixture";
 const fixture = useSettingsFixture();
 
 async function choose(control: HTMLElement, name: string | RegExp) {
-  await waitFor(() => expect(control.matches(":disabled")).toBe(false));
-  fireEvent.click(control);
-  const popup = window.document.getElementById(
-    control.getAttribute("aria-controls")!,
-  )!;
+  // The inline list is its own always-visible choice container.
+  const inline = control.getAttribute("role") === "listbox";
+  await waitFor(() =>
+    expect(
+      inline
+        ? control.getAttribute("aria-disabled") === "true"
+        : control.matches(":disabled"),
+    ).toBe(false),
+  );
+  if (!inline) fireEvent.click(control);
+  const popup = inline
+    ? control
+    : window.document.getElementById(control.getAttribute("aria-controls")!)!;
   const option = await within(popup).findByRole("option", { name });
   const id = option.dataset.pickerId;
   fireEvent.click(option);
@@ -353,7 +361,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   const changeNewSession = (name: string, value: string) =>
     fireEvent.change(newSession.getByLabelText(name), { target: { value } });
   await choose(
-    newSession.getByRole("combobox", { name: "Project" }),
+    newSession.getByRole("listbox", { name: "Project" }),
     "Owned project",
   );
   fireEvent.click(newSession.getByRole("button", { name: "Options" }));

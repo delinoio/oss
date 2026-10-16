@@ -81,6 +81,8 @@
   "new-session.useTypedBranch": "Use \"{{name}}\"",
   "new-session.noMatchingBranches": "No matching branches. Valid direct input is still available.",
   "new-session.createAgentWorker": "Create agent worker",
+  "new-session.projectGeneralChat": "General Chat",
+  "new-session.newProject": "New project",
   "new-session.newAgentWorkerAction": "New",
   "new-session.newAgentWorkerActionName": "New agent worker"
 }
