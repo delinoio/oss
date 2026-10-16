@@ -164,8 +164,10 @@ try {
               .locator(".starting-branch-autocomplete")
               .first()
               .waitFor();
+            // The Project selector is an expanded listbox, so the comboboxes
+            // are Agent Worker and Runs on.
+            await choose(0);
             await choose(1);
-            await choose(2);
             await root
               .locator("textarea")
               .fill("Retained synthetic project draft");
@@ -324,7 +326,7 @@ try {
             );
             const runner = root
               .locator(".resource-choice [role=combobox]")
-              .nth(2);
+              .nth(1);
             assert(await runner.isDisabled());
             assert(
               Number(

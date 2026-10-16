@@ -164,7 +164,9 @@ it.each([NewSessionKind.Session, NewSessionKind.GeneralChat])(
     await waitFor(() => expect(input.selectionStart).toBe(11));
     expect(input.selectionEnd).toBe(11);
     expect(document.activeElement).toBe(input);
-    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(
+      screen.queryByRole("listbox", { name: "Available skills" }),
+    ).toBeNull();
     expect(f.createSession).not.toHaveBeenCalled();
   },
 );
@@ -195,7 +197,9 @@ it("refuses completion atomically when only the separator would exceed the 256 K
   expect([input.selectionStart, input.selectionEnd]).toEqual([5, 7]);
   expect(document.activeElement).toBe(input);
   expect(view.container.querySelector(".skill-token-selected")).toBeNull();
-  expect(screen.queryByRole("listbox")).not.toBeNull();
+  expect(
+    screen.queryByRole("listbox", { name: "Available skills" }),
+  ).not.toBeNull();
   expect(f.createSession).not.toHaveBeenCalled();
 });
 

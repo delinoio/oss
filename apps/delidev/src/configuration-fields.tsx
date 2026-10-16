@@ -52,6 +52,11 @@ import {
 import type { ScrollContinuationQuery } from "./scroll-continuation";
 import { HarnessMark, knownHarness } from "./harness-mark";
 import { ScrollPicker } from "./scroll-picker";
+import {
+  InlineChoiceIcon,
+  InlineChoiceList,
+  type InlineChoiceAction,
+} from "./inline-choice-list";
 import type { MessageShape } from "@bufbuild/protobuf";
 import {
   SystemCapability,
@@ -794,6 +799,14 @@ function Check({
   );
 }
 
+/** How a ResourceChoice presents its accepted choices. Popup is the default
+ * ScrollPicker; Inline renders an always-expanded single-select list for the
+ * New session Project selector only. */
+export enum ResourceChoicePresentation {
+  Popup = "popup",
+  Inline = "inline",
+}
+
 export const ResourceSelectionPending = createContext<
   ((identity: string, pending: boolean) => void) | undefined
 >(undefined);
@@ -819,8 +832,13 @@ export function ResourceChoice({
   selectionResetToken = 0,
   emptyInventoryAction,
   emptyInventoryActionPending = false,
+  presentation = ResourceChoicePresentation.Popup,
+  inlineAction,
 }: {
   selectionResetToken?: number;
+  presentation?: ResourceChoicePresentation;
+  // Icon button beside the label; applies to the Inline presentation only.
+  inlineAction?: InlineChoiceAction;
   emptyInventoryAction?: { label: string; invoke: () => void };
   // True while the caller still restores a retained Agent selection, so the
   // empty-inventory creation entry must not be offered yet.
@@ -1276,6 +1294,22 @@ export function ResourceChoice({
       disabled: row.id === value && selectedProviderOff,
     })),
   ];
+  // The empty identity is the first row. A resolved selection that is outside
+  // the reached pages is pinned directly after it, so exactly one accepted row
+  // shows the selected state.
+  const inlineOptions = options.map((option, index) => ({
+    id: option.id,
+    label: option.label,
+    disabled: "disabled" in option ? option.disabled : false,
+    icon: index === 0 ? InlineChoiceIcon.Chat : InlineChoiceIcon.Project,
+  }));
+  if (value && selectedResource && !result.rows.some((row) => row.id === value))
+    inlineOptions.splice(1, 0, {
+      id: value,
+      label: productResourceName(productLabel, selectedResource),
+      disabled: selectedProviderOff,
+      icon: InlineChoiceIcon.Project,
+    });
   const firstInventory = resources.payloadPages.find(
     (page) => page.token === "",
   )?.payload[0];
@@ -1354,6 +1388,17 @@ export function ResourceChoice({
             {emptyInventoryAction!.label}
           </button>
         </div>
+      ) : presentation === ResourceChoicePresentation.Inline ? (
+        <InlineChoiceList
+          label={label}
+          options={inlineOptions}
+          value={value}
+          change={(id) => void select(id)}
+          query={result}
+          active={active}
+          disabled={disabled || selectionBusy}
+          action={inlineAction}
+        />
       ) : (
         <ScrollPicker
           label={label}
