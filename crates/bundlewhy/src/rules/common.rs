@@ -295,10 +295,10 @@ fn previous_significant_token<'a>(
 /// the dot as its fraction separator. A literal that is already complete
 /// leaves the dot as a property access: a hexadecimal, binary or octal
 /// literal (`0x1.eval`), a legacy octal literal (`017.eval`), a BigInt
-/// (`1n.eval`), a literal with an exponent (`1e3.eval`, `1e+3.eval`), one
-/// with a fraction (`1.5.eval`, `.5.eval`) and `1..eval`, whose first dot is
-/// the fraction separator. A dot after anything else that ends in a digit is
-/// part of the number (`1.`, `1_0.`, `08.`).
+/// (`1n.eval`), a literal with an exponent (`1e3.eval`, `1e+3.eval`,
+/// `1.e+3.eval`), one with a fraction (`1.5.eval`, `.5.eval`) and `1..eval`,
+/// whose first dot is the fraction separator. A dot after anything else that
+/// ends in a digit is part of the number (`1.`, `1_0.`, `08.`).
 fn dot_ends_decimal_integer(head: &str) -> bool {
     let word = trailing_word(head);
     if !word.starts_with(|character: char| character.is_ascii_digit()) {
@@ -342,12 +342,28 @@ fn dot_ends_decimal_integer(head: &str) -> bool {
         let mantissa = exponent_base
             .strip_suffix('e')
             .or_else(|| exponent_base.strip_suffix('E'));
-        if let Some(mantissa) = mantissa
-            && !mantissa.is_empty()
-            && is_digits(mantissa)
-            && mantissa.starts_with(|character: char| character.is_ascii_digit())
-        {
-            return false;
+        if let Some(mantissa) = mantissa {
+            let is_decimal_digits = |text: &str| {
+                !text.is_empty()
+                    && is_digits(text)
+                    && text.starts_with(|character: char| character.is_ascii_digit())
+            };
+            if is_decimal_digits(mantissa) {
+                return false;
+            }
+            // `1.e+3.eval`: an integer and its bare fraction dot are also a
+            // mantissa. The dot must belong to that integer (`1..e+3` and
+            // `.5.e+3` read `e` as a property name).
+            let stem = &sign_free[..sign_free.len() - 1];
+            if mantissa.is_empty()
+                && let Some(integer_part) = stem.strip_suffix('.')
+            {
+                let integer = trailing_word(integer_part);
+                let before_integer = &integer_part[..integer_part.len() - integer.len()];
+                if is_decimal_digits(integer) && !before_integer.ends_with('.') {
+                    return false;
+                }
+            }
         }
     }
     true
@@ -7010,6 +7026,8 @@ y=/process.env.F/.test(z),process.env.G"#;
                 ("1 .in|".to_string(), word("in", true)),
                 ("0x1.in|".to_string(), word("in", true)),
                 ("1e3.in|".to_string(), word("in", true)),
+                ("1.e+3.in|".to_string(), word("in", true)),
+                ("1.5.e+3. in|".to_string(), word("in", false)),
                 ("1n.in|".to_string(), word("in", true)),
                 ("1.5.in|".to_string(), word("in", true)),
                 ("x = 1_0. in|".to_string(), word("in", false)),
@@ -7201,6 +7219,9 @@ y=/process.env.F/.test(z),process.env.G"#;
             "1e+3.eval(code)",
             "1E-3.eval(code)",
             "1.5e+3.eval(code)",
+            "1.e+3.eval(code)",
+            "1.E-3.eval(code)",
+            "1_0.e+3.eval(code)",
             "1_0e1_0.eval(code)",
             "1n.eval(code)",
             "1_0n.eval(code)",
@@ -7231,6 +7252,8 @@ y=/process.env.F/.test(z),process.env.G"#;
             "x = 08. + eval(code)",
             "x = 1e+3 + eval(code)",
             "x = 0x1e+3. + eval(code)",
+            "x = 1.5.e+3. + eval(code)",
+            "x = 1..e+3. + eval(code)",
         ] {
             assert!(direct_eval_line(source).is_some(), "{source:?}");
         }
@@ -7244,13 +7267,16 @@ y=/process.env.F/.test(z),process.env.G"#;
         }
         for head in [
             "", "x", "x1", "obj", "1.", "1.5", ".5", "1.0", "1e3", "1E3", "1e+3", "1e-3", "1.5e+3",
-            "0x1", "0xF", "0X1e", "0b1", "0o7", "017", "00", "1n", "0n", "1_0n", "1 ", "\u{e9}1x",
+            "1.e+3", "1.E-3", "1_0.e+3", "0x1", "0xF", "0X1e", "0b1", "0o7", "017", "00", "1n",
+            "0n", "1_0n", "1 ", "\u{e9}1x",
         ] {
             assert!(!dot_ends_decimal_integer(head), "{head:?}");
         }
         // A sign after a name or a hexadecimal literal is an addition, so the
         // number after it takes the dot.
-        for head in ["e+3", "x1e+3", "0x1e+3", "1x+3", "a - 3", "1+3"] {
+        for head in [
+            "e+3", "x1e+3", "0x1e+3", "1x+3", "a - 3", "1+3", ".e+3", "x1.e+3", "1.5.e+3", "1..e+3",
+        ] {
             assert!(dot_ends_decimal_integer(head), "{head:?}");
         }
     }
@@ -7266,6 +7292,7 @@ y=/process.env.F/.test(z),process.env.G"#;
             "0o7.eval(longLocalName)",
             "1e3.eval(longLocalName)",
             "1e+3.eval(longLocalName)",
+            "1.e+3.eval(longLocalName)",
             "1n.eval(longLocalName)",
             "1_0.5.eval(longLocalName)",
         ] {
