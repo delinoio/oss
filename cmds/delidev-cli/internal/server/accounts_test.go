@@ -29,6 +29,7 @@ type accountTestSecrets struct {
 	values                                map[credentials.Ref][]byte
 	removed                               map[credentials.Ref]bool
 	putError, deleteError, referenceError error
+	getErrors                             map[credentials.Ref]error
 	enumerations                          int
 	afterPut                              func()
 	puts, deletes                         int
@@ -67,6 +68,9 @@ func (v *accountTestSecrets) Delete(ctx context.Context, ref credentials.Ref) er
 func (v *accountTestSecrets) Get(ctx context.Context, ref credentials.Ref) ([]byte, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	if err := v.getErrors[ref]; err != nil {
+		return nil, err
+	}
 	if key, ok := v.values[ref]; ok {
 		return bytes.Clone(key), nil
 	}

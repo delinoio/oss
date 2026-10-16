@@ -703,29 +703,53 @@ func (s *Service) recoveryDecision(ctx context.Context, vault accountSecrets, ac
 	}
 	defer clear(latest)
 	defer clear(original)
-	return recoveryDecision{outcome: s.recoveredOutcome(ctx, vault, account, state, capture, latest, original)}, nil
+	outcome, err := s.recoveredOutcome(ctx, vault, account, state, capture, latest, original)
+	if err != nil {
+		return recoveryDecision{}, err
+	}
+	return recoveryDecision{outcome: outcome}, nil
 }
 
 // recoveredOutcome re-validates the captured bundle against the account's
 // immutable identity and stored generation. Only a bundle that opens, keeps the
-// identity and is the original or a valid refresh of it restores readiness.
-func (s *Service) recoveredOutcome(ctx context.Context, vault accountSecrets, account domain.ID, state *domain.SubscriptionState, capture *domain.SubscriptionRecoveryCapture, latest, original []byte) domain.SubscriptionRecoveryOutcome {
+// identity and is the original or a valid refresh of it restores readiness. A
+// bundle that is positively invalid, or a stored generation that is positively
+// absent or unrecoverable, disconnects the account. Any other vault failure is
+// returned unchanged: an unavailable vault must keep the recovery fence so a later
+// attempt can decide, and must never be read as proof that the credential is bad.
+func (s *Service) recoveredOutcome(ctx context.Context, vault accountSecrets, account domain.ID, state *domain.SubscriptionState, capture *domain.SubscriptionRecoveryCapture, latest, original []byte) (domain.SubscriptionRecoveryOutcome, error) {
 	_, identity, err := subscription.Parse(latest)
 	if err != nil || s.subscriptionIdentityCommitment(identity) != state.IdentityCommitment || capture.IdentityCommitment != state.IdentityCommitment {
-		return domain.RecoveryDisconnected
+		return domain.RecoveryDisconnected, nil
 	}
 	stored, err := vault.Get(ctx, credentials.Ref{Owner: account, ID: state.Generation, Purpose: credentials.AccountLogin})
 	if err != nil {
-		return domain.RecoveryDisconnected
+		if positivelyUnusableCredential(err) {
+			s.logger.WarnContext(ctx, "subscription_recovery_generation_unusable", "phase", subscriptionRecoveryPhase, "account_id", account, "generation_id", state.Generation, "code", domain.SafeError(err).Code)
+			return domain.RecoveryDisconnected, nil
+		}
+		s.logger.WarnContext(ctx, "subscription_recovery_generation_read_failed", "phase", subscriptionRecoveryPhase, "account_id", account, "generation_id", state.Generation, "code", domain.SafeError(err).Code)
+		return "", err
 	}
 	defer clear(stored)
 	if capture.OriginalCaptured && !bytes.Equal(stored, original) {
-		return domain.RecoveryDisconnected
+		return domain.RecoveryDisconnected, nil
 	}
 	if !bytes.Equal(stored, latest) && subscription.Refreshed(stored, latest) != nil {
-		return domain.RecoveryDisconnected
+		return domain.RecoveryDisconnected, nil
 	}
-	return domain.RecoveryRestored
+	return domain.RecoveryRestored, nil
+}
+
+// positivelyUnusableCredential reports whether a vault read proves the stored
+// credential itself is gone or cannot be recovered. Every other failure is an
+// infrastructure error that proves nothing about the credential.
+func positivelyUnusableCredential(err error) bool {
+	switch domain.SafeError(err).Code {
+	case domain.NotFound, domain.RecoveryRequired:
+		return true
+	}
+	return false
 }
 
 // publishRecoveredGeneration stages the one immutable generation a restored

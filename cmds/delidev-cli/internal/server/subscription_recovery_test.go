@@ -203,6 +203,62 @@ func TestRecoveryUnusableCaptureDisconnectsAfterProvenCleanup(t *testing.T) {
 	}
 }
 
+func TestRecoveryUnavailableVaultKeepsTheFenceAndAbsentGenerationDisconnects(t *testing.T) {
+	f := newCodexRecoveryFixture(t)
+	defer clear(f.original)
+	latest := f.latest("rotated")
+	defer clear(latest)
+	capture := domain.NewID()
+	if _, err := f.sync(capture, f.original, latest); err != nil {
+		t.Fatal(err)
+	}
+	f.fence()
+	generation := credentials.Ref{Owner: f.input.AccountID, ID: domain.ID(f.lease.GenerationId), Purpose: credentials.AccountLogin}
+	// A transient failure of the stored generation read is not proof that the
+	// credential is bad: the request fails and the recovery fence stays intact.
+	f.secrets.mu.Lock()
+	f.secrets.getErrors = map[credentials.Ref]error{generation: domain.Fail(domain.Unavailable, "Simulated vault outage.", "")}
+	f.secrets.mu.Unlock()
+	request := domain.NewID()
+	report := f.recoverRequest(request, pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE, capture)
+	if _, err := f.recover(report); err == nil || recoveryCode(err) != domain.Unavailable {
+		t.Fatal("an unavailable vault was settled as a credential decision", err)
+	}
+	_, account := f.record()
+	state := account.Subscription
+	if !state.RecoveryRequired || state.Lease == nil || state.RecoveryCapture == nil || state.RecoverySettlement != nil || account.Health == domain.AccountDisconnected {
+		t.Fatal("an unavailable vault changed the fenced account")
+	}
+	refs := f.references()
+	if !refs[capture] || !refs[domain.ID(f.lease.GenerationId)] {
+		t.Fatal("an unavailable vault discarded protected references", refs)
+	}
+	f.secrets.mu.Lock()
+	f.secrets.getErrors = nil
+	f.secrets.mu.Unlock()
+	response, err := f.recover(report)
+	if err != nil || response.Outcome != pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_RESTORED {
+		t.Fatal("the retry after the vault recovered did not restore", err)
+	}
+	// A generation that is positively absent from the vault disconnects the account.
+	g := newCodexRecoveryFixture(t)
+	defer clear(g.original)
+	rotated := g.latest("rotated")
+	defer clear(rotated)
+	captured := domain.NewID()
+	if _, err := g.sync(captured, g.original, rotated); err != nil {
+		t.Fatal(err)
+	}
+	g.fence()
+	g.secrets.mu.Lock()
+	delete(g.secrets.values, credentials.Ref{Owner: g.input.AccountID, ID: domain.ID(g.lease.GenerationId), Purpose: credentials.AccountLogin})
+	g.secrets.mu.Unlock()
+	response, err = g.recover(g.recoverRequest(domain.NewID(), pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE, captured))
+	if err != nil || response.Outcome != pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_DISCONNECTED {
+		t.Fatal("a positively absent generation did not disconnect", err)
+	}
+}
+
 func TestRecoveryCaptureIsReplayableAndNeverGrantsAuthority(t *testing.T) {
 	f := newCodexRecoveryFixture(t)
 	defer clear(f.original)
