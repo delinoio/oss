@@ -700,6 +700,7 @@ export function ConfigurationEditor({
   const savedKind = {
     [EntityKind.AGENT]: "settings.savedKind.AGENT" as const,
     [EntityKind.TEMPLATE]: "settings.savedKind.TEMPLATE" as const,
+    [EntityKind.MCP_SERVER]: "settings.savedKind.MCP_SERVER" as const,
     [EntityKind.PROJECT]: "settings.savedKind.PROJECT" as const,
     [EntityKind.REPOSITORY]: "settings.savedKind.REPOSITORY" as const,
     [EntityKind.ACCOUNT]: "settings.savedKind.ACCOUNT" as const,
@@ -1903,6 +1904,16 @@ export const settingsCategories: Record<
     kind: EntityKind.TEMPLATE,
     area: SettingsArea.Configuration,
   },
+  [SettingsCategory.Mcp]: {
+    get label() {
+      return copy("settings.mcp");
+    },
+    get description() {
+      return copy("settings.mcpDescription");
+    },
+    kind: EntityKind.MCP_SERVER,
+    area: SettingsArea.Configuration,
+  },
   [SettingsCategory.ProjectDefaults]: {
     get label() {
       return copy("configuration-fields.projectDefaults");
@@ -2031,6 +2042,7 @@ export const settingsGroups: {
       SettingsCategory.Providers,
       SettingsCategory.AgentWorkers,
       SettingsCategory.Instructions,
+      SettingsCategory.Mcp,
     ],
   },
   {
@@ -2114,6 +2126,7 @@ const settingsIcons: Record<SettingsCategory, string> = {
   [SettingsCategory.AgentWorkers]:
     "M4 8h16v12H4zM8 8V5h8v3m-8 5h.01M16 13h.01M9 16h6",
   [SettingsCategory.Instructions]: "M6 3h8l4 4v14H6zM14 3v5h5M9 12h6m-6 4h6",
+  [SettingsCategory.Mcp]: "M9 3v5m6-5v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3",
   [SettingsCategory.Projects]: "M3 7h7l2 2h9v11H3zM3 7V5h7l2 2",
   [SettingsCategory.Repositories]:
     "M6 4v6m0 0a3 3 0 1 0 0 6m0-6h7a3 3 0 1 1 0 6h5m-12 0v4",
@@ -2218,6 +2231,7 @@ const entranceCategories: ReadonlyMap<SettingsCategory, EntranceTarget> =
     [SettingsCategory.SubscriptionAccounts, EntranceTarget.Surface],
     [SettingsCategory.Providers, EntranceTarget.Surface],
     [SettingsCategory.Instructions, EntranceTarget.Surface],
+    [SettingsCategory.Mcp, EntranceTarget.Surface],
     [SettingsCategory.ProjectDefaults, EntranceTarget.Surface],
     [SettingsCategory.Projects, EntranceTarget.Surface],
     [SettingsCategory.Repositories, EntranceTarget.Surface],

@@ -23,6 +23,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev image input contract](../../docs/cmds-delidev-image-input-contract.md)
 - [DeliDev retained inbox contract](../../docs/cmds-delidev-inbox-contract.md)
 - [DeliDev GitHub Integration Profiles](../../docs/cmds-delidev-integrations-contract.md)
+- [DeliDev Worker-owned MCP server definitions](../../docs/cmds-delidev-mcp-servers-contract.md)
 - [DeliDev native Codex model observations](../../docs/cmds-delidev-native-models-contract.md)
 - [DeliDev explicit outbound network contract](../../docs/cmds-delidev-network-contract.md)
 - [OpenCode Go subscription contract](../../docs/cmds-delidev-opencode-go-subscription-contract.md)

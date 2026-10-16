@@ -119,6 +119,10 @@ export enum Routing {
   Reset = "reset-window",
   Sequential = "sequential-exhaustion",
 }
+export enum McpTransport {
+  Stdio = "stdio",
+  StreamableHttp = "streamable_http",
+}
 enum Permission {
   Default = "default",
   Read = "read-only",
@@ -139,6 +143,7 @@ export const editableKinds = [
   EntityKind.ACCOUNT,
   EntityKind.AGENT,
   EntityKind.TEMPLATE,
+  EntityKind.MCP_SERVER,
   EntityKind.PROJECT,
   EntityKind.REPOSITORY,
   EntityKind.SETTINGS,
@@ -161,6 +166,9 @@ export const kindNames: Partial<Record<EntityKind, string>> = {
   },
   get [EntityKind.TEMPLATE]() {
     return copy("configuration-fields.instructions_934652");
+  },
+  get [EntityKind.MCP_SERVER]() {
+    return copy("configuration-fields.mcpServer");
   },
   get [EntityKind.PROJECT]() {
     return copy("configuration-fields.project_985959");
@@ -242,6 +250,8 @@ export function newConfiguration(kind: EntityKind): Document {
       };
     case EntityKind.TEMPLATE:
       return { name: "", contents: "" };
+    case EntityKind.MCP_SERVER:
+      return { name: "", transport: McpTransport.Stdio, enabled: true };
     case EntityKind.SETTINGS:
       return {
         automatic_plan_approval: false,
@@ -1708,6 +1718,31 @@ interface FieldsProps {
   serverPreferenceSection?: ServerPreferenceSection;
   workerWizard?: boolean;
 }
+// Keeps the raw textarea text locally so a trailing newline can be typed;
+// only non-empty lines become arguments.
+function McpArguments({
+  value,
+  change,
+}: {
+  value: string[];
+  change: (args: string[]) => void;
+}) {
+  useLocale();
+  const [draft, setDraft] = useState(() => value.join("\n"));
+  return (
+    <label>
+      {copy("configuration-fields.mcpArguments")}
+      <textarea
+        rows={4}
+        value={draft}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          change(event.target.value.split("\n").filter((line) => line !== ""));
+        }}
+      />
+    </label>
+  );
+}
 export function ConfigurationFields({
   kind,
   ...props
@@ -1827,6 +1862,87 @@ export function ConfigurationFields({
   if (kind === EntityKind.PROJECT) return <ProjectFields {...props} />;
   if (kind === EntityKind.REPOSITORY) return <RepositoryFields {...props} />;
   if (kind === EntityKind.PROVIDER) return <ProviderFields {...props} />;
+  if (kind === EntityKind.MCP_SERVER) {
+    const http = data.transport === McpTransport.StreamableHttp;
+    return (
+      <>
+        <TextField
+          label={copy("configuration-fields.name_dcd1d5")}
+          value={data.name}
+          change={field("name")}
+          required
+        />
+        <label>
+          {copy("configuration-fields.mcpTransport")}
+          <select
+            value={text(data.transport)}
+            onChange={(event) => {
+              // Switching transport drops the other transport's fields so a
+              // saved definition never carries stale command or endpoint data.
+              const transport = event.target.value;
+              change({
+                name: data.name,
+                enabled: data.enabled,
+                transport,
+              });
+            }}
+          >
+            <option value={McpTransport.Stdio}>
+              {copy("configuration-fields.mcpTransportStdio")}
+            </option>
+            <option value={McpTransport.StreamableHttp}>
+              {copy("configuration-fields.mcpTransportHttp")}
+            </option>
+          </select>
+        </label>
+        {http ? (
+          <TextField
+            label={copy("configuration-fields.mcpEndpoint")}
+            value={data.url}
+            change={field("url")}
+            max={2048}
+            required
+          />
+        ) : (
+          <>
+            <TextField
+              label={copy("configuration-fields.mcpCommand")}
+              value={data.command}
+              change={field("command")}
+              max={4096}
+              required
+            />
+            <McpArguments
+              value={items(data.args).map(String)}
+              change={(args) => {
+                const next = { ...data };
+                if (args.length > 0) next.args = args;
+                else delete next.args;
+                change(next);
+              }}
+            />
+            <TextField
+              label={copy("configuration-fields.mcpWorkingDirectory")}
+              value={data.working_directory}
+              change={(value) => {
+                const next = { ...data };
+                if (value) next.working_directory = value;
+                else delete next.working_directory;
+                change(next);
+              }}
+              max={4096}
+            />
+          </>
+        )}
+        <Check
+          label={copy("configuration-fields.mcpEnabled")}
+          value={data.enabled}
+          change={field("enabled")}
+        />
+        <p>{copy("configuration-fields.mcpHelp")}</p>
+      </>
+    );
+  }
   if (kind === EntityKind.TEMPLATE)
     return (
       <>

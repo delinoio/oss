@@ -211,5 +211,8 @@
   "settings.appInformation.sourceNotices": "이 링크는 현재 저장소의 소스 고지를 보여줍니다. 설치된 패키지의 전체 목록은 아닙니다.",
   "settings.appInformation.opening": "브라우저에서 여는 중입니다…",
   "settings.appInformation.openError": "링크를 열지 못했습니다. 직접 다시 시도하세요.",
-  "settings.productResourceRevision": "{{v0}} · 리비전 {{v1}}"
+  "settings.productResourceRevision": "{{v0}} · 리비전 {{v1}}",
+  "settings.savedKind.MCP_SERVER": "MCP 서버를 저장했습니다.",
+  "settings.mcp": "MCP",
+  "settings.mcpDescription": "선택한 서버에 저장되는 워커 소유 MCP 서버 정의입니다."
 }

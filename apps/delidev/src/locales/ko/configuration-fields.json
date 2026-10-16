@@ -228,5 +228,15 @@
   "configuration-fields.projectNameConflict": "이 이름의 프로젝트가 이미 있습니다. 다른 이름을 입력하세요.",
   "configuration-fields.repositoryNameConflict": "이 이름의 저장소가 이미 있습니다. 다른 이름을 입력하세요.",
   "configuration-fields.choices.projectRestricted": "이 페이지의 에이전트 워커 중 선택한 프로젝트의 제한에 맞는 워커가 없습니다.",
-  "configuration-fields.choices.continuing": "{{v0}} 선택 항목이 더 있습니다. 계속 불러와 목록을 확인하세요."
+  "configuration-fields.choices.continuing": "{{v0}} 선택 항목이 더 있습니다. 계속 불러와 목록을 확인하세요.",
+  "configuration-fields.mcpServer": "MCP 서버",
+  "configuration-fields.mcpTransport": "전송 방식",
+  "configuration-fields.mcpTransportStdio": "로컬 명령 (stdio)",
+  "configuration-fields.mcpTransportHttp": "Streamable HTTP",
+  "configuration-fields.mcpEnabled": "사용",
+  "configuration-fields.mcpCommand": "실행 파일",
+  "configuration-fields.mcpArguments": "인수 (한 줄에 하나)",
+  "configuration-fields.mcpWorkingDirectory": "작업 디렉터리",
+  "configuration-fields.mcpEndpoint": "엔드포인트 URL",
+  "configuration-fields.mcpHelp": "정의를 저장해도 서버를 시작하거나 로그인하거나 추론을 실행하지 않습니다. 비밀 값과 로그인은 이 정의에 포함되지 않습니다."
 }

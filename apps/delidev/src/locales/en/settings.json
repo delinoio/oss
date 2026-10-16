@@ -211,5 +211,8 @@
   "settings.appInformation.sourceNotices": "These links show current repository source notices. They are not a complete inventory of the installed package.",
   "settings.appInformation.opening": "Opening in your browser…",
   "settings.appInformation.openError": "The link could not be opened. Try again explicitly.",
-  "settings.productResourceRevision": "{{v0}} · revision {{v1}}"
+  "settings.productResourceRevision": "{{v0}} · revision {{v1}}",
+  "settings.savedKind.MCP_SERVER": "MCP server saved.",
+  "settings.mcp": "MCP",
+  "settings.mcpDescription": "Worker-owned MCP server definitions saved on the selected server."
 }

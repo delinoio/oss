@@ -228,5 +228,15 @@
   "configuration-fields.projectNameConflict": "A project with this name already exists. Choose another name.",
   "configuration-fields.repositoryNameConflict": "A repository with this name already exists. Choose another name.",
   "configuration-fields.choices.projectRestricted": "No Agent Workers on this page match the selected project's restrictions.",
-  "configuration-fields.choices.continuing": "More {{v0}} choices are available. Continue loading to inspect the inventory."
+  "configuration-fields.choices.continuing": "More {{v0}} choices are available. Continue loading to inspect the inventory.",
+  "configuration-fields.mcpServer": "MCP server",
+  "configuration-fields.mcpTransport": "Transport",
+  "configuration-fields.mcpTransportStdio": "Local command (stdio)",
+  "configuration-fields.mcpTransportHttp": "Streamable HTTP",
+  "configuration-fields.mcpEnabled": "Enabled",
+  "configuration-fields.mcpCommand": "Executable",
+  "configuration-fields.mcpArguments": "Arguments (one per line)",
+  "configuration-fields.mcpWorkingDirectory": "Working directory",
+  "configuration-fields.mcpEndpoint": "Endpoint URL",
+  "configuration-fields.mcpHelp": "Saving a definition does not start the server, sign in or run inference. Secrets and sign-in are not part of this definition."
 }

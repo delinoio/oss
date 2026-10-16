@@ -8,6 +8,7 @@ export enum SettingsCategory {
   Providers = "providers",
   AgentWorkers = "agent-workers",
   Instructions = "instructions",
+  Mcp = "mcp",
   ProjectDefaults = "project-defaults",
   Projects = "projects",
   Repositories = "repositories",
