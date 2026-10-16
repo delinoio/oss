@@ -55,9 +55,9 @@ const (
 )
 
 // grokSubscriptionLoginAdvertised is the single switch for System capability 39
-// (GROK_SUBSCRIPTION_LOGIN_V1). It stays false until the opt-in real-account run
-// has recorded the token-to-bundle mapping and the loopback-port acceptance.
-const grokSubscriptionLoginAdvertised = false
+// (GROK_SUBSCRIPTION_LOGIN_V1). The server-owned CLI flow is independent of
+// managed Grok execution, which retains its own default-off switch.
+const grokSubscriptionLoginAdvertised = true
 
 var (
 	grokOpaqueValue   = regexp.MustCompile(`^[A-Za-z0-9_.~-]{1,512}$`)
@@ -266,10 +266,11 @@ func (c *grokCallbackServer) evaluate(rawQuery string) grokCallbackResult {
 
 // grokLoginOutcome is what one runner decided before settlement.
 type grokLoginOutcome struct {
-	state  domain.SubscriptionLoginState
-	reason subscription.GrokOAuthReason
-	code   domain.Code
-	bundle subscription.GrokBundle
+	state      domain.SubscriptionLoginState
+	reason     subscription.GrokOAuthReason
+	code       domain.Code
+	bundle     subscription.GrokBundle
+	diagnostic *domain.GrokDiagnostic
 }
 
 func grokReasonCode(reason subscription.GrokOAuthReason) domain.Code {
@@ -377,10 +378,10 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 		}
 	}()
 	var out grokLoginOutcome
-	if method == subscription.GrokLoginDeviceCode {
-		out = s.performGrokDeviceLogin(ctx, id, original, &cancelSeen)
+	if s.grokLoginPerform != nil {
+		out = s.grokLoginPerform(ctx, id, original, &cancelSeen)
 	} else {
-		out = s.performGrokLogin(ctx, id, original, &cancelSeen)
+		out = s.performGrokCLILogin(ctx, id, original, &cancelSeen)
 	}
 	cancel()
 	<-watched
@@ -701,6 +702,10 @@ func (s *Service) finishGrokLogin(ctx context.Context, id domain.ID, o domain.Se
 				code = grokReasonCode(out.reason)
 			}
 			diagnostic = grokLocalDiagnostic("", domain.GrokLogin, code)
+			if out.diagnostic != nil && out.diagnostic.Validate() == nil {
+				copy := *out.diagnostic
+				diagnostic = &copy
+			}
 		}
 		if diagnostic != nil {
 			diagnostic.CorrelationID = string(op.ID)
@@ -820,8 +825,16 @@ func grokLoginCandidate(a domain.Account) bool {
 // and never changes. A request that names a Runner Device stays unsupported.
 func (s *Service) requestGrokSubscription(ctx context.Context, req *connect.Request[pb.RequestSubscriptionRequest]) (*connect.Response[pb.RequestSubscriptionResponse], error) {
 	action := subscriptionAction(req.Msg.Action)
+	if action == domain.SubscriptionLogin && !req.Msg.DeviceCode && s.grokLoginPerform == nil {
+		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Grok login uses a device code on this server.", "Use the device-code login with no Runner Device."), req.Header().Get(rpc.CorrelationHeader))
+	}
 	if req.Msg.MachineId != "" || action != domain.SubscriptionLogin && action != domain.SubscriptionRefresh && action != domain.SubscriptionLogout || action == domain.SubscriptionLogout && req.Msg.DeviceCode {
 		return nil, rpc.Error(domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Start the Grok login, refresh or logout without a Runner Device."), req.Header().Get(rpc.CorrelationHeader))
+	}
+	if action == domain.SubscriptionLogout && s.grokLogoutPerform == nil {
+		if err := s.reconcileGrokLogoutRetry(ctx, domain.ID(req.Msg.Mutation.Id)); err != nil {
+			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+		}
 	}
 	response, err := s.requestServerSubscription(ctx, req)
 	if err == nil {

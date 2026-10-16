@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
@@ -162,13 +163,22 @@ func (s *Service) cleanupServerLogoutLocked(ctx context.Context, parent, child d
 	}
 	if !out.NativeConfirmed {
 		original := *account.Subscription.ServerOperation
-		// The claim barrier set NativeStarted before the original logout ran; its
-		// settled metadata cleared the flag only after joined native closure. A
-		// Grok logout runs no native process and owns no server-side profile, so
-		// its native proof is the absence of a Worker lease, which the recovery
-		// shape already requires.
+		// Historical direct-OAuth Grok logouts had no native profile. Current
+		// server CLI logouts must prove their original process journals too.
+		native := account.SubscriptionService != domain.SubscriptionGrok
+		if !native {
+			scope, scopeErr := s.nativeScope(in.AccountID)
+			if scopeErr != nil {
+				return out, scopeErr
+			}
+			_, exists, lookupErr := scope.Profiles.Lookup(ctx, nativeprofile.Key{Harness: domain.GrokBuild, Purpose: nativeprofile.PurposeAuth, Account: in.AccountID})
+			if lookupErr != nil {
+				return out, lookupErr
+			}
+			native = exists
+		}
 		original.NativeStarted = true
-		if account.SubscriptionService != domain.SubscriptionGrok {
+		if native {
 			if err := reconcileFailedServerLoginRuntime(ctx, s.scopeFor(in.AccountID), original); err != nil {
 				retain(serverLogoutCleanupPhaseNative, err)
 				return out, err
@@ -197,7 +207,7 @@ func (s *Service) cleanupServerLogoutLocked(ctx context.Context, parent, child d
 	}
 	// Explicit logout owns the complete removal of the retained credential files
 	// and of every AccountLogin generation, without the Worker Finish limit.
-	if err := s.removeAccountCredentials(ctx, in.AccountID, in.OperationID, account.SubscriptionService != domain.SubscriptionGrok); err != nil {
+	if err := s.removeAccountCredentials(ctx, in.AccountID, in.OperationID, true); err != nil {
 		retain(serverLogoutCleanupPhaseCredentials, err)
 		if account.SubscriptionService == domain.SubscriptionGrok {
 			logger.WarnContext(ctx, "grok_logout_cleanup_pending", "phase", grokCleanupPhase, "code", domain.SafeError(err).Code)

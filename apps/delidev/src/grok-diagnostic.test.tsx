@@ -16,6 +16,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import {
   GrokDiagnosticNotice,
+  GrokDiagnosticOwner,
   grokDiagnosticFromDocument,
   safeGrokDiagnostic,
 } from "./grok-diagnostic";
@@ -405,4 +406,24 @@ it("restores OS permissions only for a runtime permission failure", async () => 
   expect(screen.getByRole("alert").textContent).toContain(accessGuidance);
   await act(() => i18n.changeLanguage("ko"));
   expect(screen.getByRole("alert").textContent).toContain("운영체제 권한");
+});
+
+it("keeps server login guidance independent of Runner installation guidance", async () => {
+  for (const language of ["en", "ko"]) {
+    await act(() => i18n.changeLanguage(language));
+    const view = render(
+      <GrokDiagnosticNotice
+        diagnostic={diagnostic(GrokDiagnosticPhase.LOGIN, FailureCode.NotFound)}
+        owner={GrokDiagnosticOwner.Server}
+      />,
+    );
+    expect(view.container.textContent).toContain(
+      language === "en" ? "DeliDev server" : "DeliDev 서버",
+    );
+    expect(view.container.textContent).not.toMatch(
+      /Runner Device|Worker diagnostics|실행 장치|워커 진단/,
+    );
+    expect(view.container.textContent).not.toMatch(sensitive);
+    view.unmount();
+  }
 });

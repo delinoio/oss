@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -107,6 +108,21 @@ type grokFixture struct{ *subscriptionFixture }
 func newGrokFixture(t *testing.T) *grokFixture {
 	t.Helper()
 	f := &grokFixture{newSubscriptionFixture(t)}
+	f.service.grokLoginPerform = func(ctx context.Context, id domain.ID, op domain.ServerSubscriptionOperation, canceled *atomic.Bool) grokLoginOutcome {
+		var device bool
+		_ = f.service.Store.Read(ctx, func(tx *store.Tx) error {
+			_, a, err := grokSubscriptionAccount(tx, id, 0)
+			if err == nil {
+				device = a.Subscription.Pending.DeviceCode
+			}
+			return err
+		})
+		if device {
+			return f.service.performGrokDeviceLogin(ctx, id, op, canceled)
+		}
+		return f.service.performGrokLogin(ctx, id, op, canceled)
+	}
+	f.service.grokLogoutPerform = f.service.performGrokLogout
 	observed := time.Now().UTC()
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.account", nil, func(tx *store.Tx) (any, error) {
 		r, a, err := accountFromTx(tx, f.input.AccountID, 0)

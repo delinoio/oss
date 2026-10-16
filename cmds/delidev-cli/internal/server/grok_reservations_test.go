@@ -15,8 +15,7 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
-// The Grok Build wire identifiers are declared but must stay unadvertised and
-// inert until the owning feature activates them.
+// Login is active independently of the reserved managed-execution identifiers.
 const (
 	grokSystemLoginReservation     = pb.SystemCapability(39)
 	grokSystemExecutionReservation = pb.SystemCapability(40)
@@ -29,16 +28,19 @@ func TestGrokReservationsAreDeclaredWithLedgerNumbers(t *testing.T) {
 	}
 }
 
-func TestGrokReservationsAreNotAdvertisedByStatus(t *testing.T) {
+func TestGrokStatusAdvertisesLoginWithoutExecution(t *testing.T) {
 	f := newManagedClaudeFixture(t)
 	status, err := f.service.GetStatus(context.Background(), connect.NewRequest(&pb.GetStatusRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, capability := range []pb.SystemCapability{grokSystemLoginReservation, grokSystemExecutionReservation} {
+	for _, capability := range []pb.SystemCapability{grokSystemExecutionReservation} {
 		if slices.Contains(status.Msg.Capabilities, capability) {
 			t.Fatalf("status advertised the unactivated capability %d", capability)
 		}
+	}
+	if !slices.Contains(status.Msg.Capabilities, grokSystemLoginReservation) {
+		t.Fatal("server CLI login is not advertised")
 	}
 	if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1) {
 		t.Fatal("existing capability 38 is no longer advertised")
