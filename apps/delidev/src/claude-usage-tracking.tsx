@@ -254,7 +254,15 @@ export function useClaudeUsageTracking({
   const [now, setNow] = useState(() => Date.now());
   const [hidden, setHidden] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<MessageKey>();
+  const [mutationProblem, setProblem] = useState<MessageKey>();
+  // A transient progress-poll failure is owned by the poll and clears itself on
+  // the next successful response; it never overwrites a mutation's result.
+  const [pollFailed, setPollFailed] = useState(false);
+  const problem =
+    mutationProblem ??
+    (pollFailed
+      ? ("claude-usage.requestUnconfirmed" as MessageKey)
+      : undefined);
   const [retry, setRetry] = useState<UsageMutation>();
   const [disconnecting, setDisconnecting] = useState(false);
   const [progress, setProgress] = useState<{
@@ -335,6 +343,8 @@ export function useClaudeUsageTracking({
     inflight.current = true;
     setBusy(true);
     setProblem(undefined);
+    // A new mutation never keeps the previous action's retry.
+    setRetry(undefined);
     try {
       await send();
       setRetry(undefined);
@@ -419,6 +429,7 @@ export function useClaudeUsageTracking({
         setHidden(true);
       },
       "claude-usage.state.failed",
+      { recoverable: [FailureCode.RecoveryRequired] },
     );
   };
   const link = () => {
@@ -518,6 +529,7 @@ export function useClaudeUsageTracking({
           usageGeneration: operation.generation,
         });
         if (stopped) return;
+        setPollFailed(false);
         const waiting =
           result.state === ClaudeUsageLoginState.WAITING && !result.canceled;
         if (waiting) {
@@ -565,7 +577,7 @@ export function useClaudeUsageTracking({
           browserFailed: previous?.browserFailed === true,
         }));
       } catch {
-        if (!stopped) setProblem("claude-usage.requestUnconfirmed");
+        if (!stopped) setPollFailed(true);
       }
     };
     void poll();

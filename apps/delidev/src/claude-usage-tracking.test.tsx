@@ -755,6 +755,77 @@ it("retries a disconnect that needs credential cleanup with the original request
   expect(second).toBe(first);
 });
 
+it("clears a recovered progress-poll error", async () => {
+  const operation = newRequestId();
+  const server: Server = {
+    quota: [],
+    connection: newRequestId(),
+    revision: 3n,
+    usage: {
+      operation: { id: operation, generation: operation, state: "waiting" },
+    },
+  };
+  let polls = 0;
+  mount(server, undefined, () => {
+    polls += 1;
+    if (polls === 1) throw new ConnectError("offline", Code.Unavailable);
+    return {
+      state: ClaudeUsageLoginState.WAITING,
+      url: authorization(MANUAL),
+      codeRequested: true,
+    };
+  });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "View usage sign-in" }),
+  );
+  await screen.findAllByText(/result of the last request is unknown/);
+  await waitFor(() =>
+    expect(
+      screen.queryAllByText(/result of the last request is unknown/),
+    ).toEqual([]),
+  );
+  await screen.findByLabelText("Approval code");
+});
+
+it("never replays an earlier action's retry after a different action fails", async () => {
+  const usage = linkedUsage({
+    last_success_at: iso(-30_000),
+    reconnect_required: true,
+    failure: "refresh_rejected",
+  });
+  const server: Server = {
+    quota: windows(Date.now() - 30_000),
+    connection: newRequestId(),
+    revision: 3n,
+    usage,
+  };
+  const { calls } = mount(server);
+  calls.disconnect.mockImplementationOnce(() => {
+    throw new ConnectError("offline", Code.Unavailable);
+  });
+  calls.start.mockImplementationOnce(() => {
+    throw new ConnectError("changed", Code.Aborted);
+  });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Disconnect usage" }),
+  );
+  await screen.findByRole("heading", { name: "Disconnect usage?" });
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Disconnect usage" }).at(-1)!,
+  );
+  await screen.findAllByRole("button", { name: "Retry original request" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reconnect usage account" }),
+  );
+  await waitFor(() => expect(calls.start).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(
+      screen.queryAllByRole("button", { name: "Retry original request" }),
+    ).toEqual([]),
+  );
+  expect(calls.disconnect).toHaveBeenCalledTimes(1);
+});
+
 function document_activeElement() {
   return globalThis.document.activeElement;
 }
