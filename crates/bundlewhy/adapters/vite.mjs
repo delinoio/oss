@@ -225,6 +225,122 @@ function resolveMangleOption(buildMinify, outputMinify) {
 }
 
 /**
+ * Whether Rolldown's own minifier (Oxc) runs for the analyzed output. The
+ * values are the wire values of the `build.rolldownOptions.output.minify`
+ * entry in the configuration summary.
+ */
+export const OutputMinifySetting = Object.freeze({
+  Enabled: "enabled",
+  Disabled: "disabled",
+});
+
+/**
+ * Resolves whether Rolldown's minifier runs, from the configured
+ * `rolldownOptions.output.minify` option and Vite's `build.minify`. Plugins'
+ * `outputOptions` hooks can still change the option later; the collector
+ * replaces this value with `resolveNormalizedOutputMinifySetting` in
+ * `generateBundle`, the same way it replaces the mangle setting.
+ *
+ * Vite derives the output `minify` option from `build.minify` (`'oxc'` or
+ * `true` runs the Oxc minifier, `false` gives `'dce-only'` and any other
+ * minifier name such as `'terser'` gives `false`, because that minifier runs
+ * in a Vite plugin instead) and lets an explicit `output.minify` replace it.
+ * Rolldown does not minify for `false` and `'dce-only'`, nor for an options
+ * object that turns both `compress` and `mangle` off. A single-entry output
+ * array is read as its entry; with several entries the minifier counts as
+ * disabled only when every entry disables it. Anything unrecognized stays
+ * `enabled`, so a minifier finding is only exempted by an explicit setting.
+ */
+export function resolveOutputMinifySetting(buildMinify, output) {
+  const entries = Array.isArray(output) ? output : [output];
+  if (entries.length === 0) {
+    return resolveOutputMinifyOption(buildMinify, undefined);
+  }
+  const settings = entries.map((entry) =>
+    resolveOutputMinifyOption(buildMinify, entry?.minify),
+  );
+  return settings.every((setting) => setting === OutputMinifySetting.Disabled)
+    ? OutputMinifySetting.Disabled
+    : OutputMinifySetting.Enabled;
+}
+
+/**
+ * Reads whether Rolldown's minifier runs from the normalized `minify` option
+ * that a `generateBundle` hook receives (see `resolveNormalizedMangleSetting`).
+ * `true` is normalized to an options object, and an object only carries the
+ * `compress` and `mangle` stages that run, so an object without either stage
+ * runs no minifier. Returns `null` for anything unrecognized, so the caller
+ * keeps the setting resolved from the configuration.
+ */
+export function resolveNormalizedOutputMinifySetting(normalizedMinify) {
+  if (normalizedMinify === false || normalizedMinify === "dce-only") {
+    return OutputMinifySetting.Disabled;
+  }
+  if (normalizedMinify === true) return OutputMinifySetting.Enabled;
+  if (normalizedMinify !== null && typeof normalizedMinify === "object") {
+    return isMinifyStageEnabled(normalizedMinify.compress) ||
+      isMinifyStageEnabled(normalizedMinify.mangle)
+      ? OutputMinifySetting.Enabled
+      : OutputMinifySetting.Disabled;
+  }
+  return null;
+}
+
+function isMinifyStageEnabled(stage) {
+  return stage !== undefined && stage !== null && stage !== false;
+}
+
+function resolveOutputMinifyOption(buildMinify, outputMinify) {
+  // Vite's own value for an absent `output.minify`: only the Oxc minifier
+  // (`'oxc'`, or `true`/absent which select it) runs inside Rolldown.
+  if (outputMinify === undefined) {
+    return buildMinify === false || isExternalMinifierName(buildMinify)
+      ? OutputMinifySetting.Disabled
+      : OutputMinifySetting.Enabled;
+  }
+  if (outputMinify === false || outputMinify === "dce-only") {
+    return OutputMinifySetting.Disabled;
+  }
+  if (
+    outputMinify !== null &&
+    typeof outputMinify === "object" &&
+    !Array.isArray(outputMinify) &&
+    outputMinify.compress === false &&
+    outputMinify.mangle === false
+  ) {
+    return OutputMinifySetting.Disabled;
+  }
+  return OutputMinifySetting.Enabled;
+}
+
+/** A `build.minify` value that names a minifier other than Oxc. */
+function isExternalMinifierName(buildMinify) {
+  return typeof buildMinify === "string" && buildMinify !== "oxc";
+}
+
+/**
+ * Derives the minifier gates of the collection from `build.minify` and the
+ * effective Rolldown minifier setting. Minification is enabled when Rolldown's
+ * Oxc minifier runs (including when only an `output.minify` option or an
+ * `outputOptions` hook enables it over `build.minify: false`) or when
+ * `build.minify` names another minifier such as `'terser'`. A named minifier
+ * is never the default one, whatever the output option says. With no minifier
+ * running, `minifierName` is `"false"`, so the report never claims a minifier
+ * that did not run.
+ */
+export function resolveMinifierGate(buildMinify, outputMinify) {
+  const rolldownRuns = outputMinify !== OutputMinifySetting.Disabled;
+  const external = isExternalMinifierName(buildMinify);
+  const minifyEnabled = rolldownRuns || external;
+  const minifierName = external ? buildMinify : rolldownRuns ? "oxc" : "false";
+  return {
+    minifyEnabled,
+    minifierName,
+    defaultMinifier: minifyEnabled && !external,
+  };
+}
+
+/**
  * Gives plugins the real `resolvedConfig.configFile` without evaluating the
  * configuration file a second time.
  *
@@ -364,6 +480,10 @@ function collectorPlugin(state) {
         config.build.rollupOptions?.output;
       state.resolved = {
         minify: config.build.minify,
+        outputMinify: resolveOutputMinifySetting(
+          config.build.minify,
+          outputOption,
+        ),
         mangle: resolveMangleSetting(config.build.minify, outputOption),
         sourcemap: config.build.sourcemap,
         lib: Boolean(config.build.lib),
@@ -404,8 +524,15 @@ function collectorPlugin(state) {
         state.outputs += 1;
         if (state.outputs > 1) return;
         // Plugins' `outputOptions` hooks can replace `output.minify` after
-        // `configResolved`, so the analyzed output's mangle setting is read
-        // from the normalized options this hook receives.
+        // `configResolved`, so the analyzed output's minifier and mangle
+        // settings are read together from the normalized options this hook
+        // receives. Every minifier gate of the collection derives from them.
+        const effectiveOutputMinify = resolveNormalizedOutputMinifySetting(
+          options?.minify,
+        );
+        if (effectiveOutputMinify !== null && state.resolved) {
+          state.resolved.outputMinify = effectiveOutputMinify;
+        }
         const effectiveMangle = resolveNormalizedMangleSetting(options?.minify);
         if (effectiveMangle !== null && state.resolved) {
           state.resolved.mangle = effectiveMangle;
@@ -703,13 +830,19 @@ await runAdapter(async (request) => {
 
   const resolved = state.resolved ?? {};
   const minify = resolved.minify;
-  const minifyEnabled = minify !== false;
   // Vite documents `build.minify` default as 'oxc' for client builds; `true`
-  // selects the same default minifier.
-  const minifierName =
-    minify === true || minify === undefined ? "oxc" : String(minify);
+  // selects the same default minifier. Whether a minifier actually runs also
+  // depends on the effective `output.minify` option, so the gates derive from
+  // it together with `build.minify`, never from `build.minify` alone.
+  const outputMinify = resolved.outputMinify ?? OutputMinifySetting.Enabled;
+  const gate = resolveMinifierGate(
+    minify === true || minify === undefined ? "oxc" : minify,
+    outputMinify,
+  );
+  const { minifyEnabled, minifierName } = gate;
   const configSummary = {
     "build.minify": summarizeValue(minify),
+    "build.rolldownOptions.output.minify": outputMinify,
     "build.rolldownOptions.output.minify.mangle":
       resolved.mangle ?? MangleSetting.Enabled,
     "build.target": resolved.target ?? "unknown",
@@ -728,9 +861,9 @@ await runAdapter(async (request) => {
     bundler: "vite",
     bundlerPackage: "vite",
     bundlerVersion: vite.version,
-    minifier: minifierName === "oxc" ? "Oxc minifier (Rolldown)" : minifierName,
-    minifierVersion: minifierName === "oxc" ? vite.rolldownVersion : "unknown",
-    defaultMinifier: minifierName === "oxc",
+    minifier: gate.defaultMinifier ? "Oxc minifier (Rolldown)" : minifierName,
+    minifierVersion: gate.defaultMinifier ? vite.rolldownVersion : "unknown",
+    defaultMinifier: gate.defaultMinifier,
     minifyEnabled,
     mangle: resolved.mangle ?? MangleSetting.Enabled,
     adapterId: ADAPTER_ID,

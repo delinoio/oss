@@ -24,6 +24,7 @@
  "context": "/__bundlewhy_project__",
  "configSummary": {
   "build.minify": "oxc",
+  "build.rolldownOptions.output.minify": "enabled",
   "build.rolldownOptions.output.minify.mangle": "enabled",
   "build.target": "[array of 5]",
   "build.rolldownOptions.treeshake": "undefined",

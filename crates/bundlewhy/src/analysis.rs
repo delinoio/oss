@@ -4257,6 +4257,149 @@ mod tests {
         );
     }
 
+    /// Applies the Vite adapter's minifier gates for one effective
+    /// configuration: `build.minify`, the effective Rolldown output minifier
+    /// setting and the resulting gates.
+    fn vite_minifier_gates(
+        value: &mut serde_json::Value,
+        build_minify: &str,
+        output_minify: &str,
+        minify_enabled: bool,
+        default_minifier: bool,
+    ) {
+        value["minifyEnabled"] = serde_json::json!(minify_enabled);
+        value["defaultMinifier"] = serde_json::json!(default_minifier);
+        value["configSummary"]["build.minify"] = serde_json::json!(build_minify);
+        value["configSummary"]["build.rolldownOptions.output.minify"] =
+            serde_json::json!(output_minify);
+    }
+
+    #[test]
+    fn output_options_that_enable_minification_over_build_minify_false_keep_coverage_active() {
+        // `build.minify: false` with `rolldownOptions.output.minify` (or an
+        // `outputOptions` hook) enabling the Oxc minifier: the adapter reports
+        // the effective gates, so the minifier categories are not skipped.
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            vite_minifier_gates(value, "false", "enabled", true, true);
+            value["mangle"] = serde_json::json!("enabled");
+        });
+        for category in [
+            OptimizationCategory::DeadCodeElimination,
+            OptimizationCategory::NameMangling,
+        ] {
+            assert_eq!(
+                coverage_state(&fixture, category).state,
+                CoverageState::Covered,
+                "{category:?}"
+            );
+        }
+        let problems = &fixture.output.analysis.problems;
+        assert!(
+            !problems
+                .iter()
+                .any(|entry| entry.code == "BW_MINIFICATION_DISABLED"
+                    || entry.code == "BW_MINIFIER_NON_DEFAULT")
+        );
+        assert!(
+            !fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
+        );
+    }
+
+    #[test]
+    fn output_options_that_disable_minification_over_build_minify_oxc_mark_coverage_not_applicable()
+    {
+        // `build.minify: 'oxc'` with an effective `output.minify` that runs no
+        // minifier (for example a hook that sets `false`): the gates are off,
+        // and the finding names the option that disabled the minifier.
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            vite_minifier_gates(value, "oxc", "disabled", false, false);
+            value["mangle"] = serde_json::json!("disabled");
+        });
+        for category in [
+            OptimizationCategory::DeadCodeElimination,
+            OptimizationCategory::NameMangling,
+        ] {
+            let coverage = coverage_state(&fixture, category);
+            assert_eq!(coverage.state, CoverageState::NotApplicable, "{category:?}");
+            assert!(coverage.note.contains("Minification is disabled"));
+        }
+        let analysis = &fixture.output.analysis;
+        assert!(
+            analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_MINIFICATION_DISABLED")
+        );
+        let diagnostic = analysis
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
+            .expect("minification-disabled finding");
+        assert!(
+            diagnostic
+                .summary
+                .starts_with("build.rolldownOptions.output.minify is disabled")
+        );
+        assert!(
+            diagnostic.conditions.iter().any(
+                |condition| condition.detail == "build.rolldownOptions.output.minify: disabled"
+            )
+        );
+    }
+
+    #[test]
+    fn build_minify_false_finding_names_build_minify() {
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            vite_minifier_gates(value, "false", "disabled", false, false);
+            value["mangle"] = serde_json::json!("disabled");
+        });
+        let diagnostic = fixture
+            .output
+            .analysis
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
+            .expect("minification-disabled finding");
+        assert!(diagnostic.summary.starts_with("build.minify is false"));
+    }
+
+    #[test]
+    fn a_named_vite_minifier_keeps_minifier_categories_unavailable() {
+        // `build.minify: 'terser'` runs in a Vite plugin while Rolldown's own
+        // minifier stays off: minification is enabled, not the default one.
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            vite_minifier_gates(value, "terser", "disabled", true, false);
+            value["minifier"] = serde_json::json!("terser");
+            value["minifierVersion"] = serde_json::json!("unknown");
+        });
+        for category in [
+            OptimizationCategory::DeadCodeElimination,
+            OptimizationCategory::NameMangling,
+        ] {
+            assert_eq!(
+                coverage_state(&fixture, category).state,
+                CoverageState::Unavailable,
+                "{category:?}"
+            );
+        }
+        let problems = &fixture.output.analysis.problems;
+        assert!(
+            problems
+                .iter()
+                .any(|entry| entry.code == "BW_MINIFIER_NON_DEFAULT")
+        );
+        assert!(
+            !problems
+                .iter()
+                .any(|entry| entry.code == "BW_MINIFICATION_DISABLED")
+        );
+    }
+
     #[test]
     fn disabled_minification_does_not_claim_a_non_default_minifier() {
         let fixture = run_fixture(BundlerChoice::Vite, |value| {

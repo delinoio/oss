@@ -937,19 +937,37 @@ pub fn configuration_disabled(
     });
 }
 
+/// Configuration-summary entry that records whether Rolldown's minifier runs
+/// for the analyzed Vite output, after plugins' `outputOptions` hooks.
+const VITE_OUTPUT_MINIFY_OPTION: &str = "build.rolldownOptions.output.minify";
+const VITE_OUTPUT_MINIFY_DISABLED: &str = "disabled";
+
 fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     if context.collection.minify_enabled {
         return;
     }
     let vite = context.collection.bundler == "vite";
-    let option = if vite {
+    let summary = &context.collection.config_summary;
+    // Vite disables the minifier through `build.minify: false`, or through the
+    // effective `rolldownOptions.output.minify` option (set in the
+    // configuration or by a plugin's `outputOptions` hook) over a
+    // `build.minify` that asks for a minifier. Name the option that
+    // actually disabled it.
+    let output_disabled = vite
+        && summary
+            .get(VITE_OUTPUT_MINIFY_OPTION)
+            .is_some_and(|value| value == VITE_OUTPUT_MINIFY_DISABLED)
+        && summary
+            .get("build.minify")
+            .is_some_and(|value| value != "false");
+    let option = if output_disabled {
+        VITE_OUTPUT_MINIFY_OPTION
+    } else if vite {
         "build.minify"
     } else {
         "optimization.minimize"
     };
-    let value = context
-        .collection
-        .config_summary
+    let value = summary
         .get(option)
         .cloned()
         .unwrap_or_else(|| "false".to_owned());
