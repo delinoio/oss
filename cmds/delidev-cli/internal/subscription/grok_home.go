@@ -151,7 +151,8 @@ func (h GrokHome) writeAnchored(raw []byte) error {
 	// same guarded unlink as retirement; one that keeps another directory entry
 	// also keeps the older plaintext reachable, so the write is refused rather
 	// than layered on it. A non-regular auth.json entry is not unlinked here: the
-	// publication below replaces it by name and never writes through it.
+	// publication below replaces it by name and never writes through it. A
+	// non-regular lock entry cannot be replaced that way and refuses the write.
 	if linked, err := h.retireNames(grokRetireBeforeWrite); err != nil {
 		return err
 	} else if linked {
@@ -306,7 +307,8 @@ type grokRetireScope int
 
 const (
 	// grokRetireBeforeWrite unlinks attributed temporaries and a regular
-	// auth.json; a non-regular auth.json is left for the publication to replace.
+	// auth.json or lock file; a non-regular auth.json is left for the publication
+	// to replace, while a non-regular lock entry is an error.
 	grokRetireBeforeWrite grokRetireScope = iota
 	// grokRetireAll unlinks attributed temporaries and auth.json; a non-regular
 	// entry is an error.
@@ -380,7 +382,10 @@ func (h GrokHome) unlinkGuarded(name string, scope grokRetireScope) (entry *reti
 		return nil, false, &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
 	}
 	if !info.Mode().IsRegular() {
-		if (name == GrokAuthFileName || name == GrokLockFileName) && scope == grokRetireBeforeWrite {
+		// Only auth.json is replaced by name during publication. A non-regular
+		// lock entry is never written through nor replaced, so it must fail the
+		// write before any plaintext credential reaches the profile.
+		if name == GrokAuthFileName && scope == grokRetireBeforeWrite {
 			return nil, false, nil
 		}
 		return nil, false, &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupNotRegular}

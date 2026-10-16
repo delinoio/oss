@@ -629,3 +629,37 @@ func TestGrokLockFileThatIsNotRegularIsNeverReportedClean(t *testing.T) {
 		t.Fatal("a non-regular lock entry must not be retired as clean")
 	}
 }
+
+// A directory or a symlink named like the native lock file survives a write,
+// because only auth.json is replaced by name. The write must therefore fail
+// before any plaintext credential reaches the profile.
+func TestGrokWriteRefusesANonRegularLockEntryBeforeWriting(t *testing.T) {
+	for name, create := range map[string]func(path string) error{
+		"directory": func(path string) error { return os.Mkdir(path, 0o700) },
+		"symlink":   func(path string) error { return os.Symlink(filepath.Join(filepath.Dir(path), "elsewhere"), path) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := grokHomeForTest(t)
+			if err := create(filepath.Join(home, GrokLockFileName)); err != nil {
+				t.Skipf("cannot create a %s entry: %v", name, err)
+			}
+			bundle, err := ParseGrokAuthFile(grokFixtureFile(t, nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			bound := boundGrokHome(t, home)
+			if err := bound.WriteAuthFile(bundle); err == nil {
+				t.Fatal("a write succeeded next to a non-regular lock entry")
+			}
+			entries, err := os.ReadDir(home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				if entry.Name() != GrokLockFileName {
+					t.Fatalf("the refused write left %q in the profile", entry.Name())
+				}
+			}
+		})
+	}
+}

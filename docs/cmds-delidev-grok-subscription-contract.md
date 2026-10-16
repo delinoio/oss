@@ -532,7 +532,10 @@ rotated refresh token is lost:
    and returned with the refresh confirmation.
 3. `auth.json`, its attributed temporaries and the native `auth.json.lock` are
    retired through the held handle. `GrokHome.AuthFilePresent` also reports a
-   remaining lock file, so an unremoved lock keeps the cleanup unconfirmed.
+   remaining lock file, so an unremoved lock keeps the cleanup unconfirmed. A
+   non-regular `auth.json.lock` entry (a directory or a symlink) in a reused home
+   is never replaced: `GrokHome.WriteAuthFile` refuses it before writing, while a
+   non-regular `auth.json` is still replaced by name during publication.
 4. A bundle is returned only with confirmed cleanup. A mismatch, an unreadable
    file or an unconfirmed cleanup reports no success and no confirmed cleanup, so
    the server keeps the lease and sets RECOVERY_REQUIRED; the lease is never
