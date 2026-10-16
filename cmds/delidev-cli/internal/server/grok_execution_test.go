@@ -398,6 +398,26 @@ func TestGrokExecutionUnconfirmedCleanupIsRetriedByTheOriginalOwnerOnly(t *testi
 	}
 }
 
+func TestGrokExecutionCleanupOnlyRecoveryCrossesAnUnconfirmedCleanupFence(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+	lease, err := f.takeExecution(w, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, true, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err != nil {
+		t.Fatal(err)
+	}
+	_, a := f.record()
+	if a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Subscription.Generation != generation || a.Health != domain.AccountReady {
+		t.Fatal("the owner's cleanup-only report did not release the unconfirmed-cleanup fence")
+	}
+}
+
 func TestGrokExecutionReplayedTakeFencesAndNeverRedistributesTheBundle(t *testing.T) {
 	f := newGrokFixture(t)
 	f.login("synthetic-principal-1")

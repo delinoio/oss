@@ -322,8 +322,11 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 		lease := state.Lease
 		// A fence set by a restart or a lost Worker is crossed only by a cleanup-only
 		// report. A fence set by the owner's own unconfirmed cleanup is retried by
-		// the same owner with the ordinary report.
-		recoveryFence := state.RecoveryRequired && !lease.CleanupUnconfirmed
+		// the same owner with the ordinary report, and a cleanup-only report from
+		// that owner (its recovery runner, after the in-process retries gave up) also
+		// crosses it.
+		cleanupOnly := input.Cleanup && !input.Success && !input.Refresh && len(req.Msg.Bundle) == 0
+		recoveryFence := state.RecoveryRequired && (!lease.CleanupUnconfirmed || cleanupOnly)
 		if state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision || recoveryFence && (!input.Cleanup || input.Success || input.Refresh || len(req.Msg.Bundle) != 0) {
 			s.logger.WarnContext(ctx, "grok_subscription_finish_refused", "phase", grokExecutionPhase, "account_id", input.Account, "lease_id", input.Lease, "recovery_fence", recoveryFence)
 			return nil, rpc.Error(subscriptionDenied(), c)
