@@ -757,6 +757,7 @@ it("keeps account continuation cursors out of provider inventory requests", asyn
     ProviderInventoryCapability.PROVIDER_ACTIVATION,
     ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER,
     ProviderInventoryCapability.ACCOUNT_TYPE_FILTER,
+    ProviderInventoryCapability.COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1,
   ];
   const value = fixture([provider, first, second], {
     providerEntries: [providerEntry],
