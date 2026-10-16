@@ -21,7 +21,8 @@ the language policy and the translation scope.
 `.github/workflows/delidev-known-models.yml` runs daily at 04:17 Asia/Seoul
 (`17 19 * * *` UTC) and supports manual dispatch on main in `delinoio/oss`.
 Its public-source collector and fixtures validate all three service inventories
-before issuing any write token. Reuse the existing release-bot GitHub App, scoped
+before issuing any write token (the Grok inventory is a reviewed static list, see
+[the catalog contract](cmds-delidev-catalog-contract.md#known-subscription-model-suggestions)). Reuse the existing release-bot GitHub App, scoped
 to `oss` with contents and pull-requests write permissions only. Checkout keeps no
 credential. Raw upstream responses and secret values are excluded from logs.
 
