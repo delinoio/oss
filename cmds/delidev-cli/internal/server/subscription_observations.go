@@ -104,6 +104,11 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 		Operation domain.SubscriptionObservationOperation
 		Confirmed bool
 	}{domain.ID(m.Id), m.ExpectedRevision, domain.SubscriptionObservationOperation{ID: domain.ID(m.RequestId), Action: action, MachineID: domain.ID(req.Msg.MachineId), Actor: actor, ConnectionID: domain.ID(req.Msg.ConnectionId), Generation: domain.ID(req.Msg.GenerationId), Phase: domain.SubscriptionObservationQueued, CreditID: req.Msg.CreditId, NextCredit: req.Msg.NextCredit, CreditsObservationID: domain.ID(req.Msg.CreditsObservationId)}, req.Msg.Confirmed}
+	// A linked Claude usage connection is served by the single usage-read owner,
+	// which takes the account gate itself.
+	if response, handled, err := s.requestClaudeUsageRefresh(ctx, req, actor, c); handled {
+		return response, err
+	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -283,10 +288,11 @@ func (s *Service) RefreshAllSubscriptionQuotas(ctx context.Context, req *connect
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	defer unlock()
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "subscription.quota.all", actor, func(tx *store.Tx) (any, error) {
 		return queueSubscriptionQuotas(tx, actor, time.Now().UTC(), false, s.subscriptionServerEpoch())
 	})
+	// The usage-read owner takes the account gate itself.
+	unlock()
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -297,6 +303,15 @@ func (s *Service) RefreshAllSubscriptionQuotas(ctx context.Context, req *connect
 	response := &pb.RefreshAllSubscriptionQuotasResponse{RequestId: req.Msg.RequestId, Replayed: result.Replayed}
 	for _, id := range receipt.Accounts {
 		response.Accounts = append(response.Accounts, string(id))
+	}
+	// Claude usage reads join the same request through their own owner. Only a
+	// read that is due is admitted, so neither Refresh all nor the 30-second
+	// foreground cadence can force a fetch before the four-minute interval, and a
+	// replayed request admits nothing.
+	if !result.Replayed {
+		for _, id := range s.scheduleClaudeUsageReads(ctx, actor, claudeUsageTriggerRefreshAll) {
+			response.Accounts = append(response.Accounts, string(id))
+		}
 	}
 	return connect.NewResponse(response), nil
 }

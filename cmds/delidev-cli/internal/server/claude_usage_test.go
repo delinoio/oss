@@ -46,6 +46,8 @@ type fakeUsageNative struct {
 	releaseCall atomic.Int32
 	submits     atomic.Int32
 	captures    atomic.Int32
+	// expiresIn is the lifetime of the captured access token; zero selects an hour.
+	expiresIn time.Duration
 }
 
 func newFakeUsageNative() *fakeUsageNative {
@@ -79,7 +81,11 @@ func (n *fakeUsageNative) Capture(context.Context) (claudeUsageCapture, error) {
 	if n.captureErr != nil {
 		return claudeUsageCapture{}, n.captureErr
 	}
-	bundle := subscription.ClaudeUsageBundle{AccessToken: []byte(usageFixtureAccess), RefreshToken: []byte(usageFixtureRefresh), ExpiresAt: time.Now().UTC().Add(time.Hour), Scopes: []string{"user:inference", "user:profile"}, ClientID: claude.UsageClientID}
+	lifetime := n.expiresIn
+	if lifetime == 0 {
+		lifetime = time.Hour
+	}
+	bundle := subscription.ClaudeUsageBundle{AccessToken: []byte(usageFixtureAccess), RefreshToken: []byte(usageFixtureRefresh), ExpiresAt: time.Now().UTC().Add(lifetime), Scopes: []string{"user:inference", "user:profile"}, ClientID: claude.UsageClientID}
 	return claudeUsageCapture{Bundle: bundle, Identity: claude.UsageIdentity{Email: usageFixtureEmail, OrganizationID: usageFixtureOrgID, OrganizationName: usageFixtureOrgName, Plan: "max"}}, nil
 }
 

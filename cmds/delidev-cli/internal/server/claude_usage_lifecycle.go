@@ -261,18 +261,22 @@ func (s *Service) claudeUsageCleanupCandidate(account domain.ID, a domain.Accoun
 	return usage.OwesCleanup()
 }
 
-// fenceClaudeUsageLogins marks every login of an older server epoch as needing
-// recovery. It runs inside the startup transaction; the login is never
-// relaunched and its credentials are never trusted.
+// fenceClaudeUsageLogin settles every usage state whose owner died with an older
+// server epoch. It runs inside the startup transaction, before any owner starts.
+// A login is marked as needing recovery and is never relaunched, and its
+// credentials are never trusted. An interrupted read returns to idle, while an
+// interrupted renewal may have rotated the credential and therefore requires an
+// explicit reconnect: it is never repeated.
 func (s *Service) fenceClaudeUsageLogin(a *domain.Account) bool {
 	if !a.ManagedClaudeAccount() || a.Subscription.ClaudeUsage == nil {
 		return false
 	}
 	usage := a.Subscription.ClaudeUsage
-	if usage.Connection != domain.ClaudeUsageConnecting || usage.Operation == nil || usage.Operation.Epoch == s.subscriptionServerEpoch() {
-		return false
+	fenced := false
+	if usage.Connection == domain.ClaudeUsageConnecting && usage.Operation != nil && usage.Operation.Epoch != s.subscriptionServerEpoch() {
+		fenced = usage.MarkRecovery()
 	}
-	return usage.MarkRecovery()
+	return usage.FenceInterruptedRead() || fenced
 }
 
 // prepareClaudeUsageLogout cancels and joins a live usage login before an

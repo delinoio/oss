@@ -209,3 +209,99 @@ func closeUsageProfileLease(lease usageProfileLease, err error, logger *slog.Log
 	}
 	return closeErr
 }
+
+// claudeUsageRenewal is the native side of one supervised refresh-login. It
+// owns the exclusive usage profile lease from open to Release, runs the one
+// child and joins it, and captures the rotated credential only after a joined
+// completion.
+type claudeUsageRenewal interface {
+	// Run executes the single refresh-login child and joins it. The status says
+	// whether an exchange could have happened; the caller never calls Run twice.
+	Run(context.Context) (claude.UsageRefreshStatus, error)
+	// Capture reads the rotated credential and identity from the joined profile.
+	// The caller clears the returned bundle.
+	Capture(context.Context) (claudeUsageCapture, error)
+	// Release drops the exclusive profile lease. It is safe to call repeatedly.
+	Release() error
+}
+
+// claudeUsageRenewer opens a renewal for the current bundle. The returned string
+// is the observed executable version. An opener error proves that no child ran;
+// a RecoveryRequired error retains the original operation for recovery.
+type claudeUsageRenewer func(context.Context, nativeScope, domain.ID, subscription.ClaudeUsageBundle, *slog.Logger) (claudeUsageRenewal, string, error)
+
+type claudeUsageRenewalRuntime struct {
+	lease   *nativeprofile.Lease
+	config  claude.AuthConfig
+	storage claude.UsageStorage
+	bundle  subscription.ClaudeUsageBundle
+
+	leaseOnce sync.Once
+	mu        sync.Mutex
+	joined    bool
+}
+
+func openClaudeUsageRenewal(ctx context.Context, scope nativeScope, owner domain.ID, bundle subscription.ClaudeUsageBundle, logger *slog.Logger) (returned claudeUsageRenewal, observed string, err error) {
+	runtimeRoot := filepath.Join(scope.Root, "subscription-runtime")
+	lease, e := acquireAccountProfile(ctx, scope, domain.ClaudeCode, nativeprofile.PurposeUsage)
+	if e != nil {
+		return nil, "", e
+	}
+	defer func() {
+		if err != nil {
+			_ = lease.Close()
+		}
+	}()
+	root := lease.Root
+	env, e := harness.PrivateRuntimeEnvironment(root)
+	if e != nil {
+		return nil, "", subscriptionDenied()
+	}
+	storage := claudeUsageStorageFor(root)
+	// The linked connection keeps no native credential storage between reads, so
+	// leftover storage is never this renewal's input and is never adopted.
+	present, e := storage.Present(ctx)
+	if e != nil || present {
+		nativeprofile.Log(logger, "native_profile_blocked", lease.Key, lease.ID, nativeprofile.ReasonCredentialPresent, "operation_id", owner)
+		return nil, "", nativeprofile.Failure(domain.RecoveryRequired, nativeprofile.ReasonCredentialPresent, "The Claude usage profile already holds credential storage.", "Let the owned cleanup finish before renewing the usage credential.")
+	}
+	installation, observed, e := discoverServerClaude(ctx, scope, runtimeRoot, owner, logger)
+	if e != nil {
+		return nil, observed, e
+	}
+	config := claude.AuthConfig{Version: installation.Version, Home: filepath.Join(root, "claude"), Process: process.Config{Directory: filepath.Join(runtimeRoot, "processes"), OwnerID: owner, Executable: installation.ResolvedPath, Cwd: root, Env: env, Logger: logger}}
+	return &claudeUsageRenewalRuntime{lease: lease, config: config, storage: storage, bundle: bundle}, observed, nil
+}
+
+func (r *claudeUsageRenewalRuntime) Run(ctx context.Context) (claude.UsageRefreshStatus, error) {
+	status, err := claude.RunUsageRefresh(ctx, r.config, r.bundle)
+	r.mu.Lock()
+	r.joined = status == claude.UsageRefreshCompleted
+	r.mu.Unlock()
+	return status, err
+}
+
+func (r *claudeUsageRenewalRuntime) Capture(ctx context.Context) (claudeUsageCapture, error) {
+	r.mu.Lock()
+	joined := r.joined
+	r.mu.Unlock()
+	if !joined {
+		return claudeUsageCapture{}, domain.Fail(domain.RecoveryRequired, "The Claude usage renewal child is not joined.", "Join the original renewal before reading its profile.")
+	}
+	bundle, err := r.storage.Read(ctx)
+	if err != nil {
+		return claudeUsageCapture{}, err
+	}
+	identity, err := claude.ReadUsageIdentity(ctx, r.config)
+	if err != nil {
+		bundle.Clear()
+		return claudeUsageCapture{}, err
+	}
+	return claudeUsageCapture{Bundle: bundle, Identity: identity}, nil
+}
+
+func (r *claudeUsageRenewalRuntime) Release() error {
+	var err error
+	r.leaseOnce.Do(func() { err = r.lease.Close() })
+	return err
+}

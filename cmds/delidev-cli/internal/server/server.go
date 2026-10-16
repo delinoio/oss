@@ -152,6 +152,11 @@ type Service struct {
 	claudeUsageOpen       claudeUsageOpener
 	claudeUsageRemove     claudeUsageStorageRemover
 	claudeUsageActiveTest bool
+	// Isolated-test seams of the usage-read owner: the outbound transport of the
+	// provider GET, the native refresh-login opener and the wall clock.
+	claudeUsageTransport http.RoundTripper
+	claudeUsageRenew     claudeUsageRenewer
+	claudeUsageClock     func() time.Time
 	// serverCleanupRetryBase is the first delay before a failed server-owned
 	// credential cleanup is retried. Zero selects the default; tests shorten it.
 	serverCleanupRetryBase        time.Duration
