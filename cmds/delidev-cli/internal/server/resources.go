@@ -711,9 +711,6 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 	if err != nil {
 		return err
 	}
-	conflict := func() error {
-		return domain.Fail(domain.Conflict, "This configuration is still referenced.", "Reconfigure its dependents before deleting it.")
-	}
 	if kind == domain.AccountKind {
 		account, err := store.Decode[domain.Account](existing)
 		if err != nil {
@@ -722,6 +719,17 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 		if account.Health != domain.AccountDisconnected || account.Connection != nil || account.Removal != nil || account.Subscription != nil && (account.Subscription.ServerObservationActive() || account.Subscription.Pending != nil || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Generation != "" || account.Subscription.NativeProfileID != "" || account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.OwnerMachineID != "") {
 			return domain.Fail(domain.Conflict, "Connected accounts require credential and device cleanup before deletion.", "Disconnect the account and complete its protected-resource cleanup first.")
 		}
+	}
+	return validateDeletionReferences(tx, kind, id)
+}
+
+// validateDeletionReferences rejects the deletion of a configuration that other
+// configuration or retained sessions still reference. It reads only references
+// and never the entity's own credential or connection state, so a caller can run
+// it before any side effect that a deletion owes.
+func validateDeletionReferences(tx *store.Tx, kind domain.Kind, id domain.ID) error {
+	conflict := func() error {
+		return domain.Fail(domain.Conflict, "This configuration is still referenced.", "Reconfigure its dependents before deleting it.")
 	}
 	for _, ownerKind := range []domain.Kind{domain.ProjectKind, domain.AgentKind, domain.ModelKind, domain.AccountKind} {
 		records, err := all(tx, ownerKind)

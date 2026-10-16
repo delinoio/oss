@@ -246,3 +246,30 @@ func TestGrokAccountDeletionRetryContinuesAfterItsOwnLogout(t *testing.T) {
 		}
 	})
 }
+
+// A rejected deletion must not irreversibly break an account that has to stay in
+// use: the references are checked before the logout revokes the token.
+func TestGrokAccountDeletionRefusedByReferencesRevokesNothing(t *testing.T) {
+	d := newGrokDeletion(t)
+	old := d.stored()
+	_, err := d.f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.reference", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.AgentKind, domain.NewID(), 0, "", "", domain.Agent{Name: "Referencing agent", Accounts: []domain.WeightedAccount{{ID: d.f.input.AccountID, Weight: 1}}})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = d.remove(context.Background(), d.request())
+	if err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {
+		t.Fatalf("a referenced account deletion = %v", err)
+	}
+	a := d.account()
+	if !d.exists() || a.Connection == nil || a.Health != domain.AccountReady || a.Subscription.Pending != nil || a.Subscription.RecoveryRequired || !d.stored().Equal(old) || len(d.f.references()) != 1 {
+		t.Fatal("a refused deletion changed the connected account")
+	}
+	if d.idp.RevokeRequests != 0 {
+		t.Fatalf("a refused deletion revoked the token (%d requests)", d.idp.RevokeRequests)
+	}
+	if !strings.Contains(d.logText(), "account_referenced") {
+		t.Fatal("the refusal was not logged")
+	}
+}

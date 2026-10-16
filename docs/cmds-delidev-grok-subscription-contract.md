@@ -629,6 +629,9 @@ waits for such a lease to be released.
 Deleting a connected Grok account performs the logout first
 (`logoutGrokBeforeDelete`, in `DeleteConfiguration`): when the account has a
 connection or generation and no other operation or recovery fence, the server
+first checks the non-credential references (`validateDeletionReferences`: projects,
+agents, models, accounts and retained sessions) and refuses a referenced account
+as `conflict` before anything is revoked or removed, then the server
 accepts a logout whose operation id is derived from the deletion request id
 (`grokDeleteLogoutID`), runs it, waits for its outcome (bounded by the request)
 and deletes the account at the revision the logout produced. The deletion

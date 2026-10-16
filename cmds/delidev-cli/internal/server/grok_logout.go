@@ -519,6 +519,14 @@ func (s *Service) logoutGrokBeforeDelete(ctx context.Context, id domain.ID, revi
 		s.logger.WarnContext(ctx, "grok_delete_logout_blocked", "phase", grokLogoutPhase, "account_id", id, "reason", "account_busy")
 		return revision, protectedAccountDeletion
 	}
+	// The logout revokes the token and removes the bundle irreversibly, so a
+	// deletion the configuration would refuse anyway must be refused first. Only
+	// the non-credential references are checked here; the complete deletion
+	// validation still runs after the logout to cover races.
+	if err := s.Store.Read(ctx, func(tx *store.Tx) error { return validateDeletionReferences(tx, domain.AccountKind, id) }); err != nil {
+		s.logger.WarnContext(ctx, "grok_delete_logout_blocked", "phase", grokLogoutPhase, "account_id", id, "reason", "account_referenced", "code", domain.SafeError(err).Code)
+		return revision, err
+	}
 	req := connect.NewRequest(&pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(logoutID), Id: string(id), ExpectedRevision: current}, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT})
 	if _, err := s.requestGrokSubscription(ctx, req); err != nil {
 		return revision, err
