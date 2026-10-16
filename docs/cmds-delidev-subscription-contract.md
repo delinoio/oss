@@ -1176,7 +1176,10 @@ and machine to equal the lease, the original instance to equal the lease
 instance, the caller to be the machine's current instance and the lease to be
 fenced. Another Worker, a revoked device, a replaced generation, restored or
 foreign journals and a live execution of the same lease in the running process
-are rejected. Every original process owner (job, shared owner and members) is
+are rejected. A shared owner is marked live by its founding lease; the final owner
+Finish clears that marker whichever member's lease carries it (the last member may
+be a joined member), even while the Finish outcome is still unconfirmed, so a
+closed owner never defers recovery until the Worker reconnects. Every original process owner (job, shared owner and members) is
 joined through the process journals before the home is touched; an owner without
 an index is accepted only with the journaled no-launch evidence of the
 [process contract](cmds-delidev-process-contract.md#managed-chatgpt-recovery-process-reconciliation); shared-owner
@@ -1197,13 +1200,21 @@ member set always fits one recovery request and every valid fenced owner stays
 recoverable.
 
 Reconciliation. The Worker reads its capture, removes only the original transient
-`auth.json` (when it equals the captured latest bundle), proves the retained
+`auth.json` (when it equals the captured latest bundle or the captured original,
+the exact generation the Take delivered), proves the retained
 history with the complete streaming scan and journals the cleanup and one durable
 recovery request before reporting. History, sessions, caches and helper links are
 preserved and no input is replayed. Legacy journals written before capture
 support that still hold a valid retained `auth.json` first capture that latest
 bundle (without an original) and then settle; retained authentication that is not
-a usable bundle is the proven absence of usable credentials; no evidence at all
+a usable bundle is the proven absence of usable credentials, and has no server
+capture, so that `auth.json` is the only copy of its evidence: it stays in place,
+outside the scan, and is removed only after the whole retained-history scan has
+passed. A canceled scan, an unreadable entry or a removable remnant therefore
+leaves the next attempt the same evidence instead of a terminal absence of
+proof. A local checkpoint write failure after that final removal is the one
+residual window; it ends as `credential-proof-unavailable` and stays protected.
+No evidence at all
 stays protected with the closed diagnostic `credential-proof-unavailable` and no
 fabricated receipt. A capture refusal proves the bundle unusable only when it
 carries the distinct cause `subscription_recovery_bundle_rejected` (the bundle is
@@ -1212,6 +1223,11 @@ identity). Every other refusal, such as a binding or authorization failure, a
 withdrawn capability, stale lease evidence or a changed current instance, says
 nothing about the bundle: the Worker keeps the only surviving `auth.json` and
 retries.
+
+Capture receipt buffers. The server commits each capture receipt to the original
+and latest bundles through one temporary concatenation. That buffer holds raw
+credentials, so it is cleared as soon as the commitment is computed, with the
+request-owned bundle buffers cleared on return.
 
 Retirement of a released capture. A successful Finish that releases the lease
 drops the capture metadata and records the capture's vault references in its
@@ -1228,7 +1244,11 @@ one immutable generation named by the recovery request and, after the original
 references are retired, restores readiness. With cleanup proven but no usable
 credentials it denies and retires every original reference and settles the
 account disconnected, so only the existing explicit login can reconnect it; no
-login starts automatically. The decision is committed first (the lease is
+login starts automatically. A refresh or logout that was accepted while the lost
+lease was live and is still queued is retired in the same transaction as a
+disconnected decision (its server record, when it has one, settles as canceled),
+so it cannot block the explicit login or be claimed against an empty generation;
+a restored decision keeps it. The decision is committed first (the lease is
 released, the recovery fence and a `recovery_settlement` checkpoint remain), the
 protected references are then retired completely, and only the final receipt
 under the recovery request clears the fence. An incomplete deletion keeps the
