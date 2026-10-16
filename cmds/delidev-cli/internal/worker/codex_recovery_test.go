@@ -111,6 +111,7 @@ type recoveryWorkerFixture struct {
 	latest     []byte
 	original   []byte
 	instance   domain.ID
+	url        string
 }
 
 func newRecoveryWorkerFixture(t *testing.T) *recoveryWorkerFixture {
@@ -149,6 +150,7 @@ func newRecoveryWorkerFixture(t *testing.T) *recoveryWorkerFixture {
 	f.server = &recoveryServer{t: t, home: f.home}
 	httpServer := httptest.NewServer(mustHandler(f.server))
 	t.Cleanup(httpServer.Close)
+	f.url = httpServer.URL
 	f.client = delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, httpServer.URL)
 	return f
 }
@@ -932,6 +934,36 @@ func TestCodexRecoveryNoCredentialDecisionSurvivesBlocksAndCrashes(t *testing.T)
 			t.Fatal("a stored capture was declared absent")
 		}
 	})
+}
+
+// The legacy capture request owns a copy of the retained credential. It is
+// cleared as soon as the bounded RPC returns, after a success and a failure.
+func TestCodexRecoveryClearsTheCredentialCopyOfTheLegacyCaptureRequest(t *testing.T) {
+	for name, syncError := range map[string]error{
+		"success": nil,
+		"failure": connect.NewError(connect.CodeUnavailable, nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newRecoveryWorkerFixture(t)
+			f.server.syncError = syncError
+			var sent *pb.SyncSubscriptionRecoveryCaptureRequest
+			f.client = delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.url, connect.WithInterceptors(connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+				return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+					if message, ok := req.Any().(*pb.SyncSubscriptionRecoveryCaptureRequest); ok {
+						sent = message
+					}
+					return next(ctx, req)
+				}
+			})))
+			f.run()
+			if sent == nil || len(sent.Latest) == 0 {
+				t.Fatal("the legacy capture request was not observed")
+			}
+			if !bytes.Equal(sent.Latest, make([]byte, len(sent.Latest))) {
+				t.Fatal("the request copy of the retained credential outlived the RPC")
+			}
+		})
+	}
 }
 
 // Every deletion of a managed lease's transient authentication, including the

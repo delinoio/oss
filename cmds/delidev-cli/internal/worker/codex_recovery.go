@@ -697,10 +697,14 @@ func recoveryCredentials(ctx context.Context, config Config, client delidevv1con
 		r := recoveryRetried(domain.RecoveryCleanupUnconfirmed)
 		return nil, nil, nil, 0, &r
 	}
+	// The request owns a second credential buffer; it is cleared as soon as the
+	// bounded RPC returns, on success and on failure alike.
+	latestCopy := bytes.Clone(raw)
 	synced, syncErr := client.SyncSubscriptionRecoveryCapture(ctx, authenticated(credential, &pb.SyncSubscriptionRecoveryCaptureRequest{
 		Mutation: &pb.Mutation{RequestId: string(request), Id: string(accountID), ExpectedRevision: lease.Revision},
-		LeaseId:  string(lease.ID), MachineId: string(credential.MachineID), InstanceId: string(instance), GenerationId: string(lease.Generation), Latest: bytes.Clone(raw),
+		LeaseId:  string(lease.ID), MachineId: string(credential.MachineID), InstanceId: string(instance), GenerationId: string(lease.Generation), Latest: latestCopy,
 	}))
+	clear(latestCopy)
 	if syncErr != nil {
 		problem := domain.SafeError(rpc.ClientError(syncErr))
 		if problem.Cause == domain.SubscriptionRecoveryBundleRejectedCause {

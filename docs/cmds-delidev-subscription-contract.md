@@ -1228,7 +1228,8 @@ instead of ending as `credential-proof-unavailable`. A stored server capture
 always takes precedence over that decision. The retry re-proves the retained
 history, but only structurally, because the removed bytes are no longer available
 as a needle; that is the inherent residual of deleting the sole evidence. The
-No evidence at all
+legacy capture request owns a second copy of the retained bundle, which is
+cleared as soon as the bounded call returns on success and failure. No evidence at all
 stays protected with the closed diagnostic `credential-proof-unavailable` and no
 fabricated receipt. A capture refusal proves the bundle unusable only when it
 carries the distinct cause `subscription_recovery_bundle_rejected` (the bundle is
