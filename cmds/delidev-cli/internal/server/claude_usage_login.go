@@ -226,7 +226,9 @@ func claudeUsageLoginState(connection domain.ClaudeUsageConnection, state domain
 		return pb.ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_PREPARING
 	case domain.SubscriptionWaiting:
 		return pb.ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_WAITING
-	case domain.SubscriptionCanceled:
+	case domain.SubscriptionCanceled, domain.SubscriptionSucceeded:
+		// A succeeded operation under a reconnect-required section was retired by
+		// a disconnect or an execution logout.
 		return pb.ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_CANCELED
 	case domain.SubscriptionExpired:
 		return pb.ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_EXPIRED

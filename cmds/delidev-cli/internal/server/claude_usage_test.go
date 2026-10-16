@@ -639,7 +639,7 @@ func TestClaudeUsageRestartFencesOldLoginWithoutRelaunch(t *testing.T) {
 		t.Fatalf("restart progress = %+v", got)
 	}
 	_, account := f.record()
-	if !f.service.claudeUsageCleanupCandidate(account, time.Now()) {
+	if !f.service.claudeUsageCleanupCandidate(account, time.Now(), false) {
 		t.Fatal("the fenced login is not selected for cleanup")
 	}
 	if err := f.service.cleanupClaudeUsage(ctx, f.input.AccountID); err != nil {
@@ -806,5 +806,75 @@ func TestClaudeUsageStateIsProtectedFromGenericConfigurationWrites(t *testing.T)
 		return validateRelationships(tx, domain.AccountKind, r.ID, r.Revision, &same)
 	}); err != nil {
 		t.Fatalf("an unchanged account was refused: %v", err)
+	}
+}
+
+func TestClaudeUsageReviewWithoutAnAuthorizedActorIsDiscarded(t *testing.T) {
+	f := newUsageFixture(t)
+	f.stage()
+	// The requesting client lost its authority before it could confirm.
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.usage.actor", nil, func(tx *store.Tx) (any, error) {
+		r, a, err := claudeUsageAccountTx(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		operation := *a.Subscription.ClaudeUsage.Operation
+		operation.Actor = domain.Principal{Type: domain.ClientDevice, DeviceID: domain.NewID()}
+		a.Subscription.ClaudeUsage.Operation = &operation
+		return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.cleanupClaudeUsage(ctx, f.input.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	section := f.section()
+	if section.Reading() || section.Connection != domain.ClaudeUsageReconnectRequired || len(f.usageRefs()) != 0 || section.OwesCleanup() {
+		t.Fatalf("an unconfirmable review survived: %+v", section)
+	}
+}
+
+func TestClaudeUsageUncertainNativeStartIsFencedForRecovery(t *testing.T) {
+	f := newUsageFixture(t)
+	f.service.claudeUsageOpen = func(context.Context, nativeScope, domain.ID, *slog.Logger) (claudeUsageNative, string, error) {
+		f.opens.Add(1)
+		return nil, "", domain.Fail(domain.RecoveryRequired, "The Claude login child could not be confirmed stopped.", "")
+	}
+	op, err := f.start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.await(op, pb.ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_RECOVERY_REQUIRED)
+	if section := f.section(); section.Connection != domain.ClaudeUsageConnecting || !section.ProfileCleanup {
+		t.Fatalf("an uncertain start was settled instead of fenced: %+v", section)
+	}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.cleanupClaudeUsage(ctx, f.input.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	if section := f.section(); section.Connection != domain.ClaudeUsageReconnectRequired || section.OwesCleanup() || f.opens.Load() != 1 {
+		t.Fatalf("recovery relaunched or kept the fence: %+v", section)
+	}
+}
+
+func TestClaudeUsageUnprovenNativeRemovalStaysOwedAndBlocksTheNextLogin(t *testing.T) {
+	f := newUsageFixture(t)
+	f.removalErr.Store(errors.New("keychain locked"))
+	op, review := f.stage()
+	section := f.section()
+	if !section.ProfileCleanup {
+		t.Fatal("unproven native removal was forgotten")
+	}
+	if _, err := f.confirm(op, review.Identity.IdentityCommitment); err != nil {
+		t.Fatal(err)
+	}
+	f.removalErr.Store(errors.New("keychain locked"))
+	if err := f.disconnect(op.UsageGeneration); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatalf("disconnect reported success with native storage present: %v", err)
+	}
+	if _, err := f.start(); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatalf("a login started over leftover credential storage: %v", err)
 	}
 }

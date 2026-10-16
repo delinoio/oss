@@ -241,8 +241,9 @@ func claudeUsageStartable(a domain.Account) bool {
 // claudeUsageCleanupCandidate selects an account whose usage section owes
 // cleanup that no live login owns. A login of the current epoch is owned by its
 // run and is never selected; a login of an older epoch has no run and is fenced
-// first. An elapsed identity review is discarded.
-func (s *Service) claudeUsageCleanupCandidate(a domain.Account, now time.Time) bool {
+// first. An identity review that elapsed, or whose actor lost authority and
+// can therefore never confirm it, is discarded.
+func (s *Service) claudeUsageCleanupCandidate(a domain.Account, now time.Time, actorGone bool) bool {
 	if !a.ManagedClaudeAccount() || a.Subscription.ClaudeUsage == nil {
 		return false
 	}
@@ -251,7 +252,7 @@ func (s *Service) claudeUsageCleanupCandidate(a domain.Account, now time.Time) b
 	case domain.ClaudeUsageConnecting:
 		return usage.Operation != nil && (usage.Operation.Epoch != s.subscriptionServerEpoch() || usage.Operation.State == domain.SubscriptionRecovery)
 	case domain.ClaudeUsageConfirming:
-		return usage.Operation != nil && !now.Before(usage.Operation.ExpiresAt) || usage.OwesCleanup()
+		return usage.Operation != nil && (!now.Before(usage.Operation.ExpiresAt) || actorGone) || usage.OwesCleanup()
 	}
 	return usage.OwesCleanup()
 }
@@ -325,7 +326,7 @@ func (s *Service) cleanupClaudeUsageExcept(ctx context.Context, account, self do
 		return nil
 	}
 	var usage domain.ClaudeServerUsageState
-	found := false
+	found, actorGone := false, false
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		_, a, err := accountFromTx(tx, account, 0)
 		if err != nil {
@@ -335,6 +336,7 @@ func (s *Service) cleanupClaudeUsageExcept(ctx context.Context, account, self do
 		if a.ManagedClaudeAccount() && a.Subscription.ClaudeUsage != nil {
 			usage, found = *a.Subscription.ClaudeUsage, true
 			usage.RetiredCredentials = slices.Clone(usage.RetiredCredentials)
+			actorGone = usage.Connection == domain.ClaudeUsageConfirming && usage.Operation != nil && subscriptionActorValid(tx, usage.Operation.Actor) != nil
 		}
 		return nil
 	})
@@ -342,7 +344,7 @@ func (s *Service) cleanupClaudeUsageExcept(ctx context.Context, account, self do
 		return err
 	}
 	orphan := usage.Connection == domain.ClaudeUsageConnecting
-	expired := usage.Connection == domain.ClaudeUsageConfirming && usage.Operation != nil && !time.Now().Before(usage.Operation.ExpiresAt)
+	expired := usage.Connection == domain.ClaudeUsageConfirming && usage.Operation != nil && (!time.Now().Before(usage.Operation.ExpiresAt) || actorGone)
 	if !usage.OwesCleanup() && !orphan && !expired {
 		return nil
 	}
@@ -372,6 +374,7 @@ func (s *Service) cleanupClaudeUsageExcept(ctx context.Context, account, self do
 		}
 	}
 	generation := usage.Generation
+	discarded := false
 	operation := domain.ID("")
 	if usage.Operation != nil {
 		operation = usage.Operation.ID
@@ -392,10 +395,11 @@ func (s *Service) cleanupClaudeUsageExcept(ctx context.Context, account, self do
 			if err := current.Settle(domain.SubscriptionFailed, diagnostic); err != nil {
 				return nil, err
 			}
-		case current.Connection == domain.ClaudeUsageConfirming && current.Operation != nil && !time.Now().Before(current.Operation.ExpiresAt):
+		case current.Connection == domain.ClaudeUsageConfirming && expired:
 			if err := current.DiscardConfirmation(domain.SubscriptionExpired); err != nil {
 				return nil, err
 			}
+			discarded = true
 		}
 		if err := a.Validate(); err != nil {
 			return nil, err
@@ -405,6 +409,10 @@ func (s *Service) cleanupClaudeUsageExcept(ctx context.Context, account, self do
 	})
 	if err != nil {
 		return err
+	}
+	if discarded && first == nil {
+		// The discarded review's credential was just retired: delete it now.
+		return s.cleanupClaudeUsageExcept(ctx, account, self)
 	}
 	s.logger.InfoContext(ctx, "claude_usage_cleanup", "account_id", account, "operation_id", operation, "references_removed", len(removed), "profile_cleaned", profile, "complete", first == nil)
 	return first

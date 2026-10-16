@@ -269,7 +269,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 				if err != nil {
 					return err
 				}
-				if s.claudeUsageCleanupCandidate(a, now) {
+				if s.claudeUsageCleanupCandidate(a, now, a.ManagedClaudeAccount() && a.Subscription.ClaudeUsage != nil && a.Subscription.ClaudeUsage.Operation != nil && subscriptionActorValid(tx, a.Subscription.ClaudeUsage.Operation.Actor) != nil) {
 					// Owed usage cleanup is keyed by the section's usage generation so
 					// it never shares a retry schedule with execution cleanup.
 					eligible[a.Subscription.ClaudeUsage.Generation] = true

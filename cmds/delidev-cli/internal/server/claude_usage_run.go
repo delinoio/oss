@@ -9,6 +9,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 )
@@ -131,13 +132,22 @@ func (s *Service) claudeUsageLoginBody(ctx context.Context, run *claudeUsageRun,
 		}
 		logger.Warn("claude_usage_login_open_failed", "phase", phase, "code", code)
 		if code == domain.RecoveryRequired {
-			// Profile admission refused leftover credential storage; the owned
-			// cleanup keeps it owed and the login settles as failed.
-			return claudeUsageOutcome{state: domain.SubscriptionFailed, diagnostic: claudeDiagnostic(op.ID, phase, version, err)}
+			if reason, ok := nativeprofile.Reasoned(err); ok && reason == nativeprofile.ReasonCredentialPresent {
+				// Profile admission refused leftover credential storage; the owned
+				// cleanup keeps it owed and the login settles as failed.
+				return claudeUsageOutcome{state: domain.SubscriptionFailed, diagnostic: claudeDiagnostic(op.ID, phase, version, err)}
+			}
+			// An uncertain native start: the child cannot be proven stopped, so the
+			// login is fenced for recovery instead of being settled as failed.
+			return claudeUsageOutcome{recovery: true, diagnostic: claudeDiagnostic(op.ID, phase, version, err)}
 		}
 		return s.claudeUsageEndOutcome(ctx, claudeDiagnostic(op.ID, phase, version, err), err)
 	}
-	defer native.Release()
+	defer func() {
+		if err := native.Release(); err != nil {
+			logger.Warn("claude_usage_profile_release_failed", "code", domain.SafeError(err).Code)
+		}
+	}()
 	published, delivered := false, false
 	var runErr error
 	ticker := time.NewTicker(250 * time.Millisecond)
@@ -362,8 +372,11 @@ func (s *Service) stageClaudeUsage(ctx context.Context, run *claudeUsageRun, op 
 		return failed(err)
 	}
 	// 3. The native copy is no longer needed once the vault holds the bundle.
-	_ = native.Release()
-	profileCleaned := s.removeUsageStorage(bounded, account) == nil
+	releaseErr := native.Release()
+	if releaseErr != nil {
+		logger.Warn("claude_usage_profile_release_failed", "code", domain.SafeError(releaseErr).Code)
+	}
+	profileCleaned := releaseErr == nil && s.removeUsageStorage(bounded, account) == nil
 	// 4. Review state.
 	_, err = s.Store.Mutate(bounded, domain.NewID(), "claude.usage.stage", struct{ Account, Operation, Credential domain.ID }{account, op.ID, credential}, func(tx *store.Tx) (any, error) {
 		r, a, err := claudeUsageAccountTx(tx, account, 0)
