@@ -107,3 +107,38 @@ export const readSubscriptionRecoveryCapture = SubscriptionService.method.readSu
  * @generated from rpc delidev.v1.SubscriptionService.RecoverSubscription
  */
 export const recoverSubscription = SubscriptionService.method.recoverSubscription;
+
+/**
+ * Server-owned Claude usage tracking, negotiated by System capability
+ * CLAUDE_SERVER_USAGE_V1. A usage login is a separate ordinary OAuth login whose
+ * credentials only fetch usage. None of these operations changes the execution
+ * setup token, delivers a credential to a Worker or returns authentication bytes.
+ *
+ * @generated from rpc delidev.v1.SubscriptionService.StartClaudeUsageLogin
+ */
+export const startClaudeUsageLogin = SubscriptionService.method.startClaudeUsageLogin;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.GetClaudeUsageLoginProgress
+ */
+export const getClaudeUsageLoginProgress = SubscriptionService.method.getClaudeUsageLoginProgress;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.SubmitClaudeUsageApprovalCode
+ */
+export const submitClaudeUsageApprovalCode = SubscriptionService.method.submitClaudeUsageApprovalCode;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.ConfirmClaudeUsageLink
+ */
+export const confirmClaudeUsageLink = SubscriptionService.method.confirmClaudeUsageLink;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.CancelClaudeUsageLogin
+ */
+export const cancelClaudeUsageLogin = SubscriptionService.method.cancelClaudeUsageLogin;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.DisconnectClaudeUsage
+ */
+export const disconnectClaudeUsage = SubscriptionService.method.disconnectClaudeUsage;

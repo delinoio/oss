@@ -921,6 +921,86 @@ func (CodexDiagnosticPhase) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{14}
 }
 
+// Claude usage tracking. Mutations use UUID-v7 request IDs. Mutation.id is the
+// Claude subscription account and Mutation.expected_revision its original
+// revision. usage_generation identifies one usage connection attempt and is
+// allocated by the server when the login starts. Progress reads never relaunch,
+// advance or confirm work, and no response carries authentication bytes.
+type ClaudeUsageLoginState int32
+
+const (
+	ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_UNSPECIFIED ClaudeUsageLoginState = 0
+	ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_PREPARING   ClaudeUsageLoginState = 1
+	// The official login is waiting for browser approval; url is present and
+	// code_requested says whether the manual approval code is expected.
+	ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_WAITING ClaudeUsageLoginState = 2
+	// Native completion was joined and the identity was validated. Nothing is
+	// linked or scheduled until ConfirmClaudeUsageLink succeeds.
+	ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_AWAITING_CONFIRMATION ClaudeUsageLoginState = 3
+	// The user linked the reviewed identity.
+	ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_LINKED            ClaudeUsageLoginState = 4
+	ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_CANCELED          ClaudeUsageLoginState = 5
+	ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_EXPIRED           ClaudeUsageLoginState = 6
+	ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_UNSUPPORTED       ClaudeUsageLoginState = 7
+	ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_RECOVERY_REQUIRED ClaudeUsageLoginState = 8
+	ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_FAILED            ClaudeUsageLoginState = 9
+)
+
+// Enum value maps for ClaudeUsageLoginState.
+var (
+	ClaudeUsageLoginState_name = map[int32]string{
+		0: "CLAUDE_USAGE_LOGIN_STATE_UNSPECIFIED",
+		1: "CLAUDE_USAGE_LOGIN_STATE_PREPARING",
+		2: "CLAUDE_USAGE_LOGIN_STATE_WAITING",
+		3: "CLAUDE_USAGE_LOGIN_STATE_AWAITING_CONFIRMATION",
+		4: "CLAUDE_USAGE_LOGIN_STATE_LINKED",
+		5: "CLAUDE_USAGE_LOGIN_STATE_CANCELED",
+		6: "CLAUDE_USAGE_LOGIN_STATE_EXPIRED",
+		7: "CLAUDE_USAGE_LOGIN_STATE_UNSUPPORTED",
+		8: "CLAUDE_USAGE_LOGIN_STATE_RECOVERY_REQUIRED",
+		9: "CLAUDE_USAGE_LOGIN_STATE_FAILED",
+	}
+	ClaudeUsageLoginState_value = map[string]int32{
+		"CLAUDE_USAGE_LOGIN_STATE_UNSPECIFIED":           0,
+		"CLAUDE_USAGE_LOGIN_STATE_PREPARING":             1,
+		"CLAUDE_USAGE_LOGIN_STATE_WAITING":               2,
+		"CLAUDE_USAGE_LOGIN_STATE_AWAITING_CONFIRMATION": 3,
+		"CLAUDE_USAGE_LOGIN_STATE_LINKED":                4,
+		"CLAUDE_USAGE_LOGIN_STATE_CANCELED":              5,
+		"CLAUDE_USAGE_LOGIN_STATE_EXPIRED":               6,
+		"CLAUDE_USAGE_LOGIN_STATE_UNSUPPORTED":           7,
+		"CLAUDE_USAGE_LOGIN_STATE_RECOVERY_REQUIRED":     8,
+		"CLAUDE_USAGE_LOGIN_STATE_FAILED":                9,
+	}
+)
+
+func (x ClaudeUsageLoginState) Enum() *ClaudeUsageLoginState {
+	p := new(ClaudeUsageLoginState)
+	*p = x
+	return p
+}
+
+func (x ClaudeUsageLoginState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ClaudeUsageLoginState) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_subscription_proto_enumTypes[15].Descriptor()
+}
+
+func (ClaudeUsageLoginState) Type() protoreflect.EnumType {
+	return &file_delidev_v1_subscription_proto_enumTypes[15]
+}
+
+func (x ClaudeUsageLoginState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ClaudeUsageLoginState.Descriptor instead.
+func (ClaudeUsageLoginState) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{15}
+}
+
 // Explicit server-owned cleanup of failed initial logins. No native login or
 // callback authority is granted by these metadata-only operations.
 type CleanupFailedSubscriptionsRequest struct {
@@ -4254,6 +4334,802 @@ func (x *SetAutomaticResetCreditConsentResponse) GetReplayed() bool {
 	return false
 }
 
+// The validated OAuth identity the user must review before linking. It is shown
+// to the requesting client only and never proves identity equality with the
+// execution setup token.
+type ClaudeUsageIdentityReview struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Email        string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Organization string                 `protobuf:"bytes,2,opt,name=organization,proto3" json:"organization,omitempty"`
+	Plan         string                 `protobuf:"bytes,3,opt,name=plan,proto3" json:"plan,omitempty"`
+	// Opaque commitment of the reviewed identity, echoed by ConfirmClaudeUsageLink
+	// so a changed identity cannot be linked by a stale review.
+	IdentityCommitment string `protobuf:"bytes,4,opt,name=identity_commitment,json=identityCommitment,proto3" json:"identity_commitment,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ClaudeUsageIdentityReview) Reset() {
+	*x = ClaudeUsageIdentityReview{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaudeUsageIdentityReview) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaudeUsageIdentityReview) ProtoMessage() {}
+
+func (x *ClaudeUsageIdentityReview) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaudeUsageIdentityReview.ProtoReflect.Descriptor instead.
+func (*ClaudeUsageIdentityReview) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *ClaudeUsageIdentityReview) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *ClaudeUsageIdentityReview) GetOrganization() string {
+	if x != nil {
+		return x.Organization
+	}
+	return ""
+}
+
+func (x *ClaudeUsageIdentityReview) GetPlan() string {
+	if x != nil {
+		return x.Plan
+	}
+	return ""
+}
+
+func (x *ClaudeUsageIdentityReview) GetIdentityCommitment() string {
+	if x != nil {
+		return x.IdentityCommitment
+	}
+	return ""
+}
+
+type StartClaudeUsageLoginRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mutation      *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartClaudeUsageLoginRequest) Reset() {
+	*x = StartClaudeUsageLoginRequest{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartClaudeUsageLoginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartClaudeUsageLoginRequest) ProtoMessage() {}
+
+func (x *StartClaudeUsageLoginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartClaudeUsageLoginRequest.ProtoReflect.Descriptor instead.
+func (*StartClaudeUsageLoginRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *StartClaudeUsageLoginRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+type StartClaudeUsageLoginResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Account         *Resource              `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	OperationId     string                 `protobuf:"bytes,2,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	UsageGeneration string                 `protobuf:"bytes,3,opt,name=usage_generation,json=usageGeneration,proto3" json:"usage_generation,omitempty"`
+	Replayed        bool                   `protobuf:"varint,4,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *StartClaudeUsageLoginResponse) Reset() {
+	*x = StartClaudeUsageLoginResponse{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartClaudeUsageLoginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartClaudeUsageLoginResponse) ProtoMessage() {}
+
+func (x *StartClaudeUsageLoginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartClaudeUsageLoginResponse.ProtoReflect.Descriptor instead.
+func (*StartClaudeUsageLoginResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *StartClaudeUsageLoginResponse) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *StartClaudeUsageLoginResponse) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *StartClaudeUsageLoginResponse) GetUsageGeneration() string {
+	if x != nil {
+		return x.UsageGeneration
+	}
+	return ""
+}
+
+func (x *StartClaudeUsageLoginResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type GetClaudeUsageLoginProgressRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	AccountId       string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	OperationId     string                 `protobuf:"bytes,2,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	UsageGeneration string                 `protobuf:"bytes,3,opt,name=usage_generation,json=usageGeneration,proto3" json:"usage_generation,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetClaudeUsageLoginProgressRequest) Reset() {
+	*x = GetClaudeUsageLoginProgressRequest{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetClaudeUsageLoginProgressRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetClaudeUsageLoginProgressRequest) ProtoMessage() {}
+
+func (x *GetClaudeUsageLoginProgressRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetClaudeUsageLoginProgressRequest.ProtoReflect.Descriptor instead.
+func (*GetClaudeUsageLoginProgressRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *GetClaudeUsageLoginProgressRequest) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *GetClaudeUsageLoginProgressRequest) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *GetClaudeUsageLoginProgressRequest) GetUsageGeneration() string {
+	if x != nil {
+		return x.UsageGeneration
+	}
+	return ""
+}
+
+type GetClaudeUsageLoginProgressResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	State ClaudeUsageLoginState  `protobuf:"varint,1,opt,name=state,proto3,enum=delidev.v1.ClaudeUsageLoginState" json:"state,omitempty"`
+	// Short-lived presentation data, never persisted or logged.
+	Url             string                        `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	CodeRequested   bool                          `protobuf:"varint,3,opt,name=code_requested,json=codeRequested,proto3" json:"code_requested,omitempty"`
+	Identity        *ClaudeUsageIdentityReview    `protobuf:"bytes,4,opt,name=identity,proto3" json:"identity,omitempty"`
+	Diagnostic      *NativeSubscriptionDiagnostic `protobuf:"bytes,5,opt,name=diagnostic,proto3" json:"diagnostic,omitempty"`
+	OperationId     string                        `protobuf:"bytes,6,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	UsageGeneration string                        `protobuf:"bytes,7,opt,name=usage_generation,json=usageGeneration,proto3" json:"usage_generation,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetClaudeUsageLoginProgressResponse) Reset() {
+	*x = GetClaudeUsageLoginProgressResponse{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetClaudeUsageLoginProgressResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetClaudeUsageLoginProgressResponse) ProtoMessage() {}
+
+func (x *GetClaudeUsageLoginProgressResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetClaudeUsageLoginProgressResponse.ProtoReflect.Descriptor instead.
+func (*GetClaudeUsageLoginProgressResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *GetClaudeUsageLoginProgressResponse) GetState() ClaudeUsageLoginState {
+	if x != nil {
+		return x.State
+	}
+	return ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_UNSPECIFIED
+}
+
+func (x *GetClaudeUsageLoginProgressResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *GetClaudeUsageLoginProgressResponse) GetCodeRequested() bool {
+	if x != nil {
+		return x.CodeRequested
+	}
+	return false
+}
+
+func (x *GetClaudeUsageLoginProgressResponse) GetIdentity() *ClaudeUsageIdentityReview {
+	if x != nil {
+		return x.Identity
+	}
+	return nil
+}
+
+func (x *GetClaudeUsageLoginProgressResponse) GetDiagnostic() *NativeSubscriptionDiagnostic {
+	if x != nil {
+		return x.Diagnostic
+	}
+	return nil
+}
+
+func (x *GetClaudeUsageLoginProgressResponse) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *GetClaudeUsageLoginProgressResponse) GetUsageGeneration() string {
+	if x != nil {
+		return x.UsageGeneration
+	}
+	return ""
+}
+
+type SubmitClaudeUsageApprovalCodeRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Mutation        *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	OperationId     string                 `protobuf:"bytes,2,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	UsageGeneration string                 `protobuf:"bytes,3,opt,name=usage_generation,json=usageGeneration,proto3" json:"usage_generation,omitempty"`
+	// Transient write-only original CLI input. Excluded from receipts, resources
+	// and logs, and cleared at its lifetime boundary.
+	Code          []byte `protobuf:"bytes,4,opt,name=code,proto3" json:"code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitClaudeUsageApprovalCodeRequest) Reset() {
+	*x = SubmitClaudeUsageApprovalCodeRequest{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitClaudeUsageApprovalCodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitClaudeUsageApprovalCodeRequest) ProtoMessage() {}
+
+func (x *SubmitClaudeUsageApprovalCodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitClaudeUsageApprovalCodeRequest.ProtoReflect.Descriptor instead.
+func (*SubmitClaudeUsageApprovalCodeRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *SubmitClaudeUsageApprovalCodeRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *SubmitClaudeUsageApprovalCodeRequest) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *SubmitClaudeUsageApprovalCodeRequest) GetUsageGeneration() string {
+	if x != nil {
+		return x.UsageGeneration
+	}
+	return ""
+}
+
+func (x *SubmitClaudeUsageApprovalCodeRequest) GetCode() []byte {
+	if x != nil {
+		return x.Code
+	}
+	return nil
+}
+
+type SubmitClaudeUsageApprovalCodeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Replayed      bool                   `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitClaudeUsageApprovalCodeResponse) Reset() {
+	*x = SubmitClaudeUsageApprovalCodeResponse{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitClaudeUsageApprovalCodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitClaudeUsageApprovalCodeResponse) ProtoMessage() {}
+
+func (x *SubmitClaudeUsageApprovalCodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitClaudeUsageApprovalCodeResponse.ProtoReflect.Descriptor instead.
+func (*SubmitClaudeUsageApprovalCodeResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *SubmitClaudeUsageApprovalCodeResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *SubmitClaudeUsageApprovalCodeResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type ConfirmClaudeUsageLinkRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Mutation           *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	OperationId        string                 `protobuf:"bytes,2,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	UsageGeneration    string                 `protobuf:"bytes,3,opt,name=usage_generation,json=usageGeneration,proto3" json:"usage_generation,omitempty"`
+	IdentityCommitment string                 `protobuf:"bytes,4,opt,name=identity_commitment,json=identityCommitment,proto3" json:"identity_commitment,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ConfirmClaudeUsageLinkRequest) Reset() {
+	*x = ConfirmClaudeUsageLinkRequest{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfirmClaudeUsageLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfirmClaudeUsageLinkRequest) ProtoMessage() {}
+
+func (x *ConfirmClaudeUsageLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfirmClaudeUsageLinkRequest.ProtoReflect.Descriptor instead.
+func (*ConfirmClaudeUsageLinkRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *ConfirmClaudeUsageLinkRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *ConfirmClaudeUsageLinkRequest) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *ConfirmClaudeUsageLinkRequest) GetUsageGeneration() string {
+	if x != nil {
+		return x.UsageGeneration
+	}
+	return ""
+}
+
+func (x *ConfirmClaudeUsageLinkRequest) GetIdentityCommitment() string {
+	if x != nil {
+		return x.IdentityCommitment
+	}
+	return ""
+}
+
+type ConfirmClaudeUsageLinkResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *Resource              `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	Replayed      bool                   `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfirmClaudeUsageLinkResponse) Reset() {
+	*x = ConfirmClaudeUsageLinkResponse{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfirmClaudeUsageLinkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfirmClaudeUsageLinkResponse) ProtoMessage() {}
+
+func (x *ConfirmClaudeUsageLinkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfirmClaudeUsageLinkResponse.ProtoReflect.Descriptor instead.
+func (*ConfirmClaudeUsageLinkResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *ConfirmClaudeUsageLinkResponse) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *ConfirmClaudeUsageLinkResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type CancelClaudeUsageLoginRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Mutation        *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	OperationId     string                 `protobuf:"bytes,2,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	UsageGeneration string                 `protobuf:"bytes,3,opt,name=usage_generation,json=usageGeneration,proto3" json:"usage_generation,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *CancelClaudeUsageLoginRequest) Reset() {
+	*x = CancelClaudeUsageLoginRequest{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelClaudeUsageLoginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelClaudeUsageLoginRequest) ProtoMessage() {}
+
+func (x *CancelClaudeUsageLoginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelClaudeUsageLoginRequest.ProtoReflect.Descriptor instead.
+func (*CancelClaudeUsageLoginRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *CancelClaudeUsageLoginRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *CancelClaudeUsageLoginRequest) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *CancelClaudeUsageLoginRequest) GetUsageGeneration() string {
+	if x != nil {
+		return x.UsageGeneration
+	}
+	return ""
+}
+
+type CancelClaudeUsageLoginResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *Resource              `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	Replayed      bool                   `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelClaudeUsageLoginResponse) Reset() {
+	*x = CancelClaudeUsageLoginResponse{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelClaudeUsageLoginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelClaudeUsageLoginResponse) ProtoMessage() {}
+
+func (x *CancelClaudeUsageLoginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelClaudeUsageLoginResponse.ProtoReflect.Descriptor instead.
+func (*CancelClaudeUsageLoginResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *CancelClaudeUsageLoginResponse) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *CancelClaudeUsageLoginResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type DisconnectClaudeUsageRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Mutation        *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	UsageGeneration string                 `protobuf:"bytes,2,opt,name=usage_generation,json=usageGeneration,proto3" json:"usage_generation,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DisconnectClaudeUsageRequest) Reset() {
+	*x = DisconnectClaudeUsageRequest{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DisconnectClaudeUsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DisconnectClaudeUsageRequest) ProtoMessage() {}
+
+func (x *DisconnectClaudeUsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DisconnectClaudeUsageRequest.ProtoReflect.Descriptor instead.
+func (*DisconnectClaudeUsageRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *DisconnectClaudeUsageRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *DisconnectClaudeUsageRequest) GetUsageGeneration() string {
+	if x != nil {
+		return x.UsageGeneration
+	}
+	return ""
+}
+
+type DisconnectClaudeUsageResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *Resource              `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	Replayed      bool                   `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DisconnectClaudeUsageResponse) Reset() {
+	*x = DisconnectClaudeUsageResponse{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DisconnectClaudeUsageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DisconnectClaudeUsageResponse) ProtoMessage() {}
+
+func (x *DisconnectClaudeUsageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DisconnectClaudeUsageResponse.ProtoReflect.Descriptor instead.
+func (*DisconnectClaudeUsageResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *DisconnectClaudeUsageResponse) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *DisconnectClaudeUsageResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
 var File_delidev_v1_subscription_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_subscription_proto_rawDesc = "" +
@@ -4550,6 +5426,62 @@ const file_delidev_v1_subscription_proto_rawDesc = "" +
 	"\tconfirmed\x18\x05 \x01(\bR\tconfirmed\"t\n" +
 	"&SetAutomaticResetCreditConsentResponse\x12.\n" +
 	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"\x9a\x01\n" +
+	"\x19ClaudeUsageIdentityReview\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x12\"\n" +
+	"\forganization\x18\x02 \x01(\tR\forganization\x12\x12\n" +
+	"\x04plan\x18\x03 \x01(\tR\x04plan\x12/\n" +
+	"\x13identity_commitment\x18\x04 \x01(\tR\x12identityCommitment\"P\n" +
+	"\x1cStartClaudeUsageLoginRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\"\xb9\x01\n" +
+	"\x1dStartClaudeUsageLoginResponse\x12.\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12!\n" +
+	"\foperation_id\x18\x02 \x01(\tR\voperationId\x12)\n" +
+	"\x10usage_generation\x18\x03 \x01(\tR\x0fusageGeneration\x12\x1a\n" +
+	"\breplayed\x18\x04 \x01(\bR\breplayed\"\x91\x01\n" +
+	"\"GetClaudeUsageLoginProgressRequest\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12!\n" +
+	"\foperation_id\x18\x02 \x01(\tR\voperationId\x12)\n" +
+	"\x10usage_generation\x18\x03 \x01(\tR\x0fusageGeneration\"\xf2\x02\n" +
+	"#GetClaudeUsageLoginProgressResponse\x127\n" +
+	"\x05state\x18\x01 \x01(\x0e2!.delidev.v1.ClaudeUsageLoginStateR\x05state\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\x12%\n" +
+	"\x0ecode_requested\x18\x03 \x01(\bR\rcodeRequested\x12A\n" +
+	"\bidentity\x18\x04 \x01(\v2%.delidev.v1.ClaudeUsageIdentityReviewR\bidentity\x12H\n" +
+	"\n" +
+	"diagnostic\x18\x05 \x01(\v2(.delidev.v1.NativeSubscriptionDiagnosticR\n" +
+	"diagnostic\x12!\n" +
+	"\foperation_id\x18\x06 \x01(\tR\voperationId\x12)\n" +
+	"\x10usage_generation\x18\a \x01(\tR\x0fusageGeneration\"\xba\x01\n" +
+	"$SubmitClaudeUsageApprovalCodeRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12!\n" +
+	"\foperation_id\x18\x02 \x01(\tR\voperationId\x12)\n" +
+	"\x10usage_generation\x18\x03 \x01(\tR\x0fusageGeneration\x12\x12\n" +
+	"\x04code\x18\x04 \x01(\fR\x04code\"_\n" +
+	"%SubmitClaudeUsageApprovalCodeResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"\xd0\x01\n" +
+	"\x1dConfirmClaudeUsageLinkRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12!\n" +
+	"\foperation_id\x18\x02 \x01(\tR\voperationId\x12)\n" +
+	"\x10usage_generation\x18\x03 \x01(\tR\x0fusageGeneration\x12/\n" +
+	"\x13identity_commitment\x18\x04 \x01(\tR\x12identityCommitment\"l\n" +
+	"\x1eConfirmClaudeUsageLinkResponse\x12.\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"\x9f\x01\n" +
+	"\x1dCancelClaudeUsageLoginRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12!\n" +
+	"\foperation_id\x18\x02 \x01(\tR\voperationId\x12)\n" +
+	"\x10usage_generation\x18\x03 \x01(\tR\x0fusageGeneration\"l\n" +
+	"\x1eCancelClaudeUsageLoginResponse\x12.\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"{\n" +
+	"\x1cDisconnectClaudeUsageRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12)\n" +
+	"\x10usage_generation\x18\x02 \x01(\tR\x0fusageGeneration\"k\n" +
+	"\x1dDisconnectClaudeUsageResponse\x12.\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1a\n" +
 	"\breplayed\x18\x02 \x01(\bR\breplayed*\xff\x01\n" +
 	"\x12SubscriptionAction\x12#\n" +
 	"\x1fSUBSCRIPTION_ACTION_UNSPECIFIED\x10\x00\x12\x1d\n" +
@@ -4662,7 +5594,18 @@ const file_delidev_v1_subscription_proto_rawDesc = "" +
 	" CODEX_DIAGNOSTIC_PHASE_EXECUTION\x10\n" +
 	"\x12\"\n" +
 	"\x1eCODEX_DIAGNOSTIC_PHASE_HISTORY\x10\v\x12\"\n" +
-	"\x1eCODEX_DIAGNOSTIC_PHASE_CLEANUP\x10\f2\xa1\x14\n" +
+	"\x1eCODEX_DIAGNOSTIC_PHASE_CLEANUP\x10\f*\xb4\x03\n" +
+	"\x15ClaudeUsageLoginState\x12(\n" +
+	"$CLAUDE_USAGE_LOGIN_STATE_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"CLAUDE_USAGE_LOGIN_STATE_PREPARING\x10\x01\x12$\n" +
+	" CLAUDE_USAGE_LOGIN_STATE_WAITING\x10\x02\x122\n" +
+	".CLAUDE_USAGE_LOGIN_STATE_AWAITING_CONFIRMATION\x10\x03\x12#\n" +
+	"\x1fCLAUDE_USAGE_LOGIN_STATE_LINKED\x10\x04\x12%\n" +
+	"!CLAUDE_USAGE_LOGIN_STATE_CANCELED\x10\x05\x12$\n" +
+	" CLAUDE_USAGE_LOGIN_STATE_EXPIRED\x10\x06\x12(\n" +
+	"$CLAUDE_USAGE_LOGIN_STATE_UNSUPPORTED\x10\a\x12.\n" +
+	"*CLAUDE_USAGE_LOGIN_STATE_RECOVERY_REQUIRED\x10\b\x12#\n" +
+	"\x1fCLAUDE_USAGE_LOGIN_STATE_FAILED\x10\t2\xe6\x19\n" +
 	"\x13SubscriptionService\x12\x87\x01\n" +
 	"\x1eSetAutomaticResetCreditConsent\x121.delidev.v1.SetAutomaticResetCreditConsentRequest\x1a2.delidev.v1.SetAutomaticResetCreditConsentResponse\x12{\n" +
 	"\x1aCleanupFailedSubscriptions\x12-.delidev.v1.CleanupFailedSubscriptionsRequest\x1a..delidev.v1.CleanupFailedSubscriptionsResponse\x12\x81\x01\n" +
@@ -4684,7 +5627,13 @@ const file_delidev_v1_subscription_proto_rawDesc = "" +
 	"\x12FinishSubscription\x12%.delidev.v1.FinishSubscriptionRequest\x1a&.delidev.v1.FinishSubscriptionResponse\x12\x8a\x01\n" +
 	"\x1fSyncSubscriptionRecoveryCapture\x122.delidev.v1.SyncSubscriptionRecoveryCaptureRequest\x1a3.delidev.v1.SyncSubscriptionRecoveryCaptureResponse\x12\x8a\x01\n" +
 	"\x1fReadSubscriptionRecoveryCapture\x122.delidev.v1.ReadSubscriptionRecoveryCaptureRequest\x1a3.delidev.v1.ReadSubscriptionRecoveryCaptureResponse\x12f\n" +
-	"\x13RecoverSubscription\x12&.delidev.v1.RecoverSubscriptionRequest\x1a'.delidev.v1.RecoverSubscriptionResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"\x13RecoverSubscription\x12&.delidev.v1.RecoverSubscriptionRequest\x1a'.delidev.v1.RecoverSubscriptionResponse\x12l\n" +
+	"\x15StartClaudeUsageLogin\x12(.delidev.v1.StartClaudeUsageLoginRequest\x1a).delidev.v1.StartClaudeUsageLoginResponse\x12~\n" +
+	"\x1bGetClaudeUsageLoginProgress\x12..delidev.v1.GetClaudeUsageLoginProgressRequest\x1a/.delidev.v1.GetClaudeUsageLoginProgressResponse\x12\x84\x01\n" +
+	"\x1dSubmitClaudeUsageApprovalCode\x120.delidev.v1.SubmitClaudeUsageApprovalCodeRequest\x1a1.delidev.v1.SubmitClaudeUsageApprovalCodeResponse\x12o\n" +
+	"\x16ConfirmClaudeUsageLink\x12).delidev.v1.ConfirmClaudeUsageLinkRequest\x1a*.delidev.v1.ConfirmClaudeUsageLinkResponse\x12o\n" +
+	"\x16CancelClaudeUsageLogin\x12).delidev.v1.CancelClaudeUsageLoginRequest\x1a*.delidev.v1.CancelClaudeUsageLoginResponse\x12l\n" +
+	"\x15DisconnectClaudeUsage\x12(.delidev.v1.DisconnectClaudeUsageRequest\x1a).delidev.v1.DisconnectClaudeUsageResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_subscription_proto_rawDescOnce sync.Once
@@ -4698,8 +5647,8 @@ func file_delidev_v1_subscription_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_subscription_proto_rawDescData
 }
 
-var file_delidev_v1_subscription_proto_enumTypes = make([]protoimpl.EnumInfo, 15)
-var file_delidev_v1_subscription_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
+var file_delidev_v1_subscription_proto_enumTypes = make([]protoimpl.EnumInfo, 16)
+var file_delidev_v1_subscription_proto_msgTypes = make([]protoimpl.MessageInfo, 61)
 var file_delidev_v1_subscription_proto_goTypes = []any{
 	(SubscriptionAction)(0),                         // 0: delidev.v1.SubscriptionAction
 	(SubscriptionLoginState)(0),                     // 1: delidev.v1.SubscriptionLoginState
@@ -4716,152 +5665,190 @@ var file_delidev_v1_subscription_proto_goTypes = []any{
 	(SubscriptionResetOutcome)(0),                   // 12: delidev.v1.SubscriptionResetOutcome
 	(GrokDiagnosticPhase)(0),                        // 13: delidev.v1.GrokDiagnosticPhase
 	(CodexDiagnosticPhase)(0),                       // 14: delidev.v1.CodexDiagnosticPhase
-	(*CleanupFailedSubscriptionsRequest)(nil),       // 15: delidev.v1.CleanupFailedSubscriptionsRequest
-	(*CleanupFailedSubscriptionsResponse)(nil),      // 16: delidev.v1.CleanupFailedSubscriptionsResponse
-	(*GetFailedSubscriptionCleanupRequest)(nil),     // 17: delidev.v1.GetFailedSubscriptionCleanupRequest
-	(*GetFailedSubscriptionCleanupResponse)(nil),    // 18: delidev.v1.GetFailedSubscriptionCleanupResponse
-	(*FailedSubscriptionCleanupJob)(nil),            // 19: delidev.v1.FailedSubscriptionCleanupJob
-	(*FailedSubscriptionCleanupResult)(nil),         // 20: delidev.v1.FailedSubscriptionCleanupResult
-	(*RequestSubscriptionRequest)(nil),              // 21: delidev.v1.RequestSubscriptionRequest
-	(*RequestSubscriptionResponse)(nil),             // 22: delidev.v1.RequestSubscriptionResponse
-	(*CancelSubscriptionRequest)(nil),               // 23: delidev.v1.CancelSubscriptionRequest
-	(*CancelSubscriptionResponse)(nil),              // 24: delidev.v1.CancelSubscriptionResponse
-	(*GetSubscriptionProgressRequest)(nil),          // 25: delidev.v1.GetSubscriptionProgressRequest
-	(*GetSubscriptionProgressResponse)(nil),         // 26: delidev.v1.GetSubscriptionProgressResponse
-	(*WatchSubscriptionRequest)(nil),                // 27: delidev.v1.WatchSubscriptionRequest
-	(*WatchSubscriptionResponse)(nil),               // 28: delidev.v1.WatchSubscriptionResponse
-	(*TakeSubscriptionRequest)(nil),                 // 29: delidev.v1.TakeSubscriptionRequest
-	(*TakeSubscriptionResponse)(nil),                // 30: delidev.v1.TakeSubscriptionResponse
-	(*PublishSubscriptionProgressRequest)(nil),      // 31: delidev.v1.PublishSubscriptionProgressRequest
-	(*PublishSubscriptionProgressResponse)(nil),     // 32: delidev.v1.PublishSubscriptionProgressResponse
-	(*FinishSubscriptionRequest)(nil),               // 33: delidev.v1.FinishSubscriptionRequest
-	(*FinishSubscriptionResponse)(nil),              // 34: delidev.v1.FinishSubscriptionResponse
-	(*SyncSubscriptionRecoveryCaptureRequest)(nil),  // 35: delidev.v1.SyncSubscriptionRecoveryCaptureRequest
-	(*SyncSubscriptionRecoveryCaptureResponse)(nil), // 36: delidev.v1.SyncSubscriptionRecoveryCaptureResponse
-	(*ReadSubscriptionRecoveryCaptureRequest)(nil),  // 37: delidev.v1.ReadSubscriptionRecoveryCaptureRequest
-	(*ReadSubscriptionRecoveryCaptureResponse)(nil), // 38: delidev.v1.ReadSubscriptionRecoveryCaptureResponse
-	(*RecoverSubscriptionRequest)(nil),              // 39: delidev.v1.RecoverSubscriptionRequest
-	(*RecoverSubscriptionResponse)(nil),             // 40: delidev.v1.RecoverSubscriptionResponse
-	(*NativeSubscriptionDiagnostic)(nil),            // 41: delidev.v1.NativeSubscriptionDiagnostic
-	(*NativeSubscriptionIdentity)(nil),              // 42: delidev.v1.NativeSubscriptionIdentity
-	(*SubmitSubscriptionLoginCodeRequest)(nil),      // 43: delidev.v1.SubmitSubscriptionLoginCodeRequest
-	(*SubmitSubscriptionLoginCodeResponse)(nil),     // 44: delidev.v1.SubmitSubscriptionLoginCodeResponse
-	(*TakeSubscriptionLoginCodeRequest)(nil),        // 45: delidev.v1.TakeSubscriptionLoginCodeRequest
-	(*TakeSubscriptionLoginCodeResponse)(nil),       // 46: delidev.v1.TakeSubscriptionLoginCodeResponse
-	(*RequestSubscriptionObservationRequest)(nil),   // 47: delidev.v1.RequestSubscriptionObservationRequest
-	(*RequestSubscriptionObservationResponse)(nil),  // 48: delidev.v1.RequestSubscriptionObservationResponse
-	(*RefreshAllSubscriptionQuotasRequest)(nil),     // 49: delidev.v1.RefreshAllSubscriptionQuotasRequest
-	(*RefreshAllSubscriptionQuotasResponse)(nil),    // 50: delidev.v1.RefreshAllSubscriptionQuotasResponse
-	(*ReconcileSubscriptionCreditRequest)(nil),      // 51: delidev.v1.ReconcileSubscriptionCreditRequest
-	(*ReconcileSubscriptionCreditResponse)(nil),     // 52: delidev.v1.ReconcileSubscriptionCreditResponse
-	(*ClaimSubscriptionObservationRequest)(nil),     // 53: delidev.v1.ClaimSubscriptionObservationRequest
-	(*ClaimSubscriptionObservationResponse)(nil),    // 54: delidev.v1.ClaimSubscriptionObservationResponse
-	(*PublishSubscriptionObservationRequest)(nil),   // 55: delidev.v1.PublishSubscriptionObservationRequest
-	(*PublishSubscriptionObservationResponse)(nil),  // 56: delidev.v1.PublishSubscriptionObservationResponse
-	(*ForwardSubscriptionCallbackRequest)(nil),      // 57: delidev.v1.ForwardSubscriptionCallbackRequest
-	(*ForwardSubscriptionCallbackResponse)(nil),     // 58: delidev.v1.ForwardSubscriptionCallbackResponse
-	(*CodexDiagnostic)(nil),                         // 59: delidev.v1.CodexDiagnostic
-	(*GrokDiagnostic)(nil),                          // 60: delidev.v1.GrokDiagnostic
-	(*SetAutomaticResetCreditConsentRequest)(nil),   // 61: delidev.v1.SetAutomaticResetCreditConsentRequest
-	(*SetAutomaticResetCreditConsentResponse)(nil),  // 62: delidev.v1.SetAutomaticResetCreditConsentResponse
-	(*Mutation)(nil),                                // 63: delidev.v1.Mutation
-	(*Resource)(nil),                                // 64: delidev.v1.Resource
+	(ClaudeUsageLoginState)(0),                      // 15: delidev.v1.ClaudeUsageLoginState
+	(*CleanupFailedSubscriptionsRequest)(nil),       // 16: delidev.v1.CleanupFailedSubscriptionsRequest
+	(*CleanupFailedSubscriptionsResponse)(nil),      // 17: delidev.v1.CleanupFailedSubscriptionsResponse
+	(*GetFailedSubscriptionCleanupRequest)(nil),     // 18: delidev.v1.GetFailedSubscriptionCleanupRequest
+	(*GetFailedSubscriptionCleanupResponse)(nil),    // 19: delidev.v1.GetFailedSubscriptionCleanupResponse
+	(*FailedSubscriptionCleanupJob)(nil),            // 20: delidev.v1.FailedSubscriptionCleanupJob
+	(*FailedSubscriptionCleanupResult)(nil),         // 21: delidev.v1.FailedSubscriptionCleanupResult
+	(*RequestSubscriptionRequest)(nil),              // 22: delidev.v1.RequestSubscriptionRequest
+	(*RequestSubscriptionResponse)(nil),             // 23: delidev.v1.RequestSubscriptionResponse
+	(*CancelSubscriptionRequest)(nil),               // 24: delidev.v1.CancelSubscriptionRequest
+	(*CancelSubscriptionResponse)(nil),              // 25: delidev.v1.CancelSubscriptionResponse
+	(*GetSubscriptionProgressRequest)(nil),          // 26: delidev.v1.GetSubscriptionProgressRequest
+	(*GetSubscriptionProgressResponse)(nil),         // 27: delidev.v1.GetSubscriptionProgressResponse
+	(*WatchSubscriptionRequest)(nil),                // 28: delidev.v1.WatchSubscriptionRequest
+	(*WatchSubscriptionResponse)(nil),               // 29: delidev.v1.WatchSubscriptionResponse
+	(*TakeSubscriptionRequest)(nil),                 // 30: delidev.v1.TakeSubscriptionRequest
+	(*TakeSubscriptionResponse)(nil),                // 31: delidev.v1.TakeSubscriptionResponse
+	(*PublishSubscriptionProgressRequest)(nil),      // 32: delidev.v1.PublishSubscriptionProgressRequest
+	(*PublishSubscriptionProgressResponse)(nil),     // 33: delidev.v1.PublishSubscriptionProgressResponse
+	(*FinishSubscriptionRequest)(nil),               // 34: delidev.v1.FinishSubscriptionRequest
+	(*FinishSubscriptionResponse)(nil),              // 35: delidev.v1.FinishSubscriptionResponse
+	(*SyncSubscriptionRecoveryCaptureRequest)(nil),  // 36: delidev.v1.SyncSubscriptionRecoveryCaptureRequest
+	(*SyncSubscriptionRecoveryCaptureResponse)(nil), // 37: delidev.v1.SyncSubscriptionRecoveryCaptureResponse
+	(*ReadSubscriptionRecoveryCaptureRequest)(nil),  // 38: delidev.v1.ReadSubscriptionRecoveryCaptureRequest
+	(*ReadSubscriptionRecoveryCaptureResponse)(nil), // 39: delidev.v1.ReadSubscriptionRecoveryCaptureResponse
+	(*RecoverSubscriptionRequest)(nil),              // 40: delidev.v1.RecoverSubscriptionRequest
+	(*RecoverSubscriptionResponse)(nil),             // 41: delidev.v1.RecoverSubscriptionResponse
+	(*NativeSubscriptionDiagnostic)(nil),            // 42: delidev.v1.NativeSubscriptionDiagnostic
+	(*NativeSubscriptionIdentity)(nil),              // 43: delidev.v1.NativeSubscriptionIdentity
+	(*SubmitSubscriptionLoginCodeRequest)(nil),      // 44: delidev.v1.SubmitSubscriptionLoginCodeRequest
+	(*SubmitSubscriptionLoginCodeResponse)(nil),     // 45: delidev.v1.SubmitSubscriptionLoginCodeResponse
+	(*TakeSubscriptionLoginCodeRequest)(nil),        // 46: delidev.v1.TakeSubscriptionLoginCodeRequest
+	(*TakeSubscriptionLoginCodeResponse)(nil),       // 47: delidev.v1.TakeSubscriptionLoginCodeResponse
+	(*RequestSubscriptionObservationRequest)(nil),   // 48: delidev.v1.RequestSubscriptionObservationRequest
+	(*RequestSubscriptionObservationResponse)(nil),  // 49: delidev.v1.RequestSubscriptionObservationResponse
+	(*RefreshAllSubscriptionQuotasRequest)(nil),     // 50: delidev.v1.RefreshAllSubscriptionQuotasRequest
+	(*RefreshAllSubscriptionQuotasResponse)(nil),    // 51: delidev.v1.RefreshAllSubscriptionQuotasResponse
+	(*ReconcileSubscriptionCreditRequest)(nil),      // 52: delidev.v1.ReconcileSubscriptionCreditRequest
+	(*ReconcileSubscriptionCreditResponse)(nil),     // 53: delidev.v1.ReconcileSubscriptionCreditResponse
+	(*ClaimSubscriptionObservationRequest)(nil),     // 54: delidev.v1.ClaimSubscriptionObservationRequest
+	(*ClaimSubscriptionObservationResponse)(nil),    // 55: delidev.v1.ClaimSubscriptionObservationResponse
+	(*PublishSubscriptionObservationRequest)(nil),   // 56: delidev.v1.PublishSubscriptionObservationRequest
+	(*PublishSubscriptionObservationResponse)(nil),  // 57: delidev.v1.PublishSubscriptionObservationResponse
+	(*ForwardSubscriptionCallbackRequest)(nil),      // 58: delidev.v1.ForwardSubscriptionCallbackRequest
+	(*ForwardSubscriptionCallbackResponse)(nil),     // 59: delidev.v1.ForwardSubscriptionCallbackResponse
+	(*CodexDiagnostic)(nil),                         // 60: delidev.v1.CodexDiagnostic
+	(*GrokDiagnostic)(nil),                          // 61: delidev.v1.GrokDiagnostic
+	(*SetAutomaticResetCreditConsentRequest)(nil),   // 62: delidev.v1.SetAutomaticResetCreditConsentRequest
+	(*SetAutomaticResetCreditConsentResponse)(nil),  // 63: delidev.v1.SetAutomaticResetCreditConsentResponse
+	(*ClaudeUsageIdentityReview)(nil),               // 64: delidev.v1.ClaudeUsageIdentityReview
+	(*StartClaudeUsageLoginRequest)(nil),            // 65: delidev.v1.StartClaudeUsageLoginRequest
+	(*StartClaudeUsageLoginResponse)(nil),           // 66: delidev.v1.StartClaudeUsageLoginResponse
+	(*GetClaudeUsageLoginProgressRequest)(nil),      // 67: delidev.v1.GetClaudeUsageLoginProgressRequest
+	(*GetClaudeUsageLoginProgressResponse)(nil),     // 68: delidev.v1.GetClaudeUsageLoginProgressResponse
+	(*SubmitClaudeUsageApprovalCodeRequest)(nil),    // 69: delidev.v1.SubmitClaudeUsageApprovalCodeRequest
+	(*SubmitClaudeUsageApprovalCodeResponse)(nil),   // 70: delidev.v1.SubmitClaudeUsageApprovalCodeResponse
+	(*ConfirmClaudeUsageLinkRequest)(nil),           // 71: delidev.v1.ConfirmClaudeUsageLinkRequest
+	(*ConfirmClaudeUsageLinkResponse)(nil),          // 72: delidev.v1.ConfirmClaudeUsageLinkResponse
+	(*CancelClaudeUsageLoginRequest)(nil),           // 73: delidev.v1.CancelClaudeUsageLoginRequest
+	(*CancelClaudeUsageLoginResponse)(nil),          // 74: delidev.v1.CancelClaudeUsageLoginResponse
+	(*DisconnectClaudeUsageRequest)(nil),            // 75: delidev.v1.DisconnectClaudeUsageRequest
+	(*DisconnectClaudeUsageResponse)(nil),           // 76: delidev.v1.DisconnectClaudeUsageResponse
+	(*Mutation)(nil),                                // 77: delidev.v1.Mutation
+	(*Resource)(nil),                                // 78: delidev.v1.Resource
 }
 var file_delidev_v1_subscription_proto_depIdxs = []int32{
-	19, // 0: delidev.v1.CleanupFailedSubscriptionsResponse.job:type_name -> delidev.v1.FailedSubscriptionCleanupJob
-	19, // 1: delidev.v1.GetFailedSubscriptionCleanupResponse.job:type_name -> delidev.v1.FailedSubscriptionCleanupJob
-	20, // 2: delidev.v1.GetFailedSubscriptionCleanupResponse.results:type_name -> delidev.v1.FailedSubscriptionCleanupResult
+	20, // 0: delidev.v1.CleanupFailedSubscriptionsResponse.job:type_name -> delidev.v1.FailedSubscriptionCleanupJob
+	20, // 1: delidev.v1.GetFailedSubscriptionCleanupResponse.job:type_name -> delidev.v1.FailedSubscriptionCleanupJob
+	21, // 2: delidev.v1.GetFailedSubscriptionCleanupResponse.results:type_name -> delidev.v1.FailedSubscriptionCleanupResult
 	2,  // 3: delidev.v1.FailedSubscriptionCleanupJob.state:type_name -> delidev.v1.FailedSubscriptionCleanupState
 	3,  // 4: delidev.v1.FailedSubscriptionCleanupResult.outcome:type_name -> delidev.v1.FailedSubscriptionCleanupOutcome
 	4,  // 5: delidev.v1.FailedSubscriptionCleanupResult.reason:type_name -> delidev.v1.FailedSubscriptionCleanupReason
-	63, // 6: delidev.v1.RequestSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
+	77, // 6: delidev.v1.RequestSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
 	0,  // 7: delidev.v1.RequestSubscriptionRequest.action:type_name -> delidev.v1.SubscriptionAction
-	64, // 8: delidev.v1.RequestSubscriptionResponse.account:type_name -> delidev.v1.Resource
-	63, // 9: delidev.v1.CancelSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
-	64, // 10: delidev.v1.CancelSubscriptionResponse.account:type_name -> delidev.v1.Resource
+	78, // 8: delidev.v1.RequestSubscriptionResponse.account:type_name -> delidev.v1.Resource
+	77, // 9: delidev.v1.CancelSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
+	78, // 10: delidev.v1.CancelSubscriptionResponse.account:type_name -> delidev.v1.Resource
 	1,  // 11: delidev.v1.GetSubscriptionProgressResponse.state:type_name -> delidev.v1.SubscriptionLoginState
-	59, // 12: delidev.v1.GetSubscriptionProgressResponse.diagnostic:type_name -> delidev.v1.CodexDiagnostic
+	60, // 12: delidev.v1.GetSubscriptionProgressResponse.diagnostic:type_name -> delidev.v1.CodexDiagnostic
 	9,  // 13: delidev.v1.GetSubscriptionProgressResponse.login_method:type_name -> delidev.v1.SubscriptionLoginMethod
-	41, // 14: delidev.v1.GetSubscriptionProgressResponse.native_diagnostic:type_name -> delidev.v1.NativeSubscriptionDiagnostic
-	60, // 15: delidev.v1.GetSubscriptionProgressResponse.grok_diagnostic:type_name -> delidev.v1.GrokDiagnostic
-	64, // 16: delidev.v1.WatchSubscriptionResponse.account:type_name -> delidev.v1.Resource
-	63, // 17: delidev.v1.TakeSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
+	42, // 14: delidev.v1.GetSubscriptionProgressResponse.native_diagnostic:type_name -> delidev.v1.NativeSubscriptionDiagnostic
+	61, // 15: delidev.v1.GetSubscriptionProgressResponse.grok_diagnostic:type_name -> delidev.v1.GrokDiagnostic
+	78, // 16: delidev.v1.WatchSubscriptionResponse.account:type_name -> delidev.v1.Resource
+	77, // 17: delidev.v1.TakeSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
 	0,  // 18: delidev.v1.TakeSubscriptionRequest.action:type_name -> delidev.v1.SubscriptionAction
 	1,  // 19: delidev.v1.PublishSubscriptionProgressRequest.state:type_name -> delidev.v1.SubscriptionLoginState
 	9,  // 20: delidev.v1.PublishSubscriptionProgressRequest.login_method:type_name -> delidev.v1.SubscriptionLoginMethod
-	41, // 21: delidev.v1.PublishSubscriptionProgressRequest.native_diagnostic:type_name -> delidev.v1.NativeSubscriptionDiagnostic
-	63, // 22: delidev.v1.FinishSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
-	42, // 23: delidev.v1.FinishSubscriptionRequest.native_identity:type_name -> delidev.v1.NativeSubscriptionIdentity
+	42, // 21: delidev.v1.PublishSubscriptionProgressRequest.native_diagnostic:type_name -> delidev.v1.NativeSubscriptionDiagnostic
+	77, // 22: delidev.v1.FinishSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
+	43, // 23: delidev.v1.FinishSubscriptionRequest.native_identity:type_name -> delidev.v1.NativeSubscriptionIdentity
 	5,  // 24: delidev.v1.FinishSubscriptionRequest.finish_scope:type_name -> delidev.v1.SubscriptionFinishScope
-	64, // 25: delidev.v1.FinishSubscriptionResponse.account:type_name -> delidev.v1.Resource
-	63, // 26: delidev.v1.SyncSubscriptionRecoveryCaptureRequest.mutation:type_name -> delidev.v1.Mutation
-	63, // 27: delidev.v1.RecoverSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
+	78, // 25: delidev.v1.FinishSubscriptionResponse.account:type_name -> delidev.v1.Resource
+	77, // 26: delidev.v1.SyncSubscriptionRecoveryCaptureRequest.mutation:type_name -> delidev.v1.Mutation
+	77, // 27: delidev.v1.RecoverSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
 	6,  // 28: delidev.v1.RecoverSubscriptionRequest.report:type_name -> delidev.v1.SubscriptionRecoveryReport
 	8,  // 29: delidev.v1.RecoverSubscriptionRequest.blocked_reason:type_name -> delidev.v1.SubscriptionRecoveryBlockedReason
-	64, // 30: delidev.v1.RecoverSubscriptionResponse.account:type_name -> delidev.v1.Resource
+	78, // 30: delidev.v1.RecoverSubscriptionResponse.account:type_name -> delidev.v1.Resource
 	7,  // 31: delidev.v1.RecoverSubscriptionResponse.outcome:type_name -> delidev.v1.SubscriptionRecoveryOutcome
 	8,  // 32: delidev.v1.RecoverSubscriptionResponse.blocked_reason:type_name -> delidev.v1.SubscriptionRecoveryBlockedReason
 	10, // 33: delidev.v1.NativeSubscriptionDiagnostic.phase:type_name -> delidev.v1.NativeSubscriptionDiagnosticPhase
-	63, // 34: delidev.v1.SubmitSubscriptionLoginCodeRequest.mutation:type_name -> delidev.v1.Mutation
-	63, // 35: delidev.v1.RequestSubscriptionObservationRequest.mutation:type_name -> delidev.v1.Mutation
+	77, // 34: delidev.v1.SubmitSubscriptionLoginCodeRequest.mutation:type_name -> delidev.v1.Mutation
+	77, // 35: delidev.v1.RequestSubscriptionObservationRequest.mutation:type_name -> delidev.v1.Mutation
 	11, // 36: delidev.v1.RequestSubscriptionObservationRequest.action:type_name -> delidev.v1.SubscriptionObservationAction
-	64, // 37: delidev.v1.RequestSubscriptionObservationResponse.account:type_name -> delidev.v1.Resource
-	63, // 38: delidev.v1.ReconcileSubscriptionCreditRequest.mutation:type_name -> delidev.v1.Mutation
-	64, // 39: delidev.v1.ReconcileSubscriptionCreditResponse.account:type_name -> delidev.v1.Resource
-	63, // 40: delidev.v1.ClaimSubscriptionObservationRequest.mutation:type_name -> delidev.v1.Mutation
-	63, // 41: delidev.v1.PublishSubscriptionObservationRequest.mutation:type_name -> delidev.v1.Mutation
-	64, // 42: delidev.v1.PublishSubscriptionObservationResponse.account:type_name -> delidev.v1.Resource
+	78, // 37: delidev.v1.RequestSubscriptionObservationResponse.account:type_name -> delidev.v1.Resource
+	77, // 38: delidev.v1.ReconcileSubscriptionCreditRequest.mutation:type_name -> delidev.v1.Mutation
+	78, // 39: delidev.v1.ReconcileSubscriptionCreditResponse.account:type_name -> delidev.v1.Resource
+	77, // 40: delidev.v1.ClaimSubscriptionObservationRequest.mutation:type_name -> delidev.v1.Mutation
+	77, // 41: delidev.v1.PublishSubscriptionObservationRequest.mutation:type_name -> delidev.v1.Mutation
+	78, // 42: delidev.v1.PublishSubscriptionObservationResponse.account:type_name -> delidev.v1.Resource
 	14, // 43: delidev.v1.CodexDiagnostic.phase:type_name -> delidev.v1.CodexDiagnosticPhase
 	13, // 44: delidev.v1.GrokDiagnostic.phase:type_name -> delidev.v1.GrokDiagnosticPhase
-	63, // 45: delidev.v1.SetAutomaticResetCreditConsentRequest.mutation:type_name -> delidev.v1.Mutation
-	64, // 46: delidev.v1.SetAutomaticResetCreditConsentResponse.account:type_name -> delidev.v1.Resource
-	61, // 47: delidev.v1.SubscriptionService.SetAutomaticResetCreditConsent:input_type -> delidev.v1.SetAutomaticResetCreditConsentRequest
-	15, // 48: delidev.v1.SubscriptionService.CleanupFailedSubscriptions:input_type -> delidev.v1.CleanupFailedSubscriptionsRequest
-	17, // 49: delidev.v1.SubscriptionService.GetFailedSubscriptionCleanup:input_type -> delidev.v1.GetFailedSubscriptionCleanupRequest
-	47, // 50: delidev.v1.SubscriptionService.RequestSubscriptionObservation:input_type -> delidev.v1.RequestSubscriptionObservationRequest
-	49, // 51: delidev.v1.SubscriptionService.RefreshAllSubscriptionQuotas:input_type -> delidev.v1.RefreshAllSubscriptionQuotasRequest
-	51, // 52: delidev.v1.SubscriptionService.ReconcileSubscriptionCredit:input_type -> delidev.v1.ReconcileSubscriptionCreditRequest
-	53, // 53: delidev.v1.SubscriptionService.ClaimSubscriptionObservation:input_type -> delidev.v1.ClaimSubscriptionObservationRequest
-	55, // 54: delidev.v1.SubscriptionService.PublishSubscriptionObservation:input_type -> delidev.v1.PublishSubscriptionObservationRequest
-	21, // 55: delidev.v1.SubscriptionService.RequestSubscription:input_type -> delidev.v1.RequestSubscriptionRequest
-	23, // 56: delidev.v1.SubscriptionService.CancelSubscription:input_type -> delidev.v1.CancelSubscriptionRequest
-	25, // 57: delidev.v1.SubscriptionService.GetSubscriptionProgress:input_type -> delidev.v1.GetSubscriptionProgressRequest
-	43, // 58: delidev.v1.SubscriptionService.SubmitSubscriptionLoginCode:input_type -> delidev.v1.SubmitSubscriptionLoginCodeRequest
-	45, // 59: delidev.v1.SubscriptionService.TakeSubscriptionLoginCode:input_type -> delidev.v1.TakeSubscriptionLoginCodeRequest
-	57, // 60: delidev.v1.SubscriptionService.ForwardSubscriptionCallback:input_type -> delidev.v1.ForwardSubscriptionCallbackRequest
-	27, // 61: delidev.v1.SubscriptionService.WatchSubscription:input_type -> delidev.v1.WatchSubscriptionRequest
-	29, // 62: delidev.v1.SubscriptionService.TakeSubscription:input_type -> delidev.v1.TakeSubscriptionRequest
-	31, // 63: delidev.v1.SubscriptionService.PublishSubscriptionProgress:input_type -> delidev.v1.PublishSubscriptionProgressRequest
-	33, // 64: delidev.v1.SubscriptionService.FinishSubscription:input_type -> delidev.v1.FinishSubscriptionRequest
-	35, // 65: delidev.v1.SubscriptionService.SyncSubscriptionRecoveryCapture:input_type -> delidev.v1.SyncSubscriptionRecoveryCaptureRequest
-	37, // 66: delidev.v1.SubscriptionService.ReadSubscriptionRecoveryCapture:input_type -> delidev.v1.ReadSubscriptionRecoveryCaptureRequest
-	39, // 67: delidev.v1.SubscriptionService.RecoverSubscription:input_type -> delidev.v1.RecoverSubscriptionRequest
-	62, // 68: delidev.v1.SubscriptionService.SetAutomaticResetCreditConsent:output_type -> delidev.v1.SetAutomaticResetCreditConsentResponse
-	16, // 69: delidev.v1.SubscriptionService.CleanupFailedSubscriptions:output_type -> delidev.v1.CleanupFailedSubscriptionsResponse
-	18, // 70: delidev.v1.SubscriptionService.GetFailedSubscriptionCleanup:output_type -> delidev.v1.GetFailedSubscriptionCleanupResponse
-	48, // 71: delidev.v1.SubscriptionService.RequestSubscriptionObservation:output_type -> delidev.v1.RequestSubscriptionObservationResponse
-	50, // 72: delidev.v1.SubscriptionService.RefreshAllSubscriptionQuotas:output_type -> delidev.v1.RefreshAllSubscriptionQuotasResponse
-	52, // 73: delidev.v1.SubscriptionService.ReconcileSubscriptionCredit:output_type -> delidev.v1.ReconcileSubscriptionCreditResponse
-	54, // 74: delidev.v1.SubscriptionService.ClaimSubscriptionObservation:output_type -> delidev.v1.ClaimSubscriptionObservationResponse
-	56, // 75: delidev.v1.SubscriptionService.PublishSubscriptionObservation:output_type -> delidev.v1.PublishSubscriptionObservationResponse
-	22, // 76: delidev.v1.SubscriptionService.RequestSubscription:output_type -> delidev.v1.RequestSubscriptionResponse
-	24, // 77: delidev.v1.SubscriptionService.CancelSubscription:output_type -> delidev.v1.CancelSubscriptionResponse
-	26, // 78: delidev.v1.SubscriptionService.GetSubscriptionProgress:output_type -> delidev.v1.GetSubscriptionProgressResponse
-	44, // 79: delidev.v1.SubscriptionService.SubmitSubscriptionLoginCode:output_type -> delidev.v1.SubmitSubscriptionLoginCodeResponse
-	46, // 80: delidev.v1.SubscriptionService.TakeSubscriptionLoginCode:output_type -> delidev.v1.TakeSubscriptionLoginCodeResponse
-	58, // 81: delidev.v1.SubscriptionService.ForwardSubscriptionCallback:output_type -> delidev.v1.ForwardSubscriptionCallbackResponse
-	28, // 82: delidev.v1.SubscriptionService.WatchSubscription:output_type -> delidev.v1.WatchSubscriptionResponse
-	30, // 83: delidev.v1.SubscriptionService.TakeSubscription:output_type -> delidev.v1.TakeSubscriptionResponse
-	32, // 84: delidev.v1.SubscriptionService.PublishSubscriptionProgress:output_type -> delidev.v1.PublishSubscriptionProgressResponse
-	34, // 85: delidev.v1.SubscriptionService.FinishSubscription:output_type -> delidev.v1.FinishSubscriptionResponse
-	36, // 86: delidev.v1.SubscriptionService.SyncSubscriptionRecoveryCapture:output_type -> delidev.v1.SyncSubscriptionRecoveryCaptureResponse
-	38, // 87: delidev.v1.SubscriptionService.ReadSubscriptionRecoveryCapture:output_type -> delidev.v1.ReadSubscriptionRecoveryCaptureResponse
-	40, // 88: delidev.v1.SubscriptionService.RecoverSubscription:output_type -> delidev.v1.RecoverSubscriptionResponse
-	68, // [68:89] is the sub-list for method output_type
-	47, // [47:68] is the sub-list for method input_type
-	47, // [47:47] is the sub-list for extension type_name
-	47, // [47:47] is the sub-list for extension extendee
-	0,  // [0:47] is the sub-list for field type_name
+	77, // 45: delidev.v1.SetAutomaticResetCreditConsentRequest.mutation:type_name -> delidev.v1.Mutation
+	78, // 46: delidev.v1.SetAutomaticResetCreditConsentResponse.account:type_name -> delidev.v1.Resource
+	77, // 47: delidev.v1.StartClaudeUsageLoginRequest.mutation:type_name -> delidev.v1.Mutation
+	78, // 48: delidev.v1.StartClaudeUsageLoginResponse.account:type_name -> delidev.v1.Resource
+	15, // 49: delidev.v1.GetClaudeUsageLoginProgressResponse.state:type_name -> delidev.v1.ClaudeUsageLoginState
+	64, // 50: delidev.v1.GetClaudeUsageLoginProgressResponse.identity:type_name -> delidev.v1.ClaudeUsageIdentityReview
+	42, // 51: delidev.v1.GetClaudeUsageLoginProgressResponse.diagnostic:type_name -> delidev.v1.NativeSubscriptionDiagnostic
+	77, // 52: delidev.v1.SubmitClaudeUsageApprovalCodeRequest.mutation:type_name -> delidev.v1.Mutation
+	77, // 53: delidev.v1.ConfirmClaudeUsageLinkRequest.mutation:type_name -> delidev.v1.Mutation
+	78, // 54: delidev.v1.ConfirmClaudeUsageLinkResponse.account:type_name -> delidev.v1.Resource
+	77, // 55: delidev.v1.CancelClaudeUsageLoginRequest.mutation:type_name -> delidev.v1.Mutation
+	78, // 56: delidev.v1.CancelClaudeUsageLoginResponse.account:type_name -> delidev.v1.Resource
+	77, // 57: delidev.v1.DisconnectClaudeUsageRequest.mutation:type_name -> delidev.v1.Mutation
+	78, // 58: delidev.v1.DisconnectClaudeUsageResponse.account:type_name -> delidev.v1.Resource
+	62, // 59: delidev.v1.SubscriptionService.SetAutomaticResetCreditConsent:input_type -> delidev.v1.SetAutomaticResetCreditConsentRequest
+	16, // 60: delidev.v1.SubscriptionService.CleanupFailedSubscriptions:input_type -> delidev.v1.CleanupFailedSubscriptionsRequest
+	18, // 61: delidev.v1.SubscriptionService.GetFailedSubscriptionCleanup:input_type -> delidev.v1.GetFailedSubscriptionCleanupRequest
+	48, // 62: delidev.v1.SubscriptionService.RequestSubscriptionObservation:input_type -> delidev.v1.RequestSubscriptionObservationRequest
+	50, // 63: delidev.v1.SubscriptionService.RefreshAllSubscriptionQuotas:input_type -> delidev.v1.RefreshAllSubscriptionQuotasRequest
+	52, // 64: delidev.v1.SubscriptionService.ReconcileSubscriptionCredit:input_type -> delidev.v1.ReconcileSubscriptionCreditRequest
+	54, // 65: delidev.v1.SubscriptionService.ClaimSubscriptionObservation:input_type -> delidev.v1.ClaimSubscriptionObservationRequest
+	56, // 66: delidev.v1.SubscriptionService.PublishSubscriptionObservation:input_type -> delidev.v1.PublishSubscriptionObservationRequest
+	22, // 67: delidev.v1.SubscriptionService.RequestSubscription:input_type -> delidev.v1.RequestSubscriptionRequest
+	24, // 68: delidev.v1.SubscriptionService.CancelSubscription:input_type -> delidev.v1.CancelSubscriptionRequest
+	26, // 69: delidev.v1.SubscriptionService.GetSubscriptionProgress:input_type -> delidev.v1.GetSubscriptionProgressRequest
+	44, // 70: delidev.v1.SubscriptionService.SubmitSubscriptionLoginCode:input_type -> delidev.v1.SubmitSubscriptionLoginCodeRequest
+	46, // 71: delidev.v1.SubscriptionService.TakeSubscriptionLoginCode:input_type -> delidev.v1.TakeSubscriptionLoginCodeRequest
+	58, // 72: delidev.v1.SubscriptionService.ForwardSubscriptionCallback:input_type -> delidev.v1.ForwardSubscriptionCallbackRequest
+	28, // 73: delidev.v1.SubscriptionService.WatchSubscription:input_type -> delidev.v1.WatchSubscriptionRequest
+	30, // 74: delidev.v1.SubscriptionService.TakeSubscription:input_type -> delidev.v1.TakeSubscriptionRequest
+	32, // 75: delidev.v1.SubscriptionService.PublishSubscriptionProgress:input_type -> delidev.v1.PublishSubscriptionProgressRequest
+	34, // 76: delidev.v1.SubscriptionService.FinishSubscription:input_type -> delidev.v1.FinishSubscriptionRequest
+	36, // 77: delidev.v1.SubscriptionService.SyncSubscriptionRecoveryCapture:input_type -> delidev.v1.SyncSubscriptionRecoveryCaptureRequest
+	38, // 78: delidev.v1.SubscriptionService.ReadSubscriptionRecoveryCapture:input_type -> delidev.v1.ReadSubscriptionRecoveryCaptureRequest
+	40, // 79: delidev.v1.SubscriptionService.RecoverSubscription:input_type -> delidev.v1.RecoverSubscriptionRequest
+	65, // 80: delidev.v1.SubscriptionService.StartClaudeUsageLogin:input_type -> delidev.v1.StartClaudeUsageLoginRequest
+	67, // 81: delidev.v1.SubscriptionService.GetClaudeUsageLoginProgress:input_type -> delidev.v1.GetClaudeUsageLoginProgressRequest
+	69, // 82: delidev.v1.SubscriptionService.SubmitClaudeUsageApprovalCode:input_type -> delidev.v1.SubmitClaudeUsageApprovalCodeRequest
+	71, // 83: delidev.v1.SubscriptionService.ConfirmClaudeUsageLink:input_type -> delidev.v1.ConfirmClaudeUsageLinkRequest
+	73, // 84: delidev.v1.SubscriptionService.CancelClaudeUsageLogin:input_type -> delidev.v1.CancelClaudeUsageLoginRequest
+	75, // 85: delidev.v1.SubscriptionService.DisconnectClaudeUsage:input_type -> delidev.v1.DisconnectClaudeUsageRequest
+	63, // 86: delidev.v1.SubscriptionService.SetAutomaticResetCreditConsent:output_type -> delidev.v1.SetAutomaticResetCreditConsentResponse
+	17, // 87: delidev.v1.SubscriptionService.CleanupFailedSubscriptions:output_type -> delidev.v1.CleanupFailedSubscriptionsResponse
+	19, // 88: delidev.v1.SubscriptionService.GetFailedSubscriptionCleanup:output_type -> delidev.v1.GetFailedSubscriptionCleanupResponse
+	49, // 89: delidev.v1.SubscriptionService.RequestSubscriptionObservation:output_type -> delidev.v1.RequestSubscriptionObservationResponse
+	51, // 90: delidev.v1.SubscriptionService.RefreshAllSubscriptionQuotas:output_type -> delidev.v1.RefreshAllSubscriptionQuotasResponse
+	53, // 91: delidev.v1.SubscriptionService.ReconcileSubscriptionCredit:output_type -> delidev.v1.ReconcileSubscriptionCreditResponse
+	55, // 92: delidev.v1.SubscriptionService.ClaimSubscriptionObservation:output_type -> delidev.v1.ClaimSubscriptionObservationResponse
+	57, // 93: delidev.v1.SubscriptionService.PublishSubscriptionObservation:output_type -> delidev.v1.PublishSubscriptionObservationResponse
+	23, // 94: delidev.v1.SubscriptionService.RequestSubscription:output_type -> delidev.v1.RequestSubscriptionResponse
+	25, // 95: delidev.v1.SubscriptionService.CancelSubscription:output_type -> delidev.v1.CancelSubscriptionResponse
+	27, // 96: delidev.v1.SubscriptionService.GetSubscriptionProgress:output_type -> delidev.v1.GetSubscriptionProgressResponse
+	45, // 97: delidev.v1.SubscriptionService.SubmitSubscriptionLoginCode:output_type -> delidev.v1.SubmitSubscriptionLoginCodeResponse
+	47, // 98: delidev.v1.SubscriptionService.TakeSubscriptionLoginCode:output_type -> delidev.v1.TakeSubscriptionLoginCodeResponse
+	59, // 99: delidev.v1.SubscriptionService.ForwardSubscriptionCallback:output_type -> delidev.v1.ForwardSubscriptionCallbackResponse
+	29, // 100: delidev.v1.SubscriptionService.WatchSubscription:output_type -> delidev.v1.WatchSubscriptionResponse
+	31, // 101: delidev.v1.SubscriptionService.TakeSubscription:output_type -> delidev.v1.TakeSubscriptionResponse
+	33, // 102: delidev.v1.SubscriptionService.PublishSubscriptionProgress:output_type -> delidev.v1.PublishSubscriptionProgressResponse
+	35, // 103: delidev.v1.SubscriptionService.FinishSubscription:output_type -> delidev.v1.FinishSubscriptionResponse
+	37, // 104: delidev.v1.SubscriptionService.SyncSubscriptionRecoveryCapture:output_type -> delidev.v1.SyncSubscriptionRecoveryCaptureResponse
+	39, // 105: delidev.v1.SubscriptionService.ReadSubscriptionRecoveryCapture:output_type -> delidev.v1.ReadSubscriptionRecoveryCaptureResponse
+	41, // 106: delidev.v1.SubscriptionService.RecoverSubscription:output_type -> delidev.v1.RecoverSubscriptionResponse
+	66, // 107: delidev.v1.SubscriptionService.StartClaudeUsageLogin:output_type -> delidev.v1.StartClaudeUsageLoginResponse
+	68, // 108: delidev.v1.SubscriptionService.GetClaudeUsageLoginProgress:output_type -> delidev.v1.GetClaudeUsageLoginProgressResponse
+	70, // 109: delidev.v1.SubscriptionService.SubmitClaudeUsageApprovalCode:output_type -> delidev.v1.SubmitClaudeUsageApprovalCodeResponse
+	72, // 110: delidev.v1.SubscriptionService.ConfirmClaudeUsageLink:output_type -> delidev.v1.ConfirmClaudeUsageLinkResponse
+	74, // 111: delidev.v1.SubscriptionService.CancelClaudeUsageLogin:output_type -> delidev.v1.CancelClaudeUsageLoginResponse
+	76, // 112: delidev.v1.SubscriptionService.DisconnectClaudeUsage:output_type -> delidev.v1.DisconnectClaudeUsageResponse
+	86, // [86:113] is the sub-list for method output_type
+	59, // [59:86] is the sub-list for method input_type
+	59, // [59:59] is the sub-list for extension type_name
+	59, // [59:59] is the sub-list for extension extendee
+	0,  // [0:59] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_subscription_proto_init() }
@@ -4875,8 +5862,8 @@ func file_delidev_v1_subscription_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_subscription_proto_rawDesc), len(file_delidev_v1_subscription_proto_rawDesc)),
-			NumEnums:      15,
-			NumMessages:   48,
+			NumEnums:      16,
+			NumMessages:   61,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

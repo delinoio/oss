@@ -56,6 +56,16 @@ service SubscriptionService {
   rpc SyncSubscriptionRecoveryCapture(SyncSubscriptionRecoveryCaptureRequest) returns (SyncSubscriptionRecoveryCaptureResponse);
   rpc ReadSubscriptionRecoveryCapture(ReadSubscriptionRecoveryCaptureRequest) returns (ReadSubscriptionRecoveryCaptureResponse);
   rpc RecoverSubscription(RecoverSubscriptionRequest) returns (RecoverSubscriptionResponse);
+  // Server-owned Claude usage tracking, negotiated by System capability
+  // CLAUDE_SERVER_USAGE_V1. A usage login is a separate ordinary OAuth login whose
+  // credentials only fetch usage. None of these operations changes the execution
+  // setup token, delivers a credential to a Worker or returns authentication bytes.
+  rpc StartClaudeUsageLogin(StartClaudeUsageLoginRequest) returns (StartClaudeUsageLoginResponse);
+  rpc GetClaudeUsageLoginProgress(GetClaudeUsageLoginProgressRequest) returns (GetClaudeUsageLoginProgressResponse);
+  rpc SubmitClaudeUsageApprovalCode(SubmitClaudeUsageApprovalCodeRequest) returns (SubmitClaudeUsageApprovalCodeResponse);
+  rpc ConfirmClaudeUsageLink(ConfirmClaudeUsageLinkRequest) returns (ConfirmClaudeUsageLinkResponse);
+  rpc CancelClaudeUsageLogin(CancelClaudeUsageLoginRequest) returns (CancelClaudeUsageLoginResponse);
+  rpc DisconnectClaudeUsage(DisconnectClaudeUsageRequest) returns (DisconnectClaudeUsageResponse);
 }
 
 // Explicit server-owned cleanup of failed initial logins. No native login or
@@ -509,6 +519,103 @@ message SetAutomaticResetCreditConsentRequest {
   bool confirmed = 5;
 }
 message SetAutomaticResetCreditConsentResponse {
+  Resource account = 1;
+  bool replayed = 2;
+}
+
+// Claude usage tracking. Mutations use UUID-v7 request IDs. Mutation.id is the
+// Claude subscription account and Mutation.expected_revision its original
+// revision. usage_generation identifies one usage connection attempt and is
+// allocated by the server when the login starts. Progress reads never relaunch,
+// advance or confirm work, and no response carries authentication bytes.
+enum ClaudeUsageLoginState {
+  CLAUDE_USAGE_LOGIN_STATE_UNSPECIFIED = 0;
+  CLAUDE_USAGE_LOGIN_STATE_PREPARING = 1;
+  // The official login is waiting for browser approval; url is present and
+  // code_requested says whether the manual approval code is expected.
+  CLAUDE_USAGE_LOGIN_STATE_WAITING = 2;
+  // Native completion was joined and the identity was validated. Nothing is
+  // linked or scheduled until ConfirmClaudeUsageLink succeeds.
+  CLAUDE_USAGE_LOGIN_STATE_AWAITING_CONFIRMATION = 3;
+  // The user linked the reviewed identity.
+  CLAUDE_USAGE_LOGIN_STATE_LINKED = 4;
+  CLAUDE_USAGE_LOGIN_STATE_CANCELED = 5;
+  CLAUDE_USAGE_LOGIN_STATE_EXPIRED = 6;
+  CLAUDE_USAGE_LOGIN_STATE_UNSUPPORTED = 7;
+  CLAUDE_USAGE_LOGIN_STATE_RECOVERY_REQUIRED = 8;
+  CLAUDE_USAGE_LOGIN_STATE_FAILED = 9;
+}
+// The validated OAuth identity the user must review before linking. It is shown
+// to the requesting client only and never proves identity equality with the
+// execution setup token.
+message ClaudeUsageIdentityReview {
+  string email = 1;
+  string organization = 2;
+  string plan = 3;
+  // Opaque commitment of the reviewed identity, echoed by ConfirmClaudeUsageLink
+  // so a changed identity cannot be linked by a stale review.
+  string identity_commitment = 4;
+}
+message StartClaudeUsageLoginRequest {
+  Mutation mutation = 1;
+}
+message StartClaudeUsageLoginResponse {
+  Resource account = 1;
+  string operation_id = 2;
+  string usage_generation = 3;
+  bool replayed = 4;
+}
+message GetClaudeUsageLoginProgressRequest {
+  string account_id = 1;
+  string operation_id = 2;
+  string usage_generation = 3;
+}
+message GetClaudeUsageLoginProgressResponse {
+  ClaudeUsageLoginState state = 1;
+  // Short-lived presentation data, never persisted or logged.
+  string url = 2;
+  bool code_requested = 3;
+  ClaudeUsageIdentityReview identity = 4;
+  NativeSubscriptionDiagnostic diagnostic = 5;
+  string operation_id = 6;
+  string usage_generation = 7;
+}
+message SubmitClaudeUsageApprovalCodeRequest {
+  Mutation mutation = 1;
+  string operation_id = 2;
+  string usage_generation = 3;
+  // Transient write-only original CLI input. Excluded from receipts, resources
+  // and logs, and cleared at its lifetime boundary.
+  bytes code = 4;
+}
+message SubmitClaudeUsageApprovalCodeResponse {
+  bool accepted = 1;
+  bool replayed = 2;
+}
+message ConfirmClaudeUsageLinkRequest {
+  Mutation mutation = 1;
+  string operation_id = 2;
+  string usage_generation = 3;
+  string identity_commitment = 4;
+}
+message ConfirmClaudeUsageLinkResponse {
+  Resource account = 1;
+  bool replayed = 2;
+}
+message CancelClaudeUsageLoginRequest {
+  Mutation mutation = 1;
+  string operation_id = 2;
+  string usage_generation = 3;
+}
+message CancelClaudeUsageLoginResponse {
+  Resource account = 1;
+  bool replayed = 2;
+}
+message DisconnectClaudeUsageRequest {
+  Mutation mutation = 1;
+  string usage_generation = 2;
+}
+message DisconnectClaudeUsageResponse {
   Resource account = 1;
   bool replayed = 2;
 }
