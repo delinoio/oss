@@ -670,18 +670,18 @@ func retireManagedCredentials(config Config, profile *nativeprofile.Lease, opera
 // Only the caller's pre-native barrier permits an unpublished auth destination.
 // A failed atomic write still needs a durable absence and the complete retained
 // file scan: a leftover temporary credential file cannot release the lease.
-func cleanupUnusedExecutionAuthentication(home string, original []byte) error {
+func cleanupUnusedExecutionAuthentication(ctx context.Context, home string, original []byte) error {
 	if err := security.CheckPrivateDir(home); err != nil {
 		return subscription.Invalid()
 	}
 	path := filepath.Join(home, "auth.json")
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
-		return cleanupExecutionAuthentication(home, original, original)
+		return cleanupExecutionAuthentication(ctx, home, original, original)
 	}
 	if err := security.SyncParent(path); err != nil {
 		return subscription.Invalid()
 	}
-	if err := scanExecutionAuthentication(home, original, original); err != nil {
+	if err := scanExecutionAuthentication(ctx, home, original, original); err != nil {
 		return err
 	}
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
@@ -694,8 +694,8 @@ func cleanupUnusedExecutionAuthentication(home string, original []byte) error {
 // authentication cleanup for a failed native startup. A joined original tree
 // authorizes that cleanup even when execution-helper retirement failed, but
 // unretired helpers keep the credential lease unconfirmed.
-func cleanupPreNativeAuthentication(home string, original []byte, helperRetained bool) (confirmed bool, err error) {
-	err = cleanupUnusedExecutionAuthentication(home, original)
+func cleanupPreNativeAuthentication(ctx context.Context, home string, original []byte, helperRetained bool) (confirmed bool, err error) {
+	err = cleanupUnusedExecutionAuthentication(ctx, home, original)
 	return err == nil && !helperRetained, err
 }
 
@@ -744,16 +744,12 @@ func logExecutionAuthenticationCleanup(logger *slog.Logger, owner domain.ID, err
 	logger.Warn("execution_authentication_cleanup", "owner_id", owner, "stage", failure.stage, "reason", failure.reason, "file_count", failure.count, "observed_bytes", failure.bytes)
 }
 
-func cleanupExecutionAuthentication(home string, latest, original []byte) error {
-	return cleanupExecutionAuthenticationContext(context.Background(), home, latest, original)
-}
-
-// cleanupExecutionAuthenticationContext removes the transient authentication file
+// cleanupExecutionAuthentication removes the transient authentication file
 // after comparing it with the latest validated bundle and then proves, with a
 // complete streaming inspection of the retained native history, that no
 // credential remnant survives. The inspection observes ctx between files and
 // chunks.
-func cleanupExecutionAuthenticationContext(ctx context.Context, home string, latest, original []byte) error {
+func cleanupExecutionAuthentication(ctx context.Context, home string, latest, original []byte) error {
 	if err := security.CheckPrivateDir(home); err != nil {
 		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
 	}
@@ -776,8 +772,8 @@ func cleanupExecutionAuthenticationContext(ctx context.Context, home string, lat
 	return scanRetainedAuthentication(ctx, home, authenticationNeedles(latest, original))
 }
 
-func scanExecutionAuthentication(home string, latest, original []byte) error {
-	return scanRetainedAuthentication(context.Background(), home, authenticationNeedles(latest, original))
+func scanExecutionAuthentication(ctx context.Context, home string, latest, original []byte) error {
+	return scanRetainedAuthentication(ctx, home, authenticationNeedles(latest, original))
 }
 
 // authenticationNeedles returns the raw and Base64 encodings of every token of

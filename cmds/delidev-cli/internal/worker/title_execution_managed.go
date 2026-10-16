@@ -75,7 +75,7 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 			defer closeManagedRPC()
 		}
 		if managed != nil && managedPreNative {
-			managedCleanup, _ = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
+			managedCleanup, _ = cleanupPreNativeAuthentication(config.cleanupContext(), nativeHome, managed.response.Bundle, managedHelperRetained)
 			if managedCleanup {
 				managedLatest = bytes.Clone(managed.response.Bundle)
 				managedUnused = true
@@ -172,7 +172,7 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 			return errors.Join(nativeErr, helperErr)
 		}
 		closed = true
-		authErr := managed.cleanupAuthentication(nativeHome, managedLatest, managed.response.Bundle)
+		authErr := managed.cleanupAuthentication(config.cleanupContext(), nativeHome, managedLatest, managed.response.Bundle)
 		managedCleanup = helperErr == nil && authErr == nil
 		logExecutionAuthenticationCleanup(config.Logger, jobID, authErr)
 		if helperErr != nil {

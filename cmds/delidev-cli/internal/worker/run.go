@@ -79,6 +79,19 @@ type Config struct {
 	approvalControls <-chan *pb.ApprovalResponseControl
 	steerControls    <-chan *pb.SteerInputControl
 }
+
+// cleanupContext is the Worker-lifetime context that credential cleanup scans
+// observe. It is the shutdown context, never a per-request context: a stopped
+// execution still completes its cleanup, while a shutting-down Worker cancels a
+// scan of a very large retained profile and leaves the lease fail-closed for the
+// recovery lane.
+func (c Config) cleanupContext() context.Context {
+	if c.executionContext != nil {
+		return c.executionContext
+	}
+	return context.Background()
+}
+
 type journalState string
 
 const (

@@ -1236,7 +1236,13 @@ Every regular file streams through a fixed window that overlaps by the longest
 token encoding, so raw and Base64 remnants across chunk boundaries are found with
 bounded memory. Pending entries, special files, unreadable entries, remnants and a
 changed root identity still fail closed without deleting history, and the scan
-observes cancellation.
+observes cancellation. Every scan path observes the Worker's execution (shutdown)
+context: the normal singleton and shared-owner cleanup, the unused-original
+cleanup after a failed native startup, the capture synchronization before the
+deletion and the recovery scan all stop with the existing fail-closed canceled
+result, so a very large retained profile never keeps a goroutine alive after
+shutdown and the lease is left for recovery. A stopped execution's own request
+context does not cancel its cleanup.
 
 Transport. A capture synchronization or read may carry both the original and the
 latest maximum-size (64 KiB) bundle plus protobuf framing, the mutation and the

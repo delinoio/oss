@@ -4,6 +4,7 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"syscall"
@@ -25,7 +26,7 @@ func TestManagedExecutionCleanupRejectsSpecialFiles(t *testing.T) {
 	if err := syscall.Mkfifo(filepath.Join(home, "pipe"), 0600); err != nil {
 		t.Skip("fifo unavailable", err)
 	}
-	err := cleanupExecutionAuthentication(home, bundle, bundle)
+	err := cleanupExecutionAuthentication(context.Background(), home, bundle, bundle)
 	var failure *executionAuthenticationFailure
 	if !errors.As(err, &failure) || failure.reason != executionAuthSpecial {
 		t.Fatal("special file did not fail the scan", err)

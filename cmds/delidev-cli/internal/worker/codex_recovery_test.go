@@ -601,7 +601,7 @@ func TestCodexCleanupCapturesTheLatestBundleBeforeDeletingAuthentication(t *test
 	f := newRecoveryWorkerFixture(t)
 	lease := &managedSubscriptionLease{recoveryCapture: true, client: f.client, credential: f.credential, instance: f.lease.InstanceID, account: f.accountID, response: &pb.TakeSubscriptionResponse{LeaseId: string(f.lease.ID), GenerationId: string(f.lease.Generation), LeaseRevision: f.lease.Revision, Bundle: f.original}, journalPath: f.path, journal: f.journal}
 	f.server.syncError = connect.NewError(connect.CodeUnavailable, nil)
-	err := lease.cleanupAuthentication(f.home, f.latest, f.original)
+	err := lease.cleanupAuthentication(context.Background(), f.home, f.latest, f.original)
 	if err == nil || !f.authExists() {
 		t.Fatal("an unconfirmed capture still deleted the authentication", err)
 	}
@@ -613,7 +613,7 @@ func TestCodexCleanupCapturesTheLatestBundleBeforeDeletingAuthentication(t *test
 	f.server.mu.Lock()
 	f.server.syncError = nil
 	f.server.mu.Unlock()
-	if err := lease.cleanupAuthentication(f.home, f.latest, f.original); err != nil {
+	if err := lease.cleanupAuthentication(context.Background(), f.home, f.latest, f.original); err != nil {
 		t.Fatal(err)
 	}
 	if f.authExists() {
@@ -628,10 +628,47 @@ func TestCodexCleanupCapturesTheLatestBundleBeforeDeletingAuthentication(t *test
 	}
 }
 
+// Worker shutdown reaches the normal cleanup: the retained-history scan stops with
+// the fail-closed canceled result, and a capture synchronization stops before any
+// deletion.
+func TestCodexCleanupObservesTheExecutionContext(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	t.Run("scan", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		lease := &managedSubscriptionLease{client: f.client, credential: f.credential, instance: f.lease.InstanceID, account: f.accountID, response: &pb.TakeSubscriptionResponse{LeaseId: string(f.lease.ID), Bundle: f.original}, journalPath: f.path, journal: f.journal}
+		err := lease.cleanupAuthentication(canceled, f.home, f.latest, f.original)
+		var failure *executionAuthenticationFailure
+		if !errors.As(err, &failure) || failure.reason != executionAuthCanceled {
+			t.Fatal("a canceled scan did not fail closed", err)
+		}
+		if _, statErr := os.Stat(filepath.Join(f.home, "history.jsonl")); statErr != nil {
+			t.Fatal("a canceled scan deleted retained history", statErr)
+		}
+	})
+	t.Run("capture", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		lease := &managedSubscriptionLease{recoveryCapture: true, client: f.client, credential: f.credential, instance: f.lease.InstanceID, account: f.accountID, response: &pb.TakeSubscriptionResponse{LeaseId: string(f.lease.ID), GenerationId: string(f.lease.Generation), LeaseRevision: f.lease.Revision, Bundle: f.original}, journalPath: f.path, journal: f.journal}
+		err := lease.cleanupAuthentication(canceled, f.home, f.latest, f.original)
+		var failure *executionAuthenticationFailure
+		if !errors.As(err, &failure) || failure.reason != executionAuthCapture || !f.authExists() {
+			t.Fatal("a canceled capture deleted the authentication", err)
+		}
+	})
+	t.Run("config", func(t *testing.T) {
+		if (Config{}).cleanupContext() == nil {
+			t.Fatal("a Config without an execution context has no cleanup context")
+		}
+		if (Config{executionContext: canceled}).cleanupContext().Err() == nil {
+			t.Fatal("the cleanup context is not the Worker execution context")
+		}
+	})
+}
+
 func TestCodexCleanupWithoutNegotiatedRecoveryKeepsTheLegacyFlow(t *testing.T) {
 	f := newRecoveryWorkerFixture(t)
 	lease := &managedSubscriptionLease{client: f.client, credential: f.credential, instance: f.lease.InstanceID, account: f.accountID, response: &pb.TakeSubscriptionResponse{LeaseId: string(f.lease.ID), Bundle: f.original}, journalPath: f.path, journal: f.journal}
-	if err := lease.cleanupAuthentication(f.home, f.latest, f.original); err != nil {
+	if err := lease.cleanupAuthentication(context.Background(), f.home, f.latest, f.original); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.server.syncs) != 0 {

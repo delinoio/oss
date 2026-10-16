@@ -45,7 +45,7 @@ func TestManagedExecutionCleanupRejectsEncodedAuthentication(t *testing.T) {
 			if err := security.WriteAtomic(history, []byte(retained)); err != nil {
 				t.Fatal(err)
 			}
-			err := cleanupExecutionAuthentication(home, bundle, bundle)
+			err := cleanupExecutionAuthentication(context.Background(), home, bundle, bundle)
 			if (name == "clean") != (err == nil) {
 				t.Fatal("credential-remnant cleanup classification is incorrect", err)
 			}
@@ -69,7 +69,7 @@ func TestManagedExecutionCleanupRetainsPendingFenceAndSafeLogs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, ".pending-native-auth"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	err := cleanupExecutionAuthentication(home, bundle, bundle)
+	err := cleanupExecutionAuthentication(context.Background(), home, bundle, bundle)
 	var failure *executionAuthenticationFailure
 	if !errors.As(err, &failure) || failure.stage != executionAuthScan || failure.reason != executionAuthPending {
 		t.Fatal("pending entry lost its independent scan fence", err)
@@ -129,7 +129,7 @@ func TestManagedExecutionCleanupScansLargeHistoryCompletely(t *testing.T) {
 					retained = append(retained, sparse("history-"+strconv.Itoa(i), 16<<20))
 				}
 			}
-			if err := cleanupExecutionAuthentication(home, bundle, bundle); err != nil {
+			if err := cleanupExecutionAuthentication(context.Background(), home, bundle, bundle); err != nil {
 				t.Fatal("ordinary history growth blocked authentication cleanup", err)
 			}
 			for _, path := range retained {
@@ -163,7 +163,7 @@ func TestManagedExecutionCleanupFindsTokenAcrossStreamChunks(t *testing.T) {
 	if err := os.WriteFile(history, content, 0600); err != nil {
 		t.Fatal(err)
 	}
-	err = cleanupExecutionAuthentication(home, bundle, bundle)
+	err = cleanupExecutionAuthentication(context.Background(), home, bundle, bundle)
 	var failure *executionAuthenticationFailure
 	if !errors.As(err, &failure) || failure.reason != executionAuthRemnant {
 		t.Fatal("split token was not detected", err)
@@ -188,7 +188,7 @@ func TestManagedExecutionCleanupObservesCancellation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := cleanupExecutionAuthenticationContext(ctx, home, bundle, bundle)
+	err := cleanupExecutionAuthentication(ctx, home, bundle, bundle)
 	var failure *executionAuthenticationFailure
 	if !errors.As(err, &failure) || failure.reason != executionAuthCanceled {
 		t.Fatal("canceled scan did not fail closed", err)
@@ -223,7 +223,7 @@ func TestManagedExecutionCleanupFailsOnChangedRootIdentity(t *testing.T) {
 		}
 	}
 	defer func() { scanIdentityCheckpoint = nil }()
-	err := cleanupExecutionAuthentication(home, bundle, bundle)
+	err := cleanupExecutionAuthentication(context.Background(), home, bundle, bundle)
 	var failure *executionAuthenticationFailure
 	if !errors.As(err, &failure) || failure.reason != executionAuthIdentity {
 		t.Fatal("root identity change was not detected", err)

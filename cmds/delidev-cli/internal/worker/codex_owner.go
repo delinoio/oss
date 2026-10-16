@@ -371,7 +371,7 @@ func (o *codexSharedOwner) retire(last *codexSharedMember) error {
 		if o.home != "" && !o.nativeUncertain {
 			if o.runtime != nil {
 				if nativeJoined && clean {
-					if err := o.lease.cleanupAuthentication(o.home, o.latest, o.initial); err != nil {
+					if err := o.lease.cleanupAuthentication(o.config.cleanupContext(), o.home, o.latest, o.initial); err != nil {
 						clean = false
 					}
 				} else {
@@ -379,7 +379,7 @@ func (o *codexSharedOwner) retire(last *codexSharedMember) error {
 				}
 			} else {
 				if clean {
-					removed, err := cleanupPreNativeAuthentication(o.home, o.initial, false)
+					removed, err := cleanupPreNativeAuthentication(o.config.cleanupContext(), o.home, o.initial, false)
 					clean = removed && err == nil
 				}
 			}

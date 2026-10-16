@@ -344,7 +344,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		if preNative {
 			// A joined tree with failed helper retirement still authorizes the
 			// independent authentication cleanup but keeps the lease retained.
-			cleanup, _ = cleanupPreNativeAuthentication(nativeConfig.Home, managed.response.Bundle, helperRetained)
+			cleanup, _ = cleanupPreNativeAuthentication(config.cleanupContext(), nativeConfig.Home, managed.response.Bundle, helperRetained)
 			if cleanup {
 				latest = bytes.Clone(managed.response.Bundle)
 				unused = true
@@ -410,7 +410,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	closeErr = errors.Join(nativeErr, helperErr)
 	if managed != nil && nativeErr == nil {
 		logger.InfoContext(ctx, "managed_fork_authentication", "job_id", owner, "phase", "cleanup")
-		authErr := managed.cleanupAuthentication(nativeConfig.Home, latest, managed.response.Bundle)
+		authErr := managed.cleanupAuthentication(config.cleanupContext(), nativeConfig.Home, latest, managed.response.Bundle)
 		cleanup = helperErr == nil && authErr == nil
 		logExecutionAuthenticationCleanup(config.Logger, owner, authErr)
 		if !captured || authErr != nil {

@@ -237,20 +237,20 @@ func (l *managedSubscriptionLease) recordAuthenticationHome(home string) error {
 // validated bundle and only then deletes the transient authentication and scans
 // the retained history. A capture that cannot be confirmed keeps the file in
 // place, so the fenced lease can still be recovered from it.
-func (l *managedSubscriptionLease) cleanupAuthentication(home string, latest, original []byte) error {
-	if err := l.syncRecoveryCapture(latest, original); err != nil {
+func (l *managedSubscriptionLease) cleanupAuthentication(ctx context.Context, home string, latest, original []byte) error {
+	if err := l.syncRecoveryCapture(ctx, latest, original); err != nil {
 		if l.logger != nil {
 			l.logger.Warn("codex_recovery_capture_unconfirmed", "phase", codexRecoveryPhase, "account_id", l.account, "lease_id", l.leaseID(), "code", domain.SafeError(err).Code)
 		}
 		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthCapture}
 	}
-	return cleanupExecutionAuthentication(home, latest, original)
+	return cleanupExecutionAuthentication(ctx, home, latest, original)
 }
 
 // syncRecoveryCapture sends the latest validated bundle to the server vault under
 // a durable capture identity. A retry after a crash or a lost response reuses the
 // same identity, so the server keeps one capture of the same bundle.
-func (l *managedSubscriptionLease) syncRecoveryCapture(latest, original []byte) error {
+func (l *managedSubscriptionLease) syncRecoveryCapture(ctx context.Context, latest, original []byte) error {
 	if !l.recoveryCapture || len(latest) == 0 {
 		return nil
 	}
@@ -264,7 +264,7 @@ func (l *managedSubscriptionLease) syncRecoveryCapture(latest, original []byte) 
 			return subscription.Invalid()
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	originalCopy, latestCopy := bytes.Clone(original), bytes.Clone(latest)
 	defer clear(originalCopy)

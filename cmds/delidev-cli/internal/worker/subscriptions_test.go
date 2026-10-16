@@ -119,7 +119,7 @@ func TestManagedExecutionAuthenticationCleanup(t *testing.T) {
 				}
 				file.Close()
 			}
-			err := cleanupExecutionAuthentication(home, bundle, bundle)
+			err := cleanupExecutionAuthentication(context.Background(), home, bundle, bundle)
 			// A native-created helper link is ordinary retained data: it is never
 			// followed and never blocks cleanup. Large history is scanned completely
 			// and does not either; only copied tokens do.
