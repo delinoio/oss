@@ -18,6 +18,26 @@ pub fn tree_shaking_disabled(collection: &crate::collect::Collection) -> bool {
         .is_some_and(|value| value == "false")
 }
 
+/// Number of emitted chunks that lack chunk import data (`imports`,
+/// `externalImports` or `dynamicImports`).
+///
+/// The adapter omits the three lists of every chunk when it cannot show that
+/// the finished build still has the module placement it collected, and older
+/// adapters never collected them. The `vite/ineffective-dynamic-import` rule
+/// proves nothing from such a chunk, so the Chunk splitting category cannot
+/// claim full coverage while any chunk is in this state.
+pub fn chunks_without_import_data(collection: &crate::collect::Collection) -> usize {
+    collection
+        .chunks
+        .iter()
+        .filter(|chunk| {
+            chunk.imports.is_none()
+                || chunk.external_imports.is_none()
+                || chunk.dynamic_imports.is_none()
+        })
+        .count()
+}
+
 pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     if tree_shaking_disabled(context.collection) {
         tree_shaking_disabled_finding(context, drafts);
