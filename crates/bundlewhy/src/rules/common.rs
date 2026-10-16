@@ -2258,7 +2258,10 @@ impl<'a> MemberScan<'a> {
                         })
                 }
                 // The `${` of a template substitution holds an expression.
-                "{" => self.opens_template_substitution(open),
+                "{" => {
+                    self.opens_template_substitution(open)
+                        || self.opens_jsx_attribute_container(open)
+                }
                 _ => false,
             },
             Token::Word { text, member } => {
@@ -2326,6 +2329,24 @@ impl<'a> MemberScan<'a> {
             let text = &self.source.as_bytes()[*start..(*finish).min(self.source.len())];
             *finish == end && text.ends_with(b"${") && matches!(text.first(), Some(b'`' | b'}'))
         })
+    }
+
+    /// Whether the `{` before the brace at `open` opens a JSX attribute
+    /// expression container (`<Widget value={{ ... }} />`): the brace follows
+    /// `name=`. A plain `= {` followed by a second `{` is not valid script
+    /// code, so the pattern cannot hide a statement block.
+    fn opens_jsx_attribute_container(&self, open: usize) -> bool {
+        let container = strip_comments_for_prefix(self.source, open, self.ignored).len() - 1;
+        matches!(
+            previous_significant_token(self.source, container, self.ignored),
+            Token::Punct("=")
+        ) && {
+            let equals = strip_comments_for_prefix(self.source, container, self.ignored).len() - 1;
+            matches!(
+                previous_significant_token(self.source, equals, self.ignored),
+                Token::Word { .. }
+            )
+        }
     }
 
     /// Whether the offset starts a member in the body of a `kind` brace: the
@@ -3549,6 +3570,23 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_all_reported(&[("class C { x = value++ eval(code) {} }", "eval(code)")]);
         // An object literal member after a postfix update is not a member.
         assert_all_reported(&[("const o = { x: value++\n eval(code) {} };", "eval(code)")]);
+    }
+
+    #[test]
+    fn jsx_attribute_containers_hold_object_literals() {
+        assert_all_declarations(&[
+            "const a = <Widget value={{ eval(input) {} }} />;",
+            "const a = <Widget value={ { eval(input) {} } } />;",
+            "const a = <Widget data-id={{ a: 1, eval(input) {} }} />;",
+            "const a = <Widget value={/* c */{ eval(input) {} }} />;",
+            "const a = <Widget first={1} value={{ async eval(input) {} }} />;",
+        ]);
+        // A block inside a block or an arrow body is not an object literal.
+        assert_all_reported(&[
+            ("function f() { { eval(code) {} } }", "eval(code)"),
+            ("const f = () => {{ eval(code) {} }};", "eval(code)"),
+            ("if (x) {{ eval(code) {} }}", "eval(code)"),
+        ]);
     }
 
     #[test]
