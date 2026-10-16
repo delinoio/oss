@@ -1268,9 +1268,8 @@ released, the recovery fence and a `recovery_settlement` checkpoint remain), the
 protected references are then retired completely, and only the final receipt
 under the recovery request clears the fence. An incomplete deletion keeps the
 checkpoint and the fence, admits no execution or login, and the original request
-resumes the same retirement; an exact receipt replay mutates nothing. Because only the original Worker device can resume it, `RemoveWorker`
-refuses the machine with the existing conflict result while any account holds a
-`recovery_settlement` naming it; removal succeeds once the settlement finishes.
+resumes the same retirement; an exact receipt replay mutates nothing. Because only the original Worker device can complete it, a committed
+settlement is one row of the original-Worker hold table below.
 A positive credential decision needs positive evidence: an unparsable or
 identity-changed capture, or a stored generation that is absent or unrecoverable
 in the vault, settles the account disconnected, while any other vault read
@@ -1282,6 +1281,40 @@ reasons are `credential-proof-unavailable`, `cleanup-unconfirmed`,
 `ownership-evidence-invalid`, `members-unsettled`, `credential-users-active` and
 `active-owner`. There is no new screen, CLI retry or automatic login; the existing
 account observation exposes the state and reason.
+
+Original-Worker holds. Some managed subscription states can be completed only by
+the Worker device that owns them, because the credential evidence they protect is
+private to that Worker and every server operation that finishes them checks the
+exact lease device, machine and original instance. `workerRecoveryHoldKind` is the
+closed set; `accountWorkerRecoveryHold` mirrors the rows `WatchSubscription` offers
+back to the owning machine, so one predicate classifies removal, revocation and
+account deletion.
+
+| Hold kind (log `hold`) | Account state                                                                                                                                                                                                                                | Completed only by                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `live_execute_lease`   | `lease` action execute, no recovery fence, any provider                                                                                                                                                                                      | the running Worker's own Finish; removal closes its connections, which fences the lease |
+| `fenced_lease`         | `recovery_required` with a retained `lease`: managed ChatGPT or Grok execute, or a Claude lease of any action. Includes `cleanup_unconfirmed`, shared owners with members, and leases with or without `recovery_capture` or `recovery_block` | the original Worker device (recovery, or its retried cleanup-only Finish)               |
+| `recovery_settlement`  | `recovery_settlement` with the lease already released and the fence kept                                                                                                                                                                     | the original recovery request from the original Worker device                           |
+
+A fenced ChatGPT lifecycle lease (login, refresh, logout) is never offered back and
+is not a hold.
+
+| Path                                                      | Live execute lease                                          | Fenced lease                                | Recovery settlement                         |
+| --------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------- | ------------------------------------------- |
+| `RemoveWorker`                                            | refused (conflict)                                          | refused (conflict)                          | refused (conflict)                          |
+| `RevokeDevice` of the Worker device                       | allowed, logs `worker_device_revoked_with_recovery_pending` | allowed, same log; the account stays fenced | allowed, same log; the account stays fenced |
+| `RemoveWorker` after the owning device is revoked or gone | allowed, logs `worker_removal_orphaned_recovery`            | allowed, same log                           | allowed, same log                           |
+| Configuration deletion of the account                     | refused (lease)                                             | refused (fence)                             | refused (fence and hold)                    |
+
+`RemoveWorker` waits while any such state names the machine and its bound device is
+still a registered, unrevoked Worker device, so removal never retires the only
+principal able to finish them. Revocation is the emergency credential cut-off and is
+never refused: it keeps the state fenced, its protected references and fence are not
+released, and the structured warning names the account and hold. A revoked or
+missing bound device can no longer recover anything, so removing its machine cannot
+make the account less recoverable and is allowed; this is how a permanently lost
+Worker is abandoned (revoke it, then remove it). Account deletion keeps requiring a
+disconnected account with no lease, fence or generation, which every hold implies.
 
 Retained history scan. The authentication cleanup scan of execution history has no
 file-count, file-size or aggregate limit, for the singleton and the shared path.

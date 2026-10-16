@@ -146,28 +146,6 @@ func recoveryOutcomeProto(outcome domain.SubscriptionRecoveryOutcome) pb.Subscri
 	return pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_UNSPECIFIED
 }
 
-// recoverySettlementHeldByMachine reports whether any account holds a committed
-// recovery settlement whose retirement the machine's Worker must still finish.
-// That retirement is callable only by the original Worker, so retiring the
-// machine first would leave the account fenced with its protected references and
-// no principal able to complete them.
-func recoverySettlementHeldByMachine(tx *store.Tx, machine domain.ID) (domain.ID, bool, error) {
-	records, err := all(tx, domain.AccountKind)
-	if err != nil {
-		return "", false, err
-	}
-	for _, record := range records {
-		account, err := store.Decode[domain.Account](record)
-		if err != nil {
-			return "", false, err
-		}
-		if st := account.Subscription; st != nil && st.RecoverySettlement != nil && st.RecoverySettlement.Machine == machine {
-			return record.ID, true, nil
-		}
-	}
-	return "", false, nil
-}
-
 // recoveryMachineSupported reports whether the machine negotiated the recovery
 // capability together with managed ChatGPT subscriptions.
 func recoveryMachineSupported(machine domain.Machine) bool {
