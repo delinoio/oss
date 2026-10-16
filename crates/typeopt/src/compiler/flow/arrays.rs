@@ -25,8 +25,9 @@
 //!   an unresolved key;
 //! - `for (const|let x of arr)` loads the element cell into `x`;
 //! - `.length` yields a value that is never an object;
-//! - the methods of [`ArrayMethod`] are modeled by [`Target`]-like dispatch in
-//!   `Graph::fire_dispatch`.
+//! - the methods of [`ArrayMethod`] are modeled where a dispatched call meets
+//!   an array receiver (`Graph::fire_array`); instances of closed classes use
+//!   their own method tables.
 //!
 //! Soundness rules:
 //! - Built-in precondition. A method is modeled only when application code
