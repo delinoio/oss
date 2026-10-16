@@ -187,7 +187,17 @@ export class PendingCloseRegistry {
    * Bye can never resurrect this window on a sibling.
    */
   private active = false;
-  private onPageHide = () => this.deactivate();
+  /**
+   * Owners of Close operations whose native Close was already dispatched
+   * (`markSent`), by key. Only these survive a bfcache suspension.
+   */
+  private sent = new Map<string, Set<object>>();
+  /**
+   * Sent owners withdrawn by pagehide, kept so a persisted pageshow can
+   * restore their holds. Cleared by settle, release and disposal.
+   */
+  private suspended = new Map<string, Set<object>>();
+  private onPageHide = () => this.suspend();
   private onPageShow = (event: Event) => {
     // A page restored from the back/forward cache is alive again.
     if ((event as PageTransitionEvent).persisted && !this.active)
@@ -233,6 +243,46 @@ export class PendingCloseRegistry {
     this.active = true;
     this.send({ kind: PendingCloseMessageKind.Query });
     this.holdLivenessLock();
+    this.restoreSuspended();
+  }
+
+  /**
+   * Temporary suspension (pagehide, which may be a bfcache entry): stashes the
+   * owners of already-sent Close operations so a persisted pageshow can
+   * restore them, then withdraws every hold exactly like disposal does. A Close
+   * still waiting for its pre-send barrier is not stashed, so it stays
+   * cancelled.
+   */
+  private suspend() {
+    for (const [key, owners] of this.sent) {
+      if (owners.size) this.suspended.set(key, new Set(owners));
+    }
+    this.sent.clear();
+    this.deactivate();
+    console.debug("delidev.browser.pending_close.suspended", {
+      window: this.window,
+      suspendedKeys: this.suspended.size,
+    });
+  }
+
+  /**
+   * Re-registers and re-announces the holds stashed by `suspend`, reusing the
+   * original owners. The native Close is never resent: the operation was
+   * already dispatched and is only observed.
+   */
+  private restoreSuspended() {
+    if (!this.suspended.size) return;
+    const restored = [...this.suspended];
+    this.suspended.clear();
+    for (const [key, owners] of restored) {
+      this.local.set(key, new Set(owners));
+      this.sent.set(key, new Set(owners));
+      this.begin(key);
+    }
+    console.debug("delidev.browser.pending_close.restored", {
+      window: this.window,
+      restoredKeys: restored.length,
+    });
   }
 
   /**
@@ -323,6 +373,9 @@ export class PendingCloseRegistry {
    */
   dispose() {
     if (!this.channel) return;
+    // Permanent disposal never restores holds.
+    this.sent.clear();
+    this.suspended.clear();
     this.deactivate();
     if (typeof window !== "undefined") {
       window.removeEventListener("pagehide", this.onPageHide);
@@ -599,6 +652,11 @@ export class PendingCloseRegistry {
     owners.add(owner);
     this.local.set(key, owners);
     if (!first) return this.syncing.get(key) ?? Promise.resolve();
+    return this.begin(key);
+  }
+
+  /** Announces the first local hold of `key` and starts the heartbeat. */
+  private begin(key: string): Promise<void> {
     const synced = this.announce(key);
     this.syncing.set(key, synced);
     void synced.finally(() => {
@@ -608,8 +666,22 @@ export class PendingCloseRegistry {
     return synced;
   }
 
+  /**
+   * Records that `owner`'s native Close was dispatched, so its hold survives a
+   * bfcache suspension. Ignored unless the hold currently stands, which keeps a
+   * Close whose pre-send barrier was withdrawn from ever being revived.
+   */
+  markSent(key: string, owner: object) {
+    if (!this.holds(key, owner)) return;
+    const owners = this.sent.get(key) ?? new Set<object>();
+    owners.add(owner);
+    this.sent.set(key, owners);
+  }
+
   /** Releases one holder once its Close settled, was rejected or abandoned. */
   release(key: string, owner: object) {
+    this.forgetSent(this.sent, key, owner);
+    this.forgetSent(this.suspended, key, owner);
     const owners = this.local.get(key);
     if (!owners) return;
     owners.delete(owner);
@@ -626,11 +698,24 @@ export class PendingCloseRegistry {
    * the page from its retained Sessions.
    */
   settle(key: string) {
+    this.sent.delete(key);
+    this.suspended.delete(key);
     this.local.delete(key);
     this.syncing.delete(key);
     this.waiters.get(key)?.done();
     this.send({ kind: PendingCloseMessageKind.Settled, key });
     this.stopHeartbeat();
+  }
+
+  private forgetSent(
+    map: Map<string, Set<object>>,
+    key: string,
+    owner: object,
+  ) {
+    const owners = map.get(key);
+    if (!owners) return;
+    owners.delete(owner);
+    if (!owners.size) map.delete(key);
   }
 
   private releaseAll() {
