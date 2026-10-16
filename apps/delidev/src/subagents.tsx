@@ -26,7 +26,7 @@ import { items, object, text } from "./documents";
 import { Failure, Problem } from "./ui";
 import {
   SubagentHarness,
-  subagentDisplayName,
+  subagentRowDisplayName,
   subagentSafeRow,
   validateSubagentPage,
   type SubagentRow,
@@ -234,7 +234,7 @@ function ChildList({
           <ChildName
             key={row.resource.id}
             row={row}
-            name={subagentDisplayName(row.resource) ?? fallback(key)}
+            name={subagentRowDisplayName(row) ?? fallback(key)}
             parent={
               child.parent_id === record.root_id
                 ? copy("subagents.rootSession_6cdfaa")
@@ -401,7 +401,8 @@ export function retainSubagentLabels(
     if (!labels.has(key)) labels.set(key, labels.size + 1);
     // Names only decorate the stable ordinal so a parent shown in a card keeps
     // the same label as its list row after its own page leaves the window.
-    const name = subagentDisplayName(row.resource);
+    // Only Codex children carry native names.
+    const name = subagentRowDisplayName(row);
     if (name !== undefined) names?.set(key, name);
   }
 }

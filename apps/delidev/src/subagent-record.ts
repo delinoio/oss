@@ -705,3 +705,14 @@ export function subagentDisplayName(resource: Resource): string | undefined {
     return undefined;
   return name;
 }
+
+/**
+ * Returns the display name of one validated child row. Only a native Codex
+ * nickname is display metadata: Claude Code and OpenCode children keep their
+ * stable localized ordinals even if a response carries unexpected metadata.
+ */
+export function subagentRowDisplayName(row: SubagentRow): string | undefined {
+  return row.record.harness === SubagentHarness.Codex
+    ? subagentDisplayName(row.resource)
+    : undefined;
+}

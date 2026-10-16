@@ -23,8 +23,13 @@ import {
 import { afterEach, expect, test, vi } from "vitest";
 import { document as readDocument, encode, object } from "./documents";
 import { Subagents, SubagentRows, retainSubagentLabels } from "./subagents";
-import { subagentDisplayName, validateSubagentPage } from "./subagent-record";
 import {
+  subagentDisplayName,
+  subagentRowDisplayName,
+  validateSubagentPage,
+} from "./subagent-record";
+import {
+  openCodeSubagentFixture,
   openSubagentCard,
   subagentFixture,
   subagentTriggers,
@@ -323,4 +328,46 @@ test("the name list wraps long text inside the narrow rail", () => {
   expect(rule).toContain("min-height: 32px");
   expect(rule).toContain("font-size: 14px");
   expect(rule).not.toContain("white-space: nowrap");
+});
+
+test.each([
+  ["OpenCode", "opencode"],
+  ["Claude Code", "claude-code"],
+])(
+  "ignores display metadata on %s children and keeps the localized ordinal",
+  (_, harness) => {
+    const session = newRequestId(),
+      row = openCodeSubagentFixture(session);
+    const record = readDocument(row);
+    record.harness = harness;
+    row.documentJson = encode(record);
+    withSubagentName(row, "Impostor");
+    const page = validateSubagentPage([row], session);
+    // The harness-specific validator may reject an edited fixture; either way no
+    // name may be retained or rendered for a non-Codex child.
+    if (page) {
+      expect(subagentRowDisplayName(page[0]!)).toBeUndefined();
+      const labels = new Map<string, number>(),
+        names = new Map<string, string>();
+      retainSubagentLabels(labels, page, names);
+      expect(names.size).toBe(0);
+      render(
+        <SubagentRows
+          rows={[row]}
+          sessionId={session}
+          labels={labels}
+          names={names}
+        />,
+      );
+      expect(screen.getByRole("listitem").textContent).toBe("Subagent 1");
+      expect(screen.queryByText("Impostor")).toBeNull();
+    } else expect(harness).toBe("claude-code");
+  },
+);
+
+test("Codex children keep an accepted name", () => {
+  const session = newRequestId(),
+    row = withSubagentName(subagentFixture(session), "Atlas");
+  const page = validateSubagentPage([row], session)!;
+  expect(subagentRowDisplayName(page[0]!)).toBe("Atlas");
 });
