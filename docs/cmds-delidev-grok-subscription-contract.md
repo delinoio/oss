@@ -819,6 +819,12 @@ that lease. A refresh the interrupted process had already
 written is lost by design: without the original bundle in memory its identity cannot
 be verified, so recovery never reads, seals or returns the credential. If the
 credential cannot be proven removed nothing is reported and the lease stays fenced.
+A missing pathname proves nothing about the journaled directory, which may have
+been moved away with its `auth.json`: it counts as retired only when the Worker's
+native profile registry (`Registry.HomeRegistered`) no longer registers that home,
+because an explicit session or storage deletion removes the profile directory and
+its registry entry together. A home that is still registered but absent from disk
+stays unconfirmed.
 
 **Harness profile.** The subscription profile of `internal/harness/grok` differs
 from the API profile only here. The API profile (authenticate with `xai.api_key`,

@@ -185,11 +185,10 @@ func (e *grokSubscriptionExecution) finish(joined bool) (returned error) {
 // retireGrokHome removes the credential file, its lock and interrupted-write
 // temporaries from the named private home through a freshly bound handle and
 // reports whether their absence is proven. A home that cannot be bound is
-// unconfirmed, except one that no longer exists at all (nothing can be left).
+// unconfirmed, including one whose pathname no longer exists: a missing name
+// cannot prove that the originally journaled directory, which may still hold
+// auth.json, was retired (it can have been renamed away).
 func retireGrokHome(path string) bool {
-	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
-		return true
-	}
 	home, err := subscription.BindGrokHome(path)
 	if err != nil {
 		return false
@@ -200,6 +199,25 @@ func retireGrokHome(path string) bool {
 	}
 	present, err := home.AuthFilePresent()
 	return err == nil && !present && home.Verify() == nil
+}
+
+// recoveredGrokHomeRetired settles the private home a recovery journal named. A
+// present home is retired through a bound handle. A missing pathname is clean
+// only when the Worker's own profile registry no longer registers that home: an
+// explicit session or storage deletion removes the whole profile directory,
+// credential included, and its registry entry. A home that the registry still
+// names but the filesystem no longer shows was moved away with its credential
+// and stays unconfirmed.
+func recoveredGrokHomeRetired(config Config, machine domain.ID, path string) bool {
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		return retireGrokHome(path)
+	}
+	registry, err := nativeProfiles(config, machine)
+	if err != nil {
+		return false
+	}
+	registered, err := registry.HomeRegistered(path)
+	return err == nil && !registered
 }
 
 // runGrokRecovery cleans up the private home of this Worker's own interrupted
@@ -242,7 +260,7 @@ func runGrokRecovery(ctx context.Context, config Config, client delidevv1connect
 		if err := process.ReconcileOwnerContext(ctx, filepath.Join(config.Root, "processes"), original.OperationID); err != nil {
 			return err
 		}
-		confirmed = retireGrokHome(journal.GrokHome)
+		confirmed = recoveredGrokHomeRetired(config, credential.MachineID, journal.GrokHome)
 	}
 	logger := config.Logger
 	if !confirmed {

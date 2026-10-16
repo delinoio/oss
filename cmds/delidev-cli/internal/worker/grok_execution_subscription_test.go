@@ -18,6 +18,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -553,6 +554,78 @@ func TestGrokRecoveryRefusesForeignJournalsAndUnprovenCleanup(t *testing.T) {
 	}
 	if len(f.finishes) != 0 {
 		t.Fatal("recovery reported without proof")
+	}
+}
+
+// A missing pathname cannot prove that the journaled credential directory was
+// retired. A profile home that was moved away with its auth.json is still
+// registered, so recovery reports nothing and keeps the lease fenced; a profile
+// that an explicit deletion removed (directory and registry entry) took the
+// credential with it and is clean.
+func TestGrokRecoveryDoesNotTreatAMissingHomePathAsClean(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory replacement semantics differ")
+	}
+	for _, test := range []struct {
+		name    string
+		remove  func(t *testing.T, f *grokExecutionFixture, key nativeprofile.Key, home string)
+		cleaned bool
+	}{
+		{"moved away", func(t *testing.T, f *grokExecutionFixture, _ nativeprofile.Key, home string) {
+			if err := os.Rename(filepath.Dir(home), filepath.Join(t.TempDir(), "moved")); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"explicitly deleted", func(t *testing.T, f *grokExecutionFixture, key nativeprofile.Key, _ string) {
+			registry, err := nativeProfiles(f.config, f.credential.MachineID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if deleted, err := registry.Delete(context.Background(), nativeprofile.DeleteScope{Conversation: key.Conversation}); err != nil || deleted != 1 {
+				t.Fatalf("deleted %d profiles: %v", deleted, err)
+			}
+		}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newGrokExecutionFixture(t)
+			key := nativeprofile.Key{Harness: domain.GrokBuild, Purpose: nativeprofile.PurposeConversation, Account: f.account, Conversation: domain.NewID()}
+			lease, err := conversationProfile(context.Background(), f.config, f.credential.MachineID, key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			home := lease.Root
+			if err := lease.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(home, subscription.GrokAuthFileName), grokWorkerFile(t, "synthetic-principal-1", "two", "2026-10-14T12:00:00Z"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := security.PrivateDir(filepath.Join(f.config.Root, "processes")); err != nil {
+				t.Fatal(err)
+			}
+			account, job := f.grokRecoveryAccount(t, managedSubscriptionJournal{GrokHome: home, NativeStarted: true})
+			if err := security.PrivateDir(filepath.Join(f.config.Root, "processes", string(job))); err != nil {
+				t.Fatal(err)
+			}
+			test.remove(t, f, key, home)
+			client := delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.credential.Endpoint)
+			err = runGrokRecovery(context.Background(), f.config, client, f.credential, f.account, account)
+			if test.cleaned {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if finish := f.onlyFinish(t); !finish.CleanupConfirmed || finish.Succeeded {
+					t.Fatal("recovery of a deleted profile was not a cleanup-only report")
+				}
+				return
+			}
+			if err == nil || domain.SafeError(err).Message != "The private Grok credential cleanup could not be confirmed." {
+				t.Fatalf("recovery reported a cleanup it cannot prove: %v", err)
+			}
+			if len(f.finishes) != 0 {
+				t.Fatal("recovery released the lease while the credential may remain")
+			}
+		})
 	}
 }
 

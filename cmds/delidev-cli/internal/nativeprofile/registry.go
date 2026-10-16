@@ -562,6 +562,35 @@ func (r *Registry) Peek(key Key) (Info, bool, error) {
 	return Info{}, false, nil
 }
 
+// HomeRegistered reports whether a registered profile exposes exactly this
+// native home path. It is a lock-free read like Peek: a registry that does not
+// exist yet registers nothing. A caller that finds a recorded home missing from
+// disk uses it to tell an explicitly deleted profile (no longer registered, so
+// its directory and everything in it were removed) from a directory that was
+// moved away while the registry still names it.
+func (r *Registry) HomeRegistered(home string) (bool, error) {
+	if _, err := os.Lstat(r.base); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err := security.CheckPrivateDir(r.base); err != nil {
+		return false, Failure(domain.RecoveryRequired, ReasonRegistryInvalid, "The native profile directory is not private.", "Inspect the owner storage root before retrying.")
+	}
+	if _, err := os.Lstat(r.registryPath()); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	file, err := r.load()
+	if err != nil {
+		return false, err
+	}
+	clean := filepath.Clean(home)
+	for _, e := range file.Profiles {
+		if r.homeOf(e) == clean {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // RegisterLegacy registers an existing pre-registry history directory in
 // place. The directory must be a real private directory below the owner root.
 // Nothing is moved, merged or rewritten. Registering the same directory for the
