@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Protocol 2 retires Model-resource discovery/revision fixtures. These cases
 // cover inline source/native IDs and retain account, draft and receipt guards.
-import { StrictMode } from "react";
+import { Fragment, StrictMode } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -188,22 +188,28 @@ function fixture(supported = true) {
   });
   const saved = vi.fn(),
     cancel = vi.fn();
-  const view = (active = true, initial?: Resource) => (
-    <StrictMode>
-      <TransportProvider transport={transport}>
-        <QueryClientProvider client={client}>
-          <MutationIntents>
-            <AgentWorkerWizard
-              active={active}
-              initial={initial}
-              saved={saved}
-              cancel={cancel}
-            />
-          </MutationIntents>
-        </QueryClientProvider>
-      </TransportProvider>
-    </StrictMode>
-  );
+  // StrictMode re-runs the effects of every reordered (moved) sibling, which
+  // restarts first-page reads that production never repeats. Read-count
+  // assertions render without it.
+  const view = (active = true, initial?: Resource, strict = true) => {
+    const Mode = strict ? StrictMode : Fragment;
+    return (
+      <Mode>
+        <TransportProvider transport={transport}>
+          <QueryClientProvider client={client}>
+            <MutationIntents>
+              <AgentWorkerWizard
+                active={active}
+                initial={initial}
+                saved={saved}
+                cancel={cancel}
+              />
+            </MutationIntents>
+          </QueryClientProvider>
+        </TransportProvider>
+      </Mode>
+    );
+  };
   return {
     row,
     provider,
@@ -1391,4 +1397,258 @@ it("starts the reads of the first invalid stage when a forward selection is bloc
   expect(await reads(f, select("Configure"))).toEqual([]);
   expect(stepHeading("Model")).toBeTruthy();
   sideEffectFree(f);
+});
+
+// Inline account-source accordions. The Accounts step renders one card per
+// source; at most one body is expanded and the grip, trigger and Remove are
+// separate controls.
+async function twoSources(f: ReturnType<typeof fixture>) {
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  await chooseScrollOption(
+    screen.getByRole("combobox", { name: "Account source 1" }),
+    `api:${f.provider.id}`,
+  );
+  fireEvent.click(
+    await screen.findByRole("checkbox", { name: /First account/ }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Add account source/ }));
+  await chooseScrollOption(
+    screen.getByRole("combobox", { name: "Account source 2" }),
+    "subscription:chatgpt",
+  );
+  await act(async () => {});
+}
+const trigger = (position: number) =>
+  screen.getByRole("button", {
+    name: new RegExp(`^${position} · .*accounts selected$`),
+  }) as HTMLButtonElement;
+const expandedTriggers = () =>
+  screen
+    .getAllByRole("button", { name: /^\d+ · .*accounts selected$/ })
+    .filter((button) => button.getAttribute("aria-expanded") === "true")
+    .map((button) => button.textContent);
+const reorderGrip = (position: number) =>
+  screen.getByRole("button", {
+    name: new RegExp(`^Reorder source ${position}: `),
+  }) as HTMLButtonElement;
+
+it("renders every source as an inline accordion and opens only the first on entry", async () => {
+  const f = fixture();
+  render(f.view());
+  await twoSources(f);
+  fireEvent.click(trigger(1));
+  expect(expandedTriggers()).toEqual([
+    expect.stringMatching(/^1 · Original API1 accounts selected$/),
+  ]);
+  const second = trigger(2);
+  expect(second.textContent).toMatch(/^2 · ChatGPT subscription/);
+  expect(second.getAttribute("aria-expanded")).toBe("false");
+  // The detached list/detail editor is gone and the heading is not repeated.
+  expect(
+    globalThis.document.querySelector(".worker-source-details"),
+  ).toBeNull();
+  expect(globalThis.document.querySelector(".worker-source-list")).toBeNull();
+  expect(screen.queryByRole("heading", { name: /^1 · /, level: 4 })).toBeNull();
+  // The collapsed body stays mounted but is absent from the accessibility tree.
+  const body = globalThis.document.getElementById(
+    second.getAttribute("aria-controls")!,
+  )!;
+  expect(body.hasAttribute("hidden")).toBe(true);
+  expect(
+    screen.queryByRole("combobox", { name: "Account source 2" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Remove source 2" })).toBeNull();
+  // Grips and Remove are never nested in a disclosure trigger.
+  for (const button of [trigger(1), second])
+    expect(button.querySelector("button")).toBeNull();
+  expect(trigger(1).contains(reorderGrip(1))).toBe(false);
+  expect(
+    trigger(1).closest("[data-source-group]")!.contains(reorderGrip(1)),
+  ).toBe(true);
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("keeps one source open, allows all to collapse and retains drafts while toggling", async () => {
+  const f = fixture();
+  render(f.view());
+  await twoSources(f);
+  // Adding opened the second source and closed the first.
+  expect(expandedTriggers()).toHaveLength(1);
+  expect(trigger(2).getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(trigger(1));
+  expect(trigger(1).getAttribute("aria-expanded")).toBe("true");
+  expect(trigger(2).getAttribute("aria-expanded")).toBe("false");
+  expect(
+    (
+      screen.getByRole("checkbox", {
+        name: /First account/,
+      }) as HTMLInputElement
+    ).checked,
+  ).toBe(true);
+  fireEvent.click(trigger(1));
+  expect(expandedTriggers()).toEqual([]);
+  expect(screen.queryByRole("checkbox", { name: /First account/ })).toBeNull();
+  // The summary updates immediately and the collapsed draft survives reopening.
+  expect(trigger(1).textContent).toContain("1 accounts selected");
+  fireEvent.click(trigger(2));
+  fireEvent.click(trigger(1));
+  expect(
+    (
+      screen.getByRole("checkbox", {
+        name: /First account/,
+      }) as HTMLInputElement
+    ).checked,
+  ).toBe(true);
+  // Collapsed-all survives Model and Back; drafts survive too.
+  fireEvent.click(trigger(2));
+  fireEvent.click(
+    await screen.findByRole("checkbox", { name: /Original subscription/ }),
+  );
+  await act(async () => {});
+  fireEvent.click(trigger(2));
+  expect(expandedTriggers()).toEqual([]);
+  const before = f.rpc.length;
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("heading", { name: "Model", level: 3 });
+  // The Model step shows every source without accordion controls.
+  expect(
+    screen.queryByRole("button", { name: /^\d+ · .*accounts selected$/ }),
+  ).toBeNull();
+  expect(
+    screen.getAllByRole("heading", { level: 4, name: /^\d · / }),
+  ).toHaveLength(2);
+  expect(screen.queryByRole("button", { name: /^Reorder source/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  await act(async () => {});
+  expect(expandedTriggers()).toEqual([]);
+  expect(trigger(1).textContent).toContain("1 accounts selected");
+  expect(f.rpc.length).toBeGreaterThanOrEqual(before);
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("exposes the disclosure through aria-expanded and aria-controls", async () => {
+  const f = fixture();
+  render(f.view());
+  await twoSources(f);
+  const first = trigger(1);
+  first.focus();
+  expect(first.getAttribute("aria-controls")).toBeTruthy();
+  fireEvent.click(first);
+  expect(first.getAttribute("aria-expanded")).toBe("true");
+  expect(
+    globalThis.document
+      .getElementById(first.getAttribute("aria-controls")!)
+      ?.hasAttribute("hidden"),
+  ).toBe(false);
+  fireEvent.click(first);
+  expect(first.getAttribute("aria-expanded")).toBe("false");
+});
+
+it("appends and opens a new source with its picker focused, then removes to the neighbour", async () => {
+  const f = fixture();
+  render(f.view());
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  // A single source cannot be removed.
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Remove source 1",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: /Add account source/ }));
+  await act(async () => {});
+  expect(trigger(2).getAttribute("aria-expanded")).toBe("true");
+  expect(trigger(1).getAttribute("aria-expanded")).toBe("false");
+  expect(trigger(2).textContent).toContain("Choose account source");
+  expect(globalThis.document.activeElement).toBe(
+    screen.getByRole("combobox", { name: "Account source 2" }),
+  );
+  // Removing the expanded last source opens and focuses the preceding source.
+  fireEvent.click(screen.getByRole("button", { name: "Remove source 2" }));
+  await act(async () => {});
+  expect(screen.queryByRole("button", { name: /^2 · / })).toBeNull();
+  expect(trigger(1).getAttribute("aria-expanded")).toBe("true");
+  expect(globalThis.document.activeElement).toBe(trigger(1));
+  // Removing the expanded first source opens and focuses the next one.
+  fireEvent.click(screen.getByRole("button", { name: /Add account source/ }));
+  await act(async () => {});
+  fireEvent.click(trigger(1));
+  fireEvent.click(screen.getByRole("button", { name: "Remove source 1" }));
+  await act(async () => {});
+  expect(trigger(1).getAttribute("aria-expanded")).toBe("true");
+  expect(trigger(1).textContent).toContain("Choose account source");
+  expect(globalThis.document.activeElement).toBe(trigger(1));
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("opens a collapsed invalid source before focusing its control without saving", async () => {
+  const f = fixture();
+  render(f.view());
+  await twoSources(f);
+  // Source 2 has no account selected; collapse it by opening source 1.
+  fireEvent.click(trigger(1));
+  expect(trigger(2).getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await act(async () => {});
+  expect(trigger(2).getAttribute("aria-expanded")).toBe("true");
+  expect(trigger(1).getAttribute("aria-expanded")).toBe("false");
+  const active = globalThis.document.activeElement as HTMLElement;
+  expect(active.closest("[data-source-group]")).toBe(
+    trigger(2).closest("[data-source-group]"),
+  );
+  expect(screen.getByRole("alert")).toBeTruthy();
+  expect(stepHeading("Accounts")).toBeTruthy();
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("reorders an expanded and a collapsed source by keyboard keeping expansion, focus and reads", async () => {
+  const f = fixture();
+  render(f.view(true, undefined, false));
+  await twoSources(f);
+  const rpc = f.rpc.length;
+  // Move the expanded second source to the top.
+  const grip = reorderGrip(2);
+  grip.focus();
+  fireEvent.keyDown(grip, { key: " " });
+  fireEvent.keyDown(grip, { key: "ArrowUp" });
+  // Positions update live, before the commit.
+  expect(trigger(1).textContent).toContain("ChatGPT subscription");
+  expect(trigger(1).getAttribute("aria-expanded")).toBe("true");
+  fireEvent.keyDown(grip, { key: "Enter" });
+  await act(async () => {});
+  expect(trigger(1).textContent).toContain("ChatGPT subscription");
+  expect(trigger(1).getAttribute("aria-expanded")).toBe("true");
+  expect(trigger(2).getAttribute("aria-expanded")).toBe("false");
+  expect(globalThis.document.activeElement).toBe(reorderGrip(1));
+  expect(f.rpc.length).toBe(rpc);
+  // Moving the collapsed source leaves the expanded identity alone.
+  const second = reorderGrip(2);
+  second.focus();
+  fireEvent.keyDown(second, { key: "Enter" });
+  fireEvent.keyDown(second, { key: "ArrowUp" });
+  fireEvent.keyDown(second, { key: "Enter" });
+  await act(async () => {});
+  expect(trigger(2).textContent).toContain("ChatGPT subscription");
+  expect(trigger(2).getAttribute("aria-expanded")).toBe("true");
+  expect(f.rpc.length).toBe(rpc);
+  // Escape cancels and keeps the original order and expansion.
+  const cancelled = reorderGrip(2);
+  cancelled.focus();
+  fireEvent.keyDown(cancelled, { key: " " });
+  fireEvent.keyDown(cancelled, { key: "ArrowUp" });
+  fireEvent.keyDown(cancelled, { key: "Escape" });
+  expect(trigger(2).textContent).toContain("ChatGPT subscription");
+  expect(trigger(2).getAttribute("aria-expanded")).toBe("true");
+  // A collapsed-all list stays collapsed after reorder.
+  fireEvent.click(trigger(2));
+  expect(expandedTriggers()).toEqual([]);
+  const last = reorderGrip(2);
+  fireEvent.keyDown(last, { key: " " });
+  fireEvent.keyDown(last, { key: "ArrowUp" });
+  fireEvent.keyDown(last, { key: " " });
+  await act(async () => {});
+  expect(expandedTriggers()).toEqual([]);
+  expect(f.rpc.length).toBe(rpc);
+  expect(f.save).not.toHaveBeenCalled();
 });
