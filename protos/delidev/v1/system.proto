@@ -70,6 +70,9 @@ enum SystemCapability {
   // Requires capability 45.
   SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1 = 105;
   SYSTEM_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1 = 106;
+  // Dedicated revision-bound DeviceService.RemoveWorker: revokes a saved Worker
+  // and retires its machine record without deleting history or device files.
+  SYSTEM_CAPABILITY_WORKER_REMOVAL_V1 = 107;
   SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1 = 90;
   SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1 = 93;
   SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1 = 89;

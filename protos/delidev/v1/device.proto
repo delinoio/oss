@@ -9,6 +9,9 @@ service DeviceService {
   rpc CreatePairing(CreatePairingRequest) returns (CreatePairingResponse);
   rpc PairDevice(PairDeviceRequest) returns (PairDeviceResponse);
   rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
+  // Revokes a Worker's device authorization and retires its saved machine in one
+  // revision-bound transaction. Gated by SYSTEM_CAPABILITY_WORKER_REMOVAL_V1.
+  rpc RemoveWorker(RemoveWorkerRequest) returns (RemoveWorkerResponse);
 }
 
 enum DeviceType {
@@ -56,6 +59,20 @@ message RevokeDeviceRequest {
 
 message RevokeDeviceResponse {
   Resource device = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message RemoveWorkerRequest {
+  // mutation.id is the original machine ID; expected_revision is its revision.
+  Mutation mutation = 1;
+  // Machine resource schema the caller observed. Only version 1 is supported.
+  uint32 schema_version = 2;
+}
+
+message RemoveWorkerResponse {
+  // The retired machine record; exact reads keep its original name and ID.
+  Resource machine = 1;
   string request_id = 2;
   bool replayed = 3;
 }

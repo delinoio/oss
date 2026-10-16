@@ -42,6 +42,9 @@ const (
 	// DeviceServiceRevokeDeviceProcedure is the fully-qualified name of the DeviceService's
 	// RevokeDevice RPC.
 	DeviceServiceRevokeDeviceProcedure = "/delidev.v1.DeviceService/RevokeDevice"
+	// DeviceServiceRemoveWorkerProcedure is the fully-qualified name of the DeviceService's
+	// RemoveWorker RPC.
+	DeviceServiceRemoveWorkerProcedure = "/delidev.v1.DeviceService/RemoveWorker"
 )
 
 // DeviceServiceClient is a client for the delidev.v1.DeviceService service.
@@ -49,6 +52,9 @@ type DeviceServiceClient interface {
 	CreatePairing(context.Context, *connect.Request[v1.CreatePairingRequest]) (*connect.Response[v1.CreatePairingResponse], error)
 	PairDevice(context.Context, *connect.Request[v1.PairDeviceRequest]) (*connect.Response[v1.PairDeviceResponse], error)
 	RevokeDevice(context.Context, *connect.Request[v1.RevokeDeviceRequest]) (*connect.Response[v1.RevokeDeviceResponse], error)
+	// Revokes a Worker's device authorization and retires its saved machine in one
+	// revision-bound transaction. Gated by SYSTEM_CAPABILITY_WORKER_REMOVAL_V1.
+	RemoveWorker(context.Context, *connect.Request[v1.RemoveWorkerRequest]) (*connect.Response[v1.RemoveWorkerResponse], error)
 }
 
 // NewDeviceServiceClient constructs a client for the delidev.v1.DeviceService service. By default,
@@ -80,6 +86,12 @@ func NewDeviceServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(deviceServiceMethods.ByName("RevokeDevice")),
 			connect.WithClientOptions(opts...),
 		),
+		removeWorker: connect.NewClient[v1.RemoveWorkerRequest, v1.RemoveWorkerResponse](
+			httpClient,
+			baseURL+DeviceServiceRemoveWorkerProcedure,
+			connect.WithSchema(deviceServiceMethods.ByName("RemoveWorker")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -88,6 +100,7 @@ type deviceServiceClient struct {
 	createPairing *connect.Client[v1.CreatePairingRequest, v1.CreatePairingResponse]
 	pairDevice    *connect.Client[v1.PairDeviceRequest, v1.PairDeviceResponse]
 	revokeDevice  *connect.Client[v1.RevokeDeviceRequest, v1.RevokeDeviceResponse]
+	removeWorker  *connect.Client[v1.RemoveWorkerRequest, v1.RemoveWorkerResponse]
 }
 
 // CreatePairing calls delidev.v1.DeviceService.CreatePairing.
@@ -105,11 +118,19 @@ func (c *deviceServiceClient) RevokeDevice(ctx context.Context, req *connect.Req
 	return c.revokeDevice.CallUnary(ctx, req)
 }
 
+// RemoveWorker calls delidev.v1.DeviceService.RemoveWorker.
+func (c *deviceServiceClient) RemoveWorker(ctx context.Context, req *connect.Request[v1.RemoveWorkerRequest]) (*connect.Response[v1.RemoveWorkerResponse], error) {
+	return c.removeWorker.CallUnary(ctx, req)
+}
+
 // DeviceServiceHandler is an implementation of the delidev.v1.DeviceService service.
 type DeviceServiceHandler interface {
 	CreatePairing(context.Context, *connect.Request[v1.CreatePairingRequest]) (*connect.Response[v1.CreatePairingResponse], error)
 	PairDevice(context.Context, *connect.Request[v1.PairDeviceRequest]) (*connect.Response[v1.PairDeviceResponse], error)
 	RevokeDevice(context.Context, *connect.Request[v1.RevokeDeviceRequest]) (*connect.Response[v1.RevokeDeviceResponse], error)
+	// Revokes a Worker's device authorization and retires its saved machine in one
+	// revision-bound transaction. Gated by SYSTEM_CAPABILITY_WORKER_REMOVAL_V1.
+	RemoveWorker(context.Context, *connect.Request[v1.RemoveWorkerRequest]) (*connect.Response[v1.RemoveWorkerResponse], error)
 }
 
 // NewDeviceServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -137,6 +158,12 @@ func NewDeviceServiceHandler(svc DeviceServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(deviceServiceMethods.ByName("RevokeDevice")),
 		connect.WithHandlerOptions(opts...),
 	)
+	deviceServiceRemoveWorkerHandler := connect.NewUnaryHandler(
+		DeviceServiceRemoveWorkerProcedure,
+		svc.RemoveWorker,
+		connect.WithSchema(deviceServiceMethods.ByName("RemoveWorker")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.DeviceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DeviceServiceCreatePairingProcedure:
@@ -145,6 +172,8 @@ func NewDeviceServiceHandler(svc DeviceServiceHandler, opts ...connect.HandlerOp
 			deviceServicePairDeviceHandler.ServeHTTP(w, r)
 		case DeviceServiceRevokeDeviceProcedure:
 			deviceServiceRevokeDeviceHandler.ServeHTTP(w, r)
+		case DeviceServiceRemoveWorkerProcedure:
+			deviceServiceRemoveWorkerHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -164,4 +193,8 @@ func (UnimplementedDeviceServiceHandler) PairDevice(context.Context, *connect.Re
 
 func (UnimplementedDeviceServiceHandler) RevokeDevice(context.Context, *connect.Request[v1.RevokeDeviceRequest]) (*connect.Response[v1.RevokeDeviceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.DeviceService.RevokeDevice is not implemented"))
+}
+
+func (UnimplementedDeviceServiceHandler) RemoveWorker(context.Context, *connect.Request[v1.RemoveWorkerRequest]) (*connect.Response[v1.RemoveWorkerResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.DeviceService.RemoveWorker is not implemented"))
 }
