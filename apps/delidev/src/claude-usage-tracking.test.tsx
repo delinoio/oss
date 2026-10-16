@@ -36,7 +36,9 @@ import {
 } from "./claude-usage-tracking";
 import {
   ClaudeUsageCapability,
+  ClaudeUsageOperationState,
   ClaudeUsageView,
+  claudeUsageEndedLogin,
   claudeUsageSection,
   claudeUsageView,
 } from "./claude-usage-state";
@@ -1018,6 +1020,78 @@ it("shows a failed login with its closed diagnostic and offers a fresh attempt",
   );
   fireEvent.click(again);
   await waitFor(() => expect(value.start).toHaveBeenCalledTimes(1));
+});
+
+it("shows the real server shape of an ended login: failed settles into reconnect-required without evidence", async () => {
+  const value = mount({
+    usage: {
+      connection: "reconnect-required",
+      generation,
+      operation: operation("unsupported"),
+    },
+    progress: () => ({
+      state: ClaudeUsageLoginState.UNSUPPORTED,
+      operationId,
+      usageGeneration: generation,
+      diagnostic: create(NativeSubscriptionDiagnosticSchema, {
+        detectedVersion: "2.1.100",
+        requiredVersion: "2.1.236",
+        phase: 2,
+        code: "unsupported",
+        correlationId: newRequestId(),
+      }),
+    }),
+  });
+  const section = await state(ClaudeUsageView.LoginFailed);
+  expect(within(section).getAllByRole("alert")[0].textContent).toMatch(
+    /cannot complete the usage sign-in/,
+  );
+  await waitFor(() => expect(section.textContent).toMatch(/2\.100|2\.1\.100/));
+  expect(section.textContent).not.toMatch(/needs to be connected again/);
+  const again = within(section).getByRole("button", { name: "Try again" });
+  await waitFor(() =>
+    expect((again as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(again);
+  await waitFor(() => expect(value.start).toHaveBeenCalledTimes(1));
+});
+
+it("returns to not connected after a cancel or disconnect that left nothing behind", async () => {
+  mount({
+    usage: {
+      connection: "reconnect-required",
+      generation,
+      operation: operation("canceled"),
+    },
+  });
+  const section = await state(ClaudeUsageView.NotConnected);
+  expect(
+    within(section).getByRole("button", { name: "Connect usage account" }),
+  ).toBeTruthy();
+  expect(section.textContent).not.toMatch(/needs to be connected again/);
+});
+
+it("keeps reconnect-required for a retained or failed connection and ignores ended logins with evidence", () => {
+  const ended = (extra: Record<string, unknown> = {}) => {
+    const section = claudeUsageSection({
+      claude_usage: {
+        connection: "reconnect-required",
+        generation,
+        operation: operation("failed"),
+        ...extra,
+      },
+    });
+    return section.kind === "present"
+      ? claudeUsageEndedLogin(section.usage)
+      : undefined;
+  };
+  expect(ended()).toBe(ClaudeUsageOperationState.Failed);
+  expect(ended({ failure: "unauthorized" })).toBeUndefined();
+  expect(ended({ refresh: "rotation-uncertain" })).toBeUndefined();
+  expect(
+    ended({ identity, last_success_at: minutes(-2), windows: windows() }),
+  ).toBeUndefined();
+  expect(ended({ operation: operation("succeeded") })).toBeUndefined();
 });
 
 it("keeps a recovery-required login visible with only an explicit cancel", async () => {

@@ -35,6 +35,7 @@ import {
   ClaudeUsageRefreshPhase,
   ClaudeUsageView,
   claudeUsageCapability,
+  claudeUsageEndedLogin,
   claudeUsageFailureMessages,
   claudeUsageLoginMessages,
   claudeUsageLoginOperationState,
@@ -331,12 +332,18 @@ export function useClaudeUsageTracking(options: ClaudeUsageTrackingOptions): {
   const lifecycle =
     usage?.connection === ClaudeUsageConnection.Connecting ||
     usage?.connection === ClaudeUsageConnection.Confirming;
+  // A login that ended without linking is settled into reconnect-required; its
+  // closed diagnostic is still served by one progress read.
+  const endedState = usage ? claudeUsageEndedLogin(usage) : undefined;
+  const endedWithDiagnostic =
+    endedState !== undefined &&
+    endedState !== ClaudeUsageOperationState.Canceled;
   const progress = useClaudeUsageProgress({
     enabled:
       active &&
       enabled &&
       capability === ClaudeUsageCapability.Available &&
-      lifecycle &&
+      (lifecycle || endedWithDiagnostic) &&
       Boolean(operation),
     settled,
     accountId,
