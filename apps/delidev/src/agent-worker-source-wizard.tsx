@@ -258,11 +258,22 @@ function SourceGroup({
     ids = value.accounts.map((account) => text(account.id));
   const sourceID = sourceKey(source);
   const query = useDeferredValue(value.input);
+  const harnessProtocol = harnessAPIProtocol(harness);
   const providers = useProviderPages(
     "",
     active && step === Step.Accounts,
     true,
+    false,
+    harnessProtocol,
   );
+  // Older servers ignore the request field and return every enabled provider,
+  // so only a response that advertises the capability proves the list filtered.
+  const compatibleFilter =
+    providers.data === undefined
+      ? undefined
+      : providers.data.capabilities.includes(
+          ProviderInventoryCapability.COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1,
+        );
   const provider = useQuery(
     ResourceQuery.getResource,
     {
@@ -277,7 +288,7 @@ function SourceGroup({
       providers.data?.capabilities.includes(
         ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1,
       )
-      ? harnessAPIProtocol(harness)
+      ? harnessProtocol
       : ApiProtocol.UNSPECIFIED,
     active && Boolean(source) && step === Step.Accounts,
   );
@@ -529,9 +540,15 @@ function SourceGroup({
     setPopup(false);
     setHighlight(-1);
   };
-  const entries = providers.rows.filter(
-    (entry) => entry.enabled && entry.providerId,
-  );
+  const entries = compatibleFilter
+    ? providers.rows.filter((entry) => entry.enabled && entry.providerId)
+    : [];
+  // Without the capability the continuation must not page through an
+  // unfiltered list that is never shown.
+  const sourceQuery =
+    compatibleFilter === false
+      ? { ...providers, nextPageToken: "" }
+      : providers;
   const changeRouting = (routing: string) =>
     update(value.key, { routing: routing || undefined });
   return (
@@ -594,7 +611,7 @@ function SourceGroup({
                 placeholder={copy("agent-worker-wizard.selectSource")}
                 active={active && step === Step.Accounts && displayed}
                 disabled={locked}
-                query={providers}
+                query={sourceQuery}
                 change={chooseSource}
                 options={[
                   ...Object.values(SubscriptionServiceId)
@@ -634,6 +651,10 @@ function SourceGroup({
             {providers.isLoading ? (
               <p role="status">
                 {copy("agent-worker-wizard.loadingApiSources")}
+              </p>
+            ) : compatibleFilter === false ? (
+              <p role="status">
+                {copy("agent-worker-wizard.updateServerCompatibleApiSources")}
               </p>
             ) : providers.loaded && entries.length === 0 ? (
               <p>{copy("agent-worker-wizard.noApiSources")}</p>

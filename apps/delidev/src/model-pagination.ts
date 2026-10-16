@@ -2,6 +2,7 @@
 import { useCallback } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
+  ApiProtocol,
   ProviderQuery,
   NativeModelQuery,
   EntityKind,
@@ -43,10 +44,21 @@ export function useProviderPages(
   active: boolean,
   enabledOnly = false,
   retainPayloadOnSuspend = false,
+  compatibleAccountApiProtocol = ApiProtocol.UNSPECIFIED,
 ) {
+  // The opt-in compatible-account filter is sent only when requested, so every
+  // other consumer keeps the historical unfiltered request and chain identity.
   const request = useCallback(
-    (token: string) => ({ query, enabledOnly, pageSize: 50, pageToken: token }),
-    [query, enabledOnly],
+    (token: string) => ({
+      query,
+      enabledOnly,
+      pageSize: 50,
+      pageToken: token,
+      ...(compatibleAccountApiProtocol === ApiProtocol.UNSPECIFIED
+        ? {}
+        : { compatibleAccountApiProtocol }),
+    }),
+    [query, enabledOnly, compatibleAccountApiProtocol],
   );
   const project = useCallback((response: ListProviderInventoryResponse) => {
     if (
@@ -92,7 +104,9 @@ export function useProviderPages(
     project,
   );
   const chain = usePaginationChain(
-    `providers:${enabledOnly}:${query}`,
+    compatibleAccountApiProtocol === ApiProtocol.UNSPECIFIED
+      ? `providers:${enabledOnly}:${query}`
+      : `providers:${enabledOnly}:${query}:compatible-${compatibleAccountApiProtocol}`,
     active,
     reader,
     true,

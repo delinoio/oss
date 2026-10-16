@@ -161,6 +161,7 @@ function fixture(supported = true) {
           capabilities: [
             ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER,
             ProviderInventoryCapability.ACCOUNT_TYPE_FILTER,
+            ProviderInventoryCapability.COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1,
           ],
         }),
         listEndpointModels: endpoint,

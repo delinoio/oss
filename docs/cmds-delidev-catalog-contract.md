@@ -248,7 +248,8 @@ proof that no account exists. The filter joins the
 signed cursor scope only when set, and the cursor epoch (latest provider/account
 event) already expires continuations after any provider or account change, so a
 token cannot cross filters or survive the loss of an eligible provider's last
-selectable account. Desktop consumption of the filter is a separate change.
+selectable account. The desktop Agent Worker wizard consumes the filter as described in the
+[desktop contract](apps-delidev-desktop-contract.md#compatible-api-source-choices).
 
 ## Ordered Agent Worker account sources
 
