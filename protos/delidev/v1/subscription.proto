@@ -50,6 +50,11 @@ service SubscriptionService {
   rpc TakeSubscription(TakeSubscriptionRequest) returns (TakeSubscriptionResponse);
   rpc PublishSubscriptionProgress(PublishSubscriptionProgressRequest) returns (PublishSubscriptionProgressResponse);
   rpc FinishSubscription(FinishSubscriptionRequest) returns (FinishSubscriptionResponse);
+  // Worker-only recovery lane for retained ChatGPT Execute ownership. Negotiated
+  // by WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1; older peers keep their fence.
+  rpc SyncSubscriptionRecoveryCapture(SyncSubscriptionRecoveryCaptureRequest) returns (SyncSubscriptionRecoveryCaptureResponse);
+  rpc ReadSubscriptionRecoveryCapture(ReadSubscriptionRecoveryCaptureRequest) returns (ReadSubscriptionRecoveryCaptureResponse);
+  rpc RecoverSubscription(RecoverSubscriptionRequest) returns (RecoverSubscriptionResponse);
 }
 
 // Explicit server-owned cleanup of failed initial logins. No native login or
@@ -215,6 +220,74 @@ enum SubscriptionFinishScope {
   SUBSCRIPTION_FINISH_SCOPE_OWNER = 2;
 }
 message FinishSubscriptionResponse {
+  Resource account = 1;
+  bool replayed = 2;
+}
+
+// Protected capture of the latest validated original bundle. The original Worker
+// synchronizes it before it deletes transient authentication. The bytes stay in
+// the server vault; they grant no readiness, Take, quota access or redistribution.
+message SyncSubscriptionRecoveryCaptureRequest {
+  // request_id is the capture identity, id the account and expected_revision the
+  // original lease revision.
+  Mutation mutation = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string generation_id = 5;
+  bytes bundle = 6;
+}
+message SyncSubscriptionRecoveryCaptureResponse {
+  string capture_id = 1;
+  bool replayed = 2;
+}
+// Reads the protected material of a fenced original Execute lease. Only the
+// original Worker device of that lease can read it.
+message ReadSubscriptionRecoveryCaptureRequest {
+  string account_id = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string generation_id = 5;
+}
+message ReadSubscriptionRecoveryCaptureResponse {
+  // Empty when the original execution never synchronized a capture.
+  string capture_id = 1;
+  bytes latest_bundle = 2;
+  // The settled generation the original lease was granted.
+  bytes original_bundle = 3;
+}
+enum SubscriptionRecoveryOutcome {
+  SUBSCRIPTION_RECOVERY_OUTCOME_UNSPECIFIED = 0;
+  // Independent cleanup is proven and the protected latest credentials validated.
+  SUBSCRIPTION_RECOVERY_OUTCOME_CREDENTIALS_VERIFIED = 1;
+  // Independent cleanup is proven but no usable credentials exist.
+  SUBSCRIPTION_RECOVERY_OUTCOME_NO_USABLE_CREDENTIALS = 2;
+  // The original Worker cannot prove cleanup. The fence stays and the closed
+  // reason is recorded on the account state.
+  SUBSCRIPTION_RECOVERY_OUTCOME_BLOCKED = 3;
+}
+enum SubscriptionRecoveryReason {
+  SUBSCRIPTION_RECOVERY_REASON_UNSPECIFIED = 0;
+  SUBSCRIPTION_RECOVERY_REASON_CREDENTIAL_PROOF_UNAVAILABLE = 1;
+  SUBSCRIPTION_RECOVERY_REASON_OWNERSHIP_EVIDENCE_UNAVAILABLE = 2;
+  SUBSCRIPTION_RECOVERY_REASON_NATIVE_PROCESS_UNCONFIRMED = 3;
+  SUBSCRIPTION_RECOVERY_REASON_AUTHENTICATION_CLEANUP_UNCONFIRMED = 4;
+  SUBSCRIPTION_RECOVERY_REASON_CREDENTIAL_VALIDATION_FAILED = 5;
+}
+message RecoverSubscriptionRequest {
+  // request_id is a durable recovery identity, never the failed Finish request.
+  Mutation mutation = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string generation_id = 5;
+  SubscriptionRecoveryOutcome outcome = 6;
+  string capture_id = 7;
+  // Set only with the BLOCKED outcome.
+  SubscriptionRecoveryReason reason = 8;
+}
+message RecoverSubscriptionResponse {
   Resource account = 1;
   bool replayed = 2;
 }

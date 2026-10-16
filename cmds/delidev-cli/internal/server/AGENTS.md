@@ -47,3 +47,4 @@
 - Explicit account deletion removes all server-owned profiles of the account before it is acknowledged (`deleteAccountNativeProfiles` in `resources.go`).
 - Retire only transient credential files after a joined operation; retain history, caches and native-created helper links, and delete profiles only through explicit session, account or storage deletion.
 - Follow the [persistent native profiles contract](../../../../docs/cmds-delidev-harness-contract.md#persistent-native-profiles).
+- Fenced managed ChatGPT Execute leases are reconciled only through the negotiated Worker-only recovery RPCs; never reuse the failed Finish request, run Take again or redistribute an old generation. Follow the [automatic recovery contract](../../../../docs/cmds-delidev-subscription-contract.md#automatic-managed-chatgpt-execution-cleanup-recovery).

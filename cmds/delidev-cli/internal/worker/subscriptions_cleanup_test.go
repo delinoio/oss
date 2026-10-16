@@ -55,7 +55,7 @@ func TestManagedExecutionCleanupRejectsEncodedAuthentication(t *testing.T) {
 	}
 }
 
-func TestManagedExecutionCleanupRetainsInventoryFencesAndSafeLogs(t *testing.T) {
+func TestManagedExecutionCleanupStreamsLargeHistoryAndFencesPending(t *testing.T) {
 	for _, mode := range []string{"pending", "file-limit", "byte-limit", "file-size-limit"} {
 		t.Run(mode, func(t *testing.T) {
 			home := filepath.Join(t.TempDir(), "codex")
@@ -97,15 +97,27 @@ func TestManagedExecutionCleanupRetainsInventoryFencesAndSafeLogs(t *testing.T) 
 				writeSparse("history", (16<<20)+1)
 			}
 			err := cleanupExecutionAuthentication(home, bundle, bundle)
+			if mode != "pending" {
+				// Ordinary accumulated history never blocks cleanup and is preserved.
+				if err != nil {
+					t.Fatal("large retained history blocked authentication cleanup", err)
+				}
+				if _, statErr := os.Stat(filepath.Join(home, "history-0")); mode != "file-size-limit" && statErr != nil {
+					t.Fatal("cleanup removed retained history", statErr)
+				}
+				if _, statErr := os.Stat(filepath.Join(home, "history")); mode == "file-size-limit" && statErr != nil {
+					t.Fatal("cleanup removed retained history", statErr)
+				}
+				if _, statErr := os.Lstat(filepath.Join(home, "auth.json")); !os.IsNotExist(statErr) {
+					t.Fatal("transient authentication remained", statErr)
+				}
+				return
+			}
 			var failure *executionAuthenticationFailure
 			if !errors.As(err, &failure) || failure.stage != executionAuthScan {
-				t.Fatal("inventory failure lost independent scan fence", err)
+				t.Fatal("pending entry lost independent scan fence", err)
 			}
-			expected := executionAuthLimit
-			if mode == "pending" {
-				expected = executionAuthPending
-			}
-			if failure.reason != expected {
+			if failure.reason != executionAuthPending {
 				t.Fatal("scan reason changed", failure.reason)
 			}
 			var logs bytes.Buffer

@@ -129,10 +129,13 @@ const (
 	ManagedCodexTitlesV1           WorkerCapability = "managed-codex-titles-v1"
 	SessionForwardingV1            WorkerCapability = "session-forwarding-v1"
 	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
-	NativeClaudeSubscriptionsV1    WorkerCapability = "native-claude-subscriptions-v1"
-	ManagedClaudeExecutionV1       WorkerCapability = "managed-claude-execution-v1"
-	CodexQuotaBlockV1              WorkerCapability = "codex-quota-block-v1"
-	SubscriptionPaidCreditsV1      WorkerCapability = "subscription-paid-credits-v1"
+	// ManagedCodexRecoveryV1 negotiates the Worker-only automatic recovery of
+	// retained managed ChatGPT Execute leases. It requires ManagedCodexSubscriptionsV1.
+	ManagedCodexRecoveryV1      WorkerCapability = "managed-codex-recovery-v1"
+	NativeClaudeSubscriptionsV1 WorkerCapability = "native-claude-subscriptions-v1"
+	ManagedClaudeExecutionV1    WorkerCapability = "managed-claude-execution-v1"
+	CodexQuotaBlockV1           WorkerCapability = "codex-quota-block-v1"
+	SubscriptionPaidCreditsV1   WorkerCapability = "subscription-paid-credits-v1"
 
 	SubscriptionObservationsV1  WorkerCapability = "subscription-observations-v1"
 	NativeSessionCompactionV1   WorkerCapability = "native-session-compaction-v1"

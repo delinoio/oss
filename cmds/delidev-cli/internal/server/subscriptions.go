@@ -467,6 +467,15 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 					continue
 				}
 				state := a.Subscription
+				// A fenced managed ChatGPT Execute lease is reconciled only by its
+				// original Worker, and only after both sides negotiated recovery.
+				if a.SubscriptionService == domain.SubscriptionChatGPT && recoveryCapabilities(machine) && recoveryEligible(a, domain.ID(req.Msg.MachineId)) {
+					records = append(records, r)
+					if len(records) == 4 {
+						break
+					}
+					continue
+				}
 				if state != nil && a.SubscriptionService == domain.SubscriptionClaude && state.RecoveryRequired && state.Lease != nil && state.Lease.MachineID == domain.ID(req.Msg.MachineId) {
 					records = append(records, r)
 					if len(records) == 4 {

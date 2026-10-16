@@ -121,8 +121,9 @@ func TestManagedExecutionAuthenticationCleanup(t *testing.T) {
 			}
 			err := cleanupExecutionAuthentication(home, bundle, bundle)
 			// A native-created helper link is ordinary retained data: it is never
-			// followed and never blocks cleanup. Copied tokens and oversized files do.
-			if (err == nil) != (mode == "clean" || mode == "symlink") {
+			// followed and never blocks cleanup. Copied tokens do; a large retained file is
+			// scanned completely by streaming and never blocks cleanup.
+			if (err == nil) != (mode == "clean" || mode == "symlink" || mode == "oversized") {
 				t.Fatalf("cleanup %s: %v", mode, err)
 			}
 			if mode == "symlink" {

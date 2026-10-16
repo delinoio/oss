@@ -454,7 +454,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		defer func() {
 			if managedPreNativeCleanup {
 				var authErr error
-				managedCleanup, authErr = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
+				managedCleanup, authErr = managed.cleanupPreNative(nativeHome, managedHelperRetained)
 				if managedHelperRetained {
 					// The original native tree was joined, so authentication cleanup
 					// runs independently; unretired helpers still retain the lease.
@@ -688,7 +688,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			// The original process join authorizes the independent final auth
 			// comparison/removal and complete retained-file scan. A failed helper
 			// owner must not skip that work or release the credential lease.
-			authErr := cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle)
+			authErr := managed.cleanupAuthentication(nativeHome, managedLatest)
 			managedCleanup = helperErr == nil && authErr == nil
 			logExecutionAuthenticationCleanup(config.Logger, owner, authErr)
 			if !managedCleanup || !managedSuccess {

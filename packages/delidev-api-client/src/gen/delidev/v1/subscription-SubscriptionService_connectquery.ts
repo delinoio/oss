@@ -88,3 +88,21 @@ export const publishSubscriptionProgress = SubscriptionService.method.publishSub
  * @generated from rpc delidev.v1.SubscriptionService.FinishSubscription
  */
 export const finishSubscription = SubscriptionService.method.finishSubscription;
+
+/**
+ * Worker-only recovery lane for retained ChatGPT Execute ownership. Negotiated
+ * by WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1; older peers keep their fence.
+ *
+ * @generated from rpc delidev.v1.SubscriptionService.SyncSubscriptionRecoveryCapture
+ */
+export const syncSubscriptionRecoveryCapture = SubscriptionService.method.syncSubscriptionRecoveryCapture;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.ReadSubscriptionRecoveryCapture
+ */
+export const readSubscriptionRecoveryCapture = SubscriptionService.method.readSubscriptionRecoveryCapture;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.RecoverSubscription
+ */
+export const recoverSubscription = SubscriptionService.method.recoverSubscription;

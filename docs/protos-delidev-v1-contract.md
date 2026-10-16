@@ -1,5 +1,9 @@
 # DeliDev v1 Connect contract
 
+## Managed ChatGPT execution-cleanup recovery
+
+Worker `MANAGED_CODEX_RECOVERY_V1 = 72` negotiates the Worker-only automatic recovery of a fenced managed ChatGPT Execute lease. It adds three `SubscriptionService` RPCs (`SyncSubscriptionRecoveryCapture`, `ReadSubscriptionRecoveryCapture`, `RecoverSubscription`), the closed enums `SubscriptionRecoveryOutcome` (`CREDENTIALS_VERIFIED = 1`, `NO_USABLE_CREDENTIALS = 2`, `BLOCKED = 3`) and `SubscriptionRecoveryReason`, and their messages. The server echoes the capability in `AttachWorkerResponse.supported_worker_capabilities`; a Worker reports it only after observing the echo, and an older peer keeps its existing fence. Existing numeric assignments are unchanged; the new assignments are recorded in `protos/delidev/allocations.json`. Go and TypeScript descriptors are regenerated. No public RPC, System capability or SQLite migration is added; the lease gains an additive `recovery_capture` JSON field and the account state a closed `recovery_reason`. See the [subscription contract](cmds-delidev-subscription-contract.md#automatic-managed-chatgpt-execution-cleanup-recovery).
+
 ## Shared subscription owner reservation
 
 The protocol reserves, with no behavior of their own, Worker `SHARED_SUBSCRIPTION_OWNER_V1 = 67`, Worker

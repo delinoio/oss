@@ -49,6 +49,9 @@ type managedSubscriptionLease struct {
 	// grokHome is the Grok home bound at materialization; Grok Finish retires the
 	// credential only in that directory.
 	grokHome subscription.GrokHome
+	// recovery reports that the original server negotiated automatic ChatGPT
+	// execution-cleanup recovery for this lease.
+	recovery bool
 }
 
 type managedJournalState string
@@ -98,6 +101,23 @@ type managedSubscriptionJournal struct {
 	// opened, so the final settlement keeps the account connected instead of
 	// confirming a logout cleanup. It survives an interrupted recovery.
 	AccountPreserved bool `json:"account_preserved,omitempty"`
+	// NativeHome and ProcessOwner are the exact native home and process scope an
+	// execution's authentication cleanup acts on. They are persisted before any
+	// transient auth.json is deleted so automatic recovery never guesses paths.
+	NativeHome   string    `json:"native_home,omitempty"`
+	ProcessOwner domain.ID `json:"process_owner,omitempty"`
+	// CaptureID names the protected server capture of the latest validated
+	// bundle. CaptureDigest binds it to those exact bytes and CaptureSynced
+	// records the acknowledged synchronization.
+	CaptureID     domain.ID `json:"capture_id,omitempty"`
+	CaptureDigest string    `json:"capture_digest,omitempty"`
+	CaptureSynced bool      `json:"capture_synced,omitempty"`
+	// RecoveryID is the durable recovery request identity. RecoveryOutcome and
+	// RecoveryCapture persist the independently proven result before it is
+	// reported, so a crash or lost acknowledgment replays the same request.
+	RecoveryID      domain.ID                          `json:"recovery_id,omitempty"`
+	RecoveryOutcome domain.SubscriptionRecoveryOutcome `json:"recovery_outcome,omitempty"`
+	RecoveryCapture domain.ID                          `json:"recovery_capture,omitempty"`
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {
@@ -244,7 +264,7 @@ func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client 
 		clear(response.Msg.Bundle)
 		return nil, release, &managedExecutionUncertain{subscription.Invalid()}
 	}
-	return &managedSubscriptionLease{paidCredits: config.paidCredits, logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, release, nil
+	return &managedSubscriptionLease{recovery: config.recovery, paidCredits: config.paidCredits, logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, release, nil
 }
 
 func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, success bool) error {
@@ -310,6 +330,7 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	active := map[domain.ID]bool{}
+	tracker := newRecoveryTracker()
 	failures := make(chan error, 1)
 	defer func() {
 		cancel()
@@ -326,12 +347,18 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			continue
 		}
 		var account domain.Account
-		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) {
+		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) && !recoveryEligible(account, credential.MachineID) {
 			return subscription.Invalid()
 		}
 		var op domain.SubscriptionOperation
 		var observation *domain.SubscriptionObservationOperation
-		if account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil {
+		chatGPTRecovery := config.recovery && recoveryEligible(account, credential.MachineID)
+		if chatGPTRecovery {
+			if !tracker.ready(domain.ID(r.Id), account.Subscription.Lease, time.Now()) {
+				continue
+			}
+			op = domain.SubscriptionOperation{ID: account.Subscription.Lease.OperationID}
+		} else if account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil {
 			op = domain.SubscriptionOperation{ID: account.Subscription.Lease.OperationID}
 		} else if account.Subscription.Observation != nil && account.Subscription.Observation.Phase == domain.SubscriptionObservationQueued {
 			observation = account.Subscription.Observation
@@ -359,6 +386,13 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 						return nil
 					}
 					return err
+				}
+				if chatGPTRecovery {
+					err := runManagedCodexRecovery(ctx, config, client, credential, instance, domain.ID(r.Id), account, tracker)
+					// A recovery failure never closes the Worker lane: it retries with
+					// backoff or stays protected until its obligation changes.
+					tracker.record(domain.ID(r.Id), account.Subscription.Lease, err, time.Now())
+					return nil
 				}
 				if account.SubscriptionService == domain.SubscriptionClaude {
 					if account.Subscription.RecoveryRequired {
@@ -617,7 +651,6 @@ const (
 	executionAuthIdentity   executionAuthenticationReason = "identity-changed"
 	executionAuthPending    executionAuthenticationReason = "pending-file"
 	executionAuthSpecial    executionAuthenticationReason = "non-regular-file"
-	executionAuthLimit      executionAuthenticationReason = "inventory-limit"
 	executionAuthRemnant    executionAuthenticationReason = "credential-remnant"
 )
 
@@ -646,7 +679,7 @@ func logExecutionAuthenticationCleanup(logger *slog.Logger, owner domain.ID, err
 	if errors.As(err, &observed) {
 		failure = observed
 	}
-	logger.Warn("execution_authentication_cleanup", "owner_id", owner, "stage", failure.stage, "reason", failure.reason, "file_count", failure.count, "observed_bytes", failure.bytes, "file_limit", 2048, "byte_limit", 64<<20)
+	logger.Warn("execution_authentication_cleanup", "owner_id", owner, "stage", failure.stage, "reason", failure.reason, "file_count", failure.count, "observed_bytes", failure.bytes, "file_limit", 0, "byte_limit", 0)
 }
 
 func cleanupExecutionAuthentication(home string, latest, original []byte) error {
@@ -752,39 +785,20 @@ func scanExecutionAuthenticationMode(home string, latest, original []byte, share
 		if !info.Mode().IsRegular() {
 			return fail(executionAuthSpecial)
 		}
-		if !shared && (count > 2048 || info.Size() > 16<<20) {
-			return fail(executionAuthLimit)
-		}
 		total += info.Size()
-		if !shared && total > 64<<20 {
-			return fail(executionAuthLimit)
-		}
+		// Ordinary accumulated history never prevents recovery: every regular
+		// file is inspected completely through a bounded streaming window.
 		file, err := root.Open(path)
 		if err != nil {
 			return fail(executionAuthFilesystem)
 		}
-		if shared {
-			found, scanErr := scanAuthenticationStream(file, needles)
-			closeErr := file.Close()
-			if scanErr != nil || closeErr != nil {
-				return fail(executionAuthFilesystem)
-			}
-			if found {
-				return fail(executionAuthRemnant)
-			}
-		} else {
-			raw, readErr := io.ReadAll(io.LimitReader(file, (16<<20)+1))
-			closeErr := file.Close()
-			if readErr != nil || closeErr != nil || len(raw) > 16<<20 {
-				clear(raw)
-				return fail(executionAuthFilesystem)
-			}
-			defer clear(raw)
-			for _, needle := range needles {
-				if bytes.Contains(raw, needle) {
-					return fail(executionAuthRemnant)
-				}
-			}
+		found, scanErr := scanAuthenticationStream(file, needles)
+		closeErr := file.Close()
+		if scanErr != nil || closeErr != nil {
+			return fail(executionAuthFilesystem)
+		}
+		if found {
+			return fail(executionAuthRemnant)
 		}
 		return nil
 	})

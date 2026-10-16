@@ -44,9 +44,12 @@ type SubscriptionState struct {
 	Generation             ID                                `json:"generation,omitempty"`
 	IdentityCommitment     string                            `json:"identity_commitment,omitempty"`
 	RecoveryRequired       bool                              `json:"recovery_required"`
-	Pending                *SubscriptionOperation            `json:"pending,omitempty"`
-	ServerOperation        *ServerSubscriptionOperation      `json:"server_operation,omitempty"`
-	Lease                  *SubscriptionLease                `json:"lease,omitempty"`
+	// RecoveryReason is the closed diagnostic the original Worker reported for a
+	// fenced managed ChatGPT Execute lease whose automatic recovery is blocked.
+	RecoveryReason  SubscriptionRecoveryReason   `json:"recovery_reason,omitempty"`
+	Pending         *SubscriptionOperation       `json:"pending,omitempty"`
+	ServerOperation *ServerSubscriptionOperation `json:"server_operation,omitempty"`
+	Lease           *SubscriptionLease           `json:"lease,omitempty"`
 	// Members are the execution members of a shared owner lease. Historical
 	// singleton accounts omit them.
 	Members []SubscriptionMember `json:"members,omitempty"`
@@ -83,6 +86,49 @@ type SubscriptionLease struct {
 	// owner and SubscriptionState.Members holds its execution members. A
 	// historical singleton lease omits it and keeps exclusive execution.
 	Shared bool `json:"shared,omitempty"`
+	// RecoveryCapture names the protected vault copy of the latest validated
+	// original bundle that the original Worker synchronized before it deleted
+	// transient authentication. It grants no readiness, Take or quota access.
+	RecoveryCapture *SubscriptionRecoveryCapture `json:"recovery_capture,omitempty"`
+}
+
+// SubscriptionRecoveryCapture binds one protected vault reference to the
+// original lease and the immutable identity commitment.
+type SubscriptionRecoveryCapture struct {
+	ID                 ID        `json:"id"`
+	IdentityCommitment string    `json:"identity_commitment"`
+	CapturedAt         time.Time `json:"captured_at"`
+}
+
+// SubscriptionRecoveryReason is the closed set of reasons an automatic managed
+// ChatGPT recovery stays blocked. It never carries paths or credential values.
+type SubscriptionRecoveryReason string
+
+const (
+	RecoveryCredentialProofUnavailable       SubscriptionRecoveryReason = "credential-proof-unavailable"
+	RecoveryOwnershipEvidenceUnavailable     SubscriptionRecoveryReason = "ownership-evidence-unavailable"
+	RecoveryNativeProcessUnconfirmed         SubscriptionRecoveryReason = "native-process-unconfirmed"
+	RecoveryAuthenticationCleanupUnconfirmed SubscriptionRecoveryReason = "authentication-cleanup-unconfirmed"
+	RecoveryCredentialValidationFailed       SubscriptionRecoveryReason = "credential-validation-failed"
+)
+
+// SubscriptionRecoveryOutcome is the closed result a Worker reports for one
+// automatic recovery of a retained managed ChatGPT Execute lease.
+type SubscriptionRecoveryOutcome string
+
+const (
+	RecoveryCredentialsVerified SubscriptionRecoveryOutcome = "credentials-verified"
+	RecoveryNoUsableCredentials SubscriptionRecoveryOutcome = "no-usable-credentials"
+	RecoveryBlocked             SubscriptionRecoveryOutcome = "blocked"
+)
+
+// Valid reports whether the reason is a member of the closed set.
+func (r SubscriptionRecoveryReason) Valid() bool {
+	switch r {
+	case RecoveryCredentialProofUnavailable, RecoveryOwnershipEvidenceUnavailable, RecoveryNativeProcessUnconfirmed, RecoveryAuthenticationCleanupUnconfirmed, RecoveryCredentialValidationFailed:
+		return true
+	}
+	return false
 }
 
 func (s SubscriptionState) Validate(account Account) error {
@@ -162,6 +208,9 @@ func (s SubscriptionState) Validate(account Account) error {
 	if s.Lease == nil && len(s.Members) != 0 {
 		return invalid()
 	}
+	if s.RecoveryReason != "" && (!s.RecoveryReason.Valid() || !s.RecoveryRequired || s.Lease == nil || account.SubscriptionService != SubscriptionChatGPT) {
+		return invalid()
+	}
 	if s.Lease != nil {
 		l := s.Lease
 		for _, id := range []ID{l.ID, l.OperationID, l.MachineID, l.InstanceID, l.DeviceID, l.Epoch} {
@@ -173,6 +222,9 @@ func (s SubscriptionState) Validate(account Account) error {
 			return invalid()
 		}
 		if !s.validateOwnership() {
+			return invalid()
+		}
+		if c := l.RecoveryCapture; c != nil && (account.SubscriptionService != SubscriptionChatGPT || l.Action != SubscriptionExecute || c.ID.Validate() != nil || len(c.IdentityCommitment) != 64 && c.IdentityCommitment != "" || c.CapturedAt.IsZero()) {
 			return invalid()
 		}
 		if l.Revision == 0 || l.StartedAt.IsZero() || l.Generation != s.Generation || (l.Action != SubscriptionLogin && l.Action != SubscriptionRefresh && l.Action != SubscriptionLogout && l.Action != SubscriptionExecute && l.Action != SubscriptionQuota && l.Action != SubscriptionResetCredit) {

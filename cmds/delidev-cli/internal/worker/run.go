@@ -29,9 +29,12 @@ import (
 )
 
 type Config struct {
-	startupProgress           bool
-	progress                  *sessionStartupReporter
-	paidCredits               bool
+	startupProgress bool
+	progress        *sessionStartupReporter
+	paidCredits     bool
+	// recovery reports that the original server negotiated automatic ChatGPT
+	// execution-cleanup recovery.
+	recovery                  bool
 	imageClient               delidevv1connect.AttachmentServiceClient
 	branchReportClient        delidevv1connect.WorkerServiceClient
 	startup                   *executionStartupAttempt
@@ -401,6 +404,12 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if config.paidCredits {
 				profile += "\x00subscription-paid-credits-v1"
 			}
+			// Older servers do not know the enum; advertise it only after the
+			// original server opts into it.
+			config.recovery = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1)
+			if config.recovery {
+				profile += "\x00managed-codex-recovery-v1"
+			}
 			// Claude adapter capabilities describe implemented code and follow the
 			// peer's independent support. They never wait on installation inventory,
 			// protocol evidence or an auth-status probe: v4 direct startup verifies the
@@ -599,6 +608,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				}
 				if config.paidCredits {
 					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1)
+				}
+				if config.recovery {
+					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1)
 				}
 			}
 			if claudeCapabilityExpected {
