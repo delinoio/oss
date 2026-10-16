@@ -1810,6 +1810,89 @@ it.each(["New session", "New Chat"])(
   fullShellTimeoutMs,
 );
 
+it.each([
+  ["New session", false],
+  ["New session", true],
+  ["New Chat", false],
+  ["New Chat", true],
+])(
+  "opens Harness from the populated Agent Worker dropdown New action on %s (keyboard: %s) and preserves the draft",
+  async (surface, keyboard) => {
+    const value = fixture([], [], [], false, true);
+    value.status.mockResolvedValue({
+      version: "0.1.0",
+      protocolVersion: 2,
+      capabilities: [
+        SystemCapability.AUTOMATIC_TITLES_V1,
+        SystemCapability.INLINE_WORKER_MODELS_V1,
+      ],
+    });
+    render(<App transport={value.transport} />);
+    fireEvent.click(
+      (await screen.findAllByRole("button", { name: surface }))[0],
+    );
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: "First message" }),
+      { target: { value: `${surface} populated draft` } },
+    );
+    await chooseScrollOption(
+      screen.getByRole("combobox", { name: "Runs on" }),
+      value.machine.id,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
+    const picker = screen.getByRole("combobox", { name: "Agent Worker" });
+    // Select the existing Worker first so the action is also proven with a selection.
+    if (keyboard) await chooseScrollOption(picker, value.agent.id);
+    await waitFor(() => expect(picker).toHaveProperty("disabled", false));
+    fireEvent.click(picker);
+    const action = await screen.findByRole("option", {
+      name: "New agent worker",
+    });
+    expect(action.textContent).toBe("New");
+    expect(action.dataset.pickerId).toBeUndefined();
+    expect(action).toBe(
+      document.getElementById(picker.getAttribute("aria-controls") ?? "")!
+        .lastElementChild,
+    );
+    if (keyboard) {
+      fireEvent.keyDown(picker, { key: "End" });
+      expect(picker.getAttribute("aria-activedescendant")).toBe(action.id);
+      fireEvent.keyDown(picker, { key: "Enter" });
+    } else {
+      fireEvent.click(action);
+    }
+    const wizard = await screen.findByRole("dialog", {
+      name: "New Agent Worker",
+    });
+    expect(
+      await within(wizard).findByRole("heading", { name: "Harness" }),
+    ).toBeTruthy();
+    expect(value.saveConfiguration).not.toHaveBeenCalled();
+    expect(value.creates).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(wizard).getByRole("button", { name: "Close New Agent Worker" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+    fireEvent.click(screen.getAllByRole("button", { name: surface })[0]);
+    expect(
+      screen.getByRole("textbox", { name: "First message" }),
+    ).toHaveProperty("value", `${surface} populated draft`);
+    expect(
+      scrollChoiceValue(screen.getByRole("combobox", { name: "Runs on" })),
+    ).toBe(value.machine.id);
+    expect(
+      scrollChoiceValue(screen.getByRole("combobox", { name: "Agent Worker" })),
+    ).toBe(keyboard ? value.agent.id : "");
+    expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty(
+      "checked",
+      true,
+    );
+    expect(value.saveConfiguration).not.toHaveBeenCalled();
+    expect(value.creates).not.toHaveBeenCalled();
+  },
+  fullShellTimeoutMs,
+);
+
 it("shows selector loading while the current page has not returned", async () => {
   let finish!: () => void;
   const gate = new Promise<void>((resolve) => {

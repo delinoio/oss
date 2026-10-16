@@ -28,6 +28,19 @@ export interface ScrollPickerOption {
   decoration?: ReactNode;
 }
 
+/** A navigation entry that is not a resource choice. It never changes the
+ * picker value and is invoked only by deliberate pointer or keyboard
+ * activation. `label` is the visible text; `name` is the accessible name and
+ * must contain the visible text. */
+export interface ScrollPickerAction {
+  label: string;
+  name: string;
+  invoke: () => void;
+}
+
+// Highlight identity of the optional action. NUL cannot appear in resource IDs.
+const ACTION_HIGHLIGHT = "\u0000scroll-picker-action";
+
 /** Choices are display projections. The domain owns exact-ID selection,
  * authoritative reads and any resulting configuration change. */
 export function ScrollPicker({
@@ -45,6 +58,7 @@ export function ScrollPicker({
   selectedDecoration,
   markRequired = false,
   triggerRef,
+  action,
 }: {
   options: ScrollPickerOption[];
   label: string;
@@ -61,6 +75,8 @@ export function ScrollPicker({
   markRequired?: boolean;
   /** Lets an owner transfer focus to this picker's trigger after a swap. */
   triggerRef?: RefObject<HTMLButtonElement | null>;
+  /** Optional final row below the choices. Other pickers expose none. */
+  action?: ScrollPickerAction;
 }) {
   const display = (label: string, decoration?: ReactNode) =>
     decoration === undefined ? (
@@ -95,6 +111,11 @@ export function ScrollPicker({
     setScrollRoot(node);
   }, []);
   const enabled = options.filter((option) => !option.disabled);
+  // Keyboard traversal order: enabled choices, then the optional action.
+  const stops = [
+    ...enabled.map((option) => option.id),
+    ...(action ? [ACTION_HIGHLIGHT] : []),
+  ];
   const selected = options.find((option) => option.id === value);
   const available = active && !disabled;
   usable.current = available;
@@ -116,6 +137,19 @@ export function ScrollPicker({
       return;
     close(true);
     change(option.id);
+  };
+  const act = () => {
+    if (
+      !action ||
+      !usable.current ||
+      !showing.current ||
+      !trigger.current?.isConnected ||
+      trigger.current.closest("[inert], [hidden]") ||
+      trigger.current.closest("dialog")?.open === false
+    )
+      return;
+    close(true);
+    action.invoke();
   };
   useLayoutEffect(() => {
     if (autoFocus && available && !focusedInitially.current) {
@@ -217,22 +251,23 @@ export function ScrollPicker({
     };
   }, [open, available]);
   useLayoutEffect(() => {
-    if (open && highlight)
-      [
-        ...(root.current?.querySelectorAll<HTMLElement>("[data-picker-id]") ??
-          []),
-      ]
-        .find((node) => node.dataset.pickerId === highlight)
-        ?.scrollIntoView?.({ block: "nearest" });
+    if (!open || !highlight) return;
+    const node =
+      highlight === ACTION_HIGHLIGHT
+        ? root.current?.querySelector<HTMLElement>("[data-picker-action]")
+        : [
+            ...(root.current?.querySelectorAll<HTMLElement>(
+              "[data-picker-id]",
+            ) ?? []),
+          ].find((candidate) => candidate.dataset.pickerId === highlight);
+    node?.scrollIntoView?.({ block: "nearest" });
   }, [open, highlight]);
   const reveal = () => {
     if (available) {
       showing.current = true;
       setOpen(true);
       setHighlight(
-        enabled.find((option) => option.id === value)?.id ??
-          enabled[0]?.id ??
-          "",
+        enabled.find((option) => option.id === value)?.id ?? stops[0] ?? "",
       );
     }
   };
@@ -264,25 +299,26 @@ export function ScrollPicker({
           event.preventDefault();
           showing.current = true;
           setOpen(true);
-          const index = enabled.findIndex((option) => option.id === highlight);
+          const index = stops.indexOf(highlight);
           const next =
             event.key === "Home"
               ? 0
               : event.key === "End"
-                ? enabled.length - 1
+                ? stops.length - 1
                 : event.key === "ArrowDown"
-                  ? Math.min(index + 1, enabled.length - 1)
+                  ? Math.min(index + 1, stops.length - 1)
                   : index < 0
-                    ? enabled.length - 1
+                    ? stops.length - 1
                     : Math.max(index - 1, 0);
-          setHighlight(enabled[next]?.id ?? "");
+          setHighlight(stops[next] ?? "");
         } else if (
           (event.key === "Enter" || event.key === " ") &&
           event.target === trigger.current
         ) {
           event.preventDefault();
           const option = options.find((option) => option.id === highlight);
-          if (open && option) choose(option);
+          if (open && highlight === ACTION_HIGHLIGHT) act();
+          else if (open && option) choose(option);
           else reveal();
         }
       }}
@@ -307,7 +343,9 @@ export function ScrollPicker({
         aria-required={required || undefined}
         aria-activedescendant={
           open && highlight
-            ? `${id}-option-${options.findIndex((option) => option.id === highlight)}`
+            ? highlight === ACTION_HIGHLIGHT
+              ? `${id}-action`
+              : `${id}-option-${options.findIndex((option) => option.id === highlight)}`
             : undefined
         }
         disabled={!available}
@@ -372,6 +410,30 @@ export function ScrollPicker({
             root={root}
             active={available && open && Boolean(scrollRoot)}
           />
+          {action ? (
+            <button
+              id={`${id}-action`}
+              data-picker-action=""
+              type="button"
+              role="option"
+              aria-selected={false}
+              aria-label={action.name}
+              tabIndex={-1}
+              data-highlighted={highlight === ACTION_HIGHLIGHT}
+              onMouseDown={(event) => event.preventDefault()}
+              onPointerMove={() => setHighlight(ACTION_HIGHLIGHT)}
+              onClick={act}
+            >
+              <span className="scroll-picker-content">
+                <span className="scroll-picker-decoration" aria-hidden="true">
+                  <svg focusable="false" viewBox="0 0 16 16">
+                    <path d="M8 3v10M3 8h10" />
+                  </svg>
+                </span>
+                <span>{action.label}</span>
+              </span>
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

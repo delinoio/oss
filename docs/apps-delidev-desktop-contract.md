@@ -1002,6 +1002,43 @@ inventory invalidation. Return restores ordinary selection when a worker exists,
 without selecting it or starting a conversation. Existing eligible-selection
 and submission gates remain required.
 
+### Agent Worker dropdown New action
+
+New session and New Chat additionally end the populated Agent Worker dropdown
+with one localized creation action, **+ New** (Korean **+ 새로 만들기**), through
+the shared creation controller. It follows the last resource choice and the
+scroll continuation, is separated by a 1px divider, stays pinned to the bottom of
+the popup so long or paged lists never hide it, and uses the same 40px row
+height, horizontal padding, highlight and focus treatment as the choices with
+the semantic link color. The plus is a decorative inert icon; the row is an
+option-role entry in the listbox whose accessible name is **New agent worker**
+(Korean **에이전트 워커 새로 만들기**) and contains the visible text. It carries no
+resource ID, is never selected and is not part of a project's eligibility
+filtering, so a project that excludes existing workers still offers it.
+
+`ScrollPicker` exposes an optional typed `action` ({`label`, `name`, `invoke`})
+that is distinct from resource choices and absent for every other consumer.
+`ResourceChoice` forwards the optional `createAction` to its popup selector only;
+the proven-empty **Create agent worker** shortcut and the inline project
+presentation are unchanged. The action joins keyboard traversal after the enabled
+choices (ArrowUp/ArrowDown/Home/End, Enter/Space) and works when no choice is
+enabled. Activation closes the popup, restores focus to the trigger and calls the
+caller's callback exactly once; it never changes the picker value, never reads an
+exact resource and never submits the composer. Escape dismisses an open popup
+without invoking it. Inactive, disabled, hidden, inert and closed-dialog owners
+cannot open the popup or invoke the action, using the same admission checks as
+choices. Loading, error and pagination states of the selector are unchanged.
+
+New session and New Chat bind the action to
+`SettingsEntryDestination.NewAgentWorker`, so it reuses the typed Settings
+destination, wizard Harness focus, protocol/capability checks, validation, save,
+conflict and error handling of the empty-inventory entry above. Navigation
+performs no save, session, project-policy edit or execution authorization and
+preserves both creation drafts, the prior Agent selection and attachments. A
+saved worker refreshes the inventory through existing invalidation and is never
+selected automatically. No protocol, schema, persistence or logging contract
+changes.
+
 ### Dedicated General Chat creation
 
 Home provides a 36px **New Chat** action (English; Korean remains **새 일반 대화**) immediately below **New session**, with a decorative chat-plus icon and its own selected-page state. `Surface.NewGeneralChat` belongs to the same Home rail, Inbox/Search header, inventory/scroll scope and compact drawer. Existing New session retains its Project and Worktree/Local flow. Explicit activation of this page plays the single 160ms Y4 entrance owned by `apps-delidev-desktop-contract.md#new-session-and-new-general-chat-entrance-motion`; no edit, read or request state replays it.
@@ -3353,7 +3390,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Agent selector harness marks follow the feature and the desktop contract. ResourceChoice retains only the optional known saved top-level Harness enum beside existing metadata projections; never infer a mark from names, routes, models, accounts or providers. Decorate popup rows and selected triggers through ScrollPicker's optional accessibility-hidden presentation slots, retaining string labels and exact IDs/callbacks. Selected marks use only the existing exact accepted Resource or validated resolvedChoice, including off-page selections; unavailable/unsupported selections and unknown/missing harnesses retain blank aligned 16px slots. Shared `harness-mark.tsx`/CSS owns unchanged local licensed assets and resolved-theme variants, with no additional metadata reads, eligibility or execution authority. Selectors use 16px marks/8px gaps, Settings preserves 32px gutters/8px gaps, and wizard/history sizes remain unchanged. Asset failures preserve text, spacing and controls without business retries or external assets; automated built-fixture validation must decode actual mark bytes, not only inspect background-image declarations.
 
-- `scroll-picker.tsx` owns the shared metadata-only combobox/listbox, exact-ID keyboard choices and popup scroll continuation. ResourceChoice keeps retained labels and configured-empty restrictions; a deliberate new choice reads its exact authoritative Resource before the existing callback. Fence late reads on original kind/restriction/transport/active ownership and never infer a replacement from display projections. Keep required validation, visible focus and explicit read recovery. A deliberate exact selection synchronously locks the containing configuration save until its accepted callback and draft commit; retain prior IDs and sibling edits and release only that reader’s pending identity on failure or disposal.
+- `scroll-picker.tsx` owns the shared metadata-only combobox/listbox, exact-ID keyboard choices and popup scroll continuation. It also owns the optional non-resource `action` row described in Agent Worker dropdown New action. ResourceChoice keeps retained labels and configured-empty restrictions; a deliberate new choice reads its exact authoritative Resource before the existing callback. Fence late reads on original kind/restriction/transport/active ownership and never infer a replacement from display projections. Keep required validation, visible focus and explicit read recovery. A deliberate exact selection synchronously locks the containing configuration save until its accepted callback and draft commit; retain prior IDs and sibling edits and release only that reader’s pending identity on failure or disposal.
 
 - Settings Resource inventories, API entry lists and independent subscription lists render only the three retained full-payload pages through `ScrollPayloadWindow`. Reached metadata identities own empty/completeness gates and paired-device disclosure pruning; appending does not reset up to 50 expanded device identities. Provider creation choices retain direct action buttons inside bounded provider envelope windows and preserve exact selected hints/current provider verification. Server-owned cleanup and refresh-all remain complete independent operations; account categories do not inspect storage.
 
