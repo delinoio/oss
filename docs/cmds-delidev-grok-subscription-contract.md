@@ -342,7 +342,9 @@ Lifecycle of one device runner:
 4. Polling sends `grant_type=urn:ietf:params:oauth:grant-type:device_code`,
    `client_id` and `device_code` to the token endpoint, first one interval after
    the presentation and then every interval, never faster. `authorization_pending`
-   continues; `slow_down` adds 5 seconds to the interval for all later polls;
+   continues; `slow_down` adds 5 seconds to the interval for all later polls, also above
+   the 5-minute cap that applies to the interval the provider demands in its
+   authorization answer;
    `access_denied` settles FAILED with `PERMISSION_DENIED` (the denied terminal
    state); `expired_token` and the local deadline settle EXPIRED. The local
    deadline is `expires_in` from the answer capped by the operation's 15-minute

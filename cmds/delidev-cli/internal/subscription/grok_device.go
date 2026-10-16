@@ -32,8 +32,10 @@ const (
 	GrokDeviceDefaultInterval = 5 * time.Second
 	// GrokDeviceSlowDownStep is the RFC 8628 section 3.5 slow_down increase.
 	GrokDeviceSlowDownStep = 5 * time.Second
-	// GrokDeviceMaxInterval bounds an interval the provider may demand; a larger
-	// value fails closed rather than polling faster than it asked for.
+	// GrokDeviceMaxInterval bounds the interval the provider may demand in its
+	// authorization answer; a larger value fails closed rather than polling
+	// faster than it asked for. It does not cap slow_down increases: every
+	// slow_down adds GrokDeviceSlowDownStep, even above this value.
 	GrokDeviceMaxInterval = 5 * time.Minute
 
 	grokDeviceMaxExpiresIn = 24 * 60 * 60
@@ -275,7 +277,9 @@ func PollGrokDeviceToken(ctx context.Context, authorization *GrokDeviceAuthoriza
 		switch outcome {
 		case GrokDevicePollPending:
 		case GrokDevicePollSlowDown:
-			interval = min(interval+GrokDeviceSlowDownStep, GrokDeviceMaxInterval)
+			// RFC 8628 section 3.5: every slow_down adds 5 seconds for all later
+			// polls, also above the cap on the interval the provider may demand.
+			interval += GrokDeviceSlowDownStep
 		default:
 			return GrokTokens{}, err
 		}

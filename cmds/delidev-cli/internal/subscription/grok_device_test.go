@@ -226,6 +226,34 @@ func TestGrokDeviceSlowDownDelaysTheNextPollByFiveSeconds(t *testing.T) {
 	}
 }
 
+// slow_down always adds five seconds, also when the interval already sits at the
+// cap that applies to the interval the provider demands in its authorization
+// answer.
+func TestGrokDeviceSlowDownAddsFiveSecondsAboveTheIntervalCap(t *testing.T) {
+	f := newGrokDeviceFlow(t, int(subscription.GrokDeviceMaxInterval/time.Second))
+	f.idp.DeviceScript = []grokidptest.DeviceStep{grokidptest.DeviceSlowDown, grokidptest.DeviceSlowDown}
+	a := f.authorize(t)
+	if _, err := f.poll(a, f.clock.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	want := []time.Duration{300 * time.Second, 305 * time.Second, 310 * time.Second}
+	got := f.clock.Waits()
+	if len(got) != len(want) {
+		t.Fatalf("waits = %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("waits = %v, want %v", got, want)
+		}
+	}
+	times := f.idp.DevicePollTimes
+	for i := 1; i < len(times); i++ {
+		if times[i].Sub(times[i-1]) < want[i] {
+			t.Fatalf("poll %d came faster than the slowed interval", i+1)
+		}
+	}
+}
+
 func TestGrokDeviceTerminalAnswersAreDistinctAndReleaseTheClaim(t *testing.T) {
 	for name, test := range map[string]struct {
 		step   grokidptest.DeviceStep
