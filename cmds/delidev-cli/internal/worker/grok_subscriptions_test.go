@@ -370,3 +370,140 @@ func TestGrokMaterializationReleasesTheHomeWhenItFails(t *testing.T) {
 		t.Fatal("a failed materialization kept a bound home")
 	}
 }
+
+const grokExecuteAction = pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE
+
+// grokExitFixture is an execution whose native process has exited: the home holds
+// the credential the process left behind and the native lock file.
+type grokExitFixture struct {
+	server, account, generation domain.ID
+	original                    subscription.GrokBundle
+	home, path, lock            string
+}
+
+func newGrokExitFixture(t *testing.T) *grokExitFixture {
+	t.Helper()
+	f := &grokExitFixture{server: domain.NewID(), account: domain.NewID(), generation: domain.NewID(), home: grokHome(t)}
+	f.original, _ = subscription.ParseGrokAuthFile(grokWorkerFile(t, "synthetic-principal-1", "one", "2026-10-14T06:00:00Z"))
+	f.path = filepath.Join(f.home, subscription.GrokAuthFileName)
+	f.lock = filepath.Join(f.home, subscription.GrokLockFileName)
+	return f
+}
+
+// leave writes the file the native process left behind, with its lock file.
+func (f *grokExitFixture) leave(t *testing.T, raw []byte) {
+	t.Helper()
+	if err := os.WriteFile(f.path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f *grokExitFixture) exit(t *testing.T, processOK bool) grokFinishOutcome {
+	t.Helper()
+	return prepareGrokFinish(bindGrokHome(t, f.home), f.server, f.account, f.generation, grokExecuteAction, f.original, processOK)
+}
+
+func (f *grokExitFixture) assertRetired(t *testing.T) {
+	t.Helper()
+	for _, path := range []string{f.path, f.lock} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatalf("%s survived the execution exit", filepath.Base(path))
+		}
+	}
+}
+
+func TestGrokExecutionExitReturnsASelfRefreshedCredentialAndRetiresTheProfile(t *testing.T) {
+	for name, processOK := range map[string]bool{"clean exit": true, "failed process": false} {
+		t.Run(name, func(t *testing.T) {
+			f := newGrokExitFixture(t)
+			f.leave(t, grokWorkerFile(t, "synthetic-principal-1", "two", "2026-10-14T12:00:00Z"))
+			out := f.exit(t, processOK)
+			if !out.Success || !out.Cleanup || !out.Refreshed || len(out.Bundle) == 0 {
+				t.Fatal("a self-refreshed credential was not returned")
+			}
+			next, err := subscription.OpenGrokBundle(out.Bundle, f.server, f.account, f.generation)
+			if err != nil || subscription.GrokRefreshed(f.original, next) != nil {
+				t.Fatal("the returned bundle is not the verified successor bound to the next generation")
+			}
+			f.assertRetired(t)
+		})
+	}
+}
+
+func TestGrokExecutionExitWithAnUnchangedCredentialReturnsNothingButRetiresTheProfile(t *testing.T) {
+	f := newGrokExitFixture(t)
+	f.leave(t, grokWorkerFile(t, "synthetic-principal-1", "one", "2026-10-14T06:00:00Z"))
+	out := f.exit(t, true)
+	if !out.Success || !out.Cleanup || out.Refreshed || len(out.Bundle) != 0 {
+		t.Fatal("an unchanged credential must be released without a replacement bundle")
+	}
+	f.assertRetired(t)
+}
+
+func TestGrokExecutionExitKeepsTheLeaseForAnythingItCannotVerify(t *testing.T) {
+	cases := map[string][]byte{
+		"another identity":       grokWorkerFile(t, "synthetic-principal-2", "two", "2026-10-14T12:00:00Z"),
+		"unreadable file":        []byte(`{"x":1}`),
+		"empty file":             []byte(""),
+		"earlier expiry":         grokWorkerFile(t, "synthetic-principal-1", "two", "2026-10-14T03:00:00Z"),
+		"same tokens new expiry": grokWorkerFile(t, "synthetic-principal-1", "one", "2026-10-14T12:00:00Z"),
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newGrokExitFixture(t)
+			f.leave(t, raw)
+			out := f.exit(t, true)
+			// Success is withheld, so Finish fences the account instead of releasing
+			// the lease. No bundle ever accompanies it, and the profile is still
+			// cleaned so no credential stays on disk.
+			if out.Success || out.Refreshed || len(out.Bundle) != 0 {
+				t.Fatal("an unverifiable exit was reported as success or returned a bundle")
+			}
+			f.assertRetired(t)
+		})
+	}
+}
+
+func TestGrokExecutionExitWithAMissingFileKeepsTheLease(t *testing.T) {
+	f := newGrokExitFixture(t)
+	if out := f.exit(t, true); out.Success || len(out.Bundle) != 0 {
+		t.Fatal("an absent auth.json was reported as a verified exit")
+	}
+}
+
+func TestGrokExecutionExitNeverConfirmsCleanupWhileTheLockFileRemains(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory replacement semantics differ")
+	}
+	f := newGrokExitFixture(t)
+	if err := os.WriteFile(f.path, grokWorkerFile(t, "synthetic-principal-1", "two", "2026-10-14T12:00:00Z"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The lock path is a directory, which cannot be proven removable.
+	if err := os.Mkdir(f.lock, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out := f.exit(t, true)
+	if out.Cleanup || out.Refreshed || len(out.Bundle) != 0 {
+		t.Fatal("cleanup was confirmed or a bundle was returned with an unretired lock file")
+	}
+}
+
+func TestGrokExecutionExitRefusesARenamedOrReplacedHome(t *testing.T) {
+	f := newGrokExitFixture(t)
+	f.leave(t, grokWorkerFile(t, "synthetic-principal-1", "two", "2026-10-14T12:00:00Z"))
+	bound := bindGrokHome(t, f.home)
+	if err := os.Rename(f.home, f.home+"-moved"); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(f.home); err != nil {
+		t.Fatal(err)
+	}
+	out := prepareGrokFinish(bound, f.server, f.account, f.generation, grokExecuteAction, f.original, true)
+	if out.Success || out.Cleanup || out.Refreshed || len(out.Bundle) != 0 {
+		t.Fatal("a replaced home produced a success, a confirmed cleanup or a bundle")
+	}
+}
