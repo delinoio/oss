@@ -650,12 +650,23 @@ func recoveryCredentials(ctx context.Context, config Config, client delidevv1con
 		return nil, nil, nil, 0, &r
 	}
 	// Legacy evidence: only the retained authentication file can supply the
-	// latest bundle. Without it no equivalent proof survives.
+	// latest bundle. Without it no equivalent proof survives, unless a previous
+	// attempt already journaled the decision that the file held no usable
+	// credential before it deleted the file.
+	noCredential := func() (latest, original, extra []byte, report pb.SubscriptionRecoveryReport, blocked *recoveryResult) {
+		return nil, nil, nil, pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL, nil
+	}
 	if missingHome {
+		if evidence.journal.RecoveryNoCredential {
+			return noCredential()
+		}
 		return nil, nil, nil, 0, block(domain.RecoveryCredentialProofUnavailable)
 	}
 	raw, readErr := security.ReadPrivate(filepath.Join(home, "auth.json"), subscription.MaxBundle)
 	if errors.Is(readErr, fs.ErrNotExist) {
+		if evidence.journal.RecoveryNoCredential {
+			return noCredential()
+		}
 		return nil, nil, nil, 0, block(domain.RecoveryCredentialProofUnavailable)
 	}
 	if readErr != nil {
@@ -663,10 +674,21 @@ func recoveryCredentials(ctx context.Context, config Config, client delidevv1con
 		r := recoveryRetried(domain.RecoveryCleanupUnconfirmed)
 		return nil, nil, nil, 0, &r
 	}
+	// withoutCredential journals the decision before the file that proves it can
+	// be deleted, and returns the exact bytes as the remnant to look for.
+	withoutCredential := func() (latest, original, extra []byte, report pb.SubscriptionRecoveryReport, blocked *recoveryResult) {
+		evidence.journal.RecoveryNoCredential = true
+		if err := writeJSON(evidence.path, evidence.journal); err != nil {
+			clear(raw)
+			r := recoveryRetried(domain.RecoveryCleanupUnconfirmed)
+			return nil, nil, nil, 0, &r
+		}
+		return nil, nil, raw, pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL, nil
+	}
 	if _, _, parseErr := subscription.Parse(raw); parseErr != nil {
 		// The retained file is not a usable bundle: its exact bytes are the only
 		// remnant to look for, and there are no usable credentials to restore.
-		return nil, nil, raw, pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL, nil
+		return withoutCredential()
 	}
 	request := domain.NewID()
 	evidence.journal.CaptureRequest, evidence.journal.CaptureDigest, evidence.journal.CaptureSynced = request, subscription.Digest(raw), false
@@ -688,7 +710,7 @@ func recoveryCredentials(ctx context.Context, config Config, client delidevv1con
 			// authorization, withdrawn capability, stale lease evidence) says nothing
 			// about the bundle, so the only surviving credential stays in place.
 			logCodexRecovery(config.Logger, ctx, slog.LevelWarn, "codex_recovery_legacy_bundle_rejected", "account_id", accountID, "lease_id", lease.ID)
-			return nil, nil, raw, pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL, nil
+			return withoutCredential()
 		}
 		logCodexRecovery(config.Logger, ctx, slog.LevelWarn, "codex_recovery_legacy_capture_retained", "account_id", accountID, "lease_id", lease.ID, "code", problem.Code)
 		clear(raw)

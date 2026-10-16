@@ -860,6 +860,80 @@ func TestCodexCleanupWithoutNegotiatedRecoveryKeepsTheLegacyFlow(t *testing.T) {
 	}
 }
 
+// The legacy decision that retained authentication holds no usable credential is
+// journaled before the file, its only evidence, is deleted. A server-side block
+// (members or credential users not yet settled) or a crash after the deletion
+// therefore never turns the account into a terminal absence of proof.
+func TestCodexRecoveryNoCredentialDecisionSurvivesBlocksAndCrashes(t *testing.T) {
+	rejected := domain.Fail(domain.RecoveryRequired, "The bundle is refused.", "")
+	rejected.Cause = domain.SubscriptionRecoveryBundleRejectedCause
+	for name, tc := range map[string]struct {
+		syncError error
+		garbage   []byte
+	}{
+		"unparsable":      {nil, []byte(`{"auth_mode":"chatgpt","tokens":"not usable"}`)},
+		"server rejected": {rpc.Error(rejected, ""), nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newRecoveryWorkerFixture(t)
+			f.server.syncError = tc.syncError
+			if tc.garbage != nil {
+				if err := security.WriteAtomic(filepath.Join(f.home, "auth.json"), tc.garbage); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.server.recoverOutcome = pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_BLOCKED
+			f.server.recoverReason = pb.SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_MEMBERS_UNSETTLED
+			if result := f.run(); result.disposition != recoveryRetry || result.reason != domain.RecoveryMembersUnsettled {
+				t.Fatal("a server block was not retried with its reason", result)
+			}
+			if f.authExists() || !f.readJournal().RecoveryNoCredential {
+				t.Fatal("the cleaned attempt did not retain the durable no-credential decision")
+			}
+			// The blocker disappears; the next attempt must settle instead of
+			// terminating as an unprovable absence of evidence.
+			f.server.mu.Lock()
+			f.server.recoverOutcome = pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_DISCONNECTED
+			f.server.recoverReason = pb.SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED
+			f.server.mu.Unlock()
+			if result := f.run(); result.disposition != recoverySettled {
+				t.Fatal("the cleaned no-credential decision was lost after a server block", result)
+			}
+			settling := f.server.settling()
+			if len(settling) != 2 || settling[1].Report != pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL || settling[1].CaptureId != "" || settling[0].Mutation.RequestId == settling[1].Mutation.RequestId {
+				t.Fatal("the retried cleanup was not a fresh no-credential report")
+			}
+		})
+	}
+	t.Run("crash after deletion before the cleanup checkpoint", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		f.journal.RecoveryNoCredential = true
+		f.writeJournal()
+		if err := os.Remove(filepath.Join(f.home, "auth.json")); err != nil {
+			t.Fatal(err)
+		}
+		f.server.recoverOutcome = pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_DISCONNECTED
+		if result := f.run(); result.disposition != recoverySettled {
+			t.Fatal("a journaled no-credential decision was lost with the deleted file", result)
+		}
+		if settling := f.server.settling(); len(settling) != 1 || settling[0].Report != pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL {
+			t.Fatal("the journaled decision was not reported as the absence of credentials")
+		}
+	})
+	t.Run("a server capture overrides the decision", func(t *testing.T) {
+		f := newRecoveryWorkerFixture(t)
+		f.journal.RecoveryNoCredential = true
+		f.writeJournal()
+		f.server.capture = &pb.ReadSubscriptionRecoveryCaptureResponse{CaptureId: string(domain.NewID()), Original: f.original, Latest: f.latest}
+		if result := f.run(); result.disposition != recoverySettled {
+			t.Fatal("recovery did not settle", result)
+		}
+		if settling := f.server.settling(); len(settling) != 1 || settling[0].Report != pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE {
+			t.Fatal("a stored capture was declared absent")
+		}
+	})
+}
+
 // Every deletion of a managed lease's transient authentication, including the
 // pre-native cleanup of an unused original bundle, is preceded by the protected
 // capture. An unconfirmed capture keeps the file so a fenced lease stays recoverable.

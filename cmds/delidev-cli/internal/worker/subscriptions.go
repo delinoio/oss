@@ -140,6 +140,13 @@ type managedSubscriptionJournal struct {
 	RecoveryCapture domain.ID `json:"recovery_capture,omitempty"`
 	RecoveryReport  int32     `json:"recovery_report,omitempty"`
 	RecoveryCleaned bool      `json:"recovery_cleaned,omitempty"`
+	// RecoveryNoCredential is the durable decision, recorded before the retained
+	// authentication file is deleted, that the file was the proven absence of usable
+	// credentials (unparsable, or positively rejected by the server). The file is
+	// then the only evidence of that decision, so the decision outlives it: a crash,
+	// a lost response or a server-side block never turns it into an unprovable
+	// absence of evidence.
+	RecoveryNoCredential bool `json:"recovery_no_credential,omitempty"`
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {

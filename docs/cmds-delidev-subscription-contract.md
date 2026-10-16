@@ -1219,8 +1219,15 @@ capture, so that `auth.json` is the only copy of its evidence: it stays in place
 outside the scan, and is removed only after the whole retained-history scan has
 passed. A canceled scan, an unreadable entry or a removable remnant therefore
 leaves the next attempt the same evidence instead of a terminal absence of
-proof. A local checkpoint write failure after that final removal is the one
-residual window; it ends as `credential-proof-unavailable` and stays protected.
+proof. The decision that the file held no usable credential is journaled
+(`recovery_no_credential`) before the file is deleted and is never cleared, so a
+crash or a failed local checkpoint write after the removal, a lost response and a
+server `blocked` outcome (members or credential users not yet settled) all retry
+the same `cleanup-without-credential` report under a fresh request identity
+instead of ending as `credential-proof-unavailable`. A stored server capture
+always takes precedence over that decision. The retry re-proves the retained
+history, but only structurally, because the removed bytes are no longer available
+as a needle; that is the inherent residual of deleting the sole evidence. The
 No evidence at all
 stays protected with the closed diagnostic `credential-proof-unavailable` and no
 fabricated receipt. A capture refusal proves the bundle unusable only when it
