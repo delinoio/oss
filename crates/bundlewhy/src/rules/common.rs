@@ -708,12 +708,51 @@ fn class_heading_scan(
                 Some(next) => depth = next,
                 None => return false,
             },
+            // The `>` of an arrow (`=>`) never closes a type-argument list.
+            '>' if depth == 0 && !code[..position].ends_with('=') => {
+                if let Some(open) = type_arguments_open(code, position, ignored) {
+                    position = open;
+                }
+            }
             '{' | '}' | ';' if depth == 0 => return false,
             '=' if depth == 0 && stop_at_assignment => return false,
             _ => {}
         }
     }
     word_end.is_some_and(|finish| depth == 0 && is_class(0, finish))
+}
+
+/// The offset of the `<` that opens the type-argument list closed by the `>` at
+/// `close`, or `None` when the `>` is an operator (`a > b`, `x >= y`) because
+/// no balanced `<` precedes it in the same statement.
+///
+/// The scan walks backwards over characters. Brackets, parentheses and braces
+/// inside the list (`T extends { a: Array<1> }`) must balance; an unmatched
+/// opener or a top-level `;` means the `>` is not a closing angle bracket.
+fn type_arguments_open(code: &str, close: usize, ignored: &[(usize, usize)]) -> Option<usize> {
+    let mut angles = 1usize;
+    let mut nesting = 0usize;
+    let mut position = close;
+    while let Some(character) = code[..position].chars().next_back() {
+        position -= character.len_utf8();
+        if in_ranges(ignored, position) {
+            continue;
+        }
+        match character {
+            ')' | ']' | '}' => nesting += 1,
+            '(' | '[' | '{' => nesting = nesting.checked_sub(1)?,
+            ';' if nesting == 0 => return None,
+            '>' if nesting == 0 && !code[..position].ends_with('=') => angles += 1,
+            '<' if nesting == 0 => {
+                angles -= 1;
+                if angles == 0 {
+                    return Some(position);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
@@ -2687,10 +2726,43 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn eval_methods_behind_type_arguments_are_declarations() {
+        for source in [
+            "class C<T extends {a:1}> { eval(value) {} }",
+            "class C<T extends { a: 1 }> { eval(value) {} }",
+            "class C<T = {a:1}> { eval(value) {} }",
+            "class C<T extends Array<{ a: 1 }>> { eval(value) {} }",
+            "class C<T extends Record<string, { a: Array<number> }>> { eval(value) {} }",
+            "class C<T extends (x: number) => void> { eval(value) {} }",
+            "class C<T extends () => { a: 1 }> { eval(value) {} }",
+            "class C<K, V = Map<K, { a: 1 }>> { eval(value) {} }",
+            "class C<const T extends { a: 1 }> { eval(value) {} }",
+            "class C extends B<{ a: 1 }> { eval(value) {} }",
+            "class C extends B<{ a: 1 }> implements I<{ b: 2 }> { eval(value) {} }",
+            "class C<T extends { a: 1 }> extends B<T> implements I<T> { eval(value) {} }",
+            "class C<T extends\n  { a: 1 }\n> {\n  eval(value) {}\n}",
+            "export default class<T extends { a: 1 }> { eval(value) {} }",
+            "const C = class<T extends { a: 1 }> { eval(value) {} };",
+            "const C = class D<T = { a: 1 }> extends B { eval(value) {} };",
+            "export abstract class C<T extends { a: 1 }> { abstract eval(value): void; \
+             eval(value) {} }",
+            "class C<T extends { a: 1 }> { run() {} eval(value) {} }",
+            "class C<T extends { a: 1 }> { x: Array<number> = []; eval(value) {} }",
+            "class C { eval(value: Array<{ a: 1 }>): Promise<{ b: 2 }> {} }",
+            // A comparison before the class does not hide its header.
+            "a > b; class C<T extends { a: 1 }> { eval(value) {} }",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    #[test]
     fn eval_methods_with_non_ascii_names_do_not_panic_or_report() {
         for source in [
             "class Caf\u{e9} { eval(value) {} }",
+            "class \u{c9}<T extends { \u{e9}: 1 }> { eval(value) {} }",
             "class \u{4e2d}\u{6587} extends \u{540d}\u{524d} { eval(value) {} }",
+            "class C extends Caf\u{e9}<{ a: 1 }> { eval(value) {} }",
             "class C { caf\u{e9} = 1\n  eval(value) {} }",
             "class C { caf\u{e9}() {} eval(value) {} }",
             "class C { \u{1f600} = 1; eval(value) {} }",
@@ -2715,6 +2787,10 @@ y=/process.env.F/.test(z),process.env.G"#;
             ("const caf\u{e9} = { a: eval(code) };", "eval(code)"),
             ("const o = { caf\u{e9}: eval(code) };", "eval(code)"),
             ("class C { caf\u{e9} = eval(code); }", "eval(code)"),
+            (
+                "class C<T extends { \u{e9}: 1 }> { run() { eval(code) } }",
+                "eval(code)",
+            ),
         ] {
             let offset = source.find(call).expect(source);
             let (line, column) = line_and_column(source, offset);
@@ -2729,7 +2805,7 @@ y=/process.env.F/.test(z),process.env.G"#;
     #[test]
     fn scans_never_panic_on_any_char_boundary_cut() {
         for source in [
-            "class Caf\u{e9} extends \u{c9} { eval(value) {} }",
+            "class Caf\u{e9}<T extends { \u{e9}: 1 }> extends \u{c9}<{ a: 1 }> { eval(value) {} }",
             "const o = { caf\u{e9}: `\u{e9}${eval(x)}`, eval(v) {}, \u{1f600}: /\u{e9}/ };",
             "class C { x = 1\u{2028}  eval(value) {}\u{2029}run() { eval(code) } }",
         ] {
