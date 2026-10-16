@@ -27,6 +27,14 @@ const selectedModel = "delidev-selected"
 const selectedModelName = "DeliDev selected model"
 const credentialVariable = "DELIDEV_GROK_EXECUTION_TOKEN"
 
+// Native ACP authentication method identifiers. The API profile uses the scoped
+// execution key; the managed subscription profile uses the login cached in the
+// private $GROK_HOME/auth.json.
+const (
+	apiKeyAuthMethod      = "xai.api_key"
+	cachedTokenAuthMethod = "cached_token"
+)
+
 // This private profile establishes native configuration/authentication only.
 // Durable session claims, typed events and permission delivery independently
 // govern any later execution; discovery never calls it.
@@ -41,9 +49,24 @@ type apiConfig struct {
 	Mode          domain.SessionMode `json:"-"`
 	ServerOrigin  string             `json:"-"`
 	Token         string             `json:"-"`
+
+	// Credential, when set, selects the managed-subscription profile. ServerOrigin
+	// and Token are then unused: the native process authenticates with the cached
+	// login that Credential materializes in the private home, and reaches its own
+	// subscription endpoints (see subscriptionEnvironment). Credential runs exactly
+	// once, after every credential-free pre-launch inspection and immediately
+	// before the native process starts; a failure aborts the launch. The caller
+	// owns the retirement of the credential on every exit path, including a
+	// failed Credential, because the harness never reads or deletes it.
+	Credential func() error `json:"-"`
 }
 
+func (c apiConfig) subscription() bool { return c.Credential != nil }
+
 type apiProfile struct {
+	// subscription selects cached_token authentication and the managed-account
+	// initialization advertisement. The API profile leaves it false.
+	subscription  bool
 	model         string
 	mode          domain.SessionMode
 	contextTokens uint64
@@ -79,6 +102,12 @@ type apiConnection struct {
 	protected security.ProtectedJSON
 }
 
+// subscriptionAuthenticationUnavailable is the typed result of a native refusal
+// of the managed login (an expired, revoked or unusable cached credential).
+func subscriptionAuthenticationUnavailable() *domain.Error {
+	return domain.Fail(domain.Unavailable, "Grok Build did not accept the managed subscription login.", "Reconnect the Grok account or retry later; the account credential was not changed.")
+}
+
 func apiConfigurationError() *domain.Error {
 	return domain.Fail(domain.InvalidArgument, "Invalid private Grok Build API configuration.", "Use the accepted model, registered execution authority and isolated native runtime.")
 }
@@ -94,17 +123,25 @@ func buildAPIProfile(config apiConfig) (apiProfile, error) {
 		return apiProfile{}, incompatible()
 	}
 	if config.Probe.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Probe.Process.Executable) ||
-		domain.Text(config.Instructions, "instructions", domain.MaxAppliedInstructions, false) != nil || !text(config.Model, 256) || config.ContextTokens < 1024 || config.ContextTokens > 1_000_000_000 || !apiproxy.ValidToken(config.Token) {
+		domain.Text(config.Instructions, "instructions", domain.MaxAppliedInstructions, false) != nil || !text(config.Model, 256) || config.ContextTokens < 1024 || config.ContextTokens > 1_000_000_000 || !config.subscription() && !apiproxy.ValidToken(config.Token) {
 		return apiProfile{}, apiConfigurationError()
 	}
-	if err := rpc.ValidateEndpoint(config.ServerOrigin); err != nil {
-		return apiProfile{}, err
-	}
-	origin, err := url.Parse(config.ServerOrigin)
-	if err != nil || origin.ForceQuery || origin.RawPath != "" {
+	if config.subscription() && (config.Token != "" || config.ServerOrigin != "") {
+		// A managed account never carries an execution key or a relay endpoint.
 		return apiProfile{}, apiConfigurationError()
 	}
-	origin.Path = apiproxy.Prefix
+	var origin *url.URL
+	if !config.subscription() {
+		if err := rpc.ValidateEndpoint(config.ServerOrigin); err != nil {
+			return apiProfile{}, err
+		}
+		var err error
+		origin, err = url.Parse(config.ServerOrigin)
+		if err != nil || origin.ForceQuery || origin.RawPath != "" {
+			return apiProfile{}, apiConfigurationError()
+		}
+		origin.Path = apiproxy.Prefix
+	}
 	workspace, err := filepath.EvalSymlinks(config.Workspace)
 	if err != nil || !filepath.IsAbs(config.Workspace) || workspace != filepath.Clean(config.Workspace) {
 		return apiProfile{}, apiConfigurationError()
@@ -124,24 +161,39 @@ func buildAPIProfile(config apiConfig) (apiProfile, error) {
 	// A fixed local selector avoids interpolating provider model IDs into TOML
 	// keys. Every native auxiliary model is explicitly the selected model;
 	// the pinned default otherwise sends title generation to grok-4.6.
+	selected := map[string]any{
+		"model": config.Model, "name": selectedModelName, "base_url": "",
+		"env_key": credentialVariable, "api_backend": "chat_completions",
+		"context_window": config.ContextTokens, "supports_backend_search": false, "max_retries": 0,
+	}
+	if origin != nil {
+		selected["base_url"] = origin.String()
+	}
+	if config.subscription() {
+		// ASSUMPTION (unverified without a real account): the subscription profile
+		// selects the native model through the same local selector but declares no
+		// relay endpoint, key variable or API backend, so the native process keeps
+		// its own subscription endpoints and authentication. The opt-in
+		// real-account run must confirm this before the capabilities are advertised.
+		selected = map[string]any{
+			"model": config.Model, "name": selectedModelName,
+			"context_window": config.ContextTokens, "supports_backend_search": false, "max_retries": 0,
+		}
+	}
 	configuration, err := toml.Marshal(map[string]any{
 		"models": map[string]any{
 			"default": selectedModel, "session_summary": selectedModel,
 			"image_description": selectedModel, "web_search": selectedModel,
 			"allowed_models": []string{selectedModel}, "max_retries": 0,
 		},
-		"model": map[string]any{selectedModel: map[string]any{
-			"model": config.Model, "name": selectedModelName, "base_url": origin.String(),
-			"env_key": credentialVariable, "api_backend": "chat_completions",
-			"context_window": config.ContextTokens, "supports_backend_search": false, "max_retries": 0,
-		}},
+		"model":   map[string]any{selectedModel: selected},
 		"session": map[string]any{"load_envrc": false},
 		"cli":     map[string]any{"auto_update": false},
 	})
 	if err != nil || len(configuration) > 16<<10 {
 		return apiProfile{}, apiConfigurationError()
 	}
-	return apiProfile{model: config.Model, mode: config.Mode, contextTokens: config.ContextTokens, configuration: configuration, instructions: instructionProfile{path: filepath.Join(config.Probe.Home, "Agents.md"), contents: config.Instructions}, path: filepath.Join(config.Probe.Home, "config.toml")}, nil
+	return apiProfile{subscription: config.subscription(), model: config.Model, mode: config.Mode, contextTokens: config.ContextTokens, configuration: configuration, instructions: instructionProfile{path: filepath.Join(config.Probe.Home, "Agents.md"), contents: config.Instructions}, path: filepath.Join(config.Probe.Home, "config.toml")}, nil
 }
 
 func (p apiProfile) check() error {
@@ -217,7 +269,11 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	if err != nil {
 		return nil, err
 	}
-	env, err := probeEnvironment(config.Probe)
+	environment := probeEnvironment
+	if config.subscription() {
+		environment = subscriptionEnvironment
+	}
+	env, err := environment(config.Probe)
 	if err != nil {
 		return nil, err
 	}
@@ -260,8 +316,18 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	inspection := prepared
 	inspection.Cwd = config.Workspace
 	env = config.OrdinaryTools.Apply(env)
-	prepared.Env = append(env, credentialVariable+"="+config.Token, "GROK_DEFAULT_MODEL="+selectedModel)
-	prepared.ProtectedValues = append(slices.Clone(prepared.ProtectedValues), config.Token)
+	if config.subscription() {
+		// The login is materialized only now, after every credential-free
+		// inspection, and the process receives no execution key at all.
+		prepared.Env = append(env, "GROK_DEFAULT_MODEL="+selectedModel)
+		phase = authenticatePhase
+		if err := config.Credential(); err != nil {
+			return nil, err
+		}
+	} else {
+		prepared.Env = append(env, credentialVariable+"="+config.Token, "GROK_DEFAULT_MODEL="+selectedModel)
+		prepared.ProtectedValues = append(slices.Clone(prepared.ProtectedValues), config.Token)
+	}
 	prepared.Args = []string{"--no-auto-update", "agent", "stdio"}
 	phase = launchPhase
 	connection, err := nativewire.StartJSONRPC(ctx, prepared)
@@ -287,17 +353,32 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	process.ObserveStartup(prepared, domain.StartupSettings, domain.StartupProgressRunning)
 	var nativeMetadata initializeResult
 	_ = decode(response.Result, &nativeMetadata)
+	method := apiKeyAuthMethod
+	if profile.subscription {
+		// The subscription profile is admitted only at or above its own baseline,
+		// checked on the version this very process reported, before any login is
+		// presented to it.
+		if !domain.GrokSubscriptionVersionAllowed(nativeMetadata.Meta.Version) {
+			return nil, incompatible()
+		}
+		method = cachedTokenAuthMethod
+	}
 	phase = authenticatePhase
 	response, err = connection.Call(ready, domain.NewID(), "authenticate", struct {
 		Method string `json:"methodId"`
 		Meta   struct {
 			Headless bool `json:"headless"`
 		} `json:"_meta"`
-	}{Method: "xai.api_key", Meta: struct {
+	}{Method: method, Meta: struct {
 		Headless bool `json:"headless"`
 	}{Headless: true}})
 	if err != nil {
 		return nil, err
+	}
+	if profile.subscription && response.ErrorCode != nil {
+		// The native refused the cached login. The refusal text can describe the
+		// account, so only the closed classification survives.
+		return nil, subscriptionAuthenticationUnavailable()
 	}
 	if response.ErrorCode != nil || decode(response.Result, &struct{}{}) != nil || profile.checkInitialized() != nil {
 		return nil, incompatible()

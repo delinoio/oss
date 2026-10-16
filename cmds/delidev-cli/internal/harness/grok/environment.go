@@ -17,6 +17,19 @@ import (
 var userAuthoredConfigurationNames = []string{"auth.json", "config.toml", "config.json", "settings.json", "GROK.md", "AGENTS.md", "hooks", "plugins", "skills", "commands", "agents", "mcp.json"}
 
 func probeEnvironment(config ProbeConfig) ([]string, error) {
+	return runtimeEnvironment(config, false)
+}
+
+// subscriptionEnvironment is the environment of a managed-subscription
+// execution. It is the discovery environment minus exactly the three loopback
+// endpoint blocks: the native process must reach its own subscription endpoints
+// with the cached login. Every other isolation variable and the
+// GROK_{CLAUDE,CURSOR}_*_ENABLED=0 set remain.
+func subscriptionEnvironment(config ProbeConfig) ([]string, error) {
+	return runtimeEnvironment(config, true)
+}
+
+func runtimeEnvironment(config ProbeConfig, subscription bool) ([]string, error) {
 	invalid := func() error {
 		return domain.Fail(domain.InvalidArgument, "Grok Build requires a canonical DeliDev-owned private profile.", "Use the persistent profile resolved by DeliDev before native protocol validation.")
 	}
@@ -85,7 +98,9 @@ func probeEnvironment(config ProbeConfig) ([]string, error) {
 		"XDG_DATA_HOME=" + filepath.Join(root, "data"), "XDG_STATE_HOME=" + filepath.Join(root, "state"),
 		"TMPDIR=" + filepath.Join(root, "tmp"), "TMP=" + filepath.Join(root, "tmp"), "TEMP=" + filepath.Join(root, "tmp"),
 		"GROK_HOME=" + config.Home, "GROK_DISABLE_AUTOUPDATER=1", "CI=1", "NO_COLOR=1",
-		"GROK_XAI_API_BASE_URL=http://127.0.0.1:1", "GROK_MODELS_BASE_URL=http://127.0.0.1:1", "GROK_MODELS_LIST_URL=http://127.0.0.1:1/models",
+	}
+	if !subscription {
+		env = append(env, "GROK_XAI_API_BASE_URL=http://127.0.0.1:1", "GROK_MODELS_BASE_URL=http://127.0.0.1:1", "GROK_MODELS_LIST_URL=http://127.0.0.1:1/models")
 	}
 	for _, vendor := range []string{"CLAUDE", "CURSOR"} {
 		for _, surface := range []string{"SKILLS", "RULES", "AGENTS", "MCPS", "HOOKS"} {

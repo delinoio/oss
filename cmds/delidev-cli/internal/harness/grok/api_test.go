@@ -51,7 +51,17 @@ func apiFixtureProcess() {
 		_ = json.NewEncoder(os.Stdout).Encode(report)
 		os.Exit(0)
 	}
-	if os.Getenv(credentialVariable) != apiFixtureToken || os.Getenv("XAI_API_KEY") != "" || os.Getenv("HTTPS_PROXY") != "" || os.Getenv("NODE_OPTIONS") != "" {
+	// A private home that already holds a login is a managed-subscription launch:
+	// the process must see the cached login, no execution key and none of the
+	// three loopback endpoint blocks, but every other isolation variable.
+	authFile, authErr := os.Stat(filepath.Join(root, "grok", "auth.json"))
+	subscription := authErr == nil
+	if subscription {
+		if authFile.Mode().Perm() != 0600 || os.Getenv(credentialVariable) != "" || os.Getenv("GROK_XAI_API_BASE_URL") != "" || os.Getenv("GROK_MODELS_BASE_URL") != "" || os.Getenv("GROK_MODELS_LIST_URL") != "" ||
+			os.Getenv("GROK_CLAUDE_SKILLS_ENABLED") != "0" || os.Getenv("GROK_CURSOR_HOOKS_ENABLED") != "0" || os.Getenv("GROK_HOME") != filepath.Join(root, "grok") || os.Getenv("GROK_DISABLE_AUTOUPDATER") != "1" || os.Getenv("XAI_API_KEY") != "" || os.Getenv("HTTPS_PROXY") != "" || os.Getenv("NODE_OPTIONS") != "" {
+			os.Exit(50)
+		}
+	} else if os.Getenv(credentialVariable) != apiFixtureToken || os.Getenv("XAI_API_KEY") != "" || os.Getenv("HTTPS_PROXY") != "" || os.Getenv("NODE_OPTIONS") != "" {
 		os.Exit(50)
 	}
 	scanner := bufio.NewScanner(os.Stdin)
@@ -88,6 +98,20 @@ func apiFixtureProcess() {
 			meta["defaultAuthMethodId"] = "xai.api_key"
 			meta["modelState"] = map[string]any{"currentModelId": selectedModel, "availableModels": fixtureAPIModels()}
 			value["authMethods"] = []any{map[string]any{"id": "xai.api_key", "name": "API", "description": "Private API advertisement"}, map[string]any{"id": "grok.com", "name": "Grok", "description": "Private subscription advertisement"}}
+			if subscription {
+				meta["defaultAuthMethodId"] = "cached_token"
+				meta["agentVersion"] = "1.0.46"
+				value["authMethods"] = []any{map[string]any{"id": "cached_token", "name": "Cached token", "description": "Private cached login advertisement"}, map[string]any{"id": "grok.com", "name": "Grok", "description": "Private subscription advertisement"}}
+				if mode == "sub-unset-default" {
+					meta["defaultAuthMethodId"] = nil
+				}
+				if mode == "sub-old-version" {
+					meta["agentVersion"] = "1.0.45"
+				}
+				if mode == "sub-api-method" {
+					value["authMethods"] = []any{map[string]any{"id": "xai.api_key", "name": "API", "description": "Private API advertisement"}, map[string]any{"id": "grok.com", "name": "Grok", "description": "Private subscription advertisement"}}
+				}
+			}
 			if strings.HasPrefix(mode, "reflect-init-") {
 				value["authMethods"].([]any)[0].(map[string]any)["description"] = reflectedFixtureValue(os.Getenv(credentialVariable), strings.TrimPrefix(mode, "reflect-init-"))
 			}
@@ -99,8 +123,16 @@ func apiFixtureProcess() {
 			}
 			result = value
 		case "authenticate":
-			if string(request.Params) != `{"methodId":"xai.api_key","_meta":{"headless":true}}` {
+			expected := `{"methodId":"xai.api_key","_meta":{"headless":true}}`
+			if subscription {
+				expected = `{"methodId":"cached_token","_meta":{"headless":true}}`
+			}
+			if string(request.Params) != expected {
 				os.Exit(52)
+			}
+			if mode == "sub-auth-refused" {
+				_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "error": map[string]any{"code": -32000, "message": "private-auth-sentinel"}})
+				continue
 			}
 			if mode == "auth-extension" {
 				result = map[string]any{"token": "private-auth-sentinel"}
