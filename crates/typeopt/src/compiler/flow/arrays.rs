@@ -36,8 +36,9 @@
 //!   cannot replace it (`Facts::patched` through [`ArrayBuiltins::detect`]).
 //!   `map`, `filter` and `slice` also need `constructor` (species), iteration
 //!   also needs `Symbol.iterator` and `next`. A write that could change what a
-//!   numeric key means on `Array` or `Object.prototype` disables every modeled
-//!   operation.
+//!   numeric key means on `Array` or `Object.prototype`, and any aliasing or
+//!   escape of the prototype chain (see `prototype_chain` in the runtime
+//!   facts), disables every modeled operation.
 //! - Callbacks. An inline arrow or function expression is summarized only as
 //!   the single argument of a callback method (see [`CallbackBoundary`] for the
 //!   rejections). Its parameters and result become unknown unless every
@@ -205,10 +206,10 @@ impl ArrayBuiltins {
     pub(in crate::compiler) fn detect(ctx: &mut Ctx) -> Self {
         let mut view = patch_view();
         let numeric = view.numeric_keys(ctx);
-        let aliased = view
-            .array_prototype_aliased(ctx)
-            .then(|| "Array.prototype used as a value".to_owned());
-        let global = numeric.clone().or(aliased);
+        let exposed = view
+            .prototype_exposure(ctx)
+            .map(|exposure| exposure.describe().to_owned());
+        let global = numeric.clone().or(exposed);
         let mut disabled: Vec<(&'static str, String)> = Vec::new();
         let mut builtins = ArrayBuiltins::NONE;
         let constructor = view.array_member(ctx, "constructor");

@@ -4682,6 +4682,205 @@ fn keeps_names_of_arrays_that_unknown_code_can_observe() {
     }
 }
 
+/// The method that hostile prototype code installs: it observes the element
+/// of the receiver by its original name.
+const HOSTILE_POP: &str = "function(){globalThis.seen=this[0].itemValue;return 7}";
+
+/// A tracked array whose `pop` is the hostile method. The popped element only
+/// reaches `typeof`, so nothing else makes the class escape.
+const POP_TAIL: &str =
+    "const list=[new Item(1)];const got=list.pop();console.log(typeof got,globalThis.seen);";
+
+/// A tracked array stored at index zero of an empty array, whose prototype
+/// chain holds a setter for `0` that reads the stored object by its original
+/// name.
+const SETTER_TAIL: &str = "const list=[];list[0]=new Item(1);console.log(globalThis.seen);";
+
+/// Every way application code can reach the prototype chain of an array and
+/// change what a tracked array does. The prototype-chain exposure rule keeps
+/// the names of the stored objects in every spelling.
+#[test]
+fn keeps_names_when_the_prototype_chain_is_exposed() {
+    let pop = |prefix: &str| format!("{prefix}P.pop={HOSTILE_POP};{POP_TAIL}");
+    let setter = |prefix: &str| {
+        format!(
+            "{prefix}Object.defineProperty(P,\"0\",{{set(v){{globalThis.seen=v.itemValue}},\
+             configurable:true}});{SETTER_TAIL}"
+        )
+    };
+    let cases: Vec<(&str, String)> = vec![
+        // Aliases of `Array.prototype` in every spelling.
+        ("dot", pop("const P=Array.prototype;")),
+        ("bracket", pop("const P=Array[\"prototype\"];")),
+        ("template", pop("const P=Array[`prototype`];")),
+        ("computed", pop("const P=Array[\"proto\"+\"type\"];")),
+        ("global object", pop("const P=globalThis.Array.prototype;")),
+        (
+            "global object bracket",
+            pop("const P=globalThis[\"Array\"][\"prototype\"];"),
+        ),
+        ("optional chain", pop("const P=(Array?.prototype);")),
+        (
+            "constructor alias",
+            pop("const A=Array;const P=A.prototype;"),
+        ),
+        ("destructured", pop("const {prototype:P}=Array;")),
+        (
+            "destructured computed key",
+            pop("const k=\"proto\"+\"type\";const {[k]:P}=Array;"),
+        ),
+        (
+            "destructuring assignment",
+            pop("let P;({prototype:P}=Array);"),
+        ),
+        (
+            "returned",
+            format!("const get=()=>Array.prototype;get().pop={HOSTILE_POP};{POP_TAIL}"),
+        ),
+        // Prototypes reached through the object model.
+        ("__proto__", pop("const P=[].__proto__;")),
+        ("__proto__ bracket", pop("const P=[][\"__proto__\"];")),
+        ("getPrototypeOf", pop("const P=Object.getPrototypeOf([]);")),
+        (
+            "Reflect.getPrototypeOf",
+            pop("const P=Reflect.getPrototypeOf([]);"),
+        ),
+        (
+            "constructor.prototype",
+            pop("const P=[].constructor.prototype;"),
+        ),
+        // `Object.prototype` aliases hide indexed accessors.
+        (
+            "Object.prototype alias",
+            setter("const P=Object.prototype;"),
+        ),
+        (
+            "Object.prototype bracket alias",
+            setter("const P=Object[\"prototype\"];"),
+        ),
+        (
+            "Object.prototype destructured",
+            setter("const {prototype:P}=Object;"),
+        ),
+        (
+            "prototype of the prototype",
+            setter("const P=Object.getPrototypeOf(Array.prototype);"),
+        ),
+        // Callees that are not the real reflection writer.
+        (
+            "unknown callee",
+            format!(
+                "const helper={{assign(t){{t.pop={HOSTILE_POP}}}}};helper.assign(Array.prototype);\
+                 {POP_TAIL}"
+            ),
+        ),
+        (
+            "unknown callee named like a writer",
+            format!(
+                "const Obj={{defineProperty(t,k,d){{t.pop=d.value}}}};Obj.defineProperty(Array.\
+                 prototype,\"pop\",{{value:{HOSTILE_POP}}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "shadowed Object",
+            format!(
+                "function install(Object){{Object.assign(Array.prototype,{{pop:\
+                 {HOSTILE_POP}}})}}install({{assign(t,s){{t.pop=s.pop}}}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "destructured writer",
+            format!(
+                "const {{defineProperty:d}}=Object;d(Array.prototype,\"pop\",{{value:\
+                 {HOSTILE_POP}}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "computed handle as a writer target",
+            format!(
+                "Object.defineProperty(Object[\"proto\"+\"type\"],\"0\",{{set(v){{globalThis.\
+                 seen=v.itemValue}},configurable:true}});{SETTER_TAIL}"
+            ),
+        ),
+        // Writes the scan records, which disable numeric modeling.
+        (
+            "__proto__ write",
+            format!(
+                "Array.prototype.__proto__={{set 0(v){{globalThis.seen=v.itemValue}},get \
+                 0(){{return void 0}}}};{SETTER_TAIL}"
+            ),
+        ),
+        (
+            "setPrototypeOf",
+            format!(
+                "Object.setPrototypeOf(Array.prototype,{{set \
+                 0(v){{globalThis.seen=v.itemValue}},get 0(){{return void 0}}}});{SETTER_TAIL}"
+            ),
+        ),
+        (
+            "bracket write",
+            format!("Array[\"prototype\"].pop={HOSTILE_POP};{POP_TAIL}"),
+        ),
+        (
+            "computed write",
+            format!("const k=\"p\"+\"op\";Array.prototype[k]={HOSTILE_POP};{POP_TAIL}"),
+        ),
+        (
+            "Reflect.defineProperty on a bracket handle",
+            format!(
+                "Reflect.defineProperty(Array[\"prototype\"],\"pop\",{{value:{HOSTILE_POP}}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        // Reflection members of the prototype objects.
+        (
+            "__defineSetter__",
+            format!(
+                "Array.prototype.__defineSetter__(\"0\",function(v){{globalThis.seen=v.\
+                 itemValue}});{SETTER_TAIL}"
+            ),
+        ),
+        (
+            "__defineSetter__ on Object.prototype",
+            format!(
+                "Object[\"prototype\"].__defineSetter__(\"0\",function(v){{globalThis.seen=v.\
+                 itemValue}});{SETTER_TAIL}"
+            ),
+        ),
+    ];
+    let renamed: Vec<&str> = cases
+        .iter()
+        .filter(|(_, body)| !array_chunk(body).1.contains("itemValue"))
+        .map(|(label, _)| *label)
+        .collect();
+    assert!(renamed.is_empty(), "names renamed for: {renamed:?}");
+}
+
+/// Prototype uses that stay inside the patch scan do not stop the model.
+#[test]
+fn renames_through_arrays_beside_scanned_prototype_uses() {
+    let cases = [
+        "console.log(Array.prototype.slice.call(\"abc\").length);",
+        "console.log(Object.prototype.hasOwnProperty.call({},\"x\"));",
+        "const {hasOwnProperty}=Object.prototype;console.log(hasOwnProperty.call({},\"x\"));",
+        "console.log(Object.getPrototypeOf({})===Object.prototype,typeof Array.prototype);",
+        "Object.defineProperty(Array.prototype,\"extraMember\",{value(){return \
+         1},configurable:true});console.log([].extraMember());",
+        "const same=[].constructor===Array;console.log(same);",
+        "console.log(Array.isArray([]),Array[\"isArray\"]([]));",
+    ];
+    for fixture in cases {
+        let body = format!(
+            "{fixture}const list=[new Item(1)];list.push(new \
+             Item(2));console.log(list.length,list[0].readItem());"
+        );
+        let (_, index) = array_chunk(&body);
+        for name in ["itemValue", "readItem"] {
+            assert!(!index.contains(name), "{name} kept in {body}:\n{index}");
+        }
+    }
+}
+
 /// Every write to `length` truncates or extends the array, so it is an escape
 /// boundary, and so is every operation spelled as a write.
 #[test]

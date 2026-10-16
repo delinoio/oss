@@ -19,6 +19,9 @@ use std::collections::{HashMap, HashSet};
 use super::super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer};
 use crate::compiler::api::*;
 
+mod prototype_chain;
+pub(in crate::compiler) use prototype_chain::PrototypeExposure;
+
 /// Possible runtime kinds of a value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Kinds(u16);
@@ -295,7 +298,8 @@ impl Patches {
     /// The first record (in textual order) that could give an array element
     /// read or write a different meaning: a write to a member of `Array`,
     /// `Object` or an unknown owner whose member is unknown or looks like a
-    /// numeric key (`1`, `-1`, `1.5`, `NaN`, `Infinity`, `undefined`).
+    /// numeric key (`1`, `-1`, `1.5`, `NaN`, `Infinity`, `undefined`) or is
+    /// `__proto__` (a replaced prototype can bring any numeric accessor).
     /// Prototype getters and setters for such keys see array holes and
     /// appended elements.
     fn numeric_key_record(&self) -> Option<String> {
@@ -310,7 +314,9 @@ impl Patches {
                 owner_matches
                     && match member {
                         Member::Any => true,
-                        Member::Named(name) => numeric_like_key(name),
+                        // Replacing the prototype of the chain installs any
+                        // numeric accessor.
+                        Member::Named(name) => name == "__proto__" || numeric_like_key(name),
                     }
             })
             .map(|(owner, member)| describe_record(owner, member))
@@ -1493,44 +1499,17 @@ impl PatchView {
         self.facts.patches(ctx).numeric_key_record()
     }
 
-    /// `Array.prototype` is used as a value (aliased, passed or returned), so
-    /// writes through the alias are invisible to the scan. Direct member
-    /// accesses and the first argument of a reflection writer are scanned.
-    pub fn array_prototype_aliased(&mut self, ctx: &mut Ctx) -> bool {
-        for index in 0..ctx.files.len() {
-            if ctx.files[index].js {
-                continue;
-            }
-            let nodes = ctx.files[index].nodes.clone();
-            for node in nodes {
-                if node.kind() != SyntaxKind::PropertyAccessExpression
-                    || node.name().text() != "prototype"
-                {
-                    continue;
-                }
-                let object = skip_outer(node.expression());
-                if lib_global_name(ctx, object) != Some("Array") {
-                    continue;
-                }
-                let outer = walk_up_outer(node);
-                let parent = outer.parent();
-                let member_access = matches!(
-                    parent.kind(),
-                    SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression
-                ) && parent.expression() == outer;
-                let reflection_target = parent.kind() == SyntaxKind::CallExpression
-                    && parent.arguments().first() == Some(outer)
-                    && {
-                        let callee = skip_outer(parent.expression());
-                        callee.kind() == SyntaxKind::PropertyAccessExpression
-                            && REFLECTION_WRITERS.contains(&callee.name().text())
-                    };
-                if !member_access && !reflection_target {
-                    return true;
-                }
-            }
-        }
-        false
+    /// The first place where application code lets the prototype chain of an
+    /// array flow somewhere the patch scan does not follow, if any. The one
+    /// rule is documented in [`prototype_chain`].
+    pub fn prototype_exposure(&mut self, ctx: &mut Ctx) -> Option<PrototypeExposure> {
+        let files: Vec<Vec<Node>> = ctx
+            .files
+            .iter()
+            .filter(|file| !file.js)
+            .map(|file| file.nodes.clone())
+            .collect();
+        prototype_chain::find(ctx, &files, &mut self.facts)
     }
 }
 
@@ -1595,8 +1574,11 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
             if [
                 "prototype",
                 "__proto__",
+                "getPrototypeOf",
                 "setPrototypeOf",
                 "defineProperty",
+                "__defineGetter__",
+                "__defineSetter__",
                 "globalThis",
             ]
             .iter()
@@ -2338,19 +2320,35 @@ enum WriteOwner {
     Opaque,
 }
 
+/// The literal member a property or element access names, if any
+/// (`x.name`, `x["name"]`).
+fn literal_access_name(ctx: &Ctx, node: Node) -> Option<String> {
+    match node.kind() {
+        SyntaxKind::PropertyAccessExpression => Some(node.name().text().to_owned()),
+        SyntaxKind::ElementAccessExpression => {
+            match literal_member(ctx, node.argument_expression()) {
+                Member::Named(name) => Some(name),
+                Member::Any => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 fn write_owner(ctx: &mut Ctx, target: Node) -> WriteOwner {
     let target = skip_outer(target);
     // Any prototype reflection in the receiver chain may reach a built-in.
     let mut node = target;
     loop {
         match node.kind() {
-            SyntaxKind::PropertyAccessExpression => {
-                if matches!(node.name().text(), "__proto__" | "constructor") {
+            SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression => {
+                if literal_access_name(ctx, node)
+                    .is_some_and(|name| matches!(name.as_str(), "__proto__" | "constructor"))
+                {
                     return WriteOwner::Opaque;
                 }
                 node = skip_outer(node.expression());
             }
-            SyntaxKind::ElementAccessExpression => node = skip_outer(node.expression()),
             SyntaxKind::CallExpression => {
                 let callee = skip_outer(node.expression());
                 if callee.kind() == SyntaxKind::PropertyAccessExpression
@@ -2377,9 +2375,8 @@ fn write_owner(ctx: &mut Ctx, target: Node) -> WriteOwner {
         }
         None
     };
-    // `X.prototype`
-    if target.kind() == SyntaxKind::PropertyAccessExpression && target.name().text() == "prototype"
-    {
+    // `X.prototype` and `X["prototype"]`
+    if literal_access_name(ctx, target).as_deref() == Some("prototype") {
         return match base(ctx, target.expression()) {
             Some(name) if GLOBAL_OBJECTS.contains(&name.as_str()) => WriteOwner::Opaque,
             Some(name) => WriteOwner::Owner(Owner::Named(name)),
@@ -2396,7 +2393,7 @@ fn write_owner(ctx: &mut Ctx, target: Node) -> WriteOwner {
         Some(name) if GLOBAL_OBJECTS.contains(&name.as_str()) => WriteOwner::Owner(Owner::Global),
         Some(name) => WriteOwner::Owner(Owner::Named(name)),
         None => {
-            if chain_mentions_prototype(target) {
+            if chain_mentions_prototype(ctx, target) {
                 WriteOwner::Unknown
             } else {
                 WriteOwner::App
@@ -2405,17 +2402,16 @@ fn write_owner(ctx: &mut Ctx, target: Node) -> WriteOwner {
     }
 }
 
-fn chain_mentions_prototype(mut node: Node) -> bool {
+fn chain_mentions_prototype(ctx: &Ctx, mut node: Node) -> bool {
     loop {
         node = skip_outer(node);
         match node.kind() {
-            SyntaxKind::PropertyAccessExpression => {
-                if node.name().text() == "prototype" {
+            SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression => {
+                if literal_access_name(ctx, node).as_deref() == Some("prototype") {
                     return true;
                 }
                 node = node.expression();
             }
-            SyntaxKind::ElementAccessExpression => node = node.expression(),
             _ => return false,
         }
     }
