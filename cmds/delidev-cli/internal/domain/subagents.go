@@ -102,6 +102,9 @@ type SubagentRecord struct {
 	FirstSequence uint64              `json:"first_sequence,string"`
 	LastSequence  uint64              `json:"last_sequence,string"`
 	Observation   SubagentObservation `json:"observation"`
+	// DisplayName is private server-retained display metadata. The Resource
+	// boundary projects it as protobuf metadata and removes it from document_json.
+	DisplayName *string `json:"display_name,omitempty"`
 }
 type SubagentEvidence struct {
 	Source   SubagentSource `json:"source"`

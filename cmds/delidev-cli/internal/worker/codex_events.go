@@ -185,7 +185,7 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		if err != nil {
 			return true, err
 		}
-		if err := c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionSubagentObserved, Subagents: event.Subagents}); err != nil {
+		if err := c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionSubagentObserved, Subagents: event.Subagents, SubagentNames: event.SubagentNames}); err != nil {
 			return true, err
 		}
 		c.children = next

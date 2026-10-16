@@ -146,6 +146,15 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 	if !owned {
 		return executionEventConflict()
 	}
+	if len(event.SubagentNames) != 0 && input.Configuration.Harness != domain.Codex {
+		// Only an observed native Codex nickname is a display name; Claude and
+		// OpenCode children keep their stable localized fallback labels.
+		return executionEventConflict()
+	}
+	names := make(map[domain.ID]string, len(event.SubagentNames))
+	for _, name := range event.SubagentNames {
+		names[name.ID] = name.Name
+	}
 	for _, child := range event.Subagents {
 		usage := child.Usage
 		codex := input.Configuration.Harness == domain.Codex
@@ -203,6 +212,10 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 		}
 		first, revision := event.Sequence, uint64(0)
 		evidence := []domain.SubagentEvidence{}
+		var displayName *string
+		if name, ok := names[child.ID]; ok {
+			displayName = &name
+		}
 		if _, exists := p.Subagents[child.NativeID]; exists {
 			record, err := tx.Get(domain.SubagentKind, child.ID)
 			if err != nil {
@@ -213,6 +226,10 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 				return executionEventConflict()
 			}
 			first, revision = prior.FirstSequence, record.Revision
+			// An omitted name is not erasure; a later valid observation updates it.
+			if displayName == nil {
+				displayName = prior.DisplayName
+			}
 			evidence = prior.Sources
 			if child.RequestedModel != nil && prior.Observation.RequestedModel != nil && *child.RequestedModel != *prior.Observation.RequestedModel {
 				return executionEventConflict()
@@ -241,7 +258,7 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 			return domain.Fail(domain.ResourceExhausted, "Child source coverage reached its bound.", "Retain its original observations; no evidence was truncated.")
 		}
 		evidence = append(evidence, domain.SubagentEvidence{Source: child.Source, SourceID: child.SourceID, Sequence: event.Sequence, Usage: usage})
-		value := domain.SubagentRecord{Sources: evidence, ExecutionID: input.ExecutionID, Harness: input.Configuration.Harness, Version: input.Installation.Version, RootID: event.NativeThreadID, FirstSequence: first, LastSequence: event.Sequence, Observation: child}
+		value := domain.SubagentRecord{Sources: evidence, ExecutionID: input.ExecutionID, Harness: input.Configuration.Harness, Version: input.Installation.Version, RootID: event.NativeThreadID, FirstSequence: first, LastSequence: event.Sequence, Observation: child, DisplayName: displayName}
 		if _, err := tx.Put(domain.SubagentKind, child.ID, revision, session.ID, session.ProjectID, value); err != nil {
 			return err
 		}

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -31,6 +32,10 @@ type PublicationConfig struct {
 type pendingPublication struct {
 	RequestID domain.ID             `json:"request_id"`
 	Event     domain.ExecutionEvent `json:"event"`
+	// Names is additive display metadata retained with the exact event so a
+	// replay after a lost acknowledgment sends the original name bytes. The
+	// schema-1 event JSON never carries it.
+	Names []domain.SubagentDisplayName `json:"subagent_names,omitempty"`
 }
 
 type publicationJournal struct {
@@ -111,6 +116,9 @@ func OpenExecutionPublisher(config PublicationConfig) (publisher *ExecutionPubli
 		if domain.Decode(raw, &retained) != nil || retained.Version != state.Version || retained.JobID != state.JobID || retained.InstanceID != state.InstanceID || retained.ServerID != state.ServerID || retained.DeviceID != state.DeviceID || retained.Revision != state.Revision || retained.AssignmentDigest != state.AssignmentDigest || retained.LastSequence > domain.MaxExecutionEvents {
 			return nil, publicationUncertain()
 		}
+		if p := retained.Pending; p != nil {
+			p.Event.SubagentNames = p.Names
+		}
 		if p := retained.Pending; p != nil && (p.RequestID.Validate() != nil || p.Event.Validate() != nil || p.Event.ExecutionID != input.ExecutionID || p.Event.Sequence != retained.LastSequence+1) {
 			return nil, publicationUncertain()
 		}
@@ -170,7 +178,8 @@ func (p *ExecutionPublisher) Publish(ctx context.Context, event domain.Execution
 		return err
 	}
 	state := p.state
-	state.Pending = &pendingPublication{RequestID: domain.NewID(), Event: frozen}
+	frozen.SubagentNames = slices.Clone(event.SubagentNames)
+	state.Pending = &pendingPublication{RequestID: domain.NewID(), Event: frozen, Names: frozen.SubagentNames}
 	p.state = state
 	return p.sendPending(ctx)
 }
@@ -201,7 +210,7 @@ func (p *ExecutionPublisher) sendPending(ctx context.Context) error {
 	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	response, err := p.config.Client.PublishExecution(bounded, authenticated(p.config.Credential, &pb.PublishExecutionRequest{Mutation: &pb.Mutation{RequestId: string(pending.RequestID), Id: string(p.state.JobID), ExpectedRevision: p.state.Revision}, MachineId: string(p.config.Credential.MachineID), InstanceId: string(p.state.InstanceID), EventJson: raw}))
+	response, err := p.config.Client.PublishExecution(bounded, authenticated(p.config.Credential, &pb.PublishExecutionRequest{Mutation: &pb.Mutation{RequestId: string(pending.RequestID), Id: string(p.state.JobID), ExpectedRevision: p.state.Revision}, MachineId: string(p.config.Credential.MachineID), InstanceId: string(p.state.InstanceID), EventJson: raw, SubagentNames: subagentNamesToProto(pending.Names)}))
 	if err != nil || response == nil || response.Msg == nil || response.Msg.AcknowledgedSequence != pending.Event.Sequence {
 		code := domain.RecoveryRequired
 		if err != nil {
@@ -227,4 +236,15 @@ func (p *ExecutionPublisher) NativeVersion() string {
 		return p.nativeVersion
 	}
 	return p.input.Installation.Version
+}
+
+func subagentNamesToProto(names []domain.SubagentDisplayName) []*pb.SubagentDisplayName {
+	if len(names) == 0 {
+		return nil
+	}
+	result := make([]*pb.SubagentDisplayName, 0, len(names))
+	for _, name := range names {
+		result = append(result, &pb.SubagentDisplayName{ChildId: string(name.ID), Name: name.Name})
+	}
+	return result
 }

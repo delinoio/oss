@@ -73,7 +73,42 @@ func (c *Client) childEvent(batch []domain.SubagentObservation) (Event, error) {
 		}
 		c.subagents[o.NativeID] = o
 	}
-	return Event{Kind: SubagentEvent, ThreadID: c.thread, TurnID: turn, Correlated: true, Subagents: batch}, nil
+	return Event{Kind: SubagentEvent, ThreadID: c.thread, TurnID: turn, Correlated: true, Subagents: batch, SubagentNames: c.displayNames(batch)}, nil
+}
+
+// rememberNickname accepts a native agentNickname only as non-blank,
+// well-formed text of at most domain.MaxSubagentDisplayNameRunes characters.
+// Missing, null, blank or invalid values are ignored without invalidating the
+// rest of the child telemetry; the last valid name stays retained, and a later
+// valid observation of the same child replaces it. The name is inert display
+// text: it never substitutes roles, task descriptions, models or identities.
+func (c *Client) rememberNickname(id domain.ID, raw json.RawMessage) {
+	if len(raw) == 0 {
+		return
+	}
+	var name *string
+	if json.Unmarshal(raw, &name) != nil || name == nil || !domain.ValidSubagentDisplayName(*name) {
+		if c.logger != nil {
+			c.logger.Debug("Codex agent nickname ignored", "owner_id", c.ownerID, "child_id", id)
+		}
+		return
+	}
+	if c.subagentNames == nil {
+		c.subagentNames = map[string]string{}
+	}
+	c.subagentNames[string(id)] = *name
+}
+
+// displayNames reports the retained native name of each child in a batch by
+// original product child ID. Children without an accepted name are omitted.
+func (c *Client) displayNames(batch []domain.SubagentObservation) []domain.SubagentDisplayName {
+	var names []domain.SubagentDisplayName
+	for _, o := range batch {
+		if name, ok := c.subagentNames[o.NativeID]; ok {
+			names = append(names, domain.SubagentDisplayName{ID: o.ID, Name: name})
+		}
+	}
+	return names
 }
 
 // Consume only original canonical collab items. Requested model is independent
@@ -236,6 +271,7 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 				return Event{}, incompatible()
 			}
 			seen[string(t.ID)] = true
+			c.rememberNickname(t.ID, t.AgentNickname)
 			o, exists := c.subagents[string(t.ID)]
 			if !exists {
 				o = domain.SubagentObservation{ID: domain.NewID(), NativeID: string(t.ID), ParentID: string(*t.ParentThreadID), Status: domain.SubagentPending}
@@ -294,6 +330,7 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			if t.ID.Validate() != nil || t.ID == c.thread || t.ParentThreadID.Validate() != nil || t.SessionID.Validate() != nil || t.ModelProvider != c.execution.settings.Provider || t.CLIVersion != c.version || validateThreadStatus(t.Status) != nil {
 				return Event{}, true, incompatible()
 			}
+			c.rememberNickname(t.ID, t.AgentNickname)
 			o, ok := c.subagents[string(t.ID)]
 			if !ok {
 				// A start notification may precede the original spawn evidence.

@@ -187,9 +187,12 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
-	FunctionOutput     *FunctionOutputUpdate              `json:"function_output,omitempty"`
-	DynamicTool        *DynamicToolUpdate                 `json:"dynamic_tool,omitempty"`
-	Subagents          []SubagentObservation              `json:"subagents,omitempty"`
+	FunctionOutput *FunctionOutputUpdate `json:"function_output,omitempty"`
+	DynamicTool    *DynamicToolUpdate    `json:"dynamic_tool,omitempty"`
+	Subagents      []SubagentObservation `json:"subagents,omitempty"`
+	// SubagentNames is outside the schema-1 event JSON and travels as additive
+	// protobuf display metadata beside it.
+	SubagentNames      []SubagentDisplayName              `json:"-"`
 	GrokTool           *ExecutionGrokToolUpdate           `json:"grok_tool,omitempty"`
 	GrokUserMessageID  ID                                 `json:"grok_user_message_id,omitempty"`
 	GrokStop           *GrokStopObservation               `json:"grok_stop,omitempty"`
@@ -236,7 +239,7 @@ type ExecutionEvent struct {
 }
 
 func (e ExecutionEvent) Validate() error {
-	if e.Kind != ExecutionSubagentObserved && e.Subagents != nil {
+	if e.Kind != ExecutionSubagentObserved && (e.Subagents != nil || len(e.SubagentNames) != 0) {
 		return invalidSubagent()
 	}
 	if e.Version != 1 || e.Sequence == 0 || e.Sequence > MaxExecutionEvents {
@@ -265,6 +268,9 @@ func (e ExecutionEvent) Validate() error {
 			if child.Validate() != nil {
 				return invalidSubagent()
 			}
+		}
+		if err := ValidateSubagentDisplayNames(e.SubagentNames, e.Subagents); err != nil {
+			return err
 		}
 	case ExecutionGrokToolObserved:
 		if e.GrokTool == nil || e.GrokTool.Validate() != nil {
