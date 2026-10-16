@@ -2006,7 +2006,7 @@ fn body_open_after_parameters(code: &str, after: usize) -> Option<usize> {
                 crossed_line |= is_line_terminator(next);
                 cursor += next.len_utf8();
             }
-            if crossed_line && nesting == 0 && !annotation_continues(bytes, run_start, cursor) {
+            if crossed_line && nesting == 0 && !annotation_continues(code, run_start, cursor) {
                 return None;
             }
             continue;
@@ -2035,19 +2035,27 @@ fn body_open_after_parameters(code: &str, after: usize) -> Option<usize> {
 /// body brace, a dangling operator before the break and a type operator or
 /// closer after it continue the signature; any other token starts the next
 /// member or statement.
-fn annotation_continues(bytes: &[u8], run_start: usize, next: usize) -> bool {
+fn annotation_continues(code: &str, run_start: usize, next: usize) -> bool {
+    let bytes = code.as_bytes();
     let previous = bytes[..run_start].last().copied();
     let following = bytes.get(next).copied();
     let dangling = matches!(
         previous,
         Some(b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'(' | b'=' | b'.' | b'?')
-    ) || bytes[..run_start].ends_with(b"=>");
+    ) || bytes[..run_start].ends_with(b"=>")
+        || TYPE_OPERATOR_KEYWORDS.contains(&trailing_word(&code[..run_start]));
     let continuing = matches!(
         following,
         Some(b'{' | b'|' | b'&' | b'.' | b'?' | b':' | b'=' | b')' | b']' | b',' | b'<' | b'>')
     );
     dangling || continuing
 }
+
+/// Type operators that need a type after them, so a line break right after one
+/// never ends the annotation (`T extends\n string ? A : B`).
+const TYPE_OPERATOR_KEYWORDS: [&str; 7] = [
+    "extends", "keyof", "typeof", "infer", "unique", "readonly", "is",
+];
 
 fn named_function_is_expression(code: &str, start: usize) -> bool {
     let raw_prefix = &code[..start];
@@ -3505,6 +3513,24 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "eval(code)",
             ),
         ]);
+    }
+
+    #[test]
+    fn conditional_return_types_continue_after_type_operators() {
+        assert_all_declarations(&[
+            "class C { eval(): T extends\n string ? T : never\n {} }",
+            "class C { eval(): T extends\n  string\n  ? T\n  : never {} }",
+            "class C { eval(): keyof\n T {} }",
+            "class C { eval(): typeof\n value {} }",
+            "class C { eval(): U extends (infer\n V) ? V : never {} }",
+            "class C { eval(): readonly\n string[] {} }",
+            "class C { eval(v): v is\n string {} }",
+        ]);
+        // A signature without a body still ends at an ordinary line break.
+        assert_all_reported(&[(
+            "declare class C { eval(v): string\n run() {} }\nfunction f() {}",
+            "eval(v)",
+        )]);
     }
 
     #[test]
