@@ -22,9 +22,12 @@ pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     if context.is_cancelled() {
         return;
     }
-    // Without a minifier, retained `process.env` reads are expected; the
-    // confirmed minification-disabled finding explains them instead.
-    if context.collection.minify_enabled {
+    // Without dead-code elimination, retained `process.env` reads are
+    // expected; the confirmed minification-disabled finding explains them
+    // instead. Rolldown's dead-code-elimination-only mode (Vite's
+    // `build.minify: false`) still folds the guarded branches, so the rule runs
+    // there although minification is disabled.
+    if context.collection.dead_code_elimination_runs() {
         unresolved_env_conditions(context, drafts);
     }
     minification_disabled(context, drafts);
@@ -940,13 +943,16 @@ pub fn configuration_disabled(
 /// Configuration-summary entry that records whether Rolldown's minifier runs
 /// for the analyzed Vite output, after plugins' `outputOptions` hooks.
 const VITE_OUTPUT_MINIFY_OPTION: &str = "build.rolldownOptions.output.minify";
-const VITE_OUTPUT_MINIFY_DISABLED: &str = "disabled";
+/// Values of that entry for which Rolldown's minifier does not compress or
+/// mangle: no stage runs, or only dead-code elimination does (`'dce-only'`).
+const VITE_OUTPUT_MINIFY_DISABLED: [&str; 2] = ["disabled", "dce-only"];
 
 fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     if context.collection.minify_enabled {
         return;
     }
     let vite = context.collection.bundler == "vite";
+    let dce_runs = context.collection.dead_code_elimination_runs();
     let summary = &context.collection.config_summary;
     // Vite disables the minifier through `build.minify: false`, or through the
     // effective `rolldownOptions.output.minify` option (set in the
@@ -956,7 +962,7 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
     let output_disabled = vite
         && summary
             .get(VITE_OUTPUT_MINIFY_OPTION)
-            .is_some_and(|value| value == VITE_OUTPUT_MINIFY_DISABLED)
+            .is_some_and(|value| VITE_OUTPUT_MINIFY_DISABLED.contains(&value.as_str()))
         && summary
             .get("build.minify")
             .is_some_and(|value| value != "false");
@@ -984,10 +990,17 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
         rule: RuleId::MinificationDisabled,
         status: EvidenceStatus::Confirmed,
         title: "JavaScript minification is disabled".to_owned(),
-        summary: format!(
-            "{option} is {value}, so dead-code elimination, name mangling and other minifier \
-             optimizations do not run."
-        ),
+        summary: if dce_runs {
+            format!(
+                "{option} is {value}, so name mangling, compression and other minifier \
+                 optimizations do not run. Dead-code elimination still runs."
+            )
+        } else {
+            format!(
+                "{option} is {value}, so dead-code elimination, name mangling and other minifier \
+                 optimizations do not run."
+            )
+        },
         conditions: vec![Condition::new(
             "Minification is enabled",
             ConditionOutcome::Unmet,

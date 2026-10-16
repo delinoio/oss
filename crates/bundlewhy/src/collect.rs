@@ -19,7 +19,17 @@ pub struct Collection {
     pub minifier: String,
     pub minifier_version: String,
     pub default_minifier: bool,
+    /// Compression or name mangling runs, or the build names another
+    /// minifier. Rolldown's dead-code-elimination-only mode is not
+    /// minification, so it leaves this `false`.
     pub minify_enabled: bool,
+    /// Whether dead-code elimination runs. Absent in collections from
+    /// adapters that do not report it, which means it runs exactly when
+    /// `minify_enabled` is set.
+    pub dead_code_elimination: Option<Stage>,
+    /// Whether code compression runs. Absent follows `minify_enabled`, like
+    /// `dead_code_elimination`.
+    pub compress: Option<Stage>,
     /// Effective output name-mangling setting. Absent in older collections,
     /// which keeps the default (`Enabled`).
     pub mangle: Mangle,
@@ -52,6 +62,20 @@ pub struct Collection {
 const VITE_OWNED_VIRTUAL_IDS: [&str; 2] = ["\0vite/preload-helper.js", "\0rolldown/runtime.js"];
 
 impl Collection {
+    /// Whether the minifier's dead-code elimination runs for the analyzed
+    /// output. Vite's `build.minify: false` still runs it (Rolldown's
+    /// `'dce-only'` mode), so it can run while `minify_enabled` is `false`.
+    pub fn dead_code_elimination_runs(&self) -> bool {
+        self.dead_code_elimination
+            .map_or(self.minify_enabled, |stage| stage == Stage::Enabled)
+    }
+
+    /// Whether code compression runs for the analyzed output.
+    pub fn compress_runs(&self) -> bool {
+        self.compress
+            .map_or(self.minify_enabled, |stage| stage == Stage::Enabled)
+    }
+
     /// Decodes the `bundler` field into the supported bundler. An unknown or
     /// empty value yields `None` and is treated as unsupported.
     pub fn bundler_choice(&self) -> Option<BundlerChoice> {
@@ -122,19 +146,25 @@ pub struct CollectedSkippedProvider {
     pub edges: u32,
 }
 
-/// Whether the minifier mangles local names for the analyzed output. An
-/// unrecognized value (for example from a newer adapter) is treated as
-/// `Enabled`, which keeps every mangling-dependent detector active.
+/// Whether one minifier stage (dead-code elimination, compression or name
+/// mangling) runs for the analyzed output. An unrecognized value (for example
+/// from a newer adapter) is treated as `Enabled`, which keeps every
+/// stage-dependent detector active.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum Mangle {
-    /// The configuration keeps every name, so retained names prove nothing
-    /// about their cause.
+pub enum Stage {
+    /// The configuration turns the stage off, so a missing optimization
+    /// proves nothing about its cause.
     Disabled,
     #[default]
     #[serde(other)]
     Enabled,
 }
+
+/// Whether the minifier mangles local names for the analyzed output. When
+/// `Disabled`, the configuration keeps every name, so retained names prove
+/// nothing about their cause.
+pub type Mangle = Stage;
 
 /// Which export of the provider module a dropped edge targeted.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -277,6 +307,45 @@ pub struct CollectedChunk {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dead_code_elimination_and_compress_follow_minify_enabled_when_absent() {
+        // Collections from adapters that do not report the stages (Rspack,
+        // older Vite adapters) keep the previous meaning of `minifyEnabled`.
+        let off: Collection = serde_json::from_str(r#"{"minifyEnabled":false}"#).unwrap();
+        assert!(!off.dead_code_elimination_runs());
+        assert!(!off.compress_runs());
+        let on: Collection = serde_json::from_str(r#"{"minifyEnabled":true}"#).unwrap();
+        assert!(on.dead_code_elimination_runs());
+        assert!(on.compress_runs());
+    }
+
+    #[test]
+    fn stages_are_independent_of_minify_enabled_and_of_each_other() {
+        // Rolldown's `'dce-only'` mode: dead-code elimination without
+        // compression or mangling.
+        let dce_only: Collection = serde_json::from_str(
+            r#"{"minifyEnabled":false,"deadCodeElimination":"enabled","compress":"disabled","mangle":"disabled"}"#,
+        )
+        .unwrap();
+        assert!(dce_only.dead_code_elimination_runs());
+        assert!(!dce_only.compress_runs());
+        assert_eq!(dce_only.mangle, Mangle::Disabled);
+        // `{ compress: false }`: mangling without compression or dead-code
+        // elimination.
+        let mangle_only: Collection = serde_json::from_str(
+            r#"{"minifyEnabled":true,"deadCodeElimination":"disabled","compress":"disabled","mangle":"enabled"}"#,
+        )
+        .unwrap();
+        assert!(!mangle_only.dead_code_elimination_runs());
+        assert!(!mangle_only.compress_runs());
+        assert_eq!(mangle_only.mangle, Mangle::Enabled);
+        let unknown: Collection =
+            serde_json::from_str(r#"{"deadCodeElimination":"partial","compress":"partial"}"#)
+                .unwrap();
+        assert!(unknown.dead_code_elimination_runs());
+        assert!(unknown.compress_runs());
+    }
 
     #[test]
     fn mangle_defaults_to_enabled_and_decodes_known_values() {

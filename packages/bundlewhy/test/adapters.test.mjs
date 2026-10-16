@@ -8,15 +8,19 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
-  MangleSetting,
+  ADAPTER_VERSION,
   OutputMinifySetting,
+  StageSetting,
   normalizeCollectionRoot,
   normalizeViteModule,
   resolveMangleSetting,
   resolveMinifierGate,
+  resolveMinifyStages,
   resolveNormalizedMangleSetting,
+  resolveNormalizedMinifyStages,
   resolveNormalizedOutputMinifySetting,
   resolveOutputMinifySetting,
+  summarizeOutputMinify,
 } from "../../../crates/bundlewhy/adapters/vite.mjs";
 import {
   ExportUsageReason,
@@ -186,550 +190,523 @@ test("vite adapter rejects configurations with several outputs", () => {
   );
 });
 
-// Mirrors the "Name mangling" rows of the Vite collection contract: Vite
+// Mirrors the "Minifier stages" rows of the Vite collection contract. Vite
 // lets an explicit `output.minify` replace the value it derives from
-// `build.minify`, and Rolldown mangles unless the effective option disables it.
-const mangleShapes = [
+// `build.minify`, and three independent facts follow from the effective
+// option: whether dead-code elimination (`dce`), compression (`compress`) and
+// name mangling (`mangle`) run. Rolldown's `'dce-only'` mode (what Vite passes
+// for `build.minify: false`) keeps dead-code elimination on.
+const ON = StageSetting.Enabled;
+const OFF = StageSetting.Disabled;
+const ALL_STAGES = { dce: ON, compress: ON, mangle: ON };
+const NO_STAGES = { dce: OFF, compress: OFF, mangle: OFF };
+const DCE_ONLY_STAGES = { dce: ON, compress: OFF, mangle: OFF };
+
+const stageShapes = [
+  { name: "oxc, absent output", minify: "oxc", output: undefined, stages: ALL_STAGES },
+  { name: "true, absent output", minify: true, output: undefined, stages: ALL_STAGES },
   {
-    name: "absent output with oxc",
-    minify: "oxc",
-    output: undefined,
-    expected: MangleSetting.Enabled,
-  },
-  {
-    name: "absent output with minify false",
+    name: "false, absent output (Vite passes dce-only)",
     minify: false,
     output: undefined,
-    expected: MangleSetting.Disabled,
+    stages: DCE_ONLY_STAGES,
   },
   {
-    name: "output without minify",
-    minify: "oxc",
-    output: {},
-    expected: MangleSetting.Enabled,
-  },
-  {
-    name: "output.minify false",
-    minify: "oxc",
-    output: { minify: false },
-    expected: MangleSetting.Disabled,
-  },
-  {
-    name: "output.minify dce-only",
-    minify: "oxc",
-    output: { minify: "dce-only" },
-    expected: MangleSetting.Disabled,
-  },
-  {
-    name: "output.minify true",
-    minify: "oxc",
-    output: { minify: true },
-    expected: MangleSetting.Enabled,
-  },
-  {
-    name: "mangle false",
-    minify: "oxc",
-    output: { minify: { compress: true, mangle: false, codegen: true } },
-    expected: MangleSetting.Disabled,
-  },
-  {
-    name: "mangle true",
-    minify: "oxc",
-    output: { minify: { mangle: true } },
-    expected: MangleSetting.Enabled,
-  },
-  {
-    name: "mangle options object",
-    minify: "oxc",
-    output: { minify: { mangle: { toplevel: true } } },
-    expected: MangleSetting.Enabled,
-  },
-  {
-    name: "options object without mangle",
-    minify: "oxc",
-    output: { minify: { compress: true } },
-    expected: MangleSetting.Enabled,
-  },
-  {
-    name: "single-entry array with mangle false",
-    minify: "oxc",
-    output: [{ minify: { mangle: false } }],
-    expected: MangleSetting.Disabled,
-  },
-  {
-    name: "single-entry array with mangle true",
-    minify: "oxc",
-    output: [{ minify: { mangle: true } }],
-    expected: MangleSetting.Enabled,
-  },
-  {
-    name: "array with one mangling entry",
-    minify: "oxc",
-    output: [{ minify: false }, { minify: true }],
-    expected: MangleSetting.Enabled,
-  },
-  {
-    name: "unrecognized value",
-    minify: "oxc",
-    output: { minify: "full" },
-    expected: MangleSetting.Enabled,
-  },
-];
-
-for (const shape of mangleShapes) {
-  test(`vite mangle setting (${shape.name})`, () => {
-    assert.equal(
-      resolveMangleSetting(shape.minify, shape.output),
-      shape.expected,
-    );
-  });
-}
-
-for (const [name, output, expected] of [
-  [
-    "mangle false",
-    "{ minify: { compress: true, mangle: false, codegen: true } }",
-    MangleSetting.Disabled,
-  ],
-  ["dce-only", "{ minify: 'dce-only' }", MangleSetting.Disabled],
-  ["mangle true", "{ minify: { mangle: true } }", MangleSetting.Enabled],
-  ["absent", "{}", MangleSetting.Enabled],
-]) {
-  test(`vite adapter collects the effective mangle setting (${name})`, () => {
-    const projectRoot = path.join(root, "fixtures/vite-app");
-    const { dir, file } = writeConfig(
-      "vite.config.mjs",
-      `export default { build: { minify: 'oxc', rolldownOptions: { output: ${output} } } };\n`,
-    );
-    const { status, events, collection } = runAdapter(
-      "vite",
-      "vite-app",
-      path.relative(projectRoot, file),
-    );
-    fs.rmSync(dir, { recursive: true, force: true });
-    assert.equal(status, 0, JSON.stringify(events));
-    assert.equal(collection.mangle, expected);
-    assert.equal(
-      collection.configSummary["build.rolldownOptions.output.minify.mangle"],
-      expected,
-    );
-    // `dce-only` runs no minifier, so no minifier gate stays on.
-    const minifierRuns = output !== "{ minify: 'dce-only' }";
-    assert.equal(collection.defaultMinifier, minifierRuns);
-    assert.equal(collection.minifyEnabled, minifierRuns);
-  });
-}
-
-// The normalized `minify` option that `generateBundle` receives is what
-// Rolldown applies after every plugin's `outputOptions` hook ran: `mangle` is
-// only present when mangling runs.
-for (const [name, normalized, expected] of [
-  ["false", false, MangleSetting.Disabled],
-  ["dce-only", "dce-only", MangleSetting.Disabled],
-  ["object without mangle", { compress: {} }, MangleSetting.Disabled],
-  ["mangle false", { mangle: false }, MangleSetting.Disabled],
-  ["mangle options", { mangle: { toplevel: true } }, MangleSetting.Enabled],
-  ["undefined", undefined, null],
-  ["true", true, null],
-  ["unrecognized string", "full", null],
-]) {
-  test(`vite normalized mangle setting (${name})`, () => {
-    assert.equal(resolveNormalizedMangleSetting(normalized), expected);
-  });
-}
-
-// A plugin's `outputOptions` hook runs after `configResolved`, so the
-// collected mangle setting must come from the options the build applies.
-for (const [name, buildOutput, hookMinify, expected] of [
-  [
-    "hook disables mangle over an enabled config",
-    "{}",
-    "{ mangle: false }",
-    MangleSetting.Disabled,
-  ],
-  ["hook sets minify false", "{}", "false", MangleSetting.Disabled],
-  [
-    "hook enables mangle over a disabled config",
-    "{ minify: { mangle: false } }",
-    "{ mangle: true }",
-    MangleSetting.Enabled,
-  ],
-]) {
-  test(`vite adapter reads the mangle setting after outputOptions hooks (${name})`, () => {
-    const projectRoot = path.join(root, "fixtures/vite-app");
-    const { dir, file } = writeConfig(
-      "vite.config.mjs",
-      `export default {
-  build: { minify: 'oxc', rolldownOptions: { output: ${buildOutput} } },
-  plugins: [{
-    name: 'test:set-minify',
-    outputOptions(options) {
-      options.minify = ${hookMinify};
-      return options;
-    },
-  }],
-};\n`,
-    );
-    const { status, events, collection } = runAdapter(
-      "vite",
-      "vite-app",
-      path.relative(projectRoot, file),
-    );
-    fs.rmSync(dir, { recursive: true, force: true });
-    assert.equal(status, 0, JSON.stringify(events));
-    assert.equal(collection.mangle, expected);
-    assert.equal(
-      collection.configSummary["build.rolldownOptions.output.minify.mangle"],
-      expected,
-    );
-  });
-}
-
-// Mirrors the "Minifier gates" rows of the Vite collection contract: whether
-// Rolldown's minifier runs follows the effective `output.minify` option, not
-// `build.minify` alone.
-const outputMinifyShapes = [
-  {
-    name: "oxc, absent output",
-    minify: "oxc",
-    output: undefined,
-    expected: "enabled",
-  },
-  {
-    name: "true, absent output",
-    minify: true,
-    output: undefined,
-    expected: "enabled",
-  },
-  {
-    name: "false, absent output",
-    minify: false,
-    output: undefined,
-    expected: "disabled",
-  },
-  {
-    name: "terser, absent output",
+    name: "terser, absent output (Vite passes false)",
     minify: "terser",
     output: undefined,
-    expected: "disabled",
+    stages: NO_STAGES,
   },
   {
-    name: "false, output without minify",
-    minify: false,
-    output: {},
-    expected: "disabled",
+    name: "esbuild, absent output (Vite passes false)",
+    minify: "esbuild",
+    output: undefined,
+    stages: NO_STAGES,
   },
+  { name: "oxc, output without minify", minify: "oxc", output: {}, stages: ALL_STAGES },
+  { name: "false, output without minify", minify: false, output: {}, stages: DCE_ONLY_STAGES },
+  { name: "oxc, output.minify true", minify: "oxc", output: { minify: true }, stages: ALL_STAGES },
+  { name: "false, output.minify true", minify: false, output: { minify: true }, stages: ALL_STAGES },
+  { name: "terser, output.minify true", minify: "terser", output: { minify: true }, stages: ALL_STAGES },
+  { name: "oxc, output.minify false", minify: "oxc", output: { minify: false }, stages: NO_STAGES },
+  { name: "false, output.minify false", minify: false, output: { minify: false }, stages: NO_STAGES },
   {
-    name: "false, output.minify true",
-    minify: false,
-    output: { minify: true },
-    expected: "enabled",
-  },
-  {
-    name: "false, output.minify mangle true",
-    minify: false,
-    output: { minify: { mangle: true } },
-    expected: "enabled",
-  },
-  {
-    name: "false, output.minify compress true",
-    minify: false,
-    output: { minify: { compress: true } },
-    expected: "enabled",
+    name: "oxc, output.minify dce-only",
+    minify: "oxc",
+    output: { minify: "dce-only" },
+    stages: DCE_ONLY_STAGES,
   },
   {
     name: "false, output.minify dce-only",
     minify: false,
     output: { minify: "dce-only" },
-    expected: "disabled",
+    stages: DCE_ONLY_STAGES,
   },
   {
-    name: "false, output.minify false",
-    minify: false,
-    output: { minify: false },
-    expected: "disabled",
-  },
-  {
-    name: "oxc, output.minify false",
+    name: "mangle false",
     minify: "oxc",
-    output: { minify: false },
-    expected: "disabled",
+    output: { minify: { compress: true, mangle: false, codegen: true } },
+    stages: { dce: ON, compress: ON, mangle: OFF },
   },
   {
-    name: "oxc, output.minify dce-only",
-    minify: "oxc",
-    output: { minify: "dce-only" },
-    expected: "disabled",
-  },
-  {
-    name: "oxc, output.minify true",
-    minify: "oxc",
-    output: { minify: true },
-    expected: "enabled",
-  },
-  {
-    name: "oxc, empty options object",
-    minify: "oxc",
-    output: { minify: {} },
-    expected: "enabled",
-  },
-  {
-    name: "oxc, mangle false only",
+    name: "mangle false only",
     minify: "oxc",
     output: { minify: { mangle: false } },
-    expected: "enabled",
+    stages: { dce: ON, compress: ON, mangle: OFF },
   },
   {
-    name: "oxc, compress and mangle false",
+    name: "compress false only",
+    minify: "oxc",
+    output: { minify: { compress: false } },
+    stages: { dce: OFF, compress: OFF, mangle: ON },
+  },
+  {
+    name: "compress false, mangle options",
+    minify: false,
+    output: { minify: { compress: false, mangle: { toplevel: true } } },
+    stages: { dce: OFF, compress: OFF, mangle: ON },
+  },
+  {
+    name: "compress and mangle false",
     minify: "oxc",
     output: { minify: { compress: false, mangle: false } },
-    expected: "disabled",
+    stages: NO_STAGES,
   },
   {
-    name: "terser, output.minify true",
-    minify: "terser",
-    output: { minify: true },
-    expected: "enabled",
+    name: "mangle true",
+    minify: "oxc",
+    output: { minify: { mangle: true } },
+    stages: ALL_STAGES,
   },
   {
-    name: "array of one disabling",
+    name: "mangle options object",
+    minify: "oxc",
+    output: { minify: { mangle: { toplevel: true } } },
+    stages: ALL_STAGES,
+  },
+  {
+    name: "compress options object",
+    minify: false,
+    output: { minify: { compress: { unused: true } } },
+    stages: ALL_STAGES,
+  },
+  { name: "empty options object", minify: "oxc", output: { minify: {} }, stages: ALL_STAGES },
+  {
+    name: "single-entry array with mangle false",
+    minify: "oxc",
+    output: [{ minify: { mangle: false } }],
+    stages: { dce: ON, compress: ON, mangle: OFF },
+  },
+  {
+    name: "single-entry array with compress false",
+    minify: "oxc",
+    output: [{ minify: { compress: false } }],
+    stages: { dce: OFF, compress: OFF, mangle: ON },
+  },
+  {
+    name: "single-entry array with dce-only",
+    minify: "oxc",
+    output: [{ minify: "dce-only" }],
+    stages: DCE_ONLY_STAGES,
+  },
+  {
+    name: "single-entry array with false",
     minify: "oxc",
     output: [{ minify: false }],
-    expected: "disabled",
+    stages: NO_STAGES,
   },
   {
-    name: "array of one enabling over false",
-    minify: false,
-    output: [{ minify: { mangle: true } }],
-    expected: "enabled",
-  },
-  {
-    name: "array of one without minify over false",
+    name: "single-entry array without minify over false",
     minify: false,
     output: [{}],
-    expected: "disabled",
+    stages: DCE_ONLY_STAGES,
   },
   {
-    name: "array with one enabling entry",
+    name: "single-entry array enabling over false",
     minify: false,
-    output: [{ minify: false }, { minify: true }],
-    expected: "enabled",
+    output: [{ minify: { mangle: true } }],
+    stages: ALL_STAGES,
   },
-  { name: "empty array", minify: false, output: [], expected: "disabled" },
+  {
+    name: "several entries enable a stage when any entry does",
+    minify: "oxc",
+    output: [{ minify: false }, { minify: "dce-only" }, { minify: { compress: false } }],
+    stages: { dce: ON, compress: OFF, mangle: ON },
+  },
+  { name: "empty array", minify: false, output: [], stages: DCE_ONLY_STAGES },
   {
     name: "unrecognized value",
-    minify: false,
+    minify: "oxc",
     output: { minify: "full" },
-    expected: "enabled",
+    stages: ALL_STAGES,
   },
 ];
 
-for (const shape of outputMinifyShapes) {
-  test(`vite output minify setting (${shape.name})`, () => {
+for (const shape of stageShapes) {
+  test(`vite minifier stages (${shape.name})`, () => {
+    assert.deepEqual(resolveMinifyStages(shape.minify, shape.output), shape.stages);
+    // The single-stage and summary helpers read the same facts.
+    assert.equal(
+      resolveMangleSetting(shape.minify, shape.output),
+      shape.stages.mangle,
+    );
     assert.equal(
       resolveOutputMinifySetting(shape.minify, shape.output),
-      shape.expected,
+      summarizeOutputMinify(shape.stages),
     );
   });
 }
 
-// The normalized option carries only the stages that run, and `true` is
-// already an options object, so an object with neither stage runs nothing.
-for (const [name, normalized, expected] of [
-  ["false", false, OutputMinifySetting.Disabled],
-  ["dce-only", "dce-only", OutputMinifySetting.Disabled],
-  ["empty object", {}, OutputMinifySetting.Disabled],
+for (const [name, stages, expected] of [
+  ["every stage", ALL_STAGES, OutputMinifySetting.Enabled],
+  ["no stage", NO_STAGES, OutputMinifySetting.Disabled],
+  ["dead-code elimination only", DCE_ONLY_STAGES, OutputMinifySetting.DceOnly],
   [
-    "both stages false",
-    { compress: false, mangle: false },
-    OutputMinifySetting.Disabled,
-  ],
-  ["mangle only", { mangle: { toplevel: true } }, OutputMinifySetting.Enabled],
-  [
-    "compress only",
-    { compress: { unused: true } },
+    "mangling only",
+    { dce: OFF, compress: OFF, mangle: ON },
     OutputMinifySetting.Enabled,
   ],
-  ["both stages", { compress: {}, mangle: {} }, OutputMinifySetting.Enabled],
-  ["true", true, OutputMinifySetting.Enabled],
+  [
+    "compression without mangling",
+    { dce: ON, compress: ON, mangle: OFF },
+    OutputMinifySetting.Enabled,
+  ],
+]) {
+  test(`vite output minify summary (${name})`, () => {
+    assert.equal(summarizeOutputMinify(stages), expected);
+  });
+}
+
+// The normalized `minify` option that `generateBundle` receives is what
+// Rolldown applies after every plugin's `outputOptions` hook ran: an options
+// object only carries the `compress` and `mangle` stages that run, and
+// `'dce-only'` keeps dead-code elimination alone.
+for (const [name, normalized, expected] of [
+  ["false", false, NO_STAGES],
+  ["dce-only", "dce-only", DCE_ONLY_STAGES],
+  ["true", true, ALL_STAGES],
+  ["empty object", {}, NO_STAGES],
+  ["both stages false", { compress: false, mangle: false }, NO_STAGES],
+  [
+    "object without mangle",
+    { compress: {} },
+    { dce: ON, compress: ON, mangle: OFF },
+  ],
+  [
+    "mangle false",
+    { compress: {}, mangle: false },
+    { dce: ON, compress: ON, mangle: OFF },
+  ],
+  [
+    "mangle options only",
+    { mangle: { toplevel: true } },
+    { dce: OFF, compress: OFF, mangle: ON },
+  ],
+  ["both stages", { compress: {}, mangle: {} }, ALL_STAGES],
   ["undefined", undefined, null],
   ["null", null, null],
   ["unrecognized string", "full", null],
 ]) {
-  test(`vite normalized output minify setting (${name})`, () => {
-    assert.equal(resolveNormalizedOutputMinifySetting(normalized), expected);
+  test(`vite normalized minifier stages (${name})`, () => {
+    assert.deepEqual(resolveNormalizedMinifyStages(normalized), expected);
+    assert.equal(
+      resolveNormalizedMangleSetting(normalized),
+      expected === null ? null : expected.mangle,
+    );
+    assert.equal(
+      resolveNormalizedOutputMinifySetting(normalized),
+      expected === null ? null : summarizeOutputMinify(expected),
+    );
   });
 }
 
-for (const [name, buildMinify, outputMinify, expected] of [
+for (const [name, buildMinify, rolldownStages, expected] of [
   [
-    "oxc with the Rolldown minifier running",
+    "oxc with every Rolldown stage running",
     "oxc",
-    OutputMinifySetting.Enabled,
-    { minifyEnabled: true, minifierName: "oxc", defaultMinifier: true },
+    ALL_STAGES,
+    {
+      minifyEnabled: true,
+      minifierName: "oxc",
+      defaultMinifier: true,
+      stages: ALL_STAGES,
+    },
   ],
   [
-    "build.minify false with the Rolldown minifier enabled by output options",
-    "false-config",
-    OutputMinifySetting.Enabled,
-    { minifyEnabled: true, minifierName: "oxc", defaultMinifier: true },
-  ],
-  [
-    "build.minify false with no minifier",
+    "Rolldown dead-code elimination only is not minification",
     false,
-    OutputMinifySetting.Disabled,
-    { minifyEnabled: false, minifierName: "false", defaultMinifier: false },
+    DCE_ONLY_STAGES,
+    {
+      minifyEnabled: false,
+      minifierName: "oxc",
+      defaultMinifier: true,
+      stages: DCE_ONLY_STAGES,
+    },
   ],
   [
-    "oxc with the Rolldown minifier disabled by output options",
+    "oxc with a hook that leaves dead-code elimination only",
     "oxc",
-    OutputMinifySetting.Disabled,
-    { minifyEnabled: false, minifierName: "false", defaultMinifier: false },
+    DCE_ONLY_STAGES,
+    {
+      minifyEnabled: false,
+      minifierName: "oxc",
+      defaultMinifier: true,
+      stages: DCE_ONLY_STAGES,
+    },
   ],
   [
-    "terser, which runs in a Vite plugin",
+    "no stage runs",
+    "oxc",
+    NO_STAGES,
+    {
+      minifyEnabled: false,
+      minifierName: "false",
+      defaultMinifier: false,
+      stages: NO_STAGES,
+    },
+  ],
+  [
+    "build.minify false with no stage",
+    false,
+    NO_STAGES,
+    {
+      minifyEnabled: false,
+      minifierName: "false",
+      defaultMinifier: false,
+      stages: NO_STAGES,
+    },
+  ],
+  [
+    "mangling without dead-code elimination",
+    "oxc",
+    { dce: OFF, compress: OFF, mangle: ON },
+    {
+      minifyEnabled: true,
+      minifierName: "oxc",
+      defaultMinifier: true,
+      stages: { dce: OFF, compress: OFF, mangle: ON },
+    },
+  ],
+  [
+    "compression without mangling",
+    "oxc",
+    { dce: ON, compress: ON, mangle: OFF },
+    {
+      minifyEnabled: true,
+      minifierName: "oxc",
+      defaultMinifier: true,
+      stages: { dce: ON, compress: ON, mangle: OFF },
+    },
+  ],
+  [
+    "terser, which runs every stage in a Vite plugin",
     "terser",
-    OutputMinifySetting.Disabled,
-    { minifyEnabled: true, minifierName: "terser", defaultMinifier: false },
+    NO_STAGES,
+    {
+      minifyEnabled: true,
+      minifierName: "terser",
+      defaultMinifier: false,
+      stages: ALL_STAGES,
+    },
   ],
   [
     "terser next to the Rolldown minifier",
     "terser",
-    OutputMinifySetting.Enabled,
-    { minifyEnabled: true, minifierName: "terser", defaultMinifier: false },
+    ALL_STAGES,
+    {
+      minifyEnabled: true,
+      minifierName: "terser",
+      defaultMinifier: false,
+      stages: ALL_STAGES,
+    },
   ],
 ]) {
   test(`vite minifier gate (${name})`, () => {
-    // The sentinel stands for any non-`oxc`, non-named build.minify value that
-    // the Rolldown output option overrides.
-    const input = buildMinify === "false-config" ? false : buildMinify;
-    assert.deepEqual(resolveMinifierGate(input, outputMinify), expected);
+    assert.deepEqual(resolveMinifierGate(buildMinify, rolldownStages), expected);
   });
 }
 
-// Every minifier gate (`minifyEnabled`, `defaultMinifier`, `minifier`,
-// `mangle`) derives from the same effective output option, including values
-// that a plugin's `outputOptions` hook replaces after `configResolved`.
+// Every minifier gate (`minifyEnabled`, `defaultMinifier`, `minifier`) and
+// every stage fact (`deadCodeElimination`, `compress`, `mangle`) derives from
+// the same effective output option, including values that a plugin's
+// `outputOptions` hook replaces after `configResolved`.
 const minifierGateBuilds = [
   {
-    name: "build.minify false, output.minify { mangle: true }",
-    minify: "false",
-    output: "{ minify: { mangle: true } }",
-    expected: { enabled: true, mangle: MangleSetting.Enabled },
+    name: "build.minify oxc, absent output option",
+    minify: "'oxc'",
+    output: "{}",
+    expected: { gate: "oxc", stages: ALL_STAGES, output: "enabled" },
   },
   {
-    name: "build.minify false, output.minify true",
+    name: "build.minify false, no output option keeps dead-code elimination",
     minify: "false",
-    output: "{ minify: true }",
-    expected: { enabled: true, mangle: MangleSetting.Enabled },
-  },
-  {
-    name: "build.minify false, output.minify { compress: true }",
-    minify: "false",
-    output: "{ minify: { compress: true } }",
-    expected: { enabled: true, mangle: MangleSetting.Enabled },
-  },
-  {
-    name: "build.minify false, array of one with mangle",
-    minify: "false",
-    output: "[{ minify: { mangle: true } }]",
-    expected: { enabled: true, mangle: MangleSetting.Enabled },
+    output: "{}",
+    expected: { gate: "dce-only", stages: DCE_ONLY_STAGES, output: "dce-only" },
   },
   {
     name: "build.minify false, output.minify dce-only",
     minify: "false",
     output: "{ minify: 'dce-only' }",
-    expected: { enabled: false, mangle: MangleSetting.Disabled },
-  },
-  {
-    name: "build.minify false, no output option",
-    minify: "false",
-    output: "{}",
-    expected: { enabled: false, mangle: MangleSetting.Disabled },
-  },
-  {
-    name: "build.minify oxc, output.minify false",
-    minify: "'oxc'",
-    output: "{ minify: false }",
-    expected: { enabled: false, mangle: MangleSetting.Disabled },
+    expected: { gate: "dce-only", stages: DCE_ONLY_STAGES, output: "dce-only" },
   },
   {
     name: "build.minify oxc, output.minify dce-only",
     minify: "'oxc'",
     output: "{ minify: 'dce-only' }",
-    expected: { enabled: false, mangle: MangleSetting.Disabled },
+    expected: { gate: "dce-only", stages: DCE_ONLY_STAGES, output: "dce-only" },
+  },
+  {
+    name: "build.minify oxc, output.minify false",
+    minify: "'oxc'",
+    output: "{ minify: false }",
+    expected: { gate: "none", stages: NO_STAGES, output: "disabled" },
+  },
+  {
+    name: "build.minify false, output.minify false",
+    minify: "false",
+    output: "{ minify: false }",
+    expected: { gate: "none", stages: NO_STAGES, output: "disabled" },
   },
   {
     name: "build.minify oxc, compress and mangle off",
     minify: "'oxc'",
     output: "{ minify: { compress: false, mangle: false } }",
-    expected: { enabled: false, mangle: MangleSetting.Disabled },
+    expected: { gate: "none", stages: NO_STAGES, output: "disabled" },
   },
   {
     name: "build.minify oxc, array of one disabling",
     minify: "'oxc'",
     output: "[{ minify: false }]",
-    expected: { enabled: false, mangle: MangleSetting.Disabled },
+    expected: { gate: "none", stages: NO_STAGES, output: "disabled" },
   },
   {
     name: "build.minify oxc, mangle off only",
     minify: "'oxc'",
     output: "{ minify: { mangle: false } }",
-    expected: { enabled: true, mangle: MangleSetting.Disabled },
+    expected: {
+      gate: "oxc",
+      stages: { dce: ON, compress: ON, mangle: OFF },
+      output: "enabled",
+    },
+  },
+  {
+    name: "build.minify oxc, compress off only",
+    minify: "'oxc'",
+    output: "{ minify: { compress: false } }",
+    expected: {
+      gate: "oxc",
+      stages: { dce: OFF, compress: OFF, mangle: ON },
+      output: "enabled",
+    },
+  },
+  {
+    name: "build.minify false, output.minify { mangle: true }",
+    minify: "false",
+    output: "{ minify: { mangle: true } }",
+    expected: { gate: "oxc", stages: ALL_STAGES, output: "enabled" },
+  },
+  {
+    name: "build.minify false, output.minify true",
+    minify: "false",
+    output: "{ minify: true }",
+    expected: { gate: "oxc", stages: ALL_STAGES, output: "enabled" },
+  },
+  {
+    name: "build.minify false, output.minify { compress: true }",
+    minify: "false",
+    output: "{ minify: { compress: true } }",
+    expected: { gate: "oxc", stages: ALL_STAGES, output: "enabled" },
+  },
+  {
+    name: "build.minify false, array of one with mangle",
+    minify: "false",
+    output: "[{ minify: { mangle: true } }]",
+    expected: { gate: "oxc", stages: ALL_STAGES, output: "enabled" },
   },
   {
     name: "hook enables the minifier over build.minify false",
     minify: "false",
     output: "{}",
     hook: "{ mangle: true }",
-    expected: { enabled: true, mangle: MangleSetting.Enabled },
+    expected: { gate: "oxc", stages: ALL_STAGES, output: "enabled" },
   },
   {
     name: "hook sets minify true over build.minify false",
     minify: "false",
     output: "{}",
     hook: "true",
-    expected: { enabled: true, mangle: MangleSetting.Enabled },
+    expected: { gate: "oxc", stages: ALL_STAGES, output: "enabled" },
   },
   {
+    // Rolldown fills an omitted stage with its default, so a stage is only
+    // off when the hook sets it to `false`.
     name: "hook enables compress only over build.minify false",
     minify: "false",
     output: "{}",
     hook: "{ compress: true }",
-    expected: { enabled: true, mangle: MangleSetting.Enabled },
+    expected: { gate: "oxc", stages: ALL_STAGES, output: "enabled" },
+  },
+  {
+    name: "hook turns mangle off over build.minify false",
+    minify: "false",
+    output: "{}",
+    hook: "{ mangle: false }",
+    expected: {
+      gate: "oxc",
+      stages: { dce: ON, compress: ON, mangle: OFF },
+      output: "enabled",
+    },
   },
   {
     name: "hook disables the minifier over build.minify oxc",
     minify: "'oxc'",
     output: "{}",
     hook: "false",
-    expected: { enabled: false, mangle: MangleSetting.Disabled },
+    expected: { gate: "none", stages: NO_STAGES, output: "disabled" },
   },
   {
     name: "hook sets dce-only over build.minify oxc",
     minify: "'oxc'",
     output: "{}",
     hook: "'dce-only'",
-    expected: { enabled: false, mangle: MangleSetting.Disabled },
+    expected: { gate: "dce-only", stages: DCE_ONLY_STAGES, output: "dce-only" },
+  },
+  {
+    name: "hook sets dce-only over an output option that enables mangling",
+    minify: "'oxc'",
+    output: "{ minify: { mangle: true } }",
+    hook: "'dce-only'",
+    expected: { gate: "dce-only", stages: DCE_ONLY_STAGES, output: "dce-only" },
   },
   {
     name: "hook turns both stages off over build.minify oxc",
     minify: "'oxc'",
     output: "{}",
     hook: "{ compress: false, mangle: false }",
-    expected: { enabled: false, mangle: MangleSetting.Disabled },
+    expected: { gate: "none", stages: NO_STAGES, output: "disabled" },
+  },
+  {
+    name: "hook turns compress off over build.minify oxc",
+    minify: "'oxc'",
+    output: "{}",
+    hook: "{ compress: false }",
+    expected: {
+      gate: "oxc",
+      stages: { dce: OFF, compress: OFF, mangle: ON },
+      output: "enabled",
+    },
   },
   {
     name: "hook keeps the configured minifier",
     minify: "'oxc'",
     output: "{}",
     hook: "options.minify",
-    expected: { enabled: true, mangle: MangleSetting.Enabled },
+    expected: { gate: "oxc", stages: ALL_STAGES, output: "enabled" },
   },
 ];
 
 for (const shape of minifierGateBuilds) {
-  test(`vite adapter derives the minifier gates from the effective output options (${shape.name})`, () => {
+  test(`vite adapter derives the minifier gates and stages from the effective output options (${shape.name})`, () => {
     const projectRoot = path.join(root, "fixtures/vite-app");
     const hookPlugin =
       shape.hook === undefined
@@ -754,25 +731,73 @@ for (const shape of minifierGateBuilds) {
     );
     fs.rmSync(dir, { recursive: true, force: true });
     assert.equal(status, 0, JSON.stringify(events));
-    assert.equal(collection.minifyEnabled, shape.expected.enabled);
-    assert.equal(collection.defaultMinifier, shape.expected.enabled);
+    const { gate, stages, output } = shape.expected;
+    // `minifyEnabled` means compression or mangling runs; Rolldown's
+    // dead-code-elimination-only mode is not minification, yet the Oxc
+    // minifier still runs and stays the default one.
+    assert.equal(collection.minifyEnabled, output === "enabled");
+    assert.equal(collection.defaultMinifier, gate !== "none");
     assert.equal(
       collection.minifier,
-      shape.expected.enabled ? "Oxc minifier (Rolldown)" : "false",
+      gate === "none" ? "false" : "Oxc minifier (Rolldown)",
     );
-    assert.equal(collection.mangle, shape.expected.mangle);
+    assert.equal(collection.deadCodeElimination, stages.dce);
+    assert.equal(collection.compress, stages.compress);
+    assert.equal(collection.mangle, stages.mangle);
     assert.equal(
       collection.configSummary["build.rolldownOptions.output.minify"],
-      shape.expected.enabled
-        ? OutputMinifySetting.Enabled
-        : OutputMinifySetting.Disabled,
+      output,
+    );
+    assert.equal(
+      collection.configSummary["build.rolldownOptions.output.minify.dce"],
+      stages.dce,
+    );
+    assert.equal(
+      collection.configSummary["build.rolldownOptions.output.minify.compress"],
+      stages.compress,
     );
     assert.equal(
       collection.configSummary["build.rolldownOptions.output.minify.mangle"],
-      shape.expected.mangle,
+      stages.mangle,
     );
   });
 }
+
+// A named minifier runs outside Rolldown, so the collection reports it as
+// running every stage while Rolldown's own minifier stays off.
+for (const [name, buildMinify] of [
+  ["terser", "terser"],
+  ["esbuild", "esbuild"],
+]) {
+  test(`vite adapter reports every stage as running for build.minify ${name}`, () => {
+    const projectRoot = path.join(root, "fixtures/vite-app");
+    const { dir, file } = writeConfig(
+      "vite.config.mjs",
+      `export default { build: { minify: '${buildMinify}' } };\n`,
+    );
+    const { status, events, collection } = runAdapter(
+      "vite",
+      "vite-app",
+      path.relative(projectRoot, file),
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+    assert.equal(status, 0, JSON.stringify(events));
+    assert.equal(collection.minifyEnabled, true);
+    assert.equal(collection.defaultMinifier, false);
+    assert.equal(collection.minifier, buildMinify);
+    assert.equal(collection.deadCodeElimination, ON);
+    assert.equal(collection.compress, ON);
+    assert.equal(collection.mangle, ON);
+    assert.equal(
+      collection.configSummary["build.rolldownOptions.output.minify"],
+      "disabled",
+    );
+  });
+}
+
+test("vite adapter version reflects the stage fields of the collection", () => {
+  assert.equal(ADAPTER_VERSION, "4");
+});
 
 test("unframed JSON printed by project configuration is not a protocol event", () => {
   const projectRoot = path.join(root, "fixtures/vite-app");

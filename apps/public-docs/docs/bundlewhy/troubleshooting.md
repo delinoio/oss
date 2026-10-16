@@ -28,7 +28,7 @@ Every error prints a stable `BW_*` code, a message and a recovery instruction. A
 | `BW_NODE_NOT_FOUND`             | The Node.js executable was not found.                                                             | Install Node.js 22.18 or newer, or set `BUNDLEWHY_NODE` to the path of the Node.js executable.  |
 | `BW_NODE_VERSION_UNSUPPORTED`   | The Node.js runtime is older than 22.18.                                                          | Install Node.js 22.18 or newer, or set `BUNDLEWHY_NODE` to a supported Node.js executable.      |
 | `BW_MINIFIER_NON_DEFAULT`       | The build uses a non-default JavaScript minifier. Minifier categories are unavailable.            | Use the default minifier to analyze minifier optimizations. Module-graph results remain usable. |
-| `BW_MINIFICATION_DISABLED`      | JavaScript minification is disabled in the selected configuration.                                | Enable minification for production builds to analyze minifier optimizations.                    |
+| `BW_MINIFICATION_DISABLED`      | JavaScript minification is disabled in the selected configuration. On Vite, dead-code elimination can still run. | Enable minification for production builds to analyze minifier optimizations.                    |
 
 ## Build and collection
 

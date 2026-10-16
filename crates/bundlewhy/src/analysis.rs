@@ -204,13 +204,45 @@ fn coverage(
                     CoverageState::Unavailable,
                     "No module data was collected.".to_owned(),
                 ),
-                OptimizationCategory::DeadCodeElimination | OptimizationCategory::NameMangling
-                    if !collection.minify_enabled =>
+                // Rolldown's dead-code-elimination-only mode (Vite's
+                // `build.minify: false`) is not minification, yet dead-code
+                // elimination still runs, so only name mangling is skipped.
+                OptimizationCategory::NameMangling
+                    if !collection.minify_enabled && collection.dead_code_elimination_runs() =>
+                {
+                    (
+                        CoverageState::NotApplicable,
+                        "Minification is disabled, so the minifier does not mangle names; only \
+                         dead-code elimination runs."
+                            .to_owned(),
+                    )
+                }
+                OptimizationCategory::NameMangling if !collection.minify_enabled => (
+                    CoverageState::NotApplicable,
+                    "Minification is disabled, so the minifier's dead-code elimination and name \
+                     mangling do not run."
+                        .to_owned(),
+                ),
+                OptimizationCategory::DeadCodeElimination
+                    if !collection.minify_enabled && !collection.dead_code_elimination_runs() =>
                 {
                     (
                         CoverageState::NotApplicable,
                         "Minification is disabled, so the minifier's dead-code elimination and \
                          name mangling do not run."
+                            .to_owned(),
+                    )
+                }
+                // Minification is on but the effective output configuration
+                // turns the compressor off, which also removes its
+                // dead-code-elimination pass.
+                OptimizationCategory::DeadCodeElimination
+                    if !collection.dead_code_elimination_runs() =>
+                {
+                    (
+                        CoverageState::NotApplicable,
+                        "Dead-code elimination is disabled by the effective output minify \
+                         configuration, so the minifier does not remove dead code."
                             .to_owned(),
                     )
                 }
@@ -803,7 +835,7 @@ mod tests {
                 if edit {
                     value["defaultMinifier"] = false.into();
                 } else {
-                    value["minifyEnabled"] = false.into();
+                    disable_minification(value);
                 }
             });
             assert_eq!(dead_code_coverage(&fixture.output.analysis).state, expected);
@@ -1031,7 +1063,7 @@ mod tests {
                 if edit {
                     value["defaultMinifier"] = false.into();
                 } else {
-                    value["minifyEnabled"] = false.into();
+                    disable_minification(value);
                 }
             });
             assert_eq!(dead_code_coverage(&fixture.output.analysis).state, expected);
@@ -3998,7 +4030,7 @@ mod tests {
         let disabled = run_fixture_patched(
             BundlerChoice::Rspack,
             true,
-            |value| value["minifyEnabled"] = serde_json::json!(false),
+            disable_minification,
             |build, _| {
                 patch_env_branch(
                     build,
@@ -4190,7 +4222,7 @@ mod tests {
     #[test]
     fn disabled_minification_suppresses_env_condition_findings() {
         let fixture = run_fixture(BundlerChoice::Rspack, |value| {
-            value["minifyEnabled"] = serde_json::json!(false);
+            disable_minification(value);
         });
         let diagnostics = &fixture.output.analysis.diagnostics;
         assert!(
@@ -4203,6 +4235,15 @@ mod tests {
                 .iter()
                 .any(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
         );
+    }
+
+    /// Turns every minifier stage off the way the adapter reports a build with
+    /// no minifier at all: no minification and no dead-code elimination.
+    fn disable_minification(value: &mut serde_json::Value) {
+        value["minifyEnabled"] = serde_json::json!(false);
+        value["deadCodeElimination"] = serde_json::json!("disabled");
+        value["compress"] = serde_json::json!("disabled");
+        value["mangle"] = serde_json::json!("disabled");
     }
 
     fn coverage_state(fixture: &Fixture, category: OptimizationCategory) -> &CategoryCoverage {
@@ -4269,6 +4310,15 @@ mod tests {
     ) {
         value["minifyEnabled"] = serde_json::json!(minify_enabled);
         value["defaultMinifier"] = serde_json::json!(default_minifier);
+        // Without an override every stage follows the minifier gate.
+        let stage = if minify_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        };
+        value["deadCodeElimination"] = serde_json::json!(stage);
+        value["compress"] = serde_json::json!(stage);
+        value["mangle"] = serde_json::json!(stage);
         value["configSummary"]["build.minify"] = serde_json::json!(build_minify);
         value["configSummary"]["build.rolldownOptions.output.minify"] =
             serde_json::json!(output_minify);
@@ -4400,10 +4450,301 @@ mod tests {
         );
     }
 
+    /// One effective Vite configuration as the adapter reports it: the
+    /// `build.minify` summary, Rolldown's minifier summary and the three
+    /// independent stage facts next to the minifier gates.
+    struct ViteStages {
+        build_minify: &'static str,
+        output_minify: &'static str,
+        minify_enabled: bool,
+        default_minifier: bool,
+        dce: &'static str,
+        compress: &'static str,
+        mangle: &'static str,
+    }
+
+    fn vite_stage_fixture(stages: &ViteStages) -> Fixture {
+        run_fixture(BundlerChoice::Vite, |value| {
+            vite_minifier_gates(
+                value,
+                stages.build_minify,
+                stages.output_minify,
+                stages.minify_enabled,
+                stages.default_minifier,
+            );
+            value["deadCodeElimination"] = serde_json::json!(stages.dce);
+            value["compress"] = serde_json::json!(stages.compress);
+            value["mangle"] = serde_json::json!(stages.mangle);
+            if !stages.default_minifier {
+                value["minifier"] = serde_json::json!(stages.build_minify);
+                value["minifierVersion"] = serde_json::json!("unknown");
+            }
+        })
+    }
+
+    fn has_env_finding(fixture: &Fixture) -> bool {
+        fixture
+            .output
+            .analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+    }
+
+    fn has_problem(fixture: &Fixture, code: &str) -> bool {
+        fixture
+            .output
+            .analysis
+            .problems
+            .iter()
+            .any(|entry| entry.code == code)
+    }
+
+    #[test]
+    fn vite_dce_only_keeps_dead_code_coverage_and_skips_only_mangling() {
+        // `build.minify: false` makes Vite pass Rolldown `'dce-only'`: the
+        // dead-code elimination pass still folds guarded branches, while
+        // compression and name mangling do not run.
+        let fixture = vite_stage_fixture(&ViteStages {
+            build_minify: "false",
+            output_minify: "dce-only",
+            minify_enabled: false,
+            default_minifier: true,
+            dce: "enabled",
+            compress: "disabled",
+            mangle: "disabled",
+        });
+        let dce = coverage_state(&fixture, OptimizationCategory::DeadCodeElimination);
+        assert_eq!(dce.state, CoverageState::Covered, "{}", dce.note);
+        let mangling = coverage_state(&fixture, OptimizationCategory::NameMangling);
+        assert_eq!(mangling.state, CoverageState::NotApplicable);
+        assert!(mangling.note.contains("only dead-code elimination runs"));
+        // The unresolved-env rule needs dead-code elimination, not
+        // minification, so it still runs.
+        assert!(has_env_finding(&fixture));
+        // Minification itself is disabled, and the finding says what still
+        // runs.
+        assert!(has_problem(&fixture, "BW_MINIFICATION_DISABLED"));
+        assert!(!has_problem(&fixture, "BW_MINIFIER_NON_DEFAULT"));
+        let diagnostic = fixture
+            .output
+            .analysis
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
+            .expect("minification-disabled finding");
+        assert!(diagnostic.summary.starts_with("build.minify is false"));
+        assert!(
+            diagnostic
+                .summary
+                .contains("Dead-code elimination still runs")
+        );
+        assert!(!diagnostic.summary.contains("so dead-code elimination"));
+    }
+
+    #[test]
+    fn vite_output_dce_only_over_build_minify_oxc_names_the_output_option() {
+        let fixture = vite_stage_fixture(&ViteStages {
+            build_minify: "oxc",
+            output_minify: "dce-only",
+            minify_enabled: false,
+            default_minifier: true,
+            dce: "enabled",
+            compress: "disabled",
+            mangle: "disabled",
+        });
+        assert_eq!(
+            coverage_state(&fixture, OptimizationCategory::DeadCodeElimination).state,
+            CoverageState::Covered
+        );
+        let diagnostic = fixture
+            .output
+            .analysis
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
+            .expect("minification-disabled finding");
+        assert!(
+            diagnostic
+                .summary
+                .starts_with("build.rolldownOptions.output.minify is dce-only")
+        );
+    }
+
+    #[test]
+    fn vite_stage_combinations_gate_each_category_independently() {
+        struct Case {
+            name: &'static str,
+            stages: ViteStages,
+            dead_code: CoverageState,
+            mangling: CoverageState,
+            env_finding: bool,
+            minification_disabled: bool,
+        }
+        let cases = [
+            Case {
+                name: "build.minify oxc or output.minify true",
+                stages: ViteStages {
+                    build_minify: "oxc",
+                    output_minify: "enabled",
+                    minify_enabled: true,
+                    default_minifier: true,
+                    dce: "enabled",
+                    compress: "enabled",
+                    mangle: "enabled",
+                },
+                dead_code: CoverageState::Covered,
+                mangling: CoverageState::Covered,
+                env_finding: true,
+                minification_disabled: false,
+            },
+            Case {
+                name: "output.minify false",
+                stages: ViteStages {
+                    build_minify: "oxc",
+                    output_minify: "disabled",
+                    minify_enabled: false,
+                    default_minifier: false,
+                    dce: "disabled",
+                    compress: "disabled",
+                    mangle: "disabled",
+                },
+                dead_code: CoverageState::NotApplicable,
+                mangling: CoverageState::NotApplicable,
+                env_finding: false,
+                minification_disabled: true,
+            },
+            Case {
+                name: "output.minify dce-only",
+                stages: ViteStages {
+                    build_minify: "oxc",
+                    output_minify: "dce-only",
+                    minify_enabled: false,
+                    default_minifier: true,
+                    dce: "enabled",
+                    compress: "disabled",
+                    mangle: "disabled",
+                },
+                dead_code: CoverageState::Covered,
+                mangling: CoverageState::NotApplicable,
+                env_finding: true,
+                minification_disabled: true,
+            },
+            Case {
+                name: "output.minify { mangle: false }",
+                stages: ViteStages {
+                    build_minify: "oxc",
+                    output_minify: "enabled",
+                    minify_enabled: true,
+                    default_minifier: true,
+                    dce: "enabled",
+                    compress: "enabled",
+                    mangle: "disabled",
+                },
+                dead_code: CoverageState::Covered,
+                mangling: CoverageState::NotApplicable,
+                env_finding: true,
+                minification_disabled: false,
+            },
+            Case {
+                name: "output.minify { compress: false }",
+                stages: ViteStages {
+                    build_minify: "oxc",
+                    output_minify: "enabled",
+                    minify_enabled: true,
+                    default_minifier: true,
+                    dce: "disabled",
+                    compress: "disabled",
+                    mangle: "enabled",
+                },
+                dead_code: CoverageState::NotApplicable,
+                mangling: CoverageState::Covered,
+                env_finding: false,
+                minification_disabled: false,
+            },
+            Case {
+                name: "output.minify { compress: false, mangle: false }",
+                stages: ViteStages {
+                    build_minify: "oxc",
+                    output_minify: "disabled",
+                    minify_enabled: false,
+                    default_minifier: false,
+                    dce: "disabled",
+                    compress: "disabled",
+                    mangle: "disabled",
+                },
+                dead_code: CoverageState::NotApplicable,
+                mangling: CoverageState::NotApplicable,
+                env_finding: false,
+                minification_disabled: true,
+            },
+            Case {
+                name: "build.minify terser",
+                stages: ViteStages {
+                    build_minify: "terser",
+                    output_minify: "disabled",
+                    minify_enabled: true,
+                    default_minifier: false,
+                    dce: "enabled",
+                    compress: "enabled",
+                    mangle: "enabled",
+                },
+                dead_code: CoverageState::Unavailable,
+                mangling: CoverageState::Unavailable,
+                env_finding: true,
+                minification_disabled: false,
+            },
+        ];
+        for case in cases {
+            let fixture = vite_stage_fixture(&case.stages);
+            assert_eq!(
+                coverage_state(&fixture, OptimizationCategory::DeadCodeElimination).state,
+                case.dead_code,
+                "{}: dead-code elimination",
+                case.name
+            );
+            assert_eq!(
+                coverage_state(&fixture, OptimizationCategory::NameMangling).state,
+                case.mangling,
+                "{}: name mangling",
+                case.name
+            );
+            assert_eq!(
+                has_env_finding(&fixture),
+                case.env_finding,
+                "{}: env finding",
+                case.name
+            );
+            assert_eq!(
+                has_problem(&fixture, "BW_MINIFICATION_DISABLED"),
+                case.minification_disabled,
+                "{}: minification-disabled problem",
+                case.name
+            );
+        }
+    }
+
+    #[test]
+    fn disabled_compress_marks_dead_code_coverage_not_applicable_with_its_own_note() {
+        let fixture = vite_stage_fixture(&ViteStages {
+            build_minify: "oxc",
+            output_minify: "enabled",
+            minify_enabled: true,
+            default_minifier: true,
+            dce: "disabled",
+            compress: "disabled",
+            mangle: "enabled",
+        });
+        let dce = coverage_state(&fixture, OptimizationCategory::DeadCodeElimination);
+        assert_eq!(dce.state, CoverageState::NotApplicable);
+        assert!(dce.note.contains("Dead-code elimination is disabled"));
+        assert!(!dce.note.contains("Minification is disabled"));
+    }
+
     #[test]
     fn disabled_minification_does_not_claim_a_non_default_minifier() {
         let fixture = run_fixture(BundlerChoice::Vite, |value| {
-            value["minifyEnabled"] = serde_json::json!(false);
+            disable_minification(value);
             value["defaultMinifier"] = serde_json::json!(false);
         });
         let problems = &fixture.output.analysis.problems;
@@ -4644,7 +4985,7 @@ mod tests {
         ] {
             let fixture = rspack_svg_eval_fixture(|value, _| {
                 if disabled {
-                    value["minifyEnabled"] = false.into();
+                    disable_minification(value);
                 } else {
                     value["defaultMinifier"] = false.into();
                 }
@@ -4690,7 +5031,7 @@ mod tests {
     #[test]
     fn disabled_minification_is_a_confirmed_configuration_finding() {
         let fixture = run_fixture(BundlerChoice::Vite, |value| {
-            value["minifyEnabled"] = serde_json::Value::Bool(false);
+            disable_minification(value);
             value["configSummary"]["build.minify"] = serde_json::Value::String("false".to_owned());
         });
         let analysis = &fixture.output.analysis;

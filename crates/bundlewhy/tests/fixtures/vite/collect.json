@@ -7,9 +7,11 @@
  "minifierVersion": "1.2.13",
  "defaultMinifier": true,
  "minifyEnabled": true,
+ "deadCodeElimination": "enabled",
+ "compress": "enabled",
  "mangle": "enabled",
  "adapterId": "bundlewhy-collector-vite",
- "adapterVersion": "3",
+ "adapterVersion": "4",
  "engineDetails": {
   "rolldownVersion": "1.2.13"
  },
@@ -25,6 +27,8 @@
  "configSummary": {
   "build.minify": "oxc",
   "build.rolldownOptions.output.minify": "enabled",
+  "build.rolldownOptions.output.minify.dce": "enabled",
+  "build.rolldownOptions.output.minify.compress": "enabled",
   "build.rolldownOptions.output.minify.mangle": "enabled",
   "build.target": "[array of 5]",
   "build.rolldownOptions.treeshake": "undefined",

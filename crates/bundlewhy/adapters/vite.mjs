@@ -24,7 +24,7 @@ import {
 } from "./common.mjs";
 
 export const ADAPTER_ID = "bundlewhy-collector-vite";
-export const ADAPTER_VERSION = "3";
+export const ADAPTER_VERSION = "4";
 
 /** Plugins that the adapter adds; they are not part of the project's config. */
 const BUNDLEWHY_PLUGIN_NAMES = new Set([
@@ -148,140 +148,111 @@ export function configuredModuleSideEffects(option, id) {
 }
 
 /**
- * Name-mangling setting of the analyzed output. The values are the wire
- * values of the Rust `Mangle` enum in the collection.
+ * Whether one minifier stage runs for the analyzed output. The values are the
+ * wire values of the Rust `Stage` enum in the collection (`mangle`,
+ * `deadCodeElimination` and `compress`) and of the `...output.minify.*`
+ * configuration-summary entries.
  */
-export const MangleSetting = Object.freeze({
+export const StageSetting = Object.freeze({
   Enabled: "enabled",
   Disabled: "disabled",
 });
 
-/**
- * Resolves whether Rolldown mangles names, from the configured
- * `rolldownOptions.output.minify` option and Vite's `build.minify`. Plugins'
- * `outputOptions` hooks can still change the option later; the collector
- * replaces this value with `resolveNormalizedMangleSetting` in `generateBundle`.
- *
- * Vite builds the output `minify` option from `build.minify` (`'oxc'` or
- * `true` gives `true`, `false` gives `'dce-only'`) and lets an explicit
- * `output.minify` replace it, merging two objects. Rolldown does not mangle
- * for `false` and `'dce-only'`. For an options object it mangles unless
- * `mangle` is `false`. A single-entry output array is read as its entry; with
- * several entries the setting is disabled only when every entry disables it.
- * Anything unrecognized stays `enabled`, so a direct eval is only exempted by
- * an explicit setting and never by a guess.
- */
-export function resolveMangleSetting(buildMinify, output) {
-  const entries = Array.isArray(output) ? output : [output];
-  if (entries.length === 0) return resolveMangleOption(buildMinify, undefined);
-  const settings = entries.map((entry) =>
-    resolveMangleOption(buildMinify, entry?.minify),
-  );
-  return settings.every((setting) => setting === MangleSetting.Disabled)
-    ? MangleSetting.Disabled
-    : MangleSetting.Enabled;
-}
+/** Name-mangling stage setting; the same values as `StageSetting`. */
+export const MangleSetting = StageSetting;
 
 /**
- * Reads the mangle setting from the normalized `minify` option that a
- * `generateBundle` hook receives. Plugins' `outputOptions` hooks run after
- * `configResolved`, so this is the only place that sees what Rolldown applies.
- * The normalized option is `false`, `'dce-only'` or an options object whose
- * `mangle` key is only present when mangling runs. Returns `null` for anything
- * else, so the caller keeps the setting resolved from the configuration.
- */
-export function resolveNormalizedMangleSetting(normalizedMinify) {
-  if (normalizedMinify === false || normalizedMinify === "dce-only") {
-    return MangleSetting.Disabled;
-  }
-  if (normalizedMinify !== null && typeof normalizedMinify === "object") {
-    const mangle = normalizedMinify.mangle;
-    return mangle === undefined || mangle === null || mangle === false
-      ? MangleSetting.Disabled
-      : MangleSetting.Enabled;
-  }
-  return null;
-}
-
-function resolveMangleOption(buildMinify, outputMinify) {
-  // Vite's own value for an absent `output.minify`.
-  if (outputMinify === undefined) {
-    return buildMinify === false
-      ? MangleSetting.Disabled
-      : MangleSetting.Enabled;
-  }
-  if (outputMinify === false || outputMinify === "dce-only") {
-    return MangleSetting.Disabled;
-  }
-  if (
-    outputMinify !== null &&
-    typeof outputMinify === "object" &&
-    !Array.isArray(outputMinify) &&
-    outputMinify.mangle === false
-  ) {
-    return MangleSetting.Disabled;
-  }
-  return MangleSetting.Enabled;
-}
-
-/**
- * Whether Rolldown's own minifier (Oxc) runs for the analyzed output. The
- * values are the wire values of the `build.rolldownOptions.output.minify`
- * entry in the configuration summary.
+ * Value of the `build.rolldownOptions.output.minify` configuration-summary
+ * entry: whether Rolldown's own minifier (Oxc) runs for the analyzed output.
+ * `DceOnly` marks Rolldown's `'dce-only'` mode, where dead-code elimination
+ * runs while compression, name mangling and whitespace removal do not.
  */
 export const OutputMinifySetting = Object.freeze({
   Enabled: "enabled",
+  DceOnly: "dce-only",
   Disabled: "disabled",
 });
 
-/**
- * Resolves whether Rolldown's minifier runs, from the configured
- * `rolldownOptions.output.minify` option and Vite's `build.minify`. Plugins'
- * `outputOptions` hooks can still change the option later; the collector
- * replaces this value with `resolveNormalizedOutputMinifySetting` in
- * `generateBundle`, the same way it replaces the mangle setting.
- *
- * Vite derives the output `minify` option from `build.minify` (`'oxc'` or
- * `true` runs the Oxc minifier, `false` gives `'dce-only'` and any other
- * minifier name such as `'terser'` gives `false`, because that minifier runs
- * in a Vite plugin instead) and lets an explicit `output.minify` replace it.
- * Rolldown does not minify for `false` and `'dce-only'`, nor for an options
- * object that turns both `compress` and `mangle` off. A single-entry output
- * array is read as its entry; with several entries the minifier counts as
- * disabled only when every entry disables it. Anything unrecognized stays
- * `enabled`, so a minifier finding is only exempted by an explicit setting.
- */
-export function resolveOutputMinifySetting(buildMinify, output) {
-  const entries = Array.isArray(output) ? output : [output];
-  if (entries.length === 0) {
-    return resolveOutputMinifyOption(buildMinify, undefined);
-  }
-  const settings = entries.map((entry) =>
-    resolveOutputMinifyOption(buildMinify, entry?.minify),
-  );
-  return settings.every((setting) => setting === OutputMinifySetting.Disabled)
-    ? OutputMinifySetting.Disabled
-    : OutputMinifySetting.Enabled;
+const ENABLED_STAGES = Object.freeze({
+  dce: StageSetting.Enabled,
+  compress: StageSetting.Enabled,
+  mangle: StageSetting.Enabled,
+});
+const DISABLED_STAGES = Object.freeze({
+  dce: StageSetting.Disabled,
+  compress: StageSetting.Disabled,
+  mangle: StageSetting.Disabled,
+});
+const DCE_ONLY_STAGES = Object.freeze({
+  dce: StageSetting.Enabled,
+  compress: StageSetting.Disabled,
+  mangle: StageSetting.Disabled,
+});
+
+function stageSetting(runs) {
+  return runs ? StageSetting.Enabled : StageSetting.Disabled;
 }
 
 /**
- * Reads whether Rolldown's minifier runs from the normalized `minify` option
- * that a `generateBundle` hook receives (see `resolveNormalizedMangleSetting`).
- * `true` is normalized to an options object, and an object only carries the
- * `compress` and `mangle` stages that run, so an object without either stage
- * runs no minifier. Returns `null` for anything unrecognized, so the caller
- * keeps the setting resolved from the configuration.
+ * Resolves which Rolldown minifier stages run, from the configured
+ * `rolldownOptions.output.minify` option and Vite's `build.minify`. Plugins'
+ * `outputOptions` hooks can still change the option later; the collector
+ * replaces the result with `resolveNormalizedMinifyStages` in `generateBundle`.
+ *
+ * The result holds three independent facts:
+ *
+ * - `dce`: dead-code elimination runs. It is the Oxc compressor's dead-code
+ *   pass, so it runs for `true`, for `'dce-only'` and for an options object
+ *   unless `compress` is `false`.
+ * - `compress`: code compression runs (`true`, or an object unless `compress`
+ *   is `false`). `'dce-only'` does not compress.
+ * - `mangle`: name mangling runs (`true`, or an object unless `mangle` is
+ *   `false`). `false` and `'dce-only'` never mangle.
+ *
+ * Vite builds the output `minify` option from `build.minify` (`'oxc'` or
+ * `true` gives `true`, `false` gives `'dce-only'`, and any other minifier
+ * name such as `'terser'` gives `false` because that minifier runs in a Vite
+ * plugin instead) and lets an explicit `output.minify` replace it. A
+ * single-entry output array is read as its entry; with several entries a stage
+ * counts as disabled only when every entry disables it. Anything unrecognized
+ * keeps every stage enabled, so a finding is only exempted by an explicit
+ * setting and never by a guess.
  */
-export function resolveNormalizedOutputMinifySetting(normalizedMinify) {
-  if (normalizedMinify === false || normalizedMinify === "dce-only") {
-    return OutputMinifySetting.Disabled;
-  }
-  if (normalizedMinify === true) return OutputMinifySetting.Enabled;
+export function resolveMinifyStages(buildMinify, output) {
+  const entries = Array.isArray(output) ? output : [output];
+  if (entries.length === 0) return resolveMinifyStagesOption(buildMinify);
+  const settings = entries.map((entry) =>
+    resolveMinifyStagesOption(buildMinify, entry?.minify),
+  );
+  const anyEnabled = (key) =>
+    settings.some((setting) => setting[key] === StageSetting.Enabled);
+  return {
+    dce: stageSetting(anyEnabled("dce")),
+    compress: stageSetting(anyEnabled("compress")),
+    mangle: stageSetting(anyEnabled("mangle")),
+  };
+}
+
+/**
+ * Reads the stages from the normalized `minify` option that a `generateBundle`
+ * hook receives. Plugins' `outputOptions` hooks run after `configResolved`, so
+ * this is the only place that sees what Rolldown applies. The normalized
+ * option is `false`, `'dce-only'`, `true` or an options object that only
+ * carries the `compress` and `mangle` stages that run. Returns `null` for
+ * anything else, so the caller keeps the stages resolved from the
+ * configuration.
+ */
+export function resolveNormalizedMinifyStages(normalizedMinify) {
+  if (normalizedMinify === false) return DISABLED_STAGES;
+  if (normalizedMinify === "dce-only") return DCE_ONLY_STAGES;
+  if (normalizedMinify === true) return ENABLED_STAGES;
   if (normalizedMinify !== null && typeof normalizedMinify === "object") {
-    return isMinifyStageEnabled(normalizedMinify.compress) ||
-      isMinifyStageEnabled(normalizedMinify.mangle)
-      ? OutputMinifySetting.Enabled
-      : OutputMinifySetting.Disabled;
+    const compress = isMinifyStageEnabled(normalizedMinify.compress);
+    return {
+      dce: stageSetting(compress),
+      compress: stageSetting(compress),
+      mangle: stageSetting(isMinifyStageEnabled(normalizedMinify.mangle)),
+    };
   }
   return null;
 }
@@ -290,27 +261,69 @@ function isMinifyStageEnabled(stage) {
   return stage !== undefined && stage !== null && stage !== false;
 }
 
-function resolveOutputMinifyOption(buildMinify, outputMinify) {
+function resolveMinifyStagesOption(buildMinify, outputMinify) {
   // Vite's own value for an absent `output.minify`: only the Oxc minifier
-  // (`'oxc'`, or `true`/absent which select it) runs inside Rolldown.
+  // (`'oxc'`, or `true`/absent which select it) runs inside Rolldown, and
+  // `build.minify: false` still leaves dead-code elimination on.
   if (outputMinify === undefined) {
-    return buildMinify === false || isExternalMinifierName(buildMinify)
-      ? OutputMinifySetting.Disabled
-      : OutputMinifySetting.Enabled;
+    if (buildMinify === false) return DCE_ONLY_STAGES;
+    return isExternalMinifierName(buildMinify)
+      ? DISABLED_STAGES
+      : ENABLED_STAGES;
   }
-  if (outputMinify === false || outputMinify === "dce-only") {
-    return OutputMinifySetting.Disabled;
-  }
+  if (outputMinify === false) return DISABLED_STAGES;
+  if (outputMinify === "dce-only") return DCE_ONLY_STAGES;
   if (
     outputMinify !== null &&
     typeof outputMinify === "object" &&
-    !Array.isArray(outputMinify) &&
-    outputMinify.compress === false &&
-    outputMinify.mangle === false
+    !Array.isArray(outputMinify)
   ) {
-    return OutputMinifySetting.Disabled;
+    const compress = outputMinify.compress !== false;
+    return {
+      dce: stageSetting(compress),
+      compress: stageSetting(compress),
+      mangle: stageSetting(outputMinify.mangle !== false),
+    };
   }
-  return OutputMinifySetting.Enabled;
+  return ENABLED_STAGES;
+}
+
+/** Name-mangling stage of the configured output. */
+export function resolveMangleSetting(buildMinify, output) {
+  return resolveMinifyStages(buildMinify, output).mangle;
+}
+
+/** Name-mangling stage of the normalized output option, or `null`. */
+export function resolveNormalizedMangleSetting(normalizedMinify) {
+  return resolveNormalizedMinifyStages(normalizedMinify)?.mangle ?? null;
+}
+
+/**
+ * Summarizes the stages as Rolldown's minifier setting: `enabled` when
+ * compression or name mangling runs, `dce-only` when only dead-code
+ * elimination runs and `disabled` when no stage runs.
+ */
+export function summarizeOutputMinify(stages) {
+  if (
+    stages.compress === StageSetting.Enabled ||
+    stages.mangle === StageSetting.Enabled
+  ) {
+    return OutputMinifySetting.Enabled;
+  }
+  return stages.dce === StageSetting.Enabled
+    ? OutputMinifySetting.DceOnly
+    : OutputMinifySetting.Disabled;
+}
+
+/** Rolldown minifier setting of the configured output. */
+export function resolveOutputMinifySetting(buildMinify, output) {
+  return summarizeOutputMinify(resolveMinifyStages(buildMinify, output));
+}
+
+/** Rolldown minifier setting of the normalized output option, or `null`. */
+export function resolveNormalizedOutputMinifySetting(normalizedMinify) {
+  const stages = resolveNormalizedMinifyStages(normalizedMinify);
+  return stages === null ? null : summarizeOutputMinify(stages);
 }
 
 /** A `build.minify` value that names a minifier other than Oxc. */
@@ -320,23 +333,38 @@ function isExternalMinifierName(buildMinify) {
 
 /**
  * Derives the minifier gates of the collection from `build.minify` and the
- * effective Rolldown minifier setting. Minification is enabled when Rolldown's
- * Oxc minifier runs (including when only an `output.minify` option or an
- * `outputOptions` hook enables it over `build.minify: false`) or when
- * `build.minify` names another minifier such as `'terser'`. A named minifier
- * is never the default one, whatever the output option says. With no minifier
- * running, `minifierName` is `"false"`, so the report never claims a minifier
- * that did not run.
+ * effective Rolldown stages. The returned `stages` are the effective facts of
+ * the whole build: a named minifier such as `'terser'` compresses, mangles and
+ * removes dead code outside Rolldown, so every stage counts as running.
+ *
+ * - `minifyEnabled`: compression or name mangling runs (including when only an
+ *   `output.minify` option or an `outputOptions` hook enables it over
+ *   `build.minify: false`), or `build.minify` names another minifier.
+ *   Rolldown's `'dce-only'` mode is not minification.
+ * - `defaultMinifier`: Rolldown's Oxc minifier is the one that runs, either
+ *   fully or as dead-code elimination only. A named minifier is never the
+ *   default one, whatever the output option says.
+ * - `minifierName`: with no minifier running it is `"false"`, so the report
+ *   never claims a minifier that did not run.
  */
-export function resolveMinifierGate(buildMinify, outputMinify) {
-  const rolldownRuns = outputMinify !== OutputMinifySetting.Disabled;
+export function resolveMinifierGate(buildMinify, rolldownStages) {
   const external = isExternalMinifierName(buildMinify);
-  const minifyEnabled = rolldownRuns || external;
-  const minifierName = external ? buildMinify : rolldownRuns ? "oxc" : "false";
+  const rolldownMinifies =
+    rolldownStages.compress === StageSetting.Enabled ||
+    rolldownStages.mangle === StageSetting.Enabled;
+  const rolldownRuns =
+    rolldownMinifies || rolldownStages.dce === StageSetting.Enabled;
+  const effective = (key) =>
+    stageSetting(external || rolldownStages[key] === StageSetting.Enabled);
   return {
-    minifyEnabled,
-    minifierName,
-    defaultMinifier: minifyEnabled && !external,
+    minifyEnabled: rolldownMinifies || external,
+    minifierName: external ? buildMinify : rolldownRuns ? "oxc" : "false",
+    defaultMinifier: rolldownRuns && !external,
+    stages: {
+      dce: effective("dce"),
+      compress: effective("compress"),
+      mangle: effective("mangle"),
+    },
   };
 }
 
@@ -480,11 +508,7 @@ function collectorPlugin(state) {
         config.build.rollupOptions?.output;
       state.resolved = {
         minify: config.build.minify,
-        outputMinify: resolveOutputMinifySetting(
-          config.build.minify,
-          outputOption,
-        ),
-        mangle: resolveMangleSetting(config.build.minify, outputOption),
+        stages: resolveMinifyStages(config.build.minify, outputOption),
         sourcemap: config.build.sourcemap,
         lib: Boolean(config.build.lib),
         ssr: Boolean(config.build.ssr),
@@ -524,18 +548,13 @@ function collectorPlugin(state) {
         state.outputs += 1;
         if (state.outputs > 1) return;
         // Plugins' `outputOptions` hooks can replace `output.minify` after
-        // `configResolved`, so the analyzed output's minifier and mangle
-        // settings are read together from the normalized options this hook
-        // receives. Every minifier gate of the collection derives from them.
-        const effectiveOutputMinify = resolveNormalizedOutputMinifySetting(
-          options?.minify,
-        );
-        if (effectiveOutputMinify !== null && state.resolved) {
-          state.resolved.outputMinify = effectiveOutputMinify;
-        }
-        const effectiveMangle = resolveNormalizedMangleSetting(options?.minify);
-        if (effectiveMangle !== null && state.resolved) {
-          state.resolved.mangle = effectiveMangle;
+        // `configResolved`, so the analyzed output's dead-code elimination,
+        // compression and mangling stages are read together from the
+        // normalized options this hook receives. Every minifier gate of the
+        // collection derives from them.
+        const effectiveStages = resolveNormalizedMinifyStages(options?.minify);
+        if (effectiveStages !== null && state.resolved) {
+          state.resolved.stages = effectiveStages;
         }
         const modules = new Map();
         const recordModule = (id) => {
@@ -834,17 +853,18 @@ await runAdapter(async (request) => {
   // selects the same default minifier. Whether a minifier actually runs also
   // depends on the effective `output.minify` option, so the gates derive from
   // it together with `build.minify`, never from `build.minify` alone.
-  const outputMinify = resolved.outputMinify ?? OutputMinifySetting.Enabled;
+  const rolldownStages = resolved.stages ?? ENABLED_STAGES;
   const gate = resolveMinifierGate(
     minify === true || minify === undefined ? "oxc" : minify,
-    outputMinify,
+    rolldownStages,
   );
-  const { minifyEnabled, minifierName } = gate;
+  const { minifyEnabled, minifierName, stages } = gate;
   const configSummary = {
     "build.minify": summarizeValue(minify),
-    "build.rolldownOptions.output.minify": outputMinify,
-    "build.rolldownOptions.output.minify.mangle":
-      resolved.mangle ?? MangleSetting.Enabled,
+    "build.rolldownOptions.output.minify": summarizeOutputMinify(rolldownStages),
+    "build.rolldownOptions.output.minify.dce": stages.dce,
+    "build.rolldownOptions.output.minify.compress": stages.compress,
+    "build.rolldownOptions.output.minify.mangle": stages.mangle,
     "build.target": resolved.target ?? "unknown",
     "build.rolldownOptions.treeshake": resolved.treeshake ?? "undefined",
     "build.lib": String(Boolean(resolved.lib)),
@@ -865,7 +885,9 @@ await runAdapter(async (request) => {
     minifierVersion: gate.defaultMinifier ? vite.rolldownVersion : "unknown",
     defaultMinifier: gate.defaultMinifier,
     minifyEnabled,
-    mangle: resolved.mangle ?? MangleSetting.Enabled,
+    deadCodeElimination: stages.dce,
+    compress: stages.compress,
+    mangle: stages.mangle,
     adapterId: ADAPTER_ID,
     adapterVersion: ADAPTER_VERSION,
     engineDetails: { rolldownVersion: vite.rolldownVersion },
