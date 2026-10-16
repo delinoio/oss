@@ -5,8 +5,10 @@ import test from "node:test";
 
 import {
   applyFinalChunkGraph,
+  chunkCodeDigest,
   chunkGraphFields,
   externalImportNames,
+  finalCodeMatches,
   finalPlacementMatches,
 } from "./vite.mjs";
 
@@ -61,10 +63,26 @@ test("chunkGraphFields marks rewritten externals", () => {
   });
 });
 
+/** The generated code that a chunk has unless a test edits it. */
+const originalCode = (fileName) => `// generated code of ${fileName}\n`;
+
+/**
+ * Digests the collector would take of the unedited chunks of `collection`
+ * in its `generateBundle` hook.
+ */
+const snapshotCodeOf = (collection) =>
+  new Map(
+    collection.chunks.map((chunk) => [
+      chunk.file,
+      chunkCodeDigest({ code: originalCode(chunk.file) }),
+    ]),
+  );
+
 /** A chunk of the finished build; `modules` are the ids it holds. */
 const finalChunk = (fileName, imports, modules = [], dynamicImports = []) => ({
   type: "chunk",
   fileName,
+  code: originalCode(fileName),
   imports,
   dynamicImports,
   modules: Object.fromEntries(
@@ -109,7 +127,12 @@ test("applyFinalChunkGraph takes the finished bundle or drops the lists", () => 
       ],
     };
     assert.equal(
-      applyFinalChunkGraph(collection, cell.result, new Set()),
+      applyFinalChunkGraph(
+        collection,
+        cell.result,
+        new Set(),
+        snapshotCodeOf(collection),
+      ),
       cell.matches,
       cell.name,
     );
@@ -230,7 +253,12 @@ test("applyFinalChunkGraph drops every list when module placement changed", () =
   for (const cell of cells) {
     const collection = snapshotCollection();
     assert.equal(
-      applyFinalChunkGraph(collection, { output: cell.output }, new Set()),
+      applyFinalChunkGraph(
+        collection,
+        { output: cell.output },
+        new Set(),
+        snapshotCodeOf(collection),
+      ),
       false,
       cell.name,
     );
@@ -269,7 +297,12 @@ test("applyFinalChunkGraph keeps the final lists when module membership is uncha
     { type: "asset", fileName: "entry.js.map" },
   ];
   assert.equal(
-    applyFinalChunkGraph(collection, { output }, new Set(["react"])),
+    applyFinalChunkGraph(
+      collection,
+      { output },
+      new Set(["react"]),
+      snapshotCodeOf(collection),
+    ),
     true,
   );
   const [entry, shared, lazy] = collection.chunks;
@@ -286,7 +319,15 @@ test("applyFinalChunkGraph ignores the order of modules inside a chunk", () => {
     chunks: [{ file: "a.js", modules: ["x", "y"], imports: ["stale.js"] }],
   };
   const output = [finalChunk("a.js", [], ["y", "x"])];
-  assert.equal(applyFinalChunkGraph(collection, { output }, new Set()), true);
+  assert.equal(
+    applyFinalChunkGraph(
+      collection,
+      { output },
+      new Set(),
+      snapshotCodeOf(collection),
+    ),
+    true,
+  );
   assert.deepEqual(collection.chunks[0].imports, []);
 });
 
@@ -309,7 +350,15 @@ test("applyFinalChunkGraph invalidates a same-chunk snapshot when the target mov
     finalChunk("main.js", ["lazy.js"], ["requester"], ["lazy.js"]),
     finalChunk("lazy.js", [], ["target"]),
   ];
-  assert.equal(applyFinalChunkGraph(collection, { output }, new Set()), false);
+  assert.equal(
+    applyFinalChunkGraph(
+      collection,
+      { output },
+      new Set(),
+      snapshotCodeOf(collection),
+    ),
+    false,
+  );
   for (const chunk of collection.chunks) {
     for (const field of listFields) assert.equal(chunk[field], undefined);
   }
@@ -332,4 +381,99 @@ test("finalPlacementMatches compares membership per chunk file", () => {
   assert.equal(finalPlacementMatches(snapshot, final(["y"], [])), false);
   assert.equal(finalPlacementMatches(snapshot, new Map()), false);
   assert.equal(finalPlacementMatches([], new Map()), true);
+});
+
+test("applyFinalChunkGraph drops every list when a chunk's code changed after the snapshot", () => {
+  // An output-only plugin edits `OutputChunk.code` (for example it moves the
+  // target's code into the requester) but leaves `OutputChunk.modules` as it
+  // was, so the membership comparison alone accepts the stale placement.
+  const cells = [
+    {
+      name: "code of the requester chunk edited",
+      edit: (output) => {
+        output[0].code += "// moved target code\n";
+      },
+    },
+    {
+      name: "code of an unrelated chunk edited",
+      edit: (output) => {
+        output[2].code = "";
+      },
+    },
+    {
+      name: "final chunk has no readable code",
+      edit: (output) => {
+        delete output[1].code;
+      },
+    },
+  ];
+  for (const cell of cells) {
+    const collection = snapshotCollection();
+    const output = [
+      finalChunk("entry.js", ["shared.js"], ["requester"], ["shared.js"]),
+      finalChunk("shared.js", [], ["target"]),
+      finalChunk("lazy.js", [], []),
+    ];
+    cell.edit(output);
+    assert.equal(
+      applyFinalChunkGraph(
+        collection,
+        { output },
+        new Set(),
+        snapshotCodeOf(collection),
+      ),
+      false,
+      cell.name,
+    );
+    for (const chunk of collection.chunks) {
+      for (const field of listFields) {
+        assert.equal(
+          chunk[field],
+          undefined,
+          `${cell.name}: ${chunk.file}.${field}`,
+        );
+      }
+    }
+  }
+});
+
+test("applyFinalChunkGraph drops the lists when the snapshot has no code digests", () => {
+  const output = [
+    finalChunk("entry.js", [], ["requester"]),
+    finalChunk("shared.js", [], ["target"]),
+    finalChunk("lazy.js", [], []),
+  ];
+  for (const snapshotCode of [undefined, null, new Map(), {}]) {
+    const collection = snapshotCollection();
+    assert.equal(
+      applyFinalChunkGraph(collection, { output }, new Set(), snapshotCode),
+      false,
+    );
+    assert.equal(collection.chunks[0].imports, undefined);
+  }
+});
+
+test("finalCodeMatches compares the code digest per chunk file", () => {
+  const snapshot = [{ file: "a.js" }, { file: "b.js" }];
+  const digests = new Map([
+    ["a.js", chunkCodeDigest({ code: "a" })],
+    ["b.js", chunkCodeDigest({ code: "b" })],
+  ]);
+  const final = (a, b) =>
+    new Map([
+      ["a.js", { code: a }],
+      ["b.js", { code: b }],
+    ]);
+  assert.equal(finalCodeMatches(digests, snapshot, final("a", "b")), true);
+  assert.equal(finalCodeMatches(digests, snapshot, final("a", "b2")), false);
+  assert.equal(
+    finalCodeMatches(digests, snapshot, final("a", undefined)),
+    false,
+  );
+  assert.equal(finalCodeMatches(digests, snapshot, new Map()), false);
+  assert.equal(finalCodeMatches(new Map(), snapshot, final("a", "b")), false);
+  assert.equal(finalCodeMatches(undefined, snapshot, final("a", "b")), false);
+  assert.equal(finalCodeMatches(digests, [], new Map()), true);
+  assert.equal(chunkCodeDigest({}), null);
+  assert.equal(chunkCodeDigest({ code: 1 }), null);
 });

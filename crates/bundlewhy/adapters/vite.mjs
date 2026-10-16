@@ -3,6 +3,7 @@
 // Runs one client production build with the project's own Vite installation
 // and records Rolldown module/chunk facts through a collector plugin.
 
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -308,6 +309,36 @@ function finalModuleIds(chunk) {
 }
 
 /**
+ * Digest of the generated code of one emitted chunk, or `null` when the chunk
+ * has no readable code string. `OutputChunk.modules` is metadata computed
+ * before `generateBundle`; the code is the only part a later hook can change
+ * without that metadata following, so the digest stands in for it.
+ */
+export function chunkCodeDigest(chunk) {
+  if (typeof chunk?.code !== "string") return null;
+  return createHash("sha256").update(chunk.code).digest("hex");
+}
+
+/**
+ * True when every snapshot chunk still has the generated code it had when the
+ * collector took its snapshot. A `generateBundle` hook that runs after the
+ * collector (an output-only plugin) can move or remove module code by editing
+ * `OutputChunk.code` while `OutputChunk.modules` keeps its old content, so the
+ * membership comparison alone cannot see that edit. A chunk without a digest,
+ * a final chunk without readable code and a changed digest all count as
+ * changed, so any post-snapshot code edit makes the placement untrusted.
+ */
+export function finalCodeMatches(snapshotCode, snapshotChunks, finalChunks) {
+  if (!(snapshotCode instanceof Map)) return false;
+  for (const chunk of snapshotChunks) {
+    const expected = snapshotCode.get(chunk.file);
+    if (typeof expected !== "string") return false;
+    if (chunkCodeDigest(finalChunks.get(chunk.file)) !== expected) return false;
+  }
+  return true;
+}
+
+/**
  * True when every snapshot chunk holds exactly the modules that the same-named
  * chunk of the finished build holds. Set equality per chunk file: the order of
  * the modules inside a chunk is not placement. A module that moved to another
@@ -340,10 +371,14 @@ export function finalPlacementMatches(snapshotChunks, finalChunks) {
  * placement (`chunk.modules` and `module.chunks`), because the rule reads which
  * chunk holds the dynamic importer and the target from the placement and the
  * route between them from the lists. The lists are therefore accepted only
- * when the finished build has the same chunk files and every chunk holds
- * exactly the modules of the snapshot. An output-only plugin can move or remove
- * modules while it keeps every file name; mixing the final edges with the
- * stale placement would describe two different output graphs. Otherwise, and
+ * when the finished build has the same chunk files, every chunk holds exactly
+ * the modules of the snapshot and no chunk's generated code changed after the
+ * snapshot (`snapshotCode`, the digests taken in the collector's hook). An
+ * output-only plugin can move or remove modules while it keeps every file name,
+ * and one that edits `OutputChunk.code` leaves `OutputChunk.modules` as it was,
+ * so the membership comparison alone would still accept the stale placement;
+ * mixing the final edges with the stale placement would describe two different
+ * output graphs. Otherwise, and
  * when the final output cannot be read, the import lists of every chunk are
  * dropped (all or nothing, no partial module facts are rebuilt from mixed
  * snapshots). The analysis reads a chunk without import data as "no chunk
@@ -353,7 +388,12 @@ export function finalPlacementMatches(snapshotChunks, finalChunks) {
  *
  * Returns whether the final import lists were applied.
  */
-export function applyFinalChunkGraph(collection, buildResult, externalNames) {
+export function applyFinalChunkGraph(
+  collection,
+  buildResult,
+  externalNames,
+  snapshotCode,
+) {
   const results = Array.isArray(buildResult) ? buildResult : [buildResult];
   const output = results.length === 1 ? results[0]?.output : null;
   const finalChunks = new Map();
@@ -366,7 +406,9 @@ export function applyFinalChunkGraph(collection, buildResult, externalNames) {
     finalChunks.size === collection.chunks.length &&
     collection.chunks.every((chunk) => finalChunks.has(chunk.file));
   const matches =
-    sameFiles && finalPlacementMatches(collection.chunks, finalChunks);
+    sameFiles &&
+    finalPlacementMatches(collection.chunks, finalChunks) &&
+    finalCodeMatches(snapshotCode, collection.chunks, finalChunks);
   for (const chunk of collection.chunks) {
     delete chunk.imports;
     delete chunk.externalImports;
@@ -523,6 +565,7 @@ function collectorPlugin(state) {
         state.externalNames = externalImportNames(externalIds, options?.paths);
         const chunks = [];
         const assets = [];
+        const codeDigests = new Map();
         for (const output of Object.values(bundle)) {
           if (output.type === "asset") {
             assets.push(output.fileName);
@@ -542,6 +585,7 @@ function collectorPlugin(state) {
             record.chunks.push(output.fileName);
             chunkModules.push(id);
           }
+          codeDigests.set(output.fileName, chunkCodeDigest(output));
           chunks.push({
             file: output.fileName,
             isEntry: output.isEntry,
@@ -559,6 +603,7 @@ function collectorPlugin(state) {
           });
         }
         state.collection = { modules: [...modules.values()], chunks, assets };
+        state.snapshotCode = codeDigests;
       },
     },
   };
@@ -594,6 +639,7 @@ await runAdapter(async (request) => {
     outputs: 0,
     renderStarts: 0,
     externalNames: new Set(),
+    snapshotCode: new Map(),
     warnings: [],
     logs: [],
   };
@@ -746,13 +792,14 @@ await runAdapter(async (request) => {
     state.collection,
     buildResult,
     state.externalNames,
+    state.snapshotCode,
   );
   if (!finalGraph) {
     emit({
       event: "progress",
       stage: "collecting",
       message:
-        "The finished build's chunks or their module membership differ from the snapshot; chunk import data is omitted",
+        "The finished build's chunks, their module membership or their generated code differ from the snapshot; chunk import data is omitted",
     });
   }
 
