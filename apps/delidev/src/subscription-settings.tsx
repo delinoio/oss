@@ -249,7 +249,7 @@ function ProviderMark({ brand }: { brand?: SubscriptionBrand }) {
   );
 }
 
-function QuotaWindow({
+export function QuotaWindow({
   window,
   now,
   active,

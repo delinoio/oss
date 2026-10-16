@@ -1,0 +1,135 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* The Usage tracking section of Manage Claude. Semantic tokens only, so the
+   light and dark themes share one rule set. */
+.claude-usage {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+.claude-usage h3,
+.claude-usage p,
+.claude-usage dl,
+.claude-usage dd {
+  margin: 0;
+}
+.claude-usage p,
+.claude-usage dd {
+  overflow-wrap: anywhere;
+}
+.claude-usage-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.claude-usage-status {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--success-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.claude-usage-status[data-health="reconnect-required"],
+.claude-usage-status[data-health="failed"],
+.claude-usage-status[data-health="cleanup"] {
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+.claude-usage-status[data-health="backoff"],
+.claude-usage-status[data-health="stale"],
+.claude-usage-status[data-health="waiting"] {
+  border-color: var(--warning-border);
+  color: var(--warning-text);
+}
+.claude-usage-note {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.claude-usage-identity {
+  display: grid;
+  gap: 4px;
+}
+.claude-usage-identity dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.claude-usage-identity dd {
+  font-weight: 600;
+}
+.claude-usage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.claude-usage button {
+  min-height: 40px;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.claude-usage-windows {
+  display: grid;
+  gap: 12px;
+}
+.claude-usage-health {
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  font-size: 0.875rem;
+}
+.claude-usage-health[data-health="backoff"],
+.claude-usage-health[data-health="stale"],
+.claude-usage-health[data-health="waiting"] {
+  border-color: var(--warning-border);
+  background: var(--warning-background);
+  color: var(--warning-text);
+}
+.claude-usage-health[data-health="reconnect-required"],
+.claude-usage-health[data-health="failed"],
+.claude-usage-health[data-health="failure"],
+.claude-usage-health[data-health="cleanup"] {
+  border-color: var(--danger-border);
+  background: var(--danger-background);
+  color: var(--danger-text);
+}
+.claude-usage-login {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.claude-usage-login form {
+  display: grid;
+  gap: 8px;
+}
+.claude-usage-login input {
+  min-height: 40px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.claude-usage-login h3,
+.claude-usage-login p,
+.claude-usage-login dl,
+.claude-usage-login dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+/* Narrow sections stack their actions so every label stays readable at 320px
+   section width and at 200% zoom. */
+@media (max-width: 480px) {
+  .claude-usage {
+    padding: 12px;
+  }
+  .claude-usage-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

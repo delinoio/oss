@@ -20,6 +20,7 @@ import {
   SystemCapability,
   SystemService,
   SubscriptionObservationAction,
+  SubscriptionQuotaRefreshTrigger,
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
@@ -752,7 +753,12 @@ it("uses one original server batch for unloaded account pages and one row quota 
     Object.keys(f.batch.mock.calls[0][0])
       .filter((key) => key !== "$typeName")
       .sort(),
-  ).toEqual(["requestId"]);
+  ).toEqual(["requestId", "trigger"]);
+  // A user-initiated Refresh all is explicit; the 30-second foreground cadence
+  // sends the foreground trigger and cannot force a Claude usage read.
+  expect(f.batch.mock.calls[0][0].trigger).toBe(
+    SubscriptionQuotaRefreshTrigger.EXPLICIT,
+  );
   expect(
     f.list.mock.calls.some(
       ([r]) => r.filter?.pageToken === "unloaded-next-page",

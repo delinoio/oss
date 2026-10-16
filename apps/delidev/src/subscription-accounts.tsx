@@ -36,6 +36,7 @@ import {
   SubscriptionAction,
   SubscriptionObservationAction,
   SubscriptionQuery,
+  SubscriptionQuotaRefreshTrigger,
   SubscriptionServiceId,
   SystemCapability,
   SystemQuery,
@@ -53,6 +54,13 @@ import {
   serverQuotaAvailable,
 } from "./subscription-quota";
 import { useSubscriptionLogin } from "./subscription-login";
+import {
+  claudeUsageHealth,
+  claudeUsageProjection,
+  claudeUsageWindowLabel,
+  ClaudeUsageHealth,
+  useClaudeUsageTracking,
+} from "./claude-usage-tracking";
 import { serviceAccount } from "./subscription-resource";
 import { document, items, object, text } from "./documents";
 import { subscriptionQuotaAllKey, useRetainedMutation } from "./mutation";
@@ -168,7 +176,27 @@ function NativeManagedSubscriptionAccount({
         request.mutation?.expectedRevision ?? 1n,
       ),
   );
-  const blocked = quotaBusy || operation.busy || operation.uncertain;
+  // Server-owned Claude usage tracking is a separate, explicitly linked
+  // connection. It never changes the execution sign-in or its readiness.
+  const usageClaudeAccount =
+    service === SubscriptionServiceId.Claude &&
+    state.claude_credential === "server-token" &&
+    Boolean(text(object(data.connection).id));
+  const usageStatusSettled =
+    status.isSuccess && !status.error && !status.isFetching;
+  const usage = useClaudeUsageTracking({
+    account: usageClaudeAccount ? current : undefined,
+    active,
+    supported:
+      usageStatusSettled &&
+      status.data?.capabilities.includes(
+        SystemCapability.CLAUDE_SERVER_USAGE_V1,
+      ) === true,
+    settled: usageStatusSettled,
+    changed: () => void read.refetch(),
+  });
+  const blocked =
+    quotaBusy || operation.busy || operation.uncertain || usage.busy;
   // Explicit refresh owns lifecycle admission until quota and status settle.
   // Ordinary background polling keeps its existing admission semantics.
   const lifecycleBlocked = blocked || refreshing;
@@ -328,7 +356,9 @@ function NativeManagedSubscriptionAccount({
           icon={SettingsActionIcon.Refresh}
           presentation={SettingsActionPresentation.Icon}
           type="button"
-          disabled={!active || blocked || refreshing || read.isFetching}
+          disabled={
+            !active || blocked || refreshing || read.isFetching || usage.paused
+          }
           onClick={() => void refresh()}
         >
           {copy(
@@ -455,6 +485,8 @@ function NativeManagedSubscriptionAccount({
           }
         />
       ) : null}
+      {usageClaudeAccount ? usage.section : null}
+      {usageClaudeAccount ? usage.dialogs : null}
       <SettingsTaskActions className="">
         {claudeConnectsNew ? (
           <SettingsActionButton
@@ -702,7 +734,11 @@ function NativeManagedSubscriptionAccount({
           footer={refreshFooter}
         />
       ) : (
-        refreshFooter()
+        refreshFooter(
+          usageClaudeAccount && usage.refreshAvailable
+            ? usage.refresh
+            : undefined,
+        )
       )}
     </section>
   );
@@ -827,6 +863,10 @@ export function SubscriptionAccounts({
       SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2,
     ) === true;
   const quotaSupported = serverQuotaSupported;
+  const claudeUsageSupported =
+    status.data?.capabilities.includes(
+      SystemCapability.CLAUDE_SERVER_USAGE_V1,
+    ) === true;
   const loginCapable =
     status.data?.capabilities.includes(
       SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
@@ -912,6 +952,22 @@ export function SubscriptionAccounts({
     ? (rows.data?.resources ?? []).map((row) => {
         const data = document(row),
           service = subscriptionService(data.subscription_service)!;
+        // A linked Claude usage connection joins the shared row refresh and
+        // identifies the manually linked usage account once observations exist.
+        const usageState =
+          service === SubscriptionServiceId.Claude
+            ? claudeUsageProjection(data)
+            : undefined;
+        const usageRefreshable =
+          usageState !== undefined &&
+          usageState.linked &&
+          claudeUsageSupported &&
+          claudeUsageHealth(usageState, Date.now()) !==
+            ClaudeUsageHealth.Backoff &&
+          claudeUsageHealth(usageState, Date.now()) !==
+            ClaudeUsageHealth.ReconnectRequired &&
+          claudeUsageHealth(usageState, Date.now()) !==
+            ClaudeUsageHealth.Cleanup;
         return {
           id: row.id,
           revision: row.revision,
@@ -925,16 +981,16 @@ export function SubscriptionAccounts({
               : text(object(data.connection).id)
                 ? SubscriptionConnectionState.Connected
                 : SubscriptionConnectionState.Disconnected,
+          maskedIdentity:
+            usageState?.linked &&
+            usageState.identity &&
+            items(data.quota).length
+              ? copy("claude-usage.row.linked", {
+                  v0: usageState.identity.email,
+                })
+              : undefined,
           refresh:
-            quotaSupported &&
-            service === SubscriptionServiceId.ChatGPT &&
-            quotaAccountAvailable(data) &&
-            serverQuotaAvailable(
-              object(data.subscription),
-              serverQuotaSupported,
-            ) &&
-            !quota.busy &&
-            !quota.uncertain
+            usageRefreshable && !quota.busy && !quota.uncertain
               ? () => {
                   if (cleanup.canMutate())
                     void quota.send({
@@ -946,10 +1002,35 @@ export function SubscriptionAccounts({
                       machineId: "",
                       action: SubscriptionObservationAction.QUOTA,
                       connectionId: text(object(data.connection).id),
-                      generationId: text(object(data.subscription).generation),
+                      generationId: usageState!.generation,
                     });
                 }
-              : undefined,
+              : quotaSupported &&
+                  service === SubscriptionServiceId.ChatGPT &&
+                  quotaAccountAvailable(data) &&
+                  serverQuotaAvailable(
+                    object(data.subscription),
+                    serverQuotaSupported,
+                  ) &&
+                  !quota.busy &&
+                  !quota.uncertain
+                ? () => {
+                    if (cleanup.canMutate())
+                      void quota.send({
+                        mutation: {
+                          requestId: newRequestId(),
+                          id: row.id,
+                          expectedRevision: row.revision,
+                        },
+                        machineId: "",
+                        action: SubscriptionObservationAction.QUOTA,
+                        connectionId: text(object(data.connection).id),
+                        generationId: text(
+                          object(data.subscription).generation,
+                        ),
+                      });
+                  }
+                : undefined,
           health: text(data.health),
           enabled: data.enabled === true,
           providerState: copy("subscription-accounts.extra.22fc4e1096f2"),
@@ -958,6 +1039,10 @@ export function SubscriptionAccounts({
             const window = object(entry);
             return {
               id: text(window.id),
+              label:
+                window.comparison_group === "claude"
+                  ? claudeUsageWindowLabel(text(window.id))
+                  : undefined,
               state:
                 Object.values(QuotaObservationState).find(
                   (state) => state === window.state,
@@ -1079,7 +1164,10 @@ export function SubscriptionAccounts({
           quotaSupported && !blocked
             ? () => {
                 if (cleanup.canMutate())
-                  void refreshAll.send({ requestId: newRequestId() });
+                  void refreshAll.send({
+                    requestId: newRequestId(),
+                    trigger: SubscriptionQuotaRefreshTrigger.EXPLICIT,
+                  });
               }
             : undefined
         }

@@ -45,6 +45,8 @@ const reviewedNeutral: Record<string, string> = {
     "Disconnect and its credential-cleanup retry stay Default",
   "browser-preference-controller.tsx":
     "controller only; the single Reset browser settings action is in browser-settings.tsx",
+  "claude-usage-tracking.tsx":
+    "Disconnect usage, its confirmation and its retry stay Default like account Disconnect",
   "desktop.tsx":
     "bridge owner only; the Remove opener, confirmation and retry are in saved-connections.tsx",
   "image-drafts.tsx": "removes an unsent draft attachment",

@@ -165,6 +165,20 @@ function claudeAuthorizationURL(raw: string, setupToken: boolean): boolean {
 export function claudeLoginURL(raw: string): boolean {
   return claudeAuthorizationURL(raw, false);
 }
+/** The usage login accepts the original auth-login address only with the
+ * manual approval-code callback: a remote server cannot receive a callback on
+ * this device's localhost, and DeliDev never substitutes another callback. */
+export function claudeUsageLoginURL(raw: string): boolean {
+  if (!claudeAuthorizationURL(raw, false)) return false;
+  try {
+    return (
+      new URL(raw).searchParams.get("redirect_uri") ===
+      "https://platform.claude.com/oauth/code/callback"
+    );
+  } catch {
+    return false;
+  }
+}
 export function claudeSetupTokenURL(raw: string): boolean {
   return claudeAuthorizationURL(raw, true);
 }

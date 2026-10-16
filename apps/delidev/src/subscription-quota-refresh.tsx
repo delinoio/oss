@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   SubscriptionQuery,
+  SubscriptionQuotaRefreshTrigger,
   SystemCapability,
   SystemQuery,
   isEntityId,
@@ -94,7 +95,10 @@ export function SubscriptionQuotaAutoRefresh({ ready }: { ready: boolean }) {
           : SubscriptionQuotaTickOutcome.Admitted;
       console.info("delidev.subscription.quota_refresh_tick", { outcome });
       if (outcome === SubscriptionQuotaTickOutcome.Admitted)
-        void current.send({ requestId: newRequestId() });
+        void current.send({
+          requestId: newRequestId(),
+          trigger: SubscriptionQuotaRefreshTrigger.FOREGROUND,
+        });
     };
     arm();
     return () => window.clearTimeout(timer);
