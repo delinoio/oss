@@ -654,17 +654,41 @@ pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, us
 }
 
 /// Whether the statement head that ends at `end` contains the `class` keyword
-/// outside nested parentheses or brackets. The scan walks backwards and stops
-/// at the previous `;`, `{` or `}`, or at an unbalanced opener.
+/// outside nested parentheses, brackets or TypeScript type-argument lists. The
+/// scan walks backwards over characters and stops at the previous `;`, `{` or
+/// `}`, or at an unbalanced opener. A type-argument list (`class C<T extends {
+/// a: 1 }>`, `extends B<{ a: 1 }>`) is skipped as a whole, so the braces and
+/// `=` inside it do not end the head.
 pub(super) fn class_heading_precedes(code: &str, end: usize, ignored: &[(usize, usize)]) -> bool {
+    class_heading_scan(code, end, ignored, false)
+}
+
+/// Shared body of [`class_heading_precedes`]. `stop_at_assignment` also ends
+/// the head at a top-level `=`, so a field initializer such as `x = { ... }`
+/// does not read an enclosing class header as its own.
+fn class_heading_scan(
+    code: &str,
+    end: usize,
+    ignored: &[(usize, usize)],
+    stop_at_assignment: bool,
+) -> bool {
     let mut depth = 0usize;
     // End offset of the identifier-like word being read backwards.
     let mut word_end: Option<usize> = None;
     let is_class = |word_start: usize, word_end: usize| {
-        &code[word_start..word_end] == "class" && !code[..word_start].ends_with(['.', '#'])
+        // `class` is a keyword unless it names a member (`a.class`, `#class`)
+        // or a property or method (`class: {`, `class() {`).
+        &code[word_start..word_end] == "class"
+            && !code[..word_start].trim_end().ends_with(['.', '#'])
+            && !code[word_end..end]
+                .trim_start()
+                .starts_with([':', '(', '=', ','])
     };
-    for (position, character) in code[..end].char_indices().rev() {
+    // Walk char boundaries only: `position` is always the start of a char.
+    let mut position = end;
+    while let Some(character) = code[..position].chars().next_back() {
         let width = character.len_utf8();
+        position -= width;
         if !in_ranges(ignored, position) && is_identifier_part(character) {
             word_end.get_or_insert(position + width);
             continue;
@@ -685,6 +709,7 @@ pub(super) fn class_heading_precedes(code: &str, end: usize, ignored: &[(usize, 
                 None => return false,
             },
             '{' | '}' | ';' if depth == 0 => return false,
+            '=' if depth == 0 && stop_at_assignment => return false,
             _ => {}
         }
     }
@@ -1988,34 +2013,11 @@ impl<'a> MemberScan<'a> {
     }
 
     /// Whether the header before the brace at `open` contains a `class`
-    /// keyword (`class A extends B {`, `const C = class {`).
+    /// keyword (`class A extends B {`, `const C = class {`). The scan reads
+    /// the masked code by character, so non-ASCII names and type-argument
+    /// lists with braces (`class C<T extends { a: 1 }> {`) are handled.
     fn has_class_header(&self, open: usize) -> bool {
-        let bytes = self.code.as_bytes();
-        let mut depth = 0usize;
-        let mut index = open;
-        while index > 0 {
-            index -= 1;
-            match bytes[index] {
-                b')' | b']' => depth += 1,
-                b'(' | b'[' => match depth.checked_sub(1) {
-                    Some(next) => depth = next,
-                    None => return false,
-                },
-                b';' | b'{' | b'}' | b'=' if depth == 0 => return false,
-                byte if depth == 0 && is_identifier_part(char::from(byte)) => {
-                    let end = index + 1;
-                    while index > 0 && is_identifier_part(char::from(bytes[index - 1])) {
-                        index -= 1;
-                    }
-                    let preceded_by_dot = self.code[..index].trim_end().ends_with('.');
-                    if &self.code[index..end] == "class" && !preceded_by_dot {
-                        return true;
-                    }
-                }
-                _ => {}
-            }
-        }
-        false
+        class_heading_scan(&self.code, open, &[], true)
     }
 
     fn brace_kind(&self, open: usize) -> BraceKind {
@@ -2681,6 +2683,124 @@ y=/process.env.F/.test(z),process.env.G"#;
             "const o = { run() {}, eval(value) {} };",
         ] {
             assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn eval_methods_with_non_ascii_names_do_not_panic_or_report() {
+        for source in [
+            "class Caf\u{e9} { eval(value) {} }",
+            "class \u{4e2d}\u{6587} extends \u{540d}\u{524d} { eval(value) {} }",
+            "class C { caf\u{e9} = 1\n  eval(value) {} }",
+            "class C { caf\u{e9}() {} eval(value) {} }",
+            "class C { \u{1f600} = 1; eval(value) {} }",
+            "class C { x = \"\u{e9}\"\n  eval(value) {} }",
+            "class C { /* \u{e9} */ eval(value) {} }",
+            "// \u{e9}\nclass C { eval(value) {} }",
+            "const o = { caf\u{e9}: 1, eval(value) {} };",
+            "const o = { \"\u{e9}\": 1, eval(value) {} };",
+            "const o = { \u{e9}val() {}, eval(value) {} };",
+            "const o = { nested: { caf\u{e9}: 1, eval(value) {} } };",
+            "const caf\u{e9} = { eval(value) {} };",
+            "const C = class Caf\u{e9} { eval(value) {} };",
+            "class C {\u{2028}  eval(value) {} }",
+            "class C { x = 1\u{2028}  eval(value) {} }",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+        // Real calls next to non-ASCII names keep their own location.
+        for (source, call) in [
+            ("class Caf\u{e9} { run() { eval(code); } }", "eval(code)"),
+            ("class Caf\u{e9} {} eval(code);", "eval(code)"),
+            ("const caf\u{e9} = { a: eval(code) };", "eval(code)"),
+            ("const o = { caf\u{e9}: eval(code) };", "eval(code)"),
+            ("class C { caf\u{e9} = eval(code); }", "eval(code)"),
+        ] {
+            let offset = source.find(call).expect(source);
+            let (line, column) = line_and_column(source, offset);
+            assert_eq!(
+                direct_eval_line(source),
+                Some((line as u32, column as u32)),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn scans_never_panic_on_any_char_boundary_cut() {
+        for source in [
+            "class Caf\u{e9} extends \u{c9} { eval(value) {} }",
+            "const o = { caf\u{e9}: `\u{e9}${eval(x)}`, eval(v) {}, \u{1f600}: /\u{e9}/ };",
+            "class C { x = 1\u{2028}  eval(value) {}\u{2029}run() { eval(code) } }",
+        ] {
+            for end in source.char_indices().map(|(index, _)| index) {
+                let _ = direct_eval_line(&source[..end]);
+                let _ = direct_eval_line(&source[end..]);
+            }
+            let ignored = non_code_ranges(source);
+            assert_eq!(
+                masked_code(source, &ignored).len(),
+                source.len(),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn computed_keys_and_accessors_around_eval_methods() {
+        for source in [
+            "class C { [key]() {} eval(value) {} }",
+            "class C { [key] = 1; eval(value) {} }",
+            "class C { [key] = 1\n  eval(value) {} }",
+            "class C { static [key]() {} eval(value) {} }",
+            "class C { get [key]() { return 1; } eval(value) {} }",
+            "class C { get eval() { return 1; } set eval(value) {} }",
+            "class C { static get eval() { return 1; } }",
+            "class C { static set eval(value) {} }",
+            "class C { async *[Symbol.iterator]() {} eval(value) {} }",
+            "const o = { [key]: 1, eval(value) {} };",
+            "const o = { [key]() {}, eval(value) {} };",
+            "const o = { get [key]() { return 1; }, eval(value) {} };",
+            "const o = { get eval() { return 1; }, set eval(value) {} };",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+        // Calls inside a computed key or an accessor body are real calls.
+        for (source, call) in [
+            ("class C { [eval(code)]() {} }", "eval(code)"),
+            ("class C { static [eval(code)] = 1; }", "eval(code)"),
+            ("class C { get [eval(code)]() { return 1; } }", "eval(code)"),
+            ("class C { get a() { return eval(code); } }", "eval(code)"),
+            ("class C { set a(v) { eval(code); } }", "eval(code)"),
+            ("const o = { [eval(code)]() {} };", "eval(code)"),
+            (
+                "const o = { get a() { return eval(code); } };",
+                "eval(code)",
+            ),
+            (
+                "const o = { [eval(code)]: 1, eval(value) {} };",
+                "eval(code)",
+            ),
+            (
+                "a > b; class C<T extends { a: 1 }> { run() { eval(code) } }",
+                "eval(code)",
+            ),
+            (
+                "const x = a > b ? { eval(value) {} } : 0; eval(code);",
+                "eval(code)",
+            ),
+            (
+                "class A {}\nconst r = a > b ? eval(code) : 0;",
+                "eval(code)",
+            ),
+        ] {
+            let offset = source.find(call).expect(source);
+            let (line, column) = line_and_column(source, offset);
+            assert_eq!(
+                direct_eval_line(source),
+                Some((line as u32, column as u32)),
+                "{source:?}"
+            );
         }
     }
 
