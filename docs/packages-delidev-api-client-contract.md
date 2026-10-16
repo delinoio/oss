@@ -580,3 +580,7 @@ Generated `SubscriptionService` declarations export the Worker-only
 and add no screen, retry control or capability gate; the account document exposes the
 recovery state and closed blocked reason. See the
 [protocol contract](protos-delidev-v1-contract.md#managed-chatgpt-recovery-allocation).
+
+## Claude usage tracking client
+
+The generated Go and TypeScript bindings expose the six Claude usage operations on `SubscriptionService` (including `SubscriptionQuery.startClaudeUsage` and its siblings for Connect Query), `SystemCapability.CLAUDE_SERVER_USAGE_V1` and `RefreshAllSubscriptionQuotasRequest.trigger`. Callers must check the capability from a settled `GetStatus` before sending any usage operation, bind every mutation to the account's exact revision and the observed usage generation, and retain the request UUID so an uncertain result is recovered only by replaying the exact original request. The package adds no wrapper.

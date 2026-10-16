@@ -336,3 +336,7 @@ it again), and recovery settlement retires every original reference
 through the complete enumeration used by explicit removal. Deletion keeps the vault
 tombstone order, so a failed deletion is resumed by the original recovery request.
 See the [subscription contract](cmds-delidev-subscription-contract.md#automatic-managed-chatgpt-execution-recovery).
+
+## Claude usage envelope
+
+The vault purpose `claude-usage` stores the versioned usage-login envelope (`subscription.SealClaudeUsage`) of one Claude account: access token, refresh token, expiry, granted scopes and the pinned client binding, bound to server, account, usage generation and an immutable reference identity. It is never an execution `account-login` reference: neither purpose opens the other's envelope, and the Worker Finish retirement helper neither counts nor retires a `claude-usage` reference. A rotation stages a new immutable reference and retires the previous one only after the switch commits. Explicit logout and account deletion remove `claude-usage` references together with the account's `account-login` generations (owner and purpose validated before the first deletion, a reference of any other purpose still denies the whole removal), and usage disconnect removes only the usage references. Reads of this purpose do not log the private reference identity. The bytes never reach Worker Take, configuration export, ordinary RPC responses, backup content, logs or the renderer; see [server-owned Claude usage tracking](cmds-delidev-subscription-contract.md#server-owned-claude-usage-tracking).

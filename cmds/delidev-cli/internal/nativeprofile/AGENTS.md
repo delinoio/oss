@@ -18,3 +18,5 @@
 - [DeliDev storage operations](../../../../docs/cmds-delidev-storage-contract.md#persistent-native-profile-storage)
 - [DeliDev owned process contract](../../../../docs/cmds-delidev-process-contract.md#profile-retention-and-process-journals)
 - [DeliDev native subscriptions](../../../../docs/cmds-delidev-subscription-contract.md#persistent-account-profiles)
+
+- `PurposeUsage` is the Claude-only exclusive account profile of the server-owned usage lane. Only that lane resolves it; no execution, setup-token or discovery path may share or adopt it.

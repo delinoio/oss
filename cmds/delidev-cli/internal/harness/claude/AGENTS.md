@@ -17,3 +17,7 @@ Follow parent instructions and the harness/subscription contracts in `docs/`.
 ## Setup-token and managed token execution
 
 `setup_token.go` and `managed_token.go` own the server-owned token profile. Keep the setup-token URL profile separate from auth-login, never log or retain the token or approval code, never pass `--bare`, and keep the contract in the harness and subscription docs aligned.
+
+## Usage profile adapter
+
+`usage_profile.go` owns the server-owned Claude usage login, refresh-login, identity read and the credential storage of exactly one newly created usage profile. Keep its address grammar separate from the setup-token and ordinary auth-login profiles, never enumerate or read a personal, legacy execution or external profile, never log credentials, identity, native bodies or paths, and keep the [harness contract](../../../../../docs/cmds-delidev-harness-contract.md#claude-usage-profile) aligned with changes.
