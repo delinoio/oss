@@ -1294,20 +1294,26 @@ export function ResourceChoice({
       disabled: row.id === value && selectedProviderOff,
     })),
   ];
-  // The empty identity is the first row. A resolved selection that is outside
-  // the reached pages is pinned directly after it, so exactly one accepted row
-  // shows the selected state.
+  // The empty identity is the first row. A selection that is outside the
+  // reached pages is pinned directly after it, so exactly one accepted row
+  // shows the selected state. While its exact read is pending, failed or denied
+  // the row reuses the popup's localized unavailable-selection sentence, so the
+  // retained identity never disappears from the list.
   const inlineOptions = options.map((option, index) => ({
     id: option.id,
     label: option.label,
     disabled: "disabled" in option ? option.disabled : false,
     icon: index === 0 ? InlineChoiceIcon.Chat : InlineChoiceIcon.Project,
   }));
-  if (value && selectedResource && !result.rows.some((row) => row.id === value))
+  if (value && !result.rows.some((row) => row.id === value))
     inlineOptions.splice(1, 0, {
       id: value,
-      label: productResourceName(productLabel, selectedResource),
-      disabled: selectedProviderOff,
+      label: selectedResource
+        ? productResourceName(productLabel, selectedResource)
+        : copy("configuration-fields.sentence.38798a0275ce", {
+            v0: resourceLabel,
+          }),
+      disabled: selectedResource ? selectedProviderOff : false,
       icon: InlineChoiceIcon.Project,
     });
   const firstInventory = resources.payloadPages.find(

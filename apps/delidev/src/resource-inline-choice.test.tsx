@@ -245,6 +245,31 @@ it("keeps an off-page accepted identity selected, loads more pages and retries f
   expect(value.change).not.toHaveBeenCalled();
 });
 
+it("keeps an unresolved accepted identity selected while its exact read fails", async () => {
+  const value = fixture(projects(["First"]));
+  const missing = newRequestId();
+  value.get.mockRejectedValue(
+    new ConnectError("denied", Code.PermissionDenied),
+  );
+  render(value.view(missing));
+  const list = screen.getByRole("listbox", { name: "Project" });
+  await waitFor(() => expect(names(list)).toContain("First"));
+  await act(async () => {});
+  const selected = within(list)
+    .getAllByRole("option")
+    .filter((option) => option.getAttribute("aria-selected") === "true");
+  expect(selected).toHaveLength(1);
+  expect(selected[0].textContent).toContain(
+    "is outside this page or unavailable",
+  );
+  expect(names(list)[1]).toBe(selected[0].textContent);
+  expect(list.dataset.value).toBe(missing);
+  // Choosing the retained identity again is a no-op.
+  fireEvent.click(selected[0]);
+  await act(async () => {});
+  expect(value.change).not.toHaveBeenCalled();
+});
+
 it("shows General Chat, an empty status and the add action when there are no projects", async () => {
   const value = fixture([]);
   render(value.view(""));
