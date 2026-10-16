@@ -624,8 +624,14 @@ waits for such a lease to be released.
 Deleting a connected Grok account performs the logout first
 (`logoutGrokBeforeDelete`, in `DeleteConfiguration`): when the account has a
 connection or generation and no other operation or recovery fence, the server
-accepts a logout with a new operation id, runs it, waits for its outcome (bounded
-by the request) and deletes the account at the revision the logout produced. A
+accepts a logout whose operation id is derived from the deletion request id
+(`grokDeleteLogoutID`), runs it, waits for its outcome (bounded by the request)
+and deletes the account at the revision the logout produced. The deletion
+receipt keeps the revision the caller sent, so a retry of the same request after
+the logout already advanced the account (the process stopped before the receipt,
+or a later deletion step failed) recognizes its own logout by that id, continues
+at the current revision and sends no second revocation; a logout the request did
+not run is never adopted. A
 Worker lease that has not exited keeps the logout queued and the deletion fails
 as `unavailable` (the account stays leased and logging out); a failed logout is
 `unavailable`; a rejected or uncertain revocation is `recovery_required` and keeps

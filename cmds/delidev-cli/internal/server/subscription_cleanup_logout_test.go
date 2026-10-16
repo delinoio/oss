@@ -199,7 +199,7 @@ func TestTerminalServerLogoutCleanupResumesPersistedNativeProof(t *testing.T) {
 	child := domain.NewID()
 	actor := domain.Principal{Type: domain.OwnerDevice}
 	_, err := f.service.Store.Mutate(failedLoginContext(), domain.NewID(), "fixture.logout.child", nil, func(tx *store.Tx) (any, error) {
-		target := serverLogoutCleanupChild(a, f.input.AccountID, r.Revision, request)
+		target := serverLogoutCleanupChild(a, f.input.AccountID, r.Revision, r.Revision, request)
 		raw, _ := json.Marshal(target)
 		out, _ := json.Marshal(failedCleanupCheckpoint{Revision: r.Revision, Started: true, NativeConfirmed: true, Outcome: pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING})
 		now := time.Now().UTC()

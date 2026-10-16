@@ -43,7 +43,7 @@ func (o failedSubscriptionDeleteOutcome) String() string {
 // Its job ID is the public deletion request ID; only the final deletion writes
 // that request's receipt. The child retains both confirmed and checkpoint
 // revisions, so cleanup cannot change the public command's immutable identity.
-func (s *Service) deleteFailedSubscription(ctx context.Context, request, id domain.ID, revision uint64) (failedSubscriptionDeleteOutcome, error) {
+func (s *Service) deleteFailedSubscription(ctx context.Context, request, id domain.ID, revision, deleteRevision uint64) (failedSubscriptionDeleteOutcome, error) {
 	if err := request.Validate(); err != nil {
 		return failedSubscriptionDeleteNotHandled, err
 	}
@@ -75,7 +75,7 @@ func (s *Service) deleteFailedSubscription(ctx context.Context, request, id doma
 				return failedCleanupUnavailable()
 			}
 			_, child, _, err := decodeFailedCleanupAccount(children[0], request)
-			if err != nil || child.AccountID != id || child.DeleteRequestID != request || child.DeleteRevision != revision {
+			if err != nil || child.AccountID != id || child.DeleteRequestID != request || child.DeleteRevision != deleteRevision {
 				return failedCleanupUnavailable()
 			}
 			parent, handled = row, true
@@ -121,9 +121,12 @@ func (s *Service) deleteFailedSubscription(ctx context.Context, request, id doma
 			var target failedCleanupAccount
 			switch {
 			case failedCleanupCandidate(account) && failedServerLoginNeedsCleanup(account):
+				if deleteRevision != revision {
+					return nil, domain.Fail(domain.Conflict, "The account revision changed.", "Read current account status before confirming deletion again.")
+				}
 				target = failedCleanupAccount{Version: 2, AccountID: id, Revision: revision, DeleteRevision: revision, OperationID: account.Subscription.ServerOperation.ID, DeleteRequestID: request, Alias: account.Alias}
 			case serverLogoutRecoveryCandidate(account):
-				target = serverLogoutCleanupChild(account, id, revision, request)
+				target = serverLogoutCleanupChild(account, id, revision, deleteRevision, request)
 			default:
 				return nil, failedCleanupUnavailable()
 			}

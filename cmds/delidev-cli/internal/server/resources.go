@@ -570,11 +570,11 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 		// A connected Grok account is logged out (token revoked, protected bundle
 		// removed) before it can be deleted; an uncertain logout blocks deletion.
 		phase = configurationDeleteLogout
-		if revision, err = s.logoutGrokBeforeDelete(ctx, domain.ID(meta.Id), meta.ExpectedRevision); err != nil {
+		if revision, err = s.logoutGrokBeforeDelete(ctx, domain.ID(meta.Id), meta.ExpectedRevision, domain.ID(meta.RequestId)); err != nil {
 			return reject(err)
 		}
 		phase = configurationDeleteAdmission
-		outcome, err := s.deleteFailedSubscription(ctx, domain.ID(meta.RequestId), domain.ID(meta.Id), revision)
+		outcome, err := s.deleteFailedSubscription(ctx, domain.ID(meta.RequestId), domain.ID(meta.Id), revision, meta.ExpectedRevision)
 		if err != nil {
 			return reject(err)
 		}

@@ -101,10 +101,15 @@ func serverLogoutRecoveryCleared(a domain.Account, in failedCleanupAccount) bool
 	return st != nil && frozenServerLogoutOperation(st.ServerOperation, in) && st.ServerOperation.State == domain.SubscriptionSucceeded && !st.ServerOperation.NativeStarted && disconnectedSubscription(a)
 }
 
-func serverLogoutCleanupChild(account domain.Account, id domain.ID, revision uint64, request domain.ID) failedCleanupAccount {
+// serverLogoutCleanupChild binds the cleanup to the account revision it compares
+// against (revision) and to the revision the public deletion request named
+// (deleteRevision). They differ when the logout of a deletion advanced the
+// account: the request digest keeps the revision the caller sent, so a retry of
+// the same request still replays instead of conflicting with its own logout.
+func serverLogoutCleanupChild(account domain.Account, id domain.ID, revision, deleteRevision uint64, request domain.ID) failedCleanupAccount {
 	o := account.Subscription.ServerOperation
 	actor := o.Actor
-	return failedCleanupAccount{Version: 3, Target: subscriptionCleanupServerLogout, AccountID: id, Revision: revision, DeleteRevision: revision, OperationID: o.ID, DeleteRequestID: request, Alias: account.Alias, Generation: o.Generation, FinishID: o.FinishID, OriginalActor: &actor}
+	return failedCleanupAccount{Version: 3, Target: subscriptionCleanupServerLogout, AccountID: id, Revision: revision, DeleteRevision: deleteRevision, OperationID: o.ID, DeleteRequestID: request, Alias: account.Alias, Generation: o.Generation, FinishID: o.FinishID, OriginalActor: &actor}
 }
 
 // updateCleanupCheckpoint advances only the private child. It is the single

@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"time"
 
 	"connectrpc.com/connect"
@@ -10,6 +11,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/google/uuid"
 )
 
 // The server-owned Grok logout. The server revokes the refresh token itself at
@@ -442,13 +444,30 @@ func (s *Service) cleanupGrokLogoutCredentials(ctx context.Context, id domain.ID
 	return err
 }
 
+// grokDeleteLogoutID derives the operation id of the logout that one deletion
+// request performs. It is deterministic so a retry of the same deletion request
+// recognizes the logout its earlier attempt already ran, even when that attempt
+// stopped before the deletion receipt was committed. The value is a canonical
+// UUID v7 shaped identifier.
+func grokDeleteLogoutID(request domain.ID) domain.ID {
+	sum := sha256.Sum256([]byte("delidev.grok.delete-logout\x00" + string(request)))
+	var raw uuid.UUID
+	copy(raw[:], sum[:16])
+	raw[6] = raw[6]&0x0f | 0x70
+	raw[8] = raw[8]&0x3f | 0x80
+	return domain.ID(raw.String())
+}
+
 // logoutGrokBeforeDelete performs the logout that account deletion requires for
 // a connected Grok account, and returns the revision to delete. An account with
-// no stored credential is returned unchanged. Deletion waits for the logout and
-// proceeds only after it succeeded: a logout that cannot start (a Worker lease
-// still holds the account), failed, or ended uncertain blocks the deletion and
-// leaves the account as the logout left it.
-func (s *Service) logoutGrokBeforeDelete(ctx context.Context, id domain.ID, revision uint64) (uint64, error) {
+// no stored credential is returned unchanged, except that a retry of the same
+// deletion request continues at the current revision when its own earlier
+// logout already advanced it. Deletion waits for the logout and proceeds only
+// after it succeeded: a logout that cannot start (a Worker lease still holds the
+// account), failed, or ended uncertain blocks the deletion and leaves the
+// account as the logout left it.
+func (s *Service) logoutGrokBeforeDelete(ctx context.Context, id domain.ID, revision uint64, request domain.ID) (uint64, error) {
+	logoutID := grokDeleteLogoutID(request)
 	var account domain.Account
 	var current uint64
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
@@ -468,6 +487,13 @@ func (s *Service) logoutGrokBeforeDelete(ctx context.Context, id domain.ID, revi
 	}
 	st := account.Subscription
 	if account.Connection == nil && (st == nil || st.Generation == "") {
+		if st != nil && st.ServerOperation != nil && st.ServerOperation.ID == logoutID && st.ServerOperation.Action == domain.SubscriptionLogout {
+			// The logout of an earlier attempt of this very request published the
+			// disconnected account and advanced its revision; continue at the
+			// current revision instead of conflicting with the request's old one.
+			s.logger.InfoContext(ctx, "grok_delete_logout_resumed", "phase", grokLogoutPhase, "account_id", id, "operation_id", logoutID, "correlation_id", logoutID)
+			return current, nil
+		}
 		return revision, nil
 	}
 	if current != revision {
@@ -477,7 +503,6 @@ func (s *Service) logoutGrokBeforeDelete(ctx context.Context, id domain.ID, revi
 		s.logger.WarnContext(ctx, "grok_delete_logout_blocked", "phase", grokLogoutPhase, "account_id", id, "reason", "account_busy")
 		return revision, protectedAccountDeletion
 	}
-	logoutID := domain.NewID()
 	req := connect.NewRequest(&pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(logoutID), Id: string(id), ExpectedRevision: current}, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT})
 	if _, err := s.requestGrokSubscription(ctx, req); err != nil {
 		return revision, err

@@ -184,3 +184,65 @@ func TestGrokAccountDeletionOfADisconnectedAccountSendsNoRevocation(t *testing.T
 		t.Fatal("deleting an already logged out account sent another revocation")
 	}
 }
+
+// The logout of a deletion advances the account revision. A retry of the same
+// deletion request after the process stopped before the deletion receipt was
+// committed, or after a later deletion step failed, must continue at the current
+// revision instead of conflicting with the request's old one, and must not send
+// another revocation.
+func TestGrokAccountDeletionRetryContinuesAfterItsOwnLogout(t *testing.T) {
+	t.Run("stopped before the receipt", func(t *testing.T) {
+		d := newGrokDeletion(t)
+		request := d.request()
+		revision, err := d.f.service.logoutGrokBeforeDelete(d.ownerContext(), d.f.input.AccountID, request.Mutation.ExpectedRevision, domain.ID(request.Mutation.RequestId))
+		if err != nil || revision <= request.Mutation.ExpectedRevision {
+			t.Fatalf("the logout did not advance the revision: %d, %v", revision, err)
+		}
+		if err := d.remove(context.Background(), request); err != nil {
+			t.Fatalf("the retry of the same request conflicted with its own logout: %v", err)
+		}
+		if d.exists() || d.idp.RevokeRequests != 1 {
+			t.Fatalf("exists = %v, revocation requests = %d", d.exists(), d.idp.RevokeRequests)
+		}
+	})
+	t.Run("completed through the logout cleanup child", func(t *testing.T) {
+		d := newGrokDeletion(t)
+		request := d.request()
+		d.f.secrets.mu.Lock()
+		d.f.secrets.deleteError = errors.New("vault unavailable")
+		d.f.secrets.mu.Unlock()
+		// The logout publishes the disconnected account but cannot remove the
+		// vault generations, so it retains the logout-cleanup recovery shape.
+		if _, err := d.f.service.logoutGrokBeforeDelete(d.ownerContext(), d.f.input.AccountID, request.Mutation.ExpectedRevision, domain.ID(request.Mutation.RequestId)); err != nil {
+			t.Fatal(err)
+		}
+		if a := d.account(); a.Connection != nil || !serverLogoutRecoveryCandidate(a) {
+			t.Fatal("the account must keep the logout-cleanup recovery shape")
+		}
+		d.f.secrets.mu.Lock()
+		d.f.secrets.deleteError = nil
+		d.f.secrets.mu.Unlock()
+		if err := d.remove(context.Background(), request); err != nil {
+			t.Fatalf("the retry of the same request conflicted with its own logout: %v", err)
+		}
+		if d.exists() || len(d.f.references()) != 0 || d.idp.RevokeRequests != 1 {
+			t.Fatalf("exists = %v, references = %d, revocation requests = %d", d.exists(), len(d.f.references()), d.idp.RevokeRequests)
+		}
+		// The receipt keeps the revision the caller sent, so the exact request
+		// still replays after the cleanup child completed the deletion.
+		if err := d.remove(context.Background(), request); err != nil || d.idp.RevokeRequests != 1 {
+			t.Fatalf("deletion replay = %v, revocation requests = %d", err, d.idp.RevokeRequests)
+		}
+	})
+	t.Run("another operation is not adopted", func(t *testing.T) {
+		d := newGrokDeletion(t)
+		if p := d.settle(); p.State != grokSucceeds {
+			t.Fatalf("logout = %v", p.State)
+		}
+		stale := d.request()
+		d.f.mutateAccount(t, func(a *domain.Account) { a.Alias = "renamed after the read" })
+		if err := d.remove(context.Background(), stale); err == nil {
+			t.Fatal("a stale expected revision was accepted for a logout the request did not run")
+		}
+	})
+}
