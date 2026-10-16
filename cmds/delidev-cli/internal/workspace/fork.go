@@ -658,6 +658,12 @@ func copyForkRepositoryPinned(ctx context.Context, git Git, source, target, comm
 // verify rechecks the copy. liveProofBytes is the retained config proof total of
 // every live Fork source; see forkLiveConfigProofBytes.
 func (c forkCopy) verify(ctx context.Context, git Git, liveProofBytes uint64) error {
+	// Admit the live proof total before any child scan or Git command.
+	if c.git && c.gitInventory != nil {
+		if _, err := c.gitInventory.admitLiveProofs(liveProofBytes); err != nil {
+			return err
+		}
+	}
 	entryLimit := c.entryLimit
 	if entryLimit == 0 {
 		entryLimit = maxForkEntries

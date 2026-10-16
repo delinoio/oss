@@ -47,6 +47,11 @@ func newForkVerifyBudget(liveProofBytes uint64) (*snapshotCopyBudget, error) {
 // proof buffers, so only the buffer and record-array backing is deduplicated; the
 // reusing copy still owns its own []string slice headers, which are charged.
 // Copies within one group are always counted separately.
+//
+// The total is also admitted against the verification allowance here, so every
+// verification phase (per-copy preparation, the final all-copy loop and
+// ForkSnapshot.Verify) rejects an over-budget total with a snapshot conflict
+// before it touches any child Git layer.
 func forkLiveConfigProofBytes(groups ...[]forkCopy) (uint64, error) {
 	var total uint64
 	seen := map[string]bool{}
@@ -70,6 +75,9 @@ func forkLiveConfigProofBytes(groups ...[]forkCopy) (uint64, error) {
 		for _, source := range added {
 			seen[source] = true
 		}
+	}
+	if _, err := newForkVerifyBudget(total); err != nil {
+		return 0, err
 	}
 	return total, nil
 }
@@ -203,20 +211,34 @@ func (i forkGitInventory) recheckSource(ctx context.Context, git Git, source str
 	return nil
 }
 
-// verify proves the copied Git directory against the frozen source. The caller
-// passes liveProofBytes, the retained config proof bytes of every live Fork source
-// including this one, so child config parsing is bounded by what remains.
-func (i forkGitInventory) verify(ctx context.Context, git Git, source, target string, liveProofBytes uint64) error {
-	if err := i.recheckSource(ctx, git, source); err != nil {
-		return err
+// admitLiveProofs deducts every live frozen source proof from the verification
+// allowance. liveProofBytes is the retained config proof total of every live Fork
+// source including this one. It runs before any source or child Git command so an
+// already over-budget verification reports a snapshot conflict instead of whatever
+// the child layers would have produced.
+func (i forkGitInventory) admitLiveProofs(liveProofBytes uint64) (*snapshotCopyBudget, error) {
+	if liveProofBytes < i.configProof.retainedBytes {
+		return nil, forkSnapshotChanged()
 	}
-	targetBudget, err := newForkVerifyBudget(0)
+	return newForkVerifyBudget(liveProofBytes)
+}
+
+// verify proves the copied Git directory against the frozen source. The child Git
+// files and config layers are charged to the allowance that remains after every
+// live proof, and that allowance is established before any Git command runs.
+func (i forkGitInventory) verify(ctx context.Context, git Git, source, target string, liveProofBytes uint64) error {
+	targetBudget, err := i.admitLiveProofs(liveProofBytes)
 	if err != nil {
 		return err
 	}
+	if err = i.recheckSource(ctx, git, source); err != nil {
+		return err
+	}
+	// The remaining allowance already excludes the live proofs, so a child Git
+	// directory that no longer fits beside them is drift, not a fresh admission.
 	targetFiles, err := walkSnapshotBudget(ctx, filepath.Join(target, ".git"), "", nil, maxForkEntries, targetBudget)
 	if err != nil {
-		return err
+		return forkChildConfigError(err)
 	}
 	if err = validateGitInventory(targetFiles); err != nil {
 		return err
@@ -239,12 +261,6 @@ func (i forkGitInventory) verify(ctx context.Context, git Git, source, target st
 	}
 	// The copied config files were excluded from the inventory comparison above
 	// because normalization rewrites them. Prove them against the frozen source.
-	// Every live frozen source proof stays allocated beside the child layers, so
-	// all of them are deducted before any child layer is parsed.
-	if liveProofBytes < i.configProof.retainedBytes || liveProofBytes > targetBudget.bytes {
-		return forkSnapshotChanged()
-	}
-	targetBudget.bytes -= liveProofBytes
 	if err = i.verifyChildConfig(ctx, git, target, targetBudget); err != nil {
 		return err
 	}
@@ -297,6 +313,19 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 		}
 	}
 	proof.bindRemote(spec)
+	// Earlier prepared repositories and the snapshot still hold their frozen
+	// source proofs while this child is copied and verified. Admit the total
+	// before the child is created, so an over-budget Fork never writes or parses a
+	// child Git layer.
+	var snapshotCopies []forkCopy
+	if snapshot != nil {
+		snapshotCopies = snapshot.copies
+	}
+	liveProofBytes, err := forkLiveConfigProofBytes(snapshotCopies, prior, []forkCopy{{source: spec.Checkout, gitInventory: &proof}})
+	if err != nil {
+		m.Logger.WarnContext(ctx, "workspace_fork_git_inventory_verify_failed", "session_id", manifest.SessionID, "repository_id", spec.ID, "phase", "live_proof_admission", "code", domain.SafeError(err).Code)
+		return *entry, nil, err
+	}
 	if spec.Starting.Type != domain.CommitReference || spec.Base.Type != domain.CommitReference || spec.Starting.Name != spec.Base.Name {
 		return *entry, nil, forkUnsupported()
 	}
@@ -342,16 +371,6 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 	}
 	hash := sha256.Sum256(index)
 	copy := forkCopy{sourceMarker: &marker, source: spec.Checkout, target: entry.Path, tree: digest, git: true, head: entry.StartingCommit, index: hex.EncodeToString(hash[:]), entryLimit: maxForkEntries, gitInventory: &proof}
-	// Earlier prepared repositories and the snapshot still hold their frozen
-	// source proofs while this child is verified.
-	var snapshotCopies []forkCopy
-	if snapshot != nil {
-		snapshotCopies = snapshot.copies
-	}
-	liveProofBytes, err := forkLiveConfigProofBytes(snapshotCopies, prior, []forkCopy{copy})
-	if err != nil {
-		return *entry, nil, err
-	}
 	if err = copy.verify(ctx, git, liveProofBytes); err != nil {
 		m.Logger.WarnContext(ctx, "workspace_fork_git_inventory_verify_failed", "session_id", manifest.SessionID, "repository_id", spec.ID, "phase", "copied_git_config_and_inventory", "live_proof_bytes", liveProofBytes, "code", domain.SafeError(err).Code)
 		return *entry, nil, err

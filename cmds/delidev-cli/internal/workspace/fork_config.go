@@ -261,6 +261,11 @@ func readChildForkConfig(ctx context.Context, git Git, target, name string, allo
 	if !info.Mode().IsRegular() {
 		return forkConfigLayer{}, 0, forkSnapshotChanged()
 	}
+	// A present layer retains at least its slice header. With less allowance than
+	// that, no output can fit, so reject before Git parses the child file.
+	if allowance < forkConfigSliceHeaderBytes {
+		return forkConfigLayer{}, 0, domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
+	}
 	records, size, err := listForkConfigFile(ctx, git, target, path, allowance)
 	if err != nil {
 		return forkConfigLayer{}, 0, err

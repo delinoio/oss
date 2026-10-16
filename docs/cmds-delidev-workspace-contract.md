@@ -724,8 +724,15 @@ verified. Each verification phase (the immediate check after one repository is
 prepared, the final all-repository check, and the snapshot verification across
 the native Fork boundary) deducts the sum of the retained proof bytes of every
 live Fork source from the unchanged 256 MiB bound, beside the verified child's Git
-files, before it reads any child layer. A source shared by the snapshot and a
-prepared copy is counted once. `config` and `config.worktree` are then read one
+files. That admission happens before any source or child Git command runs, and
+the immediate per-repository check admits it before the child Git directory is
+created, so an already over-budget verification returns the Fork snapshot
+Conflict instead of a child parsing, Unsupported or process-ownership result. A
+child Git directory that no longer fits beside the live proofs is snapshot drift
+and also returns Conflict. A source shared by the snapshot and a prepared copy
+shares one parsed buffer and record-array backing, which is counted once; every
+reusing holder still owns its own `[]string` slice headers, and those are charged.
+`config` and `config.worktree` are then read one
 after the other against what remains, and each layer is charged its complete
 output capacity plus record and slice headers before the next layer is read.
 A layer whose retained proof does not fit is rejected before its records are
