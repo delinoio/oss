@@ -330,6 +330,87 @@ test("the name list wraps long text inside the narrow rail", () => {
   expect(rule).not.toContain("white-space: nowrap");
 });
 
+function labelKey(row: ReturnType<typeof subagentFixture>) {
+  const record = readDocument(row);
+  return `${record.execution_id}:${object(record.observation).native_id}`;
+}
+
+test("a currently observed row with unusable metadata clears its stale name, while rows outside the window keep theirs", () => {
+  const session = newRequestId();
+  const rows = Array.from({ length: 3 }, () => subagentFixture(session));
+  sharedExecution(rows);
+  const [observed, kept, other] = rows as [
+    (typeof rows)[number],
+    (typeof rows)[number],
+    (typeof rows)[number],
+  ];
+  const labels = new Map<string, number>(),
+    names = new Map<string, string>();
+  withSubagentName(observed, "Atlas");
+  withSubagentName(kept, "Nova");
+  withSubagentName(other, "Iris");
+  retainSubagentLabels(labels, validateSubagentPage(rows, session)!, names);
+  expect(names.get(labelKey(observed))).toBe("Atlas");
+  const unusable: [string, (row: typeof observed) => void][] = [
+    ["missing", (row) => void (row.subagentDisplay = undefined)],
+    [
+      "foreign",
+      (row) =>
+        void (row.subagentDisplay = create(SubagentDisplayNameSchema, {
+          childId: newRequestId(),
+          name: "Atlas",
+        })),
+    ],
+    ["blank", (row) => void withSubagentName(row, "   ")],
+    ["control", (row) => void withSubagentName(row, "At\nlas")],
+    ["oversized", (row) => void withSubagentName(row, "가".repeat(257))],
+    ["lone surrogate", (row) => void withSubagentName(row, "At\ud800las")],
+  ];
+  for (const [label, damage] of unusable) {
+    names.set(labelKey(observed), "Atlas");
+    damage(observed);
+    // Only the observed row is in this payload window.
+    retainSubagentLabels(labels, validateSubagentPage([observed], session)!, names);
+    expect(names.has(labelKey(observed)), label).toBe(false);
+    expect(names.get(labelKey(kept)), label).toBe("Nova");
+    expect(names.get(labelKey(other)), label).toBe("Iris");
+    // The ordinal remains stable and the child page stays valid.
+    expect(labels.get(labelKey(observed)), label).toBe(1);
+  }
+  // A later valid observation restores the name.
+  withSubagentName(observed, "Atlas II");
+  retainSubagentLabels(labels, validateSubagentPage([observed], session)!, names);
+  expect(names.get(labelKey(observed))).toBe("Atlas II");
+});
+
+test("a parent card never shows a name that its currently observed row no longer carries", () => {
+  const session = newRequestId();
+  const rows = Array.from({ length: 2 }, () => subagentFixture(session));
+  sharedExecution(rows);
+  const [parent, child] = rows as [(typeof rows)[number], (typeof rows)[number]];
+  const record = readDocument(child);
+  object(record.observation).parent_id = object(
+    readDocument(parent).observation,
+  ).native_id;
+  child.documentJson = encode(record);
+  withSubagentName(parent, "Atlas");
+  const labels = new Map<string, number>(),
+    names = new Map<string, string>();
+  retainSubagentLabels(labels, validateSubagentPage(rows, session)!, names);
+  parent.subagentDisplay = undefined;
+  retainSubagentLabels(labels, validateSubagentPage(rows, session)!, names);
+  render(
+    <SubagentRows
+      rows={[child]}
+      sessionId={session}
+      labels={labels}
+      names={names}
+    />,
+  );
+  expect(within(openSubagentCard(0)).queryByText("Atlas")).toBeNull();
+  expect(within(openSubagentCard(0)).getByText("Subagent 1")).toBeTruthy();
+});
+
 test.each([
   ["OpenCode", "opencode"],
   ["Claude Code", "claude-code"],

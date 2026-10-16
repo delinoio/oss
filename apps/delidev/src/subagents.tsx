@@ -400,10 +400,13 @@ export function retainSubagentLabels(
     const key = `${row.record.execution_id}:${row.child.native_id}`;
     if (!labels.has(key)) labels.set(key, labels.size + 1);
     // Names only decorate the stable ordinal so a parent shown in a card keeps
-    // the same label as its list row after its own page leaves the window.
-    // Only Codex children carry native names.
+    // the same label as its list row after its own page leaves the window. A
+    // row observed now is authoritative: missing, foreign, blank, oversized,
+    // control-bearing or non-Codex metadata clears a stale name instead of
+    // leaving an older one. Entries of rows that left the window stay retained.
     const name = subagentRowDisplayName(row);
     if (name !== undefined) names?.set(key, name);
+    else names?.delete(key);
   }
 }
 
