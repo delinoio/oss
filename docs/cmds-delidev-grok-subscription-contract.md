@@ -6,10 +6,12 @@ This contract owns the Grok Build subscription lifecycle in `cmds/delidev-cli`,
 its Connect interface and the desktop AI Subscription flow. Implementation is
 partial and nothing is advertised. Implemented: the protocol identifiers below
 (declared only), the bound credential bundle library, the protected-vault
-generations, the protected Take/Finish lease handlers on the server and the
-Worker-side credential custody described under Storage. Not activated: the
-capability advertisement, native OAuth login and refresh execution, Worker-side
-watch dispatch, the remote callback forwarding and Grok execution.
+generations, the protected Take/Finish lease handlers on the server, the
+Worker-side credential custody described under Storage and the server-owned
+browser login described under [Server-owned browser login](#server-owned-browser-login),
+including its remote callback forwarding. Not activated: the capability
+advertisement, device-code login, refresh and logout, Worker-side watch dispatch
+and Grok execution.
 The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and gates protected Take admission of a Grok lease; no capability, discovery or execution path references it. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); Grok Build 1.0.52 inspection is accepted when its optional `experiments` inventory is an empty array (see `cmds-delidev-harness-contract.md`), which does not change these baselines. Reservation support is separate
 from implemented support and actual account/platform acceptance.
 
@@ -74,11 +76,10 @@ browser URL. It validates the fixed `https://auth.x.ai/oauth2/authorize` shape
 state and nonce, redirect exactly `http://127.0.0.1:<port>/callback`), opens it
 once. A local desktop binds nothing because the server listener receives the
 redirect. A remote desktop is refused explicitly (`Incompatible`) until the
-server can forward Grok callbacks: today `ForwardSubscriptionCallback` accepts
-only the ChatGPT/Codex login (`auth.openai.com`, fixed port 1457) and rejects
-Grok accounts, so forwarding must first become service-aware (Grok host,
-state and the dynamic port bound for that login) with Codex behavior unchanged.
-Once enabled, the receiver binds that IPv4 loopback port, accepts one
+server advertises the flow: `ForwardSubscriptionCallback` is service-aware (the
+ChatGPT/Codex login keeps `auth.openai.com` and fixed port 1457 byte for byte;
+a Grok account relays to the dynamic IPv4 loopback port and state bound for that
+very login). The receiver binds that IPv4 loopback port, accepts one
 `code`/`state`/`scope` redirect and returns it through Take for a single
 `ForwardSubscriptionCallback` call bound to the operation id. The server must
 therefore emit `state` and `nonce` from `[A-Za-z0-9-_.~]` (at most 512 bytes),
@@ -194,6 +195,95 @@ ever sent.
 Turning the capability 39 switch on is a server-layer decision made after the
 desktop controller exists; the desktop never infers it and never retries
 against a server that does not advertise it.
+
+### Server-owned browser login
+
+`RequestSubscription` for a Grok account with action LOGIN, `device_code` false
+and no machine ID creates the server-owned operation (`ServerOperation` plus a
+`Pending` operation without a Runner Device, 15-minute expiry). Device code,
+refresh, logout and any request that names a machine stay `unsupported` until
+their own changes. The scanner (`runServerSubscriptions`) claims the operation in
+the current server epoch and starts exactly one runner (`grok_login.go`); a Grok
+account never reaches the Codex runner.
+
+The OAuth client is `internal/subscription/grok_oauth.go`. It owns the fixed
+profile (issuer `https://auth.x.ai`, public client
+`b1a00492-073a-47ea-816f-4c329264a828`, the observed scope list in order,
+referrer `grok-build`), OIDC discovery validated against the issuer (exact
+issuer; every endpoint https on the issuer origin; PKCE method list exactly
+`S256`; token endpoint auth method `none`; ID token algorithm ES256), PKCE
+S256/state/nonce generation (43 characters from `[A-Za-z0-9_-]`), the
+public-client token exchange (no client secret, no client authentication header)
+and ID-token validation (ES256 only, key selected by `kid` from the discovery
+`jwks_uri`, issuer, audience equal to the client id, nonce, expiry). Its pieces
+are issue-neutral so device login, refresh and logout reuse them.
+
+Lifecycle of one runner:
+
+1. Discovery, then a listener bound with `net.Listen("tcp4", "127.0.0.1:0")`.
+   The authorization URL is built in the observed shape and parameter order
+   (`response_type`, `client_id`, `redirect_uri=http://127.0.0.1:PORT/callback`,
+   `scope` with `%20`, `code_challenge`, `code_challenge_method=S256`, `state`,
+   `nonce`, `referrer`) and is published only through the in-memory progress map:
+   `GetSubscriptionProgress` serves it in `url` while the operation is WAITING in
+   the current epoch and before the 15-minute deadline. It is never stored in a
+   document, log, event or error.
+2. The listener accepts exactly one callback: path `/callback`, `Host` equal to
+   `127.0.0.1:PORT`, peer `127.0.0.1`. A request outside that path, host or peer
+   is refused and ignored without consuming the slot. The first request that
+   passes is the one callback: a wrong or missing `state`, a provider `error`
+   (`access_denied` included) or a missing `code` ends the login as FAILED with
+   no token request; a second callback is refused with no action.
+3. The signing keys are read before the claim, so a keys failure cannot consume
+   the code. The durable exchange claim (`ServerSubscriptionOperation.exchange_claimed`)
+   is then committed, and only after that commit the single token request is
+   sent. The claim is never cleared or rewritten.
+4. A definitive answer (HTTP 4xx, invalid ID token, userinfo or mapping failure)
+   settles FAILED with a LOGIN `GrokDiagnostic` and the operation id as
+   correlation id. A transport error, timeout, 5xx or any interruption after the
+   claim (cancellation, expiry, server shutdown, restart) settles
+   RECOVERY_REQUIRED: the account stays fenced and the code is never sent again.
+   Before the claim, cancellation settles CANCELED and the deadline EXPIRED.
+5. Success follows the Finish-equivalent server settlement: the sealed
+   `GrokBundle` envelope is staged in the protected vault as the new
+   `AccountLogin` generation, the keyed identity commitment is checked for
+   duplicates (`uniqueSubscriptionIdentity`, same rules as the Take/Finish path),
+   and one transaction publishes the generation, commitment and connection. A
+   cancellation or a revoked initiator that appears after the claim wins as
+   RECOVERY_REQUIRED and the staged generation is retired.
+6. The listener is closed and its goroutine joined on every exit path before the
+   outcome settles. The PKCE verifier is overwritten. A server restart marks an
+   active operation recovery (`initializeServerSubscriptions`) and never binds a
+   listener again.
+
+`CancelSubscription` routes Grok accounts to the Grok branch: a queued login is
+canceled at once, a running login is flagged and its runner stopped promptly.
+`ForwardSubscriptionCallback` accepts, for a Grok account, only the original
+operation while WAITING and before the claim, with `code`, `state` and `scope`
+keys and the exact `state` of the published URL; the server relays the query to
+the loopback listener of that login once.
+
+Structured `slog` records of the flow use `phase=LOGIN` and the operation id as
+`correlation_id` (`grok_login_started`, `grok_login_waiting`,
+`grok_login_exchange_claimed`, `grok_login_listener_closed`,
+`grok_login_finished`, ...). They never contain the URL, state, nonce, verifier,
+code or a token.
+
+Field mapping assumption (unverified): the real source of each `auth.json` member
+was not captured from a real account. `subscription.BuildGrokBundle` is the one
+function that maps verified material to the native entry and is pinned by tests:
+`key` and `refresh_token` are the access and refresh tokens, `create_time` is the
+settlement time and `expires_at` adds `expires_in`, `user_id` is the verified ID
+token subject (userinfo must agree), `principal_type`, `principal_id` and
+`team_id` come from userinfo with the same-named verified ID-token claim as
+fallback (a missing principal fails closed), `email` and `first_name` come from
+userinfo or the ID token. Whether the provider accepts an arbitrary loopback port
+for this client is likewise unverified. Both need the opt-in real-account run;
+until it is recorded the single switch `grokSubscriptionLoginAdvertised`
+(`server_status.go`) stays false, so `GetStatus` does not list System 39 and the
+desktop keeps the Grok row in its disabled state. Tests use the in-process fake
+authorization server `internal/grokidptest` (discovery, authorize, token, JWKS and
+userinfo for the real issuer host, without network access).
 
 ### Desktop browser sign-in state machine
 
