@@ -55,9 +55,9 @@ const (
 )
 
 // grokSubscriptionLoginAdvertised is the single switch for System capability 39
-// (GROK_SUBSCRIPTION_LOGIN_V1). It stays false until the opt-in real-account run
-// has verified server-owned CLI login, credential persistence and logout.
-const grokSubscriptionLoginAdvertised = false
+// (GROK_SUBSCRIPTION_LOGIN_V1). The server-owned CLI flow is independent of
+// managed Grok execution, which retains its own default-off switch.
+const grokSubscriptionLoginAdvertised = true
 
 var (
 	grokOpaqueValue   = regexp.MustCompile(`^[A-Za-z0-9_.~-]{1,512}$`)

@@ -39,5 +39,6 @@
   "grok-diagnostic.label.notReported": "보고되지 않음",
   "grok-diagnostic.copyReference": "참조 복사",
   "grok-diagnostic.copied": "참조를 복사했습니다.",
-  "grok-diagnostic.copyFailed": "참조를 복사할 수 없습니다."
+  "grok-diagnostic.copyFailed": "참조를 복사할 수 없습니다.",
+  "grok-diagnostic.guidance.server": "Grok 로그인은 DeliDev 서버에서 실행됩니다. 원래 계정과 작업을 유지하세요. 다시 시도하기 전에 해당 서버의 Grok Build 설치 상태를 확인하세요."
 }

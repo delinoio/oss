@@ -28,7 +28,7 @@ import {
   useCloseSettingsTask,
   useSettingsTaskVisible,
 } from "./settings-task-context";
-import { GrokDiagnosticNotice } from "./grok-diagnostic";
+import { GrokDiagnosticNotice, GrokDiagnosticOwner } from "./grok-diagnostic";
 import { subscriptionNameValid } from "./subscription-onboarding";
 import {
   ProgressDisposition,
@@ -1214,7 +1214,10 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
             </div>
           ) : null}
           {v.diagnostic ? (
-            <GrokDiagnosticNotice diagnostic={v.diagnostic} />
+            <GrokDiagnosticNotice
+              diagnostic={v.diagnostic}
+              owner={GrokDiagnosticOwner.Server}
+            />
           ) : null}
           <SettingsTaskActions className="">
             {ui.openVerification ? (

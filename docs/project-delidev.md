@@ -3,7 +3,7 @@
 Grok sign-in runs `grok login --device-auth` directly on the server, through its
 owned-process and permanent per-account profile lifecycle, with no Runner
 registration or selection. The existing device-code UI observes the original
-Connect operation. Login activation and real-account acceptance remain separate
+Connect operation. System capability 39 enables this login independently
 from Grok execution under the [Grok subscription contract](cmds-delidev-grok-subscription-contract.md#current-server-owned-cli-login).
 
 The desktop owns shared scroll-continuation state and presentation with domain
@@ -61,7 +61,7 @@ Main desktop local Workers now have automatic same-owner registration/start and 
 
 The feature preserves closed private local-startup ownership/admission classifications across Go, native supervision and localized startup/Connection & diagnostics guidance. Original owners and data remain untouched; ownership and unclassified legacy conflicts retain safe inspection and explicit retry guidance under the existing supervision cadence. This adds no RPC, allocation, migration or automatic lifecycle authority. See the [desktop contract](apps-delidev-desktop-contract.md#local-startup-conflict-guidance).
 
-Failed-login subscription cleanup uses System capability 41 after main-first reservation the originating change. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and the declared-but-unadvertised Grok 39/40 identifiers retain ownership; no migration or Rust/native change is added.
+Failed-login subscription cleanup uses System capability 41 after main-first reservation the originating change. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38, server-owned Grok CLI login 39 and unadvertised Grok execution 40 identifiers retain ownership; no migration or Rust/native change is added.
 
 Native execution option selection follows the [catalog contract](cmds-delidev-catalog-contract.md#native-execution-option-selection). Available settings pass unchanged to native execution; unavailable saved values remain explicit, and all four Codex API/subscription permission modes preserve authentication, applied-setting and cleanup/recovery ownership. No protocol or database migration is required.
 
@@ -147,7 +147,7 @@ The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalo
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions and shared account owner/member ownership](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members), Worker 67 `SHARED_SUBSCRIPTION_OWNER_V1` and Worker 68 `CLAUDE_DEVICE_OWNED_MEMBERS_V1`
 - [OpenCode Go subscriptions](cmds-delidev-opencode-go-subscription-contract.md)
-- [Grok Build subscriptions (storage and lease layer implemented; protocol identifiers declared but unadvertised; desktop browser and device-code login UI implemented behind capability 39 and merged after the server layers; server-owned browser and device-code logins, refresh and logout (with logout-before-delete) implemented but unadvertised; managed execution on subscription accounts implemented behind default-off switches; advertisement of System 40 and Worker 21 planned after the opt-in real-account run)](cmds-delidev-grok-subscription-contract.md)
+- [Grok Build subscriptions: server-owned CLI device-code login, protected storage, refresh and logout under System 39; managed execution remains behind independent default-off System 40 and Worker 21 gates](cmds-delidev-grok-subscription-contract.md)
 - [API account browser OAuth](cmds-delidev-account-oauth-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
@@ -318,7 +318,7 @@ Workspace storage exposes original-job snapshot, usage preview, cleanup, inspect
 - [DeliDev signed updates](cmds-delidev-updates-contract.md)
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
 
-AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming. Claude sign-in is server-owned under capability 67 with login/name steps and never selects a Runner Device (capability 38 and the original Runner remain only for existing device-owned accounts' execution and logout); Grok remains unsupported (System 39/40, Worker 21 and progress field 10 are declared in the protos but unadvertised, with no server or Worker behavior). Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in the originating change; this optional JSON amendment adds no migration.
+AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming. Claude sign-in is server-owned under capability 67 with login/name steps and never selects a Runner Device (capability 38 and the original Runner remain only for existing device-owned accounts' execution and logout); Grok uses the server-owned CLI device-code flow under System 39, including protected credential storage, refresh and logout; System 40 and Worker 21 retain their separate default-off execution boundary. Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in the originating change; this optional JSON amendment adds no migration.
 
 Ordered account source routing follows the catalog, desktop, sessions, protocol and
 portable configuration contracts. One Harness retains source-specific models and

@@ -121,6 +121,7 @@ func (s *Service) performGrokCLILogin(ctx context.Context, id domain.ID, origina
 	flow := &grokFlowState{ctx: ctx, original: original, cancelSeen: canceled}
 	runtime, err := s.openGrokCLI(ctx, id, original.ID)
 	if err != nil {
+		s.logger.WarnContext(ctx, "grok_cli_login_unavailable", "phase", domain.GrokDiscovery, "operation_id", original.ID, "correlation_id", original.ID, "code", domain.SafeError(err).Code)
 		return flow.failed(err)
 	}
 	defer runtime.close()
@@ -151,7 +152,9 @@ func (s *Service) performGrokCLILogin(ctx context.Context, id domain.ID, origina
 		if domain.SafeError(err).Code == domain.RecoveryRequired {
 			return grokLoginOutcome{state: domain.SubscriptionRecovery, code: domain.RecoveryRequired}
 		}
-		return flow.failed(err)
+		// A native exit status cannot prove that a device token was not issued.
+		// Keep the durable claim fenced even when the CLI wrote no auth file.
+		return grokLoginOutcome{state: domain.SubscriptionRecovery, reason: subscription.GrokReasonTokenUncertain, code: domain.SafeError(err).Code}
 	}
 	if prompt.err != nil || !prompt.published || runtime.home.Verify() != nil {
 		return grokLoginOutcome{state: domain.SubscriptionRecovery, code: domain.RecoveryRequired}
