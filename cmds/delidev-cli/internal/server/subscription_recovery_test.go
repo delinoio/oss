@@ -259,6 +259,53 @@ func TestRecoveryUnavailableVaultKeepsTheFenceAndAbsentGenerationDisconnects(t *
 	}
 }
 
+func TestRecoveryCommittedSettlementBlocksWorkerRemovalUntilSettled(t *testing.T) {
+	f := newCodexRecoveryFixture(t)
+	defer clear(f.original)
+	latest := f.latest("rotated")
+	defer clear(latest)
+	capture := domain.NewID()
+	if _, err := f.sync(capture, f.original, latest); err != nil {
+		t.Fatal(err)
+	}
+	f.fence()
+	report := f.recoverRequest(domain.NewID(), pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE, capture)
+	f.secrets.mu.Lock()
+	f.secrets.deleteError = errors.New("simulated vault outage")
+	f.secrets.mu.Unlock()
+	if _, err := f.recover(report); err == nil {
+		t.Fatal("incomplete vault retirement was reported as settled")
+	}
+	remove := func() error {
+		machine, err := f.service.Store.Get(context.Background(), domain.MachineKind, f.input.MachineID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = f.service.RemoveWorker(context.Background(), connect.NewRequest(removeWorkerRequest(rpc.Resource(machine))))
+		return err
+	}
+	// The Worker is the only principal that can finish the committed settlement.
+	if err := remove(); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("removal retired the Worker while its recovery settlement was pending", err)
+	}
+	machine, err := f.service.Store.Get(context.Background(), domain.MachineKind, f.input.MachineID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value, err := store.Decode[domain.Machine](machine); err != nil || value.Retired || value.Disabled {
+		t.Fatal("a blocked removal changed the machine", err)
+	}
+	f.secrets.mu.Lock()
+	f.secrets.deleteError = nil
+	f.secrets.mu.Unlock()
+	if response, err := f.recover(report); err != nil || response.Outcome != pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_RESTORED {
+		t.Fatal("the original request did not finish the settlement", err)
+	}
+	if err := remove(); err != nil {
+		t.Fatal("removal stayed blocked after the settlement finished", err)
+	}
+}
+
 func TestRecoveryCaptureIsReplayableAndNeverGrantsAuthority(t *testing.T) {
 	f := newCodexRecoveryFixture(t)
 	defer clear(f.original)

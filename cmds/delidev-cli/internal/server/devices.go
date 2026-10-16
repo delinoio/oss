@@ -442,6 +442,14 @@ func (s *Service) RemoveWorker(ctx context.Context, req *connect.Request[pb.Remo
 		if record.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "This Worker changed after the confirmation was opened.", "Review the current Runner Device and confirm removal again.")
 		}
+		// A committed recovery settlement is finished only by this Worker's original
+		// request. Removal revokes its credential, so it waits for that retirement.
+		if account, held, err := recoverySettlementHeldByMachine(tx, record.ID); err != nil {
+			return nil, err
+		} else if held {
+			s.logger.Warn("worker_removal_blocked", "phase", subscriptionRecoveryPhase, "request_id", meta.RequestId, "machine_id", record.ID, "account_id", account, "reason", "recovery_settlement_pending")
+			return nil, domain.Fail(domain.Conflict, "This Worker is still finishing a credential recovery.", "Keep the Worker online until the recovery settles, then remove it.")
+		}
 		devices, err := tx.WorkerDevicesForMachine(record.ID)
 		if err != nil {
 			return nil, err
