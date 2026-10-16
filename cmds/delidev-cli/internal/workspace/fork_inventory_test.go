@@ -38,7 +38,7 @@ func forkInventoryCopyFixture(t *testing.T, linked bool) (*Manager, string, Mani
 func forkInventoryCopyFixtureWith(t *testing.T, linked bool, setup func(*testing.T, string, string)) (*Manager, string, Manifest, forkCopy, string) {
 	t.Helper()
 	input := forkInventoryFixtureInputWith(t, linked, setup)
-	prepared, copy, err := input.m.prepareForkGitInventory(context.Background(), input.git, input.spec, &input.manifest, func() error { return nil }, newForkCopyBudget(1), nil)
+	prepared, copy, err := input.m.prepareForkGitInventory(context.Background(), input.git, input.spec, &input.manifest, func() error { return nil }, newForkCopyBudget(1), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestPrepareForkGitInventoryReusesSnapshotConfigProof(t *testing.T) {
 	}
 	inventory.bindRemote(input.spec)
 	snapshot := &ForkSnapshot{copies: []forkCopy{{source: input.selected, git: true, gitInventory: &inventory}}}
-	prepared, copy, err := input.m.prepareForkGitInventory(context.Background(), input.git, input.spec, &input.manifest, func() error { return nil }, newForkCopyBudget(1), snapshot)
+	prepared, copy, err := input.m.prepareForkGitInventory(context.Background(), input.git, input.spec, &input.manifest, func() error { return nil }, newForkCopyBudget(1), snapshot, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestIndependentForkInventorySourceDriftAndChildTampering(t *testing.T) {
 		if err := os.WriteFile(path, append(append([]byte{}, original...), []byte("changed inventory\n")...), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if err := proof.verify(context.Background(), git); err == nil {
+		if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); err == nil {
 			t.Fatalf("source %s drift accepted", relative)
 		}
 		if os.IsNotExist(readErr) {
@@ -217,7 +217,7 @@ func TestIndependentForkInventorySourceDriftAndChildTampering(t *testing.T) {
 			}
 		}
 	}
-	if err := proof.verify(context.Background(), git); err != nil {
+	if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); err != nil {
 		t.Fatal("restored source proof failed", err)
 	}
 	path := filepath.Join(child.PrimaryPath, ".git", "logs", "HEAD")
@@ -228,7 +228,7 @@ func TestIndependentForkInventorySourceDriftAndChildTampering(t *testing.T) {
 	if err = os.WriteFile(path, append(original, []byte("child tampering\n")...), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err = proof.verify(context.Background(), git); err == nil {
+	if err = proof.verify(context.Background(), git, soloLiveProofBytes(proof)); err == nil {
 		t.Fatal("incomplete child history accepted")
 	}
 	if err = os.WriteFile(path, original, 0600); err != nil {
@@ -240,7 +240,7 @@ func TestIndependentForkInventorySourceDriftAndChildTampering(t *testing.T) {
 	// A rewritten worktree path would borrow the original dirty files despite
 	// owning all object files. The publication guard must reject it.
 	gitTest(t, child.PrimaryPath, "config", "core.worktree", source)
-	if err = proof.verify(context.Background(), git); err == nil {
+	if err = proof.verify(context.Background(), git, soloLiveProofBytes(proof)); err == nil {
 		t.Fatal("child borrowed original worktree")
 	}
 	if gitTest(t, source, "rev-parse", "HEAD") != proof.head {
@@ -370,7 +370,7 @@ func TestIndependentForkInventoryAcceptsInventoryAboveOrdinarySnapshotLimit(t *t
 			}
 			git := m.Git
 			git.OwnerID = child.SessionID
-			if err := proof.verify(context.Background(), git); err != nil {
+			if err := proof.verify(context.Background(), git, soloLiveProofBytes(proof)); err != nil {
 				t.Fatal("native-boundary verification rejected a valid large inventory", err)
 			}
 			if gitTest(t, child.PrimaryPath, "show", lost+":tracked.txt") != "reflog-only history" {
@@ -401,7 +401,7 @@ func TestIndependentForkInventoryLargeInventoryStaysBoundedByAggregateBudget(t *
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, copy, err := input.m.prepareForkGitInventory(context.Background(), input.git, input.spec, &input.manifest, func() error { return nil }, tc.budget, nil)
+			_, copy, err := input.m.prepareForkGitInventory(context.Background(), input.git, input.spec, &input.manifest, func() error { return nil }, tc.budget, nil, nil)
 			if domain.SafeError(err).Code != domain.ResourceExhausted || copy != nil {
 				t.Fatalf("aggregate exhaustion was not refused: %v", err)
 			}

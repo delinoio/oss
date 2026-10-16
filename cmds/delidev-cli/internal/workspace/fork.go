@@ -151,6 +151,10 @@ func (s *ForkSnapshot) Verify(ctx context.Context, child Manifest) error {
 	if s == nil || child.State != Ready {
 		return ResultUncertain()
 	}
+	liveProofBytes, err := forkLiveConfigProofBytes(s.copies)
+	if err != nil {
+		return err
+	}
 	for i, copy := range s.copies {
 		copy.target = child.PrimaryPath
 		if copy.git {
@@ -159,7 +163,7 @@ func (s *ForkSnapshot) Verify(ctx context.Context, child Manifest) error {
 			}
 			copy.target = child.Repositories[i].Path
 		}
-		if err := copy.verify(ctx, s.git); err != nil {
+		if err := copy.verify(ctx, s.git, liveProofBytes); err != nil {
 			return err
 		}
 	}
@@ -651,7 +655,15 @@ func copyForkRepositoryPinned(ctx context.Context, git Git, source, target, comm
 	return copy, nil
 }
 
-func (c forkCopy) verify(ctx context.Context, git Git) error {
+// verify rechecks the copy. liveProofBytes is the retained config proof total of
+// every live Fork source; see forkLiveConfigProofBytes.
+func (c forkCopy) verify(ctx context.Context, git Git, liveProofBytes uint64) error {
+	// Admit the live proof total before any child scan or Git command.
+	if c.git && c.gitInventory != nil {
+		if _, err := c.gitInventory.admitLiveProofs(liveProofBytes); err != nil {
+			return err
+		}
+	}
 	entryLimit := c.entryLimit
 	if entryLimit == 0 {
 		entryLimit = maxForkEntries
@@ -679,7 +691,7 @@ func (c forkCopy) verify(ctx context.Context, git Git) error {
 			if strings.TrimSpace(string(childHead)) != c.head {
 				return forkSnapshotChanged()
 			}
-			if err := c.gitInventory.verify(ctx, git, c.source, c.target); err != nil {
+			if err := c.gitInventory.verify(ctx, git, c.source, c.target, liveProofBytes); err != nil {
 				return err
 			}
 		}

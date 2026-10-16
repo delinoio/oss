@@ -451,7 +451,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 				return failed(domain.SafeError(err))
 			}
 			if spec.SourceKind.managed() {
-				prepared, copy, err := m.prepareIndependentRepository(repositoryCtx, git, root, spec, &manifest, write, forkBudget, forkSnapshot)
+				prepared, copy, err := m.prepareIndependentRepository(repositoryCtx, git, root, spec, &manifest, write, forkBudget, forkSnapshot, copies)
 				if err != nil {
 					return failed(err)
 				}
@@ -605,8 +605,19 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 	startupProgress(ctx, domain.StartupWorkspaceVerify, domain.StartupProgressRunning)
 	// Compare every source again after the final repository has been copied.
 	// A valid per-repository prefix alone cannot prove an all-repository snapshot.
+	// Every frozen source proof stays live through this loop, so each child
+	// verification deducts the total, not only its own proof.
+	var snapshotCopies []forkCopy
+	if forkSnapshot != nil {
+		snapshotCopies = forkSnapshot.copies
+	}
+	liveProofBytes, err := forkLiveConfigProofBytes(snapshotCopies, copies)
+	if err != nil {
+		return failed(err)
+	}
 	for _, copy := range copies {
-		if err := copy.verify(ctx, git); err != nil {
+		if err := copy.verify(ctx, git, liveProofBytes); err != nil {
+			m.Logger.Warn("workspace_fork_verify_failed", "session_id", request.SessionID, "phase", "final_all_copy", "live_proof_bytes", liveProofBytes, "code", domain.SafeError(err).Code)
 			return failed(err)
 		}
 	}
