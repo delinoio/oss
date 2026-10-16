@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     chunks::{Chunk, measure},
-    collect::{CollectedModule, Collection},
+    collect::{CollectedModule, Collection, MangleSetting},
     engine::BundlerChoice,
     error::{ErrorCode, problem},
     model::{
@@ -224,6 +224,18 @@ fn coverage(
                              uses {}.",
                             collection.minifier
                         ),
+                    )
+                }
+                // The only name-mangling detector does not scan a build that
+                // verifiably mangles nothing, so no result covers the category.
+                OptimizationCategory::NameMangling
+                    if collection.mangle == MangleSetting::Disabled =>
+                {
+                    (
+                        CoverageState::NotApplicable,
+                        "The build disables name mangling, so the minifier's name mangling does \
+                         not run and its detectors are skipped."
+                            .to_owned(),
                     )
                 }
                 // Vite's generated env expression needs confirmation from the
@@ -1042,6 +1054,40 @@ mod tests {
         assert_eq!(coverage.state, CoverageState::Partial);
         assert!(coverage.note.contains("no usable source map"));
         assert!(!coverage.note.contains("no source mapping"));
+    }
+
+    #[test]
+    fn disabled_name_mangling_is_not_applicable_and_other_categories_are_unchanged() {
+        let value: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(manifest_dir().join("tests/fixtures/vite/collect.json")).unwrap(),
+        )
+        .unwrap();
+        let mut collection: Collection = serde_json::from_value(value).unwrap();
+        let find = |coverage: Vec<CategoryCoverage>, category: OptimizationCategory| {
+            coverage
+                .into_iter()
+                .find(|entry| entry.category == category)
+                .unwrap()
+        };
+        let enabled = find(
+            coverage(&collection, 0, 0, 0, 0, 0, 0, None),
+            OptimizationCategory::NameMangling,
+        );
+        assert_eq!(enabled.state, CoverageState::Covered);
+        collection.mangle = MangleSetting::Disabled;
+        // Source gaps, unreadable chunks and missing maps cannot make the
+        // skipped detector partial: it did not scan anything.
+        let disabled = find(
+            coverage(&collection, 1, 1, 1, 1, 1, 0, None),
+            OptimizationCategory::NameMangling,
+        );
+        assert_eq!(disabled.state, CoverageState::NotApplicable);
+        assert!(disabled.note.contains("disables name mangling"));
+        let dead_code = find(
+            coverage(&collection, 0, 0, 0, 0, 0, 0, None),
+            OptimizationCategory::DeadCodeElimination,
+        );
+        assert_eq!(dead_code.state, CoverageState::Covered);
     }
 
     #[test]

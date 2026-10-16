@@ -24,7 +24,7 @@ import {
 } from "./common.mjs";
 
 export const ADAPTER_ID = "bundlewhy-collector-vite";
-export const ADAPTER_VERSION = "2";
+export const ADAPTER_VERSION = "3";
 
 /** Plugins that the adapter adds; they are not part of the project's config. */
 const BUNDLEWHY_PLUGIN_NAMES = new Set([
@@ -98,6 +98,85 @@ export function normalizeCollectionRoot(root, preserveSymlinks = false) {
   } catch {
     return root.replaceAll("\\", "/");
   }
+}
+
+/** Effective name-mangling state written to the collection (`mangle`). */
+export const MangleSetting = Object.freeze({
+  Enabled: "enabled",
+  Disabled: "disabled",
+});
+
+/**
+ * Resolves whether the minifier mangles names for the build.
+ *
+ * Vite spreads the user's `build.rolldownOptions.output` after the value it
+ * computes from `build.minify`, so an explicit `output.minify` wins:
+ * `false`, `"dce-only"` and an options object with `mangle: false` turn
+ * mangling off. Anything else, including an absent option, `true`, an options
+ * object without `mangle: false` and shapes bundlewhy does not recognize,
+ * keeps mangling enabled, because only a verified disabled setting may
+ * suppress a finding. Without `output.minify`, `build.minify: false` is what
+ * Vite turns into `"dce-only"`. An array of outputs is read only when it has
+ * one entry; several outputs are rejected before analysis.
+ */
+export function resolveMangleSetting(buildOptions) {
+  const options = buildOptions ?? {};
+  const rolldownOptions = options.rolldownOptions ?? options.rollupOptions;
+  let output = rolldownOptions?.output;
+  if (Array.isArray(output)) {
+    output = output.length === 1 ? output[0] : undefined;
+  }
+  const outputMinify =
+    output !== null && typeof output === "object" ? output.minify : undefined;
+  if (outputMinify === undefined) {
+    return options.minify === false
+      ? MangleSetting.Disabled
+      : MangleSetting.Enabled;
+  }
+  if (outputMinify === false || outputMinify === "dce-only") {
+    return MangleSetting.Disabled;
+  }
+  if (
+    outputMinify !== null &&
+    typeof outputMinify === "object" &&
+    !Array.isArray(outputMinify) &&
+    outputMinify.mangle === false
+  ) {
+    return MangleSetting.Disabled;
+  }
+  return MangleSetting.Enabled;
+}
+
+/**
+ * Reads the mangling state from the finalized (normalized) output options that
+ * Rolldown passes to `renderStart`, after every plugin `outputOptions` hook ran.
+ *
+ * `fallback` is the setting resolved from the configuration. Rolldown
+ * normalizes `output.minify` to `false`, `"dce-only"` or an options object, and
+ * it omits `mangle` from the object when mangling is off, so those shapes are
+ * verified disabled. `false` is disabled only when Rolldown owns minification
+ * (`build.minify` is `"oxc"` or `true`); with another minifier, Vite minifies
+ * outside Rolldown and `false` says nothing about names, so the fallback stays.
+ * Any other shape keeps the fallback.
+ */
+export function resolveNormalizedMangleSetting(
+  minify,
+  buildMinify,
+  fallback = MangleSetting.Enabled,
+) {
+  if (minify === "dce-only") return MangleSetting.Disabled;
+  if (minify === false) {
+    return buildMinify === "oxc" || buildMinify === true
+      ? MangleSetting.Disabled
+      : fallback;
+  }
+  if (minify !== null && typeof minify === "object" && !Array.isArray(minify)) {
+    const mangle = minify.mangle;
+    return mangle === undefined || mangle === null || mangle === false
+      ? MangleSetting.Disabled
+      : MangleSetting.Enabled;
+  }
+  return fallback;
 }
 
 /**
@@ -284,6 +363,7 @@ function collectorPlugin(state) {
           : undefined;
       state.resolved = {
         minify: config.build.minify,
+        mangle: resolveMangleSetting(config.build),
         sourcemap: config.build.sourcemap,
         lib: Boolean(config.build.lib),
         ssr: Boolean(config.build.ssr),
@@ -296,6 +376,19 @@ function collectorPlugin(state) {
         defineKeys: Object.keys(config.define ?? {}).sort(),
         plugins: config.plugins.map((plugin) => plugin.name).filter(Boolean),
       };
+    },
+    // The configResolved snapshot cannot see `outputOptions` hooks of Vite or
+    // Rolldown plugins, which Rolldown applies when it generates the bundle.
+    // `renderStart` receives the finalized output options, so the mangle
+    // setting is taken from them. bundlewhy analyzes the first output only.
+    renderStart(outputOptions) {
+      state.renderStarts += 1;
+      if (state.renderStarts > 1 || !state.resolved) return;
+      state.resolved.mangle = resolveNormalizedMangleSetting(
+        outputOptions?.minify,
+        state.resolved.minify,
+        state.resolved.mangle,
+      );
     },
     onLog(level, log) {
       // Rolldown reports optimization-relevant warnings (for example EVAL and
@@ -450,6 +543,7 @@ await runAdapter(async (request) => {
     moduleSideEffectsOption: undefined,
     collection: null,
     outputs: 0,
+    renderStarts: 0,
     externalNames: new Set(),
     warnings: [],
     logs: [],
@@ -622,6 +716,8 @@ await runAdapter(async (request) => {
     minify === true || minify === undefined ? "oxc" : String(minify);
   const configSummary = {
     "build.minify": summarizeValue(minify),
+    "build.rolldownOptions.output.minify.mangle":
+      resolved.mangle ?? MangleSetting.Enabled,
     "build.target": resolved.target ?? "unknown",
     "build.rolldownOptions.treeshake": resolved.treeshake ?? "undefined",
     "build.lib": String(Boolean(resolved.lib)),
@@ -642,6 +738,7 @@ await runAdapter(async (request) => {
     minifierVersion: minifierName === "oxc" ? vite.rolldownVersion : "unknown",
     defaultMinifier: minifierName === "oxc",
     minifyEnabled,
+    mangle: resolved.mangle ?? MangleSetting.Enabled,
     adapterId: ADAPTER_ID,
     adapterVersion: ADAPTER_VERSION,
     engineDetails: { rolldownVersion: vite.rolldownVersion },

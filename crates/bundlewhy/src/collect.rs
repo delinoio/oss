@@ -9,6 +9,18 @@ use crate::engine::BundlerChoice;
 
 pub const COLLECT_VERSION: u32 = 1;
 
+/// Whether the minifier mangles local names in the analyzed build. Collections
+/// written before the field existed, and Rspack collections, default to
+/// `Enabled`; only an adapter that verified a disabled setting writes
+/// `Disabled`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MangleSetting {
+    #[default]
+    Enabled,
+    Disabled,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Collection {
@@ -20,6 +32,7 @@ pub struct Collection {
     pub minifier_version: String,
     pub default_minifier: bool,
     pub minify_enabled: bool,
+    pub mangle: MangleSetting,
     pub adapter_id: String,
     pub adapter_version: String,
     pub overrides: Vec<String>,
