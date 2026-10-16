@@ -1031,3 +1031,13 @@ profile or execution authority; unknown fields remain unsupported.
 Server-owned setup-token login, Runner subscription selection and the Worker lifecycle admit any verified Claude Code installation whose valid SemVer precedence is at or above the pinned `2.1.236` baseline, using `domain.HarnessVersionAllowed`. Admission only permits the real native protocol, settings, authentication and cleanup checks to run. The `claude auth` and `--version` verification compares the executable output with the observed installation version, never with the baseline constant. A malformed or lower version stays unsupported before any native launch.
 
 `NativeSubscriptionDiagnostic.detected_version` carries the observed executable version, including on the server login path, and `phase` carries the real failing native phase. A server login rejected during Claude protocol discovery reports Discovery, not Launch. `required_version` stays in the proto and Go validator as the pinned minimum baseline for wire compatibility; clients must not present it as an exact requirement. An authentication-status failure after successful version validation never advises installing a specific version. Server and Runner messages for unsupported installations do not name a fixed version.
+
+## Claude usage response normalization (issue 4069, first slice)
+
+This slice defines only the pure normalization of the Claude OAuth usage response (`GET https://api.anthropic.com/api/oauth/usage`) in `domain.ParseClaudeUsageQuota`. It adds no login, vault, fetch, scheduling, RPC, capability or UI; the remaining `CLAUDE_SERVER_USAGE_V1` feature stays unimplemented and does not activate Claude quota support.
+
+- Input is a body of at most 1 MiB holding exactly one JSON object. The observation time is the caller's genuine successful-fetch time.
+- Only `five_hour` and `seven_day` are recognized (window IDs identical, durations 300 and 10080 minutes); unrelated fields are ignored.
+- `utilization` must be a bare finite JSON number from 0 through 100; remaining quota is `1 - utilization/100`. `resets_at` is nullable RFC 3339.
+- Missing or null windows are omitted, never zero or recovered quota. A malformed recognized window, or a response with no usable window, fails atomically so it cannot advance observation time or replace retained evidence.
+- The comparison group is `claude` (`ClaudeQuotaComparisonGroup`); publication gating for ChatGPT-only observations is unchanged.
