@@ -378,8 +378,10 @@ func TestFailedInitialLoginConfirmationRequiredRetriesWithNewRequest(t *testing.
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatal("ConfirmationRequired was not reported", err)
 	}
-	if _, a := f.record(); a.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed || !a.Subscription.RecoveryRequired {
-		t.Fatal("retained account lost its native checkpoint")
+	// Native closure settled the failed login before the explicit removal began;
+	// the OS authorization failure belongs to the explicit deletion alone.
+	if _, a := f.record(); a.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionCredentialCleanupConfirmed || a.Subscription.RecoveryRequired || a.Health != domain.AccountDisconnected {
+		t.Fatal("retained account lost its settled failed login")
 	}
 	f.secrets.deleteError = nil
 	if err := f.deleteFailedLogin(request); err == nil {
