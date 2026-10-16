@@ -751,7 +751,8 @@ func (s *Service) finishGrokLogin(ctx context.Context, id domain.ID, o domain.Se
 }
 
 // markGrokLoginRecovery fences the account when settlement itself failed. It
-// never clears the exchange claim and never resends a code.
+// never clears the exchange claim and never resends a code or a refresh token,
+// and it serves the server-owned login and refresh alike.
 func (s *Service) markGrokLoginRecovery(id, operation domain.ID) error {
 	ctx, cancel := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 5*time.Second)
 	defer cancel()
@@ -773,7 +774,7 @@ func (s *Service) markGrokLoginRecovery(id, operation domain.ID) error {
 		o := st.ServerOperation
 		o.State = domain.SubscriptionRecovery
 		if o.GrokDiagnostic == nil {
-			d := grokLocalDiagnostic("", domain.GrokLogin, domain.RecoveryRequired)
+			d := grokLocalDiagnostic("", grokActionPhase(o.Action), domain.RecoveryRequired)
 			d.CorrelationID = string(o.ID)
 			o.GrokDiagnostic = d
 		}
@@ -813,17 +814,23 @@ func grokLoginCandidate(a domain.Account) bool {
 	return o.Action == domain.SubscriptionLogin && o.State == domain.SubscriptionPreparing && !o.NativeStarted && st.Pending.ID == o.ID && st.Pending.Phase == domain.SubscriptionQueued && st.Pending.MachineID == ""
 }
 
-// requestGrokSubscription admits the Grok login: LOGIN with no machine, by
-// browser (device_code false) or by device code (device_code true). The choice
-// is stored on the pending operation and never changes. Refresh and logout have
-// no server-owned Grok path yet and stay unsupported.
+// requestGrokSubscription admits the server-owned Grok operations: LOGIN with no
+// machine, by browser (device_code false) or by device code (device_code true),
+// and REFRESH of a connected account with no machine. The login choice is stored
+// on the pending operation and never changes. Logout has no server-owned Grok
+// path yet and stays unsupported, as does any request that names a Runner Device.
 func (s *Service) requestGrokSubscription(ctx context.Context, req *connect.Request[pb.RequestSubscriptionRequest]) (*connect.Response[pb.RequestSubscriptionResponse], error) {
-	if req.Msg.MachineId != "" || subscriptionAction(req.Msg.Action) != domain.SubscriptionLogin {
-		return nil, rpc.Error(domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Start the Grok login without a Runner Device; refresh and logout are not available."), req.Header().Get(rpc.CorrelationHeader))
+	action := subscriptionAction(req.Msg.Action)
+	if req.Msg.MachineId != "" || action != domain.SubscriptionLogin && action != domain.SubscriptionRefresh {
+		return nil, rpc.Error(domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Start the Grok login or refresh without a Runner Device; logout is not available."), req.Header().Get(rpc.CorrelationHeader))
 	}
 	response, err := s.requestServerSubscription(ctx, req)
 	if err == nil {
-		s.logger.InfoContext(ctx, "grok_login_accepted", "phase", grokLoginPhase, "account_id", req.Msg.Mutation.Id, "operation_id", req.Msg.Mutation.RequestId, "correlation_id", req.Msg.Mutation.RequestId, "device_code", req.Msg.DeviceCode, "replayed", response.Msg.Replayed)
+		phase := grokLoginPhase
+		if action == domain.SubscriptionRefresh {
+			phase = grokRefreshPhase
+		}
+		s.logger.InfoContext(ctx, "grok_operation_accepted", "phase", phase, "action", action, "account_id", req.Msg.Mutation.Id, "operation_id", req.Msg.Mutation.RequestId, "correlation_id", req.Msg.Mutation.RequestId, "device_code", req.Msg.DeviceCode, "replayed", response.Msg.Replayed)
 	}
 	return response, err
 }
