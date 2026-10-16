@@ -34,7 +34,7 @@ Adapters report progress and errors as JSON lines; Rust records them in the run 
 
 ## Build and Test
 
-`pnpm --filter @delino/bundlewhy test` runs launcher and adapter tests. `pnpm --filter @delino/bundlewhy test:acceptance` builds the Rust binary, runs both fixtures end to end and verifies that fixture files are unchanged. Acceptance removes its generated web `dist` output after success or failure while preserving the original failure diagnostic. Fixtures pin `vite` `8.3.4` and `@rspack/core` `2.2.9` through this package's development dependencies.
+`pnpm --filter @delino/bundlewhy test` runs launcher and adapter tests, including the adapter unit tests that live next to the adapters (`crates/bundlewhy/adapters/*.test.mjs`). `pnpm --filter @delino/bundlewhy test:acceptance` builds the Rust binary, runs both fixtures end to end and verifies that fixture files are unchanged. Acceptance removes its generated web `dist` output after success or failure while preserving the original failure diagnostic. Fixtures pin `vite` `8.3.4` and `@rspack/core` `2.2.9` through this package's development dependencies.
 
 ## Dependencies and Integrations
 
