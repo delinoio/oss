@@ -245,7 +245,7 @@ func (s *Service) runClaudeUsageRead(read *claudeUsageRead) {
 		attrs = append(attrs, "failure", outcome.failure)
 	}
 	if outcome.backoff != nil {
-		attrs = append(attrs, "backoff", true)
+		attrs = append(attrs, "backoff_seconds", int64(outcome.backoff.Sub(s.claudeUsageNow()).Round(time.Second)/time.Second))
 	}
 	logger.Info("claude_usage_read_finished", attrs...)
 }

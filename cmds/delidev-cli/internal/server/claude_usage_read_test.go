@@ -18,6 +18,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -953,6 +954,56 @@ func containsID(ids []domain.ID, id domain.ID) bool {
 		}
 	}
 	return false
+}
+
+func TestClaudeUsageRenewalThatNeverStartedBacksOffWithoutLosingTheLink(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"discovery unavailable", domain.Fail(domain.Unavailable, "no executable", "")},
+		{"leftover credential storage", nativeprofile.Failure(domain.RecoveryRequired, nativeprofile.ReasonCredentialPresent, "present", "")},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newReadFixture(t, func(n *fakeUsageNative) { n.expiresIn = time.Minute })
+			f.service.claudeUsageRenew = func(context.Context, nativeScope, domain.ID, subscription.ClaudeUsageBundle, *slog.Logger) (claudeUsageRenewal, string, error) {
+				f.renewOpens.Add(1)
+				return nil, "", c.err
+			}
+			credential := f.section().CredentialID
+			if err := f.refreshAndWait(); err != nil {
+				t.Fatal(err)
+			}
+			section := f.section()
+			if section.Connection != domain.ClaudeUsageLinked || !section.Published || section.CredentialID != credential || section.Refresh != domain.ClaudeUsageIdle || section.Failure != domain.ClaudeUsageFailureUnavailable || section.BackoffUntil == nil {
+				t.Fatalf("section = %+v", section)
+			}
+			if f.provider.count() != 0 || f.renewal.runs.Load() != 0 {
+				t.Fatalf("requests %d runs %d", f.provider.count(), f.renewal.runs.Load())
+			}
+			// The stored refresh token was never offered, so the renewal may be
+			// retried after the pause; the owed native cleanup settles first.
+			ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+			if err := f.service.cleanupClaudeUsage(ctx, f.account()); err != nil {
+				t.Fatal(err)
+			}
+			if f.section().OwesCleanup() {
+				t.Fatalf("cleanup left %+v", f.section())
+			}
+			f.clock.Advance(domain.ClaudeUsageDefaultBackoff)
+			f.service.claudeUsageRenew = func(context.Context, nativeScope, domain.ID, subscription.ClaudeUsageBundle, *slog.Logger) (claudeUsageRenewal, string, error) {
+				f.renewOpens.Add(1)
+				return f.renewal, domain.ClaudeProtocolVersion, nil
+			}
+			if err := f.refreshAndWait(); err != nil {
+				t.Fatal(err)
+			}
+			if f.renewal.runs.Load() != 1 || f.provider.count() != 1 || f.section().Failure != domain.ClaudeUsageFailureNone {
+				t.Fatalf("the renewal did not resume: runs %d requests %d %+v", f.renewal.runs.Load(), f.provider.count(), f.section())
+			}
+		})
+	}
 }
 
 func TestClaudeUsageAmbiguousRotationRetainsRecoveryAndNeverRepeatsAnExchange(t *testing.T) {
