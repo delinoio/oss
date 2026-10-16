@@ -36,9 +36,12 @@
 //!   cannot replace it (`Facts::patched` through [`ArrayBuiltins::detect`]).
 //!   `map`, `filter` and `slice` also need `constructor` (species), iteration
 //!   also needs `Symbol.iterator` and `next`. A write that could change what a
-//!   numeric key means on `Array` or `Object.prototype`, and any aliasing or
-//!   escape of the prototype chain (see `prototype_chain` in the runtime
-//!   facts), disables every modeled operation.
+//!   numeric key means on `Array` or `Object.prototype`, and any form outside
+//!   the intrinsic allowlist (see `intrinsic_exposure` in the runtime facts:
+//!   every module, checked or unchecked, may reach `Array`, `Object`,
+//!   `Reflect`, `Function`, `Proxy`, `eval`, the global object, the reflection
+//!   keys and unproven computed keys only in the listed benign forms), disables
+//!   every modeled operation.
 //! - Callbacks. An inline arrow or function expression is summarized only as
 //!   the single argument of a callback method (see [`CallbackBoundary`] for the
 //!   rejections). Its parameters and result become unknown unless every
@@ -207,7 +210,7 @@ impl ArrayBuiltins {
         let mut view = patch_view();
         let numeric = view.numeric_keys(ctx);
         let exposed = view
-            .prototype_exposure(ctx)
+            .intrinsic_exposure(ctx)
             .map(|exposure| exposure.describe().to_owned());
         let global = numeric.clone().or(exposed);
         let mut disabled: Vec<(&'static str, String)> = Vec::new();

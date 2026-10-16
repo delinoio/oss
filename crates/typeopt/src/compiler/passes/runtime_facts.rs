@@ -19,8 +19,8 @@ use std::collections::{HashMap, HashSet};
 use super::super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer};
 use crate::compiler::api::*;
 
-mod prototype_chain;
-pub(in crate::compiler) use prototype_chain::PrototypeExposure;
+mod intrinsic_exposure;
+pub(in crate::compiler) use intrinsic_exposure::IntrinsicExposure;
 
 /// Possible runtime kinds of a value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1499,17 +1499,10 @@ impl PatchView {
         self.facts.patches(ctx).numeric_key_record()
     }
 
-    /// The first place where application code lets the prototype chain of an
-    /// array flow somewhere the patch scan does not follow, if any. The one
-    /// rule is documented in [`prototype_chain`].
-    pub fn prototype_exposure(&mut self, ctx: &mut Ctx) -> Option<PrototypeExposure> {
-        let files: Vec<Vec<Node>> = ctx
-            .files
-            .iter()
-            .filter(|file| !file.js)
-            .map(|file| file.nodes.clone())
-            .collect();
-        prototype_chain::find(ctx, &files, &mut self.facts)
+    /// The first form in the program that the intrinsic allowlist rejects, if
+    /// any. The rule is documented in [`intrinsic_exposure`].
+    pub fn intrinsic_exposure(&mut self, ctx: &mut Ctx) -> Option<IntrinsicExposure> {
+        intrinsic_exposure::find(ctx, &mut self.facts)
     }
 }
 
