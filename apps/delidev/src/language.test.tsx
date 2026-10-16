@@ -578,3 +578,130 @@ test.each(Object.values(LanguageProblem))(
     ).toBeTruthy();
   },
 );
+
+test("the list is an anchored top-layer popover that owns its empty status and reserves no layout", async () => {
+  const value = fixture();
+  const show = vi.fn(),
+    hide = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "showPopover", {
+    configurable: true,
+    value: show,
+  });
+  Object.defineProperty(HTMLElement.prototype, "hidePopover", {
+    configurable: true,
+    value: hide,
+  });
+  try {
+    const { container } = render(
+      <LanguageProvider bridge={value.bridge}>
+        <LanguageSettings />
+      </LanguageProvider>,
+    );
+    const input = screen.getByRole("combobox") as HTMLInputElement;
+    await waitFor(() => expect(input.disabled).toBe(false));
+    const before = container.innerHTML;
+    expect(container.querySelector(".language-popup")).toBeNull();
+    act(() => input.focus());
+    const popup = container.querySelector<HTMLElement>(".language-popup")!;
+    expect(popup.getAttribute("popover")).toBe("manual");
+    expect(popup.classList.contains("anchored-popup")).toBe(true);
+    // The popup stays in the original DOM subtree and owns the listbox.
+    expect(popup.closest(".language-picker")).not.toBeNull();
+    expect(popup.contains(screen.getByRole("listbox"))).toBe(true);
+    expect(input.getAttribute("aria-controls")).toBe(
+      screen.getByRole("listbox").id,
+    );
+    expect(show).toHaveBeenCalledOnce();
+    // Nothing outside the popup subtree changes while the list is open.
+    fireEvent.change(input, { target: { value: "no such language" } });
+    expect(popup.contains(screen.getByText("No matching languages."))).toBe(
+      true,
+    );
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(container.querySelector(".language-popup")).toBeNull();
+    expect(hide).toHaveBeenCalled();
+    expect(container.innerHTML.replace(/ value="[^"]*"/g, "")).toBe(
+      before.replace(/ value="[^"]*"/g, ""),
+    );
+  } finally {
+    delete (HTMLElement.prototype as { showPopover?: unknown }).showPopover;
+    delete (HTMLElement.prototype as { hidePopover?: unknown }).hidePopover;
+  }
+});
+
+test("opening, filtering and every dismissal path perform no write and release listeners", async () => {
+  const value = fixture();
+  const added = vi.spyOn(document, "addEventListener"),
+    removed = vi.spyOn(document, "removeEventListener");
+  render(
+    <LanguageProvider bridge={value.bridge}>
+      <LanguageSettings />
+      <button>Elsewhere</button>
+    </LanguageProvider>,
+  );
+  const input = screen.getByRole("combobox") as HTMLInputElement;
+  await waitFor(() => expect(input.disabled).toBe(false));
+  const scrolls = (spy: typeof added) =>
+    spy.mock.calls.filter(([type]) => type === "scroll").length;
+  const dismissals: Array<() => void> = [
+    () => fireEvent.keyDown(input, { key: "Escape" }),
+    () => fireEvent.keyDown(input, { key: "Tab" }),
+    () => fireEvent.pointerDown(screen.getByText("Elsewhere")),
+    () => act(() => input.blur()),
+  ];
+  for (const dismiss of dismissals) {
+    act(() => input.focus());
+    fireEvent.click(input);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "kor" } });
+    fireEvent.change(input, { target: { value: "" } });
+    dismiss();
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(input.value).toBe("Follow system");
+  }
+  expect(value.bridge.update).not.toHaveBeenCalled();
+  expect(scrolls(added)).toBe(dismissals.length);
+  expect(scrolls(removed)).toBe(dismissals.length);
+});
+
+test("pointer presses inside the popup keep input focus and the list open", async () => {
+  const value = fixture();
+  render(
+    <LanguageProvider bridge={value.bridge}>
+      <LanguageSettings />
+    </LanguageProvider>,
+  );
+  const input = screen.getByRole("combobox") as HTMLInputElement;
+  await waitFor(() => expect(input.disabled).toBe(false));
+  act(() => input.focus());
+  const listbox = screen.getByRole("listbox");
+  // A scrollbar press targets the popup itself rather than an option.
+  const popup = listbox.parentElement!;
+  expect(fireEvent.pointerDown(popup)).toBe(false);
+  expect(fireEvent.pointerDown(screen.getAllByRole("option")[0])).toBe(false);
+  expect(screen.getByRole("listbox")).toBeTruthy();
+  expect(document.activeElement).toBe(input);
+  expect(value.bridge.update).not.toHaveBeenCalled();
+});
+
+test("unmounting while open hides the popup and releases the document listeners", async () => {
+  const value = fixture();
+  const added = vi.spyOn(document, "addEventListener"),
+    removed = vi.spyOn(document, "removeEventListener");
+  const view = render(
+    <LanguageProvider bridge={value.bridge}>
+      <LanguageSettings />
+    </LanguageProvider>,
+  );
+  const input = screen.getByRole("combobox") as HTMLInputElement;
+  await waitFor(() => expect(input.disabled).toBe(false));
+  act(() => input.focus());
+  const count = (spy: typeof added, type: string) =>
+    spy.mock.calls.filter(([name]) => name === type).length;
+  expect(count(added, "scroll")).toBe(1);
+  expect(count(added, "pointerdown")).toBe(1);
+  view.unmount();
+  expect(count(removed, "scroll")).toBe(1);
+  expect(count(removed, "pointerdown")).toBe(1);
+  expect(value.bridge.update).not.toHaveBeenCalled();
+});

@@ -586,9 +586,9 @@
 .appearance-content .language-settings {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 220px;
-  /* The picker cell grows with the in-flow option list. Anchor both cells to
-     the top and center the label against the 40px combobox so opening or
-     filtering the list never moves the label. */
+  /* The option list overlays the page in the top layer and reserves no space.
+     Anchor both cells to the top and center the label against the 40px
+     combobox so opening or filtering the list never moves the label. */
   align-items: start;
   gap: 8px 16px;
   max-width: none;

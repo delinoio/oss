@@ -19,6 +19,7 @@ import {
   useLocale,
   type MessageKey,
 } from "./localization";
+import { useAnchoredPopup } from "./anchored-popup";
 import "./language.css";
 
 export enum LanguagePreference {
@@ -289,6 +290,7 @@ export function LanguageSettings() {
   const { snapshot, operation, select, reload } = useContext(LanguageContext);
   const input = useRef<HTMLInputElement>(null);
   const picker = useRef<HTMLDivElement>(null);
+  const listPopup = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState<{
     revision: number;
     query: string;
@@ -339,6 +341,15 @@ export function LanguageSettings() {
     // A read/save lock or newer native observation discards only this search.
     if (disabled || (search && search.revision !== snapshot.revision)) close();
   }, [disabled, snapshot.revision]);
+  // The list overlays the Appearance content in the top layer, so opening or
+  // filtering never reserves space. Dismissal semantics stay in this component.
+  useAnchoredPopup({
+    open: popup,
+    anchor: input,
+    popup: listPopup,
+    onInvalid: close,
+    boundary: (anchor) => anchor.closest<HTMLElement>(".settings-content"),
+  });
   useEffect(() => {
     if (!popup) return;
     const dismiss = (event: PointerEvent) => {
@@ -472,55 +483,62 @@ export function LanguageSettings() {
         </div>
         {popup ? (
           <>
-            <ul
-              id={listId}
-              className="language-options"
-              role="listbox"
-              aria-labelledby={`${id}-title`}
+            <div
+              ref={listPopup}
+              popover="manual"
+              className="anchored-popup language-popup"
+              onPointerDown={(event) => event.preventDefault()}
             >
-              {choices.map((preference) => (
-                <li
-                  id={`${listId}-${preference}`}
-                  key={preference}
-                  role="option"
-                  aria-selected={
-                    active
-                      ? active === preference
-                      : snapshot.language === preference
-                  }
-                  aria-describedby={
-                    snapshot.language === preference
-                      ? `${id}-current`
-                      : undefined
-                  }
-                  onPointerDown={(event) => event.preventDefault()}
-                  onClick={() => pick(preference)}
-                >
-                  <span>{copy(languageLabels[preference])}</span>
-                  {snapshot.language === preference ? (
-                    <svg
-                      className="language-check"
-                      aria-hidden="true"
-                      focusable="false"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="m5 12 4 4 10-10" />
-                    </svg>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+              <ul
+                id={listId}
+                className="language-options"
+                role="listbox"
+                aria-labelledby={`${id}-title`}
+              >
+                {choices.map((preference) => (
+                  <li
+                    id={`${listId}-${preference}`}
+                    key={preference}
+                    role="option"
+                    aria-selected={
+                      active
+                        ? active === preference
+                        : snapshot.language === preference
+                    }
+                    aria-describedby={
+                      snapshot.language === preference
+                        ? `${id}-current`
+                        : undefined
+                    }
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => pick(preference)}
+                  >
+                    <span>{copy(languageLabels[preference])}</span>
+                    {snapshot.language === preference ? (
+                      <svg
+                        className="language-check"
+                        aria-hidden="true"
+                        focusable="false"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="m5 12 4 4 10-10" />
+                      </svg>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+              {choices.length === 0 ? (
+                <p className="language-empty" role="status">
+                  {copy("language.noResults")}
+                </p>
+              ) : null}
+            </div>
             <span id={`${id}-current`} className="language-sr-only">
               {copy("language.current")}
             </span>
-            {choices.length === 0 ? (
-              <p className="language-empty" role="status">
-                {copy("language.noResults")}
-              </p>
-            ) : null}
           </>
         ) : null}
       </div>
