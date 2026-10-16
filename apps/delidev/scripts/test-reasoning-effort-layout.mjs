@@ -97,6 +97,8 @@ try {
       : {}),
   });
   const page = await browser.newPage();
+  // Real-Chromium actions can stall on a heavily loaded validation host.
+  page.setDefaultTimeout(120_000);
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
