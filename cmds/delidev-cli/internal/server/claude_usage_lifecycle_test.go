@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,9 +29,28 @@ func TestClaudeUsageDisconnectRemovesOnlyUsageCredentialsAndPreservesExecution(t
 	if len(f.usage().Windows) != 2 || len(f.usageRefs()) != 1 {
 		t.Fatal("fixture did not link usage")
 	}
+	// The usage profile exists (a login created it) and is removed with the
+	// connection; the account's other profiles are not touched.
+	registry, err := f.service.nativeProfiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, purpose := range []nativeprofile.Purpose{nativeprofile.PurposeUsage, nativeprofile.PurposeAuth} {
+		lease, err := registry.Acquire(context.Background(), nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: purpose, Account: f.input.AccountID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		lease.Close()
+	}
 	disconnected, err := f.disconnect(generation)
 	if err != nil || disconnected.Replayed {
 		t.Fatal(err)
+	}
+	if found, _ := registry.Exists(context.Background(), nativeprofile.DeleteScope{Account: f.input.AccountID, Purpose: nativeprofile.PurposeUsage}); found {
+		t.Fatal("the usage profile survived the disconnect")
+	}
+	if found, _ := registry.Exists(context.Background(), nativeprofile.DeleteScope{Account: f.input.AccountID, Purpose: nativeprofile.PurposeAuth}); !found {
+		t.Fatal("the execution auth profile was removed by the usage disconnect")
 	}
 	usage := f.usage()
 	if usage != nil && (usage.Linked() || usage.Generation != "" || usage.Identity != nil || len(usage.Windows) != 0 || usage.LastSuccess != nil || usage.CleanupPending || len(usage.RetiredCredentials) != 0) {
@@ -354,5 +375,30 @@ func TestPortableConfigurationOmitsAndRejectsClaudeUsageState(t *testing.T) {
 	// An import that carries the protected state is refused, never merged.
 	if _, err := portableValue(domain.AccountKind, r.Data, true); err == nil {
 		t.Fatal("an import accepted server-owned usage state")
+	}
+}
+
+func TestClaudeUsageLogsCarryClosedCodesOnly(t *testing.T) {
+	f := newUsageFixture(t)
+	var logs bytes.Buffer
+	f.service.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	generation := f.link()
+	f.refreshOnce(true)
+	f.transport.responses = []usageResponse{{status: 429, header: http.Header{"Retry-After": {"60"}}}}
+	f.mutateUsage(func(s *domain.ClaudeLimitState) { s.BackoffUntil = nil })
+	f.refreshOnce(true)
+	if _, err := f.disconnect(generation); err != nil {
+		t.Fatal(err)
+	}
+	text := logs.String()
+	for _, event := range []string{"claude_usage_login_accepted", "claude_usage_linked", "claude_usage_read_finished", "claude_usage_disconnect_accepted", "claude_usage_cleanup"} {
+		if !bytes.Contains(logs.Bytes(), []byte(event)) {
+			t.Fatalf("missing structured event %s", event)
+		}
+	}
+	for _, secret := range []string{"alex@example.com", "Example Org", usageFixtureAccess, usageFixtureRefresh, usageFixtureCode, usageFixtureURL(), "utilization", "org-fixture", f.service.Store.Root(), "0.75"} {
+		if strings.Contains(text, secret) {
+			t.Fatalf("a log record carried %q", secret)
+		}
 	}
 }

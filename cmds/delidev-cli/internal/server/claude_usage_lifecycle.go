@@ -85,8 +85,12 @@ func (s *Service) completeClaudeUsageCleanup(ctx context.Context, id domain.ID, 
 			return err
 		}
 		if a.Subscription != nil && a.Subscription.ClaudeUsage != nil {
-			cleanup = a.Subscription.ClaudeUsage.CleanupPending
-			retired = slices.Clone(a.Subscription.ClaudeUsage.RetiredCredentials)
+			usage := a.Subscription.ClaudeUsage
+			cleanup = usage.CleanupPending
+			retired = slices.Clone(usage.RetiredCredentials)
+			// A disconnected connection with no operation owns no usage profile
+			// any more, so a retried cleanup removes the profile as well.
+			deleteProfile = deleteProfile || usage.Operation == nil && !usage.Linked()
 		}
 		return nil
 	})

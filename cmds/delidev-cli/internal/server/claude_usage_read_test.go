@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/outbound"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -334,4 +335,30 @@ func TestClaudeUsageReadNeverUsesNativeUsageOrCachedEvidence(t *testing.T) {
 	if usage := f.usage(); usage.LastSuccess != nil || len(usage.Windows) != 0 || usage.Failure != domain.ClaudeLimitFailureNetwork {
 		t.Fatalf("usage %+v", usage)
 	}
+}
+
+func TestClaudeUsageClientUsesTheConfiguredRouteWithoutRedirectsOrDirectFallback(t *testing.T) {
+	f := newUsageFixture(t)
+	f.service.claudeUsageTransport = nil
+	client, release := f.service.claudeUsageClient()
+	defer release()
+	transport, ok := client.Transport.(*outbound.Transport)
+	if !ok || transport.Resolve == nil || transport.Base == nil || transport.Base.Proxy != nil {
+		t.Fatalf("the usage read must go through the explicit server route without ambient proxy settings: %T", client.Transport)
+	}
+	if client.Timeout != domain.ClaudeLimitRequestTimeout || client.CheckRedirect == nil || client.CheckRedirect(nil, nil) != http.ErrUseLastResponse {
+		t.Fatal("redirects must never be followed and the deadline is five seconds")
+	}
+	// An unusable route fails with the closed route failure and sends nothing.
+	f.service.claudeUsageTransport = routeFailure{}
+	observation, _, _, failure := f.service.getClaudeUsage(context.Background(), []byte(usageFixtureAccess))
+	if failure != domain.ClaudeLimitFailureRoute || len(observation.Windows) != 0 {
+		t.Fatalf("failure %q", failure)
+	}
+}
+
+type routeFailure struct{}
+
+func (routeFailure) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, domain.Fail(domain.Unsupported, "The selected route cannot reach the endpoint.", "")
 }
