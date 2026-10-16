@@ -4,6 +4,11 @@ package subscription
 // GrokAuthFileName is the native credential file below $GROK_HOME.
 const GrokAuthFileName = "auth.json"
 
+// GrokLockFileName is the lock file the native CLI keeps beside GrokAuthFileName.
+// It holds no credential, but it is retired with the credential file and an
+// unremoved one keeps a profile from being reported clean.
+const GrokLockFileName = GrokAuthFileName + ".lock"
+
 // GrokRefreshed proves that a native refresh produced a distinct credential for
 // the same bound identity: the identity key is unchanged, the expiry moved
 // forward and the access key or refresh token changed. It never reveals values.

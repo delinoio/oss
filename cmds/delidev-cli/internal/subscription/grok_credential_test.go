@@ -572,3 +572,60 @@ func TestGrokWriteRefusesAnOlderLinkedCredential(t *testing.T) {
 		})
 	}
 }
+
+func TestRetireGrokAuthFileRemovesTheNativeLockFile(t *testing.T) {
+	home := grokHomeForTest(t)
+	bundle, err := ParseGrokAuthFile(grokFixtureFile(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound := boundGrokHome(t, home)
+	if err := bound.WriteAuthFile(bundle); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(home, GrokLockFileName)
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if present, err := bound.AuthFilePresent(); err != nil || !present {
+		t.Fatal("a lock file must count as unretired credential state")
+	}
+	if err := bound.RetireAuthFile(); err != nil {
+		t.Fatal("retire failed")
+	}
+	for _, name := range []string{GrokAuthFileName, GrokLockFileName} {
+		if _, err := os.Lstat(filepath.Join(home, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s survived retirement", name)
+		}
+	}
+	if present, err := bound.AuthFilePresent(); err != nil || present {
+		t.Fatal("presence reported after retirement")
+	}
+	// A lock file alone (no credential) is still retired and reported.
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if present, err := bound.AuthFilePresent(); err != nil || !present {
+		t.Fatal("a lone lock file must keep the profile unclean")
+	}
+	if err := bound.RetireAuthFile(); err != nil {
+		t.Fatal("retire of a lone lock failed")
+	}
+	if entries, _ := os.ReadDir(home); len(entries) != 0 {
+		t.Fatal("retirement left files behind")
+	}
+}
+
+func TestGrokLockFileThatIsNotRegularIsNeverReportedClean(t *testing.T) {
+	home := grokHomeForTest(t)
+	if err := os.Mkdir(filepath.Join(home, GrokLockFileName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bound := boundGrokHome(t, home)
+	if present, err := bound.AuthFilePresent(); err == nil || !present {
+		t.Fatal("a non-regular lock entry must be an unconfirmed cleanup")
+	}
+	if err := bound.RetireAuthFile(); err == nil {
+		t.Fatal("a non-regular lock entry must not be retired as clean")
+	}
+}

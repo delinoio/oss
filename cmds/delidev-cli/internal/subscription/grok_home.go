@@ -247,26 +247,32 @@ func (h GrokHome) AuthFilePresent() (bool, error) {
 	if len(temporaries) != 0 {
 		return true, nil
 	}
-	info, err := h.root.Lstat(GrokAuthFileName)
-	if os.IsNotExist(err) {
-		return false, nil
+	// The native lock file belongs to the credential file's lifetime: it is
+	// removed with it and an unremoved one is an unconfirmed cleanup.
+	present := false
+	for _, name := range []string{GrokAuthFileName, GrokLockFileName} {
+		info, err := h.root.Lstat(name)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return true, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
+		}
+		if !info.Mode().IsRegular() {
+			return true, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupNotRegular}
+		}
+		// Removing one name of a multiply linked file does not remove the
+		// credential, so it is never reported as clean.
+		if !grokSingleLinkEntry(h.root, name, info) {
+			return true, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupIdentity}
+		}
+		present = true
 	}
-	if err != nil {
-		return true, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
-	}
-	if !info.Mode().IsRegular() {
-		return true, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupNotRegular}
-	}
-	// Removing one name of a multiply linked file does not remove the
-	// credential, so it is never reported as clean.
-	if !grokSingleLinkEntry(h.root, GrokAuthFileName, info) {
-		return true, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupIdentity}
-	}
-	return true, nil
+	return present, nil
 }
 
-// RetireAuthFile removes only the credential file and its attributed
-// temporaries from the held home, through the held handle: it works even when
+// RetireAuthFile removes only the credential file, its native lock file and its
+// attributed temporaries from the held home, through the held handle: it works even when
 // the bound path was since replaced, which is what removes a credential this
 // Worker wrote into a directory that was then swapped away. The caller has
 // already joined the native process and its descendants; every other file is
@@ -330,7 +336,7 @@ func (h GrokHome) retireNames(scope grokRetireScope) (linked bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	names = append(names, GrokAuthFileName)
+	names = append(names, GrokAuthFileName, GrokLockFileName)
 	var retired []retiredEntry
 	defer func() {
 		for _, entry := range retired {
@@ -374,7 +380,7 @@ func (h GrokHome) unlinkGuarded(name string, scope grokRetireScope) (entry *reti
 		return nil, false, &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
 	}
 	if !info.Mode().IsRegular() {
-		if name == GrokAuthFileName && scope == grokRetireBeforeWrite {
+		if (name == GrokAuthFileName || name == GrokLockFileName) && scope == grokRetireBeforeWrite {
 			return nil, false, nil
 		}
 		return nil, false, &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupNotRegular}
