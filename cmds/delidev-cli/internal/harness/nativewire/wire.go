@@ -412,20 +412,20 @@ func (c *Connection) Reply(ctx context.Context, event Event, result any) error {
 	if err != nil || event.Kind != ServerRequest {
 		return domain.Fail(domain.InvalidArgument, "A native server request is required.", "Reply to the original pending interaction.")
 	}
-	raw, err := c.resultEnvelope(event, result)
+	raw, err := c.resultEnvelope(event, result, MaxFrame)
 	if err != nil {
 		return err
 	}
 	return c.replyEnvelope(ctx, event, key, raw)
 }
 
-func (c *Connection) resultEnvelope(event Event, result any) ([]byte, error) {
+func (c *Connection) resultEnvelope(event Event, result any, limit int) ([]byte, error) {
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
 		return nil, domain.Fail(domain.InvalidArgument, "Invalid native response.", "Use the original interaction's typed response schema.")
 	}
 	raw, err := json.Marshal(envelope{JSONRPC: c.jsonrpc, ID: event.ID, Result: resultJSON})
-	if err != nil || len(raw) > MaxFrame {
+	if err != nil || len(raw) > limit {
 		return nil, domain.Fail(domain.ResourceExhausted, "Native response exceeds its bound.", "Reduce the response size.")
 	}
 	return raw, nil
@@ -436,6 +436,20 @@ func (c *Connection) resultEnvelope(event Event, result any) ([]byte, error) {
 // A stale, canceled or replaced arrival never invokes it. Once claimed, even a
 // production/encoding failure retains uncertainty and cannot authorize resampling.
 func (c *Connection) ReplyGenerated(ctx context.Context, event Event, produce func() (any, error)) error {
+	return c.replyGenerated(ctx, event, produce, MaxFrame)
+}
+
+// ReplyGeneratedImage admits the existing image frame bound in the reverse
+// direction for an original dynamic-tool arrival only. Ordinary approvals,
+// questions and all unselected connections keep their original response bound.
+func (c *Connection) ReplyGeneratedImage(ctx context.Context, event Event, produce func() (any, error)) error {
+	if c.profile != ProfileImage || event.Method != "item/tool/call" {
+		return domain.Fail(domain.Unsupported, "The native connection has no dynamic image response profile.", "Use the original selected image tool arrival.")
+	}
+	return c.replyGenerated(ctx, event, produce, c.frameLimit())
+}
+
+func (c *Connection) replyGenerated(ctx context.Context, event Event, produce func() (any, error), limit int) error {
 	key, err := idKey(event.ID)
 	if err != nil || event.Kind != ServerRequest || event.Token.Validate() != nil || produce == nil {
 		return domain.Fail(domain.InvalidArgument, "The original native server request is required.", "Retain its exact request and arrival identity before responding.")
@@ -452,9 +466,9 @@ func (c *Connection) ReplyGenerated(ctx context.Context, event Event, produce fu
 		c.fail(uncertain())
 		return uncertain()
 	}
-	raw, err := c.resultEnvelope(event, result)
+	raw, err := c.resultEnvelope(event, result, limit)
 	var checked envelope
-	if err != nil || domain.Decode(raw, &checked) != nil {
+	if err != nil || domain.DecodeBounded(raw, &checked, limit) != nil {
 		c.fail(uncertain())
 		return uncertain()
 	}

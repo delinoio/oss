@@ -10,6 +10,7 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -38,7 +39,16 @@ func TestManualNativeOpenRouterToolProfileDispatchesImageAndSearch(t *testing.T)
 		t.Fatal("installed native version is not admitted")
 	}
 	var pixels bytes.Buffer
-	if err := png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+	original := image.NewNRGBA(image.Rect(0, 0, 768, 768))
+	random := rand.New(rand.NewPCG(1, 2))
+	for i := 0; i < len(original.Pix); i += 4 {
+		value := random.Uint32()
+		original.Pix[i] = byte(value)
+		original.Pix[i+1] = byte(value >> 8)
+		original.Pix[i+2] = byte(value >> 16)
+		original.Pix[i+3] = 255
+	}
+	if err := png.Encode(&pixels, original); err != nil {
 		t.Fatal(err)
 	}
 	encoded := base64.StdEncoding.EncodeToString(pixels.Bytes())
@@ -104,7 +114,7 @@ func TestManualNativeOpenRouterToolProfileDispatchesImageAndSearch(t *testing.T)
 	cfg.DynamicTools, cfg.EnableImageGeneration = true, true
 	cfg.ImageRoot, cfg.ImageMachineID = t.TempDir(), domain.NewID()
 	cfg.API = &APIConfig{OpenRouterTools: true, ServerOrigin: provider.URL, Token: apiFixtureToken()}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	client, err := Open(ctx, cfg)
 	if err != nil {

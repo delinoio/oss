@@ -251,7 +251,7 @@ func (c *Client) observeDynamicRequestLocked(native nativewire.Event) (Event, er
 		request.IDKind = domain.InteractionNumberID
 		request.IDValue = strconv.FormatInt(*wireID.Number, 10)
 	}
-	c.dynamicArrivals[native.Token] = &dynamicArrival{Native: nativewire.Event{Kind: nativewire.ServerRequest, ID: bytes.Clone(native.ID), Token: native.Token, Params: bytes.Clone(native.Params)}, Turn: p.TurnID, CallID: p.CallID, Request: cloneDynamicRequest(request)}
+	c.dynamicArrivals[native.Token] = &dynamicArrival{Native: nativewire.Event{Kind: nativewire.ServerRequest, ID: bytes.Clone(native.ID), Token: native.Token, Method: native.Method, Params: bytes.Clone(native.Params)}, Turn: p.TurnID, CallID: p.CallID, Request: cloneDynamicRequest(request)}
 	if !exists {
 		if c.dynamicItems == nil {
 			c.dynamicItems = map[string]dynamicItem{}
@@ -336,7 +336,11 @@ func (c *Client) replyDynamic(ctx context.Context, token, turn, claim domain.ID,
 	owned.Claimed = true
 	owned.Reply = &reply
 	produced := false
-	err := c.wire.ReplyGenerated(ctx, owned.Native, func() (any, error) {
+	send := c.wire.ReplyGenerated
+	if backend != nil {
+		send = c.wire.ReplyGeneratedImage
+	}
+	err := send(ctx, owned.Native, func() (any, error) {
 		produced = true
 		if err := commit(); err != nil {
 			return nil, err

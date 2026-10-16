@@ -67,6 +67,10 @@ thread or Fork cannot adopt that cache. Existing local image references use
 original still-image bytes after effective read-root checks. Native generated
 image previews and references from inherited Fork images remain unimplemented
 for the API adapter. Retained history uses the explicit enlarged frame profile.
+The selected native image transport also admits its existing 16-MiB frame bound
+for the original dynamic image reply. Ordinary tool replies, approvals and
+questions retain the one-MiB response limit; another connection or method
+cannot invoke the image producer through this route.
 Tool completion is independent of root completion and credential, process and
 workspace cleanup.
 
