@@ -190,9 +190,13 @@ type ClaudeServerUsageState struct {
 	Published    bool       `json:"published,omitempty"`
 	LinkedAt     *time.Time `json:"linked_at,omitempty"`
 
-	Refresh       ClaudeUsageRefreshPhase     `json:"refresh,omitempty"`
-	Failure       ClaudeUsageFailure          `json:"failure,omitempty"`
-	LastSuccessAt *time.Time                  `json:"last_success_at,omitempty"`
+	Refresh       ClaudeUsageRefreshPhase `json:"refresh,omitempty"`
+	Failure       ClaudeUsageFailure      `json:"failure,omitempty"`
+	LastSuccessAt *time.Time              `json:"last_success_at,omitempty"`
+	// LastAttemptAt is the start of the latest claimed provider read. It spaces
+	// scheduled reads by ClaudeUsageDueInterval whatever the outcome was and is
+	// never an observation time.
+	LastAttemptAt *time.Time                  `json:"last_attempt_at,omitempty"`
 	BackoffUntil  *time.Time                  `json:"backoff_until,omitempty"`
 	Windows       []ClaudeUsageWindowEvidence `json:"windows,omitempty"`
 	// RetiredCredentials are protected references whose deletion is still owed.
@@ -234,7 +238,7 @@ func (s ClaudeServerUsageState) Validate(account Account) error {
 	if s.CredentialID != "" && s.CredentialID.Validate() != nil || s.LinkedAt != nil && !validClaudeUsageTime(*s.LinkedAt) {
 		return invalid()
 	}
-	for _, at := range []*time.Time{s.LastSuccessAt, s.BackoffUntil} {
+	for _, at := range []*time.Time{s.LastSuccessAt, s.LastAttemptAt, s.BackoffUntil} {
 		if at != nil && !validClaudeUsageTime(*at) {
 			return invalid()
 		}
