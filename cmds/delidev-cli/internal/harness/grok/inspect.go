@@ -23,6 +23,13 @@ func inspectConfiguration(ctx context.Context, config process.Config, ownedConfi
 }
 
 func inspectProfile(ctx context.Context, config process.Config, profile apiProfile) error {
+	_, err := inspectProfileVersion(ctx, config, profile)
+	return err
+}
+
+// inspectProfileVersion runs the credential-free inspection and returns the
+// native version it reported, so a caller can gate a credential on it.
+func inspectProfileVersion(ctx context.Context, config process.Config, profile apiProfile) (string, error) {
 	bounded, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stdout := inspectionOutput{cancel: cancel, capture: true}
@@ -31,19 +38,29 @@ func inspectProfile(ctx context.Context, config process.Config, profile apiProfi
 	config.Stdout, config.Stderr = &stdout, &stderr
 	err := process.Run(bounded, config)
 	if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
-		return err
+		return "", err
 	}
 	if stdout.overflow || stderr.overflow {
-		return domain.Fail(domain.ResourceExhausted, "Grok Build configuration inspection exceeded its bound.", "Use an isolated supported native installation and refresh discovery.")
+		return "", domain.Fail(domain.ResourceExhausted, "Grok Build configuration inspection exceeded its bound.", "Use an isolated supported native installation and refresh discovery.")
 	}
 	if err != nil {
 		// An expired deadline is a timeout, not an inspection that exited.
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return domain.SafeTimeoutError(ctx.Err())
+			return "", domain.SafeTimeoutError(ctx.Err())
 		}
-		return probeUnavailable()
+		return "", probeUnavailable()
 	}
-	return validateProfileInspection(stdout.buffer.Bytes(), config.Cwd, profile)
+	if err := validateProfileInspection(stdout.buffer.Bytes(), config.Cwd, profile); err != nil {
+		return "", err
+	}
+	var reported struct {
+		Version string `json:"grokVersion"`
+	}
+	// The report was validated above; only the version member is read here.
+	if json.Unmarshal(stdout.buffer.Bytes(), &reported) != nil {
+		return "", incompatible()
+	}
+	return reported.Version, nil
 }
 
 type inspectionOutput struct {

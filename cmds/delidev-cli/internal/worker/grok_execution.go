@@ -27,6 +27,9 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	if input.Continuation != nil || input.Fork != nil || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.GrokBuild, input.Installation.Version)) {
 		return nil, domain.Fail(domain.Unsupported, "Grok execution requires the original pinned first-input profile.", "Retain existing native history; a replacement input or continuation is not authorized.")
 	}
+	if input.Configuration.Subscription && (input.Configuration.SubscriptionService != domain.SubscriptionGrok || input.Version != 4 && !domain.GrokSubscriptionVersionAllowed(input.Installation.Version)) {
+		return nil, domain.Fail(domain.Unsupported, "Managed Grok execution requires the subscription profile baseline.", "Update the selected Grok Build installation; no API fallback is used.")
+	}
 	contextTokens, err := input.Configuration.GrokFirstInputContext(input.Input.Mode)
 	if err != nil {
 		return nil, err
@@ -111,6 +114,26 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
+	// A managed subscription account holds its exclusive lease for the whole run.
+	// The deferred settlement is registered before the native process opens, so it
+	// runs after the process is joined and before the profile lock is released.
+	var managed *grokSubscriptionExecution
+	nativeJoined := true
+	expectedProxyPath := "/api-proxy/v1"
+	if input.Configuration.Subscription {
+		expectedProxyPath = ""
+		subscriptionConfig := config
+		subscriptionConfig.Root = manager.Root
+		managed, err = beginGrokSubscriptionExecution(ctx, subscriptionConfig, owner, input)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if err := managed.finish(nativeJoined); err != nil {
+				output, returned = nil, err
+			}
+		}()
+	}
 	rawToken, err := security.RandomToken()
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -136,7 +159,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}
-	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != "/api-proxy/v1" {
+	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != expectedProxyPath {
 		return nil, publicationUncertain()
 	}
 	// Startup cancellation and stream loss join the owned process immediately.
@@ -150,6 +173,13 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 		return nil, err
 	}
 	nativeConfig := grok.APIExecutionConfig{OrdinaryTools: ordinaryTools, Probe: grok.ProbeConfig{Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "grok")}, Workspace: lease.WorkingDirectory(), Model: input.Configuration.NativeModel, Instructions: instructions, ContextTokens: contextTokens, Mode: input.Input.Mode, ServerOrigin: connection.Credential.Endpoint, Token: token}
+	if managed != nil {
+		// The native process authenticates with the cached login the hook writes into
+		// its private home right before launch. It receives no execution key and no
+		// relay endpoint, and the account bundle never leaves this Worker.
+		nativeConfig.ServerOrigin, nativeConfig.Token = "", ""
+		nativeConfig.Credential = managed.credentialHook(nativeConfig.Probe.Home)
+	}
 	tools, err := OpenGrokEventPublisher(binding)
 	if err != nil {
 		return nil, err
@@ -157,10 +187,16 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	config.startup.setPhase(domain.StartupInitialize)
 	api, err := grok.OpenOwnedAPIWithPlanning(nativeCtx, nativeConfig, grok.PlanningRecorders{Creation: binding.Creation, Input: binding.Input, Mode: binding.Mode, Closure: binding.Closure, Stop: binding.Stop, File: tools.FileReply, Question: tools.QuestionReply, Plan: tools.PlanReply})
 	if err != nil {
+		// Only an unconfirmed process cleanup leaves the native process possibly
+		// alive; every other open failure has joined it.
+		if domain.SafeError(err).Code == domain.RecoveryRequired {
+			nativeJoined = false
+		}
 		return nil, err
 	}
 	defer func() {
 		if err := api.Close(); err != nil {
+			nativeJoined = false
 			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()

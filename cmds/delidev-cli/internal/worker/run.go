@@ -348,6 +348,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		config.functionOutputsSupported = false
 		claudeCapabilityExpected := false
 		managedClaudeExpected := false
+		managedGrokExpected := false
 		metadataExpected := false
 		namedDirectoriesExpected := false
 		remoteCloneExpected := false
@@ -407,6 +408,10 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			// executable and protocol in the original execution process, before input.
 			claudeCapabilityExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
 			managedClaudeExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1)
+			// Managed Grok execution is implemented but stays off in the default build
+			// until the opt-in real-account run has verified it: the Worker reports
+			// capability 21 only when its own switch is on and the server echoed it.
+			managedGrokExpected = grokManagedExecutionEnabled && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1)
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
 			}
@@ -448,6 +453,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if managedClaudeExpected {
 				profile += "\x00managed-claude-execution-v1"
+			}
+			if managedGrokExpected {
+				profile += "\x00managed-grok-subscriptions-v1"
 			}
 			if verifiedTitleProfile {
 				profile += "\x00verified"
@@ -607,6 +615,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if managedClaudeExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1)
 			}
+			if managedGrokExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1)
+			}
 			if verifiedTitleProfile {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1)
 			}
@@ -710,7 +721,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
 			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
-			err = watchAttached(ctx, config, client, credential, instance, auxiliary, (managedCapabilityExpected || claudeCapabilityExpected || managedClaudeExpected) && managedSubscriptionCapability(attached.Msg.Machine))
+			err = watchAttached(ctx, config, client, credential, instance, auxiliary, (managedCapabilityExpected || claudeCapabilityExpected || managedClaudeExpected || managedGrokExpected) && managedSubscriptionCapability(attached.Msg.Machine))
 			if time.Since(started) > 30*time.Second {
 				backoff = time.Second
 			}

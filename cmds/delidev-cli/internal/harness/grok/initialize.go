@@ -128,9 +128,16 @@ func validateInitializeResult(raw []byte, cwd string, profile *apiProfile) error
 			return incompatible()
 		}
 	} else {
-		authMethods = []string{"xai.api_key", "grok.com"}
+		authMethods = []string{apiKeyAuthMethod, "grok.com"}
+		defaultAuth := apiKeyAuthMethod
+		if profile.subscription {
+			authMethods, defaultAuth = []string{cachedTokenAuthMethod, "grok.com"}, cachedTokenAuthMethod
+		}
 		var auth string
-		if decode(result.Meta.DefaultAuth, &auth) != nil || auth != "xai.api_key" || result.Meta.ModelState.Current != selectedModel || validateModels(result.Meta.ModelState.Models, *profile) != nil {
+		// A cached login can be advertised as the default method or left unset until
+		// authenticate; the API profile always pins its key method.
+		unsetDefault := profile.subscription && isNull(result.Meta.DefaultAuth)
+		if !unsetDefault && (decode(result.Meta.DefaultAuth, &auth) != nil || auth != defaultAuth) || result.Meta.ModelState.Current != selectedModel || validateModels(result.Meta.ModelState.Models, *profile) != nil {
 			return incompatible()
 		}
 	}

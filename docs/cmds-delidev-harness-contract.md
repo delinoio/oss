@@ -1013,6 +1013,30 @@ The original closed first-text reader additionally retains the native `user_mess
 
 A lost terminal acknowledgment replays only the original receipt. The terminal and user record cannot be published independently or rewritten by replay. Existing retained terminals and old acceptance receipts may omit the reservation and proof together; neither is reconstructed. Interrupted/raced-Stop profiles have no successful native-history comparison and leave the reservation unused. This adds readable original first-text user input through existing Resource RPC/CLI and desktop flows; live user notifications, richer/failed/stopped histories and continuation retain their separate implementation requirements.
 
+### Grok managed subscription profile
+
+`grok.APIExecutionConfig.Credential` (a non-nil hook) selects the managed
+subscription profile; it excludes `Token` and `ServerOrigin`. The API profile is
+unchanged byte for byte (golden test `TestAPIProfileBytesAreUnchangedBySubscriptionSupport`).
+The subscription profile removes exactly the three loopback endpoint blocks from the
+private environment (`GROK_XAI_API_BASE_URL`, `GROK_MODELS_BASE_URL`,
+`GROK_MODELS_LIST_URL`), keeps every other isolation variable and the
+`GROK_{CLAUDE,CURSOR}_*_ENABLED=0` set, sets no execution key, and writes an owned
+`config.toml` that selects the native model through the local selector without a
+relay `base_url`, `env_key` or `api_backend`. All credential-free inspections run
+first against the empty private home; the version they report must be at or above
+`domain.GrokSubscriptionBaselineVersion` before the hook runs, so an older
+executable never receives the login; the hook then runs once, immediately before
+launch, so a leftover `auth.json` is refused like any user-authored file and a hook
+failure aborts the launch. Initialization must advertise `cached_token` then
+`grok.com` with default method `cached_token` or unset and must report a version at
+or above `domain.GrokSubscriptionBaselineVersion`; `authenticate` then uses
+`methodId` `cached_token`. A native refusal is the typed `unavailable` error without
+native text. The caller owns retirement of the credential on every exit path. See
+[Managed execution](cmds-delidev-grok-subscription-contract.md#managed-execution)
+for the Worker supervisor, lease and recovery, and the documented unverified
+assumptions.
+
 ### OpenCode owned HTTP initialization profile
 
 OpenCode `1.18.32` discovery owns a new authenticated loopback `serve` process, following the [official server interface](https://opencode.ai/docs/server/) and [pinned native SDK launcher](https://github.com/anomalyco/opencode/blob/545f51d26cc39a907d2867492d498d9607ea5fa4/packages/sdk/js/src/v2/server.ts). It never attaches to an existing TUI or accepts a caller-supplied native endpoint. The Worker's private version probe and protocol probe use different fresh runtimes: the actual native `--version` command creates XDG subdirectories even when it writes no configuration files.
@@ -1607,7 +1631,7 @@ Targeted job cancellation after durable input acceptance now keeps the native cl
 
 ### cmds/delidev-cli/internal/harness/grok constraints
 
-- Follow the parent CLI instructions and `cmds-delidev-harness-contract.md`. Ordinary execution may apply its typed Worker gh selector only after inspection and private environment reconstruction; retain an isolated environment for every inspection process. Preserve native API token protection, original instructions, permissions, history and cleanup. Never serialize or log the selector path, own gh files/credentials, or grant the selector to discovery/login/auxiliary flows.
+- Follow the parent CLI instructions and `cmds-delidev-harness-contract.md`. Ordinary execution may apply its typed Worker gh selector only after inspection and private environment reconstruction; retain an isolated environment for every inspection process. Preserve native API token protection, original instructions, permissions, history and cleanup. The managed subscription profile is selected only by the credential hook and never changes the API profile; the harness never reads, returns or deletes the login it receives. Never serialize or log the selector path, own gh files/credentials, or grant the selector to discovery/login/auxiliary flows.
 
 ### cmds/delidev-cli/internal/harness/opencode constraints
 

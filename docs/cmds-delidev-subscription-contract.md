@@ -206,7 +206,12 @@ shares that lane and the single System 39 switch; see
 The server-owned Grok refresh (REFRESH of a connected account, no machine) also
 shares that lane, claims its refresh durably under the account's exclusive server
 lease and never resends an uncertain refresh token; see
-[Server-owned refresh](cmds-delidev-grok-subscription-contract.md#server-owned-refresh). Mock and build evidence for this model is not real-account,
+[Server-owned refresh](cmds-delidev-grok-subscription-contract.md#server-owned-refresh).
+Grok execution on a subscription account is implemented as an exclusive execute
+lease with a Worker-held private-home credential and a confined return protocol
+(see [Managed execution](cmds-delidev-grok-subscription-contract.md#managed-execution));
+System 40 and Worker 21 stay unadvertised behind default-off switches until the
+opt-in real-account run. Mock and build evidence for this model is not real-account,
 real-renewal or cross-platform acceptance; that acceptance is future work and is
 not performed.
 
