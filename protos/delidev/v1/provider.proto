@@ -66,6 +66,8 @@ enum ProviderInventoryCapability {
   PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_API_PROTOCOL_V1 = 8;
   PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_V1 = 9;
   PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_REVISION_V1 = 10;
+  // Advertises ListProviderInventoryRequest.compatible_account_api_protocol.
+  PROVIDER_INVENTORY_CAPABILITY_COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1 = 11;
 }
 
 message ListProviderInventoryRequest {
@@ -73,6 +75,15 @@ message ListProviderInventoryRequest {
   bool enabled_only = 2;
   uint32 page_size = 3;
   string page_token = 4;
+  // Opt-in filter. When set to an API protocol, only saved providers with at
+  // least one selectable account whose resolved API format uses that protocol
+  // are returned, evaluated over the complete stored state before ordering and
+  // pagination. UNSPECIFIED keeps the historical unfiltered inventory; an
+  // unknown value fails with INVALID_ARGUMENT. Servers that predate
+  // PROVIDER_INVENTORY_CAPABILITY_COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1
+  // ignore this field, so clients must require the capability in a response
+  // before trusting the result as filtered.
+  ApiProtocol compatible_account_api_protocol = 5;
 }
 
 message ProviderInventoryEntry {

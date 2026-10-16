@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -11,9 +12,14 @@ import (
 type ProviderInventorySearch struct {
 	Query       string `json:"query"`
 	EnabledOnly bool   `json:"enabled_only"`
-	Limit       int    `json:"limit"`
-	After       string `json:"-"`
-	Epoch       uint64 `json:"-"`
+	// APIProtocol, when set, keeps only saved providers with at least one account
+	// selectable for that protocol (providers.AccountSelectableForProtocol). It is
+	// omitted from the JSON scope when empty so unfiltered cursor scopes are
+	// unchanged, and included otherwise so a cursor cannot cross filters.
+	APIProtocol domain.APIProtocol `json:"api_protocol,omitempty"`
+	Limit       int                `json:"limit"`
+	After       string             `json:"-"`
+	Epoch       uint64             `json:"-"`
 }
 
 func (f ProviderInventorySearch) Validate() error {
@@ -22,6 +28,9 @@ func (f ProviderInventorySearch) Validate() error {
 	}
 	if f.Limit < 1 || f.Limit > MaxPage {
 		return domain.Fail(domain.InvalidArgument, "Invalid provider page size.", "Use 1–200 providers per page.")
+	}
+	if f.APIProtocol != "" && !f.APIProtocol.API() {
+		return domain.Fail(domain.InvalidArgument, "Unknown provider inventory API format filter.", "Select one supported API format or omit the filter.")
 	}
 	if f.After != "" && !strings.HasPrefix(f.After, "preset:") && !strings.HasPrefix(f.After, "custom:") {
 		return domain.Fail(domain.CursorExpired, "The provider inventory cursor is invalid.", "Restart provider inventory pagination.")
@@ -124,6 +133,17 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 			managedByPreset[*provider.PresetID] = record
 		}
 
+		// Account compatibility is resolved over the complete committed account and
+		// provider state before preset/custom ordering and the page limit, in this
+		// same snapshot. A read error aborts the page; it never implies absence.
+		var eligible map[domain.ID]bool
+		if f.APIProtocol != "" {
+			eligible, err = selectableAccountProviders(tx, f.APIProtocol)
+			if err != nil {
+				return err
+			}
+		}
+
 		candidates := make([]ProviderInventoryItem, 0, len(presets)+f.Limit+1)
 		for index, preset := range presets {
 			key := "preset:" + twoDigit(index) + ":" + string(preset.ID)
@@ -145,6 +165,10 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 			} else {
 				entry.Enabled = false
 			}
+			if f.APIProtocol != "" && !eligible[entry.ProviderID] {
+				// Unsaved presets have no accounts and are never selectable sources.
+				continue
+			}
 			if f.EnabledOnly && !entry.Enabled {
 				continue
 			}
@@ -159,6 +183,18 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 		}
 		if f.EnabledOnly {
 			customQuery += " AND COALESCE(json_extract(body,'$.enabled'),1)=1"
+		}
+		if f.APIProtocol != "" {
+			ids := make([]domain.ID, 0, len(eligible))
+			for id := range eligible {
+				ids = append(ids, id)
+			}
+			encoded, err := json.Marshal(ids)
+			if err != nil {
+				return storageError(err)
+			}
+			customQuery += " AND id IN (SELECT value FROM json_each(?))"
+			args = append(args, string(encoded))
 		}
 		if strings.HasPrefix(f.After, "custom:") {
 			name, id, ok := splitCustomCursor(f.After)
@@ -195,6 +231,61 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 		return countProviderAccounts(tx, result)
 	})
 	return result, more, epoch, err
+}
+
+// selectableAccountProviders returns every provider ID that owns at least one
+// API account selectable for protocol. It scans connected, non-removed,
+// ready/unverified API accounts in bounded id-ordered batches (a cheap SQL
+// prefilter), then applies the shared Go predicate so the result matches the
+// account picker and ResolveAccountProfile rather than a SQL approximation.
+func selectableAccountProviders(tx *Tx, protocol domain.APIProtocol) (map[domain.ID]bool, error) {
+	const batch = 256
+	const accountQuery = "SELECT " + recordColumns + " FROM entities WHERE kind='account' AND id>? " +
+		"AND json_extract(CAST(body AS TEXT),'$.type')='api' " +
+		"AND json_type(CAST(body AS TEXT),'$.connection')='object' " +
+		"AND COALESCE(json_type(CAST(body AS TEXT),'$.removal'),'null')='null' " +
+		"AND json_extract(CAST(body AS TEXT),'$.health') IN ('ready','unverified') ORDER BY id LIMIT ?"
+	eligible := map[domain.ID]bool{}
+	// A nil entry records a provider that does not exist, so each is read once.
+	known := map[domain.ID]*domain.Provider{}
+	after := domain.ID("")
+	for {
+		records, err := tx.modelRecords(accountQuery, after, batch)
+		if err != nil {
+			return nil, err
+		}
+		for _, record := range records {
+			after = record.ID
+			account, err := Decode[domain.Account](record)
+			if err != nil {
+				return nil, err
+			}
+			if account.ProviderID == "" || eligible[account.ProviderID] {
+				continue
+			}
+			provider, seen := known[account.ProviderID]
+			if !seen {
+				rows, err := tx.modelRecords("SELECT "+recordColumns+" FROM entities WHERE kind='provider' AND id=?", account.ProviderID)
+				if err != nil {
+					return nil, err
+				}
+				if len(rows) == 1 {
+					decoded, err := Decode[domain.Provider](rows[0])
+					if err != nil {
+						return nil, err
+					}
+					provider = &decoded
+				}
+				known[account.ProviderID] = provider
+			}
+			if provider != nil && providers.AccountSelectableForProtocol(*provider, account, protocol) {
+				eligible[account.ProviderID] = true
+			}
+		}
+		if len(records) < batch {
+			return eligible, nil
+		}
+	}
 }
 
 func countProviderAccounts(tx *Tx, entries []ProviderInventoryItem) error {

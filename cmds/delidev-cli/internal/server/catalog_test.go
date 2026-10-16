@@ -63,15 +63,19 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 9 {
+	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 10 {
 		t.Fatalf("fresh inventory was not capability-complete: %+v", initial.Msg)
 	}
-	accountTypeFilterAdvertised, oauthFormatAdvertised, formatChangeAdvertised, revisionBoundAdvertised := false, false, false, false
+	accountTypeFilterAdvertised, oauthFormatAdvertised, formatChangeAdvertised, revisionBoundAdvertised, compatibleFilterAdvertised := false, false, false, false, false
 	for _, capability := range initial.Msg.Capabilities {
 		accountTypeFilterAdvertised = accountTypeFilterAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER
 		oauthFormatAdvertised = oauthFormatAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_API_PROTOCOL_V1
 		formatChangeAdvertised = formatChangeAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_V1
 		revisionBoundAdvertised = revisionBoundAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_REVISION_V1
+		compatibleFilterAdvertised = compatibleFilterAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1
+	}
+	if !compatibleFilterAdvertised {
+		t.Fatalf("fresh inventory omitted the compatible-account API format filter capability: %+v", initial.Msg.Capabilities)
 	}
 	if !accountTypeFilterAdvertised || !formatChangeAdvertised {
 		t.Fatalf("fresh inventory omitted account-type filtering capability: %+v", initial.Msg.Capabilities)
@@ -247,4 +251,65 @@ func currentCatalogResource(t *testing.T, f *accountFixture, r *pb.Resource) *pb
 		t.Fatal(err)
 	}
 	return got.Msg.Resource
+}
+
+func TestProviderInventoryCompatibleAccountFilter(t *testing.T) {
+	f := newAccountFixture(t)
+	ctx := context.Background()
+	client := catalogClient(f)
+	connected := f.newAccount(domain.BearerAuth)
+	if _, err := connectAccount(f, connected, domain.NewID(), "compatible-filter-secret-unique", false); err != nil {
+		t.Fatal(err)
+	}
+	// A second custom provider keeps a disconnected account and must be hidden.
+	f.newAccount(domain.BearerAuth)
+
+	unfiltered, err := client.ListProviderInventory(ctx, ownerRequest(f.identity, &pb.ListProviderInventoryRequest{PageSize: 200}))
+	if err != nil || len(unfiltered.Msg.Entries) != 37 {
+		t.Fatalf("default inventory must stay unfiltered: entries=%d err=%v", len(unfiltered.Msg.GetEntries()), err)
+	}
+	names := func(protocol pb.ApiProtocol, pageSize uint32) []string {
+		t.Helper()
+		var result []string
+		token := ""
+		for {
+			response, err := client.ListProviderInventory(ctx, ownerRequest(f.identity, &pb.ListProviderInventoryRequest{PageSize: pageSize, PageToken: token, EnabledOnly: true, CompatibleAccountApiProtocol: protocol}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			advertised := false
+			for _, capability := range response.Msg.Capabilities {
+				advertised = advertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1
+			}
+			if !advertised {
+				t.Fatalf("filtered response omitted its negotiation capability: %+v", response.Msg.Capabilities)
+			}
+			for _, entry := range response.Msg.Entries {
+				result = append(result, entry.DisplayName)
+			}
+			if response.Msg.NextPageToken == "" {
+				return result
+			}
+			token = response.Msg.NextPageToken
+		}
+	}
+	for _, pageSize := range []uint32{1, 50} {
+		if got := names(pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT, pageSize); len(got) != 1 || got[0] != "provider" {
+			t.Fatalf("page size %d: chat filter returned %v", pageSize, got)
+		}
+		if got := names(pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES, pageSize); len(got) != 0 {
+			t.Fatalf("page size %d: responses filter returned %v", pageSize, got)
+		}
+	}
+
+	_, err = client.ListProviderInventory(ctx, ownerRequest(f.identity, &pb.ListProviderInventoryRequest{PageSize: 10, CompatibleAccountApiProtocol: pb.ApiProtocol(99)}))
+	wantAccountCode(t, err, domain.InvalidArgument)
+
+	// A cursor minted for one filter never continues under another or none.
+	first, err := client.ListProviderInventory(ctx, ownerRequest(f.identity, &pb.ListProviderInventoryRequest{PageSize: 1}))
+	if err != nil || first.Msg.NextPageToken == "" {
+		t.Fatalf("unfiltered first page: %+v %v", first, err)
+	}
+	_, err = client.ListProviderInventory(ctx, ownerRequest(f.identity, &pb.ListProviderInventoryRequest{PageSize: 1, PageToken: first.Msg.NextPageToken, CompatibleAccountApiProtocol: pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT}))
+	wantAccountCode(t, err, domain.CursorExpired)
 }

@@ -119,3 +119,51 @@ func TestUnknownAccountFormatNeverFallsBack(t *testing.T) {
 		t.Fatal("copied identity granted profiles")
 	}
 }
+
+func TestAccountSelectableForProtocolMatchesPickerPredicate(t *testing.T) {
+	now := time.Now().UTC()
+	chat := domain.ProviderAPIFormat{Protocol: domain.OpenAIChat, Endpoint: "https://chat.example.test/v1", Authentication: domain.BearerAuth}
+	messages := domain.ProviderAPIFormat{Protocol: domain.AnthropicMessages, Endpoint: "https://messages.example.test/v1", Authentication: domain.APIKeyAuth}
+	responses := domain.Provider{Name: "Legacy", Protocol: domain.OpenAIResponses, Endpoint: "https://legacy.example.test/v1", Authentication: domain.BearerAuth}
+	multi := domain.Provider{Name: "Multi", Protocol: domain.OpenAIChat, Endpoint: chat.Endpoint, Authentication: chat.Authentication, APIFormats: []domain.ProviderAPIFormat{chat, messages}}
+	connected := func(profile domain.ProviderAPIFormat) *domain.AccountConnection {
+		return &domain.AccountConnection{ID: domain.NewID(), Authentication: profile.Authentication, ConnectedAt: now}
+	}
+	account := func(mutate func(*domain.Account)) domain.Account {
+		a := domain.Account{Alias: "A", ProviderID: domain.NewID(), Type: domain.APIAccount, Health: domain.AccountReady, Connection: connected(responses.LegacyAPIFormat())}
+		mutate(&a)
+		return a
+	}
+	tests := []struct {
+		name     string
+		provider domain.Provider
+		account  domain.Account
+		protocol domain.APIProtocol
+		want     bool
+	}{
+		{"legacy tuple matches", responses, account(func(*domain.Account) {}), domain.OpenAIResponses, true},
+		{"legacy tuple other harness", responses, account(func(*domain.Account) {}), domain.OpenAIChat, false},
+		{"unverified is selectable", responses, account(func(a *domain.Account) { a.Health = domain.AccountUnverified }), domain.OpenAIResponses, true},
+		{"disabled and exhausted accounts stay selectable", responses, account(func(a *domain.Account) { a.Enabled, a.ConfirmedExhausted = false, true }), domain.OpenAIResponses, true},
+		{"expired health", responses, account(func(a *domain.Account) { a.Health = domain.AccountExpired }), domain.OpenAIResponses, false},
+		{"disconnected", responses, account(func(a *domain.Account) { a.Health, a.Connection = domain.AccountDisconnected, nil }), domain.OpenAIResponses, false},
+		{"removal pending", responses, account(func(a *domain.Account) {
+			a.Removal = &domain.AccountRemoval{RequestID: domain.NewID(), ExpectedRevision: 1}
+		}), domain.OpenAIResponses, false},
+		{"subscription account", responses, account(func(a *domain.Account) { a.Type = domain.SubscriptionAccount }), domain.OpenAIResponses, false},
+		{"explicit declared format", multi, account(func(a *domain.Account) { a.APIProtocol, a.Connection = domain.AnthropicMessages, connected(messages) }), domain.AnthropicMessages, true},
+		{"explicit format excludes legacy harness", multi, account(func(a *domain.Account) { a.APIProtocol, a.Connection = domain.AnthropicMessages, connected(messages) }), domain.OpenAIChat, false},
+		{"explicit undeclared format", multi, account(func(a *domain.Account) { a.APIProtocol, a.Connection = domain.OpenAIResponses, connected(chat) }), domain.OpenAIResponses, false},
+		{"connection tuple drifted", multi, account(func(a *domain.Account) {
+			a.APIProtocol, a.Connection = domain.OpenAIChat, connected(messages)
+		}), domain.OpenAIChat, false},
+		{"non-API provider", domain.Provider{Name: "Native", Protocol: domain.NativeSubscription, Authentication: domain.SubscriptionAuth}, account(func(*domain.Account) {}), domain.OpenAIResponses, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AccountSelectableForProtocol(tt.provider, tt.account, tt.protocol); got != tt.want {
+				t.Fatalf("selectable=%v, want %v", got, tt.want)
+			}
+		})
+	}
+}
