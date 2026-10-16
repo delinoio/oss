@@ -5028,6 +5028,10 @@ y=/process.env.F/.test(z),process.env.G"#;
     const KEPT_COPY_WITHOUT_EVAL: &str =
         "const longLocalName = 1;\nexport function run(value) { return value; }\n";
 
+    /// One table row: name, loaded chunks, the files the module lists (all
+    /// loaded chunks when `None`) and the reason the finding must state.
+    type ListingCase<'a> = (&'a str, Vec<TestChunk<'a>>, Option<&'a [&'a str]>, &'a str);
+
     fn mangled_copy_tokens() -> Vec<MapToken> {
         let eval_column = MANGLED_COPY.lines().nth(1).unwrap().find("eval").unwrap() as u32;
         vec![(0, 0, 0, 0, 0), (1, 0, 0, 1, 0), (1, eval_column, 0, 2, 9)]
@@ -5066,7 +5070,7 @@ y=/process.env.F/.test(z),process.env.G"#;
         // cannot be checked, so the mangled copy alone must not hide it.
         let banner_tokens: Vec<MapToken> = vec![(1, 0, 0, 0, 0), (2, 0, 0, 1, 0)];
         let banner = "eval(globalThis.bannerHook);\nconst longLocalName = 1;\n";
-        let cases: [(&str, Vec<TestChunk<'_>>, Option<&[&str]>, &str); 4] = [
+        let cases: [ListingCase<'_>; 4] = [
             (
                 "mapless copy that keeps the names",
                 vec![
@@ -5205,7 +5209,7 @@ y=/process.env.F/.test(z),process.env.G"#;
                       return c;\n}\n";
         let banner_tokens: Vec<MapToken> = vec![(1, 0, 0, 0, 0), (2, 0, 0, 1, 0), (3, 0, 0, 3, 0)];
         let mangled_mapless = "const a = 1;\nexport function run(c) { return eval(c); }\n";
-        let cases: [(&str, Vec<TestChunk<'_>>, Option<&[&str]>, &str); 4] = [
+        let cases: [ListingCase<'_>; 4] = [
             (
                 "no chunk lists the module",
                 vec![("main.js", KEPT_COPY_WITHOUT_EVAL, None)],
