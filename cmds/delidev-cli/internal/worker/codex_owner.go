@@ -371,7 +371,7 @@ func (o *codexSharedOwner) retire(last *codexSharedMember) error {
 		if o.home != "" && !o.nativeUncertain {
 			if o.runtime != nil {
 				if nativeJoined && clean {
-					if err := cleanupSharedExecutionAuthentication(o.home, o.latest, o.initial); err != nil {
+					if err := cleanupExecutionAuthentication(o.home, o.latest, o.initial); err != nil {
 						clean = false
 					}
 				} else {
