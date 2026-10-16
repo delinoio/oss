@@ -338,8 +338,8 @@ only opaque profile/owner/generation/operation metadata and a keyed identity
 commitment; native credentials never transfer. One exclusive lease serializes
 lifecycle and execution, and original cleanup gates logout/deletion/recovery.
 No migration is added. Existing personal login import, external tokens,
-Console/API login, cross-device authentication and Claude quotas/credits remain
-excluded. Actual account and packaged-platform acceptance remain separate from
+Console/API login, cross-device authentication and Claude quotas/credits of
+device-owned accounts remain excluded. Actual account and packaged-platform acceptance remain separate from
 fixtures/builds. See [the subscription contract](cmds-delidev-subscription-contract.md#native-claude-subscriptions).
 The owner-approved native Claude subscription extension spans the existing
 subscription, desktop, harness, protocol and storage owners. Record System 38,
@@ -496,6 +496,10 @@ Server reset credits V2 uses System 101 under the [subscription contract](cmds-d
 ## Server-owned Claude token accounts
 
 New Claude accounts may be authenticated by the server through `setup-token` (System 67/68, Worker 41) and executed on any Worker that advertises the managed adapter. Invariants: the token exists only in the server vault envelope, the protected Take response and the supervised child environment; a legacy-only Worker never receives it; one exclusive original lease per generation; disconnect and uncertain cleanup keep the fence until the original Worker confirms cleanup; existing device-owned profiles are never inspected or converted; no provider relay, quota, reset-credit or provider-wide revocation claim is made. See the subscription, credentials, harness, accounts, settings and protocol contracts.
+
+## Server-owned Claude usage tracking
+
+A server-token Claude account may optionally link a separate, usage-only OAuth login so DeliDev can show its 5-hour and 7-day quota (System `CLAUDE_SERVER_USAGE_V1 = 108`). The usage credential is independent of the execution setup token, never reaches a Worker, backup, export, RPC response, log or renderer, and implies no identity equality with the setup token. The protocol allocation, domain model and strict response parser, `claude-usage` vault purpose and sealed bundle envelope are implemented; the server does not advertise capability 108 and the six `SubscriptionService` usage RPCs return `Unimplemented` until the whole feature (login, identity confirmation, refresh, cleanup and desktop UI) is activated together. Follow the [subscription](cmds-delidev-subscription-contract.md#server-owned-claude-usage-tracking), [credential](cmds-delidev-credentials-contract.md#claude-usage-purpose), [protocol](protos-delidev-v1-contract.md#claude-usage-tracking-allocation) and [client package](packages-delidev-api-client-contract.md#claude-usage-tracking-client) contracts.
 
 ## Persistent native profiles
 

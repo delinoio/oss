@@ -47,6 +47,10 @@ The [doctor inspection boundary](cmds-delidev-diagnostics-contract.md) may open 
 
 Subscription `AccountLogin` read failures omit the private generation/reference ID from vault logs, retaining only safe operation, owner, purpose and closed error classification. API reads keep their original reference diagnostics. This redaction changes no native access, exact-reference selection, ownership or mutation behavior.
 
+### Claude usage purpose
+
+The closed `claude-usage` purpose protects the usage-only OAuth bundle of one server-token Claude account. A reference is owned by the Claude account and its ID is a private usage generation, so the same owner and ID under `account-login` is a different, absent reference. The envelope is bound to server, account, usage generation and reviewed identity commitment. The bundle is never delivered to a Worker, exported, backed up, returned over RPC, logged or sent to the renderer. Like `account-login`, failed reads omit the private generation from vault logs and keep only operation, owner, purpose and the closed error classification. Staged-then-published writes, immutable retry, tombstoned deletion and owner-wide reference enumeration are unchanged.
+
 ## Envelope and persistence
 
 Each reference accepts 1–65,536 bytes. Its native OS record contains exactly 64 bytes: a random 256-bit wrapping root and a 256-bit keyed content commitment. Domain-separated HMAC-SHA256 derivation produces independent encryption and commitment keys. AES-256-GCM protects the payload with a fresh 96-bit nonce. Authenticated context binds the format/service version, server scope, owner, mutation and purpose. The private JSON record contains only that context, state and ciphertext. Neither a raw secret nor an unkeyed digest is persisted. The keyed commitment can bind internal receipt metadata; it is not an execution credential.
