@@ -288,3 +288,40 @@ func TestProviderInventoryAPIProtocolFilterFailsClosedOnWrongTypedPrefilteredAcc
 		})
 	}
 }
+
+func TestProviderInventoryAPIProtocolFilterFailsClosedOnInvalidDecodableProvider(t *testing.T) {
+	for _, tc := range []struct{ name, path, value string }{
+		{"insecure endpoint", "$.endpoint", "'http://insecure.example.test/v1'"},
+		{"authentication", "$.authentication", "'unsupported'"},
+		{"empty name", "$.name", "''"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := openTest(t)
+			ctx := context.Background()
+			_, err := s.Mutate(ctx, domain.NewID(), "provider-inventory.filter-invalid-provider", nil, func(tx *Tx) (any, error) {
+				id := domain.NewID()
+				if _, err := tx.Put(domain.ProviderKind, id, 0, "", "", filterTestProvider("Healthy", domain.OpenAIChat)); err != nil {
+					return nil, err
+				}
+				_, err := tx.Put(domain.AccountKind, domain.NewID(), 0, "", "", filterTestAccount(id, "", domain.AccountReady))
+				return nil, err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The provider JSON still decodes, but Provider.Validate rejects it, so
+			// its connected account must not be silently treated as not selectable.
+			if _, err := s.db.Exec(`UPDATE entities SET body=CAST(json_set(CAST(body AS TEXT),'` + tc.path + `',` + tc.value + `) AS BLOB) WHERE kind='provider' AND json_extract(body,'$.name')='Healthy'`); err != nil {
+				t.Fatal(err)
+			}
+			page, _, _, err := s.ProviderInventoryPage(ctx, providers.Presets(), ProviderInventorySearch{Limit: 10, APIProtocol: domain.OpenAIChat})
+			if domain.SafeError(err).Code != domain.RecoveryRequired || len(page) != 0 {
+				t.Fatalf("an invalid saved provider must fail the filtered read: page=%+v err=%v", page, err)
+			}
+			// The unfiltered inventory does not evaluate account eligibility.
+			if _, _, _, err := s.ProviderInventoryPage(ctx, providers.Presets(), ProviderInventorySearch{Limit: 10}); err != nil {
+				t.Fatalf("unfiltered inventory must be unchanged: %v", err)
+			}
+		})
+	}
+}

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -272,6 +273,14 @@ func selectableAccountProviders(tx *Tx, protocol domain.APIProtocol) (map[domain
 					decoded, err := Decode[domain.Provider](rows[0])
 					if err != nil {
 						return nil, err
+					}
+					// A provider that decodes but fails validation is an unreadable
+					// record: fail the read instead of letting the boolean predicate
+					// collapse the validation error into "not selectable", which
+					// would report a false absence for its connected accounts.
+					if err := decoded.Validate(); err != nil {
+						slog.Error("provider inventory filter found an invalid saved provider", "provider_id", account.ProviderID, "error", err)
+						return nil, domain.Fail(domain.RecoveryRequired, "A saved provider record is invalid.", "Preserve the server data and repair or remove the invalid provider before filtering by API format.")
 					}
 					provider = &decoded
 				}
