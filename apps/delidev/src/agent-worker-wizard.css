@@ -44,9 +44,24 @@
   color: inherit;
   font: inherit;
   text-align: start;
-  overflow-wrap: anywhere;
+}
+/* The number and label form one atomic group: the label never breaks inside a
+   word, so a group that does not fit wraps to the next row as a whole (the
+   strip is flex-wrap: wrap). Declared on the label itself so no inherited
+   white-space or overflow-wrap from the host controls can win. */
+.worker-steps .worker-step-target > :last-child {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .worker-steps button.worker-step-target {
+  /* The shared control rules of every host cap a button at max-width: 100% of
+     its list item, but this button adds 16px of padding that the negative
+     margins give back. The cap therefore squeezed the label by 16px and let it
+     break inside words. min-width always overrides max-width, so the button is
+     never narrower than its content whatever the host selector specificity
+     (dialog, page and shared wizard hosts each cap with a different one). */
+  min-width: max-content;
   min-height: 36px;
   /* Negative margins grow the hit area without changing the strip layout. The
      reach of two neighbours (8px each) stays below the 24px step gap, so
