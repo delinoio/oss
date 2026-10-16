@@ -51,6 +51,8 @@
   --danger-background: #fff3f4;
   --danger-text: #b42332;
   --danger-border: #d9a5ab;
+  --danger-solid-background: #b42332;
+  --danger-solid-text: #ffffff;
   --success-text: #246547;
   --pr-merged: #6f42c1;
   --execution-running: #087b78;
@@ -113,6 +115,8 @@
   --danger-background: #392127;
   --danger-text: #ffb6bf;
   --danger-border: #a7777e;
+  --danger-solid-background: #c4414f;
+  --danger-solid-text: #ffffff;
   --success-text: #9ed9b7;
   --pr-merged: #b794f6;
   --execution-running: #72d9ce;
@@ -176,6 +180,8 @@
     --danger-background: #392127;
     --danger-text: #ffb6bf;
     --danger-border: #a7777e;
+    --danger-solid-background: #c4414f;
+    --danger-solid-text: #ffffff;
     --success-text: #9ed9b7;
     --pr-merged: #b794f6;
     --execution-running: #72d9ce;

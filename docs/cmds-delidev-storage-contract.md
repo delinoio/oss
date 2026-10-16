@@ -1674,3 +1674,7 @@ shared Codex history home (`runtimes/accounts/<account-id>/codex`) is registered
 in place under the `shared_owner` purpose and is not removed by session
 deletion. See the
 [harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).
+
+## Retired machine marker
+
+The Machine document has an additive optional `retired` boolean written only by Worker removal, together with `disabled`. Earlier records omit it and read as not retired, so no schema-version bump or data conversion is needed (schema 32 is unchanged). Machine list, snapshot and count queries filter on the marker inside SQL before pagination; exact reads do not. Backup restore carries the field with the entity body.

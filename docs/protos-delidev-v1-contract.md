@@ -1701,3 +1701,7 @@ System `CLAUDE_SERVER_LOGIN_V1 = 67`, System `CLAUDE_MANAGED_EXECUTION_V1 = 68` 
 ## Claude image input profile
 
 Claude image delivery uses the independently negotiated System 106 / Worker 71 pair, original Worker-owned bytes, native preprocessing replay and attachment-aware checkpoint identities. Follow the [image input contract](cmds-delidev-image-input-contract.md#closed-adapter-profiles). Original text-only streams and checkpoints retain their prior identities; unknown peers gain no image authority.
+
+## Worker removal allocation
+
+`DeviceService.RemoveWorker` (`RemoveWorkerRequest { Mutation mutation = 1; uint32 schema_version = 2; }`, `RemoveWorkerResponse { Resource machine = 1; string request_id = 2; bool replayed = 3; }`) and `SystemCapability.WORKER_REMOVAL_V1 = 107` are recorded under issue 4030 in `allocations.json` (new messages, the capability and the RPC reservation). `mutation.id` is the original machine ID, `mutation.expected_revision` its exact current revision and `schema_version` must be `1`. The RPC is owner/paired-client only; Worker credentials are rejected by the shared route allow-list and the handler. Older servers lack the capability and the RPC. Clients negotiate System 107 before offering deletion and never fall back to `DeleteConfiguration`, which still rejects machine and device kinds. Go and TypeScript bindings are generated; the Machine document gains the additive optional `retired` field described in the [server contract](cmds-delidev-contract.md#worker-removal).
