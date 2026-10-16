@@ -1705,7 +1705,7 @@ const IDENTIFIER_ESCAPE: &str = r"\\u(?:[0-9A-Fa-f]{4}|\{[0-9A-Fa-f]+\})";
 /// behavior.
 fn namespace_identifier_pattern() -> String {
     format!(
-        r"(?:\p{{XID_Start}}|[$_]|{IDENTIFIER_ESCAPE})(?:\p{{XID_Continue}}|[$_\u{{200C}}\u{{200D}}]|{IDENTIFIER_ESCAPE})*"
+        r"(?:\p{{ID_Start}}|[$_]|{IDENTIFIER_ESCAPE})(?:\p{{ID_Continue}}|[$_\u{{200C}}\u{{200D}}]|{IDENTIFIER_ESCAPE})*"
     )
 }
 
@@ -1787,9 +1787,9 @@ fn namespace_bodies(
     let identifier = namespace_identifier_pattern();
     let path = Regex::new(&format!(r"^({identifier}(?:\s*\.\s*{identifier})*)\s*\{{"))
         .expect("static regex");
-    let escape_start = Regex::new(r"^(?:\p{XID_Start}|[$_])$").expect("static regex");
+    let escape_start = Regex::new(r"^(?:\p{ID_Start}|[$_])$").expect("static regex");
     let escape_part =
-        Regex::new(r"^(?:\p{XID_Continue}|[$_\u{200C}\u{200D}])$").expect("static regex");
+        Regex::new(r"^(?:\p{ID_Continue}|[$_\u{200C}\u{200D}])$").expect("static regex");
     let mut namespaces: Vec<NamespaceBody> = Vec::new();
     for found in keyword.find_iter(code) {
         let kind = found.as_str();
@@ -5805,6 +5805,20 @@ y=/process.env.F/.test(z),process.env.G"#;
             ),
             ("namespace \\u004e { var eval = helper; eval(code); }", None),
             ("namespace \\u{4e} { var eval = helper; eval(code); }", None),
+            // ECMAScript ID_Start characters that the stricter XID_Start set
+            // excludes (U+037A), spelled with an escape or literally.
+            (
+                "namespace \\u037a { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "namespace A\\u037a { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
+            (
+                "namespace \u{37a} { var eval = helper; }\neval(code);",
+                Some((1, 0)),
+            ),
             // Escapes of ID_Start, ID_Continue, ZWNJ and ZWJ characters.
             (
                 "namespace \\u{3a9}\\u{200c}\\u0031 { var eval = helper; }\neval(code);",
