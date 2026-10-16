@@ -15986,6 +15986,37 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "SubscriptionQuotaRefreshTrigger",
+      "member": "SUBSCRIPTION_QUOTA_REFRESH_TRIGGER_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "SubscriptionQuotaRefreshTrigger",
+      "member": "SUBSCRIPTION_QUOTA_REFRESH_TRIGGER_EXPLICIT",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "enum",
+      "declaration": "SubscriptionQuotaRefreshTrigger",
+      "member": "SUBSCRIPTION_QUOTA_REFRESH_TRIGGER_FOREGROUND",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4069,
+      "kind": "message",
+      "declaration": "RefreshAllSubscriptionQuotasRequest",
+      "member": "trigger",
+      "number": 2
     }
   ],
   "rpcReservations": [

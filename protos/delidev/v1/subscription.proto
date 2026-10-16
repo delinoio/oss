@@ -406,8 +406,17 @@ message RequestSubscriptionObservationResponse {
   string operation_id = 2;
   bool replayed = 3;
 }
+// Origin of a Refresh all request. Claude usage reads honor the four-minute due
+// interval for every trigger except an explicit user refresh.
+enum SubscriptionQuotaRefreshTrigger {
+  // Older clients. Treated as a due-gated automatic trigger for Claude usage.
+  SUBSCRIPTION_QUOTA_REFRESH_TRIGGER_UNSPECIFIED = 0;
+  SUBSCRIPTION_QUOTA_REFRESH_TRIGGER_EXPLICIT = 1;
+  SUBSCRIPTION_QUOTA_REFRESH_TRIGGER_FOREGROUND = 2;
+}
 message RefreshAllSubscriptionQuotasRequest {
   string request_id = 1;
+  SubscriptionQuotaRefreshTrigger trigger = 2;
 }
 message RefreshAllSubscriptionQuotasResponse {
   // Complete server-side accepted account IDs; no frontend page drives work.
