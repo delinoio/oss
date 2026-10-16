@@ -3,6 +3,7 @@ package domain
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -329,5 +330,70 @@ func TestApplyClaudeUsageQuotaPreservesOtherComparisonGroups(t *testing.T) {
 	ClearClaudeUsageQuota(&account)
 	if len(account.Quota) != 1 || account.Quota[0].ComparisonGroup != "chatgpt" {
 		t.Fatalf("clear disturbed unrelated evidence: %+v", account.Quota)
+	}
+}
+
+func TestRetireClaudeUsageRevokesAuthorityAndKeepsCleanupEvidence(t *testing.T) {
+	observed := claudeUsageNow
+	linkedWithEvidence := func() *ClaudeServerUsageState {
+		usage := linkedClaudeUsage()
+		usage.Operation = claudeUsageOperation(SubscriptionSucceeded)
+		usage.Refresh = ClaudeUsageRenewing
+		backoff := observed.Add(time.Hour)
+		usage.Failure, usage.BackoffUntil = ClaudeUsageFailureRateLimited, &backoff
+		usage.LastSuccessAt = &observed
+		usage.Windows = []ClaudeUsageWindowEvidence{{ID: ClaudeUsageFiveHour, Remaining: 0.5, ObservedAt: observed}}
+		usage.RetiredCredentials = []ID{NewID()}
+		return usage
+	}
+	uncertain := linkedWithEvidence()
+	uncertain.Refresh = ClaudeUsageRotationUncertain
+	confirming := &ClaudeServerUsageState{Connection: ClaudeUsageConfirming, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionSucceeded), CredentialID: NewID(), Identity: linkedClaudeUsage().Identity}
+	for name, usage := range map[string]*ClaudeServerUsageState{
+		"linked":       linkedWithEvidence(),
+		"uncertain":    uncertain,
+		"confirming":   confirming,
+		"connecting":   {Connection: ClaudeUsageConnecting, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionWaiting)},
+		"preparing":    {Connection: ClaudeUsageConnecting, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionPreparing)},
+		"reconnecting": {Connection: ClaudeUsageReconnectRequired, Generation: NewID()},
+	} {
+		account := claudeUsageAccount(t, usage)
+		account.Quota = projectClaudeUsageQuota(nil, usage.Windows)
+		credential, retiredBefore, windows, refresh := usage.CredentialID, len(usage.RetiredCredentials), len(usage.Windows), usage.Refresh
+		if err := RetireClaudeUsage(&account); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		account.Connection, account.Health = nil, AccountDisconnected
+		account.Subscription.Generation, account.Subscription.IdentityCommitment = "", ""
+		if err := account.Validate(); err != nil {
+			t.Fatalf("%s retired state is invalid on a disconnected account: %v", name, err)
+		}
+		if usage.Reading() || usage.Connection != ClaudeUsageReconnectRequired || usage.Published || usage.CredentialID != "" || usage.BackoffUntil != nil || len(account.Quota) != 0 {
+			t.Fatalf("%s kept live usage authority: %+v", name, usage)
+		}
+		if credential != "" && !slices.Contains(usage.RetiredCredentials, credential) || len(usage.RetiredCredentials) < retiredBefore {
+			t.Fatalf("%s lost cleanup evidence: %+v", name, usage.RetiredCredentials)
+		}
+		if len(usage.Windows) != windows || refresh == ClaudeUsageRotationUncertain && usage.Refresh != refresh || refresh != ClaudeUsageRotationUncertain && usage.Refresh != ClaudeUsageIdle {
+			t.Fatalf("%s changed evidence or recovery phase: %+v", name, usage)
+		}
+		if usage.Operation != nil && usage.Operation.Active() {
+			t.Fatalf("%s kept an active login operation", name)
+		}
+		if err := RetireClaudeUsage(&account); err != nil || len(usage.RetiredCredentials) > retiredBefore+1 {
+			t.Fatalf("%s retirement is not idempotent: %v", name, err)
+		}
+	}
+	plain := claudeUsageAccount(t, nil)
+	if err := RetireClaudeUsage(&plain); err != nil || plain.Subscription.ClaudeUsage != nil {
+		t.Fatal("an account without usage changed")
+	}
+	full := linkedClaudeUsage()
+	for len(full.RetiredCredentials) < MaxClaudeUsageRetiredCredentials {
+		full.RetiredCredentials = append(full.RetiredCredentials, NewID())
+	}
+	before := *full
+	if err := full.Retire(); err == nil || full.Connection != before.Connection || full.CredentialID != before.CredentialID || !full.Published {
+		t.Fatal("a full retired list was exceeded or mutated")
 	}
 }

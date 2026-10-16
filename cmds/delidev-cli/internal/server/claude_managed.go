@@ -898,6 +898,12 @@ func (s *Service) finishManagedClaude(ctx context.Context, id domain.ID, o domai
 				a.ConfirmedExhausted = false
 				st.Generation = ""
 				st.IdentityCommitment = ""
+				// A disconnected account cannot keep live usage authority: the linked
+				// usage connection is revoked and its credential references stay as
+				// cleanup evidence until their vault deletion is confirmed.
+				if err := domain.RetireClaudeUsage(&a); err != nil {
+					return nil, err
+				}
 			default:
 				// A failed first login joined its child and wrote no credential.
 				a.Health = domain.AccountDisconnected

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -979,6 +980,50 @@ func TestManagedClaudeLogoutCheckpointSurvivesFailedVaultDeletion(t *testing.T) 
 	_, account = f.record()
 	if len(f.secrets.values[ref]) != 0 || account.Subscription.ServerOperation.CleanupPhase != "" || managedClaudeNeedsRecovery(account) || account.Connection != nil {
 		t.Fatal("recovery did not delete the retained token and clear the checkpoint")
+	}
+}
+
+// Explicit logout disconnects the execution account, so the linked usage
+// connection must stop authorizing reads and keep its credential as cleanup
+// evidence instead of leaving a state the account validator rejects.
+func TestManagedClaudeLogoutRetiresLinkedUsageAuthority(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.connect()
+	linkedAt := time.Now().UTC().Add(-time.Hour)
+	observed := time.Now().UTC().Add(-time.Minute)
+	usageCredential := domain.NewID()
+	commitment := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claude.usage.linked", nil, func(tx *store.Tx) (any, error) {
+		r, account, err := managedClaudeAccount(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		account.Subscription.ClaudeUsage = &domain.ClaudeServerUsageState{
+			Connection: domain.ClaudeUsageLinked, Generation: domain.NewID(), CredentialID: usageCredential, Published: true, LinkedAt: &linkedAt,
+			Identity:      &domain.ClaudeUsageIdentity{Email: "person@example.com", Commitment: commitment},
+			LastSuccessAt: &observed,
+			Windows:       []domain.ClaudeUsageWindowEvidence{{ID: domain.ClaudeUsageFiveHour, Remaining: 0.5, ObservedAt: observed}},
+		}
+		if err := account.Validate(); err != nil {
+			return nil, err
+		}
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", account)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT); err != nil {
+		t.Fatal(err)
+	}
+	awaitServerFixture(t, f.run())
+	_, account := f.record()
+	usage := account.Subscription.ClaudeUsage
+	if account.Connection != nil || usage == nil || usage.Reading() || usage.Connection != domain.ClaudeUsageReconnectRequired || usage.Published || usage.CredentialID != "" || !slices.Contains(usage.RetiredCredentials, usageCredential) || len(usage.Windows) != 1 {
+		t.Fatalf("logout left live usage authority or lost cleanup evidence: %+v", usage)
+	}
+	if err := account.Validate(); err != nil {
+		t.Fatalf("the logged-out account is invalid: %v", err)
 	}
 }
 

@@ -378,6 +378,54 @@ func projectClaudeUsageQuota(quota []QuotaWindow, windows []ClaudeUsageWindowEvi
 	return projected
 }
 
+// Retire revokes all live usage authority and moves the section to
+// reconnect-required. Reads and scheduling stop immediately: the credential is
+// unpublished, an active login is marked canceled, an in-flight read or renewal
+// is fenced and the backoff is dropped. The last evidence stays visible and an
+// ambiguous rotation keeps its recovery phase. Every credential reference that
+// still owes vault deletion moves to the retired list so cleanup evidence is
+// never lost. It fails closed, without mutation, when the bounded retired list
+// cannot hold the references. Cancelling and joining a running native login is
+// the caller's duty before the retirement is committed.
+func (s *ClaudeServerUsageState) Retire() error {
+	retired := slices.Clone(s.RetiredCredentials)
+	if s.CredentialID != "" && !slices.Contains(retired, s.CredentialID) {
+		retired = append(retired, s.CredentialID)
+	}
+	if len(retired) > MaxClaudeUsageRetiredCredentials {
+		return invalidClaudeServerUsage()
+	}
+	s.RetiredCredentials = retired
+	s.Connection = ClaudeUsageReconnectRequired
+	s.CredentialID = ""
+	s.Published = false
+	s.BackoffUntil = nil
+	if s.Refresh != ClaudeUsageRotationUncertain {
+		s.Refresh = ClaudeUsageIdle
+	}
+	if s.Operation != nil && s.Operation.Active() {
+		operation := *s.Operation
+		operation.State = SubscriptionCanceled
+		s.Operation = &operation
+	}
+	return nil
+}
+
+// RetireClaudeUsage retires the usage section of a, if any, and removes its
+// projected quota evidence. An account without usage state is unchanged. It is
+// the transition for every path that disconnects the execution account, such as
+// an explicit logout or a database restore.
+func RetireClaudeUsage(a *Account) error {
+	if a == nil || a.Subscription == nil || a.Subscription.ClaudeUsage == nil {
+		return nil
+	}
+	if err := a.Subscription.ClaudeUsage.Retire(); err != nil {
+		return err
+	}
+	ClearClaudeUsageQuota(a)
+	return nil
+}
+
 // ClearClaudeUsageQuota removes the projected usage windows of a. It is used
 // when the usage connection is retired.
 func ClearClaudeUsageQuota(a *Account) {
