@@ -66,15 +66,57 @@ type IdP struct {
 	// BeforeToken runs inside the token handler before it answers.
 	BeforeToken func()
 
+	// Device grant knobs. DeviceScript answers successive device_code token
+	// requests in order; once it is exhausted every request succeeds.
+	DeviceScript            []DeviceStep
+	DeviceInterval          int
+	DeviceExpiresIn         int
+	DeviceStatus            int
+	DeviceUserCode          string
+	DeviceVerificationURI   string
+	DeviceVerificationFull  string
+	DeviceOmitEndpoint      bool
+	DeviceCodeValue         string
+	DeviceIDTokenNonce      string
+	DeviceTokenSuccessCount int
+	// DeviceTokenBody replaces the successful device_code token body verbatim and
+	// DeviceTokenStatus answers every device_code poll with that bare status.
+	DeviceTokenBody   string
+	DeviceTokenStatus int
+	// Clock stamps DevicePollTimes; time.Now is used when nil.
+	Clock interface{ Now() time.Time }
+	// BeforeDeviceAuthorization runs inside the device authorization handler.
+	BeforeDeviceAuthorization func()
+	// BeforeDevicePoll runs inside the token handler for a device_code request.
+	BeforeDevicePoll func(poll int)
+
 	// Observations.
 	TokenRequests    int
 	TokenFormSeen    []url.Values
 	TokenAuthHeaders []string
-	DiscoveryCalls   int
-	UserinfoCalls    int
-	AccessToken      string
-	RefreshToken     string
+	// DeviceRequests counts device authorization requests; DeviceForms keeps them.
+	DeviceRequests  int
+	DeviceForms     []url.Values
+	DevicePollForms []url.Values
+	DevicePollTimes []time.Time
+	DiscoveryCalls  int
+	UserinfoCalls   int
+	AccessToken     string
+	RefreshToken    string
 }
+
+// DeviceStep is one scripted device_code token answer.
+type DeviceStep string
+
+const (
+	DevicePending  DeviceStep = "authorization_pending"
+	DeviceSlowDown DeviceStep = "slow_down"
+	DeviceDenied   DeviceStep = "access_denied"
+	DeviceExpired  DeviceStep = "expired_token"
+	DeviceUnknown  DeviceStep = "invalid_request"
+	DeviceFailure  DeviceStep = "server_error"
+	DeviceSuccess  DeviceStep = "success"
+)
 
 type issued struct {
 	challenge, nonce, redirect, clientID string
@@ -152,17 +194,27 @@ func (i *IdP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		i.mu.Lock()
 		i.DiscoveryCalls++
 		i.mu.Unlock()
-		writeJSON(w, http.StatusOK, map[string]any{
+		document := map[string]any{
 			"issuer": Issuer, "authorization_endpoint": Issuer + "/oauth2/authorize", "token_endpoint": Issuer + "/oauth2/token",
 			"jwks_uri": Issuer + "/.well-known/jwks.json", "userinfo_endpoint": Issuer + "/oauth2/userinfo",
 			"response_types_supported": []string{"code"}, "code_challenge_methods_supported": []string{"S256"},
 			"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
 			"id_token_signing_alg_values_supported": []string{"ES256"},
-		})
+			"grant_types_supported":                 []string{"authorization_code", "refresh_token", DeviceGrantType},
+		}
+		i.mu.Lock()
+		omit := i.DeviceOmitEndpoint
+		i.mu.Unlock()
+		if !omit {
+			document["device_authorization_endpoint"] = Issuer + "/oauth2/device/code"
+		}
+		writeJSON(w, http.StatusOK, document)
 	case "/.well-known/jwks.json":
 		writeJSON(w, http.StatusOK, jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &i.key.PublicKey, KeyID: KeyID, Algorithm: "ES256", Use: "sig"}}})
 	case "/oauth2/token":
 		i.token(w, r)
+	case "/oauth2/device/code":
+		i.deviceAuthorization(w, r)
 	case "/oauth2/userinfo":
 		i.mu.Lock()
 		i.UserinfoCalls++
@@ -193,6 +245,10 @@ func (i *IdP) token(w http.ResponseWriter, r *http.Request) {
 	i.TokenAuthHeaders = append(i.TokenAuthHeaders, r.Header.Get("Authorization"))
 	hook, status := i.BeforeToken, i.TokenStatus
 	i.mu.Unlock()
+	if r.PostForm.Get("grant_type") == DeviceGrantType {
+		i.devicePoll(w, r)
+		return
+	}
 	if hook != nil {
 		hook()
 	}
@@ -221,6 +277,101 @@ func (i *IdP) token(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"access_token": i.AccessToken, "token_type": "Bearer", "expires_in": i.ExpiresIn, "refresh_token": i.RefreshToken, "id_token": i.idToken(entry.nonce)})
 }
 
+// DeviceGrantType is the RFC 8628 token endpoint grant type.
+const DeviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+
+func (i *IdP) now() time.Time {
+	if i.Clock != nil {
+		return i.Clock.Now()
+	}
+	return time.Now()
+}
+
+func (i *IdP) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	i.mu.Lock()
+	i.DeviceRequests++
+	i.DeviceForms = append(i.DeviceForms, r.PostForm)
+	hook := i.BeforeDeviceAuthorization
+	status, userCode, uri, full, expires, interval, code := i.DeviceStatus, i.DeviceUserCode, i.DeviceVerificationURI, i.DeviceVerificationFull, i.DeviceExpiresIn, i.DeviceInterval, i.DeviceCodeValue
+	i.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	if status != 0 {
+		writeJSON(w, status, map[string]string{"error": "fake_failure"})
+		return
+	}
+	if r.Method != http.MethodPost || r.PostForm.Get("client_id") != ClientID || r.PostForm.Get("scope") == "" || r.PostForm.Has("client_secret") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		return
+	}
+	if userCode == "" {
+		userCode = "ABCD-1234"
+	}
+	if uri == "" {
+		uri = "https://accounts.x.ai/oauth2/device"
+	}
+	if code == "" {
+		code = "fake-device-code-1"
+	}
+	if expires == 0 {
+		expires = 900
+	}
+	document := map[string]any{"device_code": code, "user_code": userCode, "verification_uri": uri, "expires_in": expires}
+	if interval != 0 {
+		document["interval"] = interval
+	}
+	if full != "" {
+		document["verification_uri_complete"] = full
+	}
+	writeJSON(w, http.StatusOK, document)
+}
+
+func (i *IdP) devicePoll(w http.ResponseWriter, r *http.Request) {
+	i.mu.Lock()
+	i.DevicePollForms = append(i.DevicePollForms, r.PostForm)
+	i.DevicePollTimes = append(i.DevicePollTimes, i.now())
+	poll := len(i.DevicePollForms)
+	hook, code := i.BeforeDevicePoll, i.DeviceCodeValue
+	step := DeviceSuccess
+	if poll <= len(i.DeviceScript) {
+		step = i.DeviceScript[poll-1]
+	}
+	i.mu.Unlock()
+	if hook != nil {
+		hook(poll)
+	}
+	if code == "" {
+		code = "fake-device-code-1"
+	}
+	if r.Method != http.MethodPost || r.PostForm.Get("client_id") != ClientID || r.PostForm.Get("device_code") != code || r.PostForm.Has("client_secret") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
+		return
+	}
+	if i.DeviceTokenStatus != 0 {
+		w.WriteHeader(i.DeviceTokenStatus)
+		return
+	}
+	switch step {
+	case DeviceSuccess:
+		i.mu.Lock()
+		i.DeviceTokenSuccessCount++
+		nonce := i.DeviceIDTokenNonce
+		i.mu.Unlock()
+		if i.DeviceTokenBody != "" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(i.DeviceTokenBody))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"access_token": i.AccessToken, "token_type": "Bearer", "expires_in": i.ExpiresIn, "refresh_token": i.RefreshToken, "id_token": i.idToken(nonce)})
+	case DeviceFailure:
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": string(step)})
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": string(step)})
+	}
+}
+
 func (i *IdP) idToken(nonce string) string {
 	issuer, audience := i.IDTokenIssuer, i.IDTokenAudience
 	if issuer == "" {
@@ -241,7 +392,10 @@ func (i *IdP) idToken(nonce string) string {
 	if len(i.IDTokenAudiences) > 0 {
 		aud = i.IDTokenAudiences
 	}
-	claims := map[string]any{"iss": issuer, "sub": i.Subject, "aud": aud, "iat": now.Add(-time.Minute).Unix(), "exp": now.Add(i.IDTokenLifetime).Unix(), "nonce": nonce, "email": i.Email}
+	claims := map[string]any{"iss": issuer, "sub": i.Subject, "aud": aud, "iat": now.Add(-time.Minute).Unix(), "exp": now.Add(i.IDTokenLifetime).Unix(), "email": i.Email}
+	if nonce != "" {
+		claims["nonce"] = nonce
+	}
 	if i.IDTokenAuthorizedParty != "" {
 		claims["azp"] = i.IDTokenAuthorizedParty
 	}

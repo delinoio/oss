@@ -91,6 +91,12 @@ const (
 	GrokReasonUserinfo       GrokOAuthReason = "userinfo"
 	GrokReasonMapping        GrokOAuthReason = "mapping"
 	GrokReasonResponse       GrokOAuthReason = "response"
+	// GrokReasonDeviceAuthorization is a failed device authorization request or
+	// an unusable device authorization response.
+	GrokReasonDeviceAuthorization GrokOAuthReason = "device_authorization"
+	// GrokReasonDeviceExpired is the provider's expired_token answer or the local
+	// device deadline. It is a clean expiry, never a failure.
+	GrokReasonDeviceExpired GrokOAuthReason = "expired_token"
 )
 
 // GrokOAuthError never carries a code, URL, verifier or token. Uncertain is true
@@ -132,6 +138,10 @@ type GrokEndpoints struct {
 	Token         string
 	JWKS          string
 	Userinfo      string
+	// DeviceAuthorization is the RFC 8628 endpoint. It is empty unless discovery
+	// advertises both the endpoint and the device_code grant, so the browser login
+	// never depends on it.
+	DeviceAuthorization string
 }
 
 type grokDiscoveryDocument struct {
@@ -144,6 +154,8 @@ type grokDiscoveryDocument struct {
 	CodeChallengeMethods  []string `json:"code_challenge_methods_supported"`
 	TokenAuthMethods      []string `json:"token_endpoint_auth_methods_supported"`
 	IDTokenAlgs           []string `json:"id_token_signing_alg_values_supported"`
+	DeviceEndpoint        string   `json:"device_authorization_endpoint"`
+	GrantTypes            []string `json:"grant_types_supported"`
 }
 
 // grokSameOrigin accepts only an https URL on the issuer's exact origin without
@@ -180,6 +192,9 @@ func DiscoverGrokEndpoints(ctx context.Context, client *http.Client, profile Gro
 		if !grokSameOrigin(profile.Issuer, endpoint) {
 			return GrokEndpoints{}, grokFail(GrokReasonDiscovery)
 		}
+	}
+	if doc.DeviceEndpoint != "" && slices.Contains(doc.GrantTypes, GrokDeviceGrantType) && grokSameOrigin(profile.Issuer, doc.DeviceEndpoint) {
+		endpoints.DeviceAuthorization = doc.DeviceEndpoint
 	}
 	return endpoints, nil
 }
@@ -383,6 +398,12 @@ func ExchangeGrokCode(ctx context.Context, client *http.Client, profile GrokOAut
 	if status != http.StatusOK {
 		return GrokTokens{}, &GrokOAuthError{Reason: GrokReasonTokenUncertain, Uncertain: true}
 	}
+	return parseGrokTokens(body)
+}
+
+// parseGrokTokens validates a successful token endpoint answer. Both grants
+// share it, so the accepted token material is identical.
+func parseGrokTokens(body []byte) (GrokTokens, error) {
 	// The provider answered success, so the code may be consumed: an unusable
 	// body can never prove otherwise and is recovery, not a definitive failure.
 	unusable := &GrokOAuthError{Reason: GrokReasonTokenResponse, Uncertain: true}
@@ -476,6 +497,23 @@ type grokIDTokenClaims struct {
 // client id), nonce and expiry. It returns the verified claims. The raw token is
 // never retained or echoed.
 func VerifyGrokIDToken(raw string, keys *jose.JSONWebKeySet, profile GrokOAuthProfile, nonce string, now time.Time) (GrokClaims, error) {
+	if nonce == "" {
+		return GrokClaims{}, grokFail(GrokReasonNonce)
+	}
+	return verifyGrokIDToken(raw, keys, profile, nonce, now)
+}
+
+// VerifyGrokDeviceIDToken applies every check of VerifyGrokIDToken except the
+// nonce. The device grant has no front-channel authorization request, so no nonce
+// is sent and none can be compared; the token arrives directly from the token
+// endpoint over TLS in answer to the device code. UNVERIFIED ASSUMPTION: the
+// provider adds no nonce claim to a device grant ID token.
+func VerifyGrokDeviceIDToken(raw string, keys *jose.JSONWebKeySet, profile GrokOAuthProfile, now time.Time) (GrokClaims, error) {
+	return verifyGrokIDToken(raw, keys, profile, "", now)
+}
+
+// verifyGrokIDToken checks the nonce only when one was sent (nonce non-empty).
+func verifyGrokIDToken(raw string, keys *jose.JSONWebKeySet, profile GrokOAuthProfile, nonce string, now time.Time) (GrokClaims, error) {
 	parsed, err := jose.ParseSigned(raw, []jose.SignatureAlgorithm{jose.ES256})
 	if err != nil || len(parsed.Signatures) != 1 || keys == nil {
 		return GrokClaims{}, grokFail(GrokReasonIDTokenFormat)
@@ -510,7 +548,7 @@ func VerifyGrokIDToken(raw string, keys *jose.JSONWebKeySet, profile GrokOAuthPr
 		return GrokClaims{}, grokFail(GrokReasonExpired)
 	case claims.IssuedAt != nil && time.Unix(*claims.IssuedAt, 0).After(now.Add(grokClockSkew)), claims.NotBefore != nil && time.Unix(*claims.NotBefore, 0).After(now.Add(grokClockSkew)):
 		return GrokClaims{}, grokFail(GrokReasonExpired)
-	case nonce == "" || subtle.ConstantTimeCompare([]byte(claims.Nonce), []byte(nonce)) != 1:
+	case nonce != "" && subtle.ConstantTimeCompare([]byte(claims.Nonce), []byte(nonce)) != 1:
 		return GrokClaims{}, grokFail(GrokReasonNonce)
 	case !grokControlFree(claims.Subject, maxGrokIdentityField, true):
 		return GrokClaims{}, grokFail(GrokReasonIDTokenFormat)
@@ -594,4 +632,39 @@ func BuildGrokBundle(tokens GrokTokens, idClaims, info GrokClaims, now time.Time
 		return GrokBundle{}, grokFail(GrokReasonMapping)
 	}
 	return bundle, nil
+}
+
+// GrokLoginMethod is the closed set of sign-in methods. A login never switches
+// from one method to the other.
+type GrokLoginMethod string
+
+const (
+	GrokLoginBrowser    GrokLoginMethod = "browser"
+	GrokLoginDeviceCode GrokLoginMethod = "device_code"
+)
+
+// CompleteGrokLogin is the one function that turns the tokens of either method
+// into a native credential bundle: it verifies the ID token, reads and checks
+// userinfo and applies BuildGrokBundle. The browser method pins the nonce it
+// sent; the device method has none (see VerifyGrokDeviceIDToken). Equal tokens,
+// identity and time therefore produce equal bundles for both methods.
+func CompleteGrokLogin(ctx context.Context, client *http.Client, profile GrokOAuthProfile, endpoints GrokEndpoints, keys *jose.JSONWebKeySet, tokens GrokTokens, method GrokLoginMethod, nonce string, now time.Time) (GrokBundle, error) {
+	var claims GrokClaims
+	var err error
+	switch method {
+	case GrokLoginBrowser:
+		claims, err = VerifyGrokIDToken(tokens.IDToken, keys, profile, nonce, now)
+	case GrokLoginDeviceCode:
+		claims, err = VerifyGrokDeviceIDToken(tokens.IDToken, keys, profile, now)
+	default:
+		err = grokFail(GrokReasonMapping)
+	}
+	if err != nil {
+		return GrokBundle{}, err
+	}
+	info, err := FetchGrokUserinfo(ctx, client, endpoints, tokens.AccessToken, claims)
+	if err != nil {
+		return GrokBundle{}, err
+	}
+	return BuildGrokBundle(tokens, claims, info, now)
 }

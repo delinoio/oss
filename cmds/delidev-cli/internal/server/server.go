@@ -11,6 +11,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/tailscale"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/tokenprices"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
@@ -157,6 +158,9 @@ type Service struct {
 	// grokLoginTransport replaces the outbound transport of the server-owned
 	// Grok login in isolated tests; production routes through outboundResolver.
 	grokLoginTransport http.RoundTripper
+	// grokDeviceClock replaces the wall clock of the Grok device poll loop in
+	// isolated tests; nil selects the system clock.
+	grokDeviceClock subscription.GrokDeviceClock
 	// grokListen binds the loopback callback listener; tests may observe it.
 	grokListen func() (net.Listener, error)
 	// grokLoginBeforeSettle runs after the browser flow decided its outcome and

@@ -199,7 +199,10 @@ and grant no execution. The server-owned Grok browser login (LOGIN, `device_code
 false, no machine) runs in the server-owned request, progress, cancel and
 callback-forwarding lane described under
 [Server-owned browser login](cmds-delidev-grok-subscription-contract.md#server-owned-browser-login),
-implemented without a native Grok process and kept unadvertised (System 39 off). Mock and build evidence for this model is not real-account,
+implemented without a native Grok process and kept unadvertised (System 39 off).
+The server-owned Grok device-code login (LOGIN, `device_code` true, no machine)
+shares that lane and the single System 39 switch; see
+[Server-owned device-code login](cmds-delidev-grok-subscription-contract.md#server-owned-device-code-login). Mock and build evidence for this model is not real-account,
 real-renewal or cross-platform acceptance; that acceptance is future work and is
 not performed.
 

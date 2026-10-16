@@ -420,7 +420,9 @@ func grokProgressView(st *domain.SubscriptionState, operation string, connected 
 
 // grokSubscriptionProgress reports the original Grok operation's state, its
 // safe diagnostic and, once it succeeded, the committed generation. It never
-// carries URLs, codes or identity, and the Codex
+// carries URLs, codes or identity outside the transient waiting presentation
+// of a server-owned login (authorization URL, or device verification URL and
+// user code), and the Codex
 // diagnostic (7) and native diagnostic (9) fields stay unset.
 func (s *Service) grokSubscriptionProgress(ctx context.Context, req *connect.Request[pb.GetSubscriptionProgressRequest]) (*connect.Response[pb.GetSubscriptionProgressResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
@@ -460,6 +462,7 @@ func (s *Service) grokSubscriptionProgress(ctx context.Context, req *connect.Req
 				delete(s.subscriptionProgress, o.ID)
 			} else {
 				response.Url = progress.URL
+				response.UserCode = progress.UserCode
 			}
 		}
 		return nil

@@ -36,6 +36,12 @@ import (
 // writes the durable exchange claim and only then sends the one token request.
 // The URL, state, nonce, verifier, code and tokens exist only in this runner's
 // memory and are never logged, stored in a document or returned in an error.
+//
+// The device-code method (RFC 8628, grok_device_login.go) shares the scanner,
+// the claim of the operation, the cancellation watcher, the settlement and the
+// capability switch of this file. A login never switches between the methods:
+// the Pending operation's device_code choice selects one runner for its whole
+// life.
 
 const (
 	// grokLoginPhase is the phase every structured record of this flow carries.
@@ -268,7 +274,7 @@ type grokLoginOutcome struct {
 
 func grokReasonCode(reason subscription.GrokOAuthReason) domain.Code {
 	switch reason {
-	case subscription.GrokReasonDiscovery, subscription.GrokReasonJWKS, subscription.GrokReasonUserinfo, subscription.GrokReasonRandom:
+	case subscription.GrokReasonDiscovery, subscription.GrokReasonJWKS, subscription.GrokReasonUserinfo, subscription.GrokReasonRandom, subscription.GrokReasonDeviceAuthorization:
 		return domain.Unavailable
 	case subscription.GrokReasonDenied:
 		return domain.PermissionDenied
@@ -282,6 +288,7 @@ func grokReasonCode(reason subscription.GrokOAuthReason) domain.Code {
 // runGrokLogin owns one server-owned Grok browser login from claim to settlement.
 func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	var original domain.ServerSubscriptionOperation
+	method := subscription.GrokLoginBrowser
 	err := s.Store.Read(parent, func(tx *store.Tx) error {
 		_, a, err := grokSubscriptionAccount(tx, id, 0)
 		if err != nil {
@@ -291,6 +298,9 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 			return subscriptionDenied()
 		}
 		original = *a.Subscription.ServerOperation
+		if a.Subscription.Pending.DeviceCode {
+			method = subscription.GrokLoginDeviceCode
+		}
 		return nil
 	})
 	if err != nil {
@@ -329,7 +339,7 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	if err != nil || !original.NativeStarted {
 		return
 	}
-	s.logger.InfoContext(parent, "grok_login_started", "phase", grokLoginPhase, "account_id", id, "operation_id", original.ID, "correlation_id", original.ID)
+	s.logger.InfoContext(parent, "grok_login_started", "phase", grokLoginPhase, "account_id", id, "operation_id", original.ID, "correlation_id", original.ID, "method", method)
 	ctx, cancel := context.WithDeadline(parent, original.ExpiresAt)
 	defer cancel()
 	s.registerGrokLogin(original.ID, cancel)
@@ -366,7 +376,12 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 			}
 		}
 	}()
-	out := s.performGrokLogin(ctx, id, original, &cancelSeen)
+	var out grokLoginOutcome
+	if method == subscription.GrokLoginDeviceCode {
+		out = s.performGrokDeviceLogin(ctx, id, original, &cancelSeen)
+	} else {
+		out = s.performGrokLogin(ctx, id, original, &cancelSeen)
+	}
 	cancel()
 	<-watched
 	// Deadline and cancellation are classified after the exchange stopped.
@@ -387,38 +402,53 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	out.bundle.Clear()
 }
 
+// grokFlowState classifies how a login stopped. It is shared by both methods.
+type grokFlowState struct {
+	ctx        context.Context
+	original   domain.ServerSubscriptionOperation
+	cancelSeen *atomic.Bool
+	// claimed mirrors the durable exchange claim: true while a token request that
+	// may consume the one-time code could be in flight or has consumed it.
+	claimed atomic.Bool
+}
+
+// interrupted classifies a stop of the flow: before the exchange claim it is a
+// cancellation or an expiry; after it the token outcome is unknown.
+func (f *grokFlowState) interrupted() grokLoginOutcome {
+	switch {
+	case f.claimed.Load():
+		return grokLoginOutcome{state: domain.SubscriptionRecovery, reason: subscription.GrokReasonTokenUncertain}
+	case !time.Now().Before(f.original.ExpiresAt) && !f.cancelSeen.Load():
+		return grokLoginOutcome{state: domain.SubscriptionExpired}
+	default:
+		return grokLoginOutcome{state: domain.SubscriptionCanceled}
+	}
+}
+
+func (f *grokFlowState) failed(err error) grokLoginOutcome {
+	if f.ctx.Err() != nil {
+		return f.interrupted()
+	}
+	reason, uncertain := subscription.GrokOAuthReasonOf(err)
+	switch {
+	case uncertain:
+		return grokLoginOutcome{state: domain.SubscriptionRecovery, reason: reason}
+	case reason == subscription.GrokReasonDeviceExpired:
+		return grokLoginOutcome{state: domain.SubscriptionExpired, reason: reason}
+	case reason == "":
+		return grokLoginOutcome{state: domain.SubscriptionFailed, reason: subscription.GrokReasonCallback, code: domain.SafeError(err).Code}
+	}
+	return grokLoginOutcome{state: domain.SubscriptionFailed, reason: reason}
+}
+
 // performGrokLogin runs the browser flow and returns the decided outcome. The
 // listener and every secret value are released before it returns.
 func (s *Service) performGrokLogin(ctx context.Context, id domain.ID, original domain.ServerSubscriptionOperation, cancelSeen *atomic.Bool) grokLoginOutcome {
 	profile := subscription.DefaultGrokOAuthProfile()
 	client, release := s.grokLoginClient()
 	defer release()
-	claimed := false
-	// interrupted classifies a stop of the flow: before the exchange claim it is
-	// a cancellation or an expiry; after it the token outcome is unknown.
-	interrupted := func() grokLoginOutcome {
-		switch {
-		case claimed:
-			return grokLoginOutcome{state: domain.SubscriptionRecovery, reason: subscription.GrokReasonTokenUncertain}
-		case !time.Now().Before(original.ExpiresAt) && !cancelSeen.Load():
-			return grokLoginOutcome{state: domain.SubscriptionExpired}
-		default:
-			return grokLoginOutcome{state: domain.SubscriptionCanceled}
-		}
-	}
-	failed := func(err error) grokLoginOutcome {
-		if ctx.Err() != nil {
-			return interrupted()
-		}
-		reason, uncertain := subscription.GrokOAuthReasonOf(err)
-		if uncertain {
-			return grokLoginOutcome{state: domain.SubscriptionRecovery, reason: reason}
-		}
-		if reason == "" {
-			return grokLoginOutcome{state: domain.SubscriptionFailed, reason: subscription.GrokReasonCallback, code: domain.SafeError(err).Code}
-		}
-		return grokLoginOutcome{state: domain.SubscriptionFailed, reason: reason}
-	}
+	flow := &grokFlowState{ctx: ctx, original: original, cancelSeen: cancelSeen}
+	interrupted, failed := flow.interrupted, flow.failed
 	endpoints, err := subscription.DiscoverGrokEndpoints(ctx, client, profile)
 	if err != nil {
 		return failed(err)
@@ -464,7 +494,7 @@ func (s *Service) performGrokLogin(ctx context.Context, id domain.ID, original d
 		}
 		return grokLoginOutcome{state: domain.SubscriptionFailed, reason: subscription.GrokReasonCallback, code: domain.Conflict}
 	}
-	claimed = true
+	flow.claimed.Store(true)
 	s.logger.InfoContext(ctx, "grok_login_exchange_claimed", "phase", grokLoginPhase, "operation_id", original.ID, "correlation_id", original.ID)
 	tokens, err := subscription.ExchangeGrokCode(ctx, client, profile, endpoints, callback.code, authorization.Verifier(), redirect)
 	callback.code = ""
@@ -473,16 +503,8 @@ func (s *Service) performGrokLogin(ctx context.Context, id domain.ID, original d
 		// The request was sent: an interrupted exchange is uncertain.
 		return failed(err)
 	}
-	now := time.Now()
-	claims, err := subscription.VerifyGrokIDToken(tokens.IDToken, keys, profile, authorization.Nonce, now)
-	if err != nil {
-		return failed(err)
-	}
-	info, err := subscription.FetchGrokUserinfo(ctx, client, endpoints, tokens.AccessToken, claims)
-	if err != nil {
-		return failed(err)
-	}
-	bundle, err := subscription.BuildGrokBundle(tokens, claims, info, now)
+	// Both methods build the bundle through the one shared function.
+	bundle, err := subscription.CompleteGrokLogin(ctx, client, profile, endpoints, keys, tokens, subscription.GrokLoginBrowser, authorization.Nonce, time.Now())
 	if err != nil {
 		return failed(err)
 	}
@@ -496,6 +518,12 @@ func (s *Service) publishGrokLoginProgress(ctx context.Context, id domain.ID, o 
 		s.logger.WarnContext(ctx, "grok_login_url_rejected", "phase", grokLoginPhase, "operation_id", o.ID, "correlation_id", o.ID, "code", domain.RecoveryRequired)
 		return subscriptionDenied()
 	}
+	return s.publishGrokPresentation(ctx, id, o, subscriptionProgress{URL: authorization, Until: o.ExpiresAt})
+}
+
+// publishGrokPresentation moves the operation to WAITING and stores the
+// validated presentation in the in-memory progress map only.
+func (s *Service) publishGrokPresentation(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation, presentation subscriptionProgress) error {
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return err
@@ -518,7 +546,7 @@ func (s *Service) publishGrokLoginProgress(ctx context.Context, id domain.ID, o 
 		if s.subscriptionProgress == nil {
 			s.subscriptionProgress = map[domain.ID]subscriptionProgress{}
 		}
-		s.subscriptionProgress[o.ID] = subscriptionProgress{URL: authorization, Until: o.ExpiresAt}
+		s.subscriptionProgress[o.ID] = presentation
 	}
 	return err
 }
@@ -785,16 +813,17 @@ func grokLoginCandidate(a domain.Account) bool {
 	return o.Action == domain.SubscriptionLogin && o.State == domain.SubscriptionPreparing && !o.NativeStarted && st.Pending.ID == o.ID && st.Pending.Phase == domain.SubscriptionQueued && st.Pending.MachineID == ""
 }
 
-// requestGrokSubscription admits the Grok browser login: LOGIN with
-// device_code false and no machine. Device code, refresh and logout have no
-// server-owned Grok path yet and stay unsupported.
+// requestGrokSubscription admits the Grok login: LOGIN with no machine, by
+// browser (device_code false) or by device code (device_code true). The choice
+// is stored on the pending operation and never changes. Refresh and logout have
+// no server-owned Grok path yet and stay unsupported.
 func (s *Service) requestGrokSubscription(ctx context.Context, req *connect.Request[pb.RequestSubscriptionRequest]) (*connect.Response[pb.RequestSubscriptionResponse], error) {
-	if req.Msg.MachineId != "" || req.Msg.DeviceCode || subscriptionAction(req.Msg.Action) != domain.SubscriptionLogin {
-		return nil, rpc.Error(domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Start the Grok browser login without a Runner Device; device code, refresh and logout are not available."), req.Header().Get(rpc.CorrelationHeader))
+	if req.Msg.MachineId != "" || subscriptionAction(req.Msg.Action) != domain.SubscriptionLogin {
+		return nil, rpc.Error(domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Start the Grok login without a Runner Device; refresh and logout are not available."), req.Header().Get(rpc.CorrelationHeader))
 	}
 	response, err := s.requestServerSubscription(ctx, req)
 	if err == nil {
-		s.logger.InfoContext(ctx, "grok_login_accepted", "phase", grokLoginPhase, "account_id", req.Msg.Mutation.Id, "operation_id", req.Msg.Mutation.RequestId, "correlation_id", req.Msg.Mutation.RequestId, "replayed", response.Msg.Replayed)
+		s.logger.InfoContext(ctx, "grok_login_accepted", "phase", grokLoginPhase, "account_id", req.Msg.Mutation.Id, "operation_id", req.Msg.Mutation.RequestId, "correlation_id", req.Msg.Mutation.RequestId, "device_code", req.Msg.DeviceCode, "replayed", response.Msg.Replayed)
 	}
 	return response, err
 }
