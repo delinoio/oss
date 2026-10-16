@@ -1918,6 +1918,9 @@ test("DeliDev desktop phases partition all tests and preserve uncached executabl
       "scripts/ci-test-sequencer.test.mjs",
     ),
   );
+  // asset-prefix.test.mjs builds the real frontend, which imports the built
+  // API client, so the launch fixtures must wait for the workspace builds.
+  assert.ok(desktop.tasks["test:desktop-launch"].dependsOn.includes("^build"));
   const client = JSON.parse(
     readFileSync(`${root}/packages/delidev-api-client/turbo.json`, "utf8"),
   );

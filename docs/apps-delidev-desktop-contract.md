@@ -140,6 +140,8 @@ integration assertions. The combined desktop integration task also follows
 client integration, and combined QA follows type checks, desktop unit/integration
 tests and the release check. The independent checks phase runs QA after its type
 checks and release check; the release check owns its frontend build dependency.
+The desktop launch fixtures build the real frontend, so they wait for the
+workspace package builds (including the API client) before they start.
 Sharing a runner-built Go executable never shares fixture processes, credentials
 or data lifetimes.
 
