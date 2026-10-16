@@ -529,6 +529,29 @@ func TestGrokRefreshRequestIsRefusedWhileALeaseHoldsTheAccount(t *testing.T) {
 	}
 }
 
+// A generation the account references but the vault no longer holds is a local
+// credential loss: the refresh fences the account instead of settling as an
+// ordinary failure that leaves the unusable generation ready.
+func TestGrokRefreshWithAMissingBundleFencesTheAccount(t *testing.T) {
+	g := newGrokRefresh(t)
+	before := g.account()
+	if err := g.f.secrets.Delete(context.Background(), credentials.Ref{Owner: g.f.input.AccountID, ID: before.Subscription.Generation, Purpose: credentials.AccountLogin}); err != nil {
+		t.Fatal(err)
+	}
+	p := g.settle()
+	if p.State != grokRecovery || p.GrokDiagnostic == nil || p.GrokDiagnostic.Code != string(domain.RecoveryRequired) {
+		t.Fatalf("progress = %v", p)
+	}
+	after := g.account()
+	if !after.Subscription.RecoveryRequired || after.Health != domain.AccountFailed || after.Subscription.Generation != before.Subscription.Generation || g.idp.RefreshRequests != 0 {
+		t.Fatalf("recovery = %v, health = %v, requests = %d", after.Subscription.RecoveryRequired, after.Health, g.idp.RefreshRequests)
+	}
+	g.restart()
+	if g.idp.RefreshRequests != 0 {
+		t.Fatal("a restart sent a refresh for a fenced account")
+	}
+}
+
 func TestGrokRefreshExpiredBeforeTheClaimSendsNothing(t *testing.T) {
 	g := newGrokRefresh(t)
 	_, err := g.f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.expire", nil, func(tx *store.Tx) (any, error) {

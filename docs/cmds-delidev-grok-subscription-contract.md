@@ -439,8 +439,9 @@ Lifecycle of one runner:
 2. Discovery and the signing keys are read first, then the bound bundle is opened
    from the protected vault against this server, the account and the frozen
    generation. A failure here sends nothing: it settles FAILED (an unusable
-   provider) or RECOVERY_REQUIRED (an invalid bundle), and the account keeps its
-   credential.
+   provider) or RECOVERY_REQUIRED (an invalid bundle, or a referenced generation
+   whose vault object is missing, which is a local credential loss rather than a
+   provider failure), and the account keeps its credential.
 3. The durable refresh claim (`ServerSubscriptionOperation.exchange_claimed`,
    shared with the login's exchange claim and valid for `login` and `refresh`) is
    committed. Only after that commit the single request is sent: a form POST of

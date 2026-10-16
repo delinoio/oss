@@ -246,6 +246,13 @@ func (s *Service) openGrokBoundBundle(ctx context.Context, id domain.ID, o domai
 	}
 	raw, err := vault.Get(ctx, credentials.Ref{Owner: id, ID: o.Generation, Purpose: credentials.AccountLogin})
 	if err != nil {
+		if domain.SafeError(err).Code == domain.NotFound {
+			// The document references a generation whose vault object is gone: the
+			// account is unusable for every later execution and refresh, which is a
+			// local credential loss that needs the recovery fence, not a retryable
+			// provider failure.
+			return subscription.GrokBundle{}, subscription.GrokBundleInvalid()
+		}
 		return subscription.GrokBundle{}, err
 	}
 	defer clear(raw)
