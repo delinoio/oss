@@ -105,21 +105,24 @@ test.each([
   ["empty", ""],
   ["oversized", "가".repeat(257)],
   ["control", "At\nlas"],
-])("%s names use the localized ordinal without invalidating the child", (_, name) => {
-  const session = newRequestId(),
-    row = subagentFixture(session);
-  withSubagentName(row, name);
-  expect(subagentDisplayName(row)).toBeUndefined();
-  expect(validateSubagentPage([row], session)).toHaveLength(1);
-  render(
-    <SubagentRows
-      rows={[row]}
-      sessionId={session}
-      labels={labelled(session, [row])}
-    />,
-  );
-  expect(screen.getByRole("listitem").textContent).toBe("Subagent 1");
-});
+])(
+  "%s names use the localized ordinal without invalidating the child",
+  (_, name) => {
+    const session = newRequestId(),
+      row = subagentFixture(session);
+    withSubagentName(row, name);
+    expect(subagentDisplayName(row)).toBeUndefined();
+    expect(validateSubagentPage([row], session)).toHaveLength(1);
+    render(
+      <SubagentRows
+        rows={[row]}
+        sessionId={session}
+        labels={labelled(session, [row])}
+      />,
+    );
+    expect(screen.getByRole("listitem").textContent).toBe("Subagent 1");
+  },
+);
 
 test("accepts a 256-character name and rejects a foreign child join", () => {
   const session = newRequestId(),
@@ -214,7 +217,7 @@ test("source removal, session switch and disabled ownership dismiss the card", (
     other = newRequestId();
   const one = withSubagentName(subagentFixture(session), "Nova"),
     two = withSubagentName(subagentFixture(session), "Orion");
-  const view = (rows: typeof one[], id = session, enabled = true) => (
+  const view = (rows: (typeof one)[], id = session, enabled = true) => (
     <SubagentRows rows={rows} sessionId={id} enabled={enabled} />
   );
   const mounted = render(view([one, two]));
@@ -259,9 +262,7 @@ test("opening a card sends no request and Subagents has no child controls", asyn
     </QueryClientProvider>,
   );
   await waitFor(() => expect(subagentTriggers()).toHaveLength(1));
-  expect(
-    screen.queryByText(/Read-only native hierarchy/),
-  ).toBeNull();
+  expect(screen.queryByText(/Read-only native hierarchy/)).toBeNull();
   await waitFor(() => expect(reads).toBeGreaterThan(0));
   const before = reads;
   fireEvent.focus(subagentTriggers()[0]!);

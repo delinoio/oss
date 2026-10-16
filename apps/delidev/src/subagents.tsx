@@ -223,7 +223,10 @@ function ChildList({
     return names?.get(key) ?? fallback(key);
   };
   return (
-    <ul className="subagent-name-list" aria-label={copy("subagents.agentNames")}>
+    <ul
+      className="subagent-name-list"
+      aria-label={copy("subagents.agentNames")}
+    >
       {rows.map((row) => {
         const { record, child } = row;
         const key = `${record.execution_id}:${child.native_id}`;

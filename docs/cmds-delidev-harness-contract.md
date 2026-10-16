@@ -3679,3 +3679,7 @@ Retained native records keep the observed executable version (`ExecutionPublishe
 ## Claude image input profile
 
 Claude image delivery uses the independently negotiated System 106 / Worker 71 pair, original Worker-owned bytes, native preprocessing replay and attachment-aware checkpoint identities. Follow the [image input contract](cmds-delidev-image-input-contract.md#closed-adapter-profiles). Original text-only streams and checkpoints retain their prior identities; unknown peers gain no image authority.
+
+## Codex subagent display names
+
+`threadWire.agentNickname` stays raw observation JSON. The descendant inventory and child `thread/started` handling accept it only as a non-blank string of at most 256 Unicode characters without control characters; other values are ignored without failing the child inventory. The client retains the last valid name per native child and returns names beside each `SubagentEvent` as `SubagentNames` entries keyed by the original product child ID. They are not part of `SubagentObservation`. See the [subagent contract](cmds-delidev-subagents-contract.md#native-display-names).

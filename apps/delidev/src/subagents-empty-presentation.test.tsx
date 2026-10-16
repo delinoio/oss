@@ -161,9 +161,7 @@ test("reveals a child from an accepted refresh and hides again after a later com
   mounted.rerender(t.view("2"));
   await waitFor(() => expect(t.hidden()).toBe(false));
   await waitFor(() =>
-    expect(
-      screen.queryAllByRole("listitem"),
-    ).toHaveLength(1),
+    expect(screen.queryAllByRole("listitem")).toHaveLength(1),
   );
   t.state.next = {};
   mounted.rerender(t.view("3"));

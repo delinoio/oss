@@ -1701,3 +1701,7 @@ System `CLAUDE_SERVER_LOGIN_V1 = 67`, System `CLAUDE_MANAGED_EXECUTION_V1 = 68` 
 ## Claude image input profile
 
 Claude image delivery uses the independently negotiated System 106 / Worker 71 pair, original Worker-owned bytes, native preprocessing replay and attachment-aware checkpoint identities. Follow the [image input contract](cmds-delidev-image-input-contract.md#closed-adapter-profiles). Original text-only streams and checkpoints retain their prior identities; unknown peers gain no image authority.
+
+## Subagent display name metadata
+
+`SubagentDisplayName` has `child_id` 1 and `name` 2. `PublishExecutionRequest.subagent_names` uses field 5 and `Resource.subagent_display` uses field 11, all allocated for issue 4001 in `protos/delidev/allocations.json`. The metadata is optional and additive: `event_json` and Subagent `document_json` keep their closed schema-1 shapes. Request entries join by original product child ID, are bounded by the existing 128-child batch, and reject duplicate or foreign IDs and names that are blank, longer than 256 Unicode characters or control-bearing before atomic retention. Names are part of the publication receipt identity. The common Resource projection removes the private `display_name` key from the child document and fills `subagent_display`. No capability, RPC or migration is added; older peers ignore the unknown fields. Go and TypeScript bindings are regenerated with `pnpm proto:generate`.

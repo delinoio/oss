@@ -52,7 +52,9 @@ test("shows native hierarchy, missing telemetry and exact observed child counter
   two.documentJson = encode(second);
   const labels = new Map<string, number>();
   retainSubagentLabels(labels, validateSubagentPage([one, two], session)!);
-  render(<SubagentRows sessionId={session} rows={[one, two]} labels={labels} />);
+  render(
+    <SubagentRows sessionId={session} rows={[one, two]} labels={labels} />,
+  );
   // Idle Info is a plain list of names without any detail or control.
   expect(screen.getAllByRole("listitem")).toHaveLength(2);
   expect(screen.queryByText(nested)).toBeNull();
@@ -360,7 +362,11 @@ test("retains friendly identity and parent labels through the full native bound 
   retainSubagentLabels(labels, validateSubagentPage([later], session)!);
   render(
     <>
-      <SubagentRows rows={[children[1023]]} sessionId={session} labels={labels} />
+      <SubagentRows
+        rows={[children[1023]]}
+        sessionId={session}
+        labels={labels}
+      />
       <SubagentRows rows={[later]} sessionId={session} labels={labels} />
     </>,
   );
@@ -415,7 +421,9 @@ test("keeps child conversation presentation in Info and portals only source meta
   await screen.findByText("Subagent 1");
   // Ordinary Info owns the conversation presentation, but only in the card.
   expect(
-    within(mounted.container).queryByText("Original child conversation content"),
+    within(mounted.container).queryByText(
+      "Original child conversation content",
+    ),
   ).toBeNull();
   const card = within(openSubagentCard());
   expect(card.getByText("Original child conversation content")).toBeTruthy();
