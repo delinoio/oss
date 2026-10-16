@@ -1453,11 +1453,22 @@ fn collect_binding_names(pattern: &str, names: &mut Vec<String>) {
 /// offsets agree with `source`.
 fn masked_code(source: &str, ignored: &[(usize, usize)]) -> String {
     let mut masked = source.as_bytes().to_vec();
+    let bytes = source.as_bytes();
     for (start, end) in ignored {
-        for byte in &mut masked[*start..(*end).min(source.len())] {
-            if *byte != b'\n' {
-                *byte = b' ';
+        let end = (*end).min(source.len());
+        let mut index = *start;
+        while index < end {
+            // Every ECMAScript line terminator (LF, CR, U+2028 and U+2029)
+            // keeps its bytes, so the scans that stop at a line break see
+            // the same boundaries inside a comment as in plain code and the
+            // masked text stays valid UTF-8 of the same length.
+            let terminator = line_terminator_len(bytes, index);
+            if terminator > 0 {
+                index += terminator;
+                continue;
             }
+            masked[index] = b' ';
+            index += 1;
         }
     }
     String::from_utf8_lossy(&masked).into_owned()
@@ -3985,6 +3996,60 @@ y=/process.env.F/.test(z),process.env.G"#;
         ] {
             assert_reports_at(source, marker);
         }
+        // A line terminator inside a comment that follows a bodyless
+        // signature still ends the signature, whichever terminator it is.
+        for terminator in LINE_TERMINATORS {
+            for source in [
+                format!("abstract class C {{ abstract eval(): void /*{terminator}*/ run() {{}} }}"),
+                format!(
+                    "abstract class C {{ abstract eval(): void /*{terminator}*/ run() {{}}; }}"
+                ),
+                format!(
+                    "abstract class C {{ abstract eval(): void /*<T>{terminator}*/ run() {{}} }}"
+                ),
+                format!("abstract class C {{ abstract eval(): void;{terminator}run() {{}} }}"),
+                format!("abstract class C {{ abstract eval(): void // c{terminator} run() {{}} }}"),
+            ] {
+                assert_eq!(direct_eval_line(&source), Some((0, 28)), "{source:?}");
+            }
+            // An implemented method keeps being excluded.
+            let source = format!("abstract class C {{ eval(): void /*{terminator}*/ {{}} }}");
+            assert_eq!(direct_eval_line(&source), None, "{source:?}");
+            let source = format!("class C {{ eval(): void {{}}{terminator}run() {{}} }}");
+            assert_eq!(direct_eval_line(&source), None, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn masked_code_keeps_every_line_terminator_inside_ignored_ranges() {
+        for terminator in LINE_TERMINATORS {
+            let source =
+                format!("a /* x{terminator}y */ b `t{terminator}${{c}}` // d{terminator}e");
+            let ignored = non_code_ranges(&source);
+            let masked = masked_code(&source, &ignored);
+            assert_eq!(masked.len(), source.len(), "{source:?}");
+            assert_eq!(
+                masked.matches(terminator).count(),
+                source.matches(terminator).count(),
+                "{source:?} -> {masked:?}"
+            );
+            for (index, matched) in source.match_indices(terminator) {
+                assert_eq!(
+                    &masked[index..index + matched.len()],
+                    terminator,
+                    "{source:?}"
+                );
+            }
+            // Everything else in the ignored ranges is blanked.
+            assert!(!masked.contains("x") && !masked.contains("y"), "{masked:?}");
+        }
+        // Non-line-terminator multi-byte characters become spaces, one per
+        // byte, and the masked text stays valid UTF-8.
+        let source = "/* \u{e9}\u{2028}\u{1f600} */x";
+        let masked = masked_code(source, &non_code_ranges(source));
+        assert_eq!(masked.len(), source.len());
+        assert!(masked.contains('\u{2028}'));
+        assert!(masked.ends_with('x'));
     }
 
     #[test]
