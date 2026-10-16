@@ -727,12 +727,15 @@ func TestGrokBrowserLoginRequestValidation(t *testing.T) {
 	f := newGrokFixture(t)
 	for name, edit := range map[string]func(*pb.RequestSubscriptionRequest){
 		"machine": func(r *pb.RequestSubscriptionRequest) { r.MachineId = string(f.input.MachineID) },
-		"refresh": func(r *pb.RequestSubscriptionRequest) { r.Action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH },
 		"logout":  func(r *pb.RequestSubscriptionRequest) { r.Action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT },
 	} {
 		if _, err := f.grokLoginRequest(t, edit); err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
 			t.Fatalf("%s was not refused as unsupported: %v", name, err)
 		}
+	}
+	// A refresh needs a connected account: this one has no credential yet.
+	if _, err := f.grokLoginRequest(t, func(r *pb.RequestSubscriptionRequest) { r.Action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH }); err == nil {
+		t.Fatal("a refresh of an unconnected account was accepted")
 	}
 	if _, a := f.record(); a.Subscription != nil && (a.Subscription.Pending != nil || a.Subscription.ServerOperation != nil) {
 		t.Fatal("a refused request left an operation")

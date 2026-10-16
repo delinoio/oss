@@ -15,7 +15,10 @@ import (
 // it against its own server, the account and the delivered generation, writes
 // the native $GROK_HOME/auth.json atomically with owner-only permission inside a
 // private home, and returns a freshly sealed bundle only through Finish after
-// the file is retired. Every filesystem operation on the home is anchored to the
+// the file is retired. An execution exit follows the same protocol (see
+// sealGrokExecutionExit): the latest auth.json is verified against the original
+// identity, a changed credential is returned through Finish, and auth.json and
+// auth.json.lock are retired before the lease may be released. Every filesystem operation on the home is anchored to the
 // directory handle bound at materialization (see subscription.GrokHome), so a
 // home swapped after binding can never receive or lose a credential through a
 // path lookup. Nothing here logs a credential, path or identity value.
@@ -73,6 +76,10 @@ type grokFinishOutcome struct {
 	Bundle  []byte
 	Cleanup bool
 	Success bool
+	// Refreshed is true only for an execution exit whose native process rewrote
+	// auth.json with a verified successor of the original credential: Bundle then
+	// carries that successor and Finish reports it as a confirmed refresh.
+	Refreshed bool
 }
 
 // prepareGrokFinish reads the native credential file once, seals the next
@@ -96,7 +103,14 @@ func prepareGrokFinish(home subscription.GrokHome, server, account, generation d
 		// keeps its file for recovery.
 		return grokFinishOutcome{}
 	}
-	if success && action != pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT {
+	switch {
+	case action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE:
+		// The native process may have refreshed the credential itself, and a
+		// rotated refresh token that is not returned is lost, so the exit reads
+		// the latest file whatever the process outcome was.
+		sealed, refreshed, ok := sealGrokExecutionExit(home, server, account, generation, original)
+		out.Success, out.Bundle, out.Refreshed = ok, sealed, refreshed
+	case success && action != pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT:
 		sealed, bundle, err := home.SealFinish(server, account, generation, original)
 		if err != nil {
 			out.Success = false
@@ -115,9 +129,47 @@ func prepareGrokFinish(home subscription.GrokHome, server, account, generation d
 	if !out.Cleanup {
 		// Never hand a credential back with unconfirmed local cleanup.
 		clear(out.Bundle)
-		out.Bundle = nil
+		out.Bundle, out.Refreshed = nil, false
 	}
 	return out
+}
+
+// sealGrokExecutionExit is the credential half of a Grok execution exit. It
+// reads the latest auth.json once and verifies it against the original bundle:
+//
+//   - unreadable or invalid file, or another identity: not ok, nothing returned;
+//   - the original credential, unchanged: ok, no bundle (nothing to replace);
+//   - a changed credential: it must pass subscription.GrokRefreshed (same
+//     identity, later expiry, changed key or refresh token), and is then sealed
+//     for the generation the Finish creates and reported as refreshed.
+//
+// A result that is not ok keeps the lease: the Finish carries no success, so the
+// server fences the account for recovery instead of releasing it. The caller
+// retires auth.json and auth.json.lock afterwards and releases nothing before
+// that cleanup is confirmed.
+func sealGrokExecutionExit(home subscription.GrokHome, server, account, generation domain.ID, original subscription.GrokBundle) (sealed []byte, refreshed, ok bool) {
+	if original.Identity().UserID == "" {
+		return nil, false, false
+	}
+	latest, err := home.ReadAuthFile()
+	if err != nil {
+		return nil, false, false
+	}
+	defer latest.Clear()
+	if latest.IdentityKey() != original.IdentityKey() {
+		return nil, false, false
+	}
+	if latest.Equal(original) {
+		return nil, false, true
+	}
+	if subscription.GrokRefreshed(original, latest) != nil {
+		return nil, false, false
+	}
+	sealed, err = subscription.SealGrokBundle(server, account, generation, latest)
+	if err != nil {
+		return nil, false, false
+	}
+	return sealed, true, true
 }
 
 // finishGrok settles one Grok lease: it prepares the outcome from the native
@@ -132,9 +184,13 @@ func (l *managedSubscriptionLease) finishGrok(original subscription.GrokBundle, 
 	}()
 	action := l.journal.Action
 	outcome := prepareGrokFinish(l.grokHome, l.credential.ServerID, l.account, l.finishID, action, original, success)
-	refresh := outcome.Success && action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH
+	refresh := outcome.Success && (action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH || outcome.Refreshed)
 	if l.logger != nil {
-		l.logger.LogAttrs(context.Background(), slog.LevelInfo, "grok_subscription_finish", slog.String("account_id", string(l.account)), slog.String("lease_id", l.response.LeaseId), slog.String("action", action.String()), slog.Bool("success", outcome.Success), slog.Bool("cleanup_confirmed", outcome.Cleanup))
+		attrs := []slog.Attr{slog.String("account_id", string(l.account)), slog.String("lease_id", l.response.LeaseId), slog.String("action", action.String()), slog.Bool("success", outcome.Success), slog.Bool("refreshed", outcome.Refreshed), slog.Bool("cleanup_confirmed", outcome.Cleanup)}
+		if refresh {
+			attrs = append(attrs, slog.String("phase", "REFRESH"))
+		}
+		l.logger.LogAttrs(context.Background(), slog.LevelInfo, "grok_subscription_finish", attrs...)
 	}
 	return l.finish(outcome.Bundle, outcome.Cleanup, refresh, outcome.Success)
 }

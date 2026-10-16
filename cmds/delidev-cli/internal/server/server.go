@@ -166,7 +166,10 @@ type Service struct {
 	// grokLoginBeforeSettle runs after the browser flow decided its outcome and
 	// before the settlement transaction; tests use it to model a deadline or
 	// shutdown that lands in that window.
-	grokLoginBeforeSettle  func()
+	grokLoginBeforeSettle func()
+	// grokRefreshCrash simulates a process death at a refresh stage in tests: a
+	// true result makes the runner return at once without settling anything.
+	grokRefreshCrash       func(grokRefreshStage) bool
 	grokLoginsMu           sync.Mutex
 	grokLogins             map[domain.ID]context.CancelFunc
 	claudeLoginCodes       map[domain.ID][]byte

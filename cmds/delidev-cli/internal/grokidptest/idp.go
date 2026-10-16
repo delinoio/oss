@@ -90,7 +90,23 @@ type IdP struct {
 	// BeforeDevicePoll runs inside the token handler for a device_code request.
 	BeforeDevicePoll func(poll int)
 
+	// Refresh grant knobs. A successful refresh issues a fresh access token and,
+	// when RefreshRotate is set, a fresh refresh token that replaces the accepted
+	// one (the old one is then answered with invalid_grant).
+	RefreshRotate     bool
+	RefreshOmitID     bool
+	RefreshStatus     int
+	RefreshError      string
+	RefreshMalformed  bool
+	RefreshTruncated  bool
+	RefreshExpiresIn  int
+	refreshCount      int
+	issuedCredentials []string
+
 	// Observations.
+	// RefreshRequests counts refresh_token grant requests; RefreshForms keeps them.
+	RefreshRequests  int
+	RefreshForms     []url.Values
 	TokenRequests    int
 	TokenFormSeen    []url.Values
 	TokenAuthHeaders []string
@@ -252,6 +268,10 @@ func (i *IdP) token(w http.ResponseWriter, r *http.Request) {
 	if hook != nil {
 		hook()
 	}
+	if r.PostForm.Get("grant_type") == "refresh_token" {
+		i.refresh(w, r)
+		return
+	}
 	if status != 0 {
 		writeJSON(w, status, map[string]string{"error": "fake_failure"})
 		return
@@ -275,6 +295,58 @@ func (i *IdP) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"access_token": i.AccessToken, "token_type": "Bearer", "expires_in": i.ExpiresIn, "refresh_token": i.RefreshToken, "id_token": i.idToken(entry.nonce)})
+}
+
+// refresh answers the refresh_token grant. The token request counters were
+// already incremented by the caller.
+func (i *IdP) refresh(w http.ResponseWriter, r *http.Request) {
+	i.mu.Lock()
+	i.RefreshRequests++
+	i.RefreshForms = append(i.RefreshForms, r.PostForm)
+	status, failure := i.RefreshStatus, i.RefreshError
+	malformed, truncated, rotate, omit := i.RefreshMalformed, i.RefreshTruncated, i.RefreshRotate, i.RefreshOmitID
+	expires := i.RefreshExpiresIn
+	accepted := i.RefreshToken
+	i.mu.Unlock()
+	if status != 0 {
+		if failure == "" {
+			failure = "fake_failure"
+		}
+		writeJSON(w, status, map[string]string{"error": failure})
+		return
+	}
+	if r.Method != http.MethodPost || r.PostForm.Get("client_id") != ClientID || r.PostForm.Get("refresh_token") != accepted || r.PostForm.Has("client_secret") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
+		return
+	}
+	if malformed {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("this is not json"))
+		return
+	}
+	if truncated {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"fake-truncated-acc`))
+		return
+	}
+	if expires == 0 {
+		expires = 21600
+	}
+	i.mu.Lock()
+	i.refreshCount++
+	i.AccessToken = fmt.Sprintf("fake-access-token-r%d", i.refreshCount)
+	i.issuedCredentials = append(i.issuedCredentials, i.AccessToken)
+	answer := map[string]any{"access_token": i.AccessToken, "token_type": "Bearer", "expires_in": expires}
+	if rotate {
+		i.RefreshToken = fmt.Sprintf("fake-refresh-token-r%d", i.refreshCount)
+		i.issuedCredentials = append(i.issuedCredentials, i.RefreshToken)
+		answer["refresh_token"] = i.RefreshToken
+	}
+	i.mu.Unlock()
+	if !omit {
+		answer["id_token"] = i.idToken("")
+	}
+	writeJSON(w, http.StatusOK, answer)
 }
 
 // DeviceGrantType is the RFC 8628 token endpoint grant type.
@@ -415,7 +487,9 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 // Redacted reports whether text is free of every secret the fake issued.
 func (i *IdP) Redacted(text string) bool {
-	for _, secret := range []string{i.AccessToken, i.RefreshToken} {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	for _, secret := range append([]string{i.AccessToken, i.RefreshToken}, i.issuedCredentials...) {
 		if strings.Contains(text, secret) {
 			return false
 		}

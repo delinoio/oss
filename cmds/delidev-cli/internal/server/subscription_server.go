@@ -66,6 +66,12 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 		if action != domain.SubscriptionLogin && (a.Connection == nil || state.Generation == "") {
 			return nil, subscriptionDenied()
 		}
+		if action == domain.SubscriptionRefresh && a.Type == domain.SubscriptionAccount && a.SubscriptionService == domain.SubscriptionGrok && state.Lease != nil {
+			// A Worker lease (an execution lease has no pending operation) owns the
+			// credential until it is finished: a refresh must not be accepted, queued
+			// or left pending behind it.
+			return nil, domain.Fail(domain.Conflict, "The account is in use by a running lease.", "Request the refresh again after the lease has finished.")
+		}
 		if action == domain.SubscriptionRefresh {
 			// A refresh rotates the credential generation. A claimed managed title
 			// still owns the frozen generation, so the refresh waits for it.
@@ -228,6 +234,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			cleanup            bool
 			claude             bool
 			grok               bool
+			grokRefresh        bool
 		}
 		var candidates []candidate
 		eligible := map[domain.ID]bool{}
@@ -253,6 +260,8 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					continue
 				} else if grokLoginCandidate(a) && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() {
 					candidates = append(candidates, candidate{account: r.ID, grok: true})
+				} else if grokRefreshCandidate(a) && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() {
+					candidates = append(candidates, candidate{account: r.ID, grokRefresh: true})
 				} else if a.SubscriptionService == domain.SubscriptionGrok {
 					continue
 				} else if a.Subscription != nil && !a.Subscription.RecoveryRequired && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.State == domain.SubscriptionPreparing && !a.Subscription.ServerOperation.NativeStarted && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() && a.Subscription.Pending != nil && a.Subscription.Pending.Phase == domain.SubscriptionQueued && a.Subscription.Lease == nil {
@@ -285,7 +294,9 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			go func() {
 				defer workers.Done()
 				result := serverSubscriptionResult{account: next.account, operation: next.operation, cleanup: next.cleanup}
-				if next.grok {
+				if next.grokRefresh {
+					s.runGrokRefresh(child, next.account)
+				} else if next.grok {
 					s.runGrokLogin(child, next.account)
 				} else if next.claude {
 					if next.cleanup {

@@ -10,8 +10,11 @@ generations, the protected Take/Finish lease handlers on the server, the
 Worker-side credential custody described under Storage and the server-owned
 browser login described under [Server-owned browser login](#server-owned-browser-login),
 including its remote callback forwarding, and the server-owned device-code login
-described under [Server-owned device-code login](#server-owned-device-code-login).
-Not activated: the capability advertisement, refresh and logout, Worker-side
+described under [Server-owned device-code login](#server-owned-device-code-login),
+the server-owned refresh described under [Server-owned refresh](#server-owned-refresh)
+and the Worker execution-exit credential protocol described under
+[Worker execution exit](#worker-execution-exit).
+Not activated: the capability advertisement, logout, Worker-side
 watch dispatch and Grok execution.
 The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and gates protected Take admission of a Grok lease; no capability, discovery or execution path references it. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); Grok Build 1.0.52 inspection is accepted when its optional `experiments` inventory is an empty array (see `cmds-delidev-harness-contract.md`), which does not change these baselines. Reservation support is separate
 from implemented support and actual account/platform acceptance.
@@ -201,8 +204,8 @@ against a server that does not advertise it.
 
 `RequestSubscription` for a Grok account with action LOGIN, `device_code` false
 and no machine ID creates the server-owned operation (`ServerOperation` plus a
-`Pending` operation without a Runner Device, 15-minute expiry). Refresh, logout and any request that names a machine stay `unsupported` until
-their own changes. LOGIN with `device_code` true takes the device-code lane
+`Pending` operation without a Runner Device, 15-minute expiry). Logout and any request that names a machine stay `unsupported` until
+their own changes; refresh has its own lane under [Server-owned refresh](#server-owned-refresh). LOGIN with `device_code` true takes the device-code lane
 described under [Server-owned device-code login](#server-owned-device-code-login). The scanner (`runServerSubscriptions`) claims the operation in
 the current server epoch and starts exactly one runner (`grok_login.go`); a Grok
 account never reaches the Codex runner.
@@ -307,7 +310,7 @@ the choice is stored on the `Pending` operation and the scanner starts the
 device runner (`grok_device_login.go`) in place of the browser runner. A login
 never switches method: a device login that fails never opens a listener or
 publishes an authorization URL, and a browser login never requests a device code.
-Replaying the same mutation id returns the original operation. Refresh, logout
+Replaying the same mutation id returns the original operation. Logout
 and any request that names a machine stay `unsupported`. Capability 39 stays
 under the single shared switch `grokSubscriptionLoginAdvertised`
 (`server_status.go`), which stays false; no separate device capability exists.
@@ -401,6 +404,151 @@ the provider adds no nonce to a device-grant ID token; the provider honors the
 the device authorization endpoint, scripted device_code answers
 (`DeviceScript`) and a virtual `Clock`; the requirement set is covered by
 `grok_device_test.go` (client) and `grok_device_login_test.go` (server).
+
+### Server-owned refresh
+
+`RequestSubscription` for a connected Grok account with action REFRESH, no
+`device_code` and no machine ID creates the server-owned operation (`ServerOperation`
+with action `refresh` plus a `Pending` operation without a Runner Device,
+15-minute expiry). A refresh of an unconnected account, a refresh that names a
+Runner Device, a refresh with `device_code` and any request while another
+operation, a lease (including an execution lease, which has no pending
+operation) or a recovery fence holds the account are refused at admission with
+`CONFLICT`; a refresh is never queued behind a lease. The desktop
+Refresh login control of a connected Grok account (which follows System
+capability 39 alone) already sends exactly this request, so no desktop change is
+needed. A refresh is never cancelable (`CancelSubscription` refuses it): it
+finishes under exclusive ownership. The scanner (`runServerSubscriptions`) claims
+the operation in the current server epoch and starts exactly one runner
+(`internal/server/grok_refresh.go`); a Grok refresh never reaches the Codex
+runner and never creates a `SubscriptionLease`.
+
+The exclusive account lease of a server-owned operation is its claimed
+`ServerOperation` (`native_started` with the `Pending` phase `claimed`), exactly
+as for the server-owned login: a Worker Take of the account is refused while it
+is held, and the scanner does not start a refresh while a Worker lease or a
+recovery fence exists. The refresh client is `internal/subscription/grok_refresh.go`
+on top of the profile, discovery, bounded round trip and bundle library of
+`grok_oauth.go`.
+
+Lifecycle of one runner:
+
+1. The claim moves the operation to `claimed` and freezes the current generation
+   (`ServerOperation.generation`). A stopped, expired or revoked initiator settles
+   `canceled` or `expired` and sends nothing.
+2. Discovery and the signing keys are read first, then the bound bundle is opened
+   from the protected vault against this server, the account and the frozen
+   generation. A failure here sends nothing: it settles FAILED (an unusable
+   provider) or RECOVERY_REQUIRED (an invalid bundle, or a referenced generation
+   whose vault object is missing, which is a local credential loss rather than a
+   provider failure), and the account keeps its credential.
+3. The durable refresh claim (`ServerSubscriptionOperation.exchange_claimed`,
+   shared with the login's exchange claim and valid for `login` and `refresh`) is
+   committed. Only after that commit the single request is sent: a form POST of
+   `grant_type=refresh_token`, the public `client_id` and the bound
+   `refresh_token` to the discovered token endpoint, with no client secret and no
+   authentication header. The claim is never cleared or rewritten.
+4. An RFC 6749 section 5.2 error response (HTTP 400 or 401 with a JSON `error`
+   code) is a definitive rejection that did not consume the token: `invalid_grant`
+   and every other structured error settle FAILED with a REFRESH
+   `GrokDiagnostic` (`UNAUTHENTICATED`), the stored bundle untouched and the
+   account usable, so a new explicit request may try again. Everything else after
+   the claim is uncertain and settles RECOVERY_REQUIRED: a transport error, a
+   timeout, an oversized, truncated or malformed body, a 5xx answer, any other 4xx
+   answer (408, 429, an HTML 403 from an intermediary or an unstructured body), a
+   non-200 success status, an interruption (shutdown, deadline) and a restart. The old
+   token is never sent again, because a rotated token the server did not record
+   is unrecoverable; the account stays fenced and the user must sign in again.
+5. A 200 answer carries `access_token`, `token_type` `Bearer` and a positive
+   `expires_in` (at most 30 days); `refresh_token` and `id_token` are optional.
+   The identity must equal the bound identity (`CompleteGrokRefresh`): an ID
+   token, when present, must verify (ES256 signature by `kid`, issuer, audience,
+   expiry; no nonce exists for a refresh) and carry the bound subject, and the
+   userinfo read with the new access token must carry the bound subject, principal
+   type and principal ID. The verification of a received answer is not stopped by
+   a shutdown or a passed deadline, since the answer may hold the only copy of a
+   rotated token. Any failure here (identity mismatch, invalid ID token, userinfo
+   failure) is RECOVERY_REQUIRED and the bundle is not replaced.
+6. The successor keeps every other member of the bound `auth.json` entry, takes
+   the new access token as `key`, takes the new `refresh_token` when the provider
+   rotated it and keeps the bound one otherwise, and moves `create_time` to now
+   and `expires_at` to now plus `expires_in`. `subscription.GrokRefreshed` must
+   accept it (same identity key, later expiry, changed key or refresh token);
+   otherwise it is RECOVERY_REQUIRED.
+7. Success follows the Finish-equivalent server settlement
+   (`finishGrokRefresh`): the keyed identity commitment must equal the stored one
+   and the account must still reference the frozen generation; the sealed
+   `GrokBundle` envelope is staged as a new `AccountLogin` generation in the
+   protected vault, one transaction publishes it, and only afterwards the
+   superseded generation, with the superseded refresh token, is removed. A
+   cancellation of the initiator after the claim does not discard the answer. An
+   unconfirmed removal fences the account like the Take/Finish path. A restart
+   marks an active operation recovery (`initializeServerSubscriptions`) and never
+   starts a refresh again.
+
+Fault injection (`Service.grokRefreshCrash`, tests only) simulates a process
+death at three stages. A crash after the claim sends at most one request (none in
+the tested stage) and the restart settles RECOVERY_REQUIRED; a crash after the
+response leaves exactly one request and the restart settles RECOVERY_REQUIRED with
+the old bundle; a crash after the persist leaves exactly one request and a
+published new generation, which needs no recovery (the superseded generation
+stays vault-owned until the next completed operation removes it). A shutdown while
+the request is in flight is covered the same way and also leaves exactly one
+request.
+
+Structured `slog` records use `phase=REFRESH` and the operation id as
+`correlation_id`: `grok_refresh_started`, `grok_refresh_claimed`,
+`grok_refresh_claim_refused`, `grok_refresh_bundle_unavailable`,
+`grok_refresh_rejected`, `grok_refresh_outcome_uncertain`,
+`grok_refresh_verification_failed`, `grok_refresh_cleanup_pending` and
+`grok_refresh_finished` (closed state and reason values only). The acceptance of a
+login or refresh logs `grok_operation_accepted` with the phase. They never contain
+a token, the refresh request, a path or an identity field, and no event or error
+carries one.
+
+Unverified assumptions (no real refresh was captured; the opt-in real-account
+run records them, and this change records no real-world validation): the IdP may
+or may not rotate the refresh token, and the implementation accepts both; the
+answer uses the standard token members; a rejected or revoked token is answered
+with an HTTP 4xx `invalid_grant` document; and the refresh answer may omit the ID
+token, in which case userinfo alone proves the identity. Tests use
+`internal/grokidptest`, which now also serves the refresh_token grant
+(rotation, omitted ID token, scripted failures); the requirement set is covered by
+`grok_refresh_test.go` in `internal/subscription` (client) and `internal/server`
+(runner, fault injection and restart).
+
+### Worker execution exit
+
+When the native process of a future Grok execution lease exits, the Worker
+follows the same confined protocol as a lifecycle Finish (`prepareGrokFinish`
+with action EXECUTE, `sealGrokExecutionExit`), whatever the process outcome,
+because the process may have refreshed the credential itself and an unreturned
+rotated refresh token is lost:
+
+1. The held home must still be the bound directory (`GrokHome.Verify`).
+2. The latest `auth.json` is read once and verified against the original bundle.
+   An unreadable or invalid file, another identity, or a changed credential that
+   does not pass `subscription.GrokRefreshed` (a later expiry and a changed key or
+   refresh token) is not success. An unchanged credential is success with no
+   bundle. A verified successor is sealed for the generation the Finish creates
+   and returned with the refresh confirmation.
+3. `auth.json`, its attributed temporaries and the native `auth.json.lock` are
+   retired through the held handle. `GrokHome.AuthFilePresent` also reports a
+   remaining lock file, so an unremoved lock keeps the cleanup unconfirmed. A
+   non-regular `auth.json.lock` entry (a directory or a symlink) in a reused home
+   is never replaced: `GrokHome.WriteAuthFile` refuses it before writing, while a
+   non-regular `auth.json` is still replaced by name during publication.
+4. A bundle is returned only with confirmed cleanup. A mismatch, an unreadable
+   file or an unconfirmed cleanup reports no success and no confirmed cleanup, so
+   the server keeps the lease and sets RECOVERY_REQUIRED; the lease is never
+   released before the profile cleanup is confirmed.
+
+The Worker logs `grok_subscription_finish` with `refreshed` and, for a refresh,
+`phase=REFRESH`, and never a credential, path or identity. The server still
+refuses a Grok execute Take (see Storage), so no execute lease exists yet: the
+server-side Finish of an execute lease and the call of this protocol from the
+native process supervisor arrive with the execution change. The lock-file
+retirement applies to every lifecycle Finish already.
 
 ### Desktop browser sign-in state machine
 
@@ -1102,7 +1250,9 @@ confirmation only against same-directory links and links that predate Finish.
 `auth.json` or an attributed temporary is outside the attributed-name inventory;
 runtime cleanup of the rest of the home handles it.
 
-Native refresh, login execution and Worker-side watch dispatch for
+Server-owned refresh is described under [Server-owned refresh](#server-owned-refresh)
+and the Worker execution-exit protocol under [Worker execution exit](#worker-execution-exit).
+Native refresh orchestration, login execution and Worker-side watch dispatch for
 Grok are separate lifecycle work and are not activated by this storage contract.
 
 ### Grok lease interleavings
@@ -1117,35 +1267,36 @@ server tests are in `internal/server/grok_subscriptions_test.go` and
 library tests are in `internal/worker/grok_subscriptions_test.go` and
 `internal/subscription/grok_credential_test.go`.
 
-| Interleaving                                                                                           | Outcome                                                                                                                                                | Test                                                                                                                                                                                  |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Take of the queued original                                                                            | Lease committed, stored envelope re-opened and delivered once                                                                                          | `TestGrokLifecycleMovesBundleOnlyThroughProtectedTakeAndFinish`                                                                                                                       |
-| Take on an unverified or below-baseline installation, or for execute                                   | Refused before any lease; account untouched                                                                                                            | `TestGrokTakeRefusesUnsupportedAndUnverifiedWork`, `TestGrokTakeRequiresSubscriptionBaselineVersion`                                                                                  |
-| Take replayed after a lost first response                                                              | Denied; the exact unfinished lease is fenced; a finished or foreign lease is untouched                                                                 | `TestGrokReplayedTakeFencesTheUnfinishedLease`, `TestGrokLateReplayedTakeDoesNotFenceAReleasedAccount`                                                                                |
-| Replaying request canceled, past its deadline or from a revoked Worker while the fence runs            | The fence still commits on a bounded, detached context; the lease is never stranded without `RecoveryRequired`                                         | `TestGrokReplayFenceIsDetachedFromTheReplayingRequest`                                                                                                                                |
-| Take whose stored envelope is invalid or missing, or whose operation is canceled during the vault read | Nothing delivered; lease kept and account fenced under the current generation                                                                          | `TestGrokTakeFailuresAfterTheLeaseCommitFenceWithoutDelivery`                                                                                                                         |
-| Installation rediscovered after Take                                                                   | Finish still accepted from the exact owner                                                                                                             | `TestGrokFinishSurvivesInstallationRediscoveryAfterTake`                                                                                                                              |
-| Finish with a stale lease revision, generation or lease                                                | Denied before any write; no fence; the genuine owner can still finish                                                                                  | `TestGrokFinishWithAStaleLeaseIsDeniedWithoutFencing`                                                                                                                                 |
-| Finish with a rebound, foreign, native, empty or wrong-identity bundle, or an unrotated refresh        | Refused; account fenced; nothing staged                                                                                                                | `TestGrokFinishRejectsReboundAndForeignBundles`, `TestGrokRefreshRequiresSameIdentityAndRotation`, `TestGrokLoginRejectsDuplicateIdentityAndAdmitsDifferentPrincipal`                 |
-| Finish reports of login, refresh and logout (success, native refresh, cleanup)                         | Table-driven: released only when fully confirmed (or a failed login with confirmed cleanup); otherwise fenced under the existing generation            | `TestGrokFinishReportsMapToExplicitOutcomes`, `TestGrokFinishFencedLogoutKeepsTheReferencedGeneration`                                                                                |
-| Finish publishes, then removes the superseded generation                                               | Removal only after the document stops referencing it; logout removes every generation                                                                  | `TestGrokFinishDeletesTheReferencedGenerationOnlyAfterPublication`                                                                                                                    |
-| Finish aborted after staging (revoked Worker, store failure)                                           | Account fenced; current generation kept; staged generation retired after the account is proven not to reference it                                     | `TestGrokFinishFailedPublicationKeepsTheCurrentGeneration`, `TestGrokRetireUnpublishedGenerationRequiresProofOfNonPublication`                                                        |
-| Finish aborted and the staged generation cannot be removed                                             | Account fenced; current generation kept; the staged generation stays vault-owned, never granted, removed by the next cleanup                           | `TestGrokFinishAbortWithFailedRetirementStaysFencedAndNeverGrantsTheStagedGeneration`                                                                                                 |
-| Cancellation wins while the new generation is staged                                                   | Generation never published; staged generation removed                                                                                                  | `TestGrokFinishCanceledDuringStagingRemovesTheStagedGeneration`                                                                                                                       |
-| Removal of the superseded generation fails after the commit                                            | Error surfaced and account fenced; the published generation is kept, the superseded one is removed by the next cleanup                                 | `TestGrokFinishCleanupFailureAfterPublicationKeepsThePublishedGeneration`                                                                                                             |
-| Request ends while the superseded generation is removed after the commit                               | Removal continues on a bounded, detached context; the committed publication is neither undone nor fenced                                               | `TestGrokFinishCleanupIsDetachedFromTheRequestAndBounded`, `TestGrokRetireUnpublishedGenerationSurvivesAnEndedRequest`                                                                |
-| Finish retried after it committed                                                                      | Receipt replay; no vault write or removal; account untouched                                                                                           | `TestGrokFinishReplayRepeatsNoVaultWork`                                                                                                                                              |
-| Worker instance lost, or server restarted, while a lease is held                                       | Lease fenced under its generation; later Finish and Take refused; the vault is unchanged                                                               | `TestGrokLostWorkerFencesTheLeaseAndRefusesLaterFinish`                                                                                                                               |
-| Server crash between staging and the commit                                                            | Same as a restart: lease fenced; the staged generation is an unreferenced vault object, never granted, removed by the next cleanup                     | `TestGrokFinishAbortWithFailedRetirementStaysFencedAndNeverGrantsTheStagedGeneration`                                                                                                 |
-| Worker materializes a bound envelope, a rebound or malformed one, or an unsafe home                    | Written once with owner-only permission; otherwise nothing written                                                                                     | `TestGrokMaterializationWritesPrivateAuthFileFromBoundEnvelope`, `TestGrokMaterializationRejectsReboundEnvelopeBeforeWriting`, `TestGrokMaterializationRefusesNonPrivateOrLinkedHome` |
-| Home renamed away and replaced after binding, before or after the path check                           | The credential is written, read and retired only in the bound directory; the substitute is never written, read or modified                             | `TestGrokWriteIsAnchoredToTheBoundHomeNotItsPath`, `TestGrokWriteDoesNotFollowAPlantedAuthFileLink`, `TestGrokHomeRejectsALooseningAfterBinding`, `TestGrokHomeBindingFailsClosed`    |
-| Fresh login in a home that already holds a credential or temporary                                     | Refused; a leftover is never sealed as the login result                                                                                                | `TestGrokFreshLoginRefusesLeftoverCredentialFiles`                                                                                                                                    |
-| Native process rotates, fails, changes identity or leaves an unparsable file                           | Rotated credential sealed; otherwise no bundle; the file is retired in every case                                                                      | `TestPrepareGrokFinishSealsRotatedCredentialAndRetiresFile`                                                                                                                           |
-| Remnant that cannot be removed, or a hard-linked credential                                            | No bundle; cleanup unconfirmed; lease stays fenced                                                                                                     | `TestPrepareGrokFinishWithholdsBundleWhenCleanupIsUnconfirmed`, `TestPrepareGrokFinishWithholdsBundleForHardLinkedCredential`                                                         |
-| Hard link created after the credential was inspected and before its name is unlinked                   | No bundle; cleanup unconfirmed (retained-handle link count and identity rescan); lease stays fenced                                                    | `TestRetireGrokAuthFileDetectsALinkCreatedBeforeTheUnlink`, `TestRetireGrokAuthFileDetectsALinkCreatedBeforeTheTemporaryUnlink`, `TestGrokWriteRefusesAnOlderLinkedCredential`        |
-| Home renamed away or replaced after materialization                                                    | No bundle and no cleanup for refresh, login and logout; nothing read or removed in the substitute; the original keeps its file                         | `TestPrepareGrokFinishRefusesARenamedOrReplacedHome`, `TestGrokHomeVerifiesTheBoundDirectoryIdentity`                                                                                 |
-| Finish prepared for a lease that never bound a home                                                    | Cleanup never confirmed                                                                                                                                | `TestPrepareGrokFinishRefusesAnUnboundHome`, `TestGrokMaterializationBindsTheHomeForFinish`, `TestGrokMaterializationReleasesTheHomeWhenItFails`                                      |
-| Worker crash or restart with the native file on disk                                                   | The server fences the lease (row above); the plaintext stays in the private home until Worker-side recovery, which is not activated; nothing is resent | Server side: `TestGrokLostWorkerFencesTheLeaseAndRefusesLaterFinish`                                                                                                                  |
+| Interleaving                                                                                                         | Outcome                                                                                                                                                                                                                                 | Test                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Take of the queued original                                                                                          | Lease committed, stored envelope re-opened and delivered once                                                                                                                                                                           | `TestGrokLifecycleMovesBundleOnlyThroughProtectedTakeAndFinish`                                                                                                                                                                       |
+| Take on an unverified or below-baseline installation, or for execute                                                 | Refused before any lease; account untouched                                                                                                                                                                                             | `TestGrokTakeRefusesUnsupportedAndUnverifiedWork`, `TestGrokTakeRequiresSubscriptionBaselineVersion`                                                                                                                                  |
+| Take replayed after a lost first response                                                                            | Denied; the exact unfinished lease is fenced; a finished or foreign lease is untouched                                                                                                                                                  | `TestGrokReplayedTakeFencesTheUnfinishedLease`, `TestGrokLateReplayedTakeDoesNotFenceAReleasedAccount`                                                                                                                                |
+| Replaying request canceled, past its deadline or from a revoked Worker while the fence runs                          | The fence still commits on a bounded, detached context; the lease is never stranded without `RecoveryRequired`                                                                                                                          | `TestGrokReplayFenceIsDetachedFromTheReplayingRequest`                                                                                                                                                                                |
+| Take whose stored envelope is invalid or missing, or whose operation is canceled during the vault read               | Nothing delivered; lease kept and account fenced under the current generation                                                                                                                                                           | `TestGrokTakeFailuresAfterTheLeaseCommitFenceWithoutDelivery`                                                                                                                                                                         |
+| Installation rediscovered after Take                                                                                 | Finish still accepted from the exact owner                                                                                                                                                                                              | `TestGrokFinishSurvivesInstallationRediscoveryAfterTake`                                                                                                                                                                              |
+| Finish with a stale lease revision, generation or lease                                                              | Denied before any write; no fence; the genuine owner can still finish                                                                                                                                                                   | `TestGrokFinishWithAStaleLeaseIsDeniedWithoutFencing`                                                                                                                                                                                 |
+| Finish with a rebound, foreign, native, empty or wrong-identity bundle, or an unrotated refresh                      | Refused; account fenced; nothing staged                                                                                                                                                                                                 | `TestGrokFinishRejectsReboundAndForeignBundles`, `TestGrokRefreshRequiresSameIdentityAndRotation`, `TestGrokLoginRejectsDuplicateIdentityAndAdmitsDifferentPrincipal`                                                                 |
+| Finish reports of login, refresh and logout (success, native refresh, cleanup)                                       | Table-driven: released only when fully confirmed (or a failed login with confirmed cleanup); otherwise fenced under the existing generation                                                                                             | `TestGrokFinishReportsMapToExplicitOutcomes`, `TestGrokFinishFencedLogoutKeepsTheReferencedGeneration`                                                                                                                                |
+| Server-owned refresh: durable claim, one request, rotation or none, identity and failure outcomes, crash and restart | Claim committed before the single request; success publishes one new generation atomically; a 4xx rejection settles FAILED with the bundle untouched; every other post-claim outcome is RECOVERY_REQUIRED and the token is never resent | `TestGrokRefreshReplacesTheBundleWithoutRotation`, `TestGrokRefreshAdoptsARotatedRefreshToken`, `TestGrokRefreshFailuresNeverReplaceTheBundleOrResend`, `TestGrokRefreshCrashMatrix`, `TestGrokRefreshClaimIsDurableBeforeTheRequest` |
+| Finish publishes, then removes the superseded generation                                                             | Removal only after the document stops referencing it; logout removes every generation                                                                                                                                                   | `TestGrokFinishDeletesTheReferencedGenerationOnlyAfterPublication`                                                                                                                                                                    |
+| Finish aborted after staging (revoked Worker, store failure)                                                         | Account fenced; current generation kept; staged generation retired after the account is proven not to reference it                                                                                                                      | `TestGrokFinishFailedPublicationKeepsTheCurrentGeneration`, `TestGrokRetireUnpublishedGenerationRequiresProofOfNonPublication`                                                                                                        |
+| Finish aborted and the staged generation cannot be removed                                                           | Account fenced; current generation kept; the staged generation stays vault-owned, never granted, removed by the next cleanup                                                                                                            | `TestGrokFinishAbortWithFailedRetirementStaysFencedAndNeverGrantsTheStagedGeneration`                                                                                                                                                 |
+| Cancellation wins while the new generation is staged                                                                 | Generation never published; staged generation removed                                                                                                                                                                                   | `TestGrokFinishCanceledDuringStagingRemovesTheStagedGeneration`                                                                                                                                                                       |
+| Removal of the superseded generation fails after the commit                                                          | Error surfaced and account fenced; the published generation is kept, the superseded one is removed by the next cleanup                                                                                                                  | `TestGrokFinishCleanupFailureAfterPublicationKeepsThePublishedGeneration`                                                                                                                                                             |
+| Request ends while the superseded generation is removed after the commit                                             | Removal continues on a bounded, detached context; the committed publication is neither undone nor fenced                                                                                                                                | `TestGrokFinishCleanupIsDetachedFromTheRequestAndBounded`, `TestGrokRetireUnpublishedGenerationSurvivesAnEndedRequest`                                                                                                                |
+| Finish retried after it committed                                                                                    | Receipt replay; no vault write or removal; account untouched                                                                                                                                                                            | `TestGrokFinishReplayRepeatsNoVaultWork`                                                                                                                                                                                              |
+| Worker instance lost, or server restarted, while a lease is held                                                     | Lease fenced under its generation; later Finish and Take refused; the vault is unchanged                                                                                                                                                | `TestGrokLostWorkerFencesTheLeaseAndRefusesLaterFinish`                                                                                                                                                                               |
+| Server crash between staging and the commit                                                                          | Same as a restart: lease fenced; the staged generation is an unreferenced vault object, never granted, removed by the next cleanup                                                                                                      | `TestGrokFinishAbortWithFailedRetirementStaysFencedAndNeverGrantsTheStagedGeneration`                                                                                                                                                 |
+| Worker materializes a bound envelope, a rebound or malformed one, or an unsafe home                                  | Written once with owner-only permission; otherwise nothing written                                                                                                                                                                      | `TestGrokMaterializationWritesPrivateAuthFileFromBoundEnvelope`, `TestGrokMaterializationRejectsReboundEnvelopeBeforeWriting`, `TestGrokMaterializationRefusesNonPrivateOrLinkedHome`                                                 |
+| Home renamed away and replaced after binding, before or after the path check                                         | The credential is written, read and retired only in the bound directory; the substitute is never written, read or modified                                                                                                              | `TestGrokWriteIsAnchoredToTheBoundHomeNotItsPath`, `TestGrokWriteDoesNotFollowAPlantedAuthFileLink`, `TestGrokHomeRejectsALooseningAfterBinding`, `TestGrokHomeBindingFailsClosed`                                                    |
+| Fresh login in a home that already holds a credential or temporary                                                   | Refused; a leftover is never sealed as the login result                                                                                                                                                                                 | `TestGrokFreshLoginRefusesLeftoverCredentialFiles`                                                                                                                                                                                    |
+| Native process rotates, fails, changes identity or leaves an unparsable file                                         | Rotated credential sealed; otherwise no bundle; the file is retired in every case                                                                                                                                                       | `TestPrepareGrokFinishSealsRotatedCredentialAndRetiresFile`                                                                                                                                                                           |
+| Remnant that cannot be removed, or a hard-linked credential                                                          | No bundle; cleanup unconfirmed; lease stays fenced                                                                                                                                                                                      | `TestPrepareGrokFinishWithholdsBundleWhenCleanupIsUnconfirmed`, `TestPrepareGrokFinishWithholdsBundleForHardLinkedCredential`                                                                                                         |
+| Hard link created after the credential was inspected and before its name is unlinked                                 | No bundle; cleanup unconfirmed (retained-handle link count and identity rescan); lease stays fenced                                                                                                                                     | `TestRetireGrokAuthFileDetectsALinkCreatedBeforeTheUnlink`, `TestRetireGrokAuthFileDetectsALinkCreatedBeforeTheTemporaryUnlink`, `TestGrokWriteRefusesAnOlderLinkedCredential`                                                        |
+| Home renamed away or replaced after materialization                                                                  | No bundle and no cleanup for refresh, login and logout; nothing read or removed in the substitute; the original keeps its file                                                                                                          | `TestPrepareGrokFinishRefusesARenamedOrReplacedHome`, `TestGrokHomeVerifiesTheBoundDirectoryIdentity`                                                                                                                                 |
+| Finish prepared for a lease that never bound a home                                                                  | Cleanup never confirmed                                                                                                                                                                                                                 | `TestPrepareGrokFinishRefusesAnUnboundHome`, `TestGrokMaterializationBindsTheHomeForFinish`, `TestGrokMaterializationReleasesTheHomeWhenItFails`                                                                                      |
+| Worker crash or restart with the native file on disk                                                                 | The server fences the lease (row above); the plaintext stays in the private home until Worker-side recovery, which is not activated; nothing is resent                                                                                  | Server side: `TestGrokLostWorkerFencesTheLeaseAndRefusesLaterFinish`                                                                                                                                                                  |
 
 The Worker holds the only copy of a freshly produced bundle in memory until
 Finish; a Finish whose response is lost leaves the fenced lease for recovery
