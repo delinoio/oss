@@ -353,9 +353,11 @@ Lifecycle of one device runner:
    (`exchange_claimed`) is committed before each request. A definitive answer that
    proves the code was not consumed (pending, slow-down, denial, expiry or another
    4xx) clears the claim again before the next wait; the claim of a success is
-   never cleared. An unanswered request (transport error, timeout, 5xx,
-   cancellation or shutdown while in flight) leaves the claim standing, so the
-   operation settles RECOVERY_REQUIRED and the code is never sent again. A
+   never cleared. An unanswered or unusable request (transport error, timeout,
+   redirect, 5xx, a success status other than 200, a 200 whose token response is
+   truncated, malformed or incomplete, cancellation or shutdown while in flight)
+   leaves the claim standing, so the operation settles RECOVERY_REQUIRED and the
+   code is never sent again. A
    restart marks every active operation of an older epoch RECOVERY_REQUIRED
    (`initializeServerSubscriptions`) and the device code, which exists only in the
    runner's memory, is gone. If clearing the claim fails the runner stops with

@@ -291,7 +291,9 @@ func grokDevicePollOnce(ctx context.Context, polling GrokDevicePolling, authoriz
 	defer clear(payload)
 	status, body, err := grokRoundTrip(ctx, polling.Client, http.MethodPost, polling.Endpoints.Token, payload, map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
 	defer clear(body)
-	if err != nil || status >= 500 {
+	// Only 200 (success) and 4xx (an OAuth answer) are definitive. Every other
+	// status, and any unreadable answer, may hide a consumed device code.
+	if err != nil || status != http.StatusOK && (status < http.StatusBadRequest || status >= http.StatusInternalServerError) {
 		return GrokTokens{}, GrokDevicePollUncertain, &GrokOAuthError{Reason: GrokReasonTokenUncertain, Uncertain: true}
 	}
 	if status == http.StatusOK {

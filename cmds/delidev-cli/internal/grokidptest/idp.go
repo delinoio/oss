@@ -79,6 +79,10 @@ type IdP struct {
 	DeviceCodeValue         string
 	DeviceIDTokenNonce      string
 	DeviceTokenSuccessCount int
+	// DeviceTokenBody replaces the successful device_code token body verbatim and
+	// DeviceTokenStatus answers every device_code poll with that bare status.
+	DeviceTokenBody   string
+	DeviceTokenStatus int
 	// Clock stamps DevicePollTimes; time.Now is used when nil.
 	Clock interface{ Now() time.Time }
 	// BeforeDeviceAuthorization runs inside the device authorization handler.
@@ -345,12 +349,21 @@ func (i *IdP) devicePoll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
 		return
 	}
+	if i.DeviceTokenStatus != 0 {
+		w.WriteHeader(i.DeviceTokenStatus)
+		return
+	}
 	switch step {
 	case DeviceSuccess:
 		i.mu.Lock()
 		i.DeviceTokenSuccessCount++
 		nonce := i.DeviceIDTokenNonce
 		i.mu.Unlock()
+		if i.DeviceTokenBody != "" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(i.DeviceTokenBody))
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"access_token": i.AccessToken, "token_type": "Bearer", "expires_in": i.ExpiresIn, "refresh_token": i.RefreshToken, "id_token": i.idToken(nonce)})
 	case DeviceFailure:
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": string(step)})

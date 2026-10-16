@@ -439,6 +439,33 @@ func TestGrokDeviceLoginFailuresNeverFallBackToTheBrowserFlow(t *testing.T) {
 	}
 }
 
+func TestGrokDeviceLoginUnusableSuccessIsRecoveryAndNeverPollsAgain(t *testing.T) {
+	for name, prepare := range map[string]func(*grokidptest.IdP){
+		"truncated body": func(i *grokidptest.IdP) {
+			i.DeviceTokenBody = `{"access_token":"a","token_type":"Bearer","expires_in":`
+		},
+		"incomplete body":    func(i *grokidptest.IdP) { i.DeviceTokenBody = `{"access_token":"a","token_type":"mac","expires_in":5}` },
+		"unexpected status":  func(i *grokidptest.IdP) { i.DeviceTokenStatus = 202 },
+		"redirect no answer": func(i *grokidptest.IdP) { i.DeviceTokenStatus = 302 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := newGrokDeviceRun(t)
+			prepare(g.idp)
+			g.run()
+			p := g.waitState(grokRecovery)
+			g.await()
+			if p.GrokDiagnostic == nil || p.GrokDiagnostic.Code != string(domain.RecoveryRequired) {
+				t.Fatalf("recovery progress = %v", p)
+			}
+			a := g.requireNothingStored(true)
+			if !a.Subscription.RecoveryRequired || a.Subscription.Pending == nil || len(g.idp.DevicePollForms) != 1 {
+				t.Fatalf("recovery = %v, polls = %d", a.Subscription.RecoveryRequired, len(g.idp.DevicePollForms))
+			}
+			g.noDeviceLeak()
+		})
+	}
+}
+
 func TestGrokDeviceLoginRejectsInvalidIDTokens(t *testing.T) {
 	for name, prepare := range map[string]func(*grokidptest.IdP){
 		"issuer":    func(i *grokidptest.IdP) { i.IDTokenIssuer = "https://evil.example" },

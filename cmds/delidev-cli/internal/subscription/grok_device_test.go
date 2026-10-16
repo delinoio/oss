@@ -294,6 +294,36 @@ func TestGrokDeviceUncertainRequestKeepsTheClaim(t *testing.T) {
 	}
 }
 
+// A device_code answer other than 200 or 4xx, and a 200 whose token response is
+// unusable, may hide a consumed device code: both keep the durable claim and
+// stay uncertain instead of proving the code was not consumed.
+func TestGrokDeviceUnusableAnswersKeepTheClaimAsUncertain(t *testing.T) {
+	cases := map[string]func(*grokidptest.IdP){
+		"truncated success": func(i *grokidptest.IdP) {
+			i.DeviceTokenBody = `{"access_token":"a","token_type":"Bearer","expires_in":`
+		},
+		"incomplete success": func(i *grokidptest.IdP) {
+			i.DeviceTokenBody = `{"access_token":"a","token_type":"mac","expires_in":5}`
+		},
+		"accepted status": func(i *grokidptest.IdP) { i.DeviceTokenStatus = http.StatusAccepted },
+		"redirect status": func(i *grokidptest.IdP) { i.DeviceTokenStatus = http.StatusFound },
+	}
+	for name, prepare := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newGrokDeviceFlow(t, 5)
+			prepare(f.idp)
+			a := f.authorize(t)
+			_, err := f.poll(a, f.far())
+			if _, uncertain := subscription.GrokOAuthReasonOf(err); !uncertain {
+				t.Fatalf("an unusable answer must be uncertain: %v", err)
+			}
+			if f.claims != 1 || f.releases != 0 {
+				t.Fatalf("claims = %d releases = %d: the claim must stand", f.claims, f.releases)
+			}
+		})
+	}
+}
+
 func TestGrokDeviceFailedReleaseIsUncertain(t *testing.T) {
 	f := newGrokDeviceFlow(t, 5)
 	f.idp.DeviceScript = []grokidptest.DeviceStep{grokidptest.DevicePending}
