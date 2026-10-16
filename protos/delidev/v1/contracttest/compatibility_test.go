@@ -30,6 +30,9 @@ func TestCurrentDescriptorsHaveNoLegacyAggregate(t *testing.T) {
 	if (&pb.Resource{}).ProtoReflect().Descriptor().Fields().ByName("id").Number() != 1 {
 		t.Fatal("resource wire allocation changed")
 	}
+	if (&pb.Resource{}).ProtoReflect().Descriptor().Fields().ByName("subagent_display").Number() != 11 || (&pb.PublishExecutionRequest{}).ProtoReflect().Descriptor().Fields().ByName("subagent_names").Number() != 5 || (&pb.SubagentDisplayName{}).ProtoReflect().Descriptor().Fields().ByName("name").Number() != 2 {
+		t.Fatal("subagent display metadata wire allocation changed")
+	}
 	if pb.SystemCapability_SYSTEM_CAPABILITY_INLINE_WORKER_MODELS_V1 != 42 || pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1 != 22 || pb.SystemCapability_SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1 != 43 || pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1 != 23 {
 		t.Fatal("separate original capability owners changed")
 	}

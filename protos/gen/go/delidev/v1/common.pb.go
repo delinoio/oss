@@ -503,8 +503,11 @@ type Resource struct {
 	CreatedAt     string                 `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     string                 `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	StartupTiming *SessionStartupTiming  `protobuf:"bytes,10,opt,name=startup_timing,json=startupTiming,proto3" json:"startup_timing,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Server-private display metadata for a Subagent resource; never part of the
+	// closed document_json shape.
+	SubagentDisplay *SubagentDisplayName `protobuf:"bytes,11,opt,name=subagent_display,json=subagentDisplay,proto3" json:"subagent_display,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Resource) Reset() {
@@ -607,6 +610,66 @@ func (x *Resource) GetStartupTiming() *SessionStartupTiming {
 	return nil
 }
 
+func (x *Resource) GetSubagentDisplay() *SubagentDisplayName {
+	if x != nil {
+		return x.SubagentDisplay
+	}
+	return nil
+}
+
+// Optional bounded native display name for one original product child.
+type SubagentDisplayName struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ChildId       string                 `protobuf:"bytes,1,opt,name=child_id,json=childId,proto3" json:"child_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubagentDisplayName) Reset() {
+	*x = SubagentDisplayName{}
+	mi := &file_delidev_v1_common_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubagentDisplayName) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubagentDisplayName) ProtoMessage() {}
+
+func (x *SubagentDisplayName) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_common_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubagentDisplayName.ProtoReflect.Descriptor instead.
+func (*SubagentDisplayName) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SubagentDisplayName) GetChildId() string {
+	if x != nil {
+		return x.ChildId
+	}
+	return ""
+}
+
+func (x *SubagentDisplayName) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 // Server-owned display observations; never part of the closed Session document.
 type SessionStartupTiming struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -618,7 +681,7 @@ type SessionStartupTiming struct {
 
 func (x *SessionStartupTiming) Reset() {
 	*x = SessionStartupTiming{}
-	mi := &file_delidev_v1_common_proto_msgTypes[2]
+	mi := &file_delidev_v1_common_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -630,7 +693,7 @@ func (x *SessionStartupTiming) String() string {
 func (*SessionStartupTiming) ProtoMessage() {}
 
 func (x *SessionStartupTiming) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_common_proto_msgTypes[2]
+	mi := &file_delidev_v1_common_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -643,7 +706,7 @@ func (x *SessionStartupTiming) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionStartupTiming.ProtoReflect.Descriptor instead.
 func (*SessionStartupTiming) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{2}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SessionStartupTiming) GetWorkspace() *StartupGroupTiming {
@@ -672,7 +735,7 @@ type StartupGroupTiming struct {
 
 func (x *StartupGroupTiming) Reset() {
 	*x = StartupGroupTiming{}
-	mi := &file_delidev_v1_common_proto_msgTypes[3]
+	mi := &file_delidev_v1_common_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -684,7 +747,7 @@ func (x *StartupGroupTiming) String() string {
 func (*StartupGroupTiming) ProtoMessage() {}
 
 func (x *StartupGroupTiming) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_common_proto_msgTypes[3]
+	mi := &file_delidev_v1_common_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -697,7 +760,7 @@ func (x *StartupGroupTiming) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartupGroupTiming.ProtoReflect.Descriptor instead.
 func (*StartupGroupTiming) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{3}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *StartupGroupTiming) GetJobId() string {
@@ -739,7 +802,7 @@ type Mutation struct {
 
 func (x *Mutation) Reset() {
 	*x = Mutation{}
-	mi := &file_delidev_v1_common_proto_msgTypes[4]
+	mi := &file_delidev_v1_common_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -751,7 +814,7 @@ func (x *Mutation) String() string {
 func (*Mutation) ProtoMessage() {}
 
 func (x *Mutation) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_common_proto_msgTypes[4]
+	mi := &file_delidev_v1_common_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -764,7 +827,7 @@ func (x *Mutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Mutation.ProtoReflect.Descriptor instead.
 func (*Mutation) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{4}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Mutation) GetRequestId() string {
@@ -798,7 +861,7 @@ type ForwardChange struct {
 
 func (x *ForwardChange) Reset() {
 	*x = ForwardChange{}
-	mi := &file_delidev_v1_common_proto_msgTypes[5]
+	mi := &file_delidev_v1_common_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -810,7 +873,7 @@ func (x *ForwardChange) String() string {
 func (*ForwardChange) ProtoMessage() {}
 
 func (x *ForwardChange) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_common_proto_msgTypes[5]
+	mi := &file_delidev_v1_common_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -823,7 +886,7 @@ func (x *ForwardChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForwardChange.ProtoReflect.Descriptor instead.
 func (*ForwardChange) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{5}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ForwardChange) GetForward() *Resource {
@@ -859,7 +922,7 @@ type SessionDeletionJob struct {
 
 func (x *SessionDeletionJob) Reset() {
 	*x = SessionDeletionJob{}
-	mi := &file_delidev_v1_common_proto_msgTypes[6]
+	mi := &file_delidev_v1_common_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -871,7 +934,7 @@ func (x *SessionDeletionJob) String() string {
 func (*SessionDeletionJob) ProtoMessage() {}
 
 func (x *SessionDeletionJob) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_common_proto_msgTypes[6]
+	mi := &file_delidev_v1_common_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -884,7 +947,7 @@ func (x *SessionDeletionJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionDeletionJob.ProtoReflect.Descriptor instead.
 func (*SessionDeletionJob) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{6}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SessionDeletionJob) GetId() string {
@@ -969,7 +1032,7 @@ type ModelIdentity struct {
 
 func (x *ModelIdentity) Reset() {
 	*x = ModelIdentity{}
-	mi := &file_delidev_v1_common_proto_msgTypes[7]
+	mi := &file_delidev_v1_common_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -981,7 +1044,7 @@ func (x *ModelIdentity) String() string {
 func (*ModelIdentity) ProtoMessage() {}
 
 func (x *ModelIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_common_proto_msgTypes[7]
+	mi := &file_delidev_v1_common_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -994,7 +1057,7 @@ func (x *ModelIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelIdentity.ProtoReflect.Descriptor instead.
 func (*ModelIdentity) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{7}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ModelIdentity) GetProviderId() string {
@@ -1027,7 +1090,7 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x11ProviderApiFormat\x123\n" +
 	"\bprotocol\x18\x01 \x01(\x0e2\x17.delidev.v1.ApiProtocolR\bprotocol\x12\x1a\n" +
 	"\bendpoint\x18\x02 \x01(\tR\bendpoint\x12E\n" +
-	"\x0eauthentication\x18\x03 \x01(\x0e2\x1d.delidev.v1.ApiAuthenticationR\x0eauthentication\"\xf3\x02\n" +
+	"\x0eauthentication\x18\x03 \x01(\x0e2\x1d.delidev.v1.ApiAuthenticationR\x0eauthentication\"\xbf\x03\n" +
 	"\bResource\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12*\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x16.delidev.v1.EntityKindR\x04kind\x12\x1a\n" +
@@ -1043,7 +1106,11 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\t \x01(\tR\tupdatedAt\x12G\n" +
 	"\x0estartup_timing\x18\n" +
-	" \x01(\v2 .delidev.v1.SessionStartupTimingR\rstartupTiming\"\x8a\x01\n" +
+	" \x01(\v2 .delidev.v1.SessionStartupTimingR\rstartupTiming\x12J\n" +
+	"\x10subagent_display\x18\v \x01(\v2\x1f.delidev.v1.SubagentDisplayNameR\x0fsubagentDisplay\"D\n" +
+	"\x13SubagentDisplayName\x12\x19\n" +
+	"\bchild_id\x18\x01 \x01(\tR\achildId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\x8a\x01\n" +
 	"\x14SessionStartupTiming\x12<\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x1e.delidev.v1.StartupGroupTimingR\tworkspace\x124\n" +
 	"\x05agent\x18\x02 \x01(\v2\x1e.delidev.v1.StartupGroupTimingR\x05agent\"\x8e\x01\n" +
@@ -1158,7 +1225,7 @@ func file_delidev_v1_common_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_delidev_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_delidev_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_delidev_v1_common_proto_goTypes = []any{
 	(ApiProtocol)(0),                 // 0: delidev.v1.ApiProtocol
 	(ApiAuthentication)(0),           // 1: delidev.v1.ApiAuthentication
@@ -1168,28 +1235,30 @@ var file_delidev_v1_common_proto_goTypes = []any{
 	(SubscriptionServiceIdentity)(0), // 5: delidev.v1.SubscriptionServiceIdentity
 	(*ProviderApiFormat)(nil),        // 6: delidev.v1.ProviderApiFormat
 	(*Resource)(nil),                 // 7: delidev.v1.Resource
-	(*SessionStartupTiming)(nil),     // 8: delidev.v1.SessionStartupTiming
-	(*StartupGroupTiming)(nil),       // 9: delidev.v1.StartupGroupTiming
-	(*Mutation)(nil),                 // 10: delidev.v1.Mutation
-	(*ForwardChange)(nil),            // 11: delidev.v1.ForwardChange
-	(*SessionDeletionJob)(nil),       // 12: delidev.v1.SessionDeletionJob
-	(*ModelIdentity)(nil),            // 13: delidev.v1.ModelIdentity
+	(*SubagentDisplayName)(nil),      // 8: delidev.v1.SubagentDisplayName
+	(*SessionStartupTiming)(nil),     // 9: delidev.v1.SessionStartupTiming
+	(*StartupGroupTiming)(nil),       // 10: delidev.v1.StartupGroupTiming
+	(*Mutation)(nil),                 // 11: delidev.v1.Mutation
+	(*ForwardChange)(nil),            // 12: delidev.v1.ForwardChange
+	(*SessionDeletionJob)(nil),       // 13: delidev.v1.SessionDeletionJob
+	(*ModelIdentity)(nil),            // 14: delidev.v1.ModelIdentity
 }
 var file_delidev_v1_common_proto_depIdxs = []int32{
-	0, // 0: delidev.v1.ProviderApiFormat.protocol:type_name -> delidev.v1.ApiProtocol
-	1, // 1: delidev.v1.ProviderApiFormat.authentication:type_name -> delidev.v1.ApiAuthentication
-	2, // 2: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
-	8, // 3: delidev.v1.Resource.startup_timing:type_name -> delidev.v1.SessionStartupTiming
-	9, // 4: delidev.v1.SessionStartupTiming.workspace:type_name -> delidev.v1.StartupGroupTiming
-	9, // 5: delidev.v1.SessionStartupTiming.agent:type_name -> delidev.v1.StartupGroupTiming
-	7, // 6: delidev.v1.ForwardChange.forward:type_name -> delidev.v1.Resource
-	4, // 7: delidev.v1.SessionDeletionJob.state:type_name -> delidev.v1.SessionDeletionState
-	5, // 8: delidev.v1.ModelIdentity.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	9, // [9:9] is the sub-list for extension type_name
-	9, // [9:9] is the sub-list for extension extendee
-	0, // [0:9] is the sub-list for field type_name
+	0,  // 0: delidev.v1.ProviderApiFormat.protocol:type_name -> delidev.v1.ApiProtocol
+	1,  // 1: delidev.v1.ProviderApiFormat.authentication:type_name -> delidev.v1.ApiAuthentication
+	2,  // 2: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
+	9,  // 3: delidev.v1.Resource.startup_timing:type_name -> delidev.v1.SessionStartupTiming
+	8,  // 4: delidev.v1.Resource.subagent_display:type_name -> delidev.v1.SubagentDisplayName
+	10, // 5: delidev.v1.SessionStartupTiming.workspace:type_name -> delidev.v1.StartupGroupTiming
+	10, // 6: delidev.v1.SessionStartupTiming.agent:type_name -> delidev.v1.StartupGroupTiming
+	7,  // 7: delidev.v1.ForwardChange.forward:type_name -> delidev.v1.Resource
+	4,  // 8: delidev.v1.SessionDeletionJob.state:type_name -> delidev.v1.SessionDeletionState
+	5,  // 9: delidev.v1.ModelIdentity.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_common_proto_init() }
@@ -1203,7 +1272,7 @@ func file_delidev_v1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_common_proto_rawDesc), len(file_delidev_v1_common_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

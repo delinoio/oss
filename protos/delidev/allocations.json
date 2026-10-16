@@ -14671,6 +14671,36 @@
       "newDeclaration": true
     },
     {
+      "issue": 4001,
+      "kind": "message",
+      "declaration": "SubagentDisplayName",
+      "member": "child_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4001,
+      "kind": "message",
+      "declaration": "SubagentDisplayName",
+      "member": "name",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4001,
+      "kind": "message",
+      "declaration": "PublishExecutionRequest",
+      "member": "subagent_names",
+      "number": 5
+    },
+    {
+      "issue": 4001,
+      "kind": "message",
+      "declaration": "Resource",
+      "member": "subagent_display",
+      "number": 11
+    },
+    {
       "issue": 2678,
       "kind": "enum",
       "declaration": "SystemCapability",
