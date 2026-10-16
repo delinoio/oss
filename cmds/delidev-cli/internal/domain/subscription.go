@@ -89,6 +89,27 @@ type SubscriptionLease struct {
 	// Runner Device, Worker device and instance) may report a retried Finish.
 	// Historical leases omit it.
 	CleanupUnconfirmed bool `json:"cleanup_unconfirmed,omitempty"`
+	// FirstFinish freezes the native outcome the original owner reported in its
+	// first Finish while the cleanup was unconfirmed. A retried Finish can confirm
+	// the cleanup but never upgrade that outcome (a native failure cannot become a
+	// success). It is set together with CleanupUnconfirmed and omitted by
+	// historical leases, which are then treated as having reported a failure.
+	FirstFinish *SubscriptionFinishOutcome `json:"first_finish,omitempty"`
+}
+
+// SubscriptionFinishOutcome is the native outcome of one Finish report.
+type SubscriptionFinishOutcome struct {
+	Succeeded        bool `json:"succeeded"`
+	RefreshConfirmed bool `json:"refresh_confirmed"`
+}
+
+// Frozen narrows a retried report to the first reported outcome: a retry may
+// only keep or lower each flag, never raise it.
+func (o *SubscriptionFinishOutcome) Frozen(succeeded, refreshConfirmed bool) (bool, bool) {
+	if o == nil {
+		return false, false
+	}
+	return succeeded && o.Succeeded, refreshConfirmed && o.RefreshConfirmed
 }
 
 func (s SubscriptionState) Validate(account Account) error {

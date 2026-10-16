@@ -632,9 +632,15 @@ committed under the old one; any other Worker device, instance or lease revision
 is refused and the lease is untouched. The Worker keeps the home it bound at
 materialization and the original credential on the lease
 (`retryGrokCleanup`), so the retry removes the credential only in that directory.
-A confirmed retry releases the lease and lifts the fence that its own report set;
-a recovery fence set for any other reason cannot be finished this way. The
-recorded outcome of the operation stays the first failure. The server-owned logout
+The first report freezes its native outcome on the lease (`first_finish`:
+`succeeded` and `refresh_confirmed`): a retry only confirms the cleanup and can
+keep or lower each flag but never raise it, so a reported native failure cannot
+become a success, publish a bundle or clear the connection through the retry. A
+lease that carries no frozen outcome (written before the field existed) is
+treated as having reported a failure. A confirmed retry releases the lease and
+lifts the fence that its own report set; a recovery fence set for any other reason
+cannot be finished this way. The recorded outcome of the operation stays the first
+failure. The server-owned logout
 waits for such a lease to be released.
 
 #### Account deletion

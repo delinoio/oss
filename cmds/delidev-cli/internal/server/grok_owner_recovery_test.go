@@ -76,6 +76,41 @@ func TestGrokUnconfirmedHomeCleanupIsRetriedOnlyByTheOriginalLeaseOwner(t *testi
 	}
 }
 
+// The first Finish outcome is frozen: a native failure reported with an
+// unconfirmed cleanup cannot be turned into a success by the cleanup retry. The
+// retry only confirms the cleanup, so the failed logout never clears the
+// connection or the generation.
+func TestGrokCleanupRetryCannotFlipAReportedFailureIntoSuccess(t *testing.T) {
+	f := newGrokFixture(t)
+	f.login("synthetic-principal-1")
+	logout := pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT
+	lease, err := f.take(f.queue(logout), logout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := func() domain.Account { _, a := f.record(); return a }()
+	// The native logout failed and the private cleanup was not confirmed.
+	if _, err := f.finishWith(lease, domain.NewID(), nil, false, false, false); err != nil {
+		t.Fatal(err)
+	}
+	first := func() domain.Account { _, a := f.record(); return a }()
+	if o := first.Subscription.Lease.FirstFinish; o == nil || o.Succeeded || o.RefreshConfirmed {
+		t.Fatalf("the first outcome was not frozen on the lease: %+v", o)
+	}
+	// The retry claims success while confirming the cleanup.
+	if _, err := f.finishWith(lease, domain.NewID(), nil, true, true, true); err != nil {
+		t.Fatal(err)
+	}
+	_, after := f.record()
+	st := after.Subscription
+	if after.Connection == nil || st.Generation != before.Subscription.Generation || len(f.references()) != 1 {
+		t.Fatal("a retry turned a reported native failure into a completed logout")
+	}
+	if o := st.ServerOperation; o == nil || o.State == domain.SubscriptionSucceeded {
+		t.Fatal("the persisted operation no longer records the first failure")
+	}
+}
+
 // A lease fenced for any other reason has no cleanup report to retry.
 func TestGrokRecoveryWithoutAnUnconfirmedCleanupCannotBeFinished(t *testing.T) {
 	f := newGrokFixture(t)
