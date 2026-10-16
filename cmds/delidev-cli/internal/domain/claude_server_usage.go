@@ -256,7 +256,7 @@ func (s ClaudeServerUsageState) Validate(account Account) error {
 	if s.Refresh != ClaudeUsageIdle && s.Connection != ClaudeUsageLinked && s.Connection != ClaudeUsageReconnectRequired {
 		return invalid()
 	}
-	if s.BackoffUntil != nil && (s.Failure != ClaudeUsageFailureRateLimited && s.Failure != ClaudeUsageFailureForbidden && s.Failure != ClaudeUsageFailureUnavailable) {
+	if s.BackoffUntil != nil && !claudeUsageFailureAllowsBackoff(s.Failure) {
 		return invalid()
 	}
 	if len(s.Windows) > len(ClaudeUsageWindowIDs()) || (len(s.Windows) != 0) != (s.LastSuccessAt != nil) {
@@ -282,11 +282,23 @@ func (s ClaudeServerUsageState) Validate(account Account) error {
 	return nil
 }
 
+// claudeUsageFailureAllowsBackoff reports whether failure is one of the closed
+// provider failures that schedule a retry deadline.
+func claudeUsageFailureAllowsBackoff(failure ClaudeUsageFailure) bool {
+	return failure == ClaudeUsageFailureRateLimited || failure == ClaudeUsageFailureForbidden || failure == ClaudeUsageFailureUnavailable
+}
+
 // RecordFailure keeps every last-success window and time and records only the
 // closed failure and the retry deadline. A failure never advances an
-// observation time and never turns an available window into zero.
+// observation time and never turns an available window into zero. The pair is
+// validated before any mutation: only a rate-limited, forbidden or unavailable
+// failure may carry a backoff deadline, and a deadline must be a valid time, so
+// a handled provider failure can never produce state that fails persistence.
 func (s *ClaudeServerUsageState) RecordFailure(failure ClaudeUsageFailure, backoffUntil *time.Time) error {
 	if s.Connection != ClaudeUsageLinked || failure == ClaudeUsageFailureNone || !failure.Valid() {
+		return invalidClaudeServerUsage()
+	}
+	if backoffUntil != nil && (!claudeUsageFailureAllowsBackoff(failure) || !validClaudeUsageTime(*backoffUntil)) {
 		return invalidClaudeServerUsage()
 	}
 	s.Failure = failure

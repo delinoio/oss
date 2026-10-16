@@ -276,6 +276,45 @@ func TestApplyClaudeUsageQuotaRejectsUnauthorizedOrInvalidObservations(t *testin
 	}
 }
 
+func TestClaudeServerUsageRecordFailureRejectsInvalidBackoffPairsBeforeMutation(t *testing.T) {
+	future := claudeUsageNow.Add(5 * time.Minute)
+	zero := time.Time{}
+	for name, test := range map[string]struct {
+		failure ClaudeUsageFailure
+		backoff *time.Time
+	}{
+		"unauthorized with backoff":    {ClaudeUsageFailureUnauthorized, &future},
+		"malformed with backoff":       {ClaudeUsageFailureMalformed, &future},
+		"identity changed and backoff": {ClaudeUsageFailureIdentityChanged, &future},
+		"empty with backoff":           {ClaudeUsageFailureEmpty, &future},
+		"unsupported with backoff":     {ClaudeUsageFailureUnsupported, &future},
+		"rate limited zero time":       {ClaudeUsageFailureRateLimited, &zero},
+		"unavailable year overflow":    {ClaudeUsageFailureUnavailable, func() *time.Time { v := time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC); return &v }()},
+	} {
+		usage := linkedClaudeUsage()
+		prior := future.Add(time.Hour)
+		usage.Failure, usage.BackoffUntil = ClaudeUsageFailureUnavailable, &prior
+		if err := usage.RecordFailure(test.failure, test.backoff); err == nil {
+			t.Fatalf("%s was recorded", name)
+		}
+		if usage.Failure != ClaudeUsageFailureUnavailable || usage.BackoffUntil == nil || !usage.BackoffUntil.Equal(prior) {
+			t.Fatalf("%s mutated the state before failing: %+v", name, usage)
+		}
+	}
+	for _, failure := range []ClaudeUsageFailure{ClaudeUsageFailureRateLimited, ClaudeUsageFailureForbidden, ClaudeUsageFailureUnavailable} {
+		account := claudeUsageAccount(t, linkedClaudeUsage())
+		if err := account.Subscription.ClaudeUsage.RecordFailure(failure, &future); err != nil || account.Validate() != nil {
+			t.Fatalf("%s with a valid backoff was rejected: %v", failure, err)
+		}
+	}
+	for _, failure := range []ClaudeUsageFailure{ClaudeUsageFailureUnauthorized, ClaudeUsageFailureMalformed, ClaudeUsageFailureEmpty, ClaudeUsageFailureIdentityChanged, ClaudeUsageFailureUnsupported} {
+		account := claudeUsageAccount(t, linkedClaudeUsage())
+		if err := account.Subscription.ClaudeUsage.RecordFailure(failure, nil); err != nil || account.Validate() != nil {
+			t.Fatalf("%s without a backoff was rejected: %v", failure, err)
+		}
+	}
+}
+
 func TestApplyClaudeUsageQuotaPreservesOtherComparisonGroups(t *testing.T) {
 	account := claudeUsageAccount(t, linkedClaudeUsage())
 	other := 0.3
