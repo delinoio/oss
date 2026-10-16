@@ -247,7 +247,12 @@ func (s *Service) SyncSubscriptionRecoveryCapture(ctx context.Context, req *conn
 	capture := domain.ID(m.RequestId)
 	// The original instance is the lease's own; a replacement instance names it
 	// through the stored lease and is verified below.
-	commitment := s.accountCommitment(capture, append(append([]byte{}, req.Msg.Original...), req.Msg.Latest...))
+	// The receipt commits to both raw bundles through one temporary
+	// concatenation. It holds credentials, so it is cleared as soon as the
+	// commitment is computed rather than left to the garbage collector.
+	committed := append(append(make([]byte, 0, len(req.Msg.Original)+len(req.Msg.Latest)), req.Msg.Original...), req.Msg.Latest...)
+	commitment := s.accountCommitment(capture, committed)
+	clear(committed)
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
