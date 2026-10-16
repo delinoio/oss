@@ -51,8 +51,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::{
-    Builder, CellId, EMPTY, Key, MethodCall, SPECIAL_NAMES, Target, UNKNOWN, Value, collect_nodes,
-    flat_pattern, in_namespace, occurrence, owner,
+    Builder, CellId, EMPTY, Key, Kind, MethodCall, SPECIAL_NAMES, Target, UNKNOWN, Value,
+    collect_nodes, flat_pattern, in_namespace, occurrence, owner,
 };
 use crate::{
     compiler::{
@@ -943,7 +943,7 @@ impl Builder<'_, '_> {
         let value = self.objects.len() as Value;
         self.objects.push(object);
         self.intrinsic.push(reason);
-        self.instance_class.push(Some(index));
+        self.kinds.push(Kind::Instance(index));
         self.class_by_node.insert(node, index);
         for &symbol in &candidate.symbols {
             self.class_by_symbol.insert(symbol, index);

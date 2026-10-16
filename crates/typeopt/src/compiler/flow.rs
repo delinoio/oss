@@ -91,6 +91,15 @@ struct Cell {
     unknown: bool,
 }
 
+/// What an object value stands for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    /// A fresh object literal.
+    Literal,
+    /// The instances of a closed class (index into `Builder::classes`).
+    Instance(usize),
+}
+
 #[derive(Clone, Copy)]
 enum Key {
     Name(&'static str),
@@ -560,8 +569,8 @@ struct Builder<'a, 'c> {
     classes: Vec<classes::Class>,
     class_by_node: HashMap<Node, usize>,
     class_by_symbol: HashMap<SymbolId, usize>,
-    /// Class of each object value; `None` for object literals.
-    instance_class: Vec<Option<usize>>,
+    /// What each object value stands for.
+    kinds: Vec<Kind>,
     /// Dispatched calls and constructions.
     calls: Vec<MethodCall>,
     dispatched: HashSet<Node>,
@@ -709,6 +718,11 @@ fn value_union_query(type_query: Node) -> bool {
 }
 
 impl Builder<'_, '_> {
+    /// The value stands for the instances of a closed class.
+    fn is_instance(&self, value: usize) -> bool {
+        matches!(self.kinds[value], Kind::Instance(_))
+    }
+
     fn ts_files(&self) -> Vec<usize> {
         (0..self.ctx.files.len())
             .filter(|&i| !self.ctx.files[i].js)
@@ -1087,7 +1101,7 @@ impl Builder<'_, '_> {
         self.allocations.insert(node, id);
         self.objects.push(object);
         self.intrinsic.push(reason);
-        self.instance_class.push(None);
+        self.kinds.push(Kind::Literal);
     }
 
     /// String literals that may flow to computed keys.
@@ -1896,7 +1910,7 @@ impl Builder<'_, '_> {
                     graph.cells[arg as usize]
                         .values
                         .iter()
-                        .any(|&v| graph.is_object(v) && self.instance_class[v as usize].is_some())
+                        .any(|&v| graph.is_object(v) && self.is_instance(v as usize))
                 })
             {
                 *escaping_calls.entry(call.name).or_default() += 1;
@@ -1994,7 +2008,7 @@ impl Builder<'_, '_> {
             let properties = &self.objects[object].properties;
             if let Some(property) = properties.iter().position(|p| p.name == name) {
                 occurrences[object].push((property, occurrence.clone()));
-            } else if self.instance_class[object].is_none() {
+            } else if !self.is_instance(object) {
                 reasons[object].get_or_insert(Preservation::ObservableOperation);
             } else if classes::inherited_name(name) {
                 reasons[object].get_or_insert(Preservation::SpecialProperty);
@@ -2049,7 +2063,7 @@ impl Builder<'_, '_> {
                 if access.write {
                     written[object].extend(names.iter().copied());
                 }
-                let observable = if self.instance_class[object].is_some() {
+                let observable = if self.is_instance(object) {
                     access.usage == Usage::Other
                         || names
                             .iter()
@@ -2156,7 +2170,7 @@ impl Builder<'_, '_> {
         // (`Object.prototype.x = …`); reading it keeps the region.
         let mut known = HashMap::<usize, HashSet<&str>>::new();
         for object in 0..objects {
-            if self.instance_class[object].is_none() {
+            if !self.is_instance(object) {
                 continue;
             }
             let names = known.entry(root(&mut parents, object)).or_default();
@@ -2232,7 +2246,7 @@ impl Builder<'_, '_> {
             let mut classes = HashMap::<&str, usize>::new();
             let mut renamed = 0usize;
             for (object, cause) in causes.iter().enumerate() {
-                if self.instance_class[object].is_none() {
+                if !self.is_instance(object) {
                     continue;
                 }
                 tracing::debug!(
@@ -2655,7 +2669,7 @@ pub(super) fn analyze(ctx: &mut Ctx, options: Options) -> Result<Vec<Object>> {
         classes: Vec::new(),
         class_by_node: HashMap::new(),
         class_by_symbol: HashMap::new(),
-        instance_class: Vec::new(),
+        kinds: Vec::new(),
         calls: Vec::new(),
         dispatched: HashSet::new(),
         static_targets: HashMap::new(),
