@@ -314,7 +314,7 @@ func grokDevicePollOnce(ctx context.Context, polling GrokDevicePolling, authoriz
 	defer clear(payload)
 	status, body, err := grokRoundTrip(ctx, polling.Client, http.MethodPost, polling.Endpoints.Token, payload, map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
 	defer clear(body)
-	// Only 200 (success) and 4xx (an OAuth answer) are definitive. Every other
+	// Only 200 (success) and 4xx (an OAuth answer) can be definitive. Every other
 	// status, and any unreadable answer, may hide a consumed device code.
 	if err != nil || status != http.StatusOK && (status < http.StatusBadRequest || status >= http.StatusInternalServerError) {
 		return GrokTokens{}, GrokDevicePollUncertain, &GrokOAuthError{Reason: GrokReasonTokenUncertain, Uncertain: true}
@@ -325,6 +325,8 @@ func grokDevicePollOnce(ctx context.Context, polling GrokDevicePolling, authoriz
 	}
 	var failure grokDeviceError
 	_ = grokDecode(body, &failure)
+	// The four RFC 8628 answers are accepted from any 4xx status because the
+	// structured error code proves the authorization server produced them.
 	switch GrokDevicePollOutcome(failure.Error) {
 	case GrokDevicePollPending:
 		return GrokTokens{}, GrokDevicePollPending, nil
@@ -335,5 +337,12 @@ func grokDevicePollOnce(ctx context.Context, polling GrokDevicePolling, authoriz
 	case GrokDevicePollExpired:
 		return GrokTokens{}, GrokDevicePollExpired, grokFail(GrokReasonDeviceExpired)
 	}
-	return GrokTokens{}, GrokDevicePollRejected, grokFail(GrokReasonTokenRejected)
+	// Any other answer is a rejection only as an RFC 6749 section 5.2 error
+	// response (HTTP 400 or 401 with a structured error). A 408, 429, an HTML 403
+	// or an unstructured body may come from an intermediary after the request
+	// was received and keeps the claim as uncertain.
+	if grokOAuthRejection(status, body) {
+		return GrokTokens{}, GrokDevicePollRejected, grokFail(GrokReasonTokenRejected)
+	}
+	return GrokTokens{}, GrokDevicePollUncertain, &GrokOAuthError{Reason: GrokReasonTokenUncertain, Uncertain: true}
 }

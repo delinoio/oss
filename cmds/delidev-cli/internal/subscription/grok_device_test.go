@@ -313,6 +313,25 @@ func TestGrokDeviceLateSuccessIsNotAccepted(t *testing.T) {
 	}
 }
 
+// Only a structured OAuth error proves the device code was not consumed. A
+// bare 4xx answer, such as a throttle or an intermediary page, keeps the claim.
+func TestGrokDeviceNonOAuth4xxAnswersKeepTheClaimAsUncertain(t *testing.T) {
+	for name, status := range map[string]int{"bad request": http.StatusBadRequest, "unauthorized": http.StatusUnauthorized, "forbidden": http.StatusForbidden, "request timeout": http.StatusRequestTimeout, "too many requests": http.StatusTooManyRequests} {
+		t.Run(name, func(t *testing.T) {
+			f := newGrokDeviceFlow(t, 5)
+			f.idp.DeviceTokenStatus = status
+			a := f.authorize(t)
+			_, err := f.poll(a, f.far())
+			if reason, uncertain := subscription.GrokOAuthReasonOf(err); reason != subscription.GrokReasonTokenUncertain || !uncertain {
+				t.Fatalf("a bare %d answer must stay uncertain: %v", status, err)
+			}
+			if f.claims != 1 || f.releases != 0 {
+				t.Fatalf("claims = %d releases = %d: the claim must stand", f.claims, f.releases)
+			}
+		})
+	}
+}
+
 func TestGrokDeviceTerminalAnswersAreDistinctAndReleaseTheClaim(t *testing.T) {
 	for name, test := range map[string]struct {
 		step   grokidptest.DeviceStep

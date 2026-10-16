@@ -351,13 +351,14 @@ Lifecycle of one device runner:
    expiry, and no request is sent at or after it: the deadline is rechecked after
    the claim commit (a claim that outlived it is cleared again without sending)
    and a success answered at or after it is not accepted but stays uncertain with
-   its claim. Any other 4xx answer settles
-   FAILED. The poll loop takes an injectable clock (`GrokDeviceClock`) so tests
+   its claim. Any other
+   answer settles FAILED only as an RFC 6749 section 5.2 error response (HTTP 400
+   or 401 with a JSON `error` code); an unstructured 4xx answer (408, 429, an HTML 403) stays uncertain and keeps the claim. The poll loop takes an injectable clock (`GrokDeviceClock`) so tests
    run on virtual time.
 5. Every token request may consume the device code, so the durable exchange claim
    (`exchange_claimed`) is committed before each request. A definitive answer that
-   proves the code was not consumed (pending, slow-down, denial, expiry or another
-   4xx) clears the claim again before the next wait; the claim of a success is
+   proves the code was not consumed (pending, slow-down, denial, expiry or a structured
+   OAuth error) clears the claim again before the next wait; the claim of a success is
    never cleared. An unanswered or unusable request (transport error, timeout,
    redirect, 5xx, a success status other than 200, a 200 whose token response is
    truncated, malformed or incomplete, cancellation or shutdown while in flight)
