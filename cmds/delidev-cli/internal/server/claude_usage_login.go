@@ -76,6 +76,12 @@ func (s *Service) cancelClaudeUsageRun(account domain.ID) *claudeUsageRun {
 	return run
 }
 
+// claudeUsageRunOf returns the live run of an account without canceling it.
+func (s *Service) claudeUsageRunOf(account domain.ID) *claudeUsageRun {
+	defer s.claudeUsage.lock()()
+	return s.claudeUsage.runs[account]
+}
+
 // joinClaudeUsageRun waits for a cancelled run to join its native child. It is
 // called without the account gate because the run needs the gate to settle.
 func joinClaudeUsageRun(ctx context.Context, run *claudeUsageRun) error {
@@ -559,7 +565,12 @@ func (s *Service) CancelClaudeUsage(ctx context.Context, req *connect.Request[pb
 		// The runner joins the original child and discards unconfirmed credentials.
 		s.cancelClaudeUsageRun(input.Account)
 	} else if err := s.completeClaudeUsageCleanup(ctx, input.Account, false); err != nil {
+		// The cancellation is durable but its staged reference is still owed a
+		// deletion, which blocks a new sign-in. Report it instead of acknowledging
+		// the cancellation; the same request replays and retries the cleanup.
+		s.clearClaudeUsageInput(operation)
 		s.logger.WarnContext(ctx, "claude_usage_cleanup_pending", "account_id", input.Account, "code", domain.SafeError(err).Code)
+		return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "The usage sign-in was canceled but its cleanup is not complete.", "Retry the same cancel request; cleanup is retried automatically."), c)
 	}
 	s.clearClaudeUsageInput(operation)
 	s.logger.InfoContext(ctx, "claude_usage_cancel_accepted", "account_id", input.Account, "operation_id", operation, "replayed", result.Replayed)

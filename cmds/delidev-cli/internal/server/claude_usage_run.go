@@ -71,6 +71,14 @@ func (s *Service) runClaudeUsageLogin(parent context.Context, id domain.ID) {
 		s.afterClaudeUsageClaim()
 	}
 	run, ok := s.registerClaudeUsageRun(id, cancel)
+	for attempt := 0; !ok && attempt < 3; attempt++ {
+		// A previous read may have cleared its durable marker but not yet
+		// unregistered. The valid login joins that owner instead of failing.
+		if err := joinClaudeUsageRun(ctx, s.claudeUsageRunOf(id)); err != nil {
+			break
+		}
+		run, ok = s.registerClaudeUsageRun(id, cancel)
+	}
 	if !ok {
 		cancel()
 		s.settleUnstartedClaudeUsage(id, original)
@@ -205,6 +213,13 @@ func (s *Service) executeClaudeUsageLogin(ctx context.Context, id domain.ID, op 
 	}
 	login, err := native.StartLogin(ctx)
 	if err != nil {
+		if domain.SafeError(err).Code == domain.RecoveryRequired {
+			// The child started but its descendants are not proven stopped, so it may
+			// still write credentials: this is cleanup recovery, not an unsupported login.
+			result.cleanup = false
+			result.state, result.failure = domain.ClaudeLimitLoginRecovery, domain.ClaudeLimitFailureCleanupUncertain
+			return result
+		}
 		result.state, result.failure = domain.ClaudeLimitLoginFailed, claudeUsageFailureFor(err, domain.ClaudeLimitFailureLoginUnsupported)
 		if ctx.Err() != nil {
 			result.state = ""

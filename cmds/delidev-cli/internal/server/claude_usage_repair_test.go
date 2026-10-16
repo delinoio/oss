@@ -467,3 +467,109 @@ func TestClaudeUsageScannerQueuesDueReadsFromItsSingleAccountScan(t *testing.T) 
 		t.Fatalf("the due read was not accepted, run and settled exactly once: requests=%d %+v", f.transport.count(), usage)
 	}
 }
+
+func TestClaudeUsageCancelOfAConfirmingLoginReportsIncompleteCleanup(t *testing.T) {
+	f := newUsageFixture(t)
+	operation := f.loginToResult("")
+	f.secrets.mu.Lock()
+	f.secrets.deleteError = errors.New("vault unavailable")
+	f.secrets.mu.Unlock()
+	r, _ := f.record()
+	request := &pb.CancelClaudeUsageRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, OperationId: operation, UsageGeneration: operation}
+	if _, err := f.client.CancelClaudeUsage(context.Background(), subscriptionRequest(f.service.Identity.Token, request)); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("an incomplete cancellation cleanup was acknowledged: %v", err)
+	}
+	if usage := f.usage(); len(usage.RetiredCredentials) != 1 || usage.Operation.State != domain.ClaudeLimitLoginCanceled {
+		t.Fatalf("the cancellation must stay durable with its obligation: %+v", usage)
+	}
+	f.secrets.mu.Lock()
+	f.secrets.deleteError = nil
+	f.secrets.mu.Unlock()
+	replay, err := f.client.CancelClaudeUsage(context.Background(), subscriptionRequest(f.service.Identity.Token, request))
+	if err != nil || !replay.Msg.Replayed {
+		t.Fatalf("the original cancel did not recover: %v", err)
+	}
+	if len(f.usageRefs()) != 0 || len(f.usage().RetiredCredentials) != 0 {
+		t.Fatal("the staged reference remained after the retried cancel")
+	}
+}
+
+func TestClaudeUsageLoginJoinsAStaleRunRegistrationInsteadOfFailing(t *testing.T) {
+	f := newUsageFixture(t)
+	stale, ok := f.service.registerClaudeUsageRun(f.input.AccountID, func() {})
+	if !ok {
+		t.Fatal("run not registered")
+	}
+	started, err := f.start("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := f.runLogin()
+	time.AfterFunc(150*time.Millisecond, func() { f.service.finishClaudeUsageRun(f.input.AccountID, stale) })
+	close(f.native.login.ready)
+	f.awaitUsageState(started.OperationId, pb.ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_WAITING)
+	if _, err := f.cancel(started.OperationId); err != nil {
+		t.Fatal(err)
+	}
+	awaitServerFixture(t, done)
+	if o := f.usage().Operation; o.Failure == domain.ClaudeLimitFailureProfileUnsafe {
+		t.Fatalf("a valid login failed on a stale registration: %+v", o)
+	}
+}
+
+func TestClaudeUsageUncertainLoginStartupIsCleanupRecovery(t *testing.T) {
+	f := newUsageFixture(t)
+	f.native.startErr = domain.Fail(domain.RecoveryRequired, "Claude Code request delivery is uncertain.", "Inspect the original native operation.")
+	started, err := f.start("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := f.runLogin()
+	awaitServerFixture(t, done)
+	usage := f.usage()
+	if usage.Operation == nil || string(usage.Operation.ID) != started.OperationId || usage.Operation.State != domain.ClaudeLimitLoginRecovery || !usage.CleanupPending {
+		t.Fatalf("a child that may still write credentials must be fenced: %+v", usage)
+	}
+}
+
+func TestClaudeUsageRefreshWithPopulatedStorageFencesTheConnectionForCleanup(t *testing.T) {
+	f := newUsageFixture(t)
+	f.link()
+	f.seedBundle(time.Now().Add(30 * time.Second))
+	f.native.store.set([]byte("unexpected native bytes"))
+	if outcome := f.refreshOnce(true); outcome != claudeUsageReadAccepted {
+		t.Fatal(outcome)
+	}
+	usage := f.usage()
+	if usage.Failure != domain.ClaudeLimitFailureProfileUnsafe || !usage.CleanupPending || usage.Readable() {
+		t.Fatalf("the connection must stop repeating the doomed refresh: %+v", usage)
+	}
+	if len(f.native.refreshInputs) != 0 {
+		t.Fatal("a refresh child started although the storage was populated")
+	}
+	if outcome := f.refreshOnce(true); outcome != claudeUsageReadIneligible {
+		t.Fatalf("a later trigger repeated the refresh check: %s", outcome)
+	}
+	if err := f.service.completeClaudeUsageCleanup(f.owner(), f.input.AccountID, false); err != nil {
+		t.Fatal(err)
+	}
+	if present, _ := f.native.store.Present(context.Background()); present || f.usage().CleanupPending {
+		t.Fatal("the cleanup obligation did not empty the exclusive usage profile")
+	}
+}
+
+func TestClaudeUsageRefreshPublishesChangedPlanAndOrganizationName(t *testing.T) {
+	f := newUsageFixture(t)
+	f.link()
+	f.seedBundle(time.Now().Add(30 * time.Second))
+	f.rotating()
+	f.native.identity.Plan = "team"
+	f.native.identity.Organization = "Renamed Org"
+	if outcome := f.refreshOnce(true); outcome != claudeUsageReadAccepted {
+		t.Fatal(outcome)
+	}
+	usage := f.usage()
+	if usage.Identity.Plan != "team" || usage.Identity.Organization != "Renamed Org" || usage.Identity.Email != "alex@example.com" || usage.ReconnectRequired {
+		t.Fatalf("the refreshed display metadata was not published: %+v", usage.Identity)
+	}
+}

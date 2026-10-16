@@ -473,10 +473,18 @@ func (s *Service) refreshClaudeUsageNative(ctx context.Context, id domain.ID, au
 	storage := native.Storage()
 	if present, err := storage.Present(ctx); err != nil || present {
 		s.releaseClaudeUsageRefreshClaim(id, authority)
-		return fail(domain.ClaudeLimitFailureProfileUnsafe, true)
+		// Unexpected native storage in the exclusive usage profile is never adopted.
+		// The connection is fenced with a durable cleanup obligation, so every later
+		// trigger stops repeating this check until the storage is removed.
+		return fail(domain.ClaudeLimitFailureProfileUnsafe, false)
 	}
 	process, err := native.StartRefresh(ctx, claude.UsageRefreshInput{RefreshToken: old.RefreshToken, Scopes: old.Scopes, ClientID: old.ClientID})
 	if err != nil {
+		if domain.SafeError(err).Code == domain.RecoveryRequired {
+			// The child started and its descendants are not proven stopped, so the
+			// exchange may have happened: keep the claim and require a reconnect.
+			return fail(domain.ClaudeLimitFailureRefreshUncertain, false)
+		}
 		s.releaseClaudeUsageRefreshClaim(id, authority)
 		return fail(domain.ClaudeLimitFailureRefreshUnsupported, true)
 	}
@@ -517,6 +525,13 @@ func (s *Service) refreshClaudeUsageNative(ctx context.Context, id domain.ID, au
 		discard()
 		return fail(domain.ClaudeLimitFailureIdentityChanged, cleanup)
 	}
+	// Email and organization identifier are the stable identity; the plan and the
+	// organization display name may legitimately change and are published with
+	// the rotation.
+	display := &domain.ClaudeLimitIdentity{Email: identity.Email, Organization: identity.Organization, Plan: identity.Plan, Commitment: authority.identity}
+	if display.Validate() != nil {
+		display = nil
+	}
 	raw, err := storage.Read(ctx)
 	if err != nil {
 		discard()
@@ -534,7 +549,7 @@ func (s *Service) refreshClaudeUsageNative(ctx context.Context, id domain.ID, au
 		discard()
 		return fail(domain.ClaudeLimitFailureRefreshUnsupported, cleanup)
 	}
-	next, err := s.commitClaudeUsageRotation(ctx, id, authority, credential, rotated)
+	next, err := s.commitClaudeUsageRotation(ctx, id, authority, credential, rotated, display)
 	if err != nil {
 		rotated.Clear()
 		discard()
@@ -603,7 +618,7 @@ func (s *Service) releaseClaudeUsageRefreshClaim(id domain.ID, authority claudeU
 // commitClaudeUsageRotation stages the rotated bundle under a new immutable
 // reference and switches the connection to it. The previous reference becomes a
 // durable removal obligation only after the switch commits.
-func (s *Service) commitClaudeUsageRotation(ctx context.Context, id domain.ID, authority claudeUsageReadAuthority, old domain.ID, rotated subscription.ClaudeUsageBundle) (domain.ID, error) {
+func (s *Service) commitClaudeUsageRotation(ctx context.Context, id domain.ID, authority claudeUsageReadAuthority, old domain.ID, rotated subscription.ClaudeUsageBundle, display *domain.ClaudeLimitIdentity) (domain.ID, error) {
 	bounded, stop := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer stop()
 	unlock, err := s.lockAccounts(bounded)
@@ -638,6 +653,9 @@ func (s *Service) commitClaudeUsageRotation(ctx context.Context, id domain.ID, a
 		usage.RetiredCredentials = append(usage.RetiredCredentials, old)
 		usage.RetiredCredentials = slices.Compact(slices.Sorted(slices.Values(usage.RetiredCredentials)))
 		usage.CredentialID = next
+		if display != nil && usage.Identity != nil && usage.Identity.Commitment == display.Commitment {
+			usage.Identity = display
+		}
 		usage.Read.Phase, usage.Read.RefreshClaimed = domain.ClaudeLimitReadFetching, false
 		return struct{}{}, putClaudeUsage(tx, r, a)
 	})
