@@ -348,7 +348,10 @@ Lifecycle of one device runner:
    `access_denied` settles FAILED with `PERMISSION_DENIED` (the denied terminal
    state); `expired_token` and the local deadline settle EXPIRED. The local
    deadline is `expires_in` from the answer capped by the operation's 15-minute
-   expiry, and no request is sent at or after it. Any other 4xx answer settles
+   expiry, and no request is sent at or after it: the deadline is rechecked after
+   the claim commit (a claim that outlived it is cleared again without sending)
+   and a success answered at or after it is not accepted but stays uncertain with
+   its claim. Any other 4xx answer settles
    FAILED. The poll loop takes an injectable clock (`GrokDeviceClock`) so tests
    run on virtual time.
 5. Every token request may consume the device code, so the durable exchange claim

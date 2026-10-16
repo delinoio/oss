@@ -230,7 +230,10 @@ type grokDeviceError struct {
 // expired_token are terminal and a deadline reached before an answer is an
 // expiry. The device code is consumed only by a success answer; any request that
 // may have succeeded and was not answered definitively is Uncertain and keeps the
-// durable claim. A context error is returned as is.
+// durable claim. The deadline is rechecked after the claim commit and before
+// the answer is accepted: a claim that outlived the deadline is cleared without
+// sending, and a success answered at or after the deadline is not accepted but
+// stays Uncertain with its claim. A context error is returned as is.
 func PollGrokDeviceToken(ctx context.Context, authorization *GrokDeviceAuthorization, polling GrokDevicePolling) (GrokTokens, error) {
 	clock := polling.Clock
 	if clock == nil {
@@ -259,7 +262,23 @@ func PollGrokDeviceToken(ctx context.Context, authorization *GrokDeviceAuthoriza
 		if err := polling.Claim(ctx); err != nil {
 			return GrokTokens{}, err
 		}
+		// The claim commit may have blocked on the account lock or the store past
+		// the deadline: no request is sent at or after it, and the claim written
+		// for the request that will not happen is cleared again.
+		if !clock.Now().Before(polling.Deadline) {
+			if releaseErr := polling.Release(context.WithoutCancel(ctx)); releaseErr != nil {
+				return GrokTokens{}, &GrokOAuthError{Reason: GrokReasonTokenUncertain, Uncertain: true}
+			}
+			return GrokTokens{}, grokFail(GrokReasonDeviceExpired)
+		}
 		tokens, outcome, err := grokDevicePollOnce(ctx, polling, authorization)
+		if outcome == GrokDevicePollSuccess && !clock.Now().Before(polling.Deadline) {
+			// The device code was consumed by an answer that arrived at or after the
+			// local deadline. It is never accepted as a login: the claim stands and
+			// the operation settles as recovery.
+			tokens.Clear()
+			outcome, err = GrokDevicePollUncertain, &GrokOAuthError{Reason: GrokReasonTokenUncertain, Uncertain: true}
+		}
 		observe(number, outcome)
 		switch outcome {
 		case GrokDevicePollSuccess:

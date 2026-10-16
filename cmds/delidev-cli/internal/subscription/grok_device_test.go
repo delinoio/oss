@@ -254,6 +254,65 @@ func TestGrokDeviceSlowDownAddsFiveSecondsAboveTheIntervalCap(t *testing.T) {
 	}
 }
 
+// A claim commit that outlives the local deadline sends nothing, clears the
+// claim again and expires.
+func TestGrokDeviceDeadlinePassedWhileClaimingSendsNothing(t *testing.T) {
+	f := newGrokDeviceFlow(t, 5)
+	f.idp.DeviceScript = []grokidptest.DeviceStep{grokidptest.DevicePending, grokidptest.DevicePending}
+	a := f.authorize(t)
+	deadline := f.clock.Now().Add(11 * time.Second)
+	_, err := subscription.PollGrokDeviceToken(context.Background(), a, subscription.GrokDevicePolling{
+		Client: f.idp.Client(), Profile: f.profile, Endpoints: f.endpoints, Clock: f.clock, Deadline: deadline,
+		Claim: func(ctx context.Context) error {
+			f.claims++
+			if f.claims == 2 {
+				// The second claim blocks on the account lock until after the deadline.
+				return f.clock.Wait(ctx, 2*time.Second)
+			}
+			return nil
+		},
+		Release: func(context.Context) error { f.releases++; return f.releaseEr },
+	})
+	if reason, uncertain := subscription.GrokOAuthReasonOf(err); reason != subscription.GrokReasonDeviceExpired || uncertain {
+		t.Fatalf("err = %v", err)
+	}
+	if len(f.idp.DevicePollForms) != 1 || f.claims != 2 || f.releases != 2 {
+		t.Fatalf("token requests = %d claims = %d releases = %d: nothing may be sent after the deadline and the claim must be cleared", len(f.idp.DevicePollForms), f.claims, f.releases)
+	}
+}
+
+func TestGrokDeviceDeadlinePassedWhileClaimingWithAFailedReleaseIsUncertain(t *testing.T) {
+	f := newGrokDeviceFlow(t, 5)
+	a := f.authorize(t)
+	f.releaseEr = errors.New("store unavailable")
+	_, err := subscription.PollGrokDeviceToken(context.Background(), a, subscription.GrokDevicePolling{
+		Client: f.idp.Client(), Profile: f.profile, Endpoints: f.endpoints, Clock: f.clock, Deadline: f.clock.Now().Add(7 * time.Second),
+		Claim:   func(ctx context.Context) error { return f.clock.Wait(ctx, 3*time.Second) },
+		Release: func(context.Context) error { return f.releaseEr },
+	})
+	if reason, uncertain := subscription.GrokOAuthReasonOf(err); reason != subscription.GrokReasonTokenUncertain || !uncertain || len(f.idp.DevicePollForms) != 0 {
+		t.Fatalf("err = %v requests = %d", err, len(f.idp.DevicePollForms))
+	}
+}
+
+// A success that arrives at or after the local deadline consumed the device
+// code but is never accepted: the claim stands and the outcome is uncertain.
+func TestGrokDeviceLateSuccessIsNotAccepted(t *testing.T) {
+	f := newGrokDeviceFlow(t, 5)
+	f.idp.BeforeDevicePoll = func(int) { _ = f.clock.Wait(context.Background(), 3*time.Second) }
+	a := f.authorize(t)
+	tokens, err := f.poll(a, f.clock.Now().Add(7*time.Second))
+	if reason, uncertain := subscription.GrokOAuthReasonOf(err); reason != subscription.GrokReasonTokenUncertain || !uncertain {
+		t.Fatalf("err = %v", err)
+	}
+	if tokens.AccessToken != "" || f.idp.DeviceTokenSuccessCount != 1 || f.claims != 1 || f.releases != 0 {
+		t.Fatalf("tokens accepted = %v, successes = %d, claims = %d, releases = %d", tokens.AccessToken != "", f.idp.DeviceTokenSuccessCount, f.claims, f.releases)
+	}
+	if len(f.polls) != 1 || f.polls[0].Outcome != subscription.GrokDevicePollUncertain {
+		t.Fatalf("observed polls = %v", f.polls)
+	}
+}
+
 func TestGrokDeviceTerminalAnswersAreDistinctAndReleaseTheClaim(t *testing.T) {
 	for name, test := range map[string]struct {
 		step   grokidptest.DeviceStep
