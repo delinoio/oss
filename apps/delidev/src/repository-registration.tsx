@@ -62,6 +62,7 @@ import {
 import { JobState, TrackedJob } from "./jobs";
 import { useRetainedMutation } from "./mutation";
 import { useSettingsOpening } from "./settings-lifetime";
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import {
   LocalWorkerAction,
@@ -342,6 +343,7 @@ export function RepositoryRegistration({
   cancel: () => void;
 }) {
   const productLabel = useProductLabels();
+  const formId = useId();
   const disclosureContentId1 = useId();
   const disclosureContentId2 = useId();
   const manualContentId = useId();
@@ -916,6 +918,28 @@ export function RepositoryRegistration({
       legacyReady),
   );
   const cloneModeBlocked = options || draftEdited.current;
+  // Add repository and Clone share one owner callback for pointer, keyboard and
+  // form submission. It rechecks the exact disabled conditions of the visible
+  // primary control before allocating a request identity, so a blocked,
+  // uncertain or incomplete draft never starts an operation or a fresh request.
+  const submitPrimary = () => {
+    if (cloneLocally) {
+      if (blocked || !cloneReady) return;
+      void startClone();
+      return;
+    }
+    if (blocked || !ready) return;
+    setNameConflict(false);
+    void save.send({
+      mutation: {
+        requestId: newRequestId(),
+        expectedRevision: 0n,
+      },
+      kind: EntityKind.REPOSITORY,
+      schemaVersion: 1,
+      documentJson: encode(repositoryRegistrationDocument(data, legacyReady)),
+    });
+  };
   return (
     <section
       className="repository-registration"
@@ -1078,7 +1102,14 @@ export function RepositoryRegistration({
           </SettingsTaskActions>
         </>
       ) : (
-        <>
+        <form
+          id={formId}
+          noValidate
+          onKeyDown={guardEnterSubmission}
+          onSubmit={(event) => {
+            if (consumeFormSubmit(event)) submitPrimary();
+          }}
+        >
           <section
             className="repository-remote-fields"
             aria-label={copy("repository-registration.inline.9112065139")}
@@ -1612,7 +1643,7 @@ export function RepositoryRegistration({
               {copy("repository-registration.retryTheSameInspection_8ce3eb")}
             </SettingsActionButton>
           ) : null}
-          <SettingsTaskActions className="repository-add-footer">
+          <SettingsTaskActions className="repository-add-footer" form={formId}>
             <SettingsActionButton
               icon={SettingsActionIcon.Cancel}
               type="button"
@@ -1621,40 +1652,16 @@ export function RepositoryRegistration({
             >
               {copy("repository-registration.inline.19766ed6cc")}
             </SettingsActionButton>
-            {cloneLocally ? (
-              <SettingsActionButton
-                icon={SettingsActionIcon.Add}
-                type="button"
-                className="primary"
-                disabled={blocked || !cloneReady}
-                onClick={() => void startClone()}
-              >
-                {copy("repository-registration.inline.91a5165017")}
-              </SettingsActionButton>
-            ) : (
-              <SettingsActionButton
-                icon={SettingsActionIcon.Add}
-                type="button"
-                className="primary"
-                disabled={blocked || !ready}
-                onClick={() => {
-                  setNameConflict(false);
-                  void save.send({
-                    mutation: {
-                      requestId: newRequestId(),
-                      expectedRevision: 0n,
-                    },
-                    kind: EntityKind.REPOSITORY,
-                    schemaVersion: 1,
-                    documentJson: encode(
-                      repositoryRegistrationDocument(data, legacyReady),
-                    ),
-                  });
-                }}
-              >
-                {copy("repository-registration.addRepository_2eda4d")}
-              </SettingsActionButton>
-            )}
+            <SettingsActionButton
+              icon={SettingsActionIcon.Add}
+              type="submit"
+              className="primary"
+              disabled={blocked || (cloneLocally ? !cloneReady : !ready)}
+            >
+              {cloneLocally
+                ? copy("repository-registration.inline.91a5165017")
+                : copy("repository-registration.addRepository_2eda4d")}
+            </SettingsActionButton>
             {clone.uncertain ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Retry}
@@ -1678,7 +1685,7 @@ export function RepositoryRegistration({
               </SettingsActionButton>
             ) : null}
           </SettingsTaskActions>
-        </>
+        </form>
       )}
       <RunnerTaskRemediation
         active={active && taskVisible}
