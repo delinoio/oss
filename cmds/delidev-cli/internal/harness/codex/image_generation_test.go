@@ -111,9 +111,15 @@ func TestNativeImageGenerationShapesAndOriginalProvider(t *testing.T) {
 		item := generationItem("failed", "")
 		item[key] = nil
 		raw, _ := json.Marshal(item)
-		if _, err := decodeImageGeneration(raw, true); err == nil {
-			t.Fatal("nullable optional native field", key)
+		if _, err := decodeImageGeneration(raw, true); (err == nil) != (key == "transparentBackground") {
+			t.Fatal("native optional field nullability changed", key, err)
 		}
+	}
+	started := generationItem("in_progress", "")
+	started["transparentBackground"] = nil
+	startedRaw, _ := json.Marshal(started)
+	if image, err := decodeImageGeneration(startedRaw, false); err != nil || image.Observation.TransparentBackground != nil || len(image.Bytes) != 0 {
+		t.Fatal("installed native nullable start was rejected or granted image bytes", err)
 	}
 	item := generationItem("failed", "")
 	item["failure"] = map[string]any{"type": "usageLimitExceeded", "limitId": "original"}

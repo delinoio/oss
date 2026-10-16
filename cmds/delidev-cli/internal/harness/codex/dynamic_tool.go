@@ -15,6 +15,7 @@ import (
 )
 
 type dynamicItem struct {
+	Origin    externalToolOrigin
 	Turn      domain.ID
 	Identity  domain.DynamicToolIdentity
 	Completed bool
@@ -140,6 +141,10 @@ func (c *Client) observeDynamicItemLocked(native nativewire.Event, turn domain.I
 	if err != nil {
 		return Event{}, err
 	}
+	return c.observeExternalToolSnapshotLocked(native, turn, id, snapshot, dynamicToolOrigin)
+}
+
+func (c *Client) observeExternalToolSnapshotLocked(native nativewire.Event, turn domain.ID, id string, snapshot *domain.DynamicToolSnapshot, origin externalToolOrigin) (Event, error) {
 	owner, known := c.execution.turns[turn]
 	if !known {
 		return Event{}, incompatible()
@@ -149,10 +154,10 @@ func (c *Client) observeDynamicItemLocked(native nativewire.Event, turn domain.I
 	}
 	prior, exists := c.dynamicItems[id]
 	completed := native.Method == "item/completed"
-	if exists && (prior.Turn != turn || prior.Completed || prior.Started && !completed || !reflect.DeepEqual(prior.Identity, snapshot.Identity)) || !exists && len(c.dynamicItems) >= 10000 {
+	if snapshot.Validate() != nil || exists && (prior.Origin != origin || prior.Turn != turn || prior.Completed || prior.Started && !completed || !reflect.DeepEqual(prior.Identity, snapshot.Identity)) || !exists && len(c.dynamicItems) >= 10000 {
 		return Event{}, incompatible()
 	}
-	c.dynamicItems[id] = dynamicItem{Turn: turn, Identity: cloneDynamicIdentity(snapshot.Identity), Completed: completed, Started: true}
+	c.dynamicItems[id] = dynamicItem{Origin: origin, Turn: turn, Identity: cloneDynamicIdentity(snapshot.Identity), Completed: completed, Started: true}
 	stage := domain.DynamicStarted
 	if completed {
 		stage = domain.DynamicCompleted
@@ -197,7 +202,7 @@ func (c *Client) observeDynamicRequestLocked(native nativewire.Event) (Event, er
 		return Event{}, incompatible()
 	}
 	prior, exists := c.dynamicItems[p.CallID]
-	if exists && (prior.Completed || prior.Turn != p.TurnID || !reflect.DeepEqual(prior.Identity, identity)) || c.problem != nil || c.execution.paused || c.execution.interrupt != "" || c.execution.active != p.TurnID {
+	if exists && (prior.Origin != dynamicToolOrigin || prior.Completed || prior.Turn != p.TurnID || !reflect.DeepEqual(prior.Identity, identity)) || c.problem != nil || c.execution.paused || c.execution.interrupt != "" || c.execution.active != p.TurnID {
 		return Event{}, incompatible()
 	}
 	if !exists && len(c.dynamicItems) >= 10000 {

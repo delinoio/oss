@@ -3186,6 +3186,36 @@ prove real native, account or platform acceptance.
 
 ## Original Codex dynamic tools
 
+### Native MCP and web tool lifecycle
+
+Root Codex execution also projects native `mcpToolCall` and `webSearch` items
+through the already negotiated inert dynamic-tool lifecycle. Native built-in
+`list_mcp_resources` and `list_mcp_resource_templates` can emit MCP items even
+with an empty configured MCP server inventory. These observations must not
+terminate an otherwise valid turn as an unsupported extension. The original
+native process executes these calls; observation grants no dynamic responder,
+MCP configuration, plugin loading or additional backend authority.
+
+MCP identity retains the original server as namespace, tool name and argument
+commitment. Preserve native status, exact duration and ordered text results.
+Media, resources and structured results retain commitments without exposing
+locators, embedded bytes or private metadata. Native error text stays private.
+Standalone web search starts with an empty query and no action. Its lifecycle
+retains an empty-argument commitment; completion separately commits the observed
+query and action. Completion does not establish remote success because the
+native web item carries no success field. Search results
+remain in native history with an inert commitment in the transcript.
+
+Both families share the original item bound, identity checks, durable Worker
+outbox, server transcript and completion barrier. The adapter additionally
+retains the native family so an MCP, web or dynamic lifecycle cannot adopt an
+item from another family, and a native dynamic request cannot acquire an MCP
+or web call. Restricted Sidechat, native review children, foreign threads and
+unnegotiated peers retain the private extension boundary. No public field,
+protocol allocation or database migration is added.
+
+### Native dynamic requests
+
 The original root Codex execution admits the closed `dynamicToolCall` lifecycle
 and `item/tool/call` request union. Preserve the original item/call, thread,
 turn, tool, nullable namespace, argument commitment, native status, ordered

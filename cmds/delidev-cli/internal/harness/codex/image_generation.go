@@ -46,7 +46,10 @@ func decodeImageGeneration(raw json.RawMessage, completed bool) (*ImageGeneratio
 			return nil, incompatible()
 		}
 	}
-	for _, key := range []string{"transparentBackground", "savedPath"} {
+	// Codex 0.159.2 serializes an absent transparent_background as JSON null
+	// on started and failed items. saved_path still omits an absent value.
+	// Keep the nullable observation without granting a completed image.
+	for _, key := range []string{"savedPath"} {
 		if value, exists := fields[key]; exists && string(value) == "null" {
 			return nil, incompatible()
 		}
