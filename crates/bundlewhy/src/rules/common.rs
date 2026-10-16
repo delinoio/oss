@@ -7976,6 +7976,7 @@ y=/process.env.F/.test(z),process.env.G"#;
 
     const AWAIT_READ: &str = "process.env.FLAG";
     const AWAIT_CONDITION: &str = "the retained read is in an if condition";
+    const CONDITIONAL: &str = "the retained read controls a conditional (?:) branch";
 
     fn await_guard(code: &str) -> Option<&'static str> {
         let start = code.find(AWAIT_READ).unwrap();
@@ -8614,6 +8615,97 @@ y=/process.env.F/.test(z),process.env.G"#;
         for head in ["case/*c*/:", "casey:", "a:"] {
             let source = format!("o = {{ {head} function eval(x) {{ return x; }} }}; eval(code);");
             assert!(direct_eval_line(&source).is_some(), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn plain_function_parameters_reset_the_await_context() {
+        let gate = await_gate();
+        let read = AWAIT_READ;
+        let default = format!("x = await({read}) ? 1 : 2");
+        // The parameter list of a plain function is not an async context, even
+        // inside an async function, so `await(` is a call there.
+        for header in [
+            "function inner",
+            "function",
+            "function* inner",
+            "function *inner",
+            "function*",
+            "function /* c */ inner",
+        ] {
+            for body in ["{}", "{ run() }"] {
+                for (definition, outer) in [
+                    (
+                        format!("{header}({default}) {body}"),
+                        "async function outer()",
+                    ),
+                    (
+                        format!("const f = {header}({default}) {body}"),
+                        "async function outer()",
+                    ),
+                    (format!("run({header}({default}) {body})"), "async () =>"),
+                    (
+                        format!("const o = {{ m: {header}({default}) {body} }}"),
+                        "async function* outer()",
+                    ),
+                ] {
+                    let code = format!("var await = x => x; {outer} {{ {definition} }}");
+                    assert_eq!(await_guard(&code), None, "{code:?}");
+                }
+            }
+        }
+        // Nested parentheses and brackets in the default initializer.
+        for default in [
+            format!("x = (await({read}) ? 1 : 2)"),
+            format!("x = [await({read}) ? 1 : 2]"),
+            format!("x = f((await({read}) ? 1 : 2))"),
+            format!("{{ a = await({read}) ? 1 : 2 }} = {{}}"),
+        ] {
+            let code = format!("async function outer() {{ function inner({default}) {{}} }}");
+            assert_eq!(await_guard(&code), None, "{code:?}");
+        }
+        // The async context returns after the nested function, and an async
+        // function nested in a plain one is async again.
+        for code in [
+            format!("async function outer() {{ function inner(x = 1) {{}} {gate} }}"),
+            format!(
+                "async function outer() {{ function inner(x = await({read}) ? 1 : 2) {{}} {gate} \
+                 }}"
+            ),
+            format!(
+                "async function outer() {{ run(function inner(x = 1) {{}}, await({read}) ? 1 : 2) \
+                 }}"
+            ),
+            format!("async function outer() {{ async function inner(x = 1) {{ {gate} }} }}"),
+            format!("async function outer() {{ async function* inner(x = 1) {{ {gate} }} }}"),
+            format!("async function outer() {{ return await({read}) ? 1 : 2; }}"),
+        ] {
+            // The last read is the one after the nested function.
+            let start = code.rfind(read).unwrap();
+            let guard = env_guard(&code, start, start + read.len(), &non_code_ranges(&code))
+                .map(EnvGuard::evidence);
+            assert!(guard.is_some(), "{code:?}");
+        }
+        // The body of a plain function is not async either.
+        let code = format!("async function outer() {{ function inner(x = 1) {{ {gate} }} }}");
+        assert_eq!(await_guard(&code), None, "{code:?}");
+        // A property named `function` is not the keyword, so its call keeps
+        // the enclosing async context.
+        for code in [
+            format!("async function outer() {{ obj.function(); {gate} }}"),
+            format!("async function outer() {{ obj?.function(x = 1); {gate} }}"),
+        ] {
+            assert_await_is_an_operator(&code);
+        }
+        let code = format!("async function outer() {{ obj.function(await({read}) ? 1 : 2) }}");
+        assert_eq!(await_guard(&code), Some(CONDITIONAL), "{code:?}");
+        // Real guards inside default initializers stay detectable.
+        for code in [
+            format!("async function outer() {{ function inner(x = {read} ? 1 : 2) {{}} }}"),
+            format!("function inner(x = {read} ? 1 : 2) {{}}"),
+            format!("async function outer() {{ async function inner(x = {read} ? 1 : 2) {{}} }}"),
+        ] {
+            assert_eq!(await_guard(&code), Some(CONDITIONAL), "{code:?}");
         }
     }
 
