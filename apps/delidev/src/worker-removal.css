@@ -31,7 +31,9 @@
   color: var(--danger-solid-text);
 }
 :root:root:root:root:root:root
-  button.worker-removal-confirm[data-action-tone="danger"]:hover:not(:disabled) {
+  button.worker-removal-confirm[data-action-tone="danger"]:hover:not(
+    :disabled
+  ) {
   background: var(--danger-solid-background);
   filter: brightness(0.94);
 }

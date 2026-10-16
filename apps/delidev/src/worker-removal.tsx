@@ -41,9 +41,7 @@ export function workerRemovalSupport(
   failed: boolean,
 ): WorkerRemovalSupport {
   if (status)
-    return status.capabilities.includes(
-      SystemCapability.WORKER_REMOVAL_V1,
-    )
+    return status.capabilities.includes(SystemCapability.WORKER_REMOVAL_V1)
       ? WorkerRemovalSupport.Supported
       : WorkerRemovalSupport.Unsupported;
   return failed ? WorkerRemovalSupport.Unknown : WorkerRemovalSupport.Pending;
@@ -238,11 +236,7 @@ export function WorkerRemovalDialog({
           type="button"
           className="worker-removal-confirm"
           disabled={
-            pending ||
-            mutation.uncertain ||
-            stale ||
-            conflict ||
-            unavailable
+            pending || mutation.uncertain || stale || conflict || unavailable
           }
           aria-busy={pending}
           onClick={() => void confirm()}

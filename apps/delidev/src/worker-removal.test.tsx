@@ -202,9 +202,7 @@ it("disables deletion with guidance when the server lacks the removal capability
       "This server does not support deleting Workers. Update the server to enable deletion.",
     ),
   ).toBeTruthy();
-  expect(
-    (await deleteButton("Old server Worker")).disabled,
-  ).toBe(true);
+  expect((await deleteButton("Old server Worker")).disabled).toBe(true);
 });
 
 it("confirms with focus on Cancel, restores the opener on Escape and sends nothing", async () => {
@@ -266,9 +264,9 @@ it("sends one revision-bound request, removes the row after success and announce
   expect(screen.queryByRole("dialog")).toBeNull();
   await waitFor(() =>
     expect(
-      document.activeElement?.closest("[data-machine-id]")?.getAttribute(
-        "data-machine-id",
-      ),
+      document.activeElement
+        ?.closest("[data-machine-id]")
+        ?.getAttribute("data-machine-id"),
     ).toBe(second.id),
   );
 });
@@ -307,7 +305,9 @@ it("refuses a fresh request when the native identity cannot be read at confirmat
   fail = true;
   fireEvent.click(await ready(dialog));
   expect(
-    await within(dialog).findByText(/could not verify its current local Worker/),
+    await within(dialog).findByText(
+      /could not verify its current local Worker/,
+    ),
   ).toBeTruthy();
   expect(value.removals).toHaveLength(0);
 });
@@ -381,7 +381,9 @@ it("replays only the exact original request after an uncertain result", async ()
   const dialog = await screen.findByRole("dialog", { name: "Delete Worker?" });
   fireEvent.click(await ready(dialog));
   expect(
-    await within(dialog).findByText(/The result of deleting this Worker is unknown/),
+    await within(dialog).findByText(
+      /The result of deleting this Worker is unknown/,
+    ),
   ).toBeTruthy();
   expect(
     (

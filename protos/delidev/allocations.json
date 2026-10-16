@@ -15408,7 +15408,7 @@
       "output": "ReadPullRequestAvatarResponse",
       "clientStreaming": false,
       "serverStreaming": false
-       },
+    },
     {
       "issue": 4030,
       "service": "DeviceService",
