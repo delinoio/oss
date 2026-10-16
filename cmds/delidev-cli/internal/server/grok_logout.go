@@ -104,7 +104,8 @@ func grokAccountLoggingOut(a domain.Account) bool {
 // grokLogoutCandidate selects a connected Grok account whose server-owned logout
 // was accepted and not yet claimed, and which no Worker lease holds: the logout
 // starts only after the original execution (or lifecycle) lease was released
-// with confirmed cleanup.
+// with confirmed cleanup. An elapsed acceptance window is not checked here: the
+// runner's claim settles such a logout as expired instead of starting it.
 func grokLogoutCandidate(a domain.Account) bool {
 	st := a.Subscription
 	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionGrok || st == nil || st.RecoveryRequired || st.Lease != nil || st.ServerOperation == nil || st.Pending == nil || a.Connection == nil || st.Generation == "" {
@@ -178,9 +179,9 @@ func (s *Service) runGrokLogout(parent context.Context, id domain.ID) {
 	if err != nil {
 		return
 	}
-	claimed := false
+	claimed, expired := false, false
 	_, err = s.Store.Mutate(parent, domain.NewID(), "grok.logout.claim", struct{ Account, Operation domain.ID }{id, original.ID}, func(tx *store.Tx) (any, error) {
-		claimed = false
+		claimed, expired = false, false
 		r, a, err := grokSubscriptionAccount(tx, id, 0)
 		if err != nil {
 			return nil, err
@@ -190,15 +191,32 @@ func (s *Service) runGrokLogout(parent context.Context, id domain.ID) {
 			return nil, subscriptionDenied()
 		}
 		o := st.ServerOperation
-		o.NativeStarted = true
-		o.Generation = st.Generation
-		st.Pending.Phase = domain.SubscriptionClaimed
-		original = *o
-		claimed = true
+		if !time.Now().Before(o.ExpiresAt) {
+			// The acceptance window elapsed while the logout waited for the original
+			// execution exit. Clients were told it expired, so it must never revoke
+			// the credential now: it settles as expired with nothing sent, and the
+			// account becomes usable again with its credential intact.
+			o.State = domain.SubscriptionExpired
+			o.GrokDiagnostic = nil
+			st.Pending = nil
+			if a.Health == domain.AccountRevoked {
+				a.Health = domain.AccountReady
+			}
+			expired = true
+		} else {
+			o.NativeStarted = true
+			o.Generation = st.Generation
+			st.Pending.Phase = domain.SubscriptionClaimed
+			original = *o
+			claimed = true
+		}
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return struct{}{}, err
 	})
 	unlock()
+	if err == nil && expired {
+		s.logger.InfoContext(parent, "grok_logout_expired", "phase", grokLogoutPhase, "account_id", id, "operation_id", original.ID, "correlation_id", original.ID)
+	}
 	if err != nil || !claimed {
 		return
 	}

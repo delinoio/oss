@@ -297,6 +297,36 @@ func TestGrokLogoutWaitsForTheOriginalExecutionExit(t *testing.T) {
 	g.noLeak(old)
 }
 
+// A logout that waited behind the original execution past its 30-day acceptance
+// window was reported as expired, so it must never revoke the token afterwards.
+func TestGrokLogoutExpiredWhileQueuedBehindALeaseNeverRevokes(t *testing.T) {
+	g := newGrokLogout(t)
+	old := g.stored()
+	g.executionLease()
+	g.request()
+	g.f.mutateAccount(t, func(a *domain.Account) {
+		a.Subscription.ServerOperation.StartedAt = time.Now().Add(-31 * 24 * time.Hour)
+		a.Subscription.ServerOperation.ExpiresAt = time.Now().Add(-time.Hour)
+	})
+	if p := g.f.progressFor(g.op); p.State != grokExpired {
+		t.Fatalf("an elapsed queued logout reports %v", p.State)
+	}
+	g.releaseLease()
+	g.scan(2 * time.Second)
+	if g.idp.RevokeRequests != 0 || g.revokes.Load() != 0 || len(g.f.references()) != 1 {
+		t.Fatal("an expired logout revoked the token or removed the credential")
+	}
+	a := g.account()
+	o := a.Subscription.ServerOperation
+	if a.Connection == nil || a.Subscription.Generation != g.generation || a.Subscription.Pending != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady || o.State != domain.SubscriptionExpired || o.NativeStarted || o.ExchangeClaimed {
+		t.Fatal("an expired logout must settle as expired with the credential and the account intact")
+	}
+	if p := g.f.progressFor(g.op); p.State != grokExpired {
+		t.Fatalf("settled progress = %v", p.State)
+	}
+	g.noLeak(old)
+}
+
 // An execution whose private cleanup is unconfirmed keeps the account leased, so
 // the logout stays queued until the original owner confirms its cleanup.
 func TestGrokLogoutStaysQueuedWhileAnExecutionCleanupIsUnconfirmed(t *testing.T) {

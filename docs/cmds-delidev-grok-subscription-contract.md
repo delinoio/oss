@@ -549,7 +549,12 @@ Lifecycle of one runner:
 
 1. The claim moves the operation to `claimed` and freezes the current generation
    (`ServerOperation.generation`). An unavailable initiator does not stop it:
-   the logout was accepted and only protects the credential.
+   the logout was accepted and only protects the credential. A logout whose
+   30-day acceptance window elapsed while it waited for the original execution
+   exit is never claimed: clients were already told it expired
+   (`GetSubscriptionProgress` reports EXPIRED), so the claim settles it as
+   `expired`, clears the pending operation, sends nothing and returns the account
+   to `ready` with its credential and generation intact.
 2. The bound bundle is opened from the protected vault against this server, the
    account and the frozen generation, then discovery is read. Any failure here
    sends nothing: it settles FAILED (`logout` / `unavailable`; unusable discovery
