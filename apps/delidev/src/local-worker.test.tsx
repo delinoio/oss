@@ -1,7 +1,11 @@
 import { act, renderHook } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { newRequestId } from "@delinoio/delidev-api-client";
-import { useLocalWorkerProof } from "./local-worker";
+import {
+  LocalWorkerIdentityStatus,
+  useLocalWorkerIdentity,
+  useLocalWorkerProof,
+} from "./local-worker";
 
 it("rejects a replaced machine, malformed token and completion after connection disposal", async () => {
   const machine = newRequestId();
@@ -34,4 +38,22 @@ it("rejects a replaced machine, malformed token and completion after connection 
   hook.unmount();
   resolve({ machineId: machine, token: "A".repeat(43) });
   expect(await pending!).toBeUndefined();
+});
+
+it("keeps a verified identity across parent renders that reuse the same reader", async () => {
+  const machineId = newRequestId();
+  const read = vi.fn(async () => ({ machineId, token: "A".repeat(43) }));
+  const hook = renderHook(() => useLocalWorkerIdentity(read, true));
+  await act(async () => {});
+  expect(hook.result.current.identity.status).toBe(
+    LocalWorkerIdentityStatus.Verified,
+  );
+  hook.rerender();
+  hook.rerender();
+  expect(hook.result.current.identity.status).toBe(
+    LocalWorkerIdentityStatus.Verified,
+  );
+  expect(read).toHaveBeenCalledTimes(1);
+  await act(async () => hook.result.current.refresh());
+  expect(read).toHaveBeenCalledTimes(2);
 });

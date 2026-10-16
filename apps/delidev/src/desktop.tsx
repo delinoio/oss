@@ -312,7 +312,9 @@ function LocalDesktop({ entrance }: { entrance: EntranceProps }) {
       throw new Error("Folder selection connection changed");
     return path;
   };
-  const readLocalWorker = async () => {
+  // Keyed to the accepted connection epoch so unrelated renders keep the
+  // reader identity stable and do not re-trigger identity verification.
+  const readLocalWorker = useCallback(async () => {
     const selected = previous.current;
     const proof = await invoke<{
       endpoint: string;
@@ -328,7 +330,7 @@ function LocalDesktop({ entrance }: { entrance: EntranceProps }) {
     )
       throw new Error("Local Worker authority changed");
     return { machineId: proof.machine_id, token: proof.token };
-  };
+  }, [connectionEpoch]);
   const controlWorkerNetwork: ControlWorkerNetwork = async (
     machine,
     action,
@@ -666,7 +668,9 @@ function SavedDesktop({
       throw new Error("Folder selection connection changed");
     return path;
   };
-  const readLocalWorker = async () => {
+  // Keyed to the accepted connection epoch so unrelated renders keep the
+  // reader identity stable and do not re-trigger identity verification.
+  const readLocalWorker = useCallback(async () => {
     const selected = previous.current;
     const proof = await invoke<{
       endpoint: string;
@@ -682,7 +686,7 @@ function SavedDesktop({
     )
       throw new Error("Saved Worker authority changed");
     return { machineId: proof.machine_id, token: proof.token };
-  };
+  }, [epoch]);
   const controlWorkerNetwork: ControlWorkerNetwork = async (
     machine,
     action,
