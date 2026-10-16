@@ -489,3 +489,48 @@ func TestAPIReadFailureRetainsOriginalReferenceLog(t *testing.T) {
 		t.Fatal("API original-reference diagnostics changed")
 	}
 }
+
+func TestClaudeUsagePurposeIsDistinctProtectedAndLogHygienic(t *testing.T) {
+	v, _, logs := setup(t)
+	ctx := context.Background()
+	owner, generation := domain.NewID(), domain.NewID()
+	usage := Ref{Owner: owner, ID: generation, Purpose: ClaudeUsage}
+	login := Ref{Owner: owner, ID: generation, Purpose: AccountLogin}
+	secret := []byte("synthetic-usage-oauth-bundle")
+	if _, err := v.Put(ctx, usage, secret); err != nil {
+		t.Fatalf("the claude-usage purpose was rejected: %v", err)
+	}
+	out, err := v.Get(ctx, usage)
+	if err != nil || !bytes.Equal(out, secret) {
+		t.Fatalf("round trip failed: %v", err)
+	}
+	clear(out)
+	// The same owner and generation under another purpose is a different, absent
+	// reference, so a usage bundle can never be read as an execution login.
+	if _, err := v.Get(ctx, login); err == nil {
+		t.Fatal("a usage reference was readable as an execution login")
+	}
+	refs, err := v.References(ctx, owner)
+	if err != nil || len(refs) != 1 || refs[0] != usage {
+		t.Fatalf("owner references: %v %v", refs, err)
+	}
+	// Reads of a missing usage generation never place its private ID in logs.
+	logs.Reset()
+	missing := Ref{Owner: owner, ID: domain.NewID(), Purpose: ClaudeUsage}
+	if _, err := v.Get(ctx, missing); err == nil {
+		t.Fatal("a missing usage reference was readable")
+	}
+	var event map[string]any
+	if err := json.Unmarshal(logs.Bytes(), &event); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := event["credential_id"]; exists || bytes.Contains(logs.Bytes(), []byte(missing.ID)) || bytes.Contains(logs.Bytes(), secret) || event["purpose"] != string(ClaudeUsage) {
+		t.Fatal("usage read diagnostics exposed a private generation or bundle")
+	}
+	if err := v.Delete(ctx, usage); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := v.Put(ctx, usage, secret); err == nil {
+		t.Fatal("a deleted usage reference was resurrected")
+	}
+}
