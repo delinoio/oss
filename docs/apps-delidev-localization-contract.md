@@ -362,6 +362,10 @@ The `new-session` catalog localizes the expanded New session Project selector in
 
 The `tailscale` catalog localizes the Settings > Tailscale category in English and Korean, and the `settings` catalog owns its navigation label (`Tailscale` in both languages, a product name) and purpose line (`settings.tailscale`, `settings.tailscaleDescription`). The page uses the section headings **This computer** / **이 컴퓨터**, **Devices on your tailnet** / **테일넷의 기기** and **Connection requests** / **연결 요청**. The access intent reads **Enabled** / **활성화됨** or **Disabled** / **비활성화됨** and the status reads **Ready** / **준비됨**, **Off** / **꺼짐**, **Action needed** / **조치 필요** or **Setup or cleanup required** / **설정 또는 정리 필요**. Enabled intent with setup-required or cleanup-required access adds the guidance "Check Tailscale sign-in and HTTPS setup, then refresh devices." / "Tailscale 로그인과 HTTPS 설정을 확인한 다음 기기를 새로고침하세요." The Tailscale access and device copy is no longer part of Runner Devices or Connections. Switching language re-renders this copy in place and sends no Tailscale request.
 
+## Claude usage tracking catalog
+
+The `claude-usage` catalog localizes the Usage tracking section of Manage Claude and the manually linked usage account line of subscription rows in English and Korean. Closed server states (connection, login state, refresh phase and failure) select a catalog key; no provider text, native output, URL or approval code is ever translated or displayed. The reviewed email, organization and plan come from the server unchanged and never select, match or authorize an account.
+
 ## Worker removal catalog
 
 The `worker-removal` catalog localizes the saved Worker deletion row action, confirmation, protection and failure copy in English and Korean. Worker names come from the server record unchanged; no catalog text selects, matches or authorizes a Worker.
