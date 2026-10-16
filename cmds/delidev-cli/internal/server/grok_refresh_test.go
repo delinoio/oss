@@ -509,6 +509,26 @@ func TestGrokRefreshIsNotStartedWhileALeaseOrFenceHoldsTheAccount(t *testing.T) 
 	}
 }
 
+// A lease that has no pending operation (a Worker execution lease) owns the
+// credential, so the refresh is refused at admission instead of being queued
+// behind it.
+func TestGrokRefreshRequestIsRefusedWhileALeaseHoldsTheAccount(t *testing.T) {
+	g := newGrokRefresh(t)
+	if p := g.settle(); p.State != grokSucceeds {
+		t.Fatalf("progress = %v", p.State)
+	}
+	g.f.mutateAccount(t, func(a *domain.Account) {
+		a.Subscription.Lease = &domain.SubscriptionLease{ID: domain.NewID(), Action: domain.SubscriptionExecute}
+	})
+	_, err := g.f.grokLoginRequest(t, func(r *pb.RequestSubscriptionRequest) { r.Action = grokRefreshAction })
+	if err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {
+		t.Fatalf("a refresh was accepted while a lease held the account: %v", err)
+	}
+	if _, after := g.f.record(); after.Subscription.Pending != nil || after.Subscription.ServerOperation.State == domain.SubscriptionPreparing {
+		t.Fatal("the refused refresh left a pending operation behind")
+	}
+}
+
 func TestGrokRefreshExpiredBeforeTheClaimSendsNothing(t *testing.T) {
 	g := newGrokRefresh(t)
 	_, err := g.f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.expire", nil, func(tx *store.Tx) (any, error) {

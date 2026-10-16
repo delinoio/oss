@@ -66,6 +66,12 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 		if action != domain.SubscriptionLogin && (a.Connection == nil || state.Generation == "") {
 			return nil, subscriptionDenied()
 		}
+		if action == domain.SubscriptionRefresh && a.Type == domain.SubscriptionAccount && a.SubscriptionService == domain.SubscriptionGrok && state.Lease != nil {
+			// A Worker lease (an execution lease has no pending operation) owns the
+			// credential until it is finished: a refresh must not be accepted, queued
+			// or left pending behind it.
+			return nil, domain.Fail(domain.Conflict, "The account is in use by a running lease.", "Request the refresh again after the lease has finished.")
+		}
 		if action == domain.SubscriptionRefresh {
 			// A refresh rotates the credential generation. A claimed managed title
 			// still owns the frozen generation, so the refresh waits for it.

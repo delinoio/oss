@@ -412,7 +412,9 @@ the device authorization endpoint, scripted device_code answers
 with action `refresh` plus a `Pending` operation without a Runner Device,
 15-minute expiry). A refresh of an unconnected account, a refresh that names a
 Runner Device, a refresh with `device_code` and any request while another
-operation, a lease or a recovery fence holds the account are refused. The desktop
+operation, a lease (including an execution lease, which has no pending
+operation) or a recovery fence holds the account are refused at admission with
+`CONFLICT`; a refresh is never queued behind a lease. The desktop
 Refresh login control of a connected Grok account (which follows System
 capability 39 alone) already sends exactly this request, so no desktop change is
 needed. A refresh is never cancelable (`CancelSubscription` refuses it): it
