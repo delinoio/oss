@@ -48,6 +48,11 @@ import {
 } from "@delinoio/delidev-api-client";
 import { useFailedSubscriptionCleanup } from "./subscription-cleanup";
 import {
+  claudeUsageRowIdentity,
+  useClaudeUsageTracking,
+} from "./claude-usage-tracking";
+import { claudeUsageWindowLabel } from "./claude-usage-state";
+import {
   SubscriptionQuotaControls,
   quotaAccountAvailable,
   serverQuotaAvailable,
@@ -168,7 +173,30 @@ function NativeManagedSubscriptionAccount({
         request.mutation?.expectedRevision ?? 1n,
       ),
   );
-  const blocked = quotaBusy || operation.busy || operation.uncertain;
+  // Usage tracking owns its own retained operations but shares admission with
+  // the account lifecycle and keeps Manage Refresh as the only refresh action.
+  const usage = useClaudeUsageTracking({
+    account: current,
+    active,
+    managed:
+      service === SubscriptionServiceId.Claude &&
+      state.claude_credential === "server-token",
+    status,
+    externalBusy:
+      quotaBusy ||
+      operation.busy ||
+      operation.uncertain ||
+      Boolean(text(pending.id)) ||
+      state.recovery_required === true ||
+      Boolean(data.removal),
+    refreshing,
+    accept: acceptAccount,
+    reread: () => {
+      void read.refetch();
+    },
+  });
+  const blocked =
+    quotaBusy || operation.busy || operation.uncertain || usage.busy;
   // Explicit refresh owns lifecycle admission until quota and status settle.
   // Ordinary background polling keeps its existing admission semantics.
   const lifecycleBlocked = blocked || refreshing;
@@ -668,6 +696,7 @@ function NativeManagedSubscriptionAccount({
           )}
         </SettingsActionButton>
       ) : null}
+      {usage.section}
       {service === SubscriptionServiceId.ChatGPT ? (
         <PaidCredits
           buckets={paidCreditProjection(state)}
@@ -702,7 +731,7 @@ function NativeManagedSubscriptionAccount({
           footer={refreshFooter}
         />
       ) : (
-        refreshFooter()
+        refreshFooter(usage.refreshQuota)
       )}
     </section>
   );
@@ -917,6 +946,10 @@ export function SubscriptionAccounts({
           revision: row.revision,
           alias: productResourceName(productLabel, row),
           providerName: subscriptionServiceNames[service],
+          usageAccount:
+            service === SubscriptionServiceId.Claude
+              ? claudeUsageRowIdentity(object(data.subscription))
+              : undefined,
           brand: service as unknown as SubscriptionBrand,
           connection: data.removal
             ? SubscriptionConnectionState.CleanupPending
@@ -958,6 +991,10 @@ export function SubscriptionAccounts({
             const window = object(entry);
             return {
               id: text(window.id),
+              ...(service === SubscriptionServiceId.Claude &&
+              window.comparison_group === "claude"
+                ? { label: claudeUsageWindowLabel(text(window.id)) }
+                : {}),
               state:
                 Object.values(QuotaObservationState).find(
                   (state) => state === window.state,
