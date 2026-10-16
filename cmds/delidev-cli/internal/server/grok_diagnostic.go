@@ -452,6 +452,16 @@ func (s *Service) grokSubscriptionProgress(ctx context.Context, req *connect.Req
 		response.GrokDiagnostic = grokDiagnosticMessage(view.Diagnostic)
 		response.Generation = string(view.Generation)
 		provisional = view.Provisional
+		// The authorization URL of a server-owned browser login is transient: it
+		// is served only while its own epoch's operation is waiting and live.
+		if o := a.Subscription.ServerOperation; o != nil && string(o.ID) == req.Msg.OperationId && view.State == domain.SubscriptionWaiting && !view.Canceled && o.Epoch == s.subscriptionServerEpoch() {
+			progress := s.subscriptionProgress[o.ID]
+			if !progress.Until.IsZero() && !time.Now().Before(progress.Until) {
+				delete(s.subscriptionProgress, o.ID)
+			} else {
+				response.Url = progress.URL
+			}
+		}
 		return nil
 	})
 	if err != nil {

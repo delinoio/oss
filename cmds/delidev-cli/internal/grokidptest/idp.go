@@ -7,6 +7,7 @@
 package grokidptest
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -88,9 +89,20 @@ func (i *IdP) Transport() http.RoundTripper {
 		if r.URL.Scheme != "https" || r.URL.Host != "auth.x.ai" {
 			return nil, errors.New("fake idp: foreign host")
 		}
-		recorder := httptest.NewRecorder()
-		i.ServeHTTP(recorder, r)
-		return recorder.Result(), nil
+		// The handler runs apart so that a canceled request returns at once, as a
+		// real network transport does, while a blocked handler keeps running.
+		answer := make(chan *http.Response, 1)
+		go func() {
+			recorder := httptest.NewRecorder()
+			i.ServeHTTP(recorder, r.Clone(context.WithoutCancel(r.Context())))
+			answer <- recorder.Result()
+		}()
+		select {
+		case response := <-answer:
+			return response, nil
+		case <-r.Context().Done():
+			return nil, r.Context().Err()
+		}
 	})
 }
 

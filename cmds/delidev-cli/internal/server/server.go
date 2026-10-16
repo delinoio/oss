@@ -154,46 +154,53 @@ type Service struct {
 	subscriptionOnce              sync.Once
 	subscriptionEpoch             domain.ID
 	subscriptionProgress          map[domain.ID]subscriptionProgress
-	claudeLoginCodes              map[domain.ID][]byte
-	accountOnce                   sync.Once
-	accountGate                   chan struct{}
-	oauthGeneration               domain.ID
-	oauthLive                     map[domain.ID]*oauthLive
-	oauthRegistrations            map[domain.ProviderPresetID]providers.OAuthRegistration
-	oauthDeviceJobs               sync.WaitGroup
-	oauthClosing                  bool
-	oauthDeviceClient             oauthDeviceClient
-	oauthTokenClient              oauthTokenClient
-	oauthRefreshMu                sync.Mutex
-	oauthRefreshes                map[domain.ID]chan struct{}
-	oauthExchange                 oauthExchange
-	credentialRuntimeCheck        func(context.Context) error
-	accountChecks                 map[domain.ID]map[domain.ID]accountCheck
-	accountSecrets                accountSecrets
-	ownedVault                    *credentials.Vault
-	Store                         *store.Store
-	Identity                      security.Identity
-	Endpoint                      Endpoint
-	logger                        *slog.Logger
-	stop                          context.CancelFunc
-	stopping                      atomic.Bool
-	backupRestoresMu              sync.Mutex
-	backupRestoresContext         context.Context
-	backupRestoresCancel          context.CancelFunc
-	backupRestoresClosing         bool
-	backupRestoresJobs            sync.WaitGroup
-	connectionsMu                 sync.Mutex
-	connections                   map[domain.ID]map[domain.ID]context.CancelFunc
-	pairAttempts                  map[string]attemptWindow
-	workerStreams                 map[domain.ID]workerStream
-	auxiliaryStreams              map[domain.ID]workerStream
-	forwardsOnce                  sync.Once
-	forwardEpoch                  domain.ID
-	forwardsMu                    sync.Mutex
-	forwardRelays                 map[domain.ID]*forwardRelay
-	forwardLanes                  map[domain.ID]*forwardLane
-	workspaceReadsMu              sync.Mutex
-	workspaceReaders              map[domain.ID]*workspaceReader
-	executionOnce                 sync.Once
-	executionAuthority            *executionAuthority
+	// grokLoginTransport replaces the outbound transport of the server-owned
+	// Grok login in isolated tests; production routes through outboundResolver.
+	grokLoginTransport http.RoundTripper
+	// grokListen binds the loopback callback listener; tests may observe it.
+	grokListen             func() (net.Listener, error)
+	grokLoginsMu           sync.Mutex
+	grokLogins             map[domain.ID]context.CancelFunc
+	claudeLoginCodes       map[domain.ID][]byte
+	accountOnce            sync.Once
+	accountGate            chan struct{}
+	oauthGeneration        domain.ID
+	oauthLive              map[domain.ID]*oauthLive
+	oauthRegistrations     map[domain.ProviderPresetID]providers.OAuthRegistration
+	oauthDeviceJobs        sync.WaitGroup
+	oauthClosing           bool
+	oauthDeviceClient      oauthDeviceClient
+	oauthTokenClient       oauthTokenClient
+	oauthRefreshMu         sync.Mutex
+	oauthRefreshes         map[domain.ID]chan struct{}
+	oauthExchange          oauthExchange
+	credentialRuntimeCheck func(context.Context) error
+	accountChecks          map[domain.ID]map[domain.ID]accountCheck
+	accountSecrets         accountSecrets
+	ownedVault             *credentials.Vault
+	Store                  *store.Store
+	Identity               security.Identity
+	Endpoint               Endpoint
+	logger                 *slog.Logger
+	stop                   context.CancelFunc
+	stopping               atomic.Bool
+	backupRestoresMu       sync.Mutex
+	backupRestoresContext  context.Context
+	backupRestoresCancel   context.CancelFunc
+	backupRestoresClosing  bool
+	backupRestoresJobs     sync.WaitGroup
+	connectionsMu          sync.Mutex
+	connections            map[domain.ID]map[domain.ID]context.CancelFunc
+	pairAttempts           map[string]attemptWindow
+	workerStreams          map[domain.ID]workerStream
+	auxiliaryStreams       map[domain.ID]workerStream
+	forwardsOnce           sync.Once
+	forwardEpoch           domain.ID
+	forwardsMu             sync.Mutex
+	forwardRelays          map[domain.ID]*forwardRelay
+	forwardLanes           map[domain.ID]*forwardLane
+	workspaceReadsMu       sync.Mutex
+	workspaceReaders       map[domain.ID]*workspaceReader
+	executionOnce          sync.Once
+	executionAuthority     *executionAuthority
 }

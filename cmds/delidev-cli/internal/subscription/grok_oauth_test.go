@@ -323,3 +323,19 @@ func discoveryJSON(override string) string {
 	}
 	return "{" + strings.Join(parts, ",") + "}"
 }
+
+func TestGrokPKCEIsEnforcedByTheFakeAndTheExchange(t *testing.T) {
+	f := newGrokFlow(t)
+	authorization := f.profile.AuthorizationURL(f.endpoints, grokTestRedirect, f.auth)
+	u, _ := url.Parse(authorization)
+	q := u.Query()
+	q.Del("code_challenge")
+	u.RawQuery = q.Encode()
+	if _, err := f.idp.Authorize(u.String()); err == nil {
+		t.Fatal("an authorization request without a PKCE challenge was accepted")
+	}
+	_, err := subscription.ExchangeGrokCode(context.Background(), f.idp.Client(), f.profile, f.endpoints, grokidptest.Code(f.callback), []byte("a-different-verifier-value-that-does-not-match"), grokTestRedirect)
+	if reason, uncertain := subscription.GrokOAuthReasonOf(err); reason != subscription.GrokReasonTokenRejected || uncertain {
+		t.Fatalf("a wrong verifier was not rejected: %v", err)
+	}
+}

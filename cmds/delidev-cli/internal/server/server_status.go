@@ -19,6 +19,9 @@ func (s *Service) GetStatus(ctx context.Context, req *connect.Request[pb.GetStat
 	if origin, ok := ctx.Value(tailnetOriginKey{}).(string); ok {
 		response.Msg.Listener = origin
 	}
+	if grokSubscriptionLoginAdvertised {
+		response.Msg.Capabilities = append(response.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_LOGIN_V1)
+	}
 	if s.tailscale != nil {
 		response.Msg.Capabilities = append(response.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1)
 	}

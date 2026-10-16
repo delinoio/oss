@@ -109,6 +109,12 @@ func cancelServerOperation(account *domain.Account, epoch domain.ID, now time.Ti
 	}
 	if account.SubscriptionService == domain.SubscriptionGrok {
 		p := state.Pending
+		// A server-owned Grok login already has an active record of its own; a
+		// queued one settles that record as canceled.
+		if o := state.ServerOperation; o != nil && o.ID == p.ID && (o.State == domain.SubscriptionPreparing || o.State == domain.SubscriptionWaiting) {
+			o.State, o.GrokDiagnostic = domain.SubscriptionCanceled, nil
+			return
+		}
 		settleGrokOperation(state, grokSettlement{Operation: p.ID, Action: p.Action, Actor: p.Actor, Epoch: epoch, State: domain.SubscriptionCanceled}, now)
 		return
 	}
@@ -223,6 +229,11 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 		}
 		return s.requestClaudeSubscription(ctx, req)
 	}
+	if matched, err := s.isGrokSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.requestGrokSubscription(ctx, req)
+	}
 	if req.Msg.MachineId == "" {
 		return s.requestServerSubscription(ctx, req)
 	}
@@ -324,6 +335,11 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 			return s.cancelManagedClaude(ctx, req)
 		}
 		return s.cancelClaudeSubscription(ctx, req)
+	}
+	if matched, err := s.isGrokSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.cancelGrokSubscription(ctx, req)
 	}
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.cancel", disconnectAccountInput{domain.ID(m.Id), m.ExpectedRevision}, func(tx *store.Tx) (any, error) {
 		r, a, err := subscriptionAccount(tx, domain.ID(m.Id), m.ExpectedRevision)
