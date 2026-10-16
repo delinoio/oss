@@ -82,7 +82,7 @@
     },
     "test:desktop-launch": {
       "cache": false,
-      "dependsOn": [],
+      "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",

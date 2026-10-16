@@ -718,6 +718,30 @@ replaces `config.worktree`, so preparation synchronizes the rewritten file along
 with `config` and the Git directory before Ready publication. Any other difference returns the
 Fork snapshot Conflict. Config values and remote URLs are never logged.
 
+Every frozen source proof stays allocated until the Fork snapshot is dropped, so
+child config verification accounts for all of them, not only the repository being
+verified. Each verification phase (the immediate check after one repository is
+prepared, the final all-repository check, and the snapshot verification across
+the native Fork boundary) deducts the sum of the retained proof bytes of every
+live Fork source from the unchanged 256 MiB bound, beside the verified child's Git
+files. That admission happens before any source or child Git command runs, and
+the immediate per-repository check admits it before the child Git directory is
+created, so an already over-budget verification returns the Fork snapshot
+Conflict instead of a child parsing, Unsupported or process-ownership result. A
+child Git directory that no longer fits beside the live proofs is snapshot drift
+and also returns Conflict. A source shared by the snapshot and a prepared copy
+shares one parsed buffer and record-array backing, which is counted once; every
+reusing holder still owns its own `[]string` slice headers, and those are charged.
+`config` and `config.worktree` are then read one
+after the other against what remains, and each layer is charged its complete
+output capacity plus record and slice headers before the next layer is read.
+A layer whose retained proof does not fit is rejected before its records are
+allocated, and the frozen-source comparison allocates no scratch. Exhaustion
+returns the Fork snapshot Conflict through the existing original cleanup and
+recovery ownership. Git output beyond the remaining allowance is cut off by the
+bounded process output and keeps that process's ownership result. Logs carry
+only byte totals and error codes.
+
 Fresh child root and Git-directory identities are journaled before copying.
 Each copied regular file has independent storage and synchronized publication;
 Git fsck validates the complete local object and index closure before readiness.

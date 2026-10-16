@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { expect, test } from "vitest";
 import { document, encode, items, object } from "./documents";
-import { openCodeSubagentFixture } from "./subagent-test-fixture";
+import {
+  openCodeSubagentFixture,
+  openSubagentCard,
+} from "./subagent-test-fixture";
 import { validateSubagentPage } from "./subagent-record";
 import { SubagentRows } from "./subagents";
 
@@ -12,8 +15,13 @@ test("renders independently owned foreground child facts without child controls"
     row = openCodeSubagentFixture(session);
   expect(validateSubagentPage([row], session)).toHaveLength(1);
   render(<SubagentRows rows={[row]} sessionId={session} />);
-  expect(screen.getByText("Original foreground child output")).toBeTruthy();
-  expect(screen.getByText("Input: 30")).toBeTruthy();
+  // Idle Info is only the stable ordinal fallback: OpenCode has no verified
+  // native nickname, and no detail is visible before hover or focus.
+  expect(screen.getAllByRole("listitem")).toHaveLength(1);
+  expect(screen.queryByText("Original foreground child output")).toBeNull();
+  const card = within(openSubagentCard());
+  expect(card.getByText("Original foreground child output")).toBeTruthy();
+  expect(card.getByText("Input: 30")).toBeTruthy();
   expect(screen.queryAllByRole("button")).toHaveLength(0);
 });
 

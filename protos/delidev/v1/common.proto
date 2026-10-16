@@ -76,6 +76,15 @@ message Resource {
   string created_at = 8;
   string updated_at = 9;
   SessionStartupTiming startup_timing = 10;
+  // Server-private display metadata for a Subagent resource; never part of the
+  // closed document_json shape.
+  SubagentDisplayName subagent_display = 11;
+}
+
+// Optional bounded native display name for one original product child.
+message SubagentDisplayName {
+  string child_id = 1;
+  string name = 2;
 }
 
 // Server-owned display observations; never part of the closed Session document.
