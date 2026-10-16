@@ -221,6 +221,9 @@ func (s *Service) cleanupServerLogoutLocked(ctx context.Context, parent, child d
 		st := current.Subscription
 		st.ServerOperation.State = domain.SubscriptionSucceeded
 		st.ServerOperation.Diagnostic = nil
+		// A Grok recovery carries its cleanup diagnostic in the Grok field, which
+		// a settled operation must not keep.
+		st.ServerOperation.GrokDiagnostic = nil
 		st.Pending = nil
 		st.RecoveryRequired = false
 		current.Health = domain.AccountDisconnected

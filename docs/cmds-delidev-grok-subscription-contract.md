@@ -644,7 +644,10 @@ Worker lease that has not exited keeps the logout queued and the deletion fails
 as `unavailable` (the account stays leased and logging out); a failed logout is
 `unavailable`; a rejected or uncertain revocation is `recovery_required` and keeps
 the connected account and its bundle; an unconfirmed credential removal keeps the
-retained logout-cleanup shape, which the next explicit deletion finishes.
+retained logout-cleanup shape, which the next explicit deletion finishes. The
+cleanup child settles that shape when the removal is finally confirmed: the
+operation becomes `succeeded` and its cleanup `GrokDiagnostic` is cleared, so a
+deletion that a reference then blocks leaves a valid disconnected account.
 Deletion never succeeds without a confirmed revocation and confirmed removal.
 Accounts that are already disconnected, or that were never connected, use the
 ordinary deletion path and send no revocation.

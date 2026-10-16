@@ -273,3 +273,38 @@ func TestGrokAccountDeletionRefusedByReferencesRevokesNothing(t *testing.T) {
 		t.Fatal("the refusal was not logged")
 	}
 }
+
+// The logout-cleanup child settles the retained recovery when the vault removal
+// is finally confirmed. A deletion that a reference then blocks leaves the
+// account structurally valid, with the settled operation and no stale recovery
+// diagnostic.
+func TestGrokLogoutCleanupRecoveredClearsTheDiagnosticWhenDeletionIsBlocked(t *testing.T) {
+	d := newGrokDeletion(t)
+	d.f.secrets.mu.Lock()
+	d.f.secrets.deleteError = errors.New("vault unavailable")
+	d.f.secrets.mu.Unlock()
+	if p := d.settle(); p.State != grokRecovery {
+		t.Fatalf("logout = %v", p.State)
+	}
+	a := d.account()
+	if a.Connection != nil || !serverLogoutRecoveryCandidate(a) || a.Subscription.ServerOperation.GrokDiagnostic == nil {
+		t.Fatal("the account must keep the logout-cleanup recovery shape with its cleanup diagnostic")
+	}
+	d.f.secrets.mu.Lock()
+	d.f.secrets.deleteError = nil
+	d.f.secrets.mu.Unlock()
+	_, err := d.f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.reference", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.AgentKind, domain.NewID(), 0, "", "", domain.Agent{Name: "Referencing agent", Accounts: []domain.WeightedAccount{{ID: d.f.input.AccountID, Weight: 1}}})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.remove(context.Background(), d.request()); err == nil {
+		t.Fatal("a referenced account was deleted")
+	}
+	a = d.account()
+	o := a.Subscription.ServerOperation
+	if !d.exists() || len(d.f.references()) != 0 || o.State != domain.SubscriptionSucceeded || o.GrokDiagnostic != nil || o.Diagnostic != nil || a.Subscription.RecoveryRequired || a.Subscription.Pending != nil || a.Health != domain.AccountDisconnected {
+		t.Fatalf("recovered cleanup left state %v with diagnostic %v", o.State, o.GrokDiagnostic)
+	}
+}
