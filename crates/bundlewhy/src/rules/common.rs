@@ -2092,6 +2092,14 @@ impl<'a> MemberScan<'a> {
             let token = previous_significant_token(self.source, member_start, self.ignored);
             let token_end =
                 strip_comments_for_prefix(self.source, member_start, self.ignored).len();
+            // A decorator (`@dec`, `@a.b`, `@dec(args)`, `@(expr)`) on the same
+            // line is part of the member, whatever token ends it.
+            if matches!(token, Token::Word { .. } | Token::Punct(")"))
+                && let Some(at) = self.decorator_start(token_end)
+            {
+                member_start = at;
+                continue;
+            }
             match token {
                 Token::Word {
                     text,
@@ -2119,6 +2127,35 @@ impl<'a> MemberScan<'a> {
                 }
                 _ => return false,
             }
+        }
+    }
+
+    /// The offset of the `@` of the decorator that ends at `end`, or `None`
+    /// when the code before `end` is not a decorator. A decorator is `@` plus
+    /// a dotted name with optional call arguments (`@a.b(1)`), or a
+    /// parenthesized expression (`@(expr)`).
+    fn decorator_start(&self, end: usize) -> Option<usize> {
+        let code = self.code.as_str();
+        let mut cursor = end;
+        if code[..cursor].ends_with(')') {
+            cursor = matching_backward(code.as_bytes(), cursor - 1, b'(', b')')?;
+            // `@(expr)`: the parenthesis itself follows the `@`.
+            if code[..cursor].ends_with('@') {
+                return Some(cursor - 1);
+            }
+        }
+        loop {
+            let word = trailing_word(&code[..cursor]);
+            if word.is_empty() {
+                return None;
+            }
+            cursor -= word.len();
+            if code[..cursor].ends_with('@') {
+                return Some(cursor - 1);
+            }
+            cursor = cursor
+                .checked_sub(1)
+                .filter(|_| code[..cursor].ends_with('.'))?;
         }
     }
 
@@ -2769,6 +2806,8 @@ y=/process.env.F/.test(z),process.env.G"#;
             "class C { x = \"\u{e9}\"\n  eval(value) {} }",
             "class C { /* \u{e9} */ eval(value) {} }",
             "// \u{e9}\nclass C { eval(value) {} }",
+            "class C { @d\u{e9}c() eval(value) {} }",
+            "class C { @d\u{e9}c eval(value) {} }",
             "const o = { caf\u{e9}: 1, eval(value) {} };",
             "const o = { \"\u{e9}\": 1, eval(value) {} };",
             "const o = { \u{e9}val() {}, eval(value) {} };",
@@ -2805,7 +2844,8 @@ y=/process.env.F/.test(z),process.env.G"#;
     #[test]
     fn scans_never_panic_on_any_char_boundary_cut() {
         for source in [
-            "class Caf\u{e9}<T extends { \u{e9}: 1 }> extends \u{c9}<{ a: 1 }> { eval(value) {} }",
+            "class Caf\u{e9}<T extends { \u{e9}: 1 }> extends \u{c9}<{ a: 1 }> { \
+             @d\u{e9}c(\"\u{e9}\") eval(value) {} }",
             "const o = { caf\u{e9}: `\u{e9}${eval(x)}`, eval(v) {}, \u{1f600}: /\u{e9}/ };",
             "class C { x = 1\u{2028}  eval(value) {}\u{2029}run() { eval(code) } }",
         ] {
@@ -2817,6 +2857,60 @@ y=/process.env.F/.test(z),process.env.G"#;
             assert_eq!(
                 masked_code(source, &ignored).len(),
                 source.len(),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn decorated_eval_methods_are_declarations() {
+        for source in [
+            "class C { @dec() eval(value) {} }",
+            "class C { @dec eval(value) {} }",
+            "class C { @dec\n  eval(value) {} }",
+            "class C { @dec()\n  eval(value) {} }",
+            "class C { @a.b.c eval(value) {} }",
+            "class C { @a.b.c(1, { x: 2 }) eval(value) {} }",
+            "class C { @a.b(\")\") eval(value) {} }",
+            "class C { @(factory()) eval(value) {} }",
+            "class C { @dec() @other(1) eval(value) {} }",
+            "class C { @dec() @other eval(value) {} }",
+            "class C { @dec() static eval(value) {} }",
+            "class C { @dec() async eval(value) {} }",
+            "class C { @dec() static async *eval(value) {} }",
+            "class C { @dec() get eval() { return 1; } }",
+            "class C { @dec() set eval(value) {} }",
+            "class C { @dec() public override eval(value): void {} }",
+            "class C { @get eval(value) {} }",
+            "class C { @static eval(value) {} }",
+            "class C { @dec(/* c */) eval(value) {} }",
+            "class C { @dec() /* c */ eval(value) {} }",
+            "class C { run() {} @dec() eval(value) {} }",
+            "class C { x = 1; @dec() eval(value) {} }",
+            "class C { x = 1\n  @dec() eval(value) {} }",
+            "@dec() class C { @dec() eval(value) {} }",
+            "export default @dec() class { @dec() eval(value) {} }",
+            "const C = class { @dec() eval(value) {} };",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+        // A decorator that calls eval is still a real call.
+        for (source, call) in [
+            ("class C { @eval(code) run() {} }", "eval(code)"),
+            ("class C { @dec(eval(code)) run() {} }", "eval(code)"),
+            (
+                "class C { @dec() eval(value) {} run() { eval(code) } }",
+                "eval(code)",
+            ),
+            ("class C { @dec(eval(code)) eval(value) {} }", "eval(code)"),
+            ("class C { x = f() eval(code) }", "eval(code)"),
+            ("class C { x = f(a) ; y = eval(code) }", "eval(code)"),
+        ] {
+            let offset = source.find(call).expect(source);
+            let (line, column) = line_and_column(source, offset);
+            assert_eq!(
+                direct_eval_line(source),
+                Some((line as u32, column as u32)),
                 "{source:?}"
             );
         }
