@@ -11,6 +11,7 @@ import {
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   SessionService,
+  SystemCapability,
   SystemService,
   newRequestId,
 } from "@delinoio/delidev-api-client";
@@ -882,3 +883,57 @@ it("reloads the product window once from the connected top-level screens", async
     stub.restore();
   }
 }, 15_000);
+
+it("does not re-read the saved Worker proof when an unrelated render keeps the same connection", async () => {
+  const value = savedFixture();
+  value.status.mockImplementation(() => ({
+    version: "0.1.0",
+    protocolVersion: 2,
+    serverId: value.profile.server_id,
+    capabilities: [SystemCapability.WORKER_REMOVAL_V1],
+  }));
+  const original = bridge.invoke.getMockImplementation()!;
+  let changed!: () => void;
+  bridge.listen.mockImplementation(async (event: string, callback: () => void) => {
+    if (event === "saved-connection-label") changed = callback;
+    return () => {};
+  });
+  bridge.invoke.mockImplementation(async (command: string, args?: unknown) =>
+    command === "saved_worker_proof"
+      ? {
+          endpoint: value.profile.endpoint,
+          server_id: value.profile.server_id,
+          machine_id: newRequestId(),
+          token: "A".repeat(43),
+        }
+      : original(command, args),
+  );
+  render(<Desktop />);
+  await screen.findByText("Your sessions, in one place");
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
+  const proofReads = () =>
+    bridge.invoke.mock.calls.filter(
+      ([command]) => command === "saved_worker_proof",
+    ).length;
+  await waitFor(() => expect(proofReads()).toBe(1));
+  await waitFor(() =>
+    expect(screen.queryByText(/Checking which Worker belongs/)).toBeNull(),
+  );
+  const named = bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async (command: string, args?: unknown) =>
+    command === "connection_context"
+      ? { ...value.profile, revision: 3, name: "Renamed window" }
+      : named(command, args),
+  );
+  const contextReads = () =>
+    bridge.invoke.mock.calls.filter(
+      ([command]) => command === "connection_context",
+    ).length;
+  const before = contextReads();
+  await act(async () => changed());
+  await waitFor(() => expect(contextReads()).toBeGreaterThan(before));
+  await act(async () => {});
+  expect(proofReads()).toBe(1);
+  expect(screen.queryByText(/Checking which Worker belongs/)).toBeNull();
+});
