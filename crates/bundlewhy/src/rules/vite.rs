@@ -1069,6 +1069,44 @@ fn describe_routes(routes: &[ChunkRoute]) -> String {
         .join(", ")
 }
 
+/// Where the emitted chunk graph places the module relative to the chunks that
+/// request it. Only the physical chunk layout is described here; the finding
+/// itself rests on the module being loaded before the `import()` runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChunkLayout {
+    /// No importer is proven (engine-reported only): the layout is unknown.
+    Unproven,
+    /// Every proven route stays in the requesting chunk: the module is folded
+    /// into the chunk of its importer and no separate chunk exists for it.
+    SameChunk,
+    /// Every proven route reaches a chunk other than the requesting chunk
+    /// through static imports: the module has an emitted chunk of its own that
+    /// the requester already loads.
+    SeparateChunkAlreadyLoaded,
+    /// Some routes stay in the requesting chunk and others reach another chunk.
+    Mixed,
+}
+
+impl ChunkLayout {
+    fn from_proofs(proofs: &[RequesterProof]) -> Self {
+        let mut same = false;
+        let mut separate = false;
+        for route in proofs.iter().flat_map(|proof| proof.routes.iter()) {
+            if route.chunk_path.len() <= 1 {
+                same = true;
+            } else {
+                separate = true;
+            }
+        }
+        match (same, separate) {
+            (false, false) => Self::Unproven,
+            (true, false) => Self::SameChunk,
+            (false, true) => Self::SeparateChunkAlreadyLoaded,
+            (true, true) => Self::Mixed,
+        }
+    }
+}
+
 fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     let collection = context.collection;
     let logged: BTreeSet<&str> = collection
@@ -1191,48 +1229,127 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
                  chunk.",
             ));
         }
-        let loaded_detail = if proofs.is_empty() {
-            "Reported by Rolldown INEFFECTIVE_DYNAMIC_IMPORT".to_owned()
+        let layout = ChunkLayout::from_proofs(&proofs);
+        let requesting_chunks = proofs
+            .iter()
+            .flat_map(|proof| proof.routes.iter())
+            .map(|route| route.requester_chunk.as_str())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(", ");
+        let emitted_in = if module.chunks.is_empty() {
+            "no emitted chunk was collected".to_owned()
         } else {
-            format!(
-                "Requesting chunks: {}",
-                proofs
-                    .iter()
-                    .flat_map(|proof| proof.routes.iter())
-                    .map(|route| route.requester_chunk.as_str())
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
+            module.chunks.join(", ")
+        };
+        let static_importers_detail = format!("Static importers: {}", static_importers.join(", "));
+        let imported_only_dynamically = Condition::new(
+            "The module is imported only dynamically",
+            ConditionOutcome::Unmet,
+            static_importers_detail,
+        );
+        tracing::debug!(
+            module = %context.module_log_label(&module.id),
+            layout = ?layout,
+            engine_reported,
+            "vite ineffective-dynamic-import wording selected from the emitted chunk layout"
+        );
+        // The title and the chunk conditions only make claims about the chunk
+        // layout that the emitted chunk graph proves. A module that has an
+        // emitted chunk of its own is not "without a separate chunk": the
+        // finding is that the requester has already loaded that chunk.
+        let (title, summary, conditions) = match layout {
+            ChunkLayout::SameChunk => (
+                format!("Dynamic import of {display} does not create a separate chunk"),
+                "For the dynamic importers named in the evidence, the module is part of the \
+                 requesting chunk itself, so the dynamic import only defers evaluation, not \
+                 loading."
+                    .to_owned(),
+                vec![
+                    imported_only_dynamically,
+                    Condition::new(
+                        "The dynamic import loads the module from a chunk that the requester does \
+                         not already load",
+                        ConditionOutcome::Unmet,
+                        format!(
+                            "Requesting chunks: {requesting_chunks}. The module is emitted in the \
+                             requesting chunk: {emitted_in}"
+                        ),
+                    ),
+                ],
+            ),
+            ChunkLayout::SeparateChunkAlreadyLoaded => (
+                format!("Dynamic import of {display} does not defer loading"),
+                "For the dynamic importers named in the evidence, the module is emitted in a \
+                 chunk separate from the requesting chunk, but the requesting chunk already loads \
+                 that chunk through static imports, so the dynamic import only defers evaluation, \
+                 not loading."
+                    .to_owned(),
+                vec![
+                    imported_only_dynamically,
+                    Condition::new(
+                        "The module is emitted in a chunk separate from the requesting chunk",
+                        ConditionOutcome::Met,
+                        format!("Emitted in: {emitted_in}"),
+                    ),
+                    Condition::new(
+                        "The dynamic import loads that chunk only when it runs",
+                        ConditionOutcome::Unmet,
+                        format!(
+                            "The requester already loads it ({}). Requesting chunks: \
+                             {requesting_chunks}",
+                            proofs
+                                .iter()
+                                .flat_map(|proof| proof.routes.iter())
+                                .map(|route| describe_routes(std::slice::from_ref(route)))
+                                .collect::<Vec<_>>()
+                                .join("; ")
+                        ),
+                    ),
+                ],
+            ),
+            ChunkLayout::Mixed => (
+                format!("Dynamic import of {display} does not defer loading"),
+                "For the dynamic importers named in the evidence, the module is already part of \
+                 the requesting chunk or of a chunk it imports statically, so the dynamic import \
+                 only defers evaluation, not loading."
+                    .to_owned(),
+                vec![
+                    imported_only_dynamically,
+                    Condition::new(
+                        "The dynamic import loads the module from a chunk that the requester does \
+                         not already load",
+                        ConditionOutcome::Unmet,
+                        format!("Requesting chunks: {requesting_chunks}. Emitted in: {emitted_in}"),
+                    ),
+                ],
+            ),
+            ChunkLayout::Unproven => (
+                format!("Dynamic import of {display} does not defer loading"),
+                "Rolldown reported that the dynamic import does not move the module into another \
+                 chunk, so it only defers evaluation, not loading."
+                    .to_owned(),
+                vec![
+                    imported_only_dynamically,
+                    Condition::new(
+                        "The dynamic import loads the module from a chunk that the requester does \
+                         not already load",
+                        ConditionOutcome::Unmet,
+                        format!(
+                            "Reported by Rolldown INEFFECTIVE_DYNAMIC_IMPORT. Emitted in: \
+                             {emitted_in}"
+                        ),
+                    ),
+                ],
+            ),
         };
         drafts.push(DiagnosticDraft {
             rule: RuleId::ViteIneffectiveDynamicImport,
             status: EvidenceStatus::Confirmed,
-            title: format!("Dynamic import of {display} does not create a separate chunk"),
-            summary: if proofs.is_empty() {
-                "Rolldown reported that the dynamic import does not move the module into another \
-                 chunk, so it only defers evaluation, not loading."
-                    .to_owned()
-            } else {
-                "For the dynamic importers named in the evidence, the module is already part of \
-                 the requesting chunk or of a chunk it imports statically, so the dynamic import \
-                 only defers evaluation, not loading."
-                    .to_owned()
-            },
-            conditions: vec![
-                Condition::new(
-                    "The module is imported only dynamically",
-                    ConditionOutcome::Unmet,
-                    format!("Static importers: {}", static_importers.join(", ")),
-                ),
-                Condition::new(
-                    "The dynamic import loads the module from a chunk that the requester does not \
-                     already load",
-                    ConditionOutcome::Unmet,
-                    format!("{loaded_detail}. Emitted in: {}", module.chunks.join(", ")),
-                ),
-            ],
+            title,
+            summary,
+            conditions,
             located,
             module: display,
             dependency_paths: context.dependency_paths(&module.id),
@@ -1776,6 +1893,142 @@ mod ineffective_dynamic_import_tests {
         assert!(drafts[0].summary.contains("Rolldown reported"));
     }
 
+    /// The target has an emitted chunk of its own that the entry chunk imports
+    /// statically, while another module of the entry chunk imports it
+    /// dynamically.
+    fn dedicated_chunk_collection() -> Collection {
+        Collection {
+            modules: vec![
+                module("src/entry.js", &[], &[], &["entry.js"]),
+                module(
+                    "src/icon.js",
+                    &["src/entry.js"],
+                    &["src/entry.js"],
+                    &["icon.js"],
+                ),
+            ],
+            chunks: vec![
+                chunk("entry.js", Some(&["icon.js"])),
+                chunk("icon.js", Some(&[])),
+            ],
+            ..Collection::default()
+        }
+    }
+
+    fn condition<'a>(draft: &'a DiagnosticDraft, name: &str) -> &'a Condition {
+        draft
+            .conditions
+            .iter()
+            .find(|condition| condition.description.contains(name))
+            .unwrap_or_else(|| panic!("no condition containing {name:?}: {:?}", draft.conditions))
+    }
+
+    #[test]
+    fn dedicated_chunk_loaded_by_the_requester_is_not_called_chunkless() {
+        let drafts = run(&dedicated_chunk_collection());
+        assert_eq!(drafts.len(), 1);
+        let draft = &drafts[0];
+        assert_eq!(draft.status, EvidenceStatus::Confirmed);
+        assert!(!draft.title.contains("separate chunk"), "{}", draft.title);
+        assert!(
+            draft.title.contains("does not defer loading"),
+            "{}",
+            draft.title
+        );
+        assert!(
+            draft.summary.contains("already loads that chunk"),
+            "{}",
+            draft.summary
+        );
+        let emitted = condition(draft, "emitted in a chunk separate");
+        assert_eq!(emitted.outcome, ConditionOutcome::Met);
+        assert!(emitted.detail.contains("icon.js"), "{}", emitted.detail);
+        let loading = condition(draft, "loads that chunk only when");
+        assert_eq!(loading.outcome, ConditionOutcome::Unmet);
+        assert!(
+            loading.detail.contains("entry.js -> icon.js"),
+            "{}",
+            loading.detail
+        );
+        let graph = draft
+            .evidence
+            .iter()
+            .find(|e| e.provenance == "emitted chunk graph")
+            .expect("chunk graph evidence");
+        assert!(graph.detail.contains("icon.js"), "{}", graph.detail);
+    }
+
+    #[test]
+    fn folded_module_keeps_the_no_separate_chunk_wording() {
+        let collection = Collection {
+            modules: vec![
+                module("src/main.js", &[], &[], &["main.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/main.js"],
+                    &["src/main.js"],
+                    &["main.js"],
+                ),
+            ],
+            chunks: vec![chunk("main.js", Some(&[]))],
+            ..Collection::default()
+        };
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        assert!(
+            drafts[0].title.contains("does not create a separate chunk"),
+            "{}",
+            drafts[0].title
+        );
+        let loading = condition(&drafts[0], "loads the module from a chunk");
+        assert_eq!(loading.outcome, ConditionOutcome::Unmet);
+        assert!(loading.detail.contains("main.js"), "{}", loading.detail);
+    }
+
+    #[test]
+    fn mixed_layouts_use_the_loading_claim_only() {
+        let mut collection = dedicated_chunk_collection();
+        // A second requester lives in the target's own chunk.
+        collection
+            .modules
+            .push(module("src/inner.js", &[], &[], &["icon.js"]));
+        collection.modules[1]
+            .dynamic_importers
+            .push("src/inner.js".to_owned());
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        assert!(
+            !drafts[0].title.contains("separate chunk"),
+            "{}",
+            drafts[0].title
+        );
+        assert!(drafts[0].title.contains("does not defer loading"));
+        let loading = condition(&drafts[0], "loads the module from a chunk");
+        assert_eq!(loading.outcome, ConditionOutcome::Unmet);
+        assert!(loading.detail.contains("entry.js"), "{}", loading.detail);
+        assert!(loading.detail.contains("icon.js"), "{}", loading.detail);
+    }
+
+    #[test]
+    fn engine_reported_only_finding_makes_no_chunk_layout_claim() {
+        let mut collection = lazy_route_collection();
+        collection.logs.push(engine_log("src/shared.js"));
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        assert!(
+            !drafts[0].title.contains("separate chunk"),
+            "{}",
+            drafts[0].title
+        );
+        assert!(drafts[0].title.contains("does not defer loading"));
+        let loading = condition(&drafts[0], "loads the module from a chunk");
+        assert!(
+            loading.detail.contains("Reported by Rolldown"),
+            "{}",
+            loading.detail
+        );
+    }
+
     #[test]
     fn collection_without_chunk_imports_proves_only_the_same_chunk_case() {
         // Old collection: no `imports` data on any chunk.
@@ -2222,7 +2475,9 @@ mod ineffective_dynamic_import_tests {
             ),
             "{details:?}"
         );
-        let condition = &drafts[0].conditions[1];
+        assert_eq!(drafts[0].conditions[1].outcome, ConditionOutcome::Met);
+        assert_eq!(drafts[0].conditions[1].detail, "Emitted in: c.js");
+        let condition = &drafts[0].conditions[2];
         assert!(
             condition.detail.contains("Requesting chunks: a.js, b.js"),
             "{}",
