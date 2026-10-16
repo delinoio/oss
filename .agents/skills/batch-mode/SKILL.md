@@ -11,5 +11,6 @@ Apply these additional instructions to the current task only when a human explic
 - Use the existing PR's automatic CI.
 - Retrying a failed CI run is allowed.
 - Never modify `.github/workflows/CI.yml`.
+- Prioritize issues assigned to [Batch group 1](https://github.com/delinoio/oss/milestone/1) over issues assigned to [Batch group 2](https://github.com/delinoio/oss/milestone/2).
 
 This skill adds instructions only. It does not start batch work or create a PR.
