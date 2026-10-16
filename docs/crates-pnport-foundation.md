@@ -63,6 +63,25 @@ Exact native control endpoints used by the DLL loader, console, Node crypto
 provider and Winsock retain their operating-system semantics. This does not
 admit raw disk-device paths past package classification.
 
+Native process creation resolves a partial `lpApplicationName` against the
+caller's current drive and directory, never against the requested child
+`lpCurrentDirectory`. The Windows adapter keeps that rule for `CreateProcessW`
+and `CreateProcessA`: relative, root-relative (`\name`) and drive-relative
+(`C:name`, using the caller directory on the same drive, otherwise the
+caller's `=C:` record or the drive root; the record is read with the native
+`GetEnvironmentVariableW` because portable environment accessors may reject
+names that start with `=`) images are made absolute from the
+caller's state by `pnport_core::application` before translation. A
+root-relative image takes the caller's drive root or UNC share root, including
+the `\\?\C:` and `\\?\UNC\server\share` spellings; a caller directory
+without a usable root is rejected. Absolute,
+UNC, device and `\\?\` images, a null application name and a null child
+directory keep their native meaning. The requested child directory still seeds
+the child's working directory, environment and loader options. A relative image
+that exists only below the child directory fails like native creation. The
+native fixtures cover both entry points with distinct caller and child
+directories; the pure resolution rules also run as host unit tests.
+
 Merged enumeration with APC/completion-port callbacks and inherited managed
 handles across processes are not yet supported. Reject these operations before
 dispatch/child birth instead of losing completion semantics or peer provenance.
