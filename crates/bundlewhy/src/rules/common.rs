@@ -2122,15 +2122,44 @@ fn has_export_declaration(code: &str, blocks: &[(usize, usize)], body: (usize, u
             }
             // `export default class {}` and friends declare; any other
             // `export default` operand is an export assignment.
-            let declaring = captures.get(2).is_some_and(|word| {
-                matches!(
-                    word.as_str(),
-                    "class" | "function" | "abstract" | "interface" | "async" | "enum"
-                )
-            });
+            let offset = body.0 + 1;
+            let declaring = match (captures.get(1), captures.get(2)) {
+                (None, Some(word)) => {
+                    default_export_word_declares(code, word.as_str(), offset + word.end())
+                }
+                // A decorator starts a class declaration.
+                (None, None) => code[offset + whole.end()..].starts_with('@'),
+                // `export {`, `export *` and `export =` are never declarations.
+                (Some(_), _) => false,
+            };
             Some(!declaring)
         })
         .any(|assignment| assignment)
+}
+
+/// Whether the word after `export default` starts a declaration. `class`,
+/// `function`, `interface` and `enum` always do. `abstract` and `async` are
+/// contextual: they declare only when `class` or `function` follows on the
+/// same line, as in TypeScript's `export default` grammar. Otherwise they are
+/// identifier expressions, so `export default async;` is an export
+/// assignment. Comments are masked in `code`, and a comment that contains a
+/// line terminator keeps it, so it counts as a line break.
+fn default_export_word_declares(code: &str, word: &str, word_end: usize) -> bool {
+    let next = match word {
+        "class" | "function" | "interface" | "enum" => return true,
+        "abstract" => "class",
+        "async" => "function",
+        _ => return false,
+    };
+    let after = &code[word_end..];
+    let rest = after.trim_start_matches(|character: char| {
+        character.is_whitespace() && !matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+    });
+    rest.strip_prefix(next).is_some_and(|tail| {
+        tail.chars()
+            .next()
+            .is_none_or(|character| !is_identifier_part(character))
+    })
 }
 
 /// Finds a block-bodied function or arrow body after a parameter list.
@@ -6620,6 +6649,54 @@ y=/process.env.F/.test(z),process.env.G"#;
             (
                 "declare namespace N { var eval: any; export default class {} }\nnamespace N { \
                  eval(code); }",
+                None,
+            ),
+            // `async` and `abstract` declare only before `function` or `class`
+            // on the same line; otherwise they are identifier expressions in
+            // an export assignment.
+            (
+                "declare namespace N { var eval: any; export default async; }\nnamespace N { \
+                 eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export default abstract; }\nnamespace N { \
+                 eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export default async\nfunction f() {} \
+                 }\nnamespace N { eval(code); }",
+                Some((2, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export default abstract /*\n*/ class {} \
+                 }\nnamespace N { eval(code); }",
+                Some((2, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export default async classes; }\nnamespace \
+                 N { eval(code); }",
+                Some((1, 14)),
+            ),
+            (
+                "declare namespace N { var eval: any; export default async /* note */ function \
+                 f() {} }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; export default abstract class {} \
+                 }\nnamespace N { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; export default @dec class {} }\nnamespace N \
+                 { eval(code); }",
+                None,
+            ),
+            (
+                "declare namespace N { var eval: any; export default interface I {} }\nnamespace \
+                 N { eval(code); }",
                 None,
             ),
             // A member property named `export` is not a statement, with
