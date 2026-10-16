@@ -2528,9 +2528,15 @@ fn type_parameters_end(bytes: &[u8], open: usize) -> Option<usize> {
 
 /// Zero-based line and byte column of the first direct `eval` call in
 /// `source`.
+#[cfg(test)]
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
     let start = direct_eval_offsets(source).into_iter().next()?;
-    let (line, column) = line_and_column(source, start);
+    offset_position(source, start)
+}
+
+/// Zero-based line and column of `offset` in `source`, as `u32` values.
+fn offset_position(source: &str, offset: usize) -> Option<(u32, u32)> {
+    let (line, column) = line_and_column(source, offset);
     Some((u32::try_from(line).ok()?, u32::try_from(column).ok()?))
 }
 
@@ -2803,7 +2809,10 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         };
         // The original-source candidate: a call in the module text proves
         // nothing about the output, because the build can remove it.
-        let source_eval = direct_eval_line(&source);
+        let source_offsets = direct_eval_offsets(&source);
+        let source_eval = source_offsets
+            .first()
+            .and_then(|offset| offset_position(&source, *offset));
         if rolldown_log.is_none() && rspack_bailout.is_none() && source_eval.is_none() {
             continue;
         }
@@ -2875,9 +2884,18 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
             .unwrap_or((0, 0));
         let display = context.module_display(module);
         let mut located = match calls.first() {
-            // Neither the engine nor the source scan placed the call: use the
-            // original position the source map gives the emitted call.
-            Some(call) if rolldown_log.is_none() && source_eval.is_none() => {
+            // The engine log and the source scan name the first call they saw,
+            // and the build can remove that call while a later one survives.
+            // Locate the finding at the call that survives: the original
+            // position the source map gives the emitted call.
+            Some(call) if call.attribution == EvalAttribution::SourceMap => {
+                context.chunk_location(call.chunk, call.offset)
+            }
+            // Without a source map the surviving call cannot be tied to a
+            // source position. The first source candidate is the surviving
+            // one only when every candidate survives; otherwise report the
+            // emitted call, never a possibly removed one.
+            Some(call) if source_offsets.len() > calls.len() => {
                 context.chunk_location(call.chunk, call.offset)
             }
             _ => context.module_location(module, line, column),
@@ -2885,13 +2903,22 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         if let Some(call) = calls.first() {
             let chunk = &context.chunks[call.chunk];
             let (generated_line, generated_column) = chunk.position(call.offset);
-            located.generated = Some(SourceLocation {
+            let emitted_location = SourceLocation {
                 kind: LocationKind::Generated,
                 source_id: String::new(),
                 path: chunk.file.clone(),
                 line: generated_line + 1,
                 column: generated_column + 1,
-            });
+            };
+            // A location that already is the generated position is not
+            // repeated as the paired generated location.
+            if located
+                .location
+                .as_ref()
+                .is_none_or(|location| location.kind != LocationKind::Generated)
+            {
+                located.generated = Some(emitted_location);
+            }
         }
         let retained_list: Vec<String> = retained.into_iter().take(12).collect();
         let mut evidence = Vec::new();
@@ -3080,16 +3107,48 @@ mod tests {
         mapped: bool,
         engine_reports_eval: bool,
     ) -> Vec<DiagnosticDraft> {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let build_dir = root.join("build");
-        std::fs::create_dir_all(&build_dir).unwrap();
         let mut code = emitted
             .iter()
             .map(|(_, line)| *line)
             .collect::<Vec<_>>()
             .join("\n");
         code.push('\n');
+        // Each generated line maps to the next line of its own module's
+        // source, so a reported original line is the line in that file.
+        let mut next_source_line = vec![0u32; modules.len()];
+        let tokens: Vec<MapToken> = emitted
+            .iter()
+            .enumerate()
+            .map(|(line, (module, _))| {
+                let source_line = next_source_line[*module];
+                next_source_line[*module] += 1;
+                (u32::try_from(line).unwrap(), 0, *module, source_line, 0)
+            })
+            .collect();
+        eval_rule_drafts_with_tokens(
+            modules,
+            &code,
+            mapped.then_some(&tokens),
+            engine_reports_eval,
+        )
+    }
+
+    /// A source-map token: generated line and column, module index, source line
+    /// and column (all zero-based).
+    type MapToken = (u32, u32, usize, u32, u32);
+
+    /// Runs the rule over modules that share the chunk text `code`. `tokens`
+    /// is the chunk's source map, or `None` for a chunk without one.
+    fn eval_rule_drafts_with_tokens(
+        modules: &[(&str, &str)],
+        code: &str,
+        tokens: Option<&Vec<MapToken>>,
+        engine_reports_eval: bool,
+    ) -> Vec<DiagnosticDraft> {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let build_dir = root.join("build");
+        std::fs::create_dir_all(&build_dir).unwrap();
         std::fs::write(build_dir.join("main.js"), code).unwrap();
         let mut sources = crate::sources::SourceStore::new(true);
         let mut collected = Vec::new();
@@ -3115,10 +3174,17 @@ mod tests {
                 ..CollectedModule::default()
             });
         }
-        if mapped {
-            for (line, (module, _)) in emitted.iter().enumerate() {
-                let line = u32::try_from(line).unwrap();
-                builder.add_raw(line, 0, line, 0, Some(source_ids[*module]), None, false);
+        if let Some(tokens) = tokens {
+            for (line, column, module, source_line, source_column) in tokens {
+                builder.add_raw(
+                    *line,
+                    *column,
+                    *source_line,
+                    *source_column,
+                    Some(source_ids[*module]),
+                    None,
+                    false,
+                );
             }
             let mut map = Vec::new();
             builder.into_sourcemap().to_writer(&mut map).unwrap();
@@ -4626,6 +4692,106 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(emitted.status, EvidenceStatus::Inferred);
         assert!(emitted.detail.contains("no usable source map"));
         assert!(drafts[0].located.generated.is_none());
+    }
+
+    /// A module whose first eval call (line 4) is dead code and whose second
+    /// (line 7) is the call the build keeps.
+    const FIRST_EVAL_REMOVED_SOURCE: &str = "const longLocalName = 1;\nexport function a(v) {\n  \
+                                             return v;\n  eval(v);\n}\nexport function b(c) {\n  \
+                                             return eval(c);\n}\n";
+
+    #[test]
+    fn the_location_is_the_surviving_call_not_the_first_candidate() {
+        // The emitted chunk keeps `eval(c)` only; its source map points at
+        // line 7 of the module while the first source candidate is line 4.
+        let code = "const longLocalName = 1;\nfunction a(v) { return v; }\nfunction b(c) { return \
+                    eval(c); }\n";
+        let eval_column = code.lines().nth(2).unwrap().find("eval").unwrap() as u32;
+        let tokens: Vec<MapToken> = vec![
+            (0, 0, 0, 0, 0),
+            (1, 0, 0, 1, 0),
+            (2, 0, 0, 5, 0),
+            (2, eval_column, 0, 6, 9),
+        ];
+        for engine_reports_eval in [false, true] {
+            let drafts = eval_rule_drafts_with_tokens(
+                &[("src/main.js", FIRST_EVAL_REMOVED_SOURCE)],
+                code,
+                Some(&tokens),
+                engine_reports_eval,
+            );
+            assert_eq!(drafts.len(), 1, "engine={engine_reports_eval}");
+            let location = drafts[0].located.location.as_ref().unwrap();
+            assert!(location.path.ends_with("src/main.js"));
+            assert_eq!((location.line, location.column), (7, 10));
+            let generated = drafts[0].located.generated.as_ref().unwrap();
+            assert_eq!(generated.line, 3);
+            assert_eq!(generated.column as usize, eval_column as usize + 1);
+        }
+    }
+
+    #[test]
+    fn the_location_follows_the_first_emitted_call_when_several_survive() {
+        // The build reordered the functions: the emitted chunk holds `b`
+        // first, so its call locates the finding, and both calls are listed.
+        let code = "const longLocalName = 1;\nfunction b(c) { return eval(c); }\nfunction a(v) { \
+                    return v, eval(v); }\n";
+        let column = |line: usize| code.lines().nth(line).unwrap().find("eval").unwrap() as u32;
+        let tokens: Vec<MapToken> = vec![
+            (0, 0, 0, 0, 0),
+            (1, 0, 0, 5, 0),
+            (1, column(1), 0, 6, 9),
+            (2, 0, 0, 1, 0),
+            (2, column(2), 0, 3, 2),
+        ];
+        let drafts = eval_rule_drafts_with_tokens(
+            &[("src/main.js", FIRST_EVAL_REMOVED_SOURCE)],
+            code,
+            Some(&tokens),
+            true,
+        );
+        assert_eq!(drafts.len(), 1);
+        let location = drafts[0].located.location.as_ref().unwrap();
+        assert_eq!((location.line, location.column), (7, 10));
+        assert_eq!(drafts[0].located.generated.as_ref().unwrap().line, 2);
+        let emitted = evidence(&drafts[0], "emitted chunk scan").unwrap();
+        assert!(emitted.detail.contains("main.js:2:"), "{}", emitted.detail);
+        assert!(emitted.detail.contains("main.js:3:"), "{}", emitted.detail);
+    }
+
+    #[test]
+    fn without_a_source_map_only_a_fully_surviving_candidate_locates_the_finding() {
+        // The sole module of an unmapped chunk: one of two source candidates
+        // survives, so the source candidate (line 4) may be the removed call.
+        // The finding is located at the emitted call instead.
+        let code = "const longLocalName = 1;\nfunction b(c) { return eval(c); }\n";
+        let drafts = eval_rule_drafts_with_tokens(
+            &[("src/main.js", FIRST_EVAL_REMOVED_SOURCE)],
+            code,
+            None,
+            false,
+        );
+        assert_eq!(drafts.len(), 1);
+        let location = drafts[0].located.location.as_ref().unwrap();
+        assert_eq!(location.kind, LocationKind::Generated);
+        assert!(location.path.ends_with("main.js"));
+        assert_eq!(location.line, 2);
+        assert!(drafts[0].located.generated.is_none());
+        // Every candidate survives: the first source candidate is the first
+        // emitted call.
+        let code = "const longLocalName = 1;\nfunction a(v) { return v, eval(v); }\nfunction b(c) \
+                    { return eval(c); }\n";
+        let drafts = eval_rule_drafts_with_tokens(
+            &[("src/main.js", FIRST_EVAL_REMOVED_SOURCE)],
+            code,
+            None,
+            false,
+        );
+        assert_eq!(drafts.len(), 1);
+        let location = drafts[0].located.location.as_ref().unwrap();
+        assert_eq!(location.kind, LocationKind::Original);
+        assert_eq!(location.line, 4);
+        assert_eq!(drafts[0].located.generated.as_ref().unwrap().line, 2);
     }
 
     #[test]
