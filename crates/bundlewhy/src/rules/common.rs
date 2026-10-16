@@ -1800,9 +1800,13 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
     let bytes = source.as_bytes();
     let mut depth = 0usize;
     let mut index = from;
-    // True from a top-level `function` or `class` keyword to the `{` that
-    // opens its body, and then until that body closes.
-    let mut awaiting_body = false;
+    // Number of top-level `function` or `class` keywords whose body brace has
+    // not opened yet. It is above one for a class expression in a heritage
+    // clause (`class A extends class {} { ... }`): each `{` at depth zero
+    // opens the body of the innermost pending keyword, so the nested class
+    // body closes before the outer body starts.
+    let mut pending_bodies = 0usize;
+    // True while a body that started at depth zero is open.
     let mut in_body = false;
     while index < bytes.len() {
         let range = ignored.partition_point(|(start, _)| *start <= index);
@@ -1821,7 +1825,7 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
                     // body continues after the comment.
                     IgnoredRange::LineBreakComment
                         if depth == 0
-                            && !awaiting_body
+                            && pending_bodies == 0
                             && arrow_body_ends(
                                 source,
                                 start,
@@ -1854,7 +1858,7 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
         let terminator = line_terminator_len(bytes, index);
         if terminator > 0 {
             if depth == 0
-                && !awaiting_body
+                && pending_bodies == 0
                 && arrow_body_ends(
                     source,
                     index,
@@ -1869,17 +1873,23 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
             continue;
         }
         if depth == 0
-            && !awaiting_body
             && !in_body
             && let Some(length) = function_or_class_keyword_len(source, index, ignored)
+            // A keyword while another one still awaits its body counts only
+            // as a class expression in an `extends` clause.
+            && (pending_bodies == 0
+                || matches!(
+                    previous_significant_token(source, index, ignored),
+                    Token::Word { text: "extends", member: false }
+                ))
         {
-            awaiting_body = true;
+            pending_bodies += 1;
             index += length;
             continue;
         }
         match bytes[index] {
-            b'{' if depth == 0 && awaiting_body => {
-                awaiting_body = false;
+            b'{' if depth == 0 && pending_bodies > 0 => {
+                pending_bodies -= 1;
                 in_body = true;
                 depth += 1;
             }
@@ -8411,6 +8421,34 @@ y=/process.env.F/.test(z),process.env.G"#;
             "{source:?}"
         );
         assert!(direct_eval_offsets("const f = (eval) => λ + eval(code)").is_empty());
+    }
+
+    #[test]
+    fn a_class_expression_in_a_heritage_clause_does_not_end_the_arrow_scope() {
+        for terminator in LINE_TERMINATORS {
+            for heritage in [
+                "class A extends class {{}}",
+                "class A extends class B {{}}",
+                "class extends class {{}}",
+                "class A extends class extends class {{}} {{}}",
+                "class A extends class /*{t}*/ {{}}",
+            ] {
+                for line_break in [format!("/*{terminator}*/"), terminator.to_string()] {
+                    let source = format!(
+                        "const f = (eval) => {} {line_break} {{ m() {{ return eval(code) }} }}",
+                        heritage.replace("{t}", terminator)
+                    );
+                    assert!(direct_eval_offsets(&source).is_empty(), "{source:?}");
+                    // The statement after the outer body is outside the arrow.
+                    let source = format!("{source} {line_break} eval(code)");
+                    assert_eq!(
+                        direct_eval_offsets(&source),
+                        vec![source.rfind("eval(code)").unwrap()],
+                        "{source:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
