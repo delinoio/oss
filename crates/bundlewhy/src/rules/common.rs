@@ -645,8 +645,7 @@ pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, us
         ':' => !is_case_label(prefix),
         _ if is_identifier_part(last) => match trailing_word(prefix) {
             "else" | "try" | "do" | "finally" | "static" => false,
-            "return" | "typeof" | "case" | "void" | "yield" | "throw" | "new" | "in" | "of"
-            | "delete" | "await" | "instanceof" | "default" => true,
+            word if OBJECT_VALUE_KEYWORDS.contains(&word) => true,
             _ => class_heading_precedes(code, prefix.len(), ignored),
         },
         _ => true,
@@ -654,17 +653,58 @@ pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, us
 }
 
 /// Whether the statement head that ends at `end` contains the `class` keyword
-/// outside nested parentheses or brackets. The scan walks backwards and stops
-/// at the previous `;`, `{` or `}`, or at an unbalanced opener.
+/// outside nested parentheses, brackets or TypeScript type-argument lists. The
+/// scan walks backwards over characters and stops at the previous `;`, `{` or
+/// `}`, or at an unbalanced opener. A type-argument list (`class C<T extends {
+/// a: 1 }>`, `extends B<{ a: 1 }>`) is skipped as a whole, so the braces and
+/// `=` inside it do not end the head.
 pub(super) fn class_heading_precedes(code: &str, end: usize, ignored: &[(usize, usize)]) -> bool {
+    class_heading_scan(code, end, ignored, false)
+}
+
+/// Shared body of [`class_heading_precedes`]. `stop_at_assignment` also ends
+/// the head at a top-level `=`, so a field initializer such as `x = { ... }`
+/// does not read an enclosing class header as its own.
+fn class_heading_scan(
+    code: &str,
+    end: usize,
+    ignored: &[(usize, usize)],
+    stop_at_assignment: bool,
+) -> bool {
+    class_keyword_scan(code, end, ignored, stop_at_assignment).is_some()
+}
+
+/// The offset of the `class` keyword that starts the head ending at `end`, or
+/// `None` when the head holds none. The scan is described on
+/// [`class_heading_precedes`].
+///
+/// A class expression in the heritage clause (`class C extends class {} {`)
+/// has a body of its own. When a top-level `}` closes the body of a class
+/// expression whose `class` keyword follows `extends`, the scan jumps to that
+/// keyword and keeps reading the outer head. Any other `}` ends the head.
+fn class_keyword_scan(
+    code: &str,
+    end: usize,
+    ignored: &[(usize, usize)],
+    stop_at_assignment: bool,
+) -> Option<usize> {
     let mut depth = 0usize;
     // End offset of the identifier-like word being read backwards.
     let mut word_end: Option<usize> = None;
     let is_class = |word_start: usize, word_end: usize| {
-        &code[word_start..word_end] == "class" && !code[..word_start].ends_with(['.', '#'])
+        // `class` is a keyword unless it names a member (`a.class`, `#class`)
+        // or a property or method (`class: {`, `class() {`).
+        &code[word_start..word_end] == "class"
+            && !code[..word_start].trim_end().ends_with(['.', '#'])
+            && !code[word_end..end]
+                .trim_start()
+                .starts_with([':', '(', '=', ','])
     };
-    for (position, character) in code[..end].char_indices().rev() {
+    // Walk char boundaries only: `position` is always the start of a char.
+    let mut position = end;
+    while let Some(character) = code[..position].chars().next_back() {
         let width = character.len_utf8();
+        position -= width;
         if !in_ranges(ignored, position) && is_identifier_part(character) {
             word_end.get_or_insert(position + width);
             continue;
@@ -673,22 +713,105 @@ pub(super) fn class_heading_precedes(code: &str, end: usize, ignored: &[(usize, 
             && depth == 0
             && is_class(position + width, finish)
         {
-            return true;
+            return Some(position + width);
         }
         if in_ranges(ignored, position) {
             continue;
         }
         match character {
             ')' | ']' => depth += 1,
-            '(' | '[' => match depth.checked_sub(1) {
-                Some(next) => depth = next,
-                None => return false,
-            },
-            '{' | '}' | ';' if depth == 0 => return false,
+            '(' | '[' => depth = depth.checked_sub(1)?,
+            // The `>` of an arrow (`=>`) never closes a type-argument list.
+            '>' if depth == 0 && !code[..position].ends_with('=') => {
+                if let Some(open) = type_arguments_open(code, position, ignored) {
+                    position = open;
+                }
+            }
+            '}' if depth == 0 => {
+                position = heritage_class_expression_start(code, position, ignored)?;
+            }
+            '{' | ';' if depth == 0 => return None,
+            '=' if depth == 0 && stop_at_assignment => return None,
             _ => {}
         }
     }
-    word_end.is_some_and(|finish| depth == 0 && is_class(0, finish))
+    word_end
+        .filter(|finish| depth == 0 && is_class(0, *finish))
+        .map(|_| 0)
+}
+
+/// The offset of the `class` keyword of the class expression whose body ends
+/// with the `}` at `close`, when that keyword directly follows `extends`
+/// (`class C extends class { ... } {`). `None` for any other brace pair.
+fn heritage_class_expression_start(
+    code: &str,
+    close: usize,
+    ignored: &[(usize, usize)],
+) -> Option<usize> {
+    let mut nesting = 0usize;
+    let mut position = close;
+    let open = loop {
+        let character = code[..position].chars().next_back()?;
+        position -= character.len_utf8();
+        if in_ranges(ignored, position) {
+            continue;
+        }
+        match character {
+            '}' => nesting += 1,
+            '{' => match nesting.checked_sub(1) {
+                Some(next) => nesting = next,
+                None => break position,
+            },
+            _ => {}
+        }
+    };
+    let keyword = class_keyword_scan(code, open, ignored, true)?;
+    let before = strip_comments_for_prefix(code, keyword, ignored);
+    (trailing_word(before) == "extends").then_some(keyword)
+}
+
+/// The offset of the `<` that opens the type-argument list closed by the `>` at
+/// `close`, or `None` when the `>` is an operator (`a > b`, `x >= y`) because
+/// no balanced `<` precedes it in the same statement.
+///
+/// The scan walks backwards over characters. Brackets, parentheses and braces
+/// inside the list (`T extends { a: Array<1> }`) must balance; an unmatched
+/// opener or a top-level `;` means the `>` is not a closing angle bracket.
+///
+/// A type-argument list is written directly after the name it applies to
+/// (`f<A>`, `class C<T>`, `extends B<T>`), so a `<` that follows whitespace or
+/// an operator is a comparison: in `left < right > { ... }` the `>` closes
+/// nothing. A `<` attached to a name stays a type-argument opener even when it
+/// could be written as a comparison without spaces (`a<b>{ ... }`), which keeps
+/// the finding for that brace; this is the documented limit of the scan.
+fn type_arguments_open(code: &str, close: usize, ignored: &[(usize, usize)]) -> Option<usize> {
+    let mut angles = 1usize;
+    let mut nesting = 0usize;
+    let mut position = close;
+    while let Some(character) = code[..position].chars().next_back() {
+        position -= character.len_utf8();
+        if in_ranges(ignored, position) {
+            continue;
+        }
+        match character {
+            ')' | ']' | '}' => nesting += 1,
+            '(' | '[' | '{' => nesting = nesting.checked_sub(1)?,
+            ';' if nesting == 0 => return None,
+            '>' if nesting == 0 && !code[..position].ends_with('=') => angles += 1,
+            '<' if nesting == 0 => {
+                angles -= 1;
+                if angles == 0 {
+                    return code[..position]
+                        .chars()
+                        .next_back()
+                        .is_some_and(is_identifier_part)
+                        .then_some(position);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
@@ -1261,7 +1384,10 @@ fn collect_binding_names(pattern: &str, names: &mut Vec<String>) {
 /// Source ranges in which a binding named `eval` is visible. Lexical
 /// declarations use their block, while `var` uses its containing function.
 /// A named function expression binds its name only inside its own body.
-fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, usize)> {
+/// The source with every non-code range (comment, string, template text and
+/// regular expression) replaced by spaces, keeping line terminators, so byte
+/// offsets agree with `source`.
+fn masked_code(source: &str, ignored: &[(usize, usize)]) -> String {
     let mut masked = source.as_bytes().to_vec();
     for (start, end) in ignored {
         for byte in &mut masked[*start..(*end).min(source.len())] {
@@ -1270,8 +1396,12 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             }
         }
     }
-    let code = String::from_utf8_lossy(&masked).into_owned();
-    let bytes = code.as_bytes();
+    String::from_utf8_lossy(&masked).into_owned()
+}
+
+/// Every balanced `{ ... }` pair of masked code as `(open, close)` offsets, in
+/// the order the closing braces appear.
+fn brace_blocks(bytes: &[u8]) -> Vec<(usize, usize)> {
     let mut blocks = Vec::new();
     let mut stack = Vec::new();
     for (index, byte) in bytes.iter().enumerate() {
@@ -1285,6 +1415,13 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             _ => {}
         }
     }
+    blocks
+}
+
+fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, usize)> {
+    let code = masked_code(source, ignored);
+    let bytes = code.as_bytes();
+    let blocks = brace_blocks(bytes);
     let enclosing = |position: usize| {
         blocks
             .iter()
@@ -1804,44 +1941,121 @@ fn is_control_flow_parentheses(code: &str, open: usize, keyword: &str) -> bool {
 }
 
 /// Finds the block that starts a function body after its parameter list.
-/// TypeScript return annotations can contain object types with braces of
-/// their own, so skip those before selecting the executable block.
+/// See [`body_open_after_parameters`] for the rules; this adds the matching
+/// `}` from the brace pairs of the masked code.
 fn function_body_block(
     code: &str,
-    bytes: &[u8],
+    _bytes: &[u8],
     blocks: &[(usize, usize)],
-    mut cursor: usize,
+    cursor: usize,
 ) -> Option<(usize, usize)> {
-    let mut return_annotation = false;
-    while let Some(byte) = bytes.get(cursor) {
-        if byte.is_ascii_whitespace() {
-            cursor += 1;
-            continue;
-        }
-        if *byte == b'{' {
-            let type_brace = return_annotation
-                && code[..cursor]
-                    .bytes()
-                    .rev()
-                    .find(|byte| !byte.is_ascii_whitespace())
-                    .is_some_and(|byte| {
-                        matches!(byte, b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'(')
-                    })
-                || return_annotation && code[..cursor].trim_end().ends_with("=>");
-            if !type_brace {
-                return blocks.iter().find(|(open, _)| *open == cursor).copied();
+    let open = body_open_after_parameters(code, cursor)?;
+    blocks.iter().find(|(start, _)| *start == open).copied()
+}
+
+/// Whether a `{` at `open` of masked code starts a TypeScript type (an object
+/// type literal) inside a return-type annotation instead of the body.
+///
+/// A type is expected where the previous token is `:` (the annotation colon or
+/// the `: B` branch of a conditional type), `?` (the `A ? { .. } : B` branch),
+/// an opener or separator (`<`, `(`, `[`, `,`), a type operator (`|`, `&`,
+/// `=>`) or one of the keywords `extends` and `is` (`T extends { a: 1 } ? X :
+/// Y`, `v is { a: 1 }`). Any other previous token (`)`, `]`, `>`, a type name
+/// such as `void`) ends the type, so the brace is the body.
+fn opens_type_literal(code: &str, open: usize) -> bool {
+    let before = code[..open].trim_end();
+    before.ends_with(['<', '|', '&', ',', '[', '(', ':', '?'])
+        || before.ends_with("=>")
+        || matches!(trailing_word(before), "extends" | "is")
+}
+
+/// The offset of the `{` that opens a function or method body, given the
+/// offset just after the `)` of its parameter list, or `None` when there is no
+/// body. One rule set decides it, on masked code:
+///
+/// 1. After optional whitespace, a `{` is the body.
+/// 2. Otherwise a `:` starts a return-type annotation, anything else (`;`, the
+///    next member, `}`) means the signature has no body.
+/// 3. The annotation extends to the first `{` that is not a type literal (see
+///    [`opens_type_literal`]); a type literal is skipped as a whole, so object
+///    branches of a conditional type (`T extends U ? { a: 1 } : V`) and object
+///    types in generics or function types never end the annotation.
+/// 4. The annotation ends without a body at a `;`, at the `}` that closes the
+///    enclosing block, or at a line break that cannot continue its type
+///    (automatic semicolon insertion, see [`annotation_continues`]); an open
+///    `(` or `[` keeps the annotation going across line breaks.
+fn body_open_after_parameters(code: &str, after: usize) -> Option<usize> {
+    let bytes = code.as_bytes();
+    let mut cursor = skip_trivia(code, after);
+    match bytes.get(cursor) {
+        Some(b'{') => return Some(cursor),
+        Some(b':') => cursor += 1,
+        _ => return None,
+    }
+    // Open `(` and `[` of the annotation (`(a: number) => void`); a line break
+    // or `;` inside them never ends the member.
+    let mut nesting = 0usize;
+    while let Some(character) = code[cursor..].chars().next() {
+        if character.is_whitespace() {
+            let run_start = cursor;
+            let mut crossed_line = false;
+            while let Some(next) = code[cursor..].chars().next() {
+                if !next.is_whitespace() {
+                    break;
+                }
+                crossed_line |= is_line_terminator(next);
+                cursor += next.len_utf8();
             }
-            let (_, close) = blocks.iter().find(|(open, _)| *open == cursor).copied()?;
-            cursor = close + 1;
+            if crossed_line && nesting == 0 && !annotation_continues(code, run_start, cursor) {
+                return None;
+            }
             continue;
         }
-        if *byte == b':' {
-            return_annotation = true;
+        match character {
+            '{' => {
+                if nesting == 0 && !opens_type_literal(code, cursor) {
+                    return Some(cursor);
+                }
+                cursor = matching_delimiter(bytes, cursor, b'{', b'}')?;
+            }
+            // The member ends here: a `;`, or the `}` of the enclosing block
+            // (every `}` of the annotation's own braces is skipped above).
+            ';' | '}' => return None,
+            '(' | '[' => nesting += 1,
+            ')' | ']' => nesting = nesting.checked_sub(1)?,
+            _ => {}
         }
-        cursor += 1;
+        cursor += character.len_utf8();
     }
     None
 }
+
+/// Whether a line break between `run_start` and `next` (the whitespace run of
+/// masked code) leaves the member signature open instead of ending it. The
+/// body brace, a dangling operator before the break and a type operator or
+/// closer after it continue the signature; any other token starts the next
+/// member or statement.
+fn annotation_continues(code: &str, run_start: usize, next: usize) -> bool {
+    let bytes = code.as_bytes();
+    let previous = bytes[..run_start].last().copied();
+    let following = bytes.get(next).copied();
+    let dangling = matches!(
+        previous,
+        Some(b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'(' | b'=' | b'.' | b'?')
+    ) || bytes[..run_start].ends_with(b"=>")
+        || TYPE_OPERATOR_KEYWORDS.contains(&trailing_word(&code[..run_start]));
+    let continuing = matches!(
+        following,
+        Some(b'{' | b'|' | b'&' | b'.' | b'?' | b':' | b'=' | b')' | b']' | b',' | b'<' | b'>')
+    );
+    dangling || continuing
+}
+
+/// Type operators that need a type after them, so a line break right after one
+/// never ends the annotation (`T extends\n string ? A : B`).
+const TYPE_OPERATOR_KEYWORDS: [&str; 7] = [
+    "extends", "keyof", "typeof", "infer", "unique", "readonly", "is",
+];
 
 fn named_function_is_expression(code: &str, start: usize) -> bool {
     let raw_prefix = &code[..start];
@@ -1903,6 +2117,414 @@ fn is_case_label(prefix: &str) -> bool {
             .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
 }
 
+/// Whether the `?` at `index` of masked code is the question mark of a
+/// conditional expression, not part of `??`, `?.` (outside `?.5`) or an
+/// optional marker (`x?: T`).
+fn is_conditional_question(bytes: &[u8], index: usize) -> bool {
+    let next = bytes.get(index + 1).copied();
+    let previous = index
+        .checked_sub(1)
+        .and_then(|before| bytes.get(before))
+        .copied();
+    if next == Some(b'?') || previous == Some(b'?') || next == Some(b':') {
+        return false;
+    }
+    !(next == Some(b'.') && !bytes.get(index + 2).is_some_and(u8::is_ascii_digit))
+}
+
+/// What a `{` opens, as far as a lexical scan can tell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BraceKind {
+    /// The body of a `class` declaration or expression.
+    ClassBody,
+    /// An object literal (a value position, not a statement block).
+    ObjectLiteral,
+    /// A statement block, function body, or any brace the scan cannot place.
+    Other,
+}
+
+/// Modifiers that may precede a method name in a class body or object literal.
+const METHOD_MODIFIERS: [&str; 10] = [
+    "async",
+    "static",
+    "get",
+    "set",
+    "public",
+    "private",
+    "protected",
+    "override",
+    "readonly",
+    "abstract",
+];
+
+/// Keywords after which an expression, and so an object literal, can start.
+/// [`brace_holds_members`] and the method scan share this one table.
+const OBJECT_VALUE_KEYWORDS: [&str; 13] = [
+    "return",
+    "typeof",
+    "case",
+    "void",
+    "yield",
+    "throw",
+    "new",
+    "in",
+    "of",
+    "delete",
+    "await",
+    "instanceof",
+    "default",
+];
+
+/// Keywords that end their statement when a line terminator follows them
+/// (ECMAScript restricted productions): `return\n{ ... }` returns nothing and
+/// then opens a block, `break` and `continue` take only a label on their line.
+const RESTRICTED_KEYWORDS: [&str; 5] = ["return", "throw", "yield", "break", "continue"];
+
+/// Lazily built lexical context that decides whether an `eval` name followed
+/// by a parameter list is a class or object method declaration.
+struct MemberScan<'a> {
+    source: &'a str,
+    ignored: &'a [(usize, usize)],
+    code: String,
+    blocks: Vec<(usize, usize)>,
+}
+
+impl<'a> MemberScan<'a> {
+    fn new(source: &'a str, ignored: &'a [(usize, usize)]) -> Self {
+        let code = masked_code(source, ignored);
+        let blocks = brace_blocks(code.as_bytes());
+        Self {
+            source,
+            ignored,
+            code,
+            blocks,
+        }
+    }
+
+    /// The innermost brace pair that contains `position` with only balanced
+    /// brackets between the opening brace and `position`, so `position` sits
+    /// directly in that brace's body and not inside a call or array.
+    fn direct_enclosing_block(&self, position: usize) -> Option<(usize, usize)> {
+        let (open, close) = self
+            .blocks
+            .iter()
+            .filter(|(open, close)| *open < position && position < *close)
+            .min_by_key(|(open, close)| close - open)
+            .copied()?;
+        let mut depth = 0usize;
+        for byte in &self.code.as_bytes()[open + 1..position] {
+            match byte {
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' => depth = depth.checked_sub(1)?,
+                _ => {}
+            }
+        }
+        (depth == 0).then_some((open, close))
+    }
+
+    /// Whether the header before the brace at `open` contains a `class`
+    /// keyword (`class A extends B {`, `const C = class {`). The scan reads
+    /// the masked code by character, so non-ASCII names and type-argument
+    /// lists with braces (`class C<T extends { a: 1 }> {`) are handled.
+    fn has_class_header(&self, open: usize) -> bool {
+        class_heading_scan(&self.code, open, &[], true)
+    }
+
+    fn brace_kind(&self, open: usize) -> BraceKind {
+        if self.has_class_header(open) {
+            return BraceKind::ClassBody;
+        }
+        let is_object = match previous_significant_token(self.source, open, self.ignored) {
+            Token::Punct(text) => match text {
+                // An opener, a comma, a spread, or any unary, binary, logical,
+                // nullish, assignment or conditional operator: each ends in one
+                // of these characters and is followed by an expression, so a
+                // brace there is an object literal (`typeof {`, `...{`,
+                // `a + {`, `a ?? {`, `a && {`, `a **= {`, `x ? {`, `a | {`).
+                "=" | "(" | "," | "[" | "?" | "|" | "&" | "..." | "+" | "-" | "*" | "/" | "%"
+                | "^" | "~" | "!" | "<" => true,
+                // `=>` opens a function body, a closing type-argument angle
+                // bracket is followed by a body (`interface I<T> {`), and any
+                // other `>` is a comparison or shift operator.
+                ">" => self.greater_than_precedes_object(open),
+                // A property value (`{ key: { eval(x) {} } }`) or the
+                // alternate of a conditional (`c ? a : { eval(x) {} }`); a
+                // label or a `case` clause is a statement block and stays
+                // unplaced.
+                ":" => {
+                    self.colon_ends_conditional(open)
+                        || self.direct_enclosing_block(open).is_some_and(|(outer, _)| {
+                            self.brace_kind(outer) == BraceKind::ObjectLiteral
+                        })
+                }
+                // The `${` of a template substitution holds an expression.
+                "{" => {
+                    self.opens_template_substitution(open)
+                        || self.opens_jsx_attribute_container(open)
+                }
+                _ => false,
+            },
+            Token::Word { text, member } => {
+                !member
+                    && OBJECT_VALUE_KEYWORDS.contains(&text)
+                    // A line terminator after a restricted keyword (comments
+                    // included) ends the statement, so the brace is a block.
+                    && !(RESTRICTED_KEYWORDS.contains(&text) && self.line_break_before(open))
+            }
+            _ => false,
+        };
+        if is_object {
+            BraceKind::ObjectLiteral
+        } else {
+            BraceKind::Other
+        }
+    }
+
+    /// Whether the `>` before the brace at `open` is a comparison or shift
+    /// operator. An arrow (`=>`) and the end of a type-argument list are not.
+    fn greater_than_precedes_object(&self, open: usize) -> bool {
+        let prefix = strip_comments_for_prefix(self.source, open, self.ignored);
+        !prefix.ends_with("=>")
+            && type_arguments_open(self.source, prefix.len() - 1, self.ignored).is_none()
+    }
+
+    /// Whether the `:` before the brace at `open` is the alternate branch of a
+    /// conditional expression: an unmatched `?` precedes it in the same
+    /// statement and brackets, after nested conditionals are paired off.
+    fn colon_ends_conditional(&self, open: usize) -> bool {
+        let bytes = self.code.as_bytes();
+        let mut index = strip_comments_for_prefix(self.source, open, self.ignored)
+            .len()
+            .saturating_sub(1);
+        // Colons that still wait for their `?`, starting with this one.
+        let mut pending = 1usize;
+        let mut depth = 0usize;
+        while index > 0 {
+            index -= 1;
+            match bytes[index] {
+                b')' | b']' | b'}' => depth += 1,
+                b'(' | b'[' | b'{' => match depth.checked_sub(1) {
+                    Some(next) => depth = next,
+                    None => return false,
+                },
+                b';' if depth == 0 => return false,
+                b':' if depth == 0 => pending += 1,
+                b'?' if depth == 0 && is_conditional_question(bytes, index) => {
+                    pending -= 1;
+                    if pending == 0 {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Whether the `{` before the brace at `open` is the `${` that starts a
+    /// template substitution. The previous-token scan reports that `${` as `{`.
+    fn opens_template_substitution(&self, open: usize) -> bool {
+        let end = strip_comments_for_prefix(self.source, open, self.ignored).len();
+        self.ignored.iter().any(|(start, finish)| {
+            let text = &self.source.as_bytes()[*start..(*finish).min(self.source.len())];
+            *finish == end && text.ends_with(b"${") && matches!(text.first(), Some(b'`' | b'}'))
+        })
+    }
+
+    /// Whether the `{` before the brace at `open` opens a JSX attribute
+    /// expression container (`<Widget value={{ ... }} />`): the brace follows
+    /// `name=`. A plain `= {` followed by a second `{` is not valid script
+    /// code, so the pattern cannot hide a statement block.
+    fn opens_jsx_attribute_container(&self, open: usize) -> bool {
+        let container = strip_comments_for_prefix(self.source, open, self.ignored).len() - 1;
+        matches!(
+            previous_significant_token(self.source, container, self.ignored),
+            Token::Punct("=")
+        ) && {
+            let equals = strip_comments_for_prefix(self.source, container, self.ignored).len() - 1;
+            matches!(
+                previous_significant_token(self.source, equals, self.ignored),
+                Token::Word { .. }
+            )
+        }
+    }
+
+    /// Whether the offset starts a member in the body of a `kind` brace: the
+    /// previous token (past any modifiers and a generator `*`) ends an earlier
+    /// member or opens the body.
+    fn at_member_position(&self, name_start: usize, kind: BraceKind) -> bool {
+        let mut member_start = name_start;
+        loop {
+            let token = previous_significant_token(self.source, member_start, self.ignored);
+            let token_end =
+                strip_comments_for_prefix(self.source, member_start, self.ignored).len();
+            // A decorator (`@dec`, `@a.b`, `@dec(args)`, `@(expr)`) on the same
+            // line is part of the member, whatever token ends it.
+            if matches!(token, Token::Word { .. } | Token::Punct(")"))
+                && let Some(at) = self.decorator_start(token_end)
+            {
+                member_start = at;
+                continue;
+            }
+            match token {
+                Token::Word {
+                    text,
+                    member: false,
+                } if METHOD_MODIFIERS.contains(&text) => {
+                    member_start = token_end - text.len();
+                }
+                Token::Punct("*") => member_start = token_end - 1,
+                Token::Punct("{" | "}" | ";") => return true,
+                Token::Punct(",") => return kind == BraceKind::ObjectLiteral,
+                // A class body has no automatic-semicolon-free call
+                // statements, so a member that starts a new line after a
+                // complete field or decorator is a declaration.
+                Token::Punct(")" | "]" | "++" | "--")
+                | Token::Literal
+                | Token::Number
+                | Token::Template => {
+                    return kind == BraceKind::ClassBody
+                        && self.new_line_between(token_end, member_start);
+                }
+                // A name ends a field or signature, a member access
+                // (`x = a.b`) and a private name (`#state`) included; only an
+                // expression keyword (`x = typeof`) leaves the member open.
+                Token::Word { text, member } => {
+                    return kind == BraceKind::ClassBody
+                        && (member
+                            || !REGEX_KEYWORDS.contains(&text)
+                            || self.void_ends_type(token_end, text))
+                        && self.new_line_between(token_end, member_start);
+                }
+                _ => return false,
+            }
+        }
+    }
+
+    /// Whether the word `text` that ends at `end` is the type `void` of a
+    /// field or method annotation (`run(): void`, `x: A | void`), which ends a
+    /// member like any other type name, not the unary operator `void`.
+    fn void_ends_type(&self, end: usize, text: &str) -> bool {
+        if text != "void" {
+            return false;
+        }
+        let start = end - text.len();
+        let before = strip_comments_for_prefix(self.source, start, self.ignored);
+        before.ends_with("=>") || before.ends_with([':', '|', '&'])
+    }
+
+    /// The offset of the `@` of the decorator that ends at `end`, or `None`
+    /// when the code before `end` is not a decorator. A decorator is `@` plus
+    /// a dotted name with optional call arguments (`@a.b(1)`), or a
+    /// parenthesized expression (`@(expr)`).
+    fn decorator_start(&self, end: usize) -> Option<usize> {
+        let code = self.code.as_str();
+        let mut cursor = end;
+        if code[..cursor].ends_with(')') {
+            cursor = matching_backward(code.as_bytes(), cursor - 1, b'(', b')')?;
+            // `@(expr)`: the parenthesis itself follows the `@`.
+            if code[..cursor].ends_with('@') {
+                return Some(cursor - 1);
+            }
+        }
+        loop {
+            let word = trailing_word(&code[..cursor]);
+            if word.is_empty() {
+                return None;
+            }
+            cursor -= word.len();
+            if code[..cursor].ends_with('@') {
+                return Some(cursor - 1);
+            }
+            cursor = cursor
+                .checked_sub(1)
+                .filter(|_| code[..cursor].ends_with('.'))?;
+        }
+    }
+
+    fn new_line_between(&self, start: usize, end: usize) -> bool {
+        self.source[start..end].contains(is_line_terminator)
+    }
+
+    /// Whether a line terminator, possibly inside a block comment, separates
+    /// the previous significant token from `offset`.
+    fn line_break_before(&self, offset: usize) -> bool {
+        let token_end = strip_comments_for_prefix(self.source, offset, self.ignored).len();
+        self.new_line_between(token_end, offset)
+    }
+
+    /// The offset of the `(` that opens the parameter list of a function-like
+    /// `eval`: the next significant token, or the one after an optional
+    /// balanced type-parameter list (`eval<T>(value: T)`).
+    fn parameters_open(&self, name_end: usize) -> Option<usize> {
+        let bytes = self.code.as_bytes();
+        let mut cursor = skip_trivia(&self.code, name_end);
+        if bytes.get(cursor) == Some(&b'<') {
+            cursor = skip_trivia(&self.code, type_parameters_end(bytes, cursor)?);
+        }
+        (bytes.get(cursor) == Some(&b'(')).then_some(cursor)
+    }
+
+    /// Whether the `eval` at `start..end` names a method. Both parts of one
+    /// rule set must match unambiguously; anything else is a call:
+    ///
+    /// 1. Signature: an optional balanced type-parameter list, a balanced
+    ///    parameter list, an optional return-type annotation and a `{` body
+    ///    (see [`body_open_after_parameters`]).
+    /// 2. Context: the name sits directly in a class body or in an object
+    ///    literal (see [`Self::brace_kind`]) at a member position.
+    fn declares_method(&self, start: usize, name_end: usize) -> bool {
+        let Some(open_paren) = self.parameters_open(name_end) else {
+            return false;
+        };
+        let Some(close_paren) = matching_delimiter(self.code.as_bytes(), open_paren, b'(', b')')
+        else {
+            return false;
+        };
+        if body_open_after_parameters(&self.code, close_paren + 1).is_none() {
+            return false;
+        }
+        let Some((open, _)) = self.direct_enclosing_block(start) else {
+            return false;
+        };
+        let kind = self.brace_kind(open);
+        kind != BraceKind::Other && self.at_member_position(start, kind)
+    }
+}
+
+/// The offset of the first non-whitespace character at or after `from`.
+fn skip_trivia(code: &str, from: usize) -> usize {
+    from + (code[from..].len() - code[from..].trim_start().len())
+}
+
+/// The offset just after the `>` that closes the type-parameter list opened by
+/// the `<` at `open` of masked code, or `None` when the angle brackets do not
+/// balance before a statement end.
+///
+/// Brackets, parentheses and braces nest (`T extends { a: Array<1> }`,
+/// `T extends (x: number) => void`) and hide their angle brackets; the `>` of
+/// an arrow (`=>`) closes nothing.
+fn type_parameters_end(bytes: &[u8], open: usize) -> Option<usize> {
+    let mut angles = 0usize;
+    let mut nesting = 0usize;
+    for (index, byte) in bytes.iter().enumerate().skip(open) {
+        match byte {
+            b'(' | b'[' | b'{' => nesting += 1,
+            b')' | b']' | b'}' => nesting = nesting.checked_sub(1)?,
+            b';' if nesting == 0 => return None,
+            b'<' if nesting == 0 => angles += 1,
+            b'>' if nesting == 0 && bytes[index - 1] != b'=' => {
+                angles -= 1;
+                if angles == 0 {
+                    return Some(index + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
     // `eval(` inside strings, templates, comments or regular expressions is
     // not a call.
@@ -1910,6 +2532,7 @@ fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
     // A binding named `eval` makes calls inside its scope ordinary calls that
     // cannot observe the surrounding scope; shadowing is decided per call.
     let shadows = eval_shadow_scopes(source, &ignored);
+    let mut declarations: Option<MemberScan<'_>> = None;
     let start = source.match_indices("eval").find_map(|(start, name)| {
         let end = start + name.len();
         let whole_word = !source[..start].ends_with(is_identifier_part)
@@ -1924,12 +2547,33 @@ fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
             previous_significant_token(source, end, &ignored),
             Token::Word { member: true, .. }
         );
-        // Comments and line terminators may separate the name and `(`.
-        let called = next_significant_token(source, end, &ignored).1 == Token::Punct("(");
+        // Comments and line terminators may separate the name and `(`; a
+        // balanced type-parameter list may be attached to the name
+        // (`eval<T>(x)`).
+        let called = match next_significant_token(source, end, &ignored).1 {
+            Token::Punct("(") => true,
+            // A `<` that follows the name after whitespace or a comment is a
+            // comparison (`eval < value > (code)`), as for every other
+            // type-argument list in these scans.
+            Token::Punct("<") => {
+                source[end..].starts_with('<')
+                    && declarations
+                        .get_or_insert_with(|| MemberScan::new(source, &ignored))
+                        .parameters_open(end)
+                        .is_some()
+            }
+            _ => false,
+        };
         let shadowed = shadows
             .iter()
             .any(|(begin, finish)| (*begin..*finish).contains(&start));
-        (!member && called && !shadowed).then_some(start)
+        if member || !called || shadowed {
+            return None;
+        }
+        // `eval(code) { ... }` in a class body or object literal declares a
+        // method named `eval`; it never calls the global function.
+        let declaration = declarations.get_or_insert_with(|| MemberScan::new(source, &ignored));
+        (!declaration.declares_method(start, end)).then_some(start)
     })?;
     let (line, column) = line_and_column(source, start);
     Some((u32::try_from(line).ok()?, u32::try_from(column).ok()?))
@@ -2105,44 +2749,57 @@ mod tests {
     const UNARY_KEYWORDS: [&str; 4] = ["typeof", "await", "void", "delete"];
 
     fn eval_rule_drafts(source: &str, engine_reports_eval: bool) -> Vec<DiagnosticDraft> {
+        eval_rule_drafts_for_modules(&[("src/main.js", source)], engine_reports_eval)
+    }
+
+    /// Runs the rule over several modules that share one generated chunk. The
+    /// engine log, when requested, names the first module.
+    fn eval_rule_drafts_for_modules(
+        modules: &[(&str, &str)],
+        engine_reports_eval: bool,
+    ) -> Vec<DiagnosticDraft> {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let source_path = root.join("src/main.js");
         let build_dir = root.join("build");
-        std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
         std::fs::create_dir_all(&build_dir).unwrap();
-        std::fs::write(&source_path, source).unwrap();
         std::fs::write(build_dir.join("main.js"), "const longLocalName = 1;").unwrap();
-        let module_id = source_path.to_string_lossy().into_owned();
+        let mut sources = crate::sources::SourceStore::new(true);
+        let mut collected = Vec::new();
+        for (name, source) in modules {
+            let source_path = root.join(name);
+            std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            std::fs::write(&source_path, source).unwrap();
+            // `module_source` reads build-backed text, so model the
+            // source-map snapshot used by a collected build instead of
+            // relying on an unverified live file.
+            sources.snapshots.insert(
+                crate::sources::normalize(&source_path),
+                (*source).to_owned(),
+            );
+            collected.push(CollectedModule {
+                id: source_path.to_string_lossy().into_owned(),
+                path: Some(source_path.to_string_lossy().into_owned()),
+                included: true,
+                chunks: vec!["main.js".to_owned()],
+                ..CollectedModule::default()
+            });
+        }
         let collection = crate::collect::Collection {
             default_minifier: true,
             minify_enabled: true,
             logs: if engine_reports_eval {
                 vec![crate::collect::EngineLog {
                     code: Some("EVAL".to_owned()),
-                    id: Some(module_id.clone()),
+                    id: Some(collected[0].id.clone()),
                     ..crate::collect::EngineLog::default()
                 }]
             } else {
                 Vec::new()
             },
-            modules: vec![CollectedModule {
-                id: module_id,
-                path: Some(source_path.to_string_lossy().into_owned()),
-                included: true,
-                chunks: vec!["main.js".to_owned()],
-                ..CollectedModule::default()
-            }],
+            modules: collected,
             ..crate::collect::Collection::default()
         };
         let chunk = crate::chunks::Chunk::load(&build_dir, "main.js", None, true, root).unwrap();
-        // `module_source` reads build-backed text, so model the source-map
-        // snapshot used by a collected build instead of relying on an
-        // unverified live file.
-        let mut sources = crate::sources::SourceStore::new(true);
-        sources
-            .snapshots
-            .insert(crate::sources::normalize(&source_path), source.to_owned());
         let mut context = Context::new(
             &collection,
             root.to_path_buf(),
@@ -2405,6 +3062,1046 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
         assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
         assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 3);
+    }
+
+    #[test]
+    fn method_declarations_named_eval_are_not_direct_eval() {
+        for source in [
+            "class C { eval(value) { return value; } }",
+            "class C {\n  eval(object) {\n    return object;\n  }\n}",
+            "class C { run() {} eval(value) {} }",
+            "class C { x = 1; eval(value) {} }",
+            "class C { x = 1\n  eval(value) {} }",
+            "class C { x = \"a\"\n  eval(value) {} }",
+            "class C { @dec()\n  eval(value) {} }",
+            "class C extends Base { eval(value) {} }",
+            "class C extends mix(A, B) { eval(value) {} }",
+            "class C<T> implements I { eval(value) {} }",
+            "export default class { eval(value) {} }",
+            "const C = class { eval(value) {} };",
+            "const C = class extends B { eval(value) {} };",
+            "class C { async eval(value) {} }",
+            "class C { *eval(value) {} }",
+            "class C { async *eval(value) {} }",
+            "class C { static eval(value) {} }",
+            "class C { static async eval(value) {} }",
+            "class C { get eval() { return 1; } }",
+            "class C { set eval(value) {} }",
+            "class C { public eval(value: string): number { return 1; } }",
+            "class C { private static async eval(value: string): Promise<void> {} }",
+            "class C { eval(value: string): { a: number } { return { a: 1 }; } }",
+            "class C { eval/* c */(value) {} }",
+            "class C { eval // c\n(value) {} }",
+            "}class C { run() {}eval(object) {} }",
+            "const o = { eval(value) { return value; } };",
+            "const o = { a: 1, eval(value) {} };",
+            "const o = { async eval(value) {} };",
+            "const o = { *eval(value) {} };",
+            "const o = { async *eval(value) {} };",
+            "const o = { get eval() { return 1; } };",
+            "const o = { set eval(value) {} };",
+            "const o = { eval(value): number { return 1; } };",
+            "module.exports = { eval(value) {} };",
+            "export default { eval(value) {} };",
+            "run({ eval(value) {} });",
+            "run(a, { eval(value) {} });",
+            "const list = [{ eval(value) {} }];",
+            "const o = { nested: { eval(value) {} } };",
+            "const o = c ? { eval(value) {} } : null;",
+            "function f() { return { eval(value) {} }; }",
+            "const o = { run() {}, eval(value) {} };",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    /// The offset-based expectation of a source whose only direct eval is the
+    /// first `eval(` that is followed by `marker`.
+    fn assert_reports_at(source: &str, marker: &str) {
+        let offset = source.find(marker).expect(source);
+        let (line, column) = line_and_column(source, offset);
+        assert_eq!(
+            direct_eval_line(source),
+            Some((line as u32, column as u32)),
+            "{source:?}"
+        );
+    }
+
+    #[test]
+    fn object_literals_after_every_expression_operator_hold_methods() {
+        let method = "{ eval(input) {} }";
+        let mut sources: Vec<String> = Vec::new();
+        // Keyword operators.
+        for keyword in [
+            "typeof", "void", "delete", "new", "return", "throw", "default", "yield", "await",
+        ] {
+            sources.push(format!("function* f() {{ {keyword} {method}; }}"));
+        }
+        sources.push(format!("async function f() {{ await {method}; }}"));
+        sources.push(format!("const v = x in {method};"));
+        sources.push(format!("const v = x instanceof {method};"));
+        sources.push(format!("for (const k of {method}) {{}}"));
+        sources.push(format!("switch (x) {{ case {method}: break; }}"));
+        sources.push(format!("export default {method};"));
+        // Unary, binary, logical, nullish and relational operators.
+        for operator in [
+            "!", "~", "+", "-", "left +", "left -", "left *", "left /", "left %", "left **",
+            "left &", "left |", "left ^", "left <<", "left >>", "left >>>", "left <", "left >",
+            "left <=", "left >=", "left ==", "left ===", "left !=", "left !==", "left &&",
+            "left ||", "left ??",
+        ] {
+            sources.push(format!("const v = {operator} {method};"));
+        }
+        // Assignment operators.
+        for operator in [
+            "=", "+=", "-=", "*=", "/=", "%=", "**=", "&=", "|=", "^=", "<<=", ">>=", ">>>=",
+            "&&=", "||=", "??=",
+        ] {
+            sources.push(format!("target {operator} {method};"));
+        }
+        // Spread, comma, conditional, call and index contexts.
+        for context in [
+            "[...{m}]",
+            "run(...{m})",
+            "({ ...{m} })",
+            "(left, {m})",
+            "left, {m}",
+            "c ? {m} : null",
+            "c ? null : {m}",
+            "a ? b ? c : d : {m}",
+            "a ? b : c ? d : {m}",
+            "a ? (b ? c : d) : {m}",
+            "({ k: c ? 1 : {m} })",
+            "({ k: c ? {m} : 1 })",
+            "({ k: {m} })",
+            "run(a, {m})",
+            "list[{m}]",
+            "[{m}]",
+            "(({m}))",
+        ] {
+            sources.push(format!("const v = {};", context.replace("{m}", method)));
+        }
+        // Arrow bodies and template substitutions.
+        for context in [
+            "() => ({m})",
+            "async () => ({m})",
+            "x => y => ({m})",
+            "(x) => (({m}))",
+            "`${{m}}`",
+            "`a${x}b${{m}}c`",
+            "`${`${{m}}`}`",
+            "`${ /* c */ {m}}`",
+        ] {
+            sources.push(format!("const v = {};", context.replace("{m}", method)));
+        }
+        for source in &sources {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+            // A real call next to the literal keeps its own location.
+            let with_call = format!("{source}\neval(code);");
+            assert_reports_at(&with_call, "eval(code)");
+        }
+    }
+
+    #[test]
+    fn braces_that_are_not_object_literals_keep_their_eval_reported() {
+        for source in [
+            "if (x) { eval(code) {} }",
+            "label: { eval(code) {} }",
+            "switch (x) { case 1: { eval(code) {} } }",
+            "const f = () => { eval(code) {} };",
+            "function run() { eval(code) {} }",
+            "a++\n{ eval(code) {} }",
+            "x = a ? b : c\nlabel: { eval(code) {} }",
+            "interface I<T> { eval(code) {} }",
+            "const v = f<A>\n{ eval(code) {} }",
+            "try { eval(code) {} } finally { }",
+            "do { eval(code) {} } while (x);",
+            "{ eval(code) {} }",
+            "x;\n{ eval(code) {} }",
+        ] {
+            assert_reports_at(source, "eval(code)");
+        }
+    }
+
+    #[test]
+    fn signatures_without_a_body_stop_at_their_own_member() {
+        for (source, marker) in [
+            // A `;` ends the signature; the next member's body is not its own.
+            (
+                "abstract class C { abstract eval(v): void; run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { run() {} abstract eval(v): void; }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { x = 1; abstract eval(v): void; y = 2; run() {} }",
+                "eval(v)",
+            ),
+            ("abstract class C { abstract eval(v); run() {} }", "eval(v)"),
+            (
+                "abstract class C { abstract eval(v: { a: number; b: string }): void; run() {} }",
+                "eval(v",
+            ),
+            (
+                "abstract class C { abstract eval(v): { a: number; b: string }; run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): (a: number; b) => void; run() {} }",
+                "eval(v)",
+            ),
+            // Overload signatures.
+            (
+                "class C { eval(v: string): void; eval(v: number): void; run() {} }",
+                "eval(v: string)",
+            ),
+            (
+                "class C { eval(v: string): void; eval(v) {} }",
+                "eval(v: string)",
+            ),
+            (
+                "class C { run() {} eval(v: string): void; eval(v) {} }",
+                "eval(v: string)",
+            ),
+            (
+                "class C { static eval(v: string): void; static eval(v) {} }",
+                "eval(v: string)",
+            ),
+            (
+                "class C { public eval(v: string): void; run() {} }",
+                "eval(v: string)",
+            ),
+            // `declare` classes.
+            ("declare class C { eval(v): void; run() {} }", "eval(v)"),
+            (
+                "declare class C { run() {} eval(v): void }\nfunction later() {}",
+                "eval(v)",
+            ),
+            (
+                "declare class C { eval(v): void }\nfunction later() {}",
+                "eval(v)",
+            ),
+            (
+                "export declare class C { eval(v): void; }\nclass D { run() {} }",
+                "eval(v)",
+            ),
+            // Interface-like and type-literal members.
+            ("interface I { eval(v): void; run(): void }", "eval(v)"),
+            (
+                "interface I { eval(v): void }\nfunction later() {}",
+                "eval(v)",
+            ),
+            (
+                "type T = { eval(v): void; run(): void };\nfunction later() {}",
+                "eval(v)",
+            ),
+            (
+                "declare const o: { eval(v): void };\nconst later = { run() {} };",
+                "eval(v)",
+            ),
+            // Index signatures as neighbors.
+            (
+                "class C { [key: string]: any; abstract eval(v): void; run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void; [key: string]: any; run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { [key: string]: any; abstract eval(v): void; [other: number]: \
+                 any; run() {} }",
+                "eval(v)",
+            ),
+            // No semicolon: the line break ends a complete signature.
+            (
+                "declare class C { eval(v: string): void\n run() {} }",
+                "eval(v: string)",
+            ),
+            (
+                "abstract class C { abstract eval(v)\n run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): { a: number }\n run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): Promise<void>\n run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): string[]\n run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n [key]() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n static run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n async run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n get x() { return 1; } }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n @dec() run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n *gen() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n #priv() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void // c\n run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\u{2028} run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\r\n run() {} }",
+                "eval(v)",
+            ),
+            // A trailing signature is bounded by the closing brace.
+            (
+                "class C { eval(v): void }\nconst o = { run() {} };",
+                "eval(v)",
+            ),
+        ] {
+            assert_reports_at(source, marker);
+        }
+    }
+
+    #[test]
+    fn multi_line_signatures_with_a_body_stay_method_declarations() {
+        for source in [
+            "class C { eval(v): void { } }",
+            "class C { eval(v): void\n{ } }",
+            "class C { eval(v)\n{ } }",
+            "class C { eval(v):\n  void { } }",
+            "class C { eval(v): A\n  | B { } }",
+            "class C { eval(v): A |\n  B { } }",
+            "class C { eval(v): A &\n  B { } }",
+            "class C { eval(v): A\n  & B { } }",
+            "class C { eval(v): (\n  a: number\n) => void { } }",
+            "class C { eval(v): (a: number,\n b: string) => void { } }",
+            "class C { eval(v): Foo<\n  A,\n  B\n> { } }",
+            "class C { eval(v): Promise<\n  { a: number }\n> { } }",
+            "class C { eval(v): { a: number;\n b: string } { } }",
+            "class C { eval(v): { a: number; b: string } { } }",
+            "class C { eval(v): A extends B\n ? C : D { } }",
+            "class C { eval(v): A[\n] { } }",
+            "class C { eval(v) // c\n  { } }",
+            "class C { eval(v) /* c */ : void { } }",
+            "abstract class C { abstract run(): void; eval(v) { } }",
+            "abstract class C { abstract run(): void\n eval(v) { } }",
+            "abstract class C { run: () => void\n eval(v) { } }",
+            "abstract class C { run: A | void\n eval(v) { } }",
+            "abstract class C { run: A & void\n eval(v) { } }",
+            "abstract class C { run(): void // c\n eval(v) { } }",
+            "class C { eval(v) { } run(): void; }",
+            "const o = { eval(v): void { } };",
+            "const o = { eval(v): void\n { } };",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn eval_methods_behind_type_arguments_are_declarations() {
+        for source in [
+            "class C<T extends {a:1}> { eval(value) {} }",
+            "class C<T extends { a: 1 }> { eval(value) {} }",
+            "class C<T = {a:1}> { eval(value) {} }",
+            "class C<T extends Array<{ a: 1 }>> { eval(value) {} }",
+            "class C<T extends Record<string, { a: Array<number> }>> { eval(value) {} }",
+            "class C<T extends (x: number) => void> { eval(value) {} }",
+            "class C<T extends () => { a: 1 }> { eval(value) {} }",
+            "class C<K, V = Map<K, { a: 1 }>> { eval(value) {} }",
+            "class C<const T extends { a: 1 }> { eval(value) {} }",
+            "class C extends B<{ a: 1 }> { eval(value) {} }",
+            "class C extends B<{ a: 1 }> implements I<{ b: 2 }> { eval(value) {} }",
+            "class C<T extends { a: 1 }> extends B<T> implements I<T> { eval(value) {} }",
+            "class C<T extends\n  { a: 1 }\n> {\n  eval(value) {}\n}",
+            "export default class<T extends { a: 1 }> { eval(value) {} }",
+            "const C = class<T extends { a: 1 }> { eval(value) {} };",
+            "const C = class D<T = { a: 1 }> extends B { eval(value) {} };",
+            "export abstract class C<T extends { a: 1 }> { abstract run(value): void; eval(value) \
+             {} }",
+            "class C<T extends { a: 1 }> { run() {} eval(value) {} }",
+            "class C<T extends { a: 1 }> { x: Array<number> = []; eval(value) {} }",
+            "class C { eval(value: Array<{ a: 1 }>): Promise<{ b: 2 }> {} }",
+            // A comparison before the class does not hide its header.
+            "a > b; class C<T extends { a: 1 }> { eval(value) {} }",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    /// Method declarations: the whole source holds no direct eval.
+    fn assert_all_declarations(sources: &[&str]) {
+        for source in sources {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+            // A real call next to the declaration keeps its own location.
+            let with_call = format!("{source}\neval(fresh);");
+            assert_reports_at(&with_call, "eval(fresh)");
+        }
+    }
+
+    /// Findings: the first `marker` is reported, because the scan cannot prove
+    /// a method declaration there.
+    fn assert_all_reported(cases: &[(&str, &str)]) {
+        for (source, marker) in cases {
+            assert_reports_at(source, marker);
+        }
+    }
+
+    #[test]
+    fn generic_eval_methods_skip_the_type_parameter_list() {
+        assert_all_declarations(&[
+            "class C { eval<T>(value: T) {} }",
+            "const o = { eval<T>(value: T) {} };",
+            "class C { eval <T>(value: T) {} }",
+            "class C { eval/* c */<T>/* d */(value: T) {} }",
+            "class C { eval<T>\n(value: T) {} }",
+            "class C { eval<T, U>(value: T, other: U) {} }",
+            "class C { eval<T = string>(value: T) {} }",
+            "class C { eval<T = Array<number>>(value: T) {} }",
+            "class C { eval<T extends Array<Array<number>>>(value: T) {} }",
+            "class C { eval<T extends { a: 1 }>(value: T) {} }",
+            "class C { eval<T extends { a: Array<1> }, U>(value: T) {} }",
+            "class C { eval<T extends (x: number) => void>(value: T) {} }",
+            "class C { eval<T extends () => { a: 1 }>(value: T) {} }",
+            "class C { eval<T extends [number, string]>(value: T) {} }",
+            "class C { eval<const T>(value: T) {} }",
+            "class C { public async eval<T>(value: T): Promise<T> {} }",
+            "class C { static *eval<T>(value: T) {} }",
+            "class C { eval<T>(value: T): T extends U ? { a: 1 } : V {} }",
+            "class C { eval<T>(value: T)\n{} }",
+            "const o = { async eval<T>(value: T) {} };",
+            "const o = { a: 1, eval<T>(value: T): T {} };",
+            "class C { @dec() eval<T>(value: T) {} }",
+            "class C { x = 1\n eval<T>(value: T) {} }",
+        ]);
+        assert_all_reported(&[
+            // A generic signature without a body is not a declaration.
+            (
+                "abstract class C { abstract eval<T>(v: T): void; run() {} }",
+                "eval<T>",
+            ),
+            (
+                "declare class C { eval<T>(v: T): T }\nfunction later() {}",
+                "eval<T>",
+            ),
+            // A generic call, or a comparison chain read as one.
+            ("eval<string>(code);", "eval<string>"),
+            ("const v = x ? eval<T>(code) : null;", "eval<T>"),
+            ("function run() { eval<T>(code) {} }", "eval<T>"),
+            ("if (x) { eval<T>(code) {} }", "eval<T>"),
+        ]);
+        // An unbalanced list is not a call at all.
+        for source in [
+            "eval < max && (x)",
+            "if (eval < a; b > (c)) {}",
+            "eval<T(x)",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn heritage_class_expressions_do_not_hide_the_outer_class_body() {
+        assert_all_declarations(&[
+            "class C extends class {} { eval(value) {} }",
+            "class C extends class { run() {} } { eval(value) {} }",
+            "class C extends class extends class {} {} { eval(value) {} }",
+            "class C extends class B { x = { a: 1 } } { eval(value) {} }",
+            "const D = class C extends class {} { eval(value) {} };",
+            "class C extends class<T extends { a: 1 }> {} { eval(value) {} }",
+            "class C extends class { eval(v) {} } { eval(value) {} }",
+        ]);
+        // A class expression that is not the heritage ends the head, so the
+        // block after it keeps its finding.
+        assert_all_reported(&[
+            ("const D = class {}\n{ eval(code) {} }", "eval(code)"),
+            ("class C extends B {}\n{ eval(code) {} }", "eval(code)"),
+            (
+                "const D = class extends B {};\nif (x) { eval(code) {} }",
+                "eval(code)",
+            ),
+        ]);
+    }
+
+    #[test]
+    fn conditional_return_types_continue_after_type_operators() {
+        assert_all_declarations(&[
+            "class C { eval(): T extends\n string ? T : never\n {} }",
+            "class C { eval(): T extends\n  string\n  ? T\n  : never {} }",
+            "class C { eval(): keyof\n T {} }",
+            "class C { eval(): typeof\n value {} }",
+            "class C { eval(): U extends (infer\n V) ? V : never {} }",
+            "class C { eval(): readonly\n string[] {} }",
+            "class C { eval(v): v is\n string {} }",
+        ]);
+        // A signature without a body still ends at an ordinary line break.
+        assert_all_reported(&[(
+            "declare class C { eval(v): string\n run() {} }\nfunction f() {}",
+            "eval(v)",
+        )]);
+    }
+
+    #[test]
+    fn postfix_updates_complete_a_class_field() {
+        assert_all_declarations(&[
+            "class C { x = value++\n eval(input) {} }",
+            "class C { x = value--\n eval(input) {} }",
+            "class C { x = a.b++\n eval(input) {} }",
+            "class C { x = value++ // c\n eval(input) {} }",
+            "class C { x = value++\n static eval(input) {} }",
+        ]);
+        // On the same line the update is still an expression.
+        assert_all_reported(&[("class C { x = value++ eval(code) {} }", "eval(code)")]);
+        // An object literal member after a postfix update is not a member.
+        assert_all_reported(&[("const o = { x: value++\n eval(code) {} };", "eval(code)")]);
+    }
+
+    #[test]
+    fn jsx_attribute_containers_hold_object_literals() {
+        assert_all_declarations(&[
+            "const a = <Widget value={{ eval(input) {} }} />;",
+            "const a = <Widget value={ { eval(input) {} } } />;",
+            "const a = <Widget data-id={{ a: 1, eval(input) {} }} />;",
+            "const a = <Widget value={/* c */{ eval(input) {} }} />;",
+            "const a = <Widget first={1} value={{ async eval(input) {} }} />;",
+        ]);
+        // A block inside a block or an arrow body is not an object literal.
+        assert_all_reported(&[
+            ("function f() { { eval(code) {} } }", "eval(code)"),
+            ("const f = () => {{ eval(code) {} }};", "eval(code)"),
+            ("if (x) {{ eval(code) {} }}", "eval(code)"),
+        ]);
+    }
+
+    #[test]
+    fn spaced_angle_brackets_after_eval_are_comparisons() {
+        for source in [
+            "const result = eval < value > (code);",
+            "const result = eval <value> (code);",
+            "const result = eval\n< value >\n(code);",
+            "const result = eval /* c */ < value > (code);",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+            let with_call = format!("{source}\neval(fresh);");
+            assert_reports_at(&with_call, "eval(fresh)");
+        }
+        // An attached list keeps the documented generic-call reading.
+        assert_all_reported(&[("const r = eval<string>(code);", "eval<string>")]);
+    }
+
+    #[test]
+    fn comparison_chains_are_not_type_argument_lists() {
+        let method = "{ eval(input) {} }";
+        let mut sources: Vec<String> = Vec::new();
+        for prefix in [
+            "const v = left < right >",
+            "const v = left <right >",
+            "const v = a < b > c >",
+            "const v = a < b < c >",
+            "const v = (a < b) >",
+            "const v = a >= b >",
+            "const v = a < b ? c > d : e >",
+            "x = y < z >",
+            "if (a < b >",
+            "run(a < b >",
+            "const v = [a < b >",
+        ] {
+            let closing = if prefix.starts_with("if (") || prefix.starts_with("run(") {
+                format!("{prefix} {method}) {{}}")
+            } else if prefix.starts_with("const v = [") {
+                format!("{prefix} {method}];")
+            } else {
+                format!("{prefix} {method};")
+            };
+            sources.push(closing);
+        }
+        let sources: Vec<&str> = sources.iter().map(String::as_str).collect();
+        assert_all_declarations(&sources);
+        // A `<` attached to a name opens a type-argument list: the brace after
+        // its `>` is a body or block, so the finding stays.
+        assert_all_reported(&[
+            ("const v = f<A>\n{ eval(code) {} }", "eval(code)"),
+            ("const v = a.b<A>\n{ eval(code) {} }", "eval(code)"),
+            ("const v = f<A, B>\n{ eval(code) {} }", "eval(code)"),
+            ("const v = f<Array<A>>\n{ eval(code) {} }", "eval(code)"),
+            ("const v = f<(a) => void>\n{ eval(code) {} }", "eval(code)"),
+            ("const v = f<{ a: 1 }>\n{ eval(code) {} }", "eval(code)"),
+            ("function f<T>() { eval(code) {} }", "eval(code)"),
+            ("interface I<T> { eval(code) {} }", "eval(code)"),
+            // The documented limit: a comparison whose `<` touches the left
+            // operand reads as a type-argument list.
+            ("const v = a<b>{ eval(code) {} };", "eval(code)"),
+            ("const v = left< right > { eval(code) {} };", "eval(code)"),
+        ]);
+    }
+
+    #[test]
+    fn return_type_braces_never_end_the_annotation() {
+        assert_all_declarations(&[
+            "class C { eval(v): T extends U ? { a: 1 } : V { return 1; } }",
+            "class C { eval(v): T extends U ? V : { a: 1 } {} }",
+            "class C { eval(v): T extends U ? { a: 1 } : { b: 2 } {} }",
+            "class C { eval(v): T extends { a: 1 } ? X : Y {} }",
+            "class C { eval(v): T extends U ? A extends B ? { a: 1 } : C : D {} }",
+            "class C { eval(v): T extends U\n ? { a: 1 }\n : V {} }",
+            "class C { eval(v): v is { a: 1 } {} }",
+            "class C { eval(v): Array<{ a: 1 }> {} }",
+            "class C { eval(v): [{ a: 1 }, { b: 2 }] {} }",
+            "class C { eval(v): { a: 1 } | { b: 2 } {} }",
+            "class C { eval(v): { a: 1 } & { b: 2 } {} }",
+            "class C { eval(v): (a: { x: 1 }) => { y: 2 } {} }",
+            "class C { eval(v): () => void {} }",
+            "class C { eval(v): Promise<void> {} }",
+            "class C { eval(v): A[] {} }",
+            "const o = { eval(v): A extends B ? { a: 1 } : { b: 2 } {} };",
+        ]);
+        assert_all_reported(&[
+            (
+                "abstract class C { abstract eval(v): T extends U ? { a: 1 } : V; run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): T extends U ? V : { a: 1 }; run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): T extends U ? { a: 1 } : { b: 2 }; run() {} \
+                 }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): T extends { a: 1 } ? X : Y; run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): v is { a: 1 }; run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): T extends U ? { a: 1 } : V\n run() {} }",
+                "eval(v)",
+            ),
+            (
+                "declare class C { eval(v): T extends U ? { a: 1 } : V }\nfunction later() {}",
+                "eval(v)",
+            ),
+            (
+                "interface I { eval(v): T extends U ? { a: 1 } : V; run(): void }",
+                "eval(v)",
+            ),
+            (
+                "class C { eval(v): T extends U ? { a: 1 } : V; eval(v) {} }",
+                "eval(v): T",
+            ),
+        ]);
+    }
+
+    #[test]
+    fn private_and_member_fields_complete_a_class_member() {
+        assert_all_declarations(&[
+            "class C { #state\n eval(value) {} }",
+            "class C { #state\n  eval(value) {}\n}",
+            "class C { #state = 1\n eval(value) {} }",
+            "class C { #state = 'a'\n eval(value) {} }",
+            "class C { #state;\n eval(value) {} }",
+            "class C { #state; eval(value) {} }",
+            "class C { #state;eval(value) {} }",
+            "class C { static #state\n eval(value) {} }",
+            "class C { #state: number\n eval(value) {} }",
+            "class C { #state: A | B\n eval(value) {} }",
+            "class C { #state = this.#other\n eval(value) {} }",
+            "class C { x = a.b\n eval(value) {} }",
+            "class C { x = a?.b\n eval(value) {} }",
+            "class C { #state // c\n eval(value) {} }",
+            "class C { #state /* c */\n eval(value) {} }",
+            "class C { #state\n static eval(value) {} }",
+            "class C { #state\n async eval(value) {} }",
+            "class C { #state\n get eval() { return 1; } }",
+            "class C { #state\n @dec() eval(value) {} }",
+            "class C { #a\n #b\n eval(value) {} }",
+            "class C { #state\u{2028} eval(value) {} }",
+        ]);
+        assert_all_reported(&[
+            // No line break: the next token continues the field expression.
+            ("class C { x = a.b eval(value) {} }", "eval(value)"),
+            ("class C { #state eval(value) {} }", "eval(value)"),
+            // The documented limit: an optional or definite marker alone on
+            // the end of a line is not read as a complete field.
+            ("class C { x?\n eval(value) {} }", "eval(value)"),
+            ("class C { x!\n eval(value) {} }", "eval(value)"),
+            // A keyword that cannot end a field leaves the member open.
+            ("class C { x = typeof\n eval(value) {} }", "eval(value)"),
+            ("class C { x = a.b +\n eval(value) {} }", "eval(value)"),
+            // An object literal needs a comma, never a line break.
+            ("const o = { a: b\n eval(value) {} };", "eval(value)"),
+            ("const o = { a: b.c\n eval(value) {} };", "eval(value)"),
+        ]);
+    }
+
+    #[test]
+    fn restricted_keywords_end_the_statement_before_an_object_literal() {
+        assert_all_reported(&[
+            ("function f() { return\n{ eval(code)\n{} } }", "eval(code)"),
+            ("function f() { return\n{ eval(code) {} } }", "eval(code)"),
+            ("function f() { return\r\n{ eval(code) {} } }", "eval(code)"),
+            (
+                "function f() { return\u{2028}{ eval(code) {} } }",
+                "eval(code)",
+            ),
+            (
+                "function f() { return // c\n{ eval(code) {} } }",
+                "eval(code)",
+            ),
+            (
+                "function f() { return /*\n*/ { eval(code) {} } }",
+                "eval(code)",
+            ),
+            (
+                "function f() { return /* c */\n/* d */ { eval(code) {} } }",
+                "eval(code)",
+            ),
+            ("function f() { throw\n{ eval(code) {} } }", "eval(code)"),
+            ("function* f() { yield\n{ eval(code) {} } }", "eval(code)"),
+            ("while (x) { break\n{ eval(code) {} } }", "eval(code)"),
+            ("for (;;) { continue\n{ eval(code) {} } }", "eval(code)"),
+            (
+                "function f() { if (x) return\n{ eval(code) {} } }",
+                "eval(code)",
+            ),
+            // A member named like a keyword is a plain name that ends the
+            // expression, so a brace after it opens a block.
+            ("const v = a.return { eval(code) {} };", "eval(code)"),
+            ("const v = a.return\n{ eval(code) {} };", "eval(code)"),
+        ]);
+        assert_all_declarations(&[
+            "function f() { return { eval(code) {} }; }",
+            "function f() { return {\n eval(code) {} }; }",
+            "function f() { return /* c */ { eval(code) {} }; }",
+            "function f() { return /* c */{ eval(code) {} }; }",
+            "function f() { throw { eval(code) {} }; }",
+            "function* f() { yield { eval(code) {} }; }",
+            "function* f() { yield\n; return { eval(code) {} }; }",
+            // The unrestricted keywords continue across a line break.
+            "const v = typeof\n{ eval(code) {} };",
+            "const v = void\n{ eval(code) {} };",
+            "const v = new\n{ eval(code) {} };",
+            "const v = x in\n{ eval(code) {} };",
+            "async function f() { await\n{ eval(code) {} }; }",
+            "export default\n{ eval(code) {} };",
+            "switch (x) { case\n{ eval(code) {} }: break; }",
+            // Operators continue across a line break.
+            "const v =\n{ eval(code) {} };",
+            "const v = a +\n{ eval(code) {} };",
+            "const v = c ?\n{ eval(code) {} } : null;",
+            "run(\n{ eval(code) {} });",
+        ]);
+    }
+
+    #[test]
+    fn eval_methods_with_non_ascii_names_do_not_panic_or_report() {
+        for source in [
+            "class Caf\u{e9} { eval(value) {} }",
+            "class \u{c9}<T extends { \u{e9}: 1 }> { eval(value) {} }",
+            "class \u{4e2d}\u{6587} extends \u{540d}\u{524d} { eval(value) {} }",
+            "class C extends Caf\u{e9}<{ a: 1 }> { eval(value) {} }",
+            "class C { caf\u{e9} = 1\n  eval(value) {} }",
+            "class C { caf\u{e9}() {} eval(value) {} }",
+            "class C { \u{1f600} = 1; eval(value) {} }",
+            "class C { x = \"\u{e9}\"\n  eval(value) {} }",
+            "class C { /* \u{e9} */ eval(value) {} }",
+            "// \u{e9}\nclass C { eval(value) {} }",
+            "class C { @d\u{e9}c() eval(value) {} }",
+            "class C { @d\u{e9}c eval(value) {} }",
+            "const o = { caf\u{e9}: 1, eval(value) {} };",
+            "const o = { \"\u{e9}\": 1, eval(value) {} };",
+            "const o = { \u{e9}val() {}, eval(value) {} };",
+            "const o = { nested: { caf\u{e9}: 1, eval(value) {} } };",
+            "const caf\u{e9} = { eval(value) {} };",
+            "const C = class Caf\u{e9} { eval(value) {} };",
+            "class C {\u{2028}  eval(value) {} }",
+            "class C { x = 1\u{2028}  eval(value) {} }",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+        // Real calls next to non-ASCII names keep their own location.
+        for (source, call) in [
+            ("class Caf\u{e9} { run() { eval(code); } }", "eval(code)"),
+            ("class Caf\u{e9} {} eval(code);", "eval(code)"),
+            ("const caf\u{e9} = { a: eval(code) };", "eval(code)"),
+            ("const o = { caf\u{e9}: eval(code) };", "eval(code)"),
+            ("class C { caf\u{e9} = eval(code); }", "eval(code)"),
+            (
+                "class C<T extends { \u{e9}: 1 }> { run() { eval(code) } }",
+                "eval(code)",
+            ),
+        ] {
+            let offset = source.find(call).expect(source);
+            let (line, column) = line_and_column(source, offset);
+            assert_eq!(
+                direct_eval_line(source),
+                Some((line as u32, column as u32)),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn scans_never_panic_on_any_char_boundary_cut() {
+        for source in [
+            "class Caf\u{e9}<T extends { \u{e9}: 1 }> extends \u{c9}<{ a: 1 }> { \
+             @d\u{e9}c(\"\u{e9}\") eval(value) {} }",
+            "const o = { caf\u{e9}: `\u{e9}${eval(x)}`, eval(v) {}, \u{1f600}: /\u{e9}/ };",
+            "class C { x = 1\u{2028}  eval(value) {}\u{2029}run() { eval(code) } }",
+        ] {
+            for end in source.char_indices().map(|(index, _)| index) {
+                let _ = direct_eval_line(&source[..end]);
+                let _ = direct_eval_line(&source[end..]);
+            }
+            let ignored = non_code_ranges(source);
+            assert_eq!(
+                masked_code(source, &ignored).len(),
+                source.len(),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn decorated_eval_methods_are_declarations() {
+        for source in [
+            "class C { @dec() eval(value) {} }",
+            "class C { @dec eval(value) {} }",
+            "class C { @dec\n  eval(value) {} }",
+            "class C { @dec()\n  eval(value) {} }",
+            "class C { @a.b.c eval(value) {} }",
+            "class C { @a.b.c(1, { x: 2 }) eval(value) {} }",
+            "class C { @a.b(\")\") eval(value) {} }",
+            "class C { @(factory()) eval(value) {} }",
+            "class C { @dec() @other(1) eval(value) {} }",
+            "class C { @dec() @other eval(value) {} }",
+            "class C { @dec() static eval(value) {} }",
+            "class C { @dec() async eval(value) {} }",
+            "class C { @dec() static async *eval(value) {} }",
+            "class C { @dec() get eval() { return 1; } }",
+            "class C { @dec() set eval(value) {} }",
+            "class C { @dec() public override eval(value): void {} }",
+            "class C { @get eval(value) {} }",
+            "class C { @static eval(value) {} }",
+            "class C { @dec(/* c */) eval(value) {} }",
+            "class C { @dec() /* c */ eval(value) {} }",
+            "class C { run() {} @dec() eval(value) {} }",
+            "class C { x = 1; @dec() eval(value) {} }",
+            "class C { x = 1\n  @dec() eval(value) {} }",
+            "@dec() class C { @dec() eval(value) {} }",
+            "export default @dec() class { @dec() eval(value) {} }",
+            "const C = class { @dec() eval(value) {} };",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+        // A decorator that calls eval is still a real call.
+        for (source, call) in [
+            ("class C { @eval(code) run() {} }", "eval(code)"),
+            ("class C { @dec(eval(code)) run() {} }", "eval(code)"),
+            (
+                "class C { @dec() eval(value) {} run() { eval(code) } }",
+                "eval(code)",
+            ),
+            ("class C { @dec(eval(code)) eval(value) {} }", "eval(code)"),
+            ("class C { x = f() eval(code) }", "eval(code)"),
+            ("class C { x = f(a) ; y = eval(code) }", "eval(code)"),
+        ] {
+            let offset = source.find(call).expect(source);
+            let (line, column) = line_and_column(source, offset);
+            assert_eq!(
+                direct_eval_line(source),
+                Some((line as u32, column as u32)),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn computed_keys_and_accessors_around_eval_methods() {
+        for source in [
+            "class C { [key]() {} eval(value) {} }",
+            "class C { [key] = 1; eval(value) {} }",
+            "class C { [key] = 1\n  eval(value) {} }",
+            "class C { static [key]() {} eval(value) {} }",
+            "class C { get [key]() { return 1; } eval(value) {} }",
+            "class C { get eval() { return 1; } set eval(value) {} }",
+            "class C { static get eval() { return 1; } }",
+            "class C { static set eval(value) {} }",
+            "class C { async *[Symbol.iterator]() {} eval(value) {} }",
+            "const o = { [key]: 1, eval(value) {} };",
+            "const o = { [key]() {}, eval(value) {} };",
+            "const o = { get [key]() { return 1; }, eval(value) {} };",
+            "const o = { get eval() { return 1; }, set eval(value) {} };",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+        // Calls inside a computed key or an accessor body are real calls.
+        for (source, call) in [
+            ("class C { [eval(code)]() {} }", "eval(code)"),
+            ("class C { static [eval(code)] = 1; }", "eval(code)"),
+            ("class C { get [eval(code)]() { return 1; } }", "eval(code)"),
+            ("class C { get a() { return eval(code); } }", "eval(code)"),
+            ("class C { set a(v) { eval(code); } }", "eval(code)"),
+            ("const o = { [eval(code)]() {} };", "eval(code)"),
+            (
+                "const o = { get a() { return eval(code); } };",
+                "eval(code)",
+            ),
+            (
+                "const o = { [eval(code)]: 1, eval(value) {} };",
+                "eval(code)",
+            ),
+            (
+                "a > b; class C<T extends { a: 1 }> { run() { eval(code) } }",
+                "eval(code)",
+            ),
+            (
+                "const x = a > b ? { eval(value) {} } : 0; eval(code);",
+                "eval(code)",
+            ),
+            (
+                "class A {}\nconst r = a > b ? eval(code) : 0;",
+                "eval(code)",
+            ),
+        ] {
+            let offset = source.find(call).expect(source);
+            let (line, column) = line_and_column(source, offset);
+            assert_eq!(
+                direct_eval_line(source),
+                Some((line as u32, column as u32)),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn calls_next_to_method_declarations_are_still_direct_eval() {
+        // The reported position is the call, not the declaration.
+        for (source, call) in [
+            ("class C { eval(value) {} }\neval(code);", "eval(code)"),
+            (
+                "class C { eval(value) { return eval(value); } }",
+                "eval(value);",
+            ),
+            (
+                "class C {\n  eval(value) {}\n  run() { eval(code); }\n}",
+                "eval(code)",
+            ),
+            (
+                "const o = { eval(value) {} };\nconst x = eval(code);",
+                "eval(code)",
+            ),
+            ("const o = { a: eval(code), eval(value) {} };", "eval(code)"),
+            (
+                "const o = { eval(value) { return eval(code); } };",
+                "eval(code)",
+            ),
+            ("const o = { a: eval(code) };", "eval(code)"),
+            ("const o = { a: c ? eval(code) : { b: 1 } };", "eval(code)"),
+            ("class C { x = eval(code); }", "eval(code)"),
+            ("class C { x = c ? eval(code) : { b: 1 }; }", "eval(code)"),
+            ("class C { [eval(code)]() {} }", "eval(code)"),
+            ("class C { @eval(code) run() {} }", "eval(code)"),
+            ("class C { static { eval(code); } }", "eval(code)"),
+            ("class C { run() { eval(code) } }", "eval(code)"),
+            ("run(a, eval(code)) ;", "eval(code)"),
+            ("run(eval(code)) ;", "eval(code)"),
+            ("x = a ? eval(code) : b;", "eval(code)"),
+            ("if (x) { eval(code) }", "eval(code)"),
+            ("function run() { eval(code) }", "eval(code)"),
+            ("const f = () => { eval(code) };", "eval(code)"),
+            ("{ eval(code) }", "eval(code)"),
+            ("a;\neval(code)\n{ b }", "eval(code)"),
+            ("const o = { a, b }; eval(code);", "eval(code)"),
+        ] {
+            let offset = source.find(call).expect(source);
+            let expected = line_and_column(source, offset);
+            let expected = (expected.0 as u32, expected.1 as u32);
+            assert_eq!(direct_eval_line(source), Some(expected), "{source:?}");
+        }
+        // Member calls stay member calls.
+        for source in [
+            "class C { run() { return this.eval(value); } }",
+            "instance.eval(value);",
+            "const o = { eval(value) {} }; o.eval(1);",
+            "class C { eval(value) {} } new C().eval(1);",
+            "class C { eval(value) { return this.#eval(value); } }",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn eval_methods_in_one_module_do_not_hide_a_real_call_in_another() {
+        let prefix = "const longLocalName = 1;\n";
+        let method_module = format!(
+            "{prefix}export class Prefilter {{\n  eval(input, pos) {{ return input; }}\n}}\n"
+        );
+        let call_module =
+            format!("{prefix}export const run = (code) => {{\n  return eval(code);\n}};\n");
+        // Only the method: no finding.
+        let drafts = eval_rule_drafts_for_modules(&[("src/method.js", &method_module)], false);
+        assert!(drafts.is_empty());
+        // The method dependency and the real call dependency: one finding on
+        // the real call.
+        let drafts = eval_rule_drafts_for_modules(
+            &[
+                ("src/method.js", &method_module),
+                ("src/call.js", &call_module),
+            ],
+            false,
+        );
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+        assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+        let location = drafts[0].located.location.as_ref().unwrap();
+        assert!(location.path.ends_with("src/call.js"));
+        assert_eq!(location.line, 3);
+        // Reversing the module order does not change the result.
+        let drafts = eval_rule_drafts_for_modules(
+            &[
+                ("src/call.js", &call_module),
+                ("src/method.js", &method_module),
+            ],
+            false,
+        );
+        assert_eq!(drafts.len(), 1);
+        // A method and a real call in the same module report the call.
+        let both = format!(
+            "{prefix}class Prefilter {{\n  eval(input, pos) {{ return input; }}\n}}\neval(code);\n"
+        );
+        let drafts = eval_rule_drafts(&both, false);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 5);
+        // An engine-reported eval is still reported for a method-only module.
+        assert_eq!(eval_rule_drafts(&method_module, true).len(), 1);
     }
 
     #[test]
@@ -3368,12 +5065,17 @@ y=/process.env.F/.test(z),process.env.G"#;
     #[test]
     fn lexical_token_limits_stay_conservative() {
         let read = "process.env.FLAG";
-        // A method named `eval` looks like a call, and a comma inside
-        // TypeScript type arguments ends an arrow body early: both are
-        // reported as a possible direct eval.
+        // A comma inside TypeScript type arguments ends an arrow body early,
+        // so the call is reported as a possible direct eval.
+        let source = "const f = (eval) => g<A, B>(eval(code));";
+        assert!(direct_eval_line(source).is_some(), "{source:?}");
+        // A method declaration named `eval` is no call, but a declaration the
+        // scan cannot place (a statement block that only looks like a member
+        // list, or a `case` clause) is still reported.
         for source in [
-            "class A { eval(code) { return 1; } }",
-            "const f = (eval) => g<A, B>(eval(code));",
+            "if (x) { eval(code) }",
+            "label: { eval(code) {} }",
+            "switch (a) { case 1: { eval(code) {} } }",
         ] {
             assert!(direct_eval_line(source).is_some(), "{source:?}");
         }
