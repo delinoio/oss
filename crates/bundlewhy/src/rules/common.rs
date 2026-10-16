@@ -529,7 +529,8 @@ fn statement_boundary(
     block_starts_statement: bool,
     await_word: AwaitWord,
 ) -> bool {
-    let ends_expression = match previous_significant_token(code, terminator, ignored) {
+    let previous = previous_significant_token(code, terminator, ignored);
+    let ends_expression = match previous {
         Token::Word { text, member } => {
             member
                 || !OPEN_KEYWORDS.contains(&text)
@@ -542,6 +543,21 @@ fn statement_boundary(
         return false;
     }
     let (position, next) = next_significant_token(code, after, ignored);
+    // `yield` is a plain identifier in a sloppy-mode script, so a slash on the
+    // next line is a division that continues the expression. In a generator
+    // the same slash starts a regular expression; the scan cannot tell them
+    // apart without a parse, so it keeps the body open, as it did before
+    // `yield` became a restricted production.
+    if matches!(
+        previous,
+        Token::Word {
+            text: "yield",
+            member: false
+        }
+    ) && code[position..].starts_with('/')
+    {
+        return false;
+    }
     !match next {
         Token::Word { text, .. } => matches!(text, "in" | "instanceof"),
         Token::Template => true,
@@ -7669,8 +7685,13 @@ y=/process.env.F/.test(z),process.env.G"#;
                 assert_await_is_a_call(&code);
             }
         }
-        // A continuation after `yield` keeps the arrow body open.
+        // A continuation after `yield` keeps the arrow body open, including a
+        // slash that the scan also reads as the start of a regular expression
+        // (`yield` is an identifier in a script, so the slash divides).
         for code in [
+            "var yield=16; const g=async()=>yield\n/2/await(x)",
+            "var yield=16; const g=async()=>yield\n/ 2 / await(x)",
+            "var yield=16; const g=async()=>yield // c\n/* d */ /2/ await(x)",
             "const g = async () => yield\n  + await(x)",
             "const g = async () => yield\n  ?? await(x)",
             "const g = async () => yield + await(x)",
