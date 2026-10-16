@@ -27,9 +27,12 @@
 //!
 //! - An object literal, an array literal or a function or class expression.
 //! - `new C(…)` where `C` is a short list of library constructors that return a
-//!   new object (not `Object`, `Function` or `Proxy`), or an application class
-//!   declaration whose constructor chain never returns a value and extends only
-//!   such classes.
+//!   new object (not `Object`, `Function` or `Proxy`) and that nothing replaces
+//!   (`Date = …`, `globalThis.Date = …`), or an application class declaration
+//!   without a class decorator whose constructor chain never returns a value
+//!   and extends only such classes. A class decorator may replace the class
+//!   with a constructor that returns any object, so a decorated class is never
+//!   local.
 //! - `this` (and `super`) in a constructor, a field initializer or a static
 //!   block of a class: the new instance or the class itself.
 //! - A variable whose every declaration is a plain `const`, `let` or `var` with

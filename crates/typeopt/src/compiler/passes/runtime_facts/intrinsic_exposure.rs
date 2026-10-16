@@ -84,6 +84,18 @@
 //! [`super::local_receiver`]: only a provably local receiver is ignored by the
 //! patch scan; every other write is a possible patch of its key.
 //!
+//! Evidence rules. A computed key is harmless only while nothing overrides its
+//! type (an assertion, a JSDoc cast or an `any` value reaching a number-typed
+//! variable make the type a claim without runtime evidence), and a timer
+//! callback is a function only when the expression or the declaration it names
+//! shows it, never because of a call signature in its type. A key or callback
+//! that arrives through a parameter, a property or a call result keeps the
+//! conservative default (a callback is assumed to be string code; a key keeps
+//! its declared type), and calling code the program does not define (a host
+//! global, an ambient declaration) is trusted like any host function: both
+//! need an escape analysis or a host trust model and are documented limits in
+//! `docs/crates-typeopt-foundation.md`.
+//!
 //! Residuals. The rule is about the language's own routes. Routes through the
 //! host stay open: a module loader (`require("vm")`, `process.binding`), DOM
 //! script injection (`document.write`, a script element) and an `import()` of a
