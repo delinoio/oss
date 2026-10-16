@@ -188,7 +188,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		if managedPreNative {
 			// A joined tree with failed helper retirement still authorizes the
 			// independent authentication cleanup but keeps the lease retained.
-			managedCleanup, _ = cleanupPreNativeAuthentication(config.cleanupContext(), nativeHome, managed.response.Bundle, managedHelperRetained)
+			managedCleanup, _ = managed.cleanupUnusedAuthentication(config.cleanupContext(), nativeHome, managed.response.Bundle, managedHelperRetained)
 			if managedCleanup {
 				managedLatest = bytes.Clone(managed.response.Bundle)
 				managedUnused = true

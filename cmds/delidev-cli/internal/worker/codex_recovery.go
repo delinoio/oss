@@ -265,13 +265,23 @@ func (l *managedSubscriptionLease) recordNativeOwner(owner domain.ID) error {
 // the retained history. A capture that cannot be confirmed keeps the file in
 // place, so the fenced lease can still be recovered from it.
 func (l *managedSubscriptionLease) cleanupAuthentication(ctx context.Context, home string, latest, original []byte) error {
+	if err := l.captureBeforeCleanup(ctx, latest, original); err != nil {
+		return err
+	}
+	return cleanupExecutionAuthentication(ctx, home, latest, original)
+}
+
+// captureBeforeCleanup is the single gate every deletion of a managed lease's
+// transient authentication passes: the protected capture is confirmed first, or
+// the deletion does not happen.
+func (l *managedSubscriptionLease) captureBeforeCleanup(ctx context.Context, latest, original []byte) error {
 	if err := l.syncRecoveryCapture(ctx, latest, original); err != nil {
 		if l.logger != nil {
 			l.logger.Warn("codex_recovery_capture_unconfirmed", "phase", codexRecoveryPhase, "account_id", l.account, "lease_id", l.leaseID(), "code", domain.SafeError(err).Code)
 		}
 		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthCapture}
 	}
-	return cleanupExecutionAuthentication(ctx, home, latest, original)
+	return nil
 }
 
 // syncRecoveryCapture sends the latest validated bundle to the server vault under

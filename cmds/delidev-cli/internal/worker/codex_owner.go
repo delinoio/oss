@@ -379,7 +379,7 @@ func (o *codexSharedOwner) retire(last *codexSharedMember) error {
 				}
 			} else {
 				if clean {
-					removed, err := cleanupPreNativeAuthentication(o.config.cleanupContext(), o.home, o.initial, false)
+					removed, err := o.lease.cleanupUnusedAuthentication(o.config.cleanupContext(), o.home, o.initial, false)
 					clean = removed && err == nil
 				}
 			}

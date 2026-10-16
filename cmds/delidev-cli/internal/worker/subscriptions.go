@@ -706,6 +706,19 @@ func cleanupPreNativeAuthentication(ctx context.Context, home string, original [
 	return err == nil && !helperRetained, err
 }
 
+// cleanupUnusedAuthentication is the pre-native cleanup of a managed lease. The
+// delivered original bundle is the only credential evidence the fenced lease can
+// later be recovered from, so a negotiated recovery capture of it is
+// synchronized before the file is deleted. A capture that cannot be confirmed
+// keeps the file in place and leaves the cleanup unconfirmed, exactly like the
+// post-native cleanup.
+func (l *managedSubscriptionLease) cleanupUnusedAuthentication(ctx context.Context, home string, original []byte, helperRetained bool) (confirmed bool, err error) {
+	if err := l.captureBeforeCleanup(ctx, original, original); err != nil {
+		return false, err
+	}
+	return cleanupPreNativeAuthentication(ctx, home, original, helperRetained)
+}
+
 type executionAuthenticationStage string
 type executionAuthenticationReason string
 

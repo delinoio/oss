@@ -1148,8 +1148,11 @@ redistribution: Take reads only the published generation, and the Worker Finish
 retirement protects the capture (`protectedWorkerReferences`) while its lease is
 held and retires it with the lease. A replayed request (crash or lost response)
 reuses the same capture; a newer capture replaces and retires the previous one.
-If the capture cannot be confirmed the Worker keeps the authentication file in
-place, so the fenced lease can still be recovered from it. The Worker journals
+Every deletion of the transient authentication passes this one gate, including
+the pre-native cleanup of an unused original bundle (there the original is also
+the latest): the capture is confirmed first, or the file stays and the cleanup is
+unconfirmed. If the capture cannot be confirmed the Worker keeps the
+authentication file in place, so the fenced lease can still be recovered from it. The Worker journals
 the exact authentication home before any credential is written, the stable
 server identity, the capture identity and its digest; the journal never holds
 secret bytes and the home path is never logged.

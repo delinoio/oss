@@ -75,7 +75,7 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 			defer closeManagedRPC()
 		}
 		if managed != nil && managedPreNative {
-			managedCleanup, _ = cleanupPreNativeAuthentication(config.cleanupContext(), nativeHome, managed.response.Bundle, managedHelperRetained)
+			managedCleanup, _ = managed.cleanupUnusedAuthentication(config.cleanupContext(), nativeHome, managed.response.Bundle, managedHelperRetained)
 			if managedCleanup {
 				managedLatest = bytes.Clone(managed.response.Bundle)
 				managedUnused = true

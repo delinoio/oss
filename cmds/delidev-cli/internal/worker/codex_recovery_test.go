@@ -860,6 +860,55 @@ func TestCodexCleanupWithoutNegotiatedRecoveryKeepsTheLegacyFlow(t *testing.T) {
 	}
 }
 
+// Every deletion of a managed lease's transient authentication, including the
+// pre-native cleanup of an unused original bundle, is preceded by the protected
+// capture. An unconfirmed capture keeps the file so a fenced lease stays recoverable.
+func TestCodexPreNativeCleanupCapturesTheOriginalBeforeDeletingAuthentication(t *testing.T) {
+	f := newRecoveryWorkerFixture(t)
+	if err := security.WriteAtomic(filepath.Join(f.home, "auth.json"), f.original); err != nil {
+		t.Fatal(err)
+	}
+	lease := &managedSubscriptionLease{recoveryCapture: true, client: f.client, credential: f.credential, instance: f.lease.InstanceID, account: f.accountID, response: &pb.TakeSubscriptionResponse{LeaseId: string(f.lease.ID), GenerationId: string(f.lease.Generation), LeaseRevision: f.lease.Revision, Bundle: f.original}, journalPath: f.path, journal: f.journal}
+	f.server.syncError = connect.NewError(connect.CodeUnavailable, nil)
+	confirmed, err := lease.cleanupUnusedAuthentication(context.Background(), f.home, f.original, false)
+	var failure *executionAuthenticationFailure
+	if confirmed || !errors.As(err, &failure) || failure.reason != executionAuthCapture || !f.authExists() {
+		t.Fatal("an unconfirmed capture still deleted the unused original", confirmed, err)
+	}
+	f.server.mu.Lock()
+	f.server.syncError = nil
+	f.server.mu.Unlock()
+	confirmed, err = lease.cleanupUnusedAuthentication(context.Background(), f.home, f.original, false)
+	if !confirmed || err != nil || f.authExists() {
+		t.Fatal("a confirmed capture did not allow the cleanup", confirmed, err)
+	}
+	last := len(f.server.syncs) - 1
+	if last != 1 || !bytes.Equal(f.server.syncAuth[last], f.original) || !bytes.Equal(f.server.syncs[last].Latest, f.original) || !bytes.Equal(f.server.syncs[last].Original, f.original) || f.server.syncs[0].Mutation.RequestId != f.server.syncs[1].Mutation.RequestId {
+		t.Fatal("the pre-native capture did not precede the deletion under one durable identity")
+	}
+	// A retained helper keeps the lease unconfirmed even when the capture is in place.
+	if err := security.WriteAtomic(filepath.Join(f.home, "auth.json"), f.original); err != nil {
+		t.Fatal(err)
+	}
+	if confirmed, err := lease.cleanupUnusedAuthentication(context.Background(), f.home, f.original, true); confirmed || err != nil {
+		t.Fatal("retained helpers did not keep the pre-native cleanup unconfirmed", confirmed, err)
+	}
+}
+
+func TestCodexPreNativeCleanupWithoutNegotiatedRecoveryKeepsTheLegacyFlow(t *testing.T) {
+	f := newRecoveryWorkerFixture(t)
+	if err := security.WriteAtomic(filepath.Join(f.home, "auth.json"), f.original); err != nil {
+		t.Fatal(err)
+	}
+	lease := &managedSubscriptionLease{client: f.client, credential: f.credential, instance: f.lease.InstanceID, account: f.accountID, response: &pb.TakeSubscriptionResponse{LeaseId: string(f.lease.ID), Bundle: f.original}, journalPath: f.path, journal: f.journal}
+	if confirmed, err := lease.cleanupUnusedAuthentication(context.Background(), f.home, f.original, false); !confirmed || err != nil || f.authExists() {
+		t.Fatal("the legacy pre-native cleanup changed", confirmed, err)
+	}
+	if len(f.server.syncs) != 0 {
+		t.Fatal("an older peer received a capture")
+	}
+}
+
 func TestCodexRecoveryRetryDelaysAndRotation(t *testing.T) {
 	expected := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 30 * time.Second, 30 * time.Second}
 	for i, want := range expected {
