@@ -44,6 +44,16 @@ func (l *managedSubscriptionLease) finishCodexScoped(bundle []byte, cleanup, suc
 		// shared owner; every other member lease ends with its own Finish.
 		codexLeasesInFlight.Delete(l.response.LeaseId)
 	}
+	if scope == pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER && l.response.OwnerLeaseId != "" {
+		// The final owner Finish is sent through the last member's lease, which
+		// may be a joined member. Recovery is keyed by the founding owner lease,
+		// so retire that marker too; otherwise an unconfirmed owner Finish would
+		// leave the closed owner looking live until the process reconnects.
+		codexLeasesInFlight.Delete(l.response.OwnerLeaseId)
+		if l.logger != nil {
+			l.logger.Info("codex_owner_lease_marker_cleared", "account_id", l.account, "lease_id", l.response.LeaseId, "owner_lease_id", l.response.OwnerLeaseId)
+		}
+	}
 	l.journal.State = managedClosed
 	l.journal.Cleanup = cleanup
 	l.journal.Refresh = false
