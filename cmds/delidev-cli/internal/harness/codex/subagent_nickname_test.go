@@ -71,6 +71,17 @@ func TestCodexNicknameAcceptedOnlyAsBoundedNonBlankText(t *testing.T) {
 		"control":  {`"At\nlas"`, false},
 		"nul":      {`"At\u0000las"`, false},
 		"emptyArr": {`[]`, false},
+		// Malformed surrogate escapes must be rejected on the raw JSON text,
+		// because decoding them yields an otherwise valid U+FFFD.
+		"loneHigh":        {`"\ud800"`, false},
+		"loneLow":         {`"\udc00"`, false},
+		"trailingHigh":    {`"Atlas\ud83d"`, false},
+		"highThenScalar":  {`"\ud83d\u0041"`, false},
+		"highThenHigh":    {`"\ud800\ud800"`, false},
+		"lowThenHigh":     {`"\ude00\ud83d"`, false},
+		"highThenLiteral": {`"\ud83dx"`, false},
+		"validPair":       {`"At\ud83d\ude00las"`, true},
+		"escapedEscape":   {`"\\ud800"`, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			values := map[string]string{"1": `"Second"`}
@@ -164,9 +175,9 @@ func TestCodexNicknameRetainedOnlyAfterChildOwnershipIsProven(t *testing.T) {
 	if _, err := started(`"Intruder"`); err == nil || c.subagentNames[string(child)] != "Atlas" {
 		t.Fatal("rejected notification replaced the retained nickname")
 	}
-	// Invalid nicknames never replace or create a retained name.
+	// Malformed surrogate escapes never replace or create a retained name.
 	parent = c.thread
-	for _, raw := range []string{`null`, `"  "`} {
+	for _, raw := range []string{`"\ud800"`, `"\udc00"`, `null`, `"  "`} {
 		if _, err := started(raw); err != nil || c.subagentNames[string(child)] != "Atlas" {
 			t.Fatal("invalid nickname changed the retained name", raw, err)
 		}

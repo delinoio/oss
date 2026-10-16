@@ -2,6 +2,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -47,5 +48,40 @@ func TestSubagentDisplayNamesJoinOriginalChildren(t *testing.T) {
 	event := ExecutionEvent{Kind: ExecutionTurnFinished, SubagentNames: []SubagentDisplayName{{ID: a.ID, Name: "Atlas"}}}
 	if event.Validate() == nil {
 		t.Fatal("names on a non-child event accepted")
+	}
+}
+
+func TestParseSubagentDisplayNameJSONRejectsMalformedRawText(t *testing.T) {
+	for raw, want := range map[string]bool{
+		`"Atlas"`:                            true,
+		`"\u0041tlas"`:                       true,
+		`"\ud83d\ude00"`:                     true,
+		`"\\ud800"`:                          true,
+		`"\ud800"`:                           false,
+		`"\udc00"`:                           false,
+		`"\ud83d"`:                           false,
+		`"\ud83d\u0041"`:                     false,
+		`"\ud83d\ud83d"`:                     false,
+		`"\ude00\ud83d"`:                     false,
+		`"\u12"`:                             false,
+		`"\uzzzz"`:                           false,
+		`"\u0000"`:                           false,
+		`"\n"`:                               false,
+		`"  "`:                               false,
+		`""`:                                 false,
+		`null`:                               false,
+		`7`:                                  false,
+		`["Atlas"]`:                          false,
+		`Atlas`:                              false,
+		"\"\xff\"":                           false,
+		`"` + strings.Repeat("a", 257) + `"`: false,
+	} {
+		name, ok := ParseSubagentDisplayNameJSON(json.RawMessage(raw))
+		if ok != want || (ok && name == "") || (ok && !ValidSubagentDisplayName(name)) {
+			t.Fatalf("%q accepted = %v, want %v", raw, ok, want)
+		}
+	}
+	if name, ok := ParseSubagentDisplayNameJSON(json.RawMessage(`"\ud83d\ude00"`)); !ok || name != "\U0001F600" {
+		t.Fatal("valid surrogate pair was not decoded", name)
 	}
 }

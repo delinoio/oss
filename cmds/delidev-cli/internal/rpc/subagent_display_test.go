@@ -26,7 +26,7 @@ func TestSubagentDisplayNameResourceProjection(t *testing.T) {
 		t.Fatal("closed child document lost its fields")
 	}
 	// Invalid retained names never leak and never project.
-	for _, bad := range []string{`""`, `"   "`, `7`, `null`, `"a\nb"`} {
+	for _, bad := range []string{`""`, `"   "`, `7`, `null`, `"a\nb"`, `"\ud800"`, `"\udc00"`, `"ab\ud83d"`} {
 		resource = Resource(store.Record{ID: id, Kind: domain.SubagentKind, Data: []byte(`{"root_id":"root","display_name":` + bad + `}`)})
 		if resource.SubagentDisplay != nil || bytes.Contains(resource.DocumentJson, []byte("display_name")) {
 			t.Fatalf("invalid private name %s leaked", bad)

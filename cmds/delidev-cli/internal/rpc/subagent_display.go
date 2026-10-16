@@ -26,8 +26,8 @@ func subagentDisplayDocument(id domain.ID, raw []byte) ([]byte, *pb.SubagentDisp
 	if err != nil {
 		return nil, nil
 	}
-	var name string
-	if json.Unmarshal(private, &name) != nil || !domain.ValidSubagentDisplayName(name) {
+	name, ok := domain.ParseSubagentDisplayNameJSON(private)
+	if !ok {
 		return public, nil
 	}
 	return public, &pb.SubagentDisplayName{ChildId: string(id), Name: name}

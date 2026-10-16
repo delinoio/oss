@@ -2,6 +2,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"unicode"
 	"unicode/utf8"
 )
@@ -34,6 +35,77 @@ func ValidSubagentDisplayName(name string) bool {
 		}
 	}
 	return !blank
+}
+
+// ParseSubagentDisplayNameJSON decodes one raw JSON value as an observed native
+// name. The raw token must be a JSON string whose bytes are valid UTF-8 and whose
+// \u escapes are well-formed: a lone surrogate escape is rejected before
+// decoding, because encoding/json would otherwise replace it with U+FFFD and
+// the replacement would pass ValidSubagentDisplayName. Any other value, including
+// null, is rejected.
+func ParseSubagentDisplayNameJSON(raw json.RawMessage) (string, bool) {
+	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' || !utf8.Valid(raw) || !wellFormedSurrogateEscapes(raw) {
+		return "", false
+	}
+	var name string
+	if json.Unmarshal(raw, &name) != nil || !ValidSubagentDisplayName(name) {
+		return "", false
+	}
+	return name, true
+}
+
+// wellFormedSurrogateEscapes reports whether every \uXXXX escape in a JSON
+// string token is a scalar value or a high surrogate directly followed by a
+// \uXXXX low surrogate escape.
+func wellFormedSurrogateEscapes(raw []byte) bool {
+	unit := func(at int) (rune, bool) {
+		if at+6 > len(raw) || raw[at] != '\\' || raw[at+1] != 'u' {
+			return 0, false
+		}
+		var value rune
+		for _, digit := range raw[at+2 : at+6] {
+			switch {
+			case digit >= '0' && digit <= '9':
+				value = value<<4 | rune(digit-'0')
+			case digit >= 'a' && digit <= 'f':
+				value = value<<4 | rune(digit-'a'+10)
+			case digit >= 'A' && digit <= 'F':
+				value = value<<4 | rune(digit-'A'+10)
+			default:
+				return 0, false
+			}
+		}
+		return value, true
+	}
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' {
+			continue
+		}
+		if i+1 >= len(raw) {
+			return false
+		}
+		if raw[i+1] != 'u' {
+			i++
+			continue
+		}
+		value, ok := unit(i)
+		if !ok {
+			return false
+		}
+		switch {
+		case value >= 0xD800 && value <= 0xDBFF:
+			low, ok := unit(i + 6)
+			if !ok || low < 0xDC00 || low > 0xDFFF {
+				return false
+			}
+			i += 11
+		case value >= 0xDC00 && value <= 0xDFFF:
+			return false
+		default:
+			i += 5
+		}
+	}
+	return true
 }
 
 // ValidateSubagentDisplayNames checks the names of one publication against its

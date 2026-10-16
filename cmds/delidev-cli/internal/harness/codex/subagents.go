@@ -97,15 +97,14 @@ func (c *Client) stageNickname(staged map[string]string, id domain.ID, raw json.
 	if len(raw) == 0 {
 		return
 	}
-	var decoded *string
-	ok := json.Unmarshal(raw, &decoded) == nil && decoded != nil && domain.ValidSubagentDisplayName(*decoded)
+	name, ok := domain.ParseSubagentDisplayNameJSON(raw)
 	if !ok {
 		if c.logger != nil {
 			c.logger.Debug("Codex agent nickname ignored", "owner_id", c.ownerID, "child_id", id)
 		}
 		return
 	}
-	staged[string(id)] = *decoded
+	staged[string(id)] = name
 }
 
 // displayNames reports the retained native name of each child in a batch by
