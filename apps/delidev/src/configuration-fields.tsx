@@ -1382,7 +1382,10 @@ export function ResourceChoice({
           autoFocus={autoFocus}
           markRequired={markRequired}
           triggerRef={pickerTrigger}
-          action={createAction}
+          // A proven-empty inventory whose retained Agent restoration is still
+          // pending keeps the existing withholding gate: no creation entry may
+          // be offered until restoration settles.
+          action={awaitingRestoration ? undefined : createAction}
         />
       )}
       {needsProviderCapability && active && !ready ? (
