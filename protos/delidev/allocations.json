@@ -9362,6 +9362,13 @@
       "number": 35
     },
     {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "EntityKind",
+      "member": "ENTITY_KIND_MCP_SERVER",
+      "number": 36
+    },
+    {
       "issue": 1828,
       "kind": "message",
       "declaration": "ProjectPromptHistoryEntry",

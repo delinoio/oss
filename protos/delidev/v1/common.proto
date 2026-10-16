@@ -59,6 +59,7 @@ enum EntityKind {
   ENTITY_KIND_SUBAGENT = 30;
   ENTITY_KIND_UPDATE = 33;
   ENTITY_KIND_SSH_SETUP = 34;
+  ENTITY_KIND_MCP_SERVER = 36;
 }
 
 // Resource documents are versioned, strictly validated UTF-8 JSON. Their closed

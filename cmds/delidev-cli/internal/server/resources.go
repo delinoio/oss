@@ -539,7 +539,7 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 		return reject(err)
 	}
 	switch kind {
-	case domain.ProjectKind, domain.RepositoryKind, domain.AgentKind, domain.AccountKind, domain.ProviderKind, domain.ModelKind, domain.TemplateKind:
+	case domain.ProjectKind, domain.RepositoryKind, domain.AgentKind, domain.AccountKind, domain.ProviderKind, domain.ModelKind, domain.TemplateKind, domain.McpServerKind:
 	default:
 		return reject(domain.Fail(domain.InvalidArgument, "This entity cannot be deleted through configuration.", "Use its dedicated lifecycle operation."))
 	}

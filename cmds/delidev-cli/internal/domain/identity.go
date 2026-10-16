@@ -28,6 +28,7 @@ const SSHSetupKind Kind = "ssh_setup"
 
 const PairingKind Kind = "pairing"
 const ProjectPromptHistoryKind Kind = "project_prompt_history"
+const McpServerKind Kind = "mcp_server"
 
 const (
 	ProjectKind        Kind = "project"
@@ -65,7 +66,7 @@ const (
 
 func (k Kind) Valid() bool {
 	switch k {
-	case ProjectPromptHistoryKind, UpdateKind, SSHSetupKind, TerminalKind, NetworkProfileKind, NetworkRouteKind, SubagentKind, ForwardKind, PairingKind, ProjectKind, RepositoryKind, AgentKind, AccountKind, ProviderKind, ModelKind, MachineKind, SessionKind, TemplateKind, SettingsKind, ScheduleKind, OccurrenceKind, MessageKind, QueueKind, SteerKind, InteractionKind, ReviewKind, SnapshotKind, DeviceKind, IntegrationKind, PullRequestKind, ProblemKind, InboxKind, UsageKind, JobKind, RoutingKind:
+	case ProjectPromptHistoryKind, McpServerKind, UpdateKind, SSHSetupKind, TerminalKind, NetworkProfileKind, NetworkRouteKind, SubagentKind, ForwardKind, PairingKind, ProjectKind, RepositoryKind, AgentKind, AccountKind, ProviderKind, ModelKind, MachineKind, SessionKind, TemplateKind, SettingsKind, ScheduleKind, OccurrenceKind, MessageKind, QueueKind, SteerKind, InteractionKind, ReviewKind, SnapshotKind, DeviceKind, IntegrationKind, PullRequestKind, ProblemKind, InboxKind, UsageKind, JobKind, RoutingKind:
 		return true
 	default:
 		return false

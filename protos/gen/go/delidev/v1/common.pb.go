@@ -163,6 +163,7 @@ const (
 	EntityKind_ENTITY_KIND_SUBAGENT               EntityKind = 30
 	EntityKind_ENTITY_KIND_UPDATE                 EntityKind = 33
 	EntityKind_ENTITY_KIND_SSH_SETUP              EntityKind = 34
+	EntityKind_ENTITY_KIND_MCP_SERVER             EntityKind = 36
 )
 
 // Enum value maps for EntityKind.
@@ -203,6 +204,7 @@ var (
 		30: "ENTITY_KIND_SUBAGENT",
 		33: "ENTITY_KIND_UPDATE",
 		34: "ENTITY_KIND_SSH_SETUP",
+		36: "ENTITY_KIND_MCP_SERVER",
 	}
 	EntityKind_value = map[string]int32{
 		"ENTITY_KIND_UNSPECIFIED":            0,
@@ -240,6 +242,7 @@ var (
 		"ENTITY_KIND_SUBAGENT":               30,
 		"ENTITY_KIND_UPDATE":                 33,
 		"ENTITY_KIND_SSH_SETUP":              34,
+		"ENTITY_KIND_MCP_SERVER":             36,
 	}
 )
 
@@ -1158,7 +1161,7 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x1eAPI_AUTHENTICATION_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19API_AUTHENTICATION_BEARER\x10\x01\x12\x1e\n" +
 	"\x1aAPI_AUTHENTICATION_API_KEY\x10\x02\x12\x1e\n" +
-	"\x1aAPI_AUTHENTICATION_KEYLESS\x10\x03*\xa1\a\n" +
+	"\x1aAPI_AUTHENTICATION_KEYLESS\x10\x03*\xbd\a\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12&\n" +
@@ -1196,7 +1199,8 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x19ENTITY_KIND_NETWORK_ROUTE\x10\x1d\x12\x18\n" +
 	"\x14ENTITY_KIND_SUBAGENT\x10\x1e\x12\x16\n" +
 	"\x12ENTITY_KIND_UPDATE\x10!\x12\x19\n" +
-	"\x15ENTITY_KIND_SSH_SETUP\x10\"*\x8e\x01\n" +
+	"\x15ENTITY_KIND_SSH_SETUP\x10\"\x12\x1a\n" +
+	"\x16ENTITY_KIND_MCP_SERVER\x10$*\x8e\x01\n" +
 	"\rUsageCoverage\x12\x1e\n" +
 	"\x1aUSAGE_COVERAGE_UNSPECIFIED\x10\x00\x12*\n" +
 	"&USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES\x10\x01\x121\n" +

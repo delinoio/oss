@@ -57,6 +57,8 @@ func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool)
 		value = &domain.Model{}
 	case domain.TemplateKind:
 		value = &domain.Template{}
+	case domain.McpServerKind:
+		value = &domain.McpServer{}
 	case domain.SettingsKind:
 		prefix := domain.DefaultBranchPrefix
 		value = &domain.Settings{BranchPrefix: &prefix}
