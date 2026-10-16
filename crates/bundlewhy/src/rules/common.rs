@@ -5262,6 +5262,36 @@ y=/process.env.F/.test(z),process.env.G"#;
         }
     }
 
+    #[test]
+    fn an_unverified_finding_shows_the_candidate_original_location_not_an_emitted_one() {
+        // The location of a finding without an attributed call is the
+        // original-source candidate (kind original, with a snippet of the
+        // module), and the emitted location stays unavailable.
+        let chunks: [TestChunk<'_>; 1] = [("main.js", KEPT_COPY, None)];
+        let drafts = eval_rule_drafts_with_chunks(&[("src/main.js", COPY_SOURCE)], &chunks, true);
+        assert_eq!(drafts.len(), 1);
+        let located = &drafts[0].located;
+        assert!(located.generated.is_none());
+        let location = located.location.as_ref().unwrap();
+        assert_eq!(location.kind, LocationKind::Original);
+        assert!(location.path.ends_with("src/main.js"), "{}", location.path);
+        // The first direct eval of the module source, not of the emitted code.
+        assert_eq!((location.line, location.column), (3, 10));
+        let snippet = located.snippet.as_ref().unwrap();
+        assert_eq!(snippet.kind, LocationKind::Original);
+        assert_eq!(snippet.highlight_line, 3);
+        // Neither the engine log nor the module text names a position: the
+        // candidate is the first line of the module file.
+        let no_source_call = "const longLocalName = 1;\nexport const run = (value) => value;\n";
+        let drafts =
+            eval_rule_drafts_with_chunks(&[("src/main.js", no_source_call)], &chunks, true);
+        assert_eq!(drafts.len(), 1);
+        let location = drafts[0].located.location.as_ref().unwrap();
+        assert_eq!(location.kind, LocationKind::Original);
+        assert_eq!((location.line, location.column), (1, 1));
+        assert!(drafts[0].located.generated.is_none());
+    }
+
     /// A module whose first eval call (line 4) is dead code and whose second
     /// (line 7) is the call the build keeps.
     const FIRST_EVAL_REMOVED_SOURCE: &str = "const longLocalName = 1;\nexport function a(v) {\n  \
