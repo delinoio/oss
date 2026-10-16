@@ -110,7 +110,12 @@ it("manages service-native subscription metadata through real authenticated RPC 
   const subscription = await screen.findByRole("article", {
     name: "ChatGPT account",
   });
-  expect(subscription.querySelector("img")).toBeTruthy();
+  expect(
+    subscription
+      .querySelector(".subscription-mark [data-harness]")
+      ?.getAttribute("data-harness"),
+  ).toBe("codex");
+  expect(subscription.querySelector("img")).toBeNull();
   expect(within(subscription).getByText("Disconnected")).toBeTruthy();
   expect(
     screen.queryByRole("heading", { name: "Unrelated API account" }),

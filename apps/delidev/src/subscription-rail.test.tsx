@@ -194,6 +194,18 @@ it("shows separate accounts, read-only selected details, manages and restores op
     name: /ChatGPT · Personal/,
   });
   expect(screen.getAllByRole("button", { name: /remaining/ })).toHaveLength(4);
+  // The rail keeps provider catalog artwork; Settings harness marks never leak here.
+  expect(
+    screen
+      .getAllByRole("button", { name: /remaining/ })
+      .map((button) => button.querySelector("img")?.getAttribute("src")),
+  ).toEqual([
+    "./subscription-marks/openai.svg",
+    "./subscription-marks/openai.svg",
+    "./subscription-marks/claude.svg",
+    "./subscription-marks/grok.svg",
+  ]);
+  expect(document.querySelector("[data-harness]")).toBeNull();
   fireEvent.click(opener);
   expect(
     screen.getByRole("dialog", { name: "ChatGPT · Personal" }),
