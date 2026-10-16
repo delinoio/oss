@@ -268,7 +268,7 @@ fn previous_significant_token<'a>(
     }
     let prefix = &code[..end];
     if is_identifier_part(last) {
-        let text = trailing_word(prefix);
+        let text = extend_word_over_braced_escapes(prefix, trailing_word(prefix));
         if text.starts_with(|character: char| character.is_ascii_digit()) {
             return Token::Number;
         }
@@ -1701,6 +1701,12 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         let (Some(found), Some(kind)) = (captures.get(0), captures.get(1)) else {
             continue;
         };
+        // `\b` sees a word boundary between the `}` of a braced escape and
+        // the keyword, but `x\u{61}function eval` is one identifier followed
+        // by `eval`, not a declaration.
+        if braced_identifier_escape_start(&code[..found.start()]).is_some() {
+            continue;
+        }
         let scope = match kind.as_str() {
             "var" => bodies
                 .iter()
@@ -1774,6 +1780,7 @@ fn function_or_class_keyword_len(
     if after.chars().next().is_some_and(is_identifier_part)
         || before.chars().next_back().is_some_and(is_identifier_part)
         || starts_with_identifier_escape(after)
+        || braced_identifier_escape_start(before).is_some()
     {
         return None;
     }
@@ -1813,6 +1820,33 @@ fn decode_identifier_escape(text: &str) -> Option<(char, usize)> {
 /// word that ends right before it continues (`function\u0061l`).
 fn starts_with_identifier_escape(text: &str) -> bool {
     decode_identifier_escape(text).is_some_and(|(character, _)| is_identifier_part(character))
+}
+
+/// Start of the braced Unicode escape (`\u{61}`) that `text` ends with, when it
+/// is an identifier character, so a word that starts right after it continues
+/// the identifier (`x\u{61}function`). The four-digit form (`\u0061`) ends in a
+/// hex digit, which [`is_identifier_part`] already accepts, but the braced form
+/// ends in `}`, which also closes a block (`{}function f() {}`).
+fn braced_identifier_escape_start(text: &str) -> Option<usize> {
+    // Walk back over the closing brace and the hex digits only, so the cost
+    // follows the escape and not the length of the source before it.
+    let without_close = text.strip_suffix('}')?;
+    let digits_start = without_close.trim_end_matches(|c: char| c.is_ascii_hexdigit());
+    let escape_start = digits_start.strip_suffix("\\u{")?.len();
+    decode_identifier_escape(&text[escape_start..])
+        .filter(|(character, _)| is_identifier_part(*character))
+        .map(|_| escape_start)
+}
+
+/// Widens the trailing word `text` of `prefix` over the braced Unicode escapes
+/// that continue it to the left (`x\u{61}function` is one word).
+fn extend_word_over_braced_escapes<'a>(prefix: &'a str, text: &'a str) -> &'a str {
+    let mut start = prefix.len() - text.len();
+    while let Some(escape_start) = braced_identifier_escape_start(&prefix[..start]) {
+        start = escape_start;
+        start -= trailing_word(&prefix[..start]).len();
+    }
+    &prefix[start..]
 }
 
 /// End of an expression-bodied arrow function whose body starts at `from`:
@@ -8509,6 +8543,65 @@ y=/process.env.F/.test(z),process.env.G"#;
             let source =
                 format!("const f = (eval) => function /*{terminator}*/ () {{ eval(code) }}");
             assert!(direct_eval_offsets(&source).is_empty(), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn an_identifier_escape_before_a_keyword_continues_the_same_word() {
+        for terminator in LINE_TERMINATORS {
+            // The escape ends in `}` (braced form) or a hex digit (four-digit
+            // form). Either way the keyword is the tail of one identifier
+            // (`xafunction`), so the line break ends the arrow body and the
+            // call is outside it.
+            for operand in [
+                "x\\u{61}function",
+                "x\\u{0061}class",
+                "x\\u0061function",
+                "x\\u0061class",
+                "\\u{61}function",
+                "x\\u{61}\\u{62}function",
+                "x\\u{61}function\\u0061",
+                "x\\u{61}class\\u{62}",
+            ] {
+                for line_break in [format!("/*{terminator}*/"), terminator.to_string()] {
+                    let source = format!("const f = (eval) => {operand} {line_break} eval(code)");
+                    assert_eq!(
+                        direct_eval_offsets(&source),
+                        vec![source.rfind("eval(code)").unwrap()],
+                        "{source:?}"
+                    );
+                }
+            }
+        }
+        // The declaration forms `function eval`, `var eval`, `let eval` and
+        // `const eval` are not declarations after such an escape either.
+        for keyword in ["function", "var", "let", "const"] {
+            for escape in ["x\\u{61}", "x\\u0061"] {
+                let source = format!("{escape}{keyword} eval(code)");
+                assert_eq!(
+                    direct_eval_offsets(&source),
+                    vec![source.rfind("eval(").unwrap()],
+                    "{source:?}"
+                );
+            }
+        }
+        // A closing brace that does not end an identifier escape still ends a
+        // block, so the keyword after it is a keyword.
+        for prefix in ["{}", "{ a }", "\\u{110000}", "\\u{}", "u{61}", "\\x{61}"] {
+            let source = format!("{prefix}function");
+            assert_eq!(
+                function_or_class_keyword_len(&source, prefix.len(), &[]),
+                Some("function".len()),
+                "{source:?}"
+            );
+        }
+        for prefix in ["x\\u{61}", "\\u{0061}", "\\u{5f}", "a\\u{30}"] {
+            let source = format!("{prefix}class");
+            assert_eq!(
+                function_or_class_keyword_len(&source, prefix.len(), &[]),
+                None,
+                "{source:?}"
+            );
         }
     }
 
