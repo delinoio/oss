@@ -46,6 +46,7 @@ func TestParseClaudeUsageQuotaRejects(t *testing.T) {
 		`{"five_hour":{"utilization":"25"}}`, `{"five_hour":{"utilization":-1}}`, `{"five_hour":{"utilization":100.5}}`,
 		`{"five_hour":{"utilization":1e999}}`, `{"five_hour":{}}`, `{"five_hour":{"utilization":5,"resets_at":"soon"}}`,
 		`{"five_hour":{"utilization":5,"resets_at":7}}`, `{"five_hour":{"utilization":5},"seven_day":{"utilization":200}}`,
+		`{"five_hour":{"utilization":200},"five_hour":{"utilization":25}}`, `{"five_hour":{"utilization":5,"utilization":6}}`,
 		`{"five_hour":{"utilization":5}`, `{"five_hour":{"utilization":5}} {}`,
 	} {
 		if _, err := ParseClaudeUsageQuota([]byte(body), now); err == nil {

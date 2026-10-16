@@ -40,6 +40,10 @@ func ParseClaudeUsageQuota(body []byte, observedAt time.Time) (SubscriptionQuota
 	if observedAt.IsZero() || len(body) == 0 || len(body) > ClaudeUsageResponseLimit {
 		return SubscriptionQuotaObservation{}, invalidClaudeUsageQuota()
 	}
+	// Duplicate keys at any depth make the document ambiguous.
+	if uniqueJSON(body) != nil {
+		return SubscriptionQuotaObservation{}, invalidClaudeUsageQuota()
+	}
 	var envelope map[string]json.RawMessage
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	if decoder.Decode(&envelope) != nil || envelope == nil {
