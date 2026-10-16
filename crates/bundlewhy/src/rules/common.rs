@@ -2595,7 +2595,8 @@ impl<'a> MemberScan<'a> {
 
     /// Whether the offset starts a member in the body of a `kind` brace: the
     /// previous token (past any modifiers and a generator `*`) ends an earlier
-    /// member or opens the body.
+    /// member or opens the body. The scan is one backward loop; it never
+    /// recurses, whatever precedes the offset.
     fn at_member_position(&self, name_start: usize, kind: BraceKind) -> bool {
         let mut member_start = name_start;
         loop {
@@ -2617,6 +2618,15 @@ impl<'a> MemberScan<'a> {
                 } if METHOD_MODIFIERS.contains(&text) => {
                     member_start = token_end - text.len();
                 }
+                // The `accessor` modifier of an auto-accessor field
+                // (`accessor typeof`) allows no line break before the name;
+                // `accessor` + line break is a field named `accessor`.
+                Token::Word {
+                    text: text @ "accessor",
+                    member: false,
+                } if !self.new_line_between(token_end, member_start) => {
+                    member_start = token_end - text.len();
+                }
                 Token::Punct("*") => member_start = token_end - 1,
                 Token::Punct("{" | "}" | ";") => return true,
                 Token::Punct(",") => return kind == BraceKind::ObjectLiteral,
@@ -2633,12 +2643,26 @@ impl<'a> MemberScan<'a> {
                 // A name ends a field or signature, a member access
                 // (`x = a.b`) and a private name (`#state`) included; only an
                 // expression keyword (`x = typeof`) leaves the member open.
+                // A keyword that itself starts a member (`class C { typeof`)
+                // is a field name, not an operator, and ends that member. The
+                // line break before this member is required first, then the
+                // scan continues from the keyword to see whether it starts one.
                 Token::Word { text, member } => {
-                    return kind == BraceKind::ClassBody
-                        && (member
-                            || !REGEX_KEYWORDS.contains(&text)
-                            || self.void_ends_type(token_end, text))
-                        && self.new_line_between(token_end, member_start);
+                    if kind != BraceKind::ClassBody
+                        || !self.new_line_between(token_end, member_start)
+                    {
+                        return false;
+                    }
+                    if member
+                        || !REGEX_KEYWORDS.contains(&text)
+                        || self.void_ends_type(token_end, text)
+                    {
+                        return true;
+                    }
+                    // The keyword may be a field name: keep scanning backward
+                    // from it instead of recursing, so a long run of
+                    // semicolon-less keyword fields cannot exhaust the stack.
+                    member_start = token_end - text.len();
                 }
                 _ => return false,
             }
@@ -4606,6 +4630,18 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn long_runs_of_keyword_fields_are_scanned_without_recursion() {
+        // Each semicolon-less keyword field is checked back to the class
+        // brace, which used to take one stack frame per field.
+        let fields = "typeof\n".repeat(30_000);
+        let declared = format!("class C {{\n{fields}eval(value) {{}} }}");
+        assert_all_declarations(&[declared.as_str()]);
+        // An initializer in front of the run keeps the finding.
+        let initializer = format!("class C {{\nx = typeof\n{fields}eval(value) {{}} }}");
+        assert_all_reported(&[(initializer.as_str(), "eval(value)")]);
+    }
+
+    #[test]
     fn private_and_member_fields_complete_a_class_member() {
         assert_all_declarations(&[
             "class C { #state\n eval(value) {} }",
@@ -4629,6 +4665,30 @@ y=/process.env.F/.test(z),process.env.G"#;
             "class C { #state\n @dec() eval(value) {} }",
             "class C { #a\n #b\n eval(value) {} }",
             "class C { #state\u{2028} eval(value) {} }",
+            // A keyword-named field starts its own member, so it is a name.
+            "class C { typeof\n eval(value) {} }",
+            "class C { void\n eval(value) {} }",
+            "class C { return\n eval(value) {} }",
+            "class C { delete\n eval(value) {} }",
+            "class C { in\n eval(value) {} }",
+            "class C { new\n eval(value) {} }",
+            "class C { default\n eval(value) {} }",
+            "class C { await\n eval(value) {} }",
+            "class C { typeof;\n eval(value) {} }",
+            "class C { typeof; eval(value) {} }",
+            "class C { state\n eval(value) {} }",
+            "class C { a\n typeof\n eval(value) {} }",
+            "class C { x = 1\n typeof\n eval(value) {} }",
+            "class C { a = b;\n typeof\n eval(value) {} }",
+            "class C { static typeof\n eval(value) {} }",
+            "class C { @dec typeof\n eval(value) {} }",
+            "class C { typeof\n static eval(value) {} }",
+            // The `accessor` modifier of an auto-accessor field keeps a keyword name a name.
+            "class C { accessor typeof\n eval(value) {} }",
+            "class C { static accessor void\n eval(value) {} }",
+            "class C { accessor\n eval(value) {} }",
+            "class C { accessor typeof\n accessor await\n eval(value) {} }",
+            "class C { typeof // c\n eval(value) {} }",
         ]);
         assert_all_reported(&[
             // No line break: the next token continues the field expression.
@@ -4640,6 +4700,14 @@ y=/process.env.F/.test(z),process.env.G"#;
             ("class C { x!\n eval(value) {} }", "eval(value)"),
             // A keyword that cannot end a field leaves the member open.
             ("class C { x = typeof\n eval(value) {} }", "eval(value)"),
+            ("class C { x = void\n eval(value) {} }", "eval(value)"),
+            ("class C { x = delete\n eval(value) {} }", "eval(value)"),
+            ("class C { x = await\n eval(value) {} }", "eval(value)"),
+            ("class C { typeof eval(value) {} }", "eval(value)"),
+            (
+                "class C { x = accessor typeof\n eval(value) {} }",
+                "eval(value)",
+            ),
             ("class C { x = a.b +\n eval(value) {} }", "eval(value)"),
             // An object literal needs a comma, never a line break.
             ("const o = { a: b\n eval(value) {} };", "eval(value)"),
