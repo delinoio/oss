@@ -61,6 +61,7 @@ function fixture(
   const reads = vi.fn(read),
     selected = worker(),
     invoke = vi.fn(),
+    newInvoke = vi.fn(),
     change = vi.fn();
   const transport = createRouterTransport((router) =>
     router.service(ResourceService, {
@@ -78,6 +79,7 @@ function fixture(
     locked = false,
     source = transport,
     pending = false,
+    withNew = false,
   }: {
     active?: boolean;
     allowed?: string[];
@@ -85,6 +87,7 @@ function fixture(
     locked?: boolean;
     source?: typeof transport;
     pending?: boolean;
+    withNew?: boolean;
   }) {
     return (
       <TransportProvider transport={source}>
@@ -99,6 +102,15 @@ function fixture(
               showStatus
               change={change}
               emptyInventoryActionPending={pending}
+              createAction={
+                withNew
+                  ? {
+                      label: "New",
+                      name: "New agent worker",
+                      invoke: newInvoke,
+                    }
+                  : undefined
+              }
               emptyInventoryAction={{
                 label: copy("new-session.createAgentWorker"),
                 invoke,
@@ -109,7 +121,16 @@ function fixture(
       </TransportProvider>
     );
   }
-  return { View, client, transport, reads, invoke, change, selected };
+  return {
+    View,
+    client,
+    transport,
+    reads,
+    invoke,
+    newInvoke,
+    change,
+    selected,
+  };
 }
 
 it.each(["en", "ko"])(
@@ -551,6 +572,55 @@ it("withholds the creation entry while the caller still restores a retained Agen
     await screen.findByRole("button", { name: "Create agent worker" }),
   ).toBeTruthy();
   expect(screen.queryByText("Loading Agent Worker choices…")).toBeNull();
+  expect(f.change).not.toHaveBeenCalled();
+});
+
+it("withholds the dropdown New action while a proven-empty inventory awaits restoration", async () => {
+  const f = fixture(() => ({ resources: [] }));
+  const view = render(<f.View pending withNew />);
+  expect(await screen.findByText("Loading Agent Worker choices…")).toBeTruthy();
+  const picker = screen.getByRole("combobox", { name: "Agent Worker" });
+  await waitFor(() => expect(picker).toHaveProperty("disabled", false));
+  fireEvent.click(picker);
+  expect(screen.queryByRole("option", { name: "New agent worker" })).toBeNull();
+  expect(f.newInvoke).not.toHaveBeenCalled();
+  // Once restoration settles the empty-inventory shortcut replaces the picker.
+  view.rerender(<f.View withNew />);
+  expect(
+    await screen.findByRole("button", { name: "Create agent worker" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Agent Worker" })).toBeNull();
+  expect(f.newInvoke).not.toHaveBeenCalled();
+});
+
+it("withholds the dropdown New action for a populated inventory until restoration settles", async () => {
+  const f = fixture(() => ({ resources: [worker()] }));
+  const view = render(<f.View pending withNew />);
+  const picker = screen.getByRole("combobox", { name: "Agent Worker" });
+  await waitFor(() => expect(picker).toHaveProperty("disabled", false));
+  fireEvent.click(picker);
+  expect(await screen.findByRole("option", { name: /Worker/ })).toBeTruthy();
+  expect(screen.queryByRole("option", { name: "New agent worker" })).toBeNull();
+  // Settling restoration offers the action on the same populated picker.
+  view.rerender(<f.View withNew />);
+  fireEvent.click(
+    await screen.findByRole("option", { name: "New agent worker" }),
+  );
+  expect(f.newInvoke).toHaveBeenCalledTimes(1);
+  expect(f.change).not.toHaveBeenCalled();
+});
+
+it("keeps the dropdown New action for a populated or project-filtered inventory", async () => {
+  const f = fixture(() => ({ resources: [worker()] }));
+  render(<f.View allowed={[newRequestId()]} withNew />);
+  const picker = screen.getByRole("combobox", { name: "Agent Worker" });
+  await screen.findByText(/match the selected project's restrictions/);
+  await waitFor(() => expect(picker).toHaveProperty("disabled", false));
+  fireEvent.click(picker);
+  fireEvent.click(
+    await screen.findByRole("option", { name: "New agent worker" }),
+  );
+  expect(f.newInvoke).toHaveBeenCalledTimes(1);
   expect(f.change).not.toHaveBeenCalled();
 });
 

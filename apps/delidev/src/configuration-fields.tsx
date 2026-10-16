@@ -819,8 +819,12 @@ export function ResourceChoice({
   selectionResetToken = 0,
   emptyInventoryAction,
   emptyInventoryActionPending = false,
+  createAction,
 }: {
   selectionResetToken?: number;
+  // Optional final picker row that opens a creation flow. It is a navigation
+  // action, never a resource choice, and is not read through the exact-ID path.
+  createAction?: { label: string; name: string; invoke: () => void };
   emptyInventoryAction?: { label: string; invoke: () => void };
   // True while the caller still restores a retained Agent selection, so the
   // empty-inventory creation entry must not be offered yet.
@@ -1378,6 +1382,10 @@ export function ResourceChoice({
           autoFocus={autoFocus}
           markRequired={markRequired}
           triggerRef={pickerTrigger}
+          // No creation entry may be offered for the whole restoration wait:
+          // the caller's pending flag withholds the dropdown action while the
+          // inventory is loading, populated or proven empty alike.
+          action={emptyInventoryActionPending ? undefined : createAction}
         />
       )}
       {needsProviderCapability && active && !ready ? (

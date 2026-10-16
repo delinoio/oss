@@ -39,6 +39,28 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+/* The optional action stays reachable at the bottom of long or paged lists.
+   Declared before the highlight rule so selected/highlight colors still win. */
+.scroll-picker-popup[data-has-action] {
+  /* Keep the pinned action's 41px row (40px plus divider) from covering a
+     highlighted choice that scrollIntoView treats as already visible. */
+  scroll-padding-bottom: 41px;
+}
+.scroll-picker-popup > button[data-picker-action] {
+  position: sticky;
+  bottom: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--link);
+}
+.scroll-picker-popup > button[data-picker-action] svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
 .scroll-picker-popup > button[data-highlighted="true"],
 .scroll-picker-popup > button[aria-selected="true"] {
   background: var(--selected-background);
