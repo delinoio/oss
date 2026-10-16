@@ -47,6 +47,8 @@
 //! them as local needs an escape analysis; the conservative default only
 //! costs optimization, never correctness. A constructor chain whose base
 //! returns an object that a caller supplied is a residual of the same kind.
+use std::collections::HashSet;
+
 use super::lib_global_name;
 use crate::compiler::{
     analysis::{Ctx, RefKind, skip_outer},
@@ -82,14 +84,31 @@ const FRESH_LIBRARY_CLASSES: [&str; 19] = [
     "AbortController",
 ];
 
+/// Names of library constructors that application code may replace (an
+/// assignment to the global binding, a write to the same member of the global
+/// object, a global augmentation). A replaced constructor can return any object
+/// a caller supplied, so `new` of it is not fresh.
+pub(super) type Replaced = HashSet<String>;
+
+/// The library constructors whose `new` result can be fresh.
+pub(super) fn fresh_library_classes() -> impl Iterator<Item = &'static str> {
+    FRESH_LIBRARY_CLASSES.into_iter()
+}
+
+/// `new name(...)` yields a new object: `name` is a listed constructor and
+/// nothing replaces it.
+fn fresh_library_class(name: &str, replaced: &Replaced) -> bool {
+    FRESH_LIBRARY_CLASSES.contains(&name) && !replaced.contains(name)
+}
+
 /// The receiver `node` of a write is provably a fresh, non-intrinsic object.
-pub(super) fn provably_local(ctx: &mut Ctx, node: Node) -> bool {
-    let local = local(ctx, node, 0);
+pub(super) fn provably_local(ctx: &mut Ctx, node: Node, replaced: &Replaced) -> bool {
+    let local = local(ctx, node, 0, replaced);
     tracing::trace!(local, "write receiver locality");
     local
 }
 
-fn local(ctx: &mut Ctx, node: Node, depth: usize) -> bool {
+fn local(ctx: &mut Ctx, node: Node, depth: usize, replaced: &Replaced) -> bool {
     if depth > MAX_DEPTH {
         return false;
     }
@@ -100,27 +119,31 @@ fn local(ctx: &mut Ctx, node: Node, depth: usize) -> bool {
         | SyntaxKind::ClassExpression
         | SyntaxKind::FunctionExpression
         | SyntaxKind::ArrowFunction => true,
-        SyntaxKind::NewExpression => new_is_fresh(ctx, node, depth),
-        SyntaxKind::ThisKeyword | SyntaxKind::SuperKeyword => this_is_fresh(ctx, node, depth),
+        SyntaxKind::NewExpression => new_is_fresh(ctx, node, depth, replaced),
+        SyntaxKind::ThisKeyword | SyntaxKind::SuperKeyword => {
+            this_is_fresh(ctx, node, depth, replaced)
+        }
         SyntaxKind::ConditionalExpression => {
-            local(ctx, node.when_true(), depth + 1) && local(ctx, node.when_false(), depth + 1)
+            local(ctx, node.when_true(), depth + 1, replaced)
+                && local(ctx, node.when_false(), depth + 1, replaced)
         }
         SyntaxKind::BinaryExpression => match node.operator_token().kind() {
             SyntaxKind::BarBarToken | SyntaxKind::QuestionQuestionToken => {
-                local(ctx, node.left(), depth + 1) && local(ctx, node.right(), depth + 1)
+                local(ctx, node.left(), depth + 1, replaced)
+                    && local(ctx, node.right(), depth + 1, replaced)
             }
             SyntaxKind::AmpersandAmpersandToken
             | SyntaxKind::CommaToken
-            | SyntaxKind::EqualsToken => local(ctx, node.right(), depth + 1),
+            | SyntaxKind::EqualsToken => local(ctx, node.right(), depth + 1, replaced),
             _ => false,
         },
-        SyntaxKind::Identifier => identifier_is_local(ctx, node, depth),
+        SyntaxKind::Identifier => identifier_is_local(ctx, node, depth, replaced),
         _ => false,
     }
 }
 
 /// A variable or declaration that always holds a fresh object.
-fn identifier_is_local(ctx: &mut Ctx, node: Node, depth: usize) -> bool {
+fn identifier_is_local(ctx: &mut Ctx, node: Node, depth: usize, replaced: &Replaced) -> bool {
     let symbol = ctx.resolve(node);
     if symbol.is_nil() || ctx.js_referenced.contains(&symbol) {
         return false;
@@ -144,7 +167,7 @@ fn identifier_is_local(ctx: &mut Ctx, node: Node, depth: usize) -> bool {
             SyntaxKind::VariableDeclaration => {
                 declaration.name().kind() == SyntaxKind::Identifier
                     && declaration.initializer().is_some()
-                    && local(ctx, declaration.initializer(), depth + 1)
+                    && local(ctx, declaration.initializer(), depth + 1, replaced)
             }
             SyntaxKind::FunctionDeclaration | SyntaxKind::ClassDeclaration => true,
             _ => false,
@@ -154,29 +177,30 @@ fn identifier_is_local(ctx: &mut Ctx, node: Node, depth: usize) -> bool {
 
 /// `this` is the new instance (constructor, field initializer) or the class
 /// (static block) rather than a receiver chosen by a caller.
-fn this_is_fresh(ctx: &mut Ctx, node: Node, depth: usize) -> bool {
+fn this_is_fresh(ctx: &mut Ctx, node: Node, depth: usize, replaced: &Replaced) -> bool {
     let container = get_this_container(node, false, false);
     match container.kind() {
         SyntaxKind::Constructor => {
             let class = container.parent();
-            class_is_fresh(ctx, class, depth + 1)
+            class_is_fresh(ctx, class, depth + 1, replaced)
         }
         SyntaxKind::PropertyDeclaration | SyntaxKind::ClassStaticBlockDeclaration => {
-            class_is_fresh(ctx, container.parent(), depth + 1)
+            class_is_fresh(ctx, container.parent(), depth + 1, replaced)
         }
         _ => false,
     }
 }
 
-fn new_is_fresh(ctx: &mut Ctx, node: Node, depth: usize) -> bool {
+fn new_is_fresh(ctx: &mut Ctx, node: Node, depth: usize, replaced: &Replaced) -> bool {
     let callee = skip_outer(node.expression());
     if callee.kind() != SyntaxKind::Identifier {
         return false;
     }
     if let Some(name) = lib_global_name(ctx, callee) {
-        return FRESH_LIBRARY_CLASSES.contains(&name);
+        return fresh_library_class(name, replaced);
     }
-    class_of_identifier(ctx, callee).is_some_and(|class| class_is_fresh(ctx, class, depth + 1))
+    class_of_identifier(ctx, callee)
+        .is_some_and(|class| class_is_fresh(ctx, class, depth + 1, replaced))
 }
 
 /// The single class declaration an identifier names, if it is an application
@@ -204,7 +228,7 @@ fn class_of_identifier(ctx: &mut Ctx, identifier: Node) -> Option<Node> {
 /// Constructing the class always yields a new object: no constructor of the
 /// chain returns a value, and the chain ends in an application class or a
 /// fresh library class.
-fn class_is_fresh(ctx: &mut Ctx, class: Node, depth: usize) -> bool {
+fn class_is_fresh(ctx: &mut Ctx, class: Node, depth: usize, replaced: &Replaced) -> bool {
     if depth > MAX_DEPTH
         || !matches!(
             class.kind(),
@@ -233,9 +257,9 @@ fn class_is_fresh(ctx: &mut Ctx, class: Node, depth: usize) -> bool {
             return false;
         }
         let fresh = match lib_global_name(ctx, base) {
-            Some(name) => FRESH_LIBRARY_CLASSES.contains(&name),
+            Some(name) => fresh_library_class(name, replaced),
             None => class_of_identifier(ctx, base)
-                .is_some_and(|parent| class_is_fresh(ctx, parent, depth + 1)),
+                .is_some_and(|parent| class_is_fresh(ctx, parent, depth + 1, replaced)),
         };
         if !fresh {
             return false;

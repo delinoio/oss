@@ -5798,6 +5798,114 @@ fn keeps_names_for_computed_keys_that_only_a_type_assertion_proves() {
     }
 }
 
+/// `new C()` is a fresh object only while nothing replaces the library
+/// constructor `C`. A replaced `Date` can return an object that a caller
+/// supplied (an exported setter keeps `Array.prototype`), so a write through
+/// its instance is a possible patch of the member.
+#[test]
+fn keeps_names_beside_writes_through_replaced_library_constructors() {
+    let hostile = "function(){return 7}";
+    let setter = "let held;export function supply(v){held=v}";
+    let cases: Vec<(&str, String)> = vec![
+        (
+            "assigned global binding",
+            format!(
+                "{setter}Date=function(){{return held}};const p=new \
+                 Date();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "assigned member of globalThis",
+            format!(
+                "{setter}globalThis.Date=function(){{return held}};const p=new \
+                 Date();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "assigned member of global by string key",
+            format!(
+                "{setter}global[\"Date\"]=function(){{return held}};const p=new \
+                 Date();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "replaced Map",
+            format!(
+                "{setter}Map=function(){{return held}};const p=new \
+                 Map();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "replaced Set, receiver through a conditional",
+            format!(
+                "{setter}Set=function(){{return held}};const p=Math.random()>2?{{}}:new \
+                 Set();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "class extending a replaced constructor",
+            format!(
+                "{setter}Date=function(){{return held}};class Stamp extends Date{{}}const p=new \
+                 Stamp();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "constructor this of a class extending a replaced constructor",
+            format!(
+                "{setter}Date=function(){{return held}};class Stamp extends \
+                 Date{{constructor(){{super();this.pop={hostile}}}}}new Stamp();{POP_TAIL}"
+            ),
+        ),
+        (
+            "constructor replaced through an unproven receiver",
+            format!(
+                "{setter}function install(g){{g.Date=function(){{return \
+                 held}}}}install({{}});const p=new Date();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+    ];
+    let (survived, renamed) = partition_by_kept(&cases, item_names_kept);
+    assert_eq!(survived.len(), cases.len(), "renamed for: {renamed:?}");
+    // Neighbors: an unreplaced constructor stays fresh, even beside the
+    // replacement of another one, and so does an application class.
+    let accepted: Vec<(&str, String)> = vec![
+        (
+            "unreplaced Date",
+            format!("const p=new Date();p.pop={hostile};{LIST_TAIL}"),
+        ),
+        (
+            "other constructor replaced",
+            format!(
+                "{setter}Date=function(){{return held}};const m=new \
+                 Map();m.pop={hostile};{LIST_TAIL}"
+            ),
+        ),
+        (
+            "class extending an unreplaced constructor",
+            format!(
+                "{setter}Date=function(){{return held}};class Cache extends Map{{}}const c=new \
+                 Cache();c.pop={hostile};{LIST_TAIL}"
+            ),
+        ),
+        (
+            "application class beside a replacement",
+            format!(
+                "{setter}Date=function(){{return held}};const it=new \
+                 Item(2);it.pop={hostile};{LIST_TAIL}"
+            ),
+        ),
+        (
+            "local shadowing the constructor name",
+            format!(
+                "function make(){{const Date=class{{}};const p=new \
+                 Date();p.pop={hostile}}}make();{LIST_TAIL}"
+            ),
+        ),
+    ];
+    let (survived, _) = partition_by_kept(&accepted, item_names_kept);
+    assert!(survived.is_empty(), "names kept beside: {survived:?}");
+}
+
 /// The property that the hostile payloads of the unchecked-chunk fixtures read,
 /// spelled so that the chunk does not mention it (an excluded chunk that
 /// mentions `itemValue` would keep the name for that reason alone) and does not

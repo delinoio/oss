@@ -274,7 +274,7 @@ enum Member {
 }
 
 /// Members of built-ins that application code may replace.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Patches {
     records: HashSet<(Owner, Member)>,
     /// Members written through a receiver that is not provably a local
@@ -1741,12 +1741,45 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
             }
         }
     }
+    // Whether `new C()` of a library constructor is fresh depends on whether
+    // anything replaces `C`, and the writes that replace it are what this scan
+    // finds. Start from "nothing is replaced" and grow the set until it is
+    // stable: until the first constructor is replaced at run time every
+    // judgement of the first pass holds, so the write that replaces it is
+    // recorded, and a larger set only makes later passes more conservative.
+    let mut replaced = local_receiver::Replaced::new();
+    loop {
+        let scanned = classify_writes(ctx, &writes, &escaping, patches.clone(), &replaced);
+        let next: local_receiver::Replaced = local_receiver::fresh_library_classes()
+            .filter(|name| {
+                scanned.record(&Owner::Global, name).is_some()
+                    || scanned.unproven_record(name).is_some()
+            })
+            .map(str::to_owned)
+            .collect();
+        if next.is_subset(&replaced) {
+            tracing::debug!(replaced = replaced.len(), "replaced library constructors");
+            return scanned;
+        }
+        replaced.extend(next);
+    }
+}
+
+/// Adds the record of every deferred write to `patches`.
+fn classify_writes(
+    ctx: &mut Ctx,
+    writes: &[(Node, Node, Member)],
+    escaping: &HashSet<String>,
+    mut patches: Patches,
+    replaced: &local_receiver::Replaced,
+) -> Patches {
     for (_, target, member) in writes {
-        match write_owner(ctx, target) {
+        let member = member.clone();
+        match write_owner(ctx, *target, replaced) {
             WriteOwner::App => {}
             WriteOwner::Owner(owner) => patches.add(owner, member),
             WriteOwner::Unknown => {
-                for name in &escaping {
+                for name in escaping {
                     patches.add(Owner::Named(name.clone()), member.clone());
                 }
             }
@@ -2371,7 +2404,7 @@ fn literal_access_name(ctx: &Ctx, node: Node) -> Option<String> {
     }
 }
 
-fn write_owner(ctx: &mut Ctx, target: Node) -> WriteOwner {
+fn write_owner(ctx: &mut Ctx, target: Node, replaced: &local_receiver::Replaced) -> WriteOwner {
     let target = skip_outer(target);
     // Any prototype reflection in the receiver chain may reach a built-in.
     let mut node = target;
@@ -2431,7 +2464,7 @@ fn write_owner(ctx: &mut Ctx, target: Node) -> WriteOwner {
         None => {
             if chain_mentions_prototype(ctx, target) {
                 WriteOwner::Unknown
-            } else if local_receiver::provably_local(ctx, target) {
+            } else if local_receiver::provably_local(ctx, target, replaced) {
                 WriteOwner::App
             } else {
                 // A parameter, a property read, a call result or a reassigned
