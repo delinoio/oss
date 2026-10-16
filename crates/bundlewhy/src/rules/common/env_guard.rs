@@ -1877,6 +1877,15 @@ impl<'a> Parser<'a> {
             self.parse_body();
         } else if self.eat_punct(":") {
             property.value = self.parse_assign();
+            if property.key == Some("__proto__") && !property.wildcard {
+                // `{__proto__: v}` and `{"__proto__": v}` invoke the prototype
+                // setter instead of defining an own property, so no member
+                // selects `v`. The operand stays parsed for its own branches.
+                // A computed key (`["__proto__"]`) is wildcard and does define
+                // an own property, but computed keys are never inferred.
+                property.key = None;
+                property.value = None;
+            }
         } else if self.eat_punct("=") {
             self.parse_assign();
         }
@@ -3266,6 +3275,58 @@ mod tests {
             (
                 "object conditional value",
                 "x={a:c?d:process.env.FLAG}.a&&run()",
+                Some("and"),
+            ),
+            // A literal `__proto__` key sets the prototype; it is not an own
+            // property, so selecting it does not return the operand.
+            (
+                "object prototype setter",
+                "({__proto__:+process.env.FLAG}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object prototype setter (quoted)",
+                "({\"__proto__\":+process.env.FLAG}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object prototype setter (single quoted, plain operand)",
+                "({'__proto__':process.env.FLAG}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object prototype setter keeps nested branch evidence",
+                "({__proto__:process.env.FLAG&&run()}).other",
+                Some("and"),
+            ),
+            (
+                "object prototype setter after an own property",
+                "({value:1,__proto__:process.env.FLAG}).value&&run()",
+                None,
+            ),
+            (
+                "object computed __proto__ key is not inferred",
+                "({['__proto__']:+process.env.FLAG}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object __proto__ shorthand holds no read",
+                "({__proto__}).__proto__&&process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "object __proto__ method holds no read",
+                "({__proto__(){return process.env.FLAG}}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object ordinary property control",
+                "({value:+process.env.FLAG}).value&&run()",
+                Some("and"),
+            ),
+            (
+                "object ordinary property next to a prototype setter",
+                "({__proto__:a,value:+process.env.FLAG}).value&&run()",
                 Some("and"),
             ),
             // typeof, void and delete discard their operand's value.
