@@ -233,8 +233,12 @@ unsafe fn create(
         let loader = pnport_core::node::Loader::from_snapshot(&runtime.view.graph.snapshot);
         drop(runtime);
         let cwd_value = string(cwd)?;
+        // The requested child directory only seeds the child's environment
+        // and loader options. Native process creation resolves a partial
+        // application path against the caller's own directory state.
+        let caller = std::env::current_dir()?;
         let cwd = if cwd_value.is_empty() {
-            std::env::current_dir()?
+            caller.clone()
         } else {
             PathBuf::from(OsString::from_wide(&cwd_value))
         };
@@ -243,12 +247,22 @@ unsafe fn create(
         let image = if image.is_empty() {
             None
         } else {
-            let path = PathBuf::from(OsString::from_wide(&image));
-            let path = if path.is_absolute() {
-                path
-            } else {
-                cwd.join(path)
-            };
+            let caller_wide: Vec<u16> = caller.as_os_str().encode_wide().collect();
+            let resolved =
+                pnport_core::application::resolve_application(&image, &caller_wide, |drive| {
+                    let name: Vec<u16> = [u16::from(b'='), drive, u16::from(b':')].to_vec();
+                    std::env::var_os(OsString::from_wide(&name))
+                        .map(|value| value.encode_wide().collect())
+                })
+                .ok_or(std::io::ErrorKind::Unsupported)?;
+            let path = PathBuf::from(OsString::from_wide(&resolved));
+            tracing::debug!(
+                action = "windows_application_resolved",
+                requested = %String::from_utf16_lossy(&image),
+                caller = %caller.display(),
+                resolved = %path.display(),
+                "Resolved the application against the caller directory"
+            );
             let translation =
                 translate(&path, false).map_err(|_| std::io::ErrorKind::Unsupported)?;
             let mut wide: Vec<_> = translation.physical.as_os_str().encode_wide().collect();
