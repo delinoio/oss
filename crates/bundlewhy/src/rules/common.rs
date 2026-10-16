@@ -2640,13 +2640,21 @@ struct EmittedEvalCall {
 #[derive(Debug)]
 enum EmittedEval {
     /// At least one emitted direct eval call belongs to the module.
-    Emitted(Vec<EmittedEvalCall>),
+    /// `unverified` keeps one reason for every other copy of the module whose
+    /// calls could not be tied to it (a chunk without a usable source map, an
+    /// unreadable chunk, an unmapped segment, a differing or shared resource):
+    /// that copy may still spell names the attributed copy mangled, so its
+    /// uncertainty must survive next to the attributed calls.
+    Emitted {
+        calls: Vec<EmittedEvalCall>,
+        unverified: Vec<String>,
+    },
     /// Every chunk of the module was checked and none holds a direct eval call
     /// that belongs to it: the build removed the call.
     Absent,
-    /// The emitted calls cannot be tied to the module; `reason` names the
+    /// The emitted calls cannot be tied to the module; every entry names one
     /// evidence limit.
-    Unverified(String),
+    Unverified(Vec<String>),
 }
 
 /// Direct eval offsets per emitted chunk, computed once per chunk.
@@ -2670,19 +2678,22 @@ impl EmittedEvalScan {
     /// chunk without a usable source map is never attributed to a module, and
     /// no original location is claimed from call counts: the chunk may hold
     /// copies of a module, code of other modules, or code that a banner, a
-    /// runtime or a late output plugin injected. Such a call leaves the result
-    /// unverified. A chunk without any direct eval call is still proof that
-    /// the build removed the call from that chunk.
+    /// runtime or a late output plugin injected. Such a call is unverified:
+    /// it leaves the result unverified, and next to an attributed call in
+    /// another chunk it stays listed in [`EmittedEval::Emitted`], so one
+    /// mapped copy never speaks for an unchecked one. A chunk without any
+    /// direct eval call is still proof that the build removed the call from
+    /// that chunk.
     fn classify(&mut self, context: &Context<'_>, module: &CollectedModule) -> EmittedEval {
         let Some(path) = module.path.as_deref() else {
-            return EmittedEval::Unverified(
+            return EmittedEval::Unverified(vec![
                 "the module has no file path to match against source map sources".to_owned(),
-            );
+            ]);
         };
         if module.chunks.is_empty() {
-            return EmittedEval::Unverified(
+            return EmittedEval::Unverified(vec![
                 "the engine lists no output chunk for the module".to_owned(),
-            );
+            ]);
         }
         let identity = ResourceIdentity::from_module(&module.id, path);
         let sharing_modules = context.resource_sharing().count(&identity);
@@ -2749,11 +2760,11 @@ impl EmittedEvalScan {
             }
         }
         if !calls.is_empty() {
-            EmittedEval::Emitted(calls)
+            EmittedEval::Emitted { calls, unverified }
         } else if unverified.is_empty() {
             EmittedEval::Absent
         } else {
-            EmittedEval::Unverified(unverified.join("; "))
+            EmittedEval::Unverified(unverified)
         }
     }
 
@@ -2849,8 +2860,8 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         // one.
         let scan = emitted_scan.get_or_insert_with(EmittedEvalScan::default);
         let emission = scan.classify(context, module);
-        let (calls, unverified_reason) = match emission {
-            EmittedEval::Emitted(calls) => (calls, None),
+        let (calls, unverified) = match emission {
+            EmittedEval::Emitted { calls, unverified } => (calls, unverified),
             EmittedEval::Absent => {
                 tracing::debug!(
                     module = %context.module_log_label(&module.id),
@@ -2859,50 +2870,52 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                 );
                 continue;
             }
-            EmittedEval::Unverified(reason) => {
+            EmittedEval::Unverified(reasons) => {
                 if !engine_reported {
                     tracing::debug!(
                         module = %context.module_log_label(&module.id),
-                        %reason,
+                        reason = %reasons.join("; "),
                         "skipping direct-eval-blocks-mangling: emitted direct eval calls cannot be attributed to the module"
                     );
                     continue;
                 }
-                (Vec::new(), Some(reason))
+                (Vec::new(), reasons)
             }
         };
-        // Retained names count only in chunks that hold an emitted call of
-        // the module; without an attributed call, in every chunk of the
-        // module. A name counts only at positions the chunk's usable source
-        // map attributes to the module. A chunk without a usable source map is
-        // never counted; when it holds a direct eval call, the finding cannot
-        // tell whether the names survive there.
+        // Retained names count only in chunks that hold an emitted call
+        // attributed to the module, and there only at positions the chunk's
+        // usable source map attributes to the module. Without an attributed
+        // call no chunk is scanned: a name in a copy that holds no call says
+        // nothing about a different copy whose call could not be attributed.
         let mut call_chunks: Vec<usize> = calls.iter().map(|call| call.chunk).collect();
         call_chunks.sort_unstable();
         call_chunks.dedup();
-        if call_chunks.is_empty() {
-            call_chunks = module
-                .chunks
-                .iter()
-                .filter_map(|file| context.chunk_index(file))
-                .collect();
-        }
         let names = declared_names(&source);
         let mut retained: BTreeSet<String> = BTreeSet::new();
         let mut chunk_files = Vec::new();
-        let mut unchecked_files = Vec::new();
         for index in &call_chunks {
-            if context.chunks[*index].map.is_none() {
-                if !scan.chunk_offsets(context, *index).is_empty() {
-                    unchecked_files.push(context.chunks[*index].file.clone());
-                }
-                continue;
-            }
             chunk_files.push(context.chunks[*index].file.clone());
             retained.extend(scan.retained_names(context, module, *index, &names));
         }
-        if retained.is_empty() && unchecked_files.is_empty() {
-            // Names were mangled despite eval, so nothing is blocked.
+        // Copies that hold a direct eval call but no usable source map cannot
+        // attribute any name to the module.
+        let mut unchecked_files: Vec<String> = Vec::new();
+        for file in &module.chunks {
+            let Some(index) = context.chunk_index(file) else {
+                continue;
+            };
+            if context.chunks[index].map.is_none()
+                && !scan.chunk_offsets(context, index).is_empty()
+                && !unchecked_files.contains(&context.chunks[index].file)
+            {
+                unchecked_files.push(context.chunks[index].file.clone());
+            }
+        }
+        // Names that survive nowhere checked and no copy left unchecked: the
+        // minifier mangled them despite eval, so nothing is blocked. Any
+        // unverified copy, an engine-reported eval without an attributed call
+        // included, keeps the finding Inferred instead.
+        if retained.is_empty() && unverified.is_empty() {
             continue;
         }
         let emitted = !calls.is_empty();
@@ -3006,11 +3019,24 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                     }
                 ),
             ));
-        } else if let Some(reason) = &unverified_reason {
+        } else if !unverified.is_empty() {
             evidence.push(Evidence::new(
                 "emitted chunk scan",
                 EvidenceStatus::Inferred,
-                format!("No emitted direct eval call could be tied to the module: {reason}"),
+                format!(
+                    "No emitted direct eval call could be tied to the module: {}",
+                    unverified.join("; ")
+                ),
+            ));
+        }
+        if emitted && !unverified.is_empty() {
+            evidence.push(Evidence::new(
+                "emitted chunk scan",
+                EvidenceStatus::Inferred,
+                format!(
+                    "Other emitted copies of the module could not be checked: {}",
+                    unverified.join("; ")
+                ),
             ));
         }
         if !retained_list.is_empty() {
@@ -3076,10 +3102,7 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                     Condition::new(
                         "Declared names are shortened in the output",
                         ConditionOutcome::Unknown,
-                        format!(
-                            "Not checked: {} has no usable source map",
-                            unchecked_files.join(", ")
-                        ),
+                        format!("Not checked: {}", unverified.join("; ")),
                     )
                 } else {
                     Condition::new(
@@ -3198,16 +3221,32 @@ mod tests {
         chunks: &[TestChunk<'_>],
         engine_reports_eval: bool,
     ) -> Vec<DiagnosticDraft> {
+        eval_rule_drafts_with_listing(modules, chunks, None, engine_reports_eval)
+    }
+
+    /// Like [`eval_rule_drafts_with_chunks`], but every module lists exactly
+    /// the `listed` chunk files instead of every loaded chunk. A listed file
+    /// that is not loaded is an unreadable chunk; an empty list is a module
+    /// the engine lists in no output chunk.
+    fn eval_rule_drafts_with_listing(
+        modules: &[(&str, &str)],
+        chunks: &[TestChunk<'_>],
+        listed: Option<&[&str]>,
+        engine_reports_eval: bool,
+    ) -> Vec<DiagnosticDraft> {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let build_dir = root.join("build");
         std::fs::create_dir_all(&build_dir).unwrap();
         let mut sources = crate::sources::SourceStore::new(true);
         let mut collected = Vec::new();
-        let files: Vec<String> = chunks
-            .iter()
-            .map(|(file, _, _)| (*file).to_owned())
-            .collect();
+        let files: Vec<String> = match listed {
+            Some(listed) => listed.iter().map(|file| (*file).to_owned()).collect(),
+            None => chunks
+                .iter()
+                .map(|(file, _, _)| (*file).to_owned())
+                .collect(),
+        };
         for (name, source) in modules {
             let source_path = root.join(name);
             std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
@@ -4970,6 +5009,259 @@ y=/process.env.F/.test(z),process.env.G"#;
         }
     }
 
+    /// The Unknown-or-Unmet outcome of the retained-name condition.
+    fn names_condition(draft: &DiagnosticDraft) -> &Condition {
+        draft
+            .conditions
+            .iter()
+            .find(|condition| condition.description == "Declared names are shortened in the output")
+            .expect("names condition")
+    }
+
+    const COPY_SOURCE: &str =
+        "const longLocalName = 1;\nexport function run(value) {\n  return eval(value);\n}\n";
+    /// A mapped copy of [`COPY_SOURCE`] whose names the minifier mangled.
+    const MANGLED_COPY: &str = "const a = 1;\nexport function run(c) { return eval(c); }\n";
+    /// A copy that kept the names, with or without the call.
+    const KEPT_COPY: &str =
+        "const longLocalName = 1;\nexport function run(value) { return eval(value); }\n";
+    const KEPT_COPY_WITHOUT_EVAL: &str =
+        "const longLocalName = 1;\nexport function run(value) { return value; }\n";
+
+    fn mangled_copy_tokens() -> Vec<MapToken> {
+        let eval_column = MANGLED_COPY.lines().nth(1).unwrap().find("eval").unwrap() as u32;
+        vec![(0, 0, 0, 0, 0), (1, 0, 0, 1, 0), (1, eval_column, 0, 2, 9)]
+    }
+
+    /// Every finding that survives next to an unverified copy states that the
+    /// names could not be checked there: the names condition is Unknown, an
+    /// Inferred `emitted chunk scan` entry names the reason, and no retained
+    /// name is claimed from a copy that holds no attributed call.
+    fn assert_unchecked_copy_finding(draft: &DiagnosticDraft, reason: &str, name: &str) {
+        let condition = names_condition(draft);
+        assert_eq!(condition.outcome, ConditionOutcome::Unknown, "{name}");
+        assert!(condition.detail.contains(reason), "{name}: {condition:?}");
+        assert!(
+            draft.evidence.iter().any(|entry| {
+                entry.provenance == "emitted chunk scan"
+                    && entry.status == EvidenceStatus::Inferred
+                    && entry.detail.contains(reason)
+            }),
+            "{name}: {:?}",
+            draft.evidence
+        );
+        assert!(
+            draft.evidence.iter().all(|entry| {
+                entry.provenance != "generated chunk text"
+                    || entry.status != EvidenceStatus::Confirmed
+            }),
+            "{name}"
+        );
+    }
+
+    #[test]
+    fn an_unverified_copy_keeps_the_finding_next_to_a_mangled_attributed_copy() {
+        let tokens = mangled_copy_tokens();
+        // The attributed copy mangled its names; the other copy of the module
+        // cannot be checked, so the mangled copy alone must not hide it.
+        let banner_tokens: Vec<MapToken> = vec![(1, 0, 0, 0, 0), (2, 0, 0, 1, 0)];
+        let banner = "eval(globalThis.bannerHook);\nconst longLocalName = 1;\n";
+        let cases: [(&str, Vec<TestChunk<'_>>, Option<&[&str]>, &str); 4] = [
+            (
+                "mapless copy that keeps the names",
+                vec![
+                    ("main.js", MANGLED_COPY, Some(&tokens)),
+                    ("copy.js", KEPT_COPY, None),
+                ],
+                None,
+                "copy.js has no usable source map",
+            ),
+            (
+                "mapless copy that mangled its names too",
+                vec![
+                    ("main.js", MANGLED_COPY, Some(&tokens)),
+                    ("copy.js", MANGLED_COPY, None),
+                ],
+                None,
+                "copy.js has no usable source map",
+            ),
+            (
+                "listed chunk that cannot be read",
+                vec![("main.js", MANGLED_COPY, Some(&tokens))],
+                Some(&["main.js", "missing.js"]),
+                "missing.js could not be read",
+            ),
+            (
+                "mapped copy with a call no mapping covers",
+                vec![
+                    ("main.js", MANGLED_COPY, Some(&tokens)),
+                    ("banner.js", banner, Some(&banner_tokens)),
+                ],
+                None,
+                "banner.js has a direct eval call at 1:1 that no source mapping attributes",
+            ),
+        ];
+        for (name, chunks, listed, reason) in cases {
+            for engine_reports_eval in [false, true] {
+                let drafts = eval_rule_drafts_with_listing(
+                    &[("src/main.js", COPY_SOURCE)],
+                    &chunks,
+                    listed,
+                    engine_reports_eval,
+                );
+                assert_eq!(drafts.len(), 1, "{name}, engine={engine_reports_eval}");
+                // The attributed call still locates the finding.
+                let location = drafts[0].located.location.as_ref().unwrap();
+                assert_eq!((location.line, location.column), (3, 10), "{name}");
+                assert_unchecked_copy_finding(&drafts[0], reason, name);
+            }
+        }
+        // Copies that provably hold no direct eval call, and a mangled
+        // attributed copy, leave nothing blocked.
+        let tokens_without_names = mangled_copy_tokens();
+        for (name, chunks) in [
+            (
+                "mapless copy without eval",
+                vec![
+                    ("main.js", MANGLED_COPY, Some(&tokens_without_names)),
+                    ("copy.js", KEPT_COPY_WITHOUT_EVAL, None),
+                ],
+            ),
+            (
+                "mapped copy without eval",
+                vec![
+                    ("main.js", MANGLED_COPY, Some(&tokens_without_names)),
+                    (
+                        "copy.js",
+                        KEPT_COPY_WITHOUT_EVAL,
+                        Some(&tokens_without_names),
+                    ),
+                ],
+            ),
+        ] {
+            for engine_reports_eval in [false, true] {
+                let drafts = eval_rule_drafts_with_chunks(
+                    &[("src/main.js", COPY_SOURCE)],
+                    &chunks,
+                    engine_reports_eval,
+                );
+                assert!(drafts.is_empty(), "{name}, engine={engine_reports_eval}");
+            }
+        }
+    }
+
+    #[test]
+    fn retained_names_are_scanned_only_in_chunks_with_an_attributed_call() {
+        let tokens: Vec<MapToken> = vec![(0, 0, 0, 0, 0), (1, 0, 0, 1, 0)];
+        // A mapped copy keeps the long name but holds no call; a different,
+        // mapless copy holds the only call. The two copies are unrelated, so
+        // the name is no evidence against the call.
+        let chunks: [TestChunk<'_>; 2] = [
+            ("mapped.js", KEPT_COPY_WITHOUT_EVAL, Some(&tokens)),
+            ("copy.js", KEPT_COPY, None),
+        ];
+        let drafts = eval_rule_drafts_with_chunks(&[("src/main.js", COPY_SOURCE)], &chunks, true);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+        assert_unchecked_copy_finding(
+            &drafts[0],
+            "copy.js has no usable source map",
+            "unrelated mapped copy",
+        );
+        assert!(
+            drafts[0]
+                .conditions
+                .iter()
+                .all(|condition| condition.outcome != ConditionOutcome::Unmet
+                    || condition.description.starts_with("No direct eval")),
+            "{:?}",
+            drafts[0].conditions
+        );
+        // Without an engine report the source-scan candidate alone is omitted.
+        let drafts = eval_rule_drafts_with_chunks(&[("src/main.js", COPY_SOURCE)], &chunks, false);
+        assert!(drafts.is_empty());
+        // A name in the chunk that holds the attributed call still counts.
+        let attributed_tokens = {
+            let eval_column = KEPT_COPY.lines().nth(1).unwrap().find("eval").unwrap() as u32;
+            vec![(0, 0, 0, 0, 0), (1, 0, 0, 1, 0), (1, eval_column, 0, 2, 9)]
+        };
+        let chunks: [TestChunk<'_>; 2] = [
+            ("mapped.js", KEPT_COPY_WITHOUT_EVAL, Some(&tokens)),
+            ("kept.js", KEPT_COPY, Some(&attributed_tokens)),
+        ];
+        let drafts = eval_rule_drafts_with_chunks(&[("src/main.js", COPY_SOURCE)], &chunks, true);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].status, EvidenceStatus::Confirmed);
+        let condition = names_condition(&drafts[0]);
+        assert_eq!(condition.outcome, ConditionOutcome::Unmet);
+        let names = evidence(&drafts[0], "generated chunk text").unwrap();
+        assert!(names.detail.contains("kept.js"), "{}", names.detail);
+        assert!(!names.detail.contains("mapped.js"), "{}", names.detail);
+    }
+
+    #[test]
+    fn an_engine_report_with_uninspectable_chunks_stays_an_inferred_finding() {
+        let banner = "eval(globalThis.bannerHook);\nconst a = 1;\nexport function run(c) {\n  \
+                      return c;\n}\n";
+        let banner_tokens: Vec<MapToken> = vec![(1, 0, 0, 0, 0), (2, 0, 0, 1, 0), (3, 0, 0, 3, 0)];
+        let mangled_mapless = "const a = 1;\nexport function run(c) { return eval(c); }\n";
+        let cases: [(&str, Vec<TestChunk<'_>>, Option<&[&str]>, &str); 4] = [
+            (
+                "no chunk lists the module",
+                vec![("main.js", KEPT_COPY_WITHOUT_EVAL, None)],
+                Some(&[]),
+                "the engine lists no output chunk for the module",
+            ),
+            (
+                "the only listed chunk cannot be read",
+                vec![("main.js", KEPT_COPY_WITHOUT_EVAL, None)],
+                Some(&["missing.js"]),
+                "missing.js could not be read",
+            ),
+            (
+                "a call sits in an unmapped segment of a usable map",
+                vec![("main.js", banner, Some(&banner_tokens))],
+                None,
+                "main.js has a direct eval call at 1:1 that no source mapping attributes",
+            ),
+            (
+                "a mapless chunk holds the call and the names are mangled",
+                vec![("main.js", mangled_mapless, None)],
+                None,
+                "main.js has no usable source map",
+            ),
+        ];
+        for (name, chunks, listed, reason) in cases {
+            let drafts = eval_rule_drafts_with_listing(
+                &[("src/main.js", COPY_SOURCE)],
+                &chunks,
+                listed,
+                true,
+            );
+            assert_eq!(drafts.len(), 1, "{name}");
+            let draft = &drafts[0];
+            assert_eq!(draft.status, EvidenceStatus::Inferred, "{name}");
+            assert_unchecked_copy_finding(draft, reason, name);
+            let emitted = draft
+                .conditions
+                .iter()
+                .find(|condition| condition.description.starts_with("No direct eval"))
+                .unwrap();
+            assert_eq!(emitted.outcome, ConditionOutcome::Unmet, "{name}");
+            assert!(emitted.detail.contains("could not be checked"), "{name}");
+            // The summary keeps the limit visible.
+            assert!(draft.summary.contains("could not be checked"), "{name}");
+            // The source-scan candidate alone stays omitted.
+            let drafts = eval_rule_drafts_with_listing(
+                &[("src/main.js", COPY_SOURCE)],
+                &chunks,
+                listed,
+                false,
+            );
+            assert!(drafts.is_empty(), "{name}: source scan alone");
+        }
+    }
+
     /// A module whose first eval call (line 4) is dead code and whose second
     /// (line 7) is the call the build keeps.
     const FIRST_EVAL_REMOVED_SOURCE: &str = "const longLocalName = 1;\nexport function a(v) {\n  \
@@ -5150,7 +5442,8 @@ y=/process.env.F/.test(z),process.env.G"#;
         // still unattributed.
         let mut scan = EmittedEvalScan::default();
         match scan.classify(&context, &module) {
-            EmittedEval::Unverified(reason) => {
+            EmittedEval::Unverified(reasons) => {
+                let reason = reasons.join("; ");
                 assert!(reason.contains("no usable source map"), "{reason}");
             }
             other => panic!("unexpected {other:?}"),
