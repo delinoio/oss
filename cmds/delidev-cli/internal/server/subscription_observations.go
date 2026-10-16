@@ -111,6 +111,12 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 	defer unlock()
 	// RequestedAt belongs to initial transaction acceptance, not retry identity.
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.observe.request", input, func(tx *store.Tx) (any, error) {
+		if action == domain.SubscriptionQuota && input.Operation.MachineID == "" {
+			// A linked Claude usage connection is read by the one usage-read owner.
+			if cr, ca, cerr := accountFromTx(tx, input.Account, input.Revision); cerr == nil && ca.ManagedClaudeAccount() {
+				return s.requestClaudeUsageObservation(tx, cr, ca, input.Operation, input.Confirmed)
+			}
+		}
 		r, a, err := subscriptionAccount(tx, input.Account, input.Revision)
 		if err != nil {
 			return nil, err
@@ -221,6 +227,17 @@ func subscriptionQuotaCandidates(tx *store.Tx, now time.Time, dueOnly bool, epoc
 	return result, nil
 }
 func queueSubscriptionQuotas(tx *store.Tx, actor domain.Principal, now time.Time, dueOnly bool, epoch domain.ID) (subscriptionQuotaBatchReceipt, error) {
+	return queueSubscriptionQuotasWith(tx, actor, now, dueOnly, epoch, nil)
+}
+
+// claudeUsageBatch makes the refresh-all batch join the usage-read owner. The
+// owner is nil for the inactive maintenance pass, which has its own scanner.
+type claudeUsageBatch struct {
+	service *Service
+	manual  bool
+}
+
+func queueSubscriptionQuotasWith(tx *store.Tx, actor domain.Principal, now time.Time, dueOnly bool, epoch domain.ID, claude *claudeUsageBatch) (subscriptionQuotaBatchReceipt, error) {
 	records, err := subscriptionQuotaCandidates(tx, now, dueOnly, epoch)
 	result := subscriptionQuotaBatchReceipt{Accounts: []domain.ID{}}
 	if err != nil {
@@ -239,7 +256,42 @@ func queueSubscriptionQuotas(tx *store.Tx, actor domain.Principal, now time.Time
 		}
 		result.Accounts = append(result.Accounts, r.ID)
 	}
+	if claude != nil && !dueOnly {
+		accepted, err := claude.queue(tx, actor, now)
+		if err != nil {
+			return result, err
+		}
+		result.Accounts = append(result.Accounts, accepted...)
+	}
 	return result, nil
+}
+
+// queue accepts a usage read for every linked Claude account. An explicit
+// refresh ignores the four-minute cadence but never an active backoff or an
+// in-flight read; every other trigger only reads accounts that are due.
+func (b *claudeUsageBatch) queue(tx *store.Tx, actor domain.Principal, now time.Time) ([]domain.ID, error) {
+	records, err := all(tx, domain.AccountKind)
+	if err != nil {
+		return nil, err
+	}
+	var accepted []domain.ID
+	for _, r := range records {
+		a, err := store.Decode[domain.Account](r)
+		if err != nil {
+			return nil, err
+		}
+		if !claudeUsageTracked(a) {
+			continue
+		}
+		outcome, err := b.service.acceptClaudeUsageRead(tx, r, a, domain.NewID(), actor, now, b.manual)
+		if err != nil {
+			return nil, err
+		}
+		if outcome == claudeUsageReadAccepted || outcome == claudeUsageReadJoined {
+			accepted = append(accepted, r.ID)
+		}
+	}
+	return accepted, nil
 }
 
 // Keep this private rollback signal typed so Store.Mutate preserves its identity.
@@ -284,8 +336,18 @@ func (s *Service) RefreshAllSubscriptionQuotas(ctx context.Context, req *connect
 		return nil, rpc.Error(err, c)
 	}
 	defer unlock()
-	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "subscription.quota.all", actor, func(tx *store.Tx) (any, error) {
-		return queueSubscriptionQuotas(tx, actor, time.Now().UTC(), false, s.subscriptionServerEpoch())
+	// Only an explicit user refresh may read Claude usage before its cadence;
+	// the foreground tick and older clients are due-gated.
+	batch := &claudeUsageBatch{service: s, manual: req.Msg.Trigger == pb.SubscriptionQuotaRefreshTrigger_SUBSCRIPTION_QUOTA_REFRESH_TRIGGER_EXPLICIT}
+	var input any = actor
+	if req.Msg.Trigger != pb.SubscriptionQuotaRefreshTrigger_SUBSCRIPTION_QUOTA_REFRESH_TRIGGER_UNSPECIFIED {
+		input = struct {
+			Actor   domain.Principal
+			Trigger pb.SubscriptionQuotaRefreshTrigger
+		}{actor, req.Msg.Trigger}
+	}
+	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "subscription.quota.all", input, func(tx *store.Tx) (any, error) {
+		return queueSubscriptionQuotasWith(tx, actor, time.Now().UTC(), false, s.subscriptionServerEpoch(), batch)
 	})
 	if err != nil {
 		return nil, rpc.Error(err, c)

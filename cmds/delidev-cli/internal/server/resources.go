@@ -682,7 +682,7 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 				// removal of its retained AccountLogin generations and credential
 				// files. Any other protected reference keeps the account.
 				for _, ref := range refs {
-					if ref.Purpose != credentials.AccountLogin {
+					if ref.Purpose != credentials.AccountLogin && ref.Purpose != credentials.ClaudeUsage {
 						return protectedAccountDeletion
 					}
 				}

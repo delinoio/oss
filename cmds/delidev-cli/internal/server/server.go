@@ -145,6 +145,14 @@ type Service struct {
 	prFixRequests         prFixRequestTracker
 	subscriptionOpen      serverSubscriptionOpener
 	claudeSetupOpen       managedClaudeOpener
+	// claudeUsage holds the live usage-tracking runs and the memory-only
+	// approval codes and addresses. The openers and transport are replaced only
+	// by isolated tests; production uses the installed CLI and the configured
+	// server network route.
+	claudeUsage            claudeUsageMemory
+	claudeUsageOpen        claudeUsageOpener
+	claudeUsageStorageOpen claudeUsageStorageOpener
+	claudeUsageTransport   http.RoundTripper
 	// serverCleanupRetryBase is the first delay before a failed server-owned
 	// credential cleanup is retried. Zero selects the default; tests shorten it.
 	serverCleanupRetryBase        time.Duration

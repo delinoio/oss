@@ -92,6 +92,7 @@ func (s *Service) closeAccountSecrets() error {
 	for operation := range s.claudeLoginCodes {
 		s.clearClaudeLoginInput(operation)
 	}
+	s.clearAllClaudeUsageInput()
 	for id := range s.accountChecks {
 		s.cancelAccountChecks(id)
 	}

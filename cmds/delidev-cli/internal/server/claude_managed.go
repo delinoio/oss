@@ -265,6 +265,12 @@ func (s *Service) requestManagedClaude(ctx context.Context, req *connect.Request
 			if err := cancelAccountExecutions(tx, r.ID); err != nil {
 				return nil, err
 			}
+			// The usage connection ends with the account's sign-in: reads stop at
+			// acceptance and its storage is removed by the logout's explicit removal.
+			if state.ClaudeUsage != nil {
+				revokeClaudeUsage(state.ClaudeUsage)
+				a.ProjectClaudeLimits()
+			}
 		}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
@@ -277,6 +283,9 @@ func (s *Service) requestManagedClaude(ctx context.Context, req *connect.Request
 	r, err := s.accountRecord(ctx, input.ID)
 	if err != nil {
 		return nil, rpc.Error(err, c)
+	}
+	if action == domain.SubscriptionLogout {
+		s.cancelClaudeUsageRun(input.ID)
 	}
 	s.logger.InfoContext(ctx, "claude_managed_accepted", "account_id", input.ID, "operation_id", m.RequestId, "action", action, "replayed", result.Replayed)
 	return connect.NewResponse(&pb.RequestSubscriptionResponse{Account: rpc.Resource(r), OperationId: m.RequestId, Replayed: result.Replayed}), nil

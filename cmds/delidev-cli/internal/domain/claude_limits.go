@@ -385,6 +385,12 @@ type ClaudeLimitOperation struct {
 	NativeStarted    bool                  `json:"native_started"`
 	CodeSubmissionID ID                    `json:"code_submission_id,omitempty"`
 	CodeConsumed     bool                  `json:"code_consumed,omitempty"`
+	// Canceled records an accepted explicit Cancel that the runner has not yet
+	// settled. The original login is joined and its credentials discarded.
+	Canceled bool `json:"canceled,omitempty"`
+	// Identity is the validated identity awaiting confirmation. It becomes the
+	// linked identity only when the user confirms it.
+	Identity *ClaudeLimitIdentity `json:"identity,omitempty"`
 	// CredentialID is the staged claude-usage vault reference awaiting
 	// confirmation. It grants no authority until the association is confirmed.
 	CredentialID ID                 `json:"credential_id,omitempty"`
@@ -411,6 +417,11 @@ type ClaudeLimitRead struct {
 	ID        ID                   `json:"id,omitempty"`
 	Epoch     ID                   `json:"epoch,omitempty"`
 	StartedAt *time.Time           `json:"started_at,omitempty"`
+	// ConnectionID, Generation and Actor bind the in-flight read to the
+	// authority it started under; publication rechecks all of them.
+	ConnectionID ID        `json:"connection_id,omitempty"`
+	Generation   ID        `json:"generation,omitempty"`
+	Actor        Principal `json:"actor,omitempty"`
 	// LastAttemptAt starts the four-minute due interval for every attempt.
 	LastAttemptAt *time.Time `json:"last_attempt_at,omitempty"`
 	// RefreshClaimed is written before a native refresh-login starts and is
@@ -428,9 +439,10 @@ func (r ClaudeLimitRead) Active() bool {
 // clients cannot change it; it never exists for an account the user did not
 // explicitly connect.
 type ClaudeLimitState struct {
-	// Generation changes with every new usage login. Vault references,
-	// receipts and every mutation bind to it.
-	Generation ID                    `json:"generation"`
+	// Generation is the usage generation of the linked connection; it is empty
+	// until the first confirmed link and changes with every confirmed
+	// reconnect. Vault references, receipts and mutations bind to it.
+	Generation ID                    `json:"generation,omitempty"`
 	Operation  *ClaudeLimitOperation `json:"operation,omitempty"`
 	// Identity is the validated OAuth identity: pending confirmation while the
 	// operation confirms, retained as the linked identity afterwards.
@@ -457,7 +469,7 @@ type ClaudeLimitState struct {
 
 // Linked reports whether usage evidence may be read and published.
 func (s ClaudeLimitState) Linked() bool {
-	return s.LinkedAt != nil && s.CredentialID != "" && s.Identity != nil
+	return s.LinkedAt != nil && s.Generation != "" && s.CredentialID != "" && s.Identity != nil
 }
 
 // Readable reports whether a fetch may be attempted at all.
@@ -523,7 +535,7 @@ func (s ClaudeLimitState) Validate(account Account) error {
 	invalid := func() error {
 		return Fail(InvalidArgument, "Invalid Claude usage state.", "Use the server-owned usage connection operations.")
 	}
-	if !account.ManagedClaudeAccount() || s.Generation.Validate() != nil || !s.Failure.Valid() {
+	if !account.ManagedClaudeAccount() || s.Generation != "" && s.Generation.Validate() != nil || !s.Failure.Valid() {
 		return invalid()
 	}
 	if o := s.Operation; o != nil {
@@ -532,10 +544,16 @@ func (s ClaudeLimitState) Validate(account Account) error {
 				return invalid()
 			}
 		}
-		if o.Generation != s.Generation || !o.State.Valid() || !o.Failure.Valid() || o.StartedAt.IsZero() || !o.ExpiresAt.After(o.StartedAt) || (o.Actor.Type != OwnerDevice && o.Actor.Type != ClientDevice) || o.Actor.Type == ClientDevice && o.Actor.DeviceID.Validate() != nil {
+		if !o.State.Valid() || !o.Failure.Valid() || o.StartedAt.IsZero() || !o.ExpiresAt.After(o.StartedAt) || (o.Actor.Type != OwnerDevice && o.Actor.Type != ClientDevice) || o.Actor.Type == ClientDevice && o.Actor.DeviceID.Validate() != nil {
 			return invalid()
 		}
 		if o.CredentialID != "" && o.CredentialID.Validate() != nil || o.CodeSubmissionID != "" && o.CodeSubmissionID.Validate() != nil {
+			return invalid()
+		}
+		if o.Identity != nil && (o.Identity.Validate() != nil || o.State != ClaudeLimitLoginConfirming && o.State != ClaudeLimitLoginCanceled && o.State != ClaudeLimitLoginLinked) {
+			return invalid()
+		}
+		if o.State == ClaudeLimitLoginConfirming && (o.Identity == nil || o.CredentialID == "") {
 			return invalid()
 		}
 	}
@@ -545,13 +563,13 @@ func (s ClaudeLimitState) Validate(account Account) error {
 	if s.CredentialID != "" && s.CredentialID.Validate() != nil {
 		return invalid()
 	}
-	if s.LinkedAt != nil && (s.CredentialID == "" || s.Identity == nil || s.LinkedAt.IsZero()) {
+	if s.LinkedAt != nil && (s.Generation == "" || s.CredentialID == "" || s.Identity == nil || s.LinkedAt.IsZero()) {
 		return invalid()
 	}
-	if s.LinkedAt == nil && (s.CredentialID != "" || len(s.Windows) != 0 || s.LastSuccess != nil) {
+	if s.LinkedAt == nil && (s.CredentialID != "" || len(s.Windows) != 0 || s.LastSuccess != nil || s.Identity != nil) {
 		return invalid()
 	}
-	if r := s.Read; r.Phase != "" && r.Phase != ClaudeLimitReadIdle && r.Phase != ClaudeLimitReadFetching && r.Phase != ClaudeLimitReadRefreshing || r.Active() && (r.ID.Validate() != nil || r.Epoch.Validate() != nil || r.StartedAt == nil) {
+	if r := s.Read; r.Phase != "" && r.Phase != ClaudeLimitReadIdle && r.Phase != ClaudeLimitReadFetching && r.Phase != ClaudeLimitReadRefreshing || r.Active() && (r.ID.Validate() != nil || r.Epoch.Validate() != nil || r.StartedAt == nil || r.ConnectionID.Validate() != nil || r.Generation.Validate() != nil || r.Actor.Type != OwnerDevice && r.Actor.Type != ClientDevice) {
 		return invalid()
 	}
 	if len(s.Windows) > len(ClaudeLimitWindowIDs) || len(s.RetiredCredentials) > 64 {

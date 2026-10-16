@@ -137,6 +137,11 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 				return nil, err
 			}
 		}
+		if account, ok := value.(*domain.Account); ok {
+			if err := preserveClaudeUsage(tx, input, id, account); err != nil {
+				return nil, err
+			}
+		}
 		if err := validateNewProviderSelections(tx, input, id, value); err != nil {
 			return nil, err
 		}
@@ -791,4 +796,34 @@ func routingState(tx *store.Tx, agentID domain.ID) (domain.RoutingState, error) 
 func connectionGenerationBytes(account domain.Account) []byte {
 	raw, _ := json.Marshal(account.RetainedConnections)
 	return raw
+}
+
+// preserveClaudeUsage keeps the server-owned Claude usage connection out of the
+// reach of generic configuration writes and of older clients that re-serialize
+// an account without the optional state. The stored connection is restored over
+// the incoming document and the informational windows are re-projected from it,
+// so neither a missing nor a forged usage state can change the connection.
+func preserveClaudeUsage(tx configurationView, input ConfigurationMutation, id domain.ID, incoming *domain.Account) error {
+	if incoming.Type != domain.SubscriptionAccount || incoming.SubscriptionService != domain.SubscriptionClaude {
+		return nil
+	}
+	var stored *domain.ClaudeLimitState
+	if input.ExpectedRevision > 0 {
+		record, err := tx.Get(input.Kind, id)
+		if err != nil {
+			return err
+		}
+		prior, err := store.Decode[domain.Account](record)
+		if err != nil {
+			return err
+		}
+		if prior.Subscription != nil {
+			stored = prior.Subscription.ClaudeUsage
+		}
+	}
+	if incoming.Subscription != nil {
+		incoming.Subscription.ClaudeUsage = stored
+	}
+	incoming.ProjectClaudeLimits()
+	return nil
 }

@@ -52,7 +52,9 @@ func removeAccountLoginReferences(ctx context.Context, vault accountSecrets, own
 		return 0, err
 	}
 	for _, ref := range refs {
-		if ref.Owner != owner || ref.Purpose != credentials.AccountLogin || ref.ID.Validate() != nil {
+		// The read-only Claude usage references of the same account are removed
+		// with its execution generations; any other purpose still denies.
+		if ref.Owner != owner || ref.Purpose != credentials.AccountLogin && ref.Purpose != credentials.ClaudeUsage || ref.ID.Validate() != nil {
 			return 0, subscriptionDenied()
 		}
 	}
@@ -93,6 +95,12 @@ func (s *Service) removeAccountCredentials(ctx context.Context, id, legacyOperat
 		}
 		s.logger.InfoContext(ctx, "server_credential_removal", "account_id", id, "operation_id", legacyOperation, "result", credentialRemovalConfirmed, "files", includeFiles, "references_removed", removed)
 	}()
+	// The Claude usage connection ends with the account's execution credentials:
+	// its reads stop, live work is cancelled and its native storage and profile
+	// are removed before the execution generations are.
+	if err = s.retireClaudeUsage(ctx, id); err != nil {
+		return err
+	}
 	if includeFiles {
 		if err = retireServerLoginCredentials(ctx, s.scopeFor(id), legacyRuntimeHome(s.scopeFor(id), legacyOperation), legacyOperation); err != nil {
 			return err

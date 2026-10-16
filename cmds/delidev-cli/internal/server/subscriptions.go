@@ -1601,13 +1601,15 @@ func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, ow
 		return err
 	}
 	for _, ref := range refs {
-		if ref.Owner != owner || ref.Purpose != credentials.AccountLogin {
+		if ref.Owner != owner || ref.Purpose != credentials.AccountLogin && ref.Purpose != credentials.ClaudeUsage {
 			return subscriptionDenied()
 		}
 	}
 	retired := 0
 	for _, ref := range refs {
-		if ref.ID == keep || slices.Contains(protected, ref.ID) {
+		// A Claude usage reference is never an execution generation: a Worker
+		// Finish neither retires nor counts it.
+		if ref.Purpose == credentials.ClaudeUsage || ref.ID == keep || slices.Contains(protected, ref.ID) {
 			continue
 		}
 		if retired == workerReferenceRetirementBudget {

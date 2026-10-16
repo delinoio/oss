@@ -271,6 +271,11 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 				state := v.Subscription
 				// Historical references retain cleanup ownership, never standing spending consent.
 				state.AutomaticCreditConsent = nil
+				// A restored image never resurrects Claude usage authority: its
+				// credentials live outside the image and any scheduling or reads
+				// require a fresh explicit connection. The retained references are
+				// removed by the account's explicit logout or deletion.
+				state.ClaudeUsage = nil
 				if state.ServerObservationActive() || state.NativeProfileID != "" || state.OwnerMachineID != "" || state.Generation != "" || state.IdentityCommitment != "" || state.Pending != nil || state.Lease != nil || state.RecoveryRequired {
 					// The vault is outside this image. Retain historical references
 					// without authorizing an older bundle or native claim.
