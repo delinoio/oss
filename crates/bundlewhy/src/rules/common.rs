@@ -1760,9 +1760,47 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
     let mut index = from;
     while index < bytes.len() {
         let range = ignored.partition_point(|(start, _)| *start <= index);
-        if let Some((_, stop)) = range.checked_sub(1).map(|found| ignored[found])
+        if let Some((start, stop)) = range.checked_sub(1).map(|found| ignored[found])
             && index < stop
         {
+            // Only a range that starts at `index` is classified. The scan
+            // starts outside every range, so a range reached mid-way is
+            // skipped as a whole.
+            if index == start {
+                let kind = IgnoredRange::classify(source, (start, stop));
+                match kind {
+                    // A block comment that holds a line terminator is a line
+                    // break for automatic semicolon insertion. The comment
+                    // ends the body when the line break would; otherwise the
+                    // body continues after the comment.
+                    IgnoredRange::LineBreakComment
+                        if depth == 0
+                            && arrow_body_ends(
+                                source,
+                                start,
+                                stop,
+                                ignored,
+                                AwaitWord::Operator,
+                            ) =>
+                    {
+                        return start;
+                    }
+                    IgnoredRange::TemplateHead => depth += 1,
+                    // A substitution closer is a closing delimiter: at the
+                    // top level it closes the group that holds the arrow, and
+                    // a middle part opens the next substitution at once.
+                    IgnoredRange::TemplateMiddle | IgnoredRange::TemplateTail => {
+                        let Some(next) = depth.checked_sub(1) else {
+                            return start;
+                        };
+                        depth = next;
+                        if matches!(kind, IgnoredRange::TemplateMiddle) {
+                            depth += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
             index = stop;
             continue;
         }
@@ -1794,6 +1832,57 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
         index += 1;
     }
     bytes.len()
+}
+
+/// What an ignored range means to [`arrow_expression_end`], which skips the
+/// range as one unit but still has to see the delimiters and line breaks it
+/// holds.
+enum IgnoredRange {
+    /// A block comment that contains a line terminator.
+    LineBreakComment,
+    /// A template text that ends at `${`: it opens a substitution.
+    TemplateHead,
+    /// The `}` that closes a substitution and the text up to the next `${`.
+    TemplateMiddle,
+    /// The `}` that closes the last substitution and the text up to the
+    /// closing backtick.
+    TemplateTail,
+    /// Any other comment, string, template without substitution or regular
+    /// expression.
+    Other,
+}
+
+impl IgnoredRange {
+    /// Classifies a range produced by [`non_code_ranges`]. A string or
+    /// regular expression never starts with a backtick or `}`, so the first
+    /// byte tells templates apart from them.
+    fn classify(source: &str, (start, end): (usize, usize)) -> Self {
+        let text = &source.as_bytes()[start..end.min(source.len())];
+        if text.starts_with(b"/*") {
+            return if source[start..end.min(source.len())].contains(is_line_terminator) {
+                Self::LineBreakComment
+            } else {
+                Self::Other
+            };
+        }
+        // A `${` preceded by an odd number of backslashes is escaped text. The
+        // scanner skips a backslash together with the byte after it, so
+        // pairs of backslashes cancel.
+        let opens_substitution = text.ends_with(b"${")
+            && text[..text.len() - 2]
+                .iter()
+                .rev()
+                .take_while(|byte| **byte == b'\\')
+                .count()
+                % 2
+                == 0;
+        match text.first() {
+            Some(b'`') if opens_substitution => Self::TemplateHead,
+            Some(b'}') if opens_substitution => Self::TemplateMiddle,
+            Some(b'}') => Self::TemplateTail,
+            _ => Self::Other,
+        }
+    }
 }
 
 /// ECMAScript identifier syntax: Unicode `ID_Start` or `$`/`_`, then
@@ -7708,6 +7797,156 @@ y=/process.env.F/.test(z),process.env.G"#;
                 format!("switch (a) {{ case 1:{terminator}function eval() {{}} }} eval(code);");
             assert!(direct_eval_line(&source).is_some(), "{source:?}");
         }
+    }
+
+    #[test]
+    fn a_block_comment_with_a_line_terminator_ends_an_arrow_scope_like_a_line_break() {
+        for terminator in LINE_TERMINATORS {
+            // The comment is a line break for automatic semicolon insertion,
+            // so the shadow ends before the next statement.
+            for head in [
+                "(eval) => 1",
+                "eval => 1",
+                "(a, eval = 0) => 1",
+                "(eval) => f(1)",
+            ] {
+                let source = format!("const f = {head} /*{terminator}*/ eval(code)");
+                assert_eq!(
+                    direct_eval_offsets(&source),
+                    vec![source.rfind("eval(code)").unwrap()],
+                    "{source:?}"
+                );
+                // Text around the terminator and several comments behave the
+                // same.
+                let source = format!("const f = {head} /* a{terminator}b */ /* c */ eval(code)");
+                assert_eq!(
+                    direct_eval_offsets(&source),
+                    vec![source.rfind("eval(code)").unwrap()],
+                    "{source:?}"
+                );
+                let source = format!("const f = {head} /* a */ /*{terminator}*/ eval(code)");
+                assert_eq!(
+                    direct_eval_offsets(&source),
+                    vec![source.rfind("eval(code)").unwrap()],
+                    "{source:?}"
+                );
+            }
+            // A token that continues the expression keeps the shadow active.
+            for continuation in ["+ eval(code)", "? eval(code) : 0", "in eval(code)"] {
+                let source = format!("const f = (eval) => 1 /*{terminator}*/ {continuation}");
+                assert!(direct_eval_offsets(&source).is_empty(), "{source:?}");
+            }
+            // A call or tagged template continues the expression too.
+            for source in [
+                format!("const f = (eval) => g /*{terminator}*/ (eval(code))"),
+                format!("const f = (eval) => g /*{terminator}*/ `${{eval(code)}}`"),
+            ] {
+                assert!(direct_eval_offsets(&source).is_empty(), "{source:?}");
+            }
+            // No line break follows `=>`, and a comment inside a nested group
+            // is not at the arrow's top level.
+            for source in [
+                format!("const f = (eval) => /*{terminator}*/ eval(code)"),
+                format!("const f = (eval) => g(1 /*{terminator}*/, eval(code))"),
+                format!("const f = (eval) => [1 /*{terminator}*/ , eval(code)]"),
+                format!("const f = (eval) => ({{ a: 1 /*{terminator}*/, b: eval(code) }})"),
+            ] {
+                assert!(direct_eval_offsets(&source).is_empty(), "{source:?}");
+            }
+            // A comment without a line terminator, a comment that follows a
+            // semicolon and a line comment keep their earlier behavior.
+            let source = format!("const f = (eval) => 1 /* c */ + eval(code){terminator}eval(2)");
+            assert_eq!(
+                direct_eval_offsets(&source),
+                vec![source.rfind("eval(2)").unwrap()],
+                "{source:?}"
+            );
+            let source = format!("const f = (eval) => 1 /*{terminator}*/ ; eval(code)");
+            assert_eq!(
+                direct_eval_offsets(&source),
+                vec![source.rfind("eval(code)").unwrap()],
+                "{source:?}"
+            );
+            let source = format!("const f = (eval) => 1 // c{terminator}eval(code)");
+            assert_eq!(
+                direct_eval_offsets(&source),
+                vec![source.rfind("eval(code)").unwrap()],
+                "{source:?}"
+            );
+            // A string or regular expression that holds `/*` text is not a
+            // comment.
+            let source = format!("const f = (eval) => '/*{terminator}*/' + eval(code)");
+            assert!(direct_eval_offsets(&source).is_empty(), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn a_template_substitution_nests_inside_an_arrow_scope() {
+        // Commas, semicolons and line breaks inside `${ ... }` belong to the
+        // substitution, not to the arrow body.
+        for source in [
+            "const longLocalName = (eval) => `${0, eval(code)}`;",
+            "const f = eval => `${0, eval(code)}`;",
+            "const f = (eval) => `a${0}b${1, eval(code)}c`;",
+            "const f = (eval) => `${0, eval(a)} and ${1, eval(b)}`;",
+            "const f = (eval) => `${0}${1, eval(code)}`;",
+            // Nested templates restore the outer depth on their tail.
+            "const f = (eval) => `${`${0, eval(a)}`, eval(b)}`;",
+            "const f = (eval) => `${`${0}`, eval(a)} ${`x`, eval(b)}`;",
+            "const f = (eval) => `${`${`${0, eval(a)}`}`, eval(b)}`;",
+            // Braces and an object literal inside a substitution.
+            "const f = (eval) => `${{ a: 0, b: eval(code) }.b}`;",
+            "const f = (eval) => `${(() => { return 1, eval(code); })()}`;",
+            // An escaped `\\${` is text and the `\\\\${` after it is not.
+            "const f = (eval) => `a\\\\${0, eval(code)}`;",
+            // A line break inside a substitution does not end the arrow.
+            "const f = (eval) => `${0\n, eval(code)}`;",
+            "const f = (eval) => `${\n0\n}${eval(code)}`;",
+            // Tagged templates and templates as arguments.
+            "const f = (eval) => tag`${0, eval(code)}`;",
+            "const f = (eval) => g(`${0, eval(code)}`, 1);",
+        ] {
+            assert!(direct_eval_offsets(source).is_empty(), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn eval_after_a_template_arrow_is_still_a_direct_eval() {
+        for (source, marker) in [
+            ("const f = (eval) => `${0}`; eval(code)", "eval(code)"),
+            ("const f = (eval) => `${0, 1}`, eval(code)", "eval(code)"),
+            ("const f = (eval) => `${0}${1}`\neval(code)", "eval(code)"),
+            ("const f = (eval) => `${`${0}`}`; eval(code)", "eval(code)"),
+            ("const f = eval => `a${0}b`; eval(code)", "eval(code)"),
+            // An escaped `\\${` opens no substitution, so the comma after the
+            // template ends the arrow.
+            ("const f = (eval) => `a\\${0`, eval(code)", "eval(code)"),
+            ("const f = (eval) => `a\\\\${0}`, eval(code)", "eval(code)"),
+            ("const f = (eval) => `a`, eval(code)", "eval(code)"),
+            // Unshadowed code in and next to templates is still reported.
+            ("const f = `${0, eval(code)}`;", "eval(code)"),
+            ("const f = (value) => `${0, eval(code)}`;", "eval(code)"),
+            // The arrow inside a substitution ends at the `}` that closes
+            // it, and a later substitution is outside the arrow.
+            ("const f = `${(eval) => eval(a)}${eval(b)}`;", "eval(b)"),
+            ("const f = `${(eval) => 1} ${eval(b)}`;", "eval(b)"),
+            ("const f = `${(eval) => 1}`; eval(b)", "eval(b)"),
+            ("const f = `${(eval) => `${1}`}${eval(b)}`;", "eval(b)"),
+            ("const f = `${eval => eval(a)} ${eval(b)}`;", "eval(b)"),
+        ] {
+            assert_eq!(
+                direct_eval_offsets(source),
+                vec![source.rfind(marker).unwrap()],
+                "{source:?}"
+            );
+        }
+        // Grouped commas and trailing expressions keep their behavior.
+        let grouped = "const f = (eval) => (0, eval(a)), eval(b)";
+        assert_eq!(
+            direct_eval_offsets(grouped),
+            vec![grouped.rfind("eval(b)").unwrap()]
+        );
+        assert!(direct_eval_offsets("const f = (eval) => (0, 1) + eval(a)").is_empty());
     }
 
     #[test]
