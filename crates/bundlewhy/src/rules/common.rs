@@ -1964,11 +1964,22 @@ fn function_body_block(
 /// } ? X : Y`, `v is { a: 1 }`, `keyof { a: 1 }`). Any other previous token
 /// (`)`, `]`, `>`, a type name such as `void`) ends the type, so the brace is
 /// the body.
+///
+/// A keyword counts only as a standalone type operator. A member name after a
+/// dot (`typeof obj.keyof {`) is part of a qualified name, which ends the
+/// type, so the brace is the body. A spread (`[...keyof { a: 1 }]`) is not a
+/// member access.
 fn opens_type_literal(code: &str, open: usize) -> bool {
     let before = code[..open].trim_end();
-    before.ends_with(['<', '|', '&', ',', '[', '(', ':', '?'])
-        || before.ends_with("=>")
-        || matches!(trailing_word(before), "extends" | "is" | "keyof")
+    if before.ends_with(['<', '|', '&', ',', '[', '(', ':', '?']) || before.ends_with("=>") {
+        return true;
+    }
+    let word = trailing_word(before);
+    if !matches!(word, "extends" | "is" | "keyof") {
+        return false;
+    }
+    let preceding = before[..before.len() - word.len()].trim_end();
+    !preceding.ends_with('.') || preceding.ends_with("...")
 }
 
 /// The offset of the `{` that opens a function or method body, given the
@@ -3948,6 +3959,28 @@ y=/process.env.F/.test(z),process.env.G"#;
         ] {
             assert_reports_at(source, marker);
         }
+    }
+
+    #[test]
+    fn type_operator_names_in_qualified_return_types_do_not_open_a_type_literal() {
+        // A member named like a type operator (`obj.keyof`) is part of a
+        // qualified name, so the brace after it is the function body and the
+        // expression-local `eval` name shadows only that body.
+        for member in ["keyof", "extends", "is"] {
+            let source =
+                format!("const f = function eval(): typeof obj.{member} {{}}; eval(code);");
+            assert_reports_at(&source, "eval(code)");
+            let spaced =
+                format!("const f = function eval(): typeof obj . {member} {{}}; eval(code);");
+            assert_reports_at(&spaced, "eval(code)");
+            let method = format!("class C {{ eval(): typeof obj.{member} {{ return 1; }} }}");
+            assert_eq!(direct_eval_line(&method), None, "{method:?}");
+        }
+        // A spread element in a tuple type still takes an object type.
+        assert_eq!(
+            direct_eval_line("class C { eval(): [...keyof { a: 1 }] { return []; } }"),
+            None
+        );
     }
 
     #[test]
