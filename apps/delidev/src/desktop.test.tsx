@@ -894,10 +894,12 @@ it("does not re-read the saved Worker proof when an unrelated render keeps the s
   }));
   const original = bridge.invoke.getMockImplementation()!;
   let changed!: () => void;
-  bridge.listen.mockImplementation(async (event: string, callback: () => void) => {
-    if (event === "saved-connection-label") changed = callback;
-    return () => {};
-  });
+  bridge.listen.mockImplementation(
+    async (event: string, callback: () => void) => {
+      if (event === "saved-connection-label") changed = callback;
+      return () => {};
+    },
+  );
   bridge.invoke.mockImplementation(async (command: string, args?: unknown) =>
     command === "saved_worker_proof"
       ? {
