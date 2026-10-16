@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     chunks::{Chunk, measure},
-    collect::{CollectedModule, Collection},
+    collect::{CollectedModule, Collection, Mangle},
     engine::BundlerChoice,
     error::{ErrorCode, problem},
     model::{
@@ -226,6 +226,16 @@ fn coverage(
                         ),
                     )
                 }
+                // The only name-mangling detector (direct eval blocking
+                // mangling) is skipped when the effective output configuration
+                // disables mangling, so an empty result is not a clean detector
+                // result.
+                OptimizationCategory::NameMangling if collection.mangle == Mangle::Disabled => (
+                    CoverageState::NotApplicable,
+                    "Name mangling is disabled by the effective output minify configuration, so \
+                     the minifier does not mangle names."
+                        .to_owned(),
+                ),
                 // Vite's generated env expression needs confirmation from the
                 // build's original source; Rspack's detector does not.
                 OptimizationCategory::DeadCodeElimination
@@ -4192,6 +4202,58 @@ mod tests {
             diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
+        );
+    }
+
+    fn coverage_state(fixture: &Fixture, category: OptimizationCategory) -> &CategoryCoverage {
+        fixture
+            .output
+            .analysis
+            .coverage
+            .iter()
+            .find(|entry| entry.category == category)
+            .unwrap()
+    }
+
+    #[test]
+    fn disabled_mangling_marks_name_mangling_coverage_not_applicable() {
+        let enabled = run_fixture(BundlerChoice::Vite, |_| {});
+        assert_eq!(
+            coverage_state(&enabled, OptimizationCategory::NameMangling).state,
+            CoverageState::Covered
+        );
+        let disabled = run_fixture(BundlerChoice::Vite, |value| {
+            value["mangle"] = serde_json::json!("disabled");
+        });
+        let mangling = coverage_state(&disabled, OptimizationCategory::NameMangling);
+        assert_eq!(mangling.state, CoverageState::NotApplicable);
+        assert!(mangling.note.contains("Name mangling is disabled"));
+        // Dead-code elimination still runs when only mangling is disabled.
+        assert_eq!(
+            coverage_state(&disabled, OptimizationCategory::DeadCodeElimination).state,
+            CoverageState::Covered
+        );
+    }
+
+    #[test]
+    fn disabled_mangling_wins_over_a_source_gap_partial_state() {
+        let fixture = rspack_svg_eval_fixture(|value, _| {
+            value["mangle"] = serde_json::json!("disabled");
+        });
+        assert_eq!(
+            coverage_state(&fixture, OptimizationCategory::NameMangling).state,
+            CoverageState::NotApplicable
+        );
+    }
+
+    #[test]
+    fn unknown_mangle_value_keeps_name_mangling_coverage_active() {
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            value["mangle"] = serde_json::json!("partial");
+        });
+        assert_eq!(
+            coverage_state(&fixture, OptimizationCategory::NameMangling).state,
+            CoverageState::Covered
         );
     }
 
