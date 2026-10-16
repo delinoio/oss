@@ -153,6 +153,9 @@ type Service struct {
 	claudeUsageOpen        claudeUsageOpener
 	claudeUsageStorageOpen claudeUsageStorageOpener
 	claudeUsageTransport   http.RoundTripper
+	// afterClaudeUsageClaim runs between a durable login claim and the
+	// registration of its run. It is set only by isolated tests.
+	afterClaudeUsageClaim func()
 	// serverCleanupRetryBase is the first delay before a failed server-owned
 	// credential cleanup is retried. Zero selects the default; tests shorten it.
 	serverCleanupRetryBase        time.Duration

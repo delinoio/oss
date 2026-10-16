@@ -374,6 +374,11 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	// Join its original controller before retiring dependencies or reporting Stop.
 	stopSessionDeletions()
 	<-sessionDeletionsDone
+	// Canceled usage workers settle on background contexts and may still stage,
+	// open, rotate or delete vault references. Join them before the account
+	// secrets close; the deferred stop remains only as a fallback.
+	stopClaudeUsage()
+	<-claudeUsageDone
 	service.executionAuthority.close()
 	if config.Desktop != nil && config.DesktopCredentials != nil {
 		config.DesktopCredentials.close()

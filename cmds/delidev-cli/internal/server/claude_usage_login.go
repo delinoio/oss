@@ -94,6 +94,50 @@ func joinClaudeUsageRun(ctx context.Context, run *claudeUsageRun) error {
 	}
 }
 
+// stopClaudeUsageWork cancels the live usage run of an account and waits for it
+// to join its native child. The caller must not hold the account gate because
+// the run needs the gate to settle.
+func (s *Service) stopClaudeUsageWork(ctx context.Context, account domain.ID) error {
+	return joinClaudeUsageRun(ctx, s.cancelClaudeUsageRun(account))
+}
+
+// addClaudeUsageRetired records claude-usage references that are owed a
+// deletion. The list stays sorted and free of duplicates and empty identifiers.
+func addClaudeUsageRetired(usage *domain.ClaudeLimitState, references ...domain.ID) {
+	for _, reference := range references {
+		if reference != "" {
+			usage.RetiredCredentials = append(usage.RetiredCredentials, reference)
+		}
+	}
+	usage.RetiredCredentials = slices.Compact(slices.Sorted(slices.Values(usage.RetiredCredentials)))
+}
+
+// recordClaudeUsageRetirement durably records references whose vault state is
+// unproven (an uncertain write or a failed deletion) as removal obligations of
+// the maintenance scanner. The caller holds the account gate.
+func (s *Service) recordClaudeUsageRetirement(ctx context.Context, id domain.ID, references ...domain.ID) error {
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "claude.usage.retire-reference", struct {
+		Account    domain.ID
+		References []domain.ID
+	}{id, references}, func(tx *store.Tx) (any, error) {
+		r, a, err := accountFromTx(tx, id, 0)
+		if err != nil {
+			return nil, err
+		}
+		if a.Subscription == nil {
+			return struct{}{}, nil
+		}
+		addClaudeUsageRetired(claudeUsageStateOf(&a), references...)
+		return struct{}{}, putClaudeUsage(tx, r, a)
+	})
+	if err != nil {
+		s.logger.WarnContext(ctx, "claude_usage_retirement_unrecorded", "account_id", id, "references", len(references), "code", domain.SafeError(err).Code)
+		return err
+	}
+	s.logger.InfoContext(ctx, "claude_usage_retirement_recorded", "account_id", id, "references", len(references))
+	return nil
+}
+
 func (s *Service) setClaudeUsagePresentation(operation domain.ID, value claudeUsagePresentation) {
 	defer s.claudeUsage.lock()()
 	if s.claudeUsage.presentation == nil {
@@ -336,16 +380,37 @@ func (s *Service) SubmitClaudeUsageCode(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	if !result.Replayed {
+	// An exact replay of a claim whose first acknowledgment was lost restores the
+	// bytes while the committed claim is still unconsumed, so the original child
+	// still receives the code it was promised.
+	if retain := !result.Replayed || s.claudeUsageClaimPending(ctx, input.Account, operation, domain.ID(m.RequestId)); retain {
 		unlockMemory := s.claudeUsage.lock()
 		if s.claudeUsage.codes == nil {
 			s.claudeUsage.codes = map[domain.ID][]byte{}
 		}
-		s.claudeUsage.codes[operation] = slices.Clone(req.Msg.Code)
+		if len(s.claudeUsage.codes[operation]) == 0 {
+			s.claudeUsage.codes[operation] = slices.Clone(req.Msg.Code)
+		}
 		unlockMemory()
 	}
 	s.logger.InfoContext(ctx, "claude_usage_code_claimed", "operation_id", operation, "replayed", result.Replayed)
 	return connect.NewResponse(&pb.SubmitClaudeUsageCodeResponse{Accepted: true}), nil
+}
+
+// claudeUsageClaimPending reports whether the stored operation still holds the
+// given approval-code claim unconsumed. The caller holds the account gate.
+func (s *Service) claudeUsageClaimPending(ctx context.Context, account, operation, claim domain.ID) bool {
+	pending := false
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := claudeUsageAccountTx(tx, account, 0)
+		if err != nil {
+			return err
+		}
+		usage := a.Subscription.ClaudeUsage
+		pending = usage != nil && usage.Operation != nil && usage.Operation.ID == operation && usage.Operation.State == domain.ClaudeLimitLoginWaiting && usage.Operation.CodeSubmissionID == claim && !usage.Operation.CodeConsumed
+		return nil
+	})
+	return err == nil && pending
 }
 
 // ConfirmClaudeUsageLink publishes the association the user confirmed. It never
@@ -508,9 +573,13 @@ func (s *Service) CancelClaudeUsage(ctx context.Context, req *connect.Request[pb
 // DisconnectClaudeUsage revokes usage reads immediately, stops and joins any
 // live usage work and removes only the usage credentials and profile. The
 // execution setup-token and the account's execution readiness are untouched.
+// Live work is canceled only after a current, non-replayed disconnect was
+// accepted, so a stale or replayed request can never interrupt another client's
+// work.
 func (s *Service) DisconnectClaudeUsage(ctx context.Context, req *connect.Request[pb.DisconnectClaudeUsageRequest]) (*connect.Response[pb.DisconnectClaudeUsageResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
-	if _, err := subscriptionClient(ctx); err != nil {
+	actor, err := subscriptionClient(ctx)
+	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
 	m := req.Msg.Mutation
@@ -521,15 +590,14 @@ func (s *Service) DisconnectClaudeUsage(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	// The initiating actor is part of the immutable input, so another paired
+	// client reusing the request identifier is a different request.
 	input := struct {
 		Account    domain.ID
 		Revision   uint64
 		Generation domain.ID
-	}{domain.ID(m.Id), m.ExpectedRevision, generation}
-	// Stop live work first, outside the gate, so the runner can settle.
-	if err := joinClaudeUsageRun(ctx, s.cancelClaudeUsageRun(input.Account)); err != nil {
-		return nil, rpc.Error(err, c)
-	}
+		Actor      domain.Principal
+	}{domain.ID(m.Id), m.ExpectedRevision, generation, actor}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -549,11 +617,22 @@ func (s *Service) DisconnectClaudeUsage(ctx context.Context, req *connect.Reques
 		}
 		return accountReceipt{ID: r.ID}, nil
 	})
+	revoked := err == nil && s.claudeUsageRevoked(ctx, input.Account)
 	unlock()
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
 	s.logger.InfoContext(ctx, "claude_usage_disconnect_accepted", "account_id", input.Account, "replayed", result.Replayed)
+	// The revocation is durable, so the live run can no longer publish anything.
+	// Stop and join it outside the gate before the profile is removed. A replay
+	// only joins while the stored state is still the revoked one it produced; a
+	// newer connection's run is never touched.
+	if !result.Replayed || revoked {
+		if err := s.stopClaudeUsageWork(ctx, input.Account); err != nil {
+			s.logger.WarnContext(ctx, "claude_usage_disconnect_join_unconfirmed", "account_id", input.Account, "code", domain.SafeError(err).Code)
+			return nil, rpc.Error(err, c)
+		}
+	}
 	// Cleanup completes before it is reported: a replay retries an incomplete one
 	// and never reports success while storage or references remain.
 	if err := s.completeClaudeUsageCleanup(ctx, input.Account, true); err != nil {
@@ -567,17 +646,34 @@ func (s *Service) DisconnectClaudeUsage(ctx context.Context, req *connect.Reques
 	return connect.NewResponse(&pb.DisconnectClaudeUsageResponse{Account: rpc.Resource(r), Replayed: result.Replayed}), nil
 }
 
+// claudeUsageRevoked reports whether the stored usage state is still the revoked
+// one a disconnect leaves behind: no generation, no operation and a pending
+// removal. A new connection or login makes it false. The caller holds the gate.
+func (s *Service) claudeUsageRevoked(ctx context.Context, account domain.ID) bool {
+	revoked := false
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := accountFromTx(tx, account, 0)
+		if err != nil {
+			return err
+		}
+		var usage *domain.ClaudeLimitState
+		if a.Subscription != nil {
+			usage = a.Subscription.ClaudeUsage
+		}
+		revoked = usage != nil && usage.Generation == "" && usage.Operation == nil && !usage.Read.Active() && (usage.CleanupPending || len(usage.RetiredCredentials) != 0)
+		return nil
+	})
+	return err == nil && revoked
+}
+
 // revokeClaudeUsage ends the connection in the stored state: reads stop at
 // once, every credential reference becomes a removal obligation and the usage
 // evidence is cleared. The execution state is not touched.
 func revokeClaudeUsage(usage *domain.ClaudeLimitState) {
-	if usage.CredentialID != "" {
-		usage.RetiredCredentials = append(usage.RetiredCredentials, usage.CredentialID)
+	addClaudeUsageRetired(usage, usage.CredentialID)
+	if o := usage.Operation; o != nil {
+		addClaudeUsageRetired(usage, o.CredentialID)
 	}
-	if o := usage.Operation; o != nil && o.CredentialID != "" {
-		usage.RetiredCredentials = append(usage.RetiredCredentials, o.CredentialID)
-	}
-	usage.RetiredCredentials = slices.Compact(slices.Sorted(slices.Values(usage.RetiredCredentials)))
 	usage.Generation, usage.Identity, usage.LinkedAt, usage.CredentialID = "", nil, nil, ""
 	usage.ClearEvidence()
 	usage.Read = domain.ClaudeLimitRead{}

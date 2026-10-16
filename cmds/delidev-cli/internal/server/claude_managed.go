@@ -231,6 +231,7 @@ func (s *Service) requestManagedClaude(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	unlock = sync.OnceFunc(unlock)
 	defer unlock()
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "claude.managed.request", input, func(tx *store.Tx) (any, error) {
 		r, a, err := accountFromTx(tx, input.ID, input.Revision)
@@ -285,7 +286,12 @@ func (s *Service) requestManagedClaude(ctx context.Context, req *connect.Request
 		return nil, rpc.Error(err, c)
 	}
 	if action == domain.SubscriptionLogout {
-		s.cancelClaudeUsageRun(input.ID)
+		// The revocation is durable. Release the gate so the live usage run can
+		// settle, then stop and join it; the logout cleanup removes its profile.
+		unlock()
+		if err := s.stopClaudeUsageWork(ctx, input.ID); err != nil {
+			s.logger.WarnContext(ctx, "claude_usage_logout_join_unconfirmed", "account_id", input.ID, "code", domain.SafeError(err).Code)
+		}
 	}
 	s.logger.InfoContext(ctx, "claude_managed_accepted", "account_id", input.ID, "operation_id", m.RequestId, "action", action, "replayed", result.Replayed)
 	return connect.NewResponse(&pb.RequestSubscriptionResponse{Account: rpc.Resource(r), OperationId: m.RequestId, Replayed: result.Replayed}), nil

@@ -590,6 +590,12 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 			return response, nil
 		}
 		phase = configurationDeleteAdmission
+		// Live Claude usage work is stopped and joined before the account gate is
+		// taken: the run needs the gate to settle, and the explicit removal below
+		// deletes its profile and references.
+		if err := s.stopClaudeUsageWork(ctx, domain.ID(meta.Id)); err != nil {
+			return reject(err)
+		}
 		unlock, err := s.lockAccounts(ctx)
 		if err != nil {
 			return reject(err)

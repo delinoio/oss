@@ -67,6 +67,9 @@ func (s *Service) runClaudeUsageLogin(parent context.Context, id domain.ID) {
 	}
 	s.logger.InfoContext(parent, "claude_usage_login_started", "account_id", id, "operation_id", original.ID)
 	ctx, cancel := context.WithDeadline(parent, original.ExpiresAt)
+	if s.afterClaudeUsageClaim != nil {
+		s.afterClaudeUsageClaim()
+	}
 	run, ok := s.registerClaudeUsageRun(id, cancel)
 	if !ok {
 		cancel()
@@ -74,6 +77,24 @@ func (s *Service) runClaudeUsageLogin(parent context.Context, id domain.ID) {
 		return
 	}
 	defer s.finishClaudeUsageRun(id, run)
+	// A disconnect, logout or deletion that committed between the claim and the
+	// registration found no run to cancel and may already have removed the
+	// profile. Registration now makes every later revocation reach this run, and
+	// the claimed operation is checked again before any native resource opens.
+	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := claudeUsageAccountTx(tx, id, 0)
+		if err != nil {
+			return err
+		}
+		usage := a.Subscription.ClaudeUsage
+		if usage == nil || usage.Operation == nil || usage.Operation.ID != original.ID || usage.Operation.Canceled || subscriptionActorValid(tx, original.Actor) != nil {
+			return subscriptionDenied()
+		}
+		return nil
+	}); err != nil {
+		s.logger.WarnContext(parent, "claude_usage_login_revoked_before_native_work", "account_id", id, "operation_id", original.ID, "code", domain.SafeError(err).Code)
+		cancel()
+	}
 	checked := make(chan struct{})
 	go func() {
 		defer close(checked)
@@ -102,7 +123,10 @@ func (s *Service) runClaudeUsageLogin(parent context.Context, id domain.ID) {
 			}
 		}
 	}()
-	result := s.executeClaudeUsageLogin(ctx, id, original)
+	var result claudeUsageLoginResult
+	if ctx.Err() == nil {
+		result = s.executeClaudeUsageLogin(ctx, id, original)
+	}
 	expired := !time.Now().Before(original.ExpiresAt)
 	interrupted := parent.Err() != nil
 	cancel()
@@ -120,7 +144,7 @@ func (s *Service) runClaudeUsageLogin(parent context.Context, id domain.ID) {
 	defer stop()
 	if err := s.finishClaudeUsageLogin(bounded, id, original, result); err != nil {
 		s.logger.WarnContext(bounded, "claude_usage_finish_failed", "operation_id", original.ID, "code", domain.SafeError(err).Code, "cleanup_confirmed", result.cleanup)
-		s.markClaudeUsageRecovery(id, original.ID)
+		s.markClaudeUsageRecovery(id, original.ID, result.credential)
 	}
 	clear(result.envelope)
 }
@@ -144,6 +168,13 @@ func (s *Service) executeClaudeUsageLogin(ctx context.Context, id domain.ID, op 
 	}
 	native, err := opener(ctx, s.scopeFor(id), op.ID, s.logger)
 	if err != nil {
+		if claudeUsageLeaseLeaked(err) {
+			// The failed open could not release its profile lease: the lease may stay
+			// locked, so the operation enters cleanup recovery instead of a plain failure.
+			result.cleanup = false
+			result.state, result.failure = domain.ClaudeLimitLoginRecovery, domain.ClaudeLimitFailureCleanupUncertain
+			return result
+		}
 		result.state, result.failure = domain.ClaudeLimitLoginFailed, claudeUsageFailureFor(err, domain.ClaudeLimitFailureInstallation)
 		if result.failure == domain.ClaudeLimitFailureInstallation || result.failure == domain.ClaudeLimitFailureLoginUnsupported {
 			result.state = domain.ClaudeLimitLoginUnsupported
@@ -156,6 +187,13 @@ func (s *Service) executeClaudeUsageLogin(ctx context.Context, id domain.ID, op 
 	defer func() {
 		if err := native.Close(); err != nil {
 			result.cleanup = false
+			if result.state == domain.ClaudeLimitLoginConfirming {
+				// The profile lease is not proven released, so nothing is offered for
+				// confirmation and no credential is staged.
+				clear(result.envelope)
+				result.envelope, result.identity, result.credential = nil, nil, ""
+				result.state, result.failure = domain.ClaudeLimitLoginRecovery, domain.ClaudeLimitFailureCleanupUncertain
+			}
 		}
 	}()
 	storage := native.Storage()
@@ -397,12 +435,27 @@ func (s *Service) finishClaudeUsageLogin(ctx context.Context, id domain.ID, op d
 		clear(result.envelope)
 		result.envelope, result.state, result.identity, result.credential = nil, domain.ClaudeLimitLoginCanceled, nil, ""
 	}
+	if !result.cleanup && result.state == domain.ClaudeLimitLoginConfirming {
+		// Unproven native cleanup never offers a credential for confirmation.
+		clear(result.envelope)
+		result.envelope, result.identity, result.credential = nil, nil, ""
+		result.state, result.failure = domain.ClaudeLimitLoginRecovery, domain.ClaudeLimitFailureCleanupUncertain
+	}
 	staged := false
 	if result.state == domain.ClaudeLimitLoginConfirming {
 		if err := s.stageClaudeUsageCredential(ctx, id, result.credential, result.envelope); err != nil {
-			return err
+			// The vault may already hold the reference although the write was not
+			// acknowledged. Its identifier is the only handle, so it becomes a durable
+			// removal obligation before the login is settled as failed.
+			if recordErr := s.recordClaudeUsageRetirement(ctx, id, result.credential); recordErr != nil {
+				return err
+			}
+			clear(result.envelope)
+			result.envelope, result.identity, result.credential = nil, nil, ""
+			result.state, result.failure = domain.ClaudeLimitLoginFailed, domain.ClaudeLimitFailureCredentials
+		} else {
+			staged = true
 		}
-		staged = true
 	}
 	_, err = s.Store.Mutate(ctx, domain.NewID(), "claude.usage.finish", struct{ Account, Operation domain.ID }{id, op.ID}, func(tx *store.Tx) (any, error) {
 		r, a, err := claudeUsageAccountTx(tx, id, 0)
@@ -424,6 +477,10 @@ func (s *Service) finishClaudeUsageLogin(ctx context.Context, id domain.ID, op d
 			o.Canceled = true
 		}
 		if !result.cleanup {
+			// A recovering operation retains neither a pending identity nor a staged
+			// credential: the reference is owed a deletion instead.
+			addClaudeUsageRetired(usage, o.CredentialID)
+			o.CredentialID, o.Identity = "", nil
 			o.State = domain.ClaudeLimitLoginRecovery
 			usage.CleanupPending = true
 		}
@@ -435,7 +492,12 @@ func (s *Service) finishClaudeUsageLogin(ctx context.Context, id domain.ID, op d
 			// that references the staged reference keeps it; otherwise it is
 			// removed. An unreadable account deletes nothing.
 			if published, e := s.claudeUsageStagedPublished(id, op.ID, result.credential); e == nil && !published {
-				_ = s.deleteClaudeUsageReference(ctx, id, result.credential)
+				if deleteErr := s.deleteClaudeUsageReference(ctx, id, result.credential); deleteErr != nil {
+					// Losing this identifier would retain the OAuth credential until the whole
+					// account is removed, so the deletion becomes a durable obligation.
+					s.logger.WarnContext(ctx, "claude_usage_staging_cleanup_pending", "account_id", id, "operation_id", op.ID, "code", domain.SafeError(deleteErr).Code)
+					_ = s.recordClaudeUsageRetirement(ctx, id, result.credential)
+				}
 			} else if e == nil && published {
 				err = nil
 			}
@@ -480,7 +542,7 @@ func (s *Service) deleteClaudeUsageReference(ctx context.Context, account, crede
 // markClaudeUsageRecovery fences an operation whose settlement could not be
 // committed. It retains the original operation for the cleanup scanner and never
 // relaunches anything.
-func (s *Service) markClaudeUsageRecovery(id, operation domain.ID) {
+func (s *Service) markClaudeUsageRecovery(id, operation domain.ID, staged ...domain.ID) {
 	ctx, cancel := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 5*time.Second)
 	defer cancel()
 	unlock, err := s.lockAccounts(ctx)
@@ -489,7 +551,10 @@ func (s *Service) markClaudeUsageRecovery(id, operation domain.ID) {
 	}
 	defer unlock()
 	s.clearClaudeUsageInput(operation)
-	_, err = s.Store.Mutate(ctx, domain.NewID(), "claude.usage.recovery", struct{ Account, Operation domain.ID }{id, operation}, func(tx *store.Tx) (any, error) {
+	_, err = s.Store.Mutate(ctx, domain.NewID(), "claude.usage.recovery", struct {
+		Account, Operation domain.ID
+		Staged             []domain.ID
+	}{id, operation, staged}, func(tx *store.Tx) (any, error) {
 		r, a, err := claudeUsageAccountTx(tx, id, 0)
 		if err != nil {
 			return nil, err
@@ -498,9 +563,20 @@ func (s *Service) markClaudeUsageRecovery(id, operation domain.ID) {
 		if usage == nil || usage.Operation == nil || usage.Operation.ID != operation || !usage.Operation.Active() {
 			return nil, subscriptionDenied()
 		}
-		usage.Operation.State = domain.ClaudeLimitLoginRecovery
-		usage.Operation.NativeStarted = false
-		usage.Operation.Failure = domain.ClaudeLimitFailureCleanupUncertain
+		o := usage.Operation
+		// A reference this settlement staged or may have staged is owed a deletion
+		// unless the connection already publishes it; a recovering operation keeps
+		// neither a pending identity nor a staged reference.
+		for _, reference := range staged {
+			if reference != usage.CredentialID {
+				addClaudeUsageRetired(usage, reference)
+			}
+		}
+		addClaudeUsageRetired(usage, o.CredentialID)
+		o.CredentialID, o.Identity = "", nil
+		o.State = domain.ClaudeLimitLoginRecovery
+		o.NativeStarted = false
+		o.Failure = domain.ClaudeLimitFailureCleanupUncertain
 		usage.CleanupPending = true
 		return struct{}{}, putClaudeUsage(tx, r, a)
 	})

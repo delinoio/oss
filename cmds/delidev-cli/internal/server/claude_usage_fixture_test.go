@@ -145,6 +145,7 @@ type fakeUsageNative struct {
 	refreshInputs []claude.UsageRefreshInput
 	opens, closes atomic.Int32
 	loginStarts   atomic.Int32
+	closeErr      error
 }
 
 func newFakeUsageNative() *fakeUsageNative {
@@ -174,7 +175,7 @@ func (n *fakeUsageNative) StartRefresh(_ context.Context, input claude.UsageRefr
 func (n *fakeUsageNative) Identity(context.Context) (claude.UsageIdentity, error) {
 	return n.identity, n.identityErr
 }
-func (n *fakeUsageNative) Close() error { n.closes.Add(1); return nil }
+func (n *fakeUsageNative) Close() error { n.closes.Add(1); return n.closeErr }
 
 // usageTransport scripts the usage endpoint.
 type usageTransport struct {

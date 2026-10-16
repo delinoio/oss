@@ -93,8 +93,17 @@ func (s *Service) queueDueClaudeUsage(ctx context.Context, now time.Time) error 
 			}
 		}
 		return nil
-	}); err != nil || len(due) == 0 {
+	}); err != nil {
 		return err
+	}
+	return s.acceptDueClaudeUsage(ctx, due, now)
+}
+
+// acceptDueClaudeUsage accepts the reads of accounts a scan found due. Each is
+// rechecked inside its write transaction, so a stale candidate list is harmless.
+func (s *Service) acceptDueClaudeUsage(ctx context.Context, due []domain.ID, now time.Time) error {
+	if len(due) == 0 {
+		return nil
 	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
@@ -155,15 +164,27 @@ func (s *Service) runClaudeUsageRead(parent context.Context, id domain.ID) {
 	if err != nil {
 		return
 	}
+	ctx, cancel := context.WithTimeout(parent, 3*time.Minute)
+	defer cancel()
+	var run *claudeUsageRun
+	registered := false
 	err = s.Store.Read(parent, func(tx *store.Tx) error {
 		_, a, err := accountFromTx(tx, id, 0)
 		if err != nil {
 			return err
 		}
-		if !claudeUsageTracked(a) || a.Connection == nil || a.Removal != nil {
+		if a.Subscription == nil || a.Subscription.ClaudeUsage == nil {
 			return subscriptionDenied()
 		}
 		usage := a.Subscription.ClaudeUsage
+		// The marker is captured before the authority is judged, so a read whose
+		// actor or connection was revoked can still be settled by its identifier.
+		if usage.Read.Active() {
+			authority.read = usage.Read
+		}
+		if !claudeUsageTracked(a) || a.Connection == nil || a.Removal != nil {
+			return subscriptionDenied()
+		}
 		if !usage.Read.Active() || usage.Read.Epoch != s.subscriptionServerEpoch() || usage.Read.ConnectionID != a.Connection.ID || usage.Read.Generation != usage.Generation || subscriptionActorValid(tx, usage.Read.Actor) != nil {
 			return subscriptionDenied()
 		}
@@ -172,23 +193,21 @@ func (s *Service) runClaudeUsageRead(parent context.Context, id domain.ID) {
 	})
 	var openErr error
 	if err == nil {
-		bundle, openErr = s.openClaudeUsageCredential(parent, id, authority.generation, authority.credential)
+		// The run is registered before the gate is released and before the token
+		// is opened, so a disconnect, logout or deletion that revokes the
+		// connection afterwards always finds this read and cancels it.
+		if run, registered = s.registerClaudeUsageRun(id, cancel); registered {
+			bundle, openErr = s.openClaudeUsageCredential(parent, id, authority.generation, authority.credential)
+		}
 	}
 	unlock()
-	if err != nil {
-		// The authority changed before the read began. Nothing was sent.
-		s.discardClaudeUsageRead(id, authority.read)
-		return
-	}
-	defer bundle.Clear()
-	ctx, cancel := context.WithTimeout(parent, 3*time.Minute)
-	defer cancel()
-	run, ok := s.registerClaudeUsageRun(id, cancel)
-	if !ok {
+	if err != nil || !registered {
+		// The authority changed or another run owns the account. Nothing was sent.
 		s.discardClaudeUsageRead(id, authority.read)
 		return
 	}
 	defer s.finishClaudeUsageRun(id, run)
+	defer bundle.Clear()
 	s.logger.InfoContext(ctx, "claude_usage_read_started", "account_id", id, "read_id", authority.read.ID)
 	result := claudeUsageReadResult{credential: authority.credential, cleanup: true}
 	if openErr != nil {
@@ -205,6 +224,9 @@ func (s *Service) runClaudeUsageRead(parent context.Context, id domain.ID) {
 
 // discardClaudeUsageRead idles a marker whose read never sent anything.
 func (s *Service) discardClaudeUsageRead(id domain.ID, read domain.ClaudeLimitRead) {
+	if read.ID == "" {
+		return
+	}
 	ctx, cancel := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 10*time.Second)
 	defer cancel()
 	unlock, err := s.lockAccounts(ctx)
@@ -360,15 +382,22 @@ func (s *Service) finishClaudeUsageRead(ctx context.Context, id domain.ID, autho
 		}
 		usage := a.Subscription.ClaudeUsage
 		read := usage.Read
-		if !read.Active() || read.ID != authority.read.ID || read.Epoch != s.subscriptionServerEpoch() || read.ConnectionID != a.Connection.ID || usage.Generation != authority.generation || usage.CredentialID != result.credential || subscriptionActorValid(tx, read.Actor) != nil {
+		if !read.Active() || read.ID != authority.read.ID || read.Epoch != s.subscriptionServerEpoch() {
 			s.logger.WarnContext(ctx, "claude_usage_read_discarded", "account_id", id, "read_id", authority.read.ID, "failure", domain.ClaudeLimitFailureAuthorityChanged)
 			return nil, subscriptionDenied()
 		}
 		now := time.Now().UTC()
-		if result.observation != nil {
+		// A changed connection, generation, credential or revoked actor discards the
+		// result, but the matching durable marker is still settled: an unsettled
+		// marker would keep the account reading and refuse every later refresh.
+		authorityChanged := read.ConnectionID != a.Connection.ID || usage.Generation != authority.generation || usage.CredentialID != result.credential || subscriptionActorValid(tx, read.Actor) != nil
+		switch {
+		case authorityChanged:
+			s.logger.WarnContext(ctx, "claude_usage_read_discarded", "account_id", id, "read_id", authority.read.ID, "failure", domain.ClaudeLimitFailureAuthorityChanged)
+		case result.observation != nil:
 			observation := *result.observation
 			usage.RecordSuccess(observation)
-		} else {
+		default:
 			usage.RecordFailure(result.failure, now, result.retryAfter)
 			if result.reconnect {
 				usage.ReconnectRequired = true
@@ -418,9 +447,29 @@ func (s *Service) refreshClaudeUsage(ctx context.Context, id domain.ID, authorit
 	native, err := opener(ctx, s.scopeFor(id), authority.read.ID, s.logger)
 	if err != nil {
 		s.releaseClaudeUsageRefreshClaim(id, authority)
+		if claudeUsageLeaseLeaked(err) {
+			// The failed open could not release the profile lease, so the read ends
+			// with a durable cleanup obligation instead of a leaked lock.
+			return fail(domain.ClaudeLimitFailureCleanupUncertain, false)
+		}
 		return fail(domain.ClaudeLimitFailureRefreshUnsupported, true)
 	}
-	defer native.Close()
+	next, rotated, result := s.refreshClaudeUsageNative(ctx, id, authority, credential, old, native)
+	if err := native.Close(); err != nil {
+		// The exclusive profile lease may stay locked, so later refreshes,
+		// reconnects and disconnects would fail against it. The read settles with a
+		// durable cleanup obligation instead of reporting the profile released.
+		s.logger.WarnContext(ctx, "claude_usage_profile_release_failed", "account_id", id, "read_id", authority.read.ID, "code", domain.SafeError(err).Code)
+		result.cleanup = false
+	}
+	return next, rotated, result
+}
+
+// refreshClaudeUsageNative runs the refresh-login in the held native profile.
+func (s *Service) refreshClaudeUsageNative(ctx context.Context, id domain.ID, authority claudeUsageReadAuthority, credential domain.ID, old *subscription.ClaudeUsageBundle, native claudeUsageNative) (subscription.ClaudeUsageBundle, domain.ID, claudeUsageReadResult) {
+	fail := func(failure domain.ClaudeLimitFailure, cleanup bool) (subscription.ClaudeUsageBundle, domain.ID, claudeUsageReadResult) {
+		return subscription.ClaudeUsageBundle{}, credential, claudeUsageReadResult{failure: failure, reconnect: failure.ReconnectRequired() || failure == domain.ClaudeLimitFailureRefreshRejected, cleanup: cleanup}
+	}
 	storage := native.Storage()
 	if present, err := storage.Present(ctx); err != nil || present {
 		s.releaseClaudeUsageRefreshClaim(id, authority)
@@ -569,6 +618,9 @@ func (s *Service) commitClaudeUsageRotation(ctx context.Context, id domain.ID, a
 	}
 	defer clear(envelope)
 	if err := s.stageClaudeUsageCredential(bounded, id, next, envelope); err != nil {
+		// A write that failed without an acknowledgment may still have stored the
+		// reference, so its identifier becomes a durable removal obligation.
+		_ = s.recordClaudeUsageRetirement(bounded, id, next)
 		return "", err
 	}
 	_, err = s.Store.Mutate(bounded, domain.NewID(), "claude.usage.refresh.commit", struct{ Account, Read domain.ID }{id, authority.read.ID}, func(tx *store.Tx) (any, error) {
@@ -599,7 +651,10 @@ func (s *Service) commitClaudeUsageRotation(ctx context.Context, id domain.ID, a
 		}
 		// The switch did not commit, so the staged reference is unused.
 		if deleteErr := s.deleteClaudeUsageReference(bounded, id, next); deleteErr != nil {
+			// Losing the identifier would retain the OAuth credential until the whole
+			// account is removed, so the deletion becomes a durable obligation.
 			s.logger.WarnContext(bounded, "claude_usage_staging_cleanup_pending", "account_id", id, "code", domain.SafeError(deleteErr).Code)
+			_ = s.recordClaudeUsageRetirement(bounded, id, next)
 		}
 		return "", err
 	}

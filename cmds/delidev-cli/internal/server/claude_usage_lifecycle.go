@@ -139,7 +139,11 @@ func (s *Service) completeClaudeUsageCleanup(ctx context.Context, id domain.ID, 
 		if cleanup {
 			usage.CleanupPending = false
 			if o := usage.Operation; o != nil && o.State == domain.ClaudeLimitLoginRecovery && !o.NativeStarted {
-				// The joined operation's storage is now proven empty.
+				// The joined operation's storage is now proven empty. A failed
+				// operation retains neither a pending identity nor a staged
+				// credential: the reference becomes a removal obligation.
+				addClaudeUsageRetired(usage, o.CredentialID)
+				o.CredentialID, o.Identity = "", nil
 				o.State = domain.ClaudeLimitLoginFailed
 			}
 		}
@@ -182,7 +186,6 @@ func (s *Service) retireClaudeUsage(ctx context.Context, id domain.ID) error {
 	if !present && !profiled {
 		return nil
 	}
-	s.cancelClaudeUsageRun(id)
 	if present {
 		_, err = s.Store.Mutate(ctx, domain.NewID(), "claude.usage.retire", struct{ Account domain.ID }{id}, func(tx *store.Tx) (any, error) {
 			r, a, err := accountFromTx(tx, id, 0)
@@ -194,6 +197,18 @@ func (s *Service) retireClaudeUsage(ctx context.Context, id domain.ID) error {
 		})
 		if err != nil {
 			return err
+		}
+	}
+	// The caller holds the account gate, so the run cannot settle here. Callers
+	// join live work before taking the gate (stopClaudeUsageWork); a run that is
+	// still stopping keeps the profile locked, so removal is retried instead of
+	// racing its native child.
+	if run := s.cancelClaudeUsageRun(id); run != nil {
+		select {
+		case <-run.done:
+		default:
+			s.logger.WarnContext(ctx, "claude_usage_retire", "account_id", id, "result", credentialRemovalRetained, "reason", "usage_work_still_stopping")
+			return domain.Fail(domain.Unavailable, "Claude usage work is still stopping.", "Retry once the usage work has finished.")
 		}
 	}
 	if err := s.removeClaudeUsageNative(ctx, id, true); err != nil {
@@ -323,6 +338,9 @@ func (s *Service) runClaudeUsage(ctx context.Context) {
 			cleanup bool
 		}
 		var candidates []candidate
+		// Due automatic reads are detected by the same scan, so an idle server
+		// decodes the account inventory once per iteration.
+		var due []domain.ID
 		eligible := map[domain.ID]bool{}
 		now := time.Now()
 		err := s.Store.Read(child, func(tx *store.Tx) error {
@@ -340,6 +358,9 @@ func (s *Service) runClaudeUsage(ctx context.Context) {
 				}
 				usage := a.Subscription.ClaudeUsage
 				epoch := s.subscriptionServerEpoch()
+				if claudeUsageTracked(a) && a.Connection != nil && usage.DueAt(now) {
+					due = append(due, r.ID)
+				}
 				switch {
 				case usage.Operation != nil && usage.Operation.State == domain.ClaudeLimitLoginPreparing && !usage.Operation.NativeStarted && usage.Operation.Epoch == epoch:
 					candidates = append(candidates, candidate{account: r.ID, login: true})
@@ -363,8 +384,10 @@ func (s *Service) runClaudeUsage(ctx context.Context) {
 				}
 			}
 		}
-		if err := s.queueDueClaudeUsage(child, time.Now().UTC()); err != nil && child.Err() == nil {
-			s.logger.WarnContext(ctx, "claude_usage_queue_failed", "code", domain.SafeError(err).Code)
+		if err == nil {
+			if err := s.acceptDueClaudeUsage(child, due, now.UTC()); err != nil && child.Err() == nil {
+				s.logger.WarnContext(ctx, "claude_usage_queue_failed", "code", domain.SafeError(err).Code)
+			}
 		}
 		for _, next := range candidates {
 			if running[next.account] || len(running) >= 16 {

@@ -73,7 +73,7 @@ func openClaudeUsageNative(ctx context.Context, scope nativeScope, operation dom
 	}
 	defer func() {
 		if err != nil {
-			_ = lease.Close()
+			err = failClaudeUsageOpen(lease, err)
 		}
 	}()
 	root := lease.Root
@@ -117,6 +117,36 @@ func (n *serverClaudeUsageNative) Identity(ctx context.Context) (claude.UsageIde
 func (n *serverClaudeUsageNative) Close() error {
 	n.once.Do(func() { n.closed = n.lease.Close() })
 	return n.closed
+}
+
+// claudeUsageLeaseReleaseError reports an open that failed and could not release
+// the exclusive usage profile lease either. The lease may stay locked, so the
+// caller records a cleanup obligation instead of an ordinary failure.
+type claudeUsageLeaseReleaseError struct {
+	cause   error
+	release error
+}
+
+func (e *claudeUsageLeaseReleaseError) Error() string {
+	return "Claude usage profile lease not released."
+}
+func (e *claudeUsageLeaseReleaseError) Unwrap() []error {
+	return []error{e.cause, e.release}
+}
+
+// failClaudeUsageOpen releases the lease of a failed open and keeps a release
+// failure visible to the caller.
+func failClaudeUsageOpen(lease interface{ Close() error }, cause error) error {
+	if releaseErr := lease.Close(); releaseErr != nil {
+		return &claudeUsageLeaseReleaseError{cause: cause, release: releaseErr}
+	}
+	return cause
+}
+
+// claudeUsageLeaseLeaked reports whether a failed open could not release its lease.
+func claudeUsageLeaseLeaked(err error) bool {
+	var leaked *claudeUsageLeaseReleaseError
+	return errors.As(err, &leaked)
 }
 
 // claudeUsageFailureFor maps an arbitrary error to the closed usage failure
