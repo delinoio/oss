@@ -1883,6 +1883,12 @@ fn is_control_flow_parentheses(code: &str, open: usize, keyword: &str) -> bool {
 /// Finds the block that starts a function body after its parameter list.
 /// TypeScript return annotations can contain object types with braces of
 /// their own, so skip those before selecting the executable block.
+///
+/// The search never leaves the current member or declaration: a signature
+/// without a body (`abstract eval(v): void;`, an overload, `declare function
+/// f(): void`) ends at its `;`, at the `}` that closes the enclosing block, or
+/// at a line break that cannot continue its type (automatic semicolon
+/// insertion), and then has no body.
 fn function_body_block(
     code: &str,
     bytes: &[u8],
@@ -1890,34 +1896,78 @@ fn function_body_block(
     mut cursor: usize,
 ) -> Option<(usize, usize)> {
     let mut return_annotation = false;
+    // Open `(` and `[` of the annotation (`(a: number) => void`); a line break
+    // or `;` inside them never ends the member.
+    let mut nesting = 0usize;
     while let Some(byte) = bytes.get(cursor) {
-        if byte.is_ascii_whitespace() {
-            cursor += 1;
-            continue;
-        }
-        if *byte == b'{' {
-            let type_brace = return_annotation
-                && code[..cursor]
-                    .bytes()
-                    .rev()
-                    .find(|byte| !byte.is_ascii_whitespace())
-                    .is_some_and(|byte| {
-                        matches!(byte, b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'(')
-                    })
-                || return_annotation && code[..cursor].trim_end().ends_with("=>");
-            if !type_brace {
-                return blocks.iter().find(|(open, _)| *open == cursor).copied();
+        let terminator = line_terminator_len(bytes, cursor);
+        if byte.is_ascii_whitespace() || terminator > 0 {
+            let run_start = cursor;
+            let mut crossed_line = false;
+            while let Some(next) = bytes.get(cursor) {
+                let length = line_terminator_len(bytes, cursor);
+                if length > 0 {
+                    crossed_line = true;
+                    cursor += length;
+                } else if next.is_ascii_whitespace() {
+                    cursor += 1;
+                } else {
+                    break;
+                }
             }
-            let (_, close) = blocks.iter().find(|(open, _)| *open == cursor).copied()?;
-            cursor = close + 1;
+            if crossed_line && nesting == 0 && !annotation_continues(bytes, run_start, cursor) {
+                return None;
+            }
             continue;
         }
-        if *byte == b':' {
-            return_annotation = true;
+        match *byte {
+            b'{' => {
+                let type_brace = return_annotation
+                    && code[..cursor]
+                        .bytes()
+                        .rev()
+                        .find(|byte| !byte.is_ascii_whitespace())
+                        .is_some_and(|byte| {
+                            matches!(byte, b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'(')
+                        })
+                    || return_annotation && code[..cursor].trim_end().ends_with("=>");
+                if !type_brace {
+                    return blocks.iter().find(|(open, _)| *open == cursor).copied();
+                }
+                let (_, close) = blocks.iter().find(|(open, _)| *open == cursor).copied()?;
+                cursor = close + 1;
+                continue;
+            }
+            // The member ends here: a `;`, or the `}` of the enclosing block
+            // (every `}` of the annotation's own braces is skipped above).
+            b';' | b'}' => return None,
+            b'(' | b'[' => nesting += 1,
+            b')' | b']' => nesting = nesting.checked_sub(1)?,
+            b':' => return_annotation = true,
+            _ => {}
         }
         cursor += 1;
     }
     None
+}
+
+/// Whether a line break between `run_start` and `next` (the whitespace run of
+/// masked code) leaves the member signature open instead of ending it. The
+/// body brace, a dangling operator before the break and a type operator or
+/// closer after it continue the signature; any other token starts the next
+/// member or statement.
+fn annotation_continues(bytes: &[u8], run_start: usize, next: usize) -> bool {
+    let previous = bytes[..run_start].last().copied();
+    let following = bytes.get(next).copied();
+    let dangling = matches!(
+        previous,
+        Some(b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'(' | b'=' | b'.' | b'?')
+    ) || bytes[..run_start].ends_with(b"=>");
+    let continuing = matches!(
+        following,
+        Some(b'{' | b'|' | b'&' | b'.' | b'?' | b':' | b'=' | b')' | b']' | b',' | b'<' | b'>')
+    );
+    dangling || continuing
 }
 
 fn named_function_is_expression(code: &str, start: usize) -> bool {
@@ -2219,12 +2269,25 @@ impl<'a> MemberScan<'a> {
                     member: false,
                 } => {
                     return kind == BraceKind::ClassBody
-                        && !REGEX_KEYWORDS.contains(&text)
+                        && (!REGEX_KEYWORDS.contains(&text)
+                            || self.void_ends_type(token_end, text))
                         && self.new_line_between(token_end, member_start);
                 }
                 _ => return false,
             }
         }
+    }
+
+    /// Whether the word `text` that ends at `end` is the type `void` of a
+    /// field or method annotation (`run(): void`, `x: A | void`), which ends a
+    /// member like any other type name, not the unary operator `void`.
+    fn void_ends_type(&self, end: usize, text: &str) -> bool {
+        if text != "void" {
+            return false;
+        }
+        let start = end - text.len();
+        let before = strip_comments_for_prefix(self.source, start, self.ignored);
+        before.ends_with("=>") || before.ends_with([':', '|', '&'])
     }
 
     /// The offset of the `@` of the decorator that ends at `end`, or `None`
@@ -2964,6 +3027,204 @@ y=/process.env.F/.test(z),process.env.G"#;
             "x;\n{ eval(code) {} }",
         ] {
             assert_reports_at(source, "eval(code)");
+        }
+    }
+
+    #[test]
+    fn signatures_without_a_body_stop_at_their_own_member() {
+        for (source, marker) in [
+            // A `;` ends the signature; the next member's body is not its own.
+            (
+                "abstract class C { abstract eval(v): void; run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { run() {} abstract eval(v): void; }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { x = 1; abstract eval(v): void; y = 2; run() {} }",
+                "eval(v)",
+            ),
+            ("abstract class C { abstract eval(v); run() {} }", "eval(v)"),
+            (
+                "abstract class C { abstract eval(v: { a: number; b: string }): void; run() {} }",
+                "eval(v",
+            ),
+            (
+                "abstract class C { abstract eval(v): { a: number; b: string }; run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): (a: number; b) => void; run() {} }",
+                "eval(v)",
+            ),
+            // Overload signatures.
+            (
+                "class C { eval(v: string): void; eval(v: number): void; run() {} }",
+                "eval(v: string)",
+            ),
+            (
+                "class C { eval(v: string): void; eval(v) {} }",
+                "eval(v: string)",
+            ),
+            (
+                "class C { run() {} eval(v: string): void; eval(v) {} }",
+                "eval(v: string)",
+            ),
+            (
+                "class C { static eval(v: string): void; static eval(v) {} }",
+                "eval(v: string)",
+            ),
+            (
+                "class C { public eval(v: string): void; run() {} }",
+                "eval(v: string)",
+            ),
+            // `declare` classes.
+            ("declare class C { eval(v): void; run() {} }", "eval(v)"),
+            (
+                "declare class C { run() {} eval(v): void }\nfunction later() {}",
+                "eval(v)",
+            ),
+            (
+                "declare class C { eval(v): void }\nfunction later() {}",
+                "eval(v)",
+            ),
+            (
+                "export declare class C { eval(v): void; }\nclass D { run() {} }",
+                "eval(v)",
+            ),
+            // Interface-like and type-literal members.
+            ("interface I { eval(v): void; run(): void }", "eval(v)"),
+            (
+                "interface I { eval(v): void }\nfunction later() {}",
+                "eval(v)",
+            ),
+            (
+                "type T = { eval(v): void; run(): void };\nfunction later() {}",
+                "eval(v)",
+            ),
+            (
+                "declare const o: { eval(v): void };\nconst later = { run() {} };",
+                "eval(v)",
+            ),
+            // Index signatures as neighbors.
+            (
+                "class C { [key: string]: any; abstract eval(v): void; run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void; [key: string]: any; run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { [key: string]: any; abstract eval(v): void; [other: number]: \
+                 any; run() {} }",
+                "eval(v)",
+            ),
+            // No semicolon: the line break ends a complete signature.
+            (
+                "declare class C { eval(v: string): void\n run() {} }",
+                "eval(v: string)",
+            ),
+            (
+                "abstract class C { abstract eval(v)\n run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): { a: number }\n run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): Promise<void>\n run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): string[]\n run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n [key]() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n static run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n async run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n get x() { return 1; } }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n @dec() run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n *gen() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\n #priv() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void // c\n run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\u{2028} run() {} }",
+                "eval(v)",
+            ),
+            (
+                "abstract class C { abstract eval(v): void\r\n run() {} }",
+                "eval(v)",
+            ),
+            // A trailing signature is bounded by the closing brace.
+            (
+                "class C { eval(v): void }\nconst o = { run() {} };",
+                "eval(v)",
+            ),
+        ] {
+            assert_reports_at(source, marker);
+        }
+    }
+
+    #[test]
+    fn multi_line_signatures_with_a_body_stay_method_declarations() {
+        for source in [
+            "class C { eval(v): void { } }",
+            "class C { eval(v): void\n{ } }",
+            "class C { eval(v)\n{ } }",
+            "class C { eval(v):\n  void { } }",
+            "class C { eval(v): A\n  | B { } }",
+            "class C { eval(v): A |\n  B { } }",
+            "class C { eval(v): A &\n  B { } }",
+            "class C { eval(v): A\n  & B { } }",
+            "class C { eval(v): (\n  a: number\n) => void { } }",
+            "class C { eval(v): (a: number,\n b: string) => void { } }",
+            "class C { eval(v): Foo<\n  A,\n  B\n> { } }",
+            "class C { eval(v): Promise<\n  { a: number }\n> { } }",
+            "class C { eval(v): { a: number;\n b: string } { } }",
+            "class C { eval(v): { a: number; b: string } { } }",
+            "class C { eval(v): A extends B\n ? C : D { } }",
+            "class C { eval(v): A[\n] { } }",
+            "class C { eval(v) // c\n  { } }",
+            "class C { eval(v) /* c */ : void { } }",
+            "abstract class C { abstract run(): void; eval(v) { } }",
+            "abstract class C { abstract run(): void\n eval(v) { } }",
+            "abstract class C { run: () => void\n eval(v) { } }",
+            "abstract class C { run: A | void\n eval(v) { } }",
+            "abstract class C { run: A & void\n eval(v) { } }",
+            "abstract class C { run(): void // c\n eval(v) { } }",
+            "class C { eval(v) { } run(): void; }",
+            "const o = { eval(v): void { } };",
+            "const o = { eval(v): void\n { } };",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
         }
     }
 
