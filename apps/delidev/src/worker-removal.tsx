@@ -17,7 +17,7 @@ import {
   observeLocalWorkerMachine,
   type ReadLocalWorkerProof,
 } from "./local-worker";
-import { useRetainedMutation } from "./mutation";
+import { useRetainedMutation, workerRemovalPrefix } from "./mutation";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -26,8 +26,7 @@ import {
 import { Modal, Problem } from "./ui";
 import "./worker-removal.css";
 
-/** Retained-mutation key prefix; one original request per saved machine. */
-export const workerRemovalPrefix = "remove-worker:";
+export { workerRemovalPrefix };
 
 /** Server support for the dedicated RemoveWorker operation. */
 export enum WorkerRemovalSupport {

@@ -26,6 +26,7 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { encode, document as documentOf } from "./documents";
+import { MutationIntents } from "./mutation";
 import { ProductIdentityProvider } from "./product-identity-labels";
 import { Settings } from "./settings";
 import type { ReadLocalWorkerProof } from "./local-worker";
@@ -128,7 +129,9 @@ function fixture(rows: Resource[], options: Options = {}) {
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <ProductIdentityProvider>
-          <Settings readLocalWorker={read} />
+          <MutationIntents>
+            <Settings readLocalWorker={read} />
+          </MutationIntents>
         </ProductIdentityProvider>
       </QueryClientProvider>
     </TransportProvider>,
@@ -397,6 +400,48 @@ it("refetches the exact Worker before accepting conflict review", async () => {
   expect(value.removals[0].mutation?.expectedRevision).toBe(3n);
   expect(value.removals[1].mutation?.expectedRevision).toBe(4n);
   expect(value.removals[1].mutation?.requestId).not.toBe(
+    value.removals[0].mutation?.requestId,
+  );
+});
+
+it("keeps an uncertain deletion replayable across Settings category changes", async () => {
+  const row = machine("Category change", 6n);
+  let attempts = 0;
+  const value = fixture([row], {
+    local: async () => newRequestId(),
+    remove: async (request) => {
+      attempts += 1;
+      if (attempts === 1) throw unavailable();
+      return create(ResourceSchema, {
+        ...row,
+        revision: request.mutation!.expectedRevision + 1n,
+        documentJson: encode({ name: "Category change", retired: true }),
+      });
+    },
+  });
+  const opener = await deleteButton("Category change");
+  await waitFor(() => expect(opener.disabled).toBe(false));
+  fireEvent.click(opener);
+  let dialog = await screen.findByRole("dialog", { name: "Delete Worker?" });
+  fireEvent.click(await ready(dialog));
+  await within(dialog).findByText(
+    /The result of deleting this Worker is unknown/,
+  );
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
+  const reopened = await deleteButton("Category change");
+  await waitFor(() => expect(reopened.disabled).toBe(false));
+  fireEvent.click(reopened);
+  dialog = await screen.findByRole("dialog", { name: "Delete Worker?" });
+  fireEvent.click(
+    await within(dialog).findByRole("button", {
+      name: "Retry original deletion",
+    }),
+  );
+  await screen.findByText(/Deleted Worker Category change/);
+  expect(value.removals).toHaveLength(2);
+  expect(value.removals[1].mutation?.requestId).toBe(
     value.removals[0].mutation?.requestId,
   );
 });
