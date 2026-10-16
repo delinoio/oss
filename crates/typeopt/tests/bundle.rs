@@ -3648,7 +3648,9 @@ fn keeps_revision_data_outside_precache_calls() {
     let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
     chunks[1] = (
         "assets/index-AAAAAAAA.js",
-        r#"import{m as e}from"./settings-BBBBBBBB.js";import{p as t}from"./plain-CCCCCCCC.js";import{d}from"../config.js";console.log(e(2).verticalSpacing,t(),d[0].revision);"#,
+        // The manifest escapes to unknown code, so its keys keep their names
+        // (a tracked array of objects would have them renamed).
+        r#"import{m as e}from"./settings-BBBBBBBB.js";import{p as t}from"./plain-CCCCCCCC.js";import{d}from"../config.js";globalThis.manifest=d;console.log(e(2).verticalSpacing,t(),d[0].revision);"#,
     );
     chunks.push((
         "config.js",
@@ -4509,6 +4511,1782 @@ fn keeps_behavior_of_class_member_edge_cases() {
         let code = format!("{code}export{{}};");
         run(&[("index.js", &code)]);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Arrays
+// ---------------------------------------------------------------------------
+
+/// A closed class whose instances the fixtures store in arrays.
+const ITEM: &str = "class Item{constructor(v){this.itemValue=v}readItem(){return this.itemValue}}";
+
+/// Runs `body` after the `Item` class as the only chunk and returns the
+/// optimized chunk.
+fn array_chunk(body: &str) -> (tempfile::TempDir, String) {
+    // An export makes the chunk a module rather than a classic script.
+    let code = format!("{ITEM}{body}export{{}};");
+    let (temp, _) = run(&[("index.js", &code)]);
+    let index = out(temp.path(), "index.js");
+    (temp, index)
+}
+
+/// Arrays that analyzed code creates, fills and reads let the objects stored
+/// in them be renamed; every fixture prints the same output in Node.
+#[test]
+fn renames_objects_stored_in_tracked_arrays() {
+    let cases: [(&str, &[&str]); 5] = [
+        // P1: push, unshift, for-of, pop, shift, at and length.
+        (
+            "const list=[];list.push(new Item(1));list.unshift(new Item(2));for(const it of \
+             list)console.log(it.readItem());console.log(list.length,list.at(0).itemValue,list.\
+             pop().readItem(),list.shift().itemValue);",
+            &["itemValue", "readItem"],
+        ),
+        // P2: proven numeric indexes. Reading a possibly missing element
+        // into unknown code would expose it, so only its type is printed.
+        (
+            "const list=[new Item(1),new Item(2)];for(let \
+             i=0;i<list.length;i++)console.log(list[i].readItem());list[list.length]=new \
+             Item(3);console.log(list[list.length-1].itemValue,typeof list[9]);",
+            &["itemValue", "readItem"],
+        ),
+        // P3: inline callbacks and the methods that return arrays.
+        (
+            "const list=[new Item(1),new \
+             Item(2)];list.forEach(x=>console.log(x.readItem()));const \
+             w=list.map(x=>({wrappedValue:x.itemValue}));console.log(w[0].wrappedValue,list.\
+             filter(x=>x.itemValue>1).length,list.find(function(x){return \
+             x.itemValue===2}).readItem(),list.some(x=>x.itemValue>1),list.slice(1)[0].itemValue,\
+             list.indexOf(list[0]));",
+            &["itemValue", "readItem", "wrappedValue"],
+        ),
+        // P4: an array in a closed class field.
+        (
+            "class Bag{constructor(){this.items=[]}add(i){this.items.push(i);return \
+             this.items[0]}}const b=new Bag;console.log(b.add(new Item(1)).readItem());",
+            &["itemValue", "readItem", "items", "add"],
+        ),
+        // P5: object literal elements and spread.
+        (
+            "const rows=[{rowLabel:\"a\",rowCount:1}];const \
+             all=[...rows,{rowLabel:\"b\",rowCount:2}];for(const r of \
+             all)console.log(r.rowLabel,r.rowCount);",
+            &["rowLabel", "rowCount"],
+        ),
+    ];
+    for (body, names) in cases {
+        let (_, index) = array_chunk(body);
+        for name in names {
+            assert!(!index.contains(name), "{name} kept in {body}:\n{index}");
+        }
+    }
+}
+
+/// Every fixture lets unknown code, or code the model does not cover, reach
+/// an array or its elements, so the names stay.
+#[test]
+fn keeps_names_of_arrays_that_unknown_code_can_observe() {
+    let cases: [(&str, &[&str]); 15] = [
+        // N1: an array passed to unknown code.
+        (
+            "const list=[new \
+             Item(1)];globalThis.read=l=>l[0].itemValue;console.log(globalThis.read(list));",
+            &["itemValue"],
+        ),
+        // N2: serialization.
+        (
+            "console.log(JSON.stringify([{rowLabel:1}]));",
+            &["rowLabel"],
+        ),
+        // N3: a callback with a `this` argument.
+        (
+            "const list=[new \
+             Item(1)];list.forEach(function(x){console.log(this.tag,x.itemValue)},{tag:1});",
+            &["itemValue"],
+        ),
+        // N4: a callback that is not an inline function.
+        (
+            "globalThis.cb=x=>console.log(x.itemValue);[new Item(1)].forEach(globalThis.cb);",
+            &["itemValue"],
+        ),
+        // N5: an inline callback on a receiver the analysis does not own.
+        (
+            "const ext={map(f){return f({})}};const \
+             r=(globalThis.e??ext).map(x=>({wrappedValue:1}));console.log(r.wrappedValue);",
+            &["wrappedValue"],
+        ),
+        // N6: an escaped array may have an own `push`.
+        (
+            "const list=[];globalThis.hook=l=>{l.push=x=>console.log(x.itemValue)};globalThis.\
+             hook(list);list.push(new Item(1));",
+            &["itemValue"],
+        ),
+        // N7: a hole read reaches a numeric `Object.prototype` member.
+        (
+            "Object.prototype[1]={itemValue:9};const list=[new \
+             Item(1)];console.log(list[1].itemValue);",
+            &["itemValue"],
+        ),
+        // N8: a patched built-in.
+        (
+            "Array.prototype.push=function(x){console.log(x.itemValue)};[].push(new Item(1));",
+            &["itemValue"],
+        ),
+        // N9: an unproven key.
+        (
+            "const list=[new Item(1)];const k=globalThis.k??\"0\";console.log(list[k].itemValue);",
+            &["itemValue"],
+        ),
+        // N11: an unmodeled method.
+        (
+            "const list=[new Item(2),new \
+             Item(1)];list.sort((a,b)=>a.itemValue-b.itemValue);console.log(list[0].itemValue);",
+            &["itemValue"],
+        ),
+        // N12: array destructuring.
+        (
+            "const [first]=[new Item(1)];console.log(Object.keys(first));",
+            &["itemValue"],
+        ),
+        // An element read that code passes to unknown code (a hole read
+        // returns undefined, but the analysis cannot tell).
+        (
+            "const list=[new Item(1),new Item(2)];console.log(list[9]);",
+            &["itemValue"],
+        ),
+        // A callback result that unknown code observes.
+        (
+            "const list=[new \
+             Item(1)];globalThis.out=list.map(x=>({wrappedValue:x.itemValue}));console.\
+             log(globalThis.out[0].wrappedValue);",
+            &["wrappedValue"],
+        ),
+        // Array methods are modeled only when the built-in is intact.
+        (
+            "Object.defineProperty(Array.prototype,\"at\",{value(i){console.log(this[i].\
+             itemValue);return this[i]}});const list=[new Item(1)];list.at(0);",
+            &["itemValue"],
+        ),
+        // `Array.prototype` used as a value hides patches from the scan.
+        (
+            "const P=Array.prototype;P.pop=function(){globalThis.seen=this[0].itemValue;return \
+             7};const list=[new Item(1)];console.log(list.pop(),globalThis.seen);",
+            &["itemValue"],
+        ),
+    ];
+    for (body, names) in cases {
+        let (_, index) = array_chunk(body);
+        for name in names {
+            assert!(index.contains(name), "{name} renamed in {body}:\n{index}");
+        }
+    }
+}
+
+/// The method that hostile prototype code installs: it observes the element
+/// of the receiver by its original name.
+const HOSTILE_POP: &str = "function(){globalThis.seen=this[0].itemValue;return 7}";
+
+/// A tracked array whose `pop` is the hostile method. The popped element only
+/// reaches `typeof`, so nothing else makes the class escape.
+const POP_TAIL: &str =
+    "const list=[new Item(1)];const got=list.pop();console.log(typeof got,globalThis.seen);";
+
+/// A tracked array stored at index zero of an empty array, whose prototype
+/// chain holds a setter for `0` that reads the stored object by its original
+/// name.
+const SETTER_TAIL: &str = "const list=[];list[0]=new Item(1);console.log(globalThis.seen);";
+
+/// Every way application code can reach the prototype chain of an array and
+/// change what a tracked array does. The prototype-chain exposure rule keeps
+/// the names of the stored objects in every spelling.
+#[test]
+fn keeps_names_when_the_prototype_chain_is_exposed() {
+    let pop = |prefix: &str| format!("{prefix}P.pop={HOSTILE_POP};{POP_TAIL}");
+    let setter = |prefix: &str| {
+        format!(
+            "{prefix}Object.defineProperty(P,\"0\",{{set(v){{globalThis.seen=v.itemValue}},\
+             configurable:true}});{SETTER_TAIL}"
+        )
+    };
+    let cases: Vec<(&str, String)> = vec![
+        // Aliases of `Array.prototype` in every spelling.
+        ("dot", pop("const P=Array.prototype;")),
+        ("bracket", pop("const P=Array[\"prototype\"];")),
+        ("template", pop("const P=Array[`prototype`];")),
+        ("computed", pop("const P=Array[\"proto\"+\"type\"];")),
+        ("global object", pop("const P=globalThis.Array.prototype;")),
+        (
+            "global object bracket",
+            pop("const P=globalThis[\"Array\"][\"prototype\"];"),
+        ),
+        ("optional chain", pop("const P=(Array?.prototype);")),
+        (
+            "constructor alias",
+            pop("const A=Array;const P=A.prototype;"),
+        ),
+        ("destructured", pop("const {prototype:P}=Array;")),
+        (
+            "destructured computed key",
+            pop("const k=\"proto\"+\"type\";const {[k]:P}=Array;"),
+        ),
+        (
+            "destructuring assignment",
+            pop("let P;({prototype:P}=Array);"),
+        ),
+        (
+            "returned",
+            format!("const get=()=>Array.prototype;get().pop={HOSTILE_POP};{POP_TAIL}"),
+        ),
+        // Prototypes reached through the object model.
+        ("__proto__", pop("const P=[].__proto__;")),
+        ("__proto__ bracket", pop("const P=[][\"__proto__\"];")),
+        ("getPrototypeOf", pop("const P=Object.getPrototypeOf([]);")),
+        (
+            "Reflect.getPrototypeOf",
+            pop("const P=Reflect.getPrototypeOf([]);"),
+        ),
+        (
+            "constructor.prototype",
+            pop("const P=[].constructor.prototype;"),
+        ),
+        // `Object.prototype` aliases hide indexed accessors.
+        (
+            "Object.prototype alias",
+            setter("const P=Object.prototype;"),
+        ),
+        (
+            "Object.prototype bracket alias",
+            setter("const P=Object[\"prototype\"];"),
+        ),
+        (
+            "Object.prototype destructured",
+            setter("const {prototype:P}=Object;"),
+        ),
+        (
+            "prototype of the prototype",
+            setter("const P=Object.getPrototypeOf(Array.prototype);"),
+        ),
+        // Callees that are not the real reflection writer.
+        (
+            "unknown callee",
+            format!(
+                "const helper={{assign(t){{t.pop={HOSTILE_POP}}}}};helper.assign(Array.prototype);\
+                 {POP_TAIL}"
+            ),
+        ),
+        (
+            "unknown callee named like a writer",
+            format!(
+                "const Obj={{defineProperty(t,k,d){{t.pop=d.value}}}};Obj.defineProperty(Array.\
+                 prototype,\"pop\",{{value:{HOSTILE_POP}}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "shadowed Object",
+            format!(
+                "function install(Object){{Object.assign(Array.prototype,{{pop:\
+                 {HOSTILE_POP}}})}}install({{assign(t,s){{t.pop=s.pop}}}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "destructured writer",
+            format!(
+                "const {{defineProperty:d}}=Object;d(Array.prototype,\"pop\",{{value:\
+                 {HOSTILE_POP}}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "computed handle as a writer target",
+            format!(
+                "Object.defineProperty(Object[\"proto\"+\"type\"],\"0\",{{set(v){{globalThis.\
+                 seen=v.itemValue}},configurable:true}});{SETTER_TAIL}"
+            ),
+        ),
+        // Writes the scan records, which disable numeric modeling.
+        (
+            "__proto__ write",
+            format!(
+                "Array.prototype.__proto__={{set 0(v){{globalThis.seen=v.itemValue}},get \
+                 0(){{return void 0}}}};{SETTER_TAIL}"
+            ),
+        ),
+        (
+            "setPrototypeOf",
+            format!(
+                "Object.setPrototypeOf(Array.prototype,{{set \
+                 0(v){{globalThis.seen=v.itemValue}},get 0(){{return void 0}}}});{SETTER_TAIL}"
+            ),
+        ),
+        (
+            "bracket write",
+            format!("Array[\"prototype\"].pop={HOSTILE_POP};{POP_TAIL}"),
+        ),
+        (
+            "computed write",
+            format!("const k=\"p\"+\"op\";Array.prototype[k]={HOSTILE_POP};{POP_TAIL}"),
+        ),
+        (
+            "Reflect.defineProperty on a bracket handle",
+            format!(
+                "Reflect.defineProperty(Array[\"prototype\"],\"pop\",{{value:{HOSTILE_POP}}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        // Reflection members of the prototype objects.
+        (
+            "__defineSetter__",
+            format!(
+                "Array.prototype.__defineSetter__(\"0\",function(v){{globalThis.seen=v.\
+                 itemValue}});{SETTER_TAIL}"
+            ),
+        ),
+        (
+            "__defineSetter__ on Object.prototype",
+            format!(
+                "Object[\"prototype\"].__defineSetter__(\"0\",function(v){{globalThis.seen=v.\
+                 itemValue}});{SETTER_TAIL}"
+            ),
+        ),
+    ];
+    let renamed: Vec<&str> = cases
+        .iter()
+        .filter(|(_, body)| !array_chunk(body).1.contains("itemValue"))
+        .map(|(label, _)| *label)
+        .collect();
+    assert!(renamed.is_empty(), "names renamed for: {renamed:?}");
+}
+
+/// Prototype uses that stay inside the patch scan do not stop the model.
+#[test]
+fn renames_through_arrays_beside_scanned_prototype_uses() {
+    let cases = [
+        "console.log(Array.prototype.slice.call(\"abc\").length);",
+        "console.log(Object.prototype.hasOwnProperty.call({},\"x\"));",
+        "const {hasOwnProperty}=Object.prototype;console.log(hasOwnProperty.call({},\"x\"));",
+        "console.log(Object.getPrototypeOf({})===Object.prototype,typeof Array.prototype);",
+        "Object.defineProperty(Array.prototype,\"extraMember\",{value(){return \
+         1},configurable:true});console.log([].extraMember());",
+        "const same=[].constructor===Array;console.log(same);",
+        "console.log(Array.isArray([]),Array[\"isArray\"]([]));",
+    ];
+    for fixture in cases {
+        let body = format!(
+            "{fixture}const list=[new Item(1)];list.push(new \
+             Item(2));console.log(list.length,list[0].readItem());"
+        );
+        let (_, index) = array_chunk(&body);
+        for name in ["itemValue", "readItem"] {
+            assert!(!index.contains(name), "{name} kept in {body}:\n{index}");
+        }
+    }
+}
+
+/// Forms that stay inside the intrinsic allowlist do not stop the model: the
+/// guards, comparisons and library calls that bundles use every day.
+#[test]
+fn renames_through_arrays_beside_allowlisted_intrinsic_forms() {
+    let cases = [
+        // Feature detection and comparisons.
+        "console.log(typeof window,typeof Reflect!==\"undefined\",typeof globalThis);",
+        "console.log([] instanceof Array,({}) instanceof Object,typeof Function);",
+        // Library functions that return neither a handle nor the global object.
+        "console.log(Object.keys({a:1}).length,Object.values({a:1})[0],Object.entries({a:1}).\
+         length);",
+        "console.log(Array.from(\"ab\").length,Array.of(1,2).length,Object.hasOwn({a:1},\"a\"));",
+        "const frozen=Object.freeze({fixedValue:1});console.log(frozen.fixedValue,Object.\
+         isFrozen(frozen));",
+        "const bag=Object.create(null);Object.defineProperty(bag,\"hidden\",{value:1});console.\
+         log(Object.getOwnPropertyNames(bag).length);",
+        "const app={};Object.assign(app,{extra:1});Object.setPrototypeOf(app,null);console.\
+         log(Reflect.ownKeys(app).length,Reflect.has(app,\"extra\"));",
+        // Constructors only compared or asked for their name.
+        "class Named{label(){return this.constructor.name}}console.log(new Named().label());",
+        "class Kind{}console.log(new Kind().constructor===Kind);",
+        // Strict `this`, ordinary members of the global object and timers.
+        "function strictThis(){\"use strict\";return this}console.log(strictThis());",
+        "globalThis.flag=1;console.log(globalThis.flag);",
+        "setTimeout(()=>console.log(\"tick\"),0);",
+        // A literal member of a prototype that no write replaces.
+        "console.log(typeof Array.prototype.map,Object.prototype.toString.call(1));",
+    ];
+    for fixture in cases {
+        let body = format!(
+            "{fixture}const list=[new Item(1)];list.push(new \
+             Item(2));console.log(list.length,list[0].readItem());"
+        );
+        let (_, index) = array_chunk(&body);
+        for name in ["itemValue", "readItem"] {
+            assert!(!index.contains(name), "{name} kept in {body}:\n{index}");
+        }
+    }
+}
+
+/// Every route to a shared built-in that the allowlist does not name keeps the
+/// names, in every spelling the review rounds reported (patched writers,
+/// `Reflect` and `Object` reflection getters, `__proto__`, `getPrototypeOf`,
+/// `setPrototypeOf`, `constructor`, dynamic and concatenated keys, the global
+/// object under every alias) and the generalizations of each. The hostile
+/// payload reads the stored object by its original name, so a wrong rename
+/// also changes the output that `run` compares.
+#[test]
+fn keeps_names_for_every_intrinsic_spelling() {
+    let pop = |prefix: &str| format!("{prefix}P.pop={HOSTILE_POP};{POP_TAIL}");
+    let setter = |prefix: &str| {
+        format!(
+            "{prefix}Object.defineProperty(P,\"0\",{{set(v){{globalThis.seen=v.itemValue}},\
+             configurable:true}});{SETTER_TAIL}"
+        )
+    };
+    let writer_result = format!(
+        "const P=Object.defineProperty(Array.prototype,\"extraMember\",{{value(){{return \
+         1}},configurable:true}});P.pop={HOSTILE_POP};{POP_TAIL}"
+    );
+    let cases: Vec<(&str, String)> = vec![
+        // Thread: the writer check accepted a replaced `Object.defineProperty`.
+        (
+            "defineProperty replaced while Object is intact",
+            format!(
+                "Object.defineProperty=function(t,k,d){{t[k]=d.value;return \
+                 t}};Object.defineProperty(Array.prototype,\"pop\",{{value:{HOSTILE_POP}}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        (
+            "Object replaced and defineProperty replaced",
+            format!(
+                "globalThis.Object={{defineProperty(t,k,d){{t[k]=d.value;return \
+                 t}}}};Object.defineProperty(Array.prototype,\"pop\",{{value:{HOSTILE_POP}}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        (
+            "Reflect.defineProperty replaced",
+            format!(
+                "Reflect.defineProperty=function(t,k,d){{t[k]=d.value;return \
+                 true}};Reflect.defineProperty(Array.prototype,\"pop\",{{value:{HOSTILE_POP}}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        (
+            "Reflect.set replaced",
+            format!(
+                "Reflect.set=function(t,k,v){{t[k]=v;return \
+                 true}};Reflect.set(Array.prototype,\"pop\",{HOSTILE_POP});{POP_TAIL}"
+            ),
+        ),
+        // Thread: reflection getters were not recognized as handles.
+        (
+            "Reflect.get __proto__",
+            pop("const P=Reflect.get([],\"__proto__\");"),
+        ),
+        (
+            "Reflect.get concatenated key",
+            pop("const P=Reflect.get([],\"__pro\"+\"to__\");"),
+        ),
+        (
+            "Reflect.getPrototypeOf alias",
+            pop("const g=Reflect.getPrototypeOf;const P=g([]);"),
+        ),
+        (
+            "Object.getPrototypeOf call",
+            pop("const P=Object.getPrototypeOf.call(null,[]);"),
+        ),
+        (
+            "Object.getOwnPropertyDescriptor value of Array",
+            pop("const P=Object.getOwnPropertyDescriptor(Array,\"prototype\").value;"),
+        ),
+        (
+            "Object.getOwnPropertyDescriptor value of the prototype",
+            pop(
+                "const P=Object.getOwnPropertyDescriptor(Array.prototype,\"constructor\").value.\
+                 prototype;",
+            ),
+        ),
+        (
+            "Object.getOwnPropertyDescriptors __proto__ getter",
+            pop(
+                "const P=Object.getOwnPropertyDescriptors(Object.prototype)[\"__proto__\"].get.\
+                 call([]);",
+            ),
+        ),
+        (
+            "__lookupGetter__",
+            pop("const P=[].__lookupGetter__(\"__proto__\").call([]);"),
+        ),
+        (
+            "__lookupGetter__ concatenated name",
+            pop("const P=[][\"__lookup\"+\"Getter__\"](\"__proto__\").call([]);"),
+        ),
+        (
+            "Proxy of an array",
+            pop("const P=Object.getPrototypeOf(new Proxy([],{}));"),
+        ),
+        // Writer results are handles too.
+        ("writer result kept", writer_result),
+        (
+            "writer in an arrow body",
+            pop(
+                "const install=()=>Object.defineProperty(Array.prototype,\"extraMember\",\
+                 {value(){return 1},configurable:true});const P=install();",
+            ),
+        ),
+        (
+            "Object.assign result kept",
+            pop("const P=Object.assign(Array.prototype,{});"),
+        ),
+        (
+            "Object.assign with a static key",
+            format!("Object.assign(Array.prototype,{{pop:{HOSTILE_POP}}});{POP_TAIL}"),
+        ),
+        (
+            "Object.defineProperties with a static key",
+            format!(
+                "Object.defineProperties(Array.prototype,{{pop:{{value:{HOSTILE_POP}}}}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        // Dynamic keys and string concatenation.
+        (
+            "dynamic constructor key",
+            pop("const k=\"con\"+\"structor\";const P=[][k].prototype;"),
+        ),
+        (
+            "dynamic key from a function",
+            pop("const key=()=>\"constr\"+\"uctor\";const P=[][key()].prototype;"),
+        ),
+        (
+            "dynamic key from a parameter",
+            pop("const get=(o,k)=>o[k];const P=get([],\"constructor\").prototype;"),
+        ),
+        (
+            "dynamic key from a template",
+            pop("const t=\"structor\";const P=[][`con${t}`].prototype;"),
+        ),
+        (
+            "dynamic key on an object literal",
+            setter("const P={}[\"con\"+\"structor\"].prototype;"),
+        ),
+        (
+            "concatenated __proto__",
+            pop("const k=\"__pro\"+\"to__\";const P=[][k];"),
+        ),
+        (
+            "concatenated prototype on Array",
+            format!("Array[\"proto\"+\"type\"].pop={HOSTILE_POP};{POP_TAIL}"),
+        ),
+        // Constructors read from values.
+        (
+            "constructor of a function",
+            format!(
+                "[].map.constructor(\"return Array.prototype\")().pop={HOSTILE_POP};{POP_TAIL}"
+            ),
+        ),
+        (
+            "Function constructor",
+            format!("Function(\"return Array.prototype\")().pop={HOSTILE_POP};{POP_TAIL}"),
+        ),
+        (
+            "constructor of an object literal",
+            setter("const P=({}).constructor.prototype;"),
+        ),
+        (
+            "optional chain constructor",
+            pop("const P=[]?.constructor?.prototype;"),
+        ),
+        (
+            "constructor destructured",
+            pop("const {constructor:C}=[];const P=C.prototype;"),
+        ),
+        ("__proto__ destructured", pop("const {__proto__:P}=[];")),
+        (
+            "__proto__ destructured with a concatenated key",
+            pop("const {[\"__pro\"+\"to__\"]:P}=[];"),
+        ),
+        // The global object under every alias.
+        ("global", pop("const P=global.Array.prototype;")),
+        (
+            "global object concatenated name",
+            pop("const P=globalThis[\"Ar\"+\"ray\"].prototype;"),
+        ),
+        (
+            "global object destructured",
+            pop("const {Array:A}=globalThis;const P=A.prototype;"),
+        ),
+        (
+            "global object kept in a variable",
+            pop("const g=globalThis;const P=g.Array.prototype;"),
+        ),
+        (
+            "global object passed through a function",
+            pop("const id=x=>x;const P=id(globalThis).Array.prototype;"),
+        ),
+        (
+            "Reflect.get of the global object",
+            pop("const P=Reflect.get(globalThis,\"Array\").prototype;"),
+        ),
+        // Aliases of the constructors themselves.
+        (
+            "Object kept in a variable",
+            setter("const O=Object;const P=O.prototype;"),
+        ),
+        (
+            "Array in an array",
+            pop("const [A]=[Array];const P=A.prototype;"),
+        ),
+        (
+            "Array as a property value",
+            pop("const holder={A:Array};const P=holder.A.prototype;"),
+        ),
+        (
+            "Array as a call argument",
+            pop("const use=A=>A.prototype;const P=use(Array);"),
+        ),
+        (
+            "Array extended",
+            pop("class Mine extends Array{}const P=Object.getPrototypeOf(Mine.prototype);"),
+        ),
+    ];
+    let renamed: Vec<&str> = cases
+        .iter()
+        .filter(|(_, body)| !array_chunk(body).1.contains("itemValue"))
+        .map(|(label, _)| *label)
+        .collect();
+    assert!(renamed.is_empty(), "names renamed for: {renamed:?}");
+}
+
+/// A tracked array that only `push` and an index read touch.
+const LIST_TAIL: &str =
+    "const list=[new Item(1)];list.push(new Item(2));console.log(list.length,list[0].readItem());";
+
+/// A tracked array whose `slice` allocates through its `constructor`.
+const SLICE_TAIL: &str = "const list=[new Item(1)];console.log(list.slice(0)[0].readItem());";
+
+/// Whether the tracked `Item` names survive in the optimized `body`.
+fn item_names_kept(body: &str) -> bool {
+    array_chunk(body).1.contains("itemValue")
+}
+
+/// A call of a member of the global object passes the global object as
+/// `this`. The inherited `Object.prototype` methods return it (`valueOf`), so
+/// `globalThis.valueOf()` is a handle to the global object and, through
+/// `.Array.prototype`, to every built-in. Only a short list of functions that
+/// return a primitive may be called, and only while nothing replaces them.
+#[test]
+fn keeps_names_beside_calls_of_global_object_members() {
+    let patch_through = |call: &str| {
+        format!("const g={call};const P=g.Array.prototype;P.pop={HOSTILE_POP};{POP_TAIL}")
+    };
+    let rejected: Vec<(&str, String)> = vec![
+        // The reviewed spelling and its aliases of the global object.
+        ("valueOf", patch_through("globalThis.valueOf()")),
+        (
+            "valueOf bracket",
+            patch_through("globalThis[\"valueOf\"]()"),
+        ),
+        ("valueOf global", patch_through("global.valueOf()")),
+        (
+            "valueOf parenthesized",
+            patch_through("(globalThis.valueOf)()"),
+        ),
+        (
+            "valueOf optional call",
+            patch_through("globalThis.valueOf?.()"),
+        ),
+        (
+            "valueOf window",
+            patch_through("(typeof window===\"undefined\"?globalThis:window).valueOf()"),
+        ),
+        // Every other inherited method, without a hostile payload: the call
+        // alone turns modeling off.
+        ("toString", format!("globalThis.toString();{LIST_TAIL}")),
+        (
+            "toLocaleString",
+            format!("globalThis.toLocaleString();{LIST_TAIL}"),
+        ),
+        (
+            "constructor",
+            format!("globalThis.constructor();{LIST_TAIL}"),
+        ),
+        (
+            "__lookupGetter__",
+            format!("globalThis.__lookupGetter__(\"x\");{LIST_TAIL}"),
+        ),
+        (
+            "__lookupSetter__",
+            format!("globalThis.__lookupSetter__(\"x\");{LIST_TAIL}"),
+        ),
+        (
+            "valueOf in statement position",
+            format!("globalThis.valueOf();{LIST_TAIL}"),
+        ),
+        (
+            "valueOf tagged template",
+            format!("globalThis.valueOf``;{LIST_TAIL}"),
+        ),
+        // A member that application code defines can return its `this`.
+        (
+            "application function",
+            format!("globalThis.helper=function(){{return 1}};globalThis.helper();{LIST_TAIL}"),
+        ),
+        (
+            "strict application function",
+            format!(
+                "globalThis.helper=function(){{\"use strict\";return \
+                 this}};globalThis.helper();{LIST_TAIL}"
+            ),
+        ),
+        // The allowlisted names stop being handle-free once replaced.
+        (
+            "hasOwnProperty replaced on the prototype",
+            format!(
+                "Object.prototype.hasOwnProperty=function(){{return \
+                 true}};globalThis.hasOwnProperty(\"x\");{LIST_TAIL}"
+            ),
+        ),
+        (
+            "hasOwnProperty replaced on the global object",
+            format!(
+                "globalThis.hasOwnProperty=function(){{return \
+                 true}};globalThis.hasOwnProperty(\"x\");{LIST_TAIL}"
+            ),
+        ),
+        (
+            "hasOwnProperty replaced through a parameter",
+            format!(
+                "function swap(o){{o.hasOwnProperty=function(){{return \
+                 true}}}}swap({{}});globalThis.hasOwnProperty(\"x\");{LIST_TAIL}"
+            ),
+        ),
+        (
+            "parseInt replaced",
+            format!(
+                "globalThis.parseInt=function(){{return 1}};globalThis.parseInt(\"1\");{LIST_TAIL}"
+            ),
+        ),
+    ];
+    let renamed: Vec<&str> = rejected
+        .iter()
+        .filter(|(_, body)| !item_names_kept(body))
+        .map(|(label, _)| *label)
+        .collect();
+    assert!(renamed.is_empty(), "names renamed for: {renamed:?}");
+
+    // Handle-free calls and reads of the global object do not stop the model.
+    let allowed = [
+        "globalThis.hasOwnProperty(\"x\");",
+        "globalThis.isPrototypeOf({});",
+        "globalThis.propertyIsEnumerable(\"x\");",
+        "globalThis[\"hasOwnProperty\"](\"x\");",
+        "console.log(globalThis.parseInt(\"1\"),globalThis.isNaN(1),globalThis.\
+         encodeURIComponent(\"a\"));",
+        "globalThis.console.log(1);",
+        "console.log(typeof globalThis.valueOf,globalThis.valueOf===undefined);",
+        "const read=globalThis.toString;console.log(typeof read);",
+        "console.log(new globalThis.Date(0).getTime());",
+        "globalThis.flag=1;console.log(globalThis.flag);",
+    ];
+    let kept: Vec<&str> = allowed
+        .iter()
+        .filter(|fixture| item_names_kept(&format!("{fixture}{LIST_TAIL}")))
+        .copied()
+        .collect();
+    assert!(kept.is_empty(), "names kept beside: {kept:?}");
+}
+
+/// A property write, deletion or define-like call through a receiver that is
+/// not provably a local object may patch an intrinsic that a caller supplied
+/// (`install(Array.prototype, hostile)` from an importer), whatever the
+/// binding spelling. The write is recorded for its key, so `pop` stops being
+/// modeled and the tracked array that pops keeps its element names.
+#[test]
+fn keeps_names_for_writes_through_unproven_receivers() {
+    let hostile = "function(){return 7}";
+    let cases: Vec<(&str, String)> = vec![
+        // Parameters of exported and ordinary functions.
+        (
+            "exported function parameter",
+            format!("export function install(p){{p.pop={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "exported arrow parameter",
+            format!("export const install=p=>{{p.pop={hostile}}};install({{}});{POP_TAIL}"),
+        ),
+        (
+            "internal function parameter",
+            format!("function install(p){{p.pop={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "default parameter",
+            format!("function install(p={{}}){{p.pop={hostile}}}install();{POP_TAIL}"),
+        ),
+        (
+            "object-destructured parameter",
+            format!(
+                "function install({{target}}){{target.pop={hostile}}}install({{target:{{}}}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        (
+            "array-destructured parameter",
+            format!("function install([t]){{t.pop={hostile}}}install([{{}}]);{POP_TAIL}"),
+        ),
+        (
+            "rest parameter",
+            format!("function install(...ps){{ps[0].pop={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "arguments object",
+            format!("function install(){{arguments[0].pop={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "closure over a parameter",
+            format!(
+                "function make(p){{return function(){{p.pop={hostile}}}}}make({{}})();{POP_TAIL}"
+            ),
+        ),
+        // Callbacks that unknown callers fill.
+        (
+            "callback parameter",
+            format!("setTimeout(p=>{{p.pop={hostile}}},0,{{}});{POP_TAIL}"),
+        ),
+        (
+            "callback stored for unknown callers",
+            format!("const cb=p=>{{p.pop={hostile}}};cb({{}});export{{cb}};{POP_TAIL}"),
+        ),
+        (
+            "iteration variable",
+            format!("for(const p of [{{}}]){{p.pop={hostile}}}{POP_TAIL}"),
+        ),
+        // Class methods and `this` chosen by the caller.
+        (
+            "class method parameter",
+            format!(
+                "class Installer{{install(p){{p.pop={hostile}}}}}new \
+                 Installer().install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "class method this",
+            format!("class Patcher{{run(){{this.pop={hostile}}}}}new Patcher().run();{POP_TAIL}"),
+        ),
+        (
+            "static method this",
+            format!("class Patcher{{static run(){{this.pop={hostile}}}}}Patcher.run();{POP_TAIL}"),
+        ),
+        (
+            "accessor this",
+            format!(
+                "class Patcher{{set value(v){{this.pop={hostile}}}}}new \
+                 Patcher().value=1;{POP_TAIL}"
+            ),
+        ),
+        (
+            "function this",
+            format!("function run(){{\"use strict\";this.pop={hostile}}}run.call({{}});{POP_TAIL}"),
+        ),
+        (
+            "object method this",
+            format!("const o={{run(){{this.pop={hostile}}}}};o.run();{POP_TAIL}"),
+        ),
+        // Receivers read from other values or returned by calls.
+        (
+            "property read",
+            format!("const holder={{p:{{}}}};holder.p.pop={hostile};{POP_TAIL}"),
+        ),
+        (
+            "call result",
+            format!("JSON.parse(\"{{}}\").pop={hostile};{POP_TAIL}"),
+        ),
+        (
+            "reassigned variable",
+            format!("let o={{}};o=Object.create(null);o.pop={hostile};{POP_TAIL}"),
+        ),
+        (
+            "alias of a parameter",
+            format!("function install(p){{const q=p;q.pop={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "conditional with a parameter",
+            format!(
+                "function install(p){{const q=p||{{}};q.pop={hostile}}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        // Every write shape.
+        (
+            "bracket write",
+            format!("function install(p){{p[\"pop\"]={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "computed write",
+            format!("function install(p,k){{p[k]={hostile}}}install({{}},\"x\");{POP_TAIL}"),
+        ),
+        (
+            "compound write",
+            format!("function install(p){{p.pop||={hostile}}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "destructuring assignment target",
+            format!("function install(p){{({{a:p.pop}}={{a:{hostile}}})}}install({{}});{POP_TAIL}"),
+        ),
+        (
+            "delete",
+            format!("function install(p){{delete p.pop}}install({{pop:1}});{POP_TAIL}"),
+        ),
+        (
+            "defineProperty",
+            format!(
+                "function install(p){{Object.defineProperty(p,\"pop\",{{value:\
+                 {hostile}}})}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "Object.assign",
+            format!(
+                "function install(p){{Object.assign(p,{{pop:{hostile}}})}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "Reflect.set",
+            format!(
+                "function install(p){{Reflect.set(p,\"pop\",{hostile})}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "Reflect.deleteProperty",
+            format!(
+                "function install(p){{Reflect.deleteProperty(p,\"pop\")}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        // Keys that change the meaning of element reads and writes turn the
+        // whole model off, not one method.
+        (
+            "numeric key",
+            format!("function install(p){{p[0]=1}}install({{}});{LIST_TAIL}"),
+        ),
+        (
+            "unknown key",
+            format!("function install(p,k){{p[k]=1}}install({{}},\"x\");{LIST_TAIL}"),
+        ),
+        (
+            "__proto__ key",
+            format!("function install(p){{p.__proto__={{}}}}install({{}});{LIST_TAIL}"),
+        ),
+        (
+            "setPrototypeOf",
+            format!(
+                "function install(p){{Object.setPrototypeOf(p,null)}}install({{}});{LIST_TAIL}"
+            ),
+        ),
+        (
+            "Object.assign with spread keys",
+            format!("function install(p,s){{Object.assign(p,s)}}install({{}},{{}});{LIST_TAIL}"),
+        ),
+        // Other members the array model relies on.
+        (
+            "push",
+            format!("function install(p){{p.push={hostile}}}install({{}});{LIST_TAIL}"),
+        ),
+        (
+            "constructor",
+            format!("function install(p){{p.constructor={hostile}}}install({{}});{SLICE_TAIL}"),
+        ),
+        (
+            "next",
+            format!(
+                "function install(p){{p.next={hostile}}}install({{}});for(const x of [new \
+                 Item(1)])console.log(x.readItem());"
+            ),
+        ),
+    ];
+    let renamed: Vec<&str> = cases
+        .iter()
+        .filter(|(_, body)| !item_names_kept(body))
+        .map(|(label, _)| *label)
+        .collect();
+    assert!(renamed.is_empty(), "names renamed for: {renamed:?}");
+}
+
+/// Writes whose receiver is provably a fresh local object, and writes through
+/// any receiver whose key no array operation relies on, leave the model on.
+#[test]
+fn renames_beside_writes_through_provably_local_receivers() {
+    let hostile = "function(){return 7}";
+    let cases: Vec<(&str, String)> = vec![
+        (
+            "object literal variable",
+            format!("const o={{}};o.pop={hostile};o[\"k\"+1]=2;delete o.pop;"),
+        ),
+        (
+            "array literal variable",
+            format!("const a=[];a.pop={hostile};a[0]=1;a[a.length]=2;"),
+        ),
+        (
+            "let variable never reassigned",
+            format!("let o={{}};o.pop={hostile};"),
+        ),
+        (
+            "alias chain",
+            format!("const a={{}};const b=a;const c=b;c.pop={hostile};c[\"x\"+1]=1;"),
+        ),
+        (
+            "conditional of locals",
+            format!("const o=Math.random()>2?{{}}:[];o.pop={hostile};"),
+        ),
+        (
+            "logical of locals",
+            format!("const o=null||{{}};o.pop={hostile};"),
+        ),
+        (
+            "function statics",
+            format!("function helper(){{}}helper.pop={hostile};helper[\"k\"+1]=1;"),
+        ),
+        (
+            "class statics",
+            format!("class Registry{{}}Registry.pop={hostile};Registry[\"k\"+1]=1;"),
+        ),
+        (
+            "new of an application class",
+            format!("const it=new Item(2);it.pop={hostile};"),
+        ),
+        (
+            "new of a library class",
+            format!("const m=new Map();m.pop={hostile};m[\"k\"+1]=1;"),
+        ),
+        (
+            "constructor this",
+            format!(
+                "class Box{{constructor(){{this.pop={hostile};this[\"k\"+1]=1;Object.assign(this,\
+                 {{boxValue:1}})}}}}new Box();"
+            ),
+        ),
+        (
+            "field initializer this",
+            "class Box{field=(this[\"k\"+1]=1)}new Box();".to_owned(),
+        ),
+        (
+            "static block this",
+            "class Box{static{this[\"k\"+1]=1}}".to_owned(),
+        ),
+        (
+            "derived constructor this",
+            "class Base{}class Derived extends Base{constructor(){super();this[\"k\"+1]=1}}new \
+             Derived();"
+                .to_owned(),
+        ),
+        (
+            "Object.assign onto a local",
+            "const o={};Object.assign(o,{a:1},{b:2});".to_owned(),
+        ),
+        (
+            "defineProperty onto a local",
+            format!("const o={{}};Object.defineProperty(o,\"pop\",{{value:{hostile}}});"),
+        ),
+        // A parameter write with a key that no array operation relies on is a
+        // possible patch of that key only.
+        (
+            "benign key on a parameter",
+            "function label(o,n){o.label=n}label({},1);".to_owned(),
+        ),
+        (
+            "benign key on this of a method",
+            "class Counter{count=0;bump(){this.count=this.count+1}}new Counter().bump();"
+                .to_owned(),
+        ),
+        (
+            "benign key on a property read",
+            "const holder={inner:{}};holder.inner.tag=1;".to_owned(),
+        ),
+        (
+            "benign key through Object.defineProperty on a parameter",
+            "function tag(o){Object.defineProperty(o,\"tag\",{value:1})}tag({});".to_owned(),
+        ),
+        (
+            "delete of a benign key",
+            "function drop(o){delete o.tag}drop({tag:1});".to_owned(),
+        ),
+    ];
+    let kept: Vec<&str> = cases
+        .iter()
+        .filter(|(_, fixture)| item_names_kept(&format!("{fixture}{LIST_TAIL}")))
+        .map(|(label, _)| *label)
+        .collect();
+    assert!(kept.is_empty(), "names kept beside: {kept:?}");
+}
+
+/// Whether the tracked `Item` names survive in `body`, optimized without
+/// running it: fixtures with syntax that Node 24 cannot execute (decorators).
+fn item_names_kept_unrun(body: &str) -> bool {
+    let code = format!("{ITEM}{body}export{{}};");
+    let temp = bundle(&[("index.js", &code)]);
+    optimize(temp.path(), &[]);
+    out(temp.path(), "index.js").contains("itemValue")
+}
+
+/// The labels of `cases` whose tracked names `kept` reports as renamed, and
+/// the labels where they survived.
+fn partition_by_kept(
+    cases: &[(&str, String)],
+    kept: impl Fn(&str) -> bool,
+) -> (Vec<String>, Vec<String>) {
+    let mut survived = Vec::new();
+    let mut renamed = Vec::new();
+    for (label, body) in cases {
+        if kept(body) {
+            survived.push((*label).to_owned());
+        } else {
+            renamed.push((*label).to_owned());
+        }
+    }
+    (survived, renamed)
+}
+
+/// A timer runs a string as code unless its callback is a function at run
+/// time. The checker's type is not that evidence: a string that is asserted
+/// (`@type {() => void}`) or annotated as callable has a call signature. Only
+/// a function expression or a reference to an unassigned function qualifies.
+#[test]
+fn keeps_names_for_timer_callbacks_without_runtime_evidence() {
+    let cases: Vec<(&str, String)> = vec![
+        (
+            "asserted union of a string and a function",
+            format!(
+                "const code=Math.random()>2?\"0\":()=>0;setTimeout(/** @type {{() => void}} */ \
+                 (code),0);{POP_TAIL}"
+            ),
+        ),
+        (
+            "callback parameter",
+            format!("function later(cb){{setTimeout(cb,0)}}later(()=>0);{POP_TAIL}"),
+        ),
+        (
+            "callback property",
+            format!("const job={{run:()=>0}};setTimeout(job.run,0);{POP_TAIL}"),
+        ),
+        (
+            "callback call result",
+            format!("function pick(){{return()=>0}}setTimeout(pick(),0);{POP_TAIL}"),
+        ),
+        (
+            "reassigned function variable",
+            format!("let tick=()=>0;tick=()=>1;setTimeout(tick,0);{POP_TAIL}"),
+        ),
+        (
+            "variable initialized with a conditional",
+            format!("const tick=Math.random()>2?\"0\":()=>0;setTimeout(tick,0);{POP_TAIL}"),
+        ),
+        (
+            "reassigned function declaration",
+            format!("function tick(){{}}tick=()=>1;setTimeout(tick,0);{POP_TAIL}"),
+        ),
+    ];
+    let (survived, renamed) = partition_by_kept(&cases, item_names_kept);
+    assert_eq!(survived.len(), cases.len(), "renamed for: {renamed:?}");
+    // Neighbors: a function expression or an unassigned function reference is
+    // runtime evidence and leaves array modeling on.
+    let accepted = [
+        ("arrow", "setTimeout(()=>0,0);"),
+        ("function expression", "setTimeout(function(){},0);"),
+        ("parenthesized arrow", "setTimeout((()=>0),0);"),
+        (
+            "arrow with a type cast around the function",
+            "setTimeout(/** @type {() => void} */ (()=>0),0);",
+        ),
+        (
+            "function held in a variable behind a cast",
+            "const code=/** @type {unknown} */ (()=>0);setTimeout(/** @type {() => void} */ \
+             (code),0);",
+        ),
+        (
+            "function declaration",
+            "function tick(){}setTimeout(tick,0);",
+        ),
+        ("const arrow", "const tick=()=>0;setTimeout(tick,0);"),
+        (
+            "var function expression",
+            "var tick=function(){};setTimeout(tick,0);",
+        ),
+        ("arrow with extra arguments", "setTimeout(a=>0,0,1);"),
+    ];
+    for (label, fixture) in accepted {
+        let body = format!("{fixture}{LIST_TAIL}");
+        assert!(!item_names_kept(&body), "names kept beside {label}");
+    }
+}
+
+/// A computed key is harmless only when its runtime value is a number, a
+/// symbol or a harmless string. The checker's type is a claim: an assertion
+/// (`"constructor" as unknown as number`) or an `any` value flowing into a
+/// number-typed variable makes the claim false, and `a[k]` then reads
+/// `Array`, a handle to every built-in.
+#[test]
+fn keeps_names_for_computed_keys_that_only_a_type_assertion_proves() {
+    let patch_through =
+        |setup: &str| format!("{setup}const A=[][k];A.prototype.pop={HOSTILE_POP};{POP_TAIL}");
+    let number_of_unknown = "/** @type {number} */ (/** @type {unknown} */ (\"constructor\"))";
+    let cases: Vec<(&str, String)> = vec![
+        (
+            "const asserted through unknown",
+            patch_through(&format!("const k={number_of_unknown};")),
+        ),
+        (
+            "key asserted at the access",
+            format!("const A=[][{number_of_unknown}];A.prototype.pop={HOSTILE_POP};{POP_TAIL}"),
+        ),
+        (
+            "any value asserted to a number",
+            patch_through("const k=/** @type {number} */ (JSON.parse('\"constructor\"'));"),
+        ),
+        (
+            "alias of an asserted constant",
+            patch_through(&format!("const raw={number_of_unknown};const k=raw;")),
+        ),
+        (
+            "variable assigned an asserted value later",
+            patch_through(&format!("let k=0;k={number_of_unknown};")),
+        ),
+        (
+            "variable assigned an any value later",
+            patch_through("let k=0;k=JSON.parse('\"constructor\"');"),
+        ),
+        (
+            "conditional with an asserted branch",
+            patch_through(&format!("const k=Math.random()>2?1:{number_of_unknown};")),
+        ),
+        (
+            "logical with an asserted operand",
+            patch_through(&format!("const k=Math.random()>2||{number_of_unknown};")),
+        ),
+        (
+            "comma with an asserted result",
+            patch_through(&format!("const k=(0,{number_of_unknown});")),
+        ),
+        (
+            "destructuring key",
+            format!(
+                "const k={number_of_unknown};const \
+                 {{[k]:A}}=[];A.prototype.pop={HOSTILE_POP};{POP_TAIL}"
+            ),
+        ),
+    ];
+    let (survived, renamed) = partition_by_kept(&cases, item_names_kept);
+    assert_eq!(survived.len(), cases.len(), "renamed for: {renamed:?}");
+    // Neighbors: keys whose runtime value is a number, with or without a
+    // harmless assertion, and literal keys, leave array modeling on.
+    let accepted = [
+        ("numeric literal", "const k=1;const v=[1,2][k];"),
+        ("loop counter", "let t=0;for(let k=0;k<3;k++)t+=[1,2,3][k];"),
+        (
+            "number cast of a number",
+            "const k=/** @type {number} */ (Number(\"1\"));const v=[1,2][k];",
+        ),
+        (
+            "cast of a numeric literal",
+            "const k=/** @type {number} */ (1);const v=[1,2][k];",
+        ),
+        (
+            "conditional of numbers",
+            "const k=Math.random()>2?1:2;const v=[1,2,3][k];",
+        ),
+        (
+            "variable assigned numbers",
+            "let k=0;k=2;k+=1;const v=[1,2,3,4][k];",
+        ),
+        ("length arithmetic", "const a=[1,2];const v=a[a.length-1];"),
+        (
+            "symbol key",
+            "const s=Symbol(\"s\");const o={};o[s]=1;const v=o[s];",
+        ),
+        (
+            "harmless string literal key",
+            "const o={size:1};const v=o[\"size\"];",
+        ),
+    ];
+    for (label, fixture) in accepted {
+        let body = format!("{fixture}{LIST_TAIL}");
+        assert!(!item_names_kept(&body), "names kept beside {label}");
+    }
+}
+
+/// `new C()` is a fresh object only while nothing replaces the library
+/// constructor `C`. A replaced `Date` can return an object that a caller
+/// supplied (an exported setter keeps `Array.prototype`), so a write through
+/// its instance is a possible patch of the member.
+#[test]
+fn keeps_names_beside_writes_through_replaced_library_constructors() {
+    let hostile = "function(){return 7}";
+    let setter = "let held;export function supply(v){held=v}";
+    let cases: Vec<(&str, String)> = vec![
+        (
+            "assigned global binding",
+            format!(
+                "{setter}Date=function(){{return held}};const p=new \
+                 Date();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "assigned member of globalThis",
+            format!(
+                "{setter}globalThis.Date=function(){{return held}};const p=new \
+                 Date();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "assigned member of global by string key",
+            format!(
+                "{setter}global[\"Date\"]=function(){{return held}};const p=new \
+                 Date();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "replaced Map",
+            format!(
+                "{setter}Map=function(){{return held}};const p=new \
+                 Map();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "replaced Set, receiver through a conditional",
+            format!(
+                "{setter}Set=function(){{return held}};const p=Math.random()>2?{{}}:new \
+                 Set();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "class extending a replaced constructor",
+            format!(
+                "{setter}Date=function(){{return held}};class Stamp extends Date{{}}const p=new \
+                 Stamp();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "constructor this of a class extending a replaced constructor",
+            format!(
+                "{setter}Date=function(){{return held}};class Stamp extends \
+                 Date{{constructor(){{super();this.pop={hostile}}}}}new Stamp();{POP_TAIL}"
+            ),
+        ),
+        (
+            "constructor replaced through an unproven receiver",
+            format!(
+                "{setter}function install(g){{g.Date=function(){{return \
+                 held}}}}install({{}});const p=new Date();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+    ];
+    let (survived, renamed) = partition_by_kept(&cases, item_names_kept);
+    assert_eq!(survived.len(), cases.len(), "renamed for: {renamed:?}");
+    // Neighbors: an unreplaced constructor stays fresh, even beside the
+    // replacement of another one, and so does an application class.
+    let accepted: Vec<(&str, String)> = vec![
+        (
+            "unreplaced Date",
+            format!("const p=new Date();p.pop={hostile};{LIST_TAIL}"),
+        ),
+        (
+            "other constructor replaced",
+            format!(
+                "{setter}Date=function(){{return held}};const m=new \
+                 Map();m.pop={hostile};{LIST_TAIL}"
+            ),
+        ),
+        (
+            "class extending an unreplaced constructor",
+            format!(
+                "{setter}Date=function(){{return held}};class Cache extends Map{{}}const c=new \
+                 Cache();c.pop={hostile};{LIST_TAIL}"
+            ),
+        ),
+        (
+            "application class beside a replacement",
+            format!(
+                "{setter}Date=function(){{return held}};const it=new \
+                 Item(2);it.pop={hostile};{LIST_TAIL}"
+            ),
+        ),
+        (
+            "local shadowing the constructor name",
+            format!(
+                "function make(){{const Date=class{{}};const p=new \
+                 Date();p.pop={hostile}}}make();{LIST_TAIL}"
+            ),
+        ),
+    ];
+    let (survived, _) = partition_by_kept(&accepted, item_names_kept);
+    assert!(survived.is_empty(), "names kept beside: {survived:?}");
+}
+
+/// A class decorator may replace the declaration with any constructor, so the
+/// original constructor chain does not show what `new C()` returns. A
+/// decorated class, and every class built on one, is not a fresh receiver.
+#[test]
+fn keeps_names_beside_writes_through_decorated_classes() {
+    let hostile = "function(){return 7}";
+    let setter = "let held;export function supply(v){held=v}";
+    let decorator = "function wrap(C){return function(){return held}}";
+    let cases: Vec<(&str, String)> = vec![
+        (
+            "instance of a decorated class",
+            format!(
+                "{setter}{decorator}@wrap class Box{{}}const p=new \
+                 Box();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "decorated class with a decorator factory",
+            format!(
+                "{setter}{decorator}function tag(){{return wrap}}@tag() class Box{{}}const p=new \
+                 Box();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "static write on a decorated class",
+            format!("{setter}{decorator}@wrap class Box{{}}Box.pop={hostile};{POP_TAIL}"),
+        ),
+        (
+            "class extending a decorated class",
+            format!(
+                "{setter}{decorator}@wrap class Base{{}}class Box extends Base{{}}const p=new \
+                 Box();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "constructor this of a decorated class",
+            format!(
+                "{setter}{decorator}@wrap class Box{{constructor(){{this.pop={hostile}}}}}new \
+                 Box();{POP_TAIL}"
+            ),
+        ),
+        (
+            "decorated class expression",
+            format!(
+                "{setter}{decorator}const Box=@wrap class{{}};const p=new \
+                 Box();p.pop={hostile};{POP_TAIL}"
+            ),
+        ),
+        (
+            "write on a decorated class expression",
+            format!("{setter}{decorator}const Box=@wrap class{{}};Box.pop={hostile};{POP_TAIL}"),
+        ),
+    ];
+    let (survived, renamed) = partition_by_kept(&cases, item_names_kept_unrun);
+    assert_eq!(survived.len(), cases.len(), "renamed for: {renamed:?}");
+    // Neighbors: classes without a class decorator stay fresh receivers, and
+    // so do classes whose members, not the class itself, are decorated.
+    let accepted: Vec<(&str, String)> = vec![
+        (
+            "plain class",
+            format!("class Box{{}}const p=new Box();p.pop={hostile};{LIST_TAIL}"),
+        ),
+        (
+            "class with a decorated method",
+            format!(
+                "function mark(m){{return m}}class Box{{@mark go(){{}}}}const p=new \
+                 Box();p.pop={hostile};{LIST_TAIL}"
+            ),
+        ),
+        (
+            "class with a decorated field",
+            format!(
+                "function mark(){{}}class Box{{@mark field=1}}const p=new \
+                 Box();p.pop={hostile};{LIST_TAIL}"
+            ),
+        ),
+        (
+            "class extending a plain class",
+            format!("class Base{{}}class Box extends Base{{}}new Box().pop={hostile};{LIST_TAIL}"),
+        ),
+        (
+            "plain class expression",
+            format!("const Box=class{{}};Box.pop={hostile};{LIST_TAIL}"),
+        ),
+    ];
+    let (survived, _) = partition_by_kept(&accepted, item_names_kept_unrun);
+    assert!(survived.is_empty(), "names kept beside: {survived:?}");
+}
+
+/// The property that the hostile payloads of the unchecked-chunk fixtures read,
+/// spelled so that the chunk does not mention it (an excluded chunk that
+/// mentions `itemValue` would keep the name for that reason alone) and does not
+/// contain a text needle of the patch scan (`globalThis`, `prototype`).
+const OPAQUE_POP: &str = "function(){global.seen=this[0][\"item\"+\"Value\"];return 7}";
+
+/// The entry chunk of the unchecked-chunk fixtures: it imports `vendor.js` and
+/// stores a tracked object in an array whose `pop` the vendor chunk replaces.
+fn vendor_entry() -> String {
+    format!("import\"./vendor.js\";{ITEM}{POP_TAIL}export{{}};")
+}
+
+/// Optimizes the entry with `vendor` as an unchecked chunk (operator-excluded
+/// or a syntax boundary because it calls `eval`), checks that the program
+/// behaves the same, and returns the optimized entry chunk.
+fn vendor_run(vendor: &str, boundary: &[&str]) -> String {
+    let temp = bundle(&[("index.js", &vendor_entry()), ("vendor.js", vendor)]);
+    let output = run_typeopt(temp.path(), boundary);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    same_behavior(temp.path());
+    out(temp.path(), "index.js")
+}
+
+/// An unchecked chunk (excluded by the operator, or a boundary because it
+/// calls `eval`) that reaches the intrinsics keeps the names of every checked
+/// chunk, in spellings that the text needles of the patch scan do not see.
+#[test]
+fn keeps_names_when_an_unchecked_chunk_reaches_intrinsics() {
+    let hostile = [
+        // Thread: a split spelling of `prototype` on the constructor.
+        ("split prototype", "Array[\"proto\"+\"type\"].pop=H;"),
+        (
+            "split prototype in a variable",
+            "const k=\"proto\"+\"type\";Array[k].pop=H;",
+        ),
+        (
+            "constructor of an array",
+            "[][\"con\"+\"structor\"][\"proto\"+\"type\"].pop=H;",
+        ),
+        ("Reflect.get", "Reflect.get([],\"__pro\"+\"to__\").pop=H;"),
+        (
+            "property descriptor of Array",
+            "Object.getOwnPropertyDescriptor(Array,\"proto\"+\"type\").value.pop=H;",
+        ),
+        (
+            "split getPrototypeOf",
+            "Object[\"getPrototype\"+\"Of\"]([]).pop=H;",
+        ),
+        (
+            "Function constructor",
+            "Function(\"return Array\")()[\"proto\"+\"type\"].pop=H;",
+        ),
+        (
+            "global object",
+            "global[\"Ar\"+\"ray\"][\"proto\"+\"type\"].pop=H;",
+        ),
+        (
+            "writer on a split prototype",
+            "Object.assign(Array[\"proto\"+\"type\"],{pop:H});",
+        ),
+    ];
+    let mut renamed: Vec<&str> = Vec::new();
+    for (label, body) in hostile {
+        let vendor = format!("const H={OPAQUE_POP};{body}export{{}};");
+        let index = vendor_run(&vendor, &["--bundle-exclude", "vendor"]);
+        if !index.contains("itemValue") {
+            renamed.push(label);
+        }
+    }
+    assert!(renamed.is_empty(), "names renamed for: {renamed:?}");
+    // Dynamic code in any chunk is a route to every intrinsic: `eval` and
+    // `Function` are guarded globals in every spelling.
+    for dynamic in [
+        "eval(\"0\");export{};",
+        "(0,eval)(\"0\");export{};",
+        "export const f=new Function(\"return 1\");",
+        "export const g=globalThis.eval;",
+        "export const h=globalThis[\"ev\"+\"al\"];",
+    ] {
+        let index = vendor_run(dynamic, &[]);
+        assert!(index.contains("itemValue"), "{dynamic}:\n{index}");
+    }
+    // The same chunk without a route to the intrinsics lets the model run, so
+    // the fixtures above keep the names because of the rule.
+    let index = vendor_run(
+        "export const flag=Array.isArray([]);",
+        &["--bundle-exclude", "vendor"],
+    );
+    assert!(!index.contains("itemValue"), "{index}");
+}
+
+/// Entry chunk for the fixtures that only the analysis sees: the tracked array
+/// is renamable unless some other chunk rejects the model.
+fn static_entry() -> String {
+    format!(
+        "{ITEM}const list=[];list.push(new Item(1));console.log(list.pop().itemValue);export{{}};"
+    )
+}
+
+/// Optimizes the entry beside a classic chunk and reports whether the name
+/// survives. The classic chunk is not executed: its sloppy-mode code cannot
+/// run as an ES module.
+fn name_survives_beside(classic: &str) -> bool {
+    let temp = bundle(&[("index.js", &static_entry()), ("classic.js", classic)]);
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    out(temp.path(), "index.js").contains("itemValue")
+}
+
+/// A classic script runs sloppy code: a function called without a receiver
+/// sees the global object as `this`, and `with` rebinds names.
+#[test]
+fn keeps_names_beside_sloppy_classic_chunks_that_can_reach_the_global_object() {
+    let rejected = [
+        ("sloppy function this", "function leak(){return this}"),
+        ("sloppy method this", "var o={m(){return this}};"),
+        ("sloppy arrow in a function", "function f(){return()=>this}"),
+        ("top-level this of a script", "var g=this;"),
+        ("with statement", "with({}){}"),
+        ("string timer", "setTimeout(\"0\");"),
+        ("string interval", "setInterval(\"0\",1);"),
+        ("data module import", "import(\"data:text/javascript,0\");"),
+        ("computed import", "var u=\"./x.js\";import(u);"),
+    ];
+    let survived: Vec<&str> = rejected
+        .iter()
+        .filter(|(_, code)| !name_survives_beside(code))
+        .map(|(label, _)| *label)
+        .collect();
+    assert!(survived.is_empty(), "names renamed for: {survived:?}");
+    // Strict code and application functions do not reach the global object.
+    for classic in [
+        "\"use strict\";function ok(){return this}",
+        "class K{m(){return this}}",
+        "function f(){\"use strict\";return this}",
+        "setTimeout(()=>0,1);",
+        "import(\"./other.js\").catch(()=>0);",
+        "var plain=function(a){return a+1};",
+    ] {
+        assert!(!name_survives_beside(classic), "name kept beside {classic}");
+    }
+}
+
+/// Every write to `length` truncates or extends the array, so it is an escape
+/// boundary, and so is every operation spelled as a write.
+#[test]
+fn keeps_names_of_arrays_whose_length_is_written() {
+    let writes = [
+        "list.length=0",
+        "list[\"length\"]=0",
+        "list.length=list.length",
+        "list.length+=0",
+        "list.length*=1",
+        "list.length++",
+        "--list.length",
+        "try{delete list.length}catch{}",
+        "[list.length]=[0]",
+        "({length:list.length}={length:0})",
+        "for(list.length of[0]);",
+    ];
+    let renamed: Vec<&str> = writes
+        .into_iter()
+        .filter(|write| {
+            let body = format!(
+                "const list=[new \
+                 Item(1)];console.log(list[0].itemValue);{write};console.log(list.length);"
+            );
+            !array_chunk(&body).1.contains("itemValue")
+        })
+        .collect();
+    assert!(renamed.is_empty(), "names renamed for: {renamed:?}");
+}
+
+/// A receiver that is an array or a closed class instance keeps both; the
+/// closed class has its own `length`.
+#[test]
+fn keeps_mixed_array_and_instance_receivers() {
+    let (_, index) = array_chunk(
+        "class Sized{constructor(){this.length=3}}const v=globalThis.k?[1,2]:new \
+         Sized;console.log(v.length);",
+    );
+    assert!(index.contains("length"), "{index}");
+}
+
+/// Arrays are never rename units: a program with only arrays has no object
+/// region and no property, and arrays beside objects add no region.
+#[test]
+fn reports_no_regions_for_arrays() {
+    let code = "const a=[1,2];const b=a.map(x=>x+1);b.push(a.length);console.log(a,b);export{};";
+    let (_, report) = run(&[("index.js", code)]);
+    assert_eq!(report["object_regions"], 0, "{report:#}");
+    assert_eq!(report["properties"], 0, "{report:#}");
+    let with_object = "const rows=[{rowLabel:1}];const copy=rows.slice(0);for(const r of \
+                       copy)console.log(r.rowLabel);export{};";
+    let (_, report) = run(&[("index.js", with_object)]);
+    assert_eq!(report["object_regions"], 1, "{report:#}");
+    assert_eq!(report["properties"], 1, "{report:#}");
+}
+
+/// Arrays that analyzed code keeps private let objects stored in them be
+/// renamed even when other arrays escape.
+#[test]
+fn renames_through_one_array_while_another_escapes() {
+    let (_, index) = array_chunk(
+        "const kept=[{keptLabel:1}];const \
+         leaked=[{leakedLabel:2}];globalThis.leak=leaked;console.log(kept[0].keptLabel,globalThis.\
+         leak.length);",
+    );
+    assert!(!index.contains("keptLabel"), "{index}");
+    assert!(index.contains("leakedLabel"), "{index}");
+}
+
+/// Debug logs report which array built-ins are modeled, how many array values
+/// exist and why arrays are preserved, with the array cause labels.
+#[test]
+fn logs_array_decisions_with_their_causes() {
+    let fixtures: [(&str, &str); 5] = [
+        (
+            "array:unmodeled-member",
+            "const list=[new Item(2),new \
+             Item(1)];list.sort((a,b)=>a.itemValue-b.itemValue);console.log(list[0].itemValue);",
+        ),
+        (
+            "access:mixed-array-receiver",
+            "class Sized{constructor(){this.length=3}}const v=globalThis.k?[1,2]:new \
+             Sized;console.log(v.length);",
+        ),
+        (
+            "store-into-array-length",
+            "const list=[];list.length={lengthLabel:1};console.log(list.length);",
+        ),
+        (
+            "sink:exposed-callback-result",
+            "const ext={map(f){return f({})}};const \
+             r=(globalThis.e??ext).map(x=>({wrappedValue:1}));console.log(r.wrappedValue);",
+        ),
+        (
+            "call-argument:escaped-array",
+            "const list=[];globalThis.hook=l=>{l.push=x=>console.log(x.itemValue)};globalThis.\
+             hook(list);list.push(new Item(1));",
+        ),
+    ];
+    for (label, body) in fixtures {
+        let code = format!("{ITEM}{body}export{{}};");
+        let temp = bundle(&[("index.js", &code)]);
+        let output = run_typeopt(temp.path(), &[]);
+        assert!(output.status.success());
+        let log = strip_ansi(&String::from_utf8_lossy(&output.stderr));
+        for event in [
+            "array builtins intact",
+            "array values allocated",
+            "array preservation causes",
+        ] {
+            assert!(log.contains(event), "{event} missing for {label}:\n{log}");
+        }
+        assert!(log.contains(label), "{label} missing in {body}:\n{log}");
+    }
+}
+
+/// Optimizing twice gives identical output: arrays do not make the analysis
+/// order-dependent.
+#[test]
+fn array_analysis_is_deterministic() {
+    let code = format!(
+        "{ITEM}const list=[new Item(1),new Item(2)];const \
+         w=list.map(x=>({{wrappedValue:x.itemValue}}));for(const it of \
+         w)console.log(it.wrappedValue);list.push(new \
+         Item(3));console.log(list.length);export{{}};"
+    );
+    let (first, _) = run(&[("index.js", &code)]);
+    let (second, _) = run(&[("index.js", &code)]);
+    assert_eq!(
+        out(first.path(), "index.js"),
+        out(second.path(), "index.js")
+    );
 }
 
 // ---------------------------------------------------------------------------

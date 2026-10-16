@@ -19,6 +19,10 @@ use std::collections::{HashMap, HashSet};
 use super::super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer};
 use crate::compiler::api::*;
 
+mod intrinsic_exposure;
+mod local_receiver;
+pub(in crate::compiler) use intrinsic_exposure::IntrinsicExposure;
+
 /// Possible runtime kinds of a value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Kinds(u16);
@@ -270,9 +274,15 @@ enum Member {
 }
 
 /// Members of built-ins that application code may replace.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Patches {
     records: HashSet<(Owner, Member)>,
+    /// Members written through a receiver that is not provably a local
+    /// object (a parameter, a property read, a call result). The receiver may
+    /// be an intrinsic that a caller supplied, so the write is a possible
+    /// patch of that member on any owner. Only the array model consults these
+    /// (see [`local_receiver`]); other passes keep their own evidence.
+    unproven: HashSet<Member>,
 }
 
 impl Patches {
@@ -280,13 +290,84 @@ impl Patches {
         self.records.insert((owner, member));
     }
 
-    fn contains(&self, owner: &Owner, member: &str) -> bool {
+    /// The record that lets application code replace `member` of `owner`, in
+    /// a stable textual form (`Array.push`, `*.push`, `Array.*`, `*.*`).
+    fn record(&self, owner: &Owner, member: &str) -> Option<String> {
         let member = Member::Named(member.to_owned());
-        [owner.clone(), Owner::Any].iter().any(|o| {
-            self.records.contains(&(o.clone(), member.clone()))
-                || self.records.contains(&(o.clone(), Member::Any))
-        })
+        [owner.clone(), Owner::Any]
+            .iter()
+            .flat_map(|o| [(o.clone(), member.clone()), (o.clone(), Member::Any)])
+            .filter(|record| self.records.contains(record))
+            .map(|(owner, member)| describe_record(&owner, &member))
+            .min()
     }
+
+    /// The first unproven write (see [`Patches::unproven`]) of `member`, or of
+    /// an unknown member, in a stable textual form.
+    fn unproven_record(&self, member: &str) -> Option<String> {
+        [Member::Named(member.to_owned()), Member::Any]
+            .iter()
+            .filter(|record| self.unproven.contains(record))
+            .map(|record| describe_record(&Owner::Any, record))
+            .min()
+    }
+
+    /// The first record (in textual order) that could give an array element
+    /// read or write a different meaning: a write to a member of `Array`,
+    /// `Object` or an unknown owner whose member is unknown or looks like a
+    /// numeric key (`1`, `-1`, `1.5`, `NaN`, `Infinity`, `undefined`) or is
+    /// `__proto__` (a replaced prototype can bring any numeric accessor).
+    /// Prototype getters and setters for such keys see array holes and
+    /// appended elements.
+    fn numeric_key_record(&self) -> Option<String> {
+        self.records
+            .iter()
+            .filter(|(owner, member)| {
+                let owner_matches = match owner {
+                    Owner::Any => true,
+                    Owner::Named(name) => matches!(name.as_str(), "Array" | "Object"),
+                    Owner::Global => false,
+                };
+                owner_matches
+                    && match member {
+                        Member::Any => true,
+                        // Replacing the prototype of the chain installs any
+                        // numeric accessor.
+                        Member::Named(name) => name == "__proto__" || numeric_like_key(name),
+                    }
+            })
+            .map(|(owner, member)| describe_record(owner, member))
+            .chain(
+                self.unproven
+                    .iter()
+                    .filter(|member| match member {
+                        Member::Any => true,
+                        Member::Named(name) => name == "__proto__" || numeric_like_key(name),
+                    })
+                    .map(|member| describe_record(&Owner::Any, member)),
+            )
+            .min()
+    }
+}
+
+fn describe_record(owner: &Owner, member: &Member) -> String {
+    let owner = match owner {
+        Owner::Global => "globalThis",
+        Owner::Named(name) => name.as_str(),
+        Owner::Any => "*",
+    };
+    let member = match member {
+        Member::Named(name) => name.as_str(),
+        Member::Any => "*",
+    };
+    format!("{owner}.{member}")
+}
+
+/// A property name that array index reads and writes may produce: a number
+/// (any form), `NaN`, `Infinity` or `undefined`.
+fn numeric_like_key(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_digit() || matches!(c, '-' | '+' | '.'))
+        || matches!(name, "NaN" | "Infinity" | "undefined")
 }
 
 /// Global names that denote the global object itself.
@@ -887,16 +968,39 @@ impl Facts {
     /// Whether application code may replace member `member` of the global
     /// object (`owner == None`) or of built-in `owner` and its prototype.
     pub fn patched(&mut self, ctx: &mut Ctx, owner: Option<&str>, member: &str) -> bool {
-        if self.patches.is_none() {
-            let patches = scan_patches(ctx);
-            tracing::debug!(records = patches.records.len(), "intrinsic patch scan");
-            self.patches = Some(patches);
-        }
+        self.patch_record(ctx, owner, member).is_some()
+    }
+
+    /// The patch record that makes [`Facts::patched`] true, for diagnostics.
+    pub fn patch_record(
+        &mut self,
+        ctx: &mut Ctx,
+        owner: Option<&str>,
+        member: &str,
+    ) -> Option<String> {
         let owner = match owner {
             Some(name) => Owner::Named(name.to_owned()),
             None => Owner::Global,
         };
-        self.patches.as_ref().unwrap().contains(&owner, member)
+        self.patches(ctx).record(&owner, member)
+    }
+
+    /// The unproven write of `member` (see [`Patches::unproven`]), if any.
+    pub fn unproven_record(&mut self, ctx: &mut Ctx, member: &str) -> Option<String> {
+        self.patches(ctx).unproven_record(member)
+    }
+
+    fn patches(&mut self, ctx: &mut Ctx) -> &Patches {
+        if self.patches.is_none() {
+            let patches = scan_patches(ctx);
+            tracing::debug!(
+                records = patches.records.len(),
+                unproven = patches.unproven.len(),
+                "intrinsic patch scan"
+            );
+            self.patches = Some(patches);
+        }
+        self.patches.as_ref().unwrap()
     }
 
     /// `ident` is a read of the unmodified built-in global `name`.
@@ -1405,6 +1509,40 @@ pub(in crate::compiler) fn builtin_intact(ctx: &mut Ctx, owner: &str, member: &s
     !facts.patched(ctx, None, owner) && !facts.patched(ctx, Some(owner), member)
 }
 
+/// The shared intrinsic patch scan, as the property flow queries it to decide
+/// which `Array` built-ins it may model.
+pub(in crate::compiler) struct PatchView {
+    facts: Facts,
+}
+
+pub(in crate::compiler) fn patch_view() -> PatchView {
+    PatchView {
+        facts: Facts::new(),
+    }
+}
+
+impl PatchView {
+    /// The record that lets application code replace `Array.prototype`
+    /// member `member` (or the `Array` constructor's), if any.
+    pub fn array_member(&mut self, ctx: &mut Ctx, member: &str) -> Option<String> {
+        self.facts
+            .patch_record(ctx, Some("Array"), member)
+            .or_else(|| self.facts.unproven_record(ctx, member))
+    }
+
+    /// The record that could change the meaning of element reads and writes
+    /// (see [`Patches::numeric_key_record`]), if any.
+    pub fn numeric_keys(&mut self, ctx: &mut Ctx) -> Option<String> {
+        self.facts.patches(ctx).numeric_key_record()
+    }
+
+    /// The first form in the program that the intrinsic allowlist rejects, if
+    /// any. The rule is documented in [`intrinsic_exposure`].
+    pub fn intrinsic_exposure(&mut self, ctx: &mut Ctx) -> Option<IntrinsicExposure> {
+        intrinsic_exposure::find(ctx, &mut self.facts)
+    }
+}
+
 /// The calls through a local alias `const d = Object.defineProperty` when
 /// `access` is exactly that initializer and the alias has one declaration, no
 /// write and no use other than being called. Every other use lets the member
@@ -1466,8 +1604,11 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
             if [
                 "prototype",
                 "__proto__",
+                "getPrototypeOf",
                 "setPrototypeOf",
                 "defineProperty",
+                "__defineGetter__",
+                "__defineSetter__",
                 "globalThis",
             ]
             .iter()
@@ -1600,16 +1741,52 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
             }
         }
     }
+    // Whether `new C()` of a library constructor is fresh depends on whether
+    // anything replaces `C`, and the writes that replace it are what this scan
+    // finds. Start from "nothing is replaced" and grow the set until it is
+    // stable: until the first constructor is replaced at run time every
+    // judgement of the first pass holds, so the write that replaces it is
+    // recorded, and a larger set only makes later passes more conservative.
+    let mut replaced = local_receiver::Replaced::new();
+    loop {
+        let scanned = classify_writes(ctx, &writes, &escaping, patches.clone(), &replaced);
+        let next: local_receiver::Replaced = local_receiver::fresh_library_classes()
+            .filter(|name| {
+                scanned.record(&Owner::Global, name).is_some()
+                    || scanned.unproven_record(name).is_some()
+            })
+            .map(str::to_owned)
+            .collect();
+        if next.is_subset(&replaced) {
+            tracing::debug!(replaced = replaced.len(), "replaced library constructors");
+            return scanned;
+        }
+        replaced.extend(next);
+    }
+}
+
+/// Adds the record of every deferred write to `patches`.
+fn classify_writes(
+    ctx: &mut Ctx,
+    writes: &[(Node, Node, Member)],
+    escaping: &HashSet<String>,
+    mut patches: Patches,
+    replaced: &local_receiver::Replaced,
+) -> Patches {
     for (_, target, member) in writes {
-        match write_owner(ctx, target) {
+        let member = member.clone();
+        match write_owner(ctx, *target, replaced) {
             WriteOwner::App => {}
             WriteOwner::Owner(owner) => patches.add(owner, member),
             WriteOwner::Unknown => {
-                for name in &escaping {
+                for name in escaping {
                     patches.add(Owner::Named(name.clone()), member.clone());
                 }
             }
             WriteOwner::Opaque => patches.add(Owner::Any, member),
+            WriteOwner::Unproven => {
+                patches.unproven.insert(member);
+            }
         }
     }
     patches
@@ -2202,6 +2379,9 @@ const AUGMENTED: [(&str, &str); 14] = [
 enum WriteOwner {
     /// An application object; built-ins are unaffected.
     App,
+    /// A receiver that is not provably a local object (a parameter, a
+    /// property read, a call result): a possible patch of any intrinsic.
+    Unproven,
     Owner(Owner),
     /// May be any built-in that escapes as a value.
     Unknown,
@@ -2209,19 +2389,35 @@ enum WriteOwner {
     Opaque,
 }
 
-fn write_owner(ctx: &mut Ctx, target: Node) -> WriteOwner {
+/// The literal member a property or element access names, if any
+/// (`x.name`, `x["name"]`).
+fn literal_access_name(ctx: &Ctx, node: Node) -> Option<String> {
+    match node.kind() {
+        SyntaxKind::PropertyAccessExpression => Some(node.name().text().to_owned()),
+        SyntaxKind::ElementAccessExpression => {
+            match literal_member(ctx, node.argument_expression()) {
+                Member::Named(name) => Some(name),
+                Member::Any => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn write_owner(ctx: &mut Ctx, target: Node, replaced: &local_receiver::Replaced) -> WriteOwner {
     let target = skip_outer(target);
     // Any prototype reflection in the receiver chain may reach a built-in.
     let mut node = target;
     loop {
         match node.kind() {
-            SyntaxKind::PropertyAccessExpression => {
-                if matches!(node.name().text(), "__proto__" | "constructor") {
+            SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression => {
+                if literal_access_name(ctx, node)
+                    .is_some_and(|name| matches!(name.as_str(), "__proto__" | "constructor"))
+                {
                     return WriteOwner::Opaque;
                 }
                 node = skip_outer(node.expression());
             }
-            SyntaxKind::ElementAccessExpression => node = skip_outer(node.expression()),
             SyntaxKind::CallExpression => {
                 let callee = skip_outer(node.expression());
                 if callee.kind() == SyntaxKind::PropertyAccessExpression
@@ -2248,9 +2444,8 @@ fn write_owner(ctx: &mut Ctx, target: Node) -> WriteOwner {
         }
         None
     };
-    // `X.prototype`
-    if target.kind() == SyntaxKind::PropertyAccessExpression && target.name().text() == "prototype"
-    {
+    // `X.prototype` and `X["prototype"]`
+    if literal_access_name(ctx, target).as_deref() == Some("prototype") {
         return match base(ctx, target.expression()) {
             Some(name) if GLOBAL_OBJECTS.contains(&name.as_str()) => WriteOwner::Opaque,
             Some(name) => WriteOwner::Owner(Owner::Named(name)),
@@ -2267,26 +2462,29 @@ fn write_owner(ctx: &mut Ctx, target: Node) -> WriteOwner {
         Some(name) if GLOBAL_OBJECTS.contains(&name.as_str()) => WriteOwner::Owner(Owner::Global),
         Some(name) => WriteOwner::Owner(Owner::Named(name)),
         None => {
-            if chain_mentions_prototype(target) {
+            if chain_mentions_prototype(ctx, target) {
                 WriteOwner::Unknown
-            } else {
+            } else if local_receiver::provably_local(ctx, target, replaced) {
                 WriteOwner::App
+            } else {
+                // A parameter, a property read, a call result or a reassigned
+                // variable may hold an intrinsic that a caller supplied.
+                WriteOwner::Unproven
             }
         }
     }
 }
 
-fn chain_mentions_prototype(mut node: Node) -> bool {
+fn chain_mentions_prototype(ctx: &Ctx, mut node: Node) -> bool {
     loop {
         node = skip_outer(node);
         match node.kind() {
-            SyntaxKind::PropertyAccessExpression => {
-                if node.name().text() == "prototype" {
+            SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression => {
+                if literal_access_name(ctx, node).as_deref() == Some("prototype") {
                     return true;
                 }
                 node = node.expression();
             }
-            SyntaxKind::ElementAccessExpression => node = node.expression(),
             _ => return false,
         }
     }
