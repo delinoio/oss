@@ -368,6 +368,180 @@ func (SubscriptionFinishScope) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{5}
 }
 
+// What the original Worker proved for one recovery attempt.
+type SubscriptionRecoveryReport int32
+
+const (
+	SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_UNSPECIFIED SubscriptionRecoveryReport = 0
+	// Process, profile and retained-file cleanup is proven and the protected
+	// capture holds the latest validated credentials.
+	SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE SubscriptionRecoveryReport = 1
+	// Cleanup is proven but no usable latest credentials exist.
+	SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL SubscriptionRecoveryReport = 2
+	// Cleanup is not proven; blocked_reason names why.
+	SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_BLOCKED SubscriptionRecoveryReport = 3
+)
+
+// Enum value maps for SubscriptionRecoveryReport.
+var (
+	SubscriptionRecoveryReport_name = map[int32]string{
+		0: "SUBSCRIPTION_RECOVERY_REPORT_UNSPECIFIED",
+		1: "SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE",
+		2: "SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL",
+		3: "SUBSCRIPTION_RECOVERY_REPORT_BLOCKED",
+	}
+	SubscriptionRecoveryReport_value = map[string]int32{
+		"SUBSCRIPTION_RECOVERY_REPORT_UNSPECIFIED":                0,
+		"SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE":       1,
+		"SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL": 2,
+		"SUBSCRIPTION_RECOVERY_REPORT_BLOCKED":                    3,
+	}
+)
+
+func (x SubscriptionRecoveryReport) Enum() *SubscriptionRecoveryReport {
+	p := new(SubscriptionRecoveryReport)
+	*p = x
+	return p
+}
+
+func (x SubscriptionRecoveryReport) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SubscriptionRecoveryReport) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_subscription_proto_enumTypes[6].Descriptor()
+}
+
+func (SubscriptionRecoveryReport) Type() protoreflect.EnumType {
+	return &file_delidev_v1_subscription_proto_enumTypes[6]
+}
+
+func (x SubscriptionRecoveryReport) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SubscriptionRecoveryReport.Descriptor instead.
+func (SubscriptionRecoveryReport) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{6}
+}
+
+type SubscriptionRecoveryOutcome int32
+
+const (
+	SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_UNSPECIFIED SubscriptionRecoveryOutcome = 0
+	// One immutable generation was published and readiness restored.
+	SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_RESTORED SubscriptionRecoveryOutcome = 1
+	// All original references were retired and the account is disconnected.
+	SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_DISCONNECTED SubscriptionRecoveryOutcome = 2
+	// The account stays protected; blocked_reason names why.
+	SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_BLOCKED SubscriptionRecoveryOutcome = 3
+)
+
+// Enum value maps for SubscriptionRecoveryOutcome.
+var (
+	SubscriptionRecoveryOutcome_name = map[int32]string{
+		0: "SUBSCRIPTION_RECOVERY_OUTCOME_UNSPECIFIED",
+		1: "SUBSCRIPTION_RECOVERY_OUTCOME_RESTORED",
+		2: "SUBSCRIPTION_RECOVERY_OUTCOME_DISCONNECTED",
+		3: "SUBSCRIPTION_RECOVERY_OUTCOME_BLOCKED",
+	}
+	SubscriptionRecoveryOutcome_value = map[string]int32{
+		"SUBSCRIPTION_RECOVERY_OUTCOME_UNSPECIFIED":  0,
+		"SUBSCRIPTION_RECOVERY_OUTCOME_RESTORED":     1,
+		"SUBSCRIPTION_RECOVERY_OUTCOME_DISCONNECTED": 2,
+		"SUBSCRIPTION_RECOVERY_OUTCOME_BLOCKED":      3,
+	}
+)
+
+func (x SubscriptionRecoveryOutcome) Enum() *SubscriptionRecoveryOutcome {
+	p := new(SubscriptionRecoveryOutcome)
+	*p = x
+	return p
+}
+
+func (x SubscriptionRecoveryOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SubscriptionRecoveryOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_subscription_proto_enumTypes[7].Descriptor()
+}
+
+func (SubscriptionRecoveryOutcome) Type() protoreflect.EnumType {
+	return &file_delidev_v1_subscription_proto_enumTypes[7]
+}
+
+func (x SubscriptionRecoveryOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SubscriptionRecoveryOutcome.Descriptor instead.
+func (SubscriptionRecoveryOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{7}
+}
+
+type SubscriptionRecoveryBlockedReason int32
+
+const (
+	SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED SubscriptionRecoveryBlockedReason = 0
+	// Legacy evidence cannot prove the latest credentials or their cleanup.
+	SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_PROOF_UNAVAILABLE SubscriptionRecoveryBlockedReason = 1
+	SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CLEANUP_UNCONFIRMED          SubscriptionRecoveryBlockedReason = 2
+	SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_OWNERSHIP_EVIDENCE_INVALID   SubscriptionRecoveryBlockedReason = 3
+	SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_MEMBERS_UNSETTLED            SubscriptionRecoveryBlockedReason = 4
+	SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_USERS_ACTIVE      SubscriptionRecoveryBlockedReason = 5
+	SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_ACTIVE_OWNER                 SubscriptionRecoveryBlockedReason = 6
+)
+
+// Enum value maps for SubscriptionRecoveryBlockedReason.
+var (
+	SubscriptionRecoveryBlockedReason_name = map[int32]string{
+		0: "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED",
+		1: "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_PROOF_UNAVAILABLE",
+		2: "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CLEANUP_UNCONFIRMED",
+		3: "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_OWNERSHIP_EVIDENCE_INVALID",
+		4: "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_MEMBERS_UNSETTLED",
+		5: "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_USERS_ACTIVE",
+		6: "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_ACTIVE_OWNER",
+	}
+	SubscriptionRecoveryBlockedReason_value = map[string]int32{
+		"SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED":                  0,
+		"SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_PROOF_UNAVAILABLE": 1,
+		"SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CLEANUP_UNCONFIRMED":          2,
+		"SUBSCRIPTION_RECOVERY_BLOCKED_REASON_OWNERSHIP_EVIDENCE_INVALID":   3,
+		"SUBSCRIPTION_RECOVERY_BLOCKED_REASON_MEMBERS_UNSETTLED":            4,
+		"SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_USERS_ACTIVE":      5,
+		"SUBSCRIPTION_RECOVERY_BLOCKED_REASON_ACTIVE_OWNER":                 6,
+	}
+)
+
+func (x SubscriptionRecoveryBlockedReason) Enum() *SubscriptionRecoveryBlockedReason {
+	p := new(SubscriptionRecoveryBlockedReason)
+	*p = x
+	return p
+}
+
+func (x SubscriptionRecoveryBlockedReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SubscriptionRecoveryBlockedReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_subscription_proto_enumTypes[8].Descriptor()
+}
+
+func (SubscriptionRecoveryBlockedReason) Type() protoreflect.EnumType {
+	return &file_delidev_v1_subscription_proto_enumTypes[8]
+}
+
+func (x SubscriptionRecoveryBlockedReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SubscriptionRecoveryBlockedReason.Descriptor instead.
+func (SubscriptionRecoveryBlockedReason) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{8}
+}
+
 type SubscriptionLoginMethod int32
 
 const (
@@ -401,11 +575,11 @@ func (x SubscriptionLoginMethod) String() string {
 }
 
 func (SubscriptionLoginMethod) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_subscription_proto_enumTypes[6].Descriptor()
+	return file_delidev_v1_subscription_proto_enumTypes[9].Descriptor()
 }
 
 func (SubscriptionLoginMethod) Type() protoreflect.EnumType {
-	return &file_delidev_v1_subscription_proto_enumTypes[6]
+	return &file_delidev_v1_subscription_proto_enumTypes[9]
 }
 
 func (x SubscriptionLoginMethod) Number() protoreflect.EnumNumber {
@@ -414,7 +588,7 @@ func (x SubscriptionLoginMethod) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SubscriptionLoginMethod.Descriptor instead.
 func (SubscriptionLoginMethod) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{6}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{9}
 }
 
 type NativeSubscriptionDiagnosticPhase int32
@@ -471,11 +645,11 @@ func (x NativeSubscriptionDiagnosticPhase) String() string {
 }
 
 func (NativeSubscriptionDiagnosticPhase) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_subscription_proto_enumTypes[7].Descriptor()
+	return file_delidev_v1_subscription_proto_enumTypes[10].Descriptor()
 }
 
 func (NativeSubscriptionDiagnosticPhase) Type() protoreflect.EnumType {
-	return &file_delidev_v1_subscription_proto_enumTypes[7]
+	return &file_delidev_v1_subscription_proto_enumTypes[10]
 }
 
 func (x NativeSubscriptionDiagnosticPhase) Number() protoreflect.EnumNumber {
@@ -484,7 +658,7 @@ func (x NativeSubscriptionDiagnosticPhase) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use NativeSubscriptionDiagnosticPhase.Descriptor instead.
 func (NativeSubscriptionDiagnosticPhase) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{7}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{10}
 }
 
 // Quota reads and explicit credit consumption share the original native owner.
@@ -521,11 +695,11 @@ func (x SubscriptionObservationAction) String() string {
 }
 
 func (SubscriptionObservationAction) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_subscription_proto_enumTypes[8].Descriptor()
+	return file_delidev_v1_subscription_proto_enumTypes[11].Descriptor()
 }
 
 func (SubscriptionObservationAction) Type() protoreflect.EnumType {
-	return &file_delidev_v1_subscription_proto_enumTypes[8]
+	return &file_delidev_v1_subscription_proto_enumTypes[11]
 }
 
 func (x SubscriptionObservationAction) Number() protoreflect.EnumNumber {
@@ -534,7 +708,7 @@ func (x SubscriptionObservationAction) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SubscriptionObservationAction.Descriptor instead.
 func (SubscriptionObservationAction) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{8}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{11}
 }
 
 type SubscriptionResetOutcome int32
@@ -576,11 +750,11 @@ func (x SubscriptionResetOutcome) String() string {
 }
 
 func (SubscriptionResetOutcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_subscription_proto_enumTypes[9].Descriptor()
+	return file_delidev_v1_subscription_proto_enumTypes[12].Descriptor()
 }
 
 func (SubscriptionResetOutcome) Type() protoreflect.EnumType {
-	return &file_delidev_v1_subscription_proto_enumTypes[9]
+	return &file_delidev_v1_subscription_proto_enumTypes[12]
 }
 
 func (x SubscriptionResetOutcome) Number() protoreflect.EnumNumber {
@@ -589,7 +763,7 @@ func (x SubscriptionResetOutcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SubscriptionResetOutcome.Descriptor instead.
 func (SubscriptionResetOutcome) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{9}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{12}
 }
 
 type GrokDiagnosticPhase int32
@@ -652,11 +826,11 @@ func (x GrokDiagnosticPhase) String() string {
 }
 
 func (GrokDiagnosticPhase) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_subscription_proto_enumTypes[10].Descriptor()
+	return file_delidev_v1_subscription_proto_enumTypes[13].Descriptor()
 }
 
 func (GrokDiagnosticPhase) Type() protoreflect.EnumType {
-	return &file_delidev_v1_subscription_proto_enumTypes[10]
+	return &file_delidev_v1_subscription_proto_enumTypes[13]
 }
 
 func (x GrokDiagnosticPhase) Number() protoreflect.EnumNumber {
@@ -665,7 +839,7 @@ func (x GrokDiagnosticPhase) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GrokDiagnosticPhase.Descriptor instead.
 func (GrokDiagnosticPhase) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{10}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{13}
 }
 
 type CodexDiagnosticPhase int32
@@ -731,11 +905,11 @@ func (x CodexDiagnosticPhase) String() string {
 }
 
 func (CodexDiagnosticPhase) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_subscription_proto_enumTypes[11].Descriptor()
+	return file_delidev_v1_subscription_proto_enumTypes[14].Descriptor()
 }
 
 func (CodexDiagnosticPhase) Type() protoreflect.EnumType {
-	return &file_delidev_v1_subscription_proto_enumTypes[11]
+	return &file_delidev_v1_subscription_proto_enumTypes[14]
 }
 
 func (x CodexDiagnosticPhase) Number() protoreflect.EnumNumber {
@@ -744,7 +918,7 @@ func (x CodexDiagnosticPhase) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CodexDiagnosticPhase.Descriptor instead.
 func (CodexDiagnosticPhase) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{11}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{14}
 }
 
 // Explicit server-owned cleanup of failed initial logins. No native login or
@@ -2144,6 +2318,494 @@ func (x *FinishSubscriptionResponse) GetReplayed() bool {
 	return false
 }
 
+// Stores a server-vault protected capture of the latest validated bundle of one
+// live or fenced managed ChatGPT EXECUTE lease before the Worker deletes its
+// transient authentication. The mutation request_id is the durable capture
+// identity, id is the account and expected_revision the lease revision. The
+// capture grants no readiness, Take, quota access or redistribution.
+type SyncSubscriptionRecoveryCaptureRequest struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Mutation     *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	LeaseId      string                 `protobuf:"bytes,2,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	MachineId    string                 `protobuf:"bytes,3,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	InstanceId   string                 `protobuf:"bytes,4,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	GenerationId string                 `protobuf:"bytes,5,opt,name=generation_id,json=generationId,proto3" json:"generation_id,omitempty"`
+	// The exact unused bundle the lease took, used only to recognize remnants.
+	Original []byte `protobuf:"bytes,6,opt,name=original,proto3" json:"original,omitempty"`
+	// The latest validated bundle written back by the native process.
+	Latest        []byte `protobuf:"bytes,7,opt,name=latest,proto3" json:"latest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SyncSubscriptionRecoveryCaptureRequest) Reset() {
+	*x = SyncSubscriptionRecoveryCaptureRequest{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncSubscriptionRecoveryCaptureRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncSubscriptionRecoveryCaptureRequest) ProtoMessage() {}
+
+func (x *SyncSubscriptionRecoveryCaptureRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncSubscriptionRecoveryCaptureRequest.ProtoReflect.Descriptor instead.
+func (*SyncSubscriptionRecoveryCaptureRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *SyncSubscriptionRecoveryCaptureRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *SyncSubscriptionRecoveryCaptureRequest) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *SyncSubscriptionRecoveryCaptureRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *SyncSubscriptionRecoveryCaptureRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *SyncSubscriptionRecoveryCaptureRequest) GetGenerationId() string {
+	if x != nil {
+		return x.GenerationId
+	}
+	return ""
+}
+
+func (x *SyncSubscriptionRecoveryCaptureRequest) GetOriginal() []byte {
+	if x != nil {
+		return x.Original
+	}
+	return nil
+}
+
+func (x *SyncSubscriptionRecoveryCaptureRequest) GetLatest() []byte {
+	if x != nil {
+		return x.Latest
+	}
+	return nil
+}
+
+type SyncSubscriptionRecoveryCaptureResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CaptureId     string                 `protobuf:"bytes,1,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SyncSubscriptionRecoveryCaptureResponse) Reset() {
+	*x = SyncSubscriptionRecoveryCaptureResponse{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncSubscriptionRecoveryCaptureResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncSubscriptionRecoveryCaptureResponse) ProtoMessage() {}
+
+func (x *SyncSubscriptionRecoveryCaptureResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncSubscriptionRecoveryCaptureResponse.ProtoReflect.Descriptor instead.
+func (*SyncSubscriptionRecoveryCaptureResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *SyncSubscriptionRecoveryCaptureResponse) GetCaptureId() string {
+	if x != nil {
+		return x.CaptureId
+	}
+	return ""
+}
+
+func (x *SyncSubscriptionRecoveryCaptureResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+// Returns the lease's own capture to its original Worker for complete retained
+// history inspection. It is not a Take and never changes ownership.
+type ReadSubscriptionRecoveryCaptureRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	AccountId string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	LeaseId   string                 `protobuf:"bytes,2,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	MachineId string                 `protobuf:"bytes,3,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	// The currently authenticated Worker instance.
+	InstanceId string `protobuf:"bytes,4,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	// The instance that held the lease when it was granted.
+	OriginalInstanceId string `protobuf:"bytes,5,opt,name=original_instance_id,json=originalInstanceId,proto3" json:"original_instance_id,omitempty"`
+	GenerationId       string `protobuf:"bytes,6,opt,name=generation_id,json=generationId,proto3" json:"generation_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ReadSubscriptionRecoveryCaptureRequest) Reset() {
+	*x = ReadSubscriptionRecoveryCaptureRequest{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadSubscriptionRecoveryCaptureRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadSubscriptionRecoveryCaptureRequest) ProtoMessage() {}
+
+func (x *ReadSubscriptionRecoveryCaptureRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadSubscriptionRecoveryCaptureRequest.ProtoReflect.Descriptor instead.
+func (*ReadSubscriptionRecoveryCaptureRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ReadSubscriptionRecoveryCaptureRequest) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *ReadSubscriptionRecoveryCaptureRequest) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *ReadSubscriptionRecoveryCaptureRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *ReadSubscriptionRecoveryCaptureRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *ReadSubscriptionRecoveryCaptureRequest) GetOriginalInstanceId() string {
+	if x != nil {
+		return x.OriginalInstanceId
+	}
+	return ""
+}
+
+func (x *ReadSubscriptionRecoveryCaptureRequest) GetGenerationId() string {
+	if x != nil {
+		return x.GenerationId
+	}
+	return ""
+}
+
+type ReadSubscriptionRecoveryCaptureResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CaptureId     string                 `protobuf:"bytes,1,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
+	Original      []byte                 `protobuf:"bytes,2,opt,name=original,proto3" json:"original,omitempty"`
+	Latest        []byte                 `protobuf:"bytes,3,opt,name=latest,proto3" json:"latest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadSubscriptionRecoveryCaptureResponse) Reset() {
+	*x = ReadSubscriptionRecoveryCaptureResponse{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadSubscriptionRecoveryCaptureResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadSubscriptionRecoveryCaptureResponse) ProtoMessage() {}
+
+func (x *ReadSubscriptionRecoveryCaptureResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadSubscriptionRecoveryCaptureResponse.ProtoReflect.Descriptor instead.
+func (*ReadSubscriptionRecoveryCaptureResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ReadSubscriptionRecoveryCaptureResponse) GetCaptureId() string {
+	if x != nil {
+		return x.CaptureId
+	}
+	return ""
+}
+
+func (x *ReadSubscriptionRecoveryCaptureResponse) GetOriginal() []byte {
+	if x != nil {
+		return x.Original
+	}
+	return nil
+}
+
+func (x *ReadSubscriptionRecoveryCaptureResponse) GetLatest() []byte {
+	if x != nil {
+		return x.Latest
+	}
+	return nil
+}
+
+// Settles one fenced managed ChatGPT EXECUTE lease under a durable recovery
+// request identity distinct from the original Take and Finish requests. The
+// mutation id is the account and expected_revision the lease revision.
+type RecoverSubscriptionRequest struct {
+	state              protoimpl.MessageState     `protogen:"open.v1"`
+	Mutation           *Mutation                  `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	LeaseId            string                     `protobuf:"bytes,2,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	MachineId          string                     `protobuf:"bytes,3,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	InstanceId         string                     `protobuf:"bytes,4,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	OriginalInstanceId string                     `protobuf:"bytes,5,opt,name=original_instance_id,json=originalInstanceId,proto3" json:"original_instance_id,omitempty"`
+	GenerationId       string                     `protobuf:"bytes,6,opt,name=generation_id,json=generationId,proto3" json:"generation_id,omitempty"`
+	Report             SubscriptionRecoveryReport `protobuf:"varint,7,opt,name=report,proto3,enum=delidev.v1.SubscriptionRecoveryReport" json:"report,omitempty"`
+	// The capture the cleanup report relies on.
+	CaptureId string `protobuf:"bytes,8,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
+	// Every execution member of a shared owner that settled before retirement.
+	SettledMemberLeaseIds []string                          `protobuf:"bytes,9,rep,name=settled_member_lease_ids,json=settledMemberLeaseIds,proto3" json:"settled_member_lease_ids,omitempty"`
+	BlockedReason         SubscriptionRecoveryBlockedReason `protobuf:"varint,10,opt,name=blocked_reason,json=blockedReason,proto3,enum=delidev.v1.SubscriptionRecoveryBlockedReason" json:"blocked_reason,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *RecoverSubscriptionRequest) Reset() {
+	*x = RecoverSubscriptionRequest{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecoverSubscriptionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecoverSubscriptionRequest) ProtoMessage() {}
+
+func (x *RecoverSubscriptionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecoverSubscriptionRequest.ProtoReflect.Descriptor instead.
+func (*RecoverSubscriptionRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *RecoverSubscriptionRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *RecoverSubscriptionRequest) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *RecoverSubscriptionRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *RecoverSubscriptionRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *RecoverSubscriptionRequest) GetOriginalInstanceId() string {
+	if x != nil {
+		return x.OriginalInstanceId
+	}
+	return ""
+}
+
+func (x *RecoverSubscriptionRequest) GetGenerationId() string {
+	if x != nil {
+		return x.GenerationId
+	}
+	return ""
+}
+
+func (x *RecoverSubscriptionRequest) GetReport() SubscriptionRecoveryReport {
+	if x != nil {
+		return x.Report
+	}
+	return SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_UNSPECIFIED
+}
+
+func (x *RecoverSubscriptionRequest) GetCaptureId() string {
+	if x != nil {
+		return x.CaptureId
+	}
+	return ""
+}
+
+func (x *RecoverSubscriptionRequest) GetSettledMemberLeaseIds() []string {
+	if x != nil {
+		return x.SettledMemberLeaseIds
+	}
+	return nil
+}
+
+func (x *RecoverSubscriptionRequest) GetBlockedReason() SubscriptionRecoveryBlockedReason {
+	if x != nil {
+		return x.BlockedReason
+	}
+	return SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED
+}
+
+type RecoverSubscriptionResponse struct {
+	state         protoimpl.MessageState            `protogen:"open.v1"`
+	Account       *Resource                         `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	Replayed      bool                              `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	Outcome       SubscriptionRecoveryOutcome       `protobuf:"varint,3,opt,name=outcome,proto3,enum=delidev.v1.SubscriptionRecoveryOutcome" json:"outcome,omitempty"`
+	BlockedReason SubscriptionRecoveryBlockedReason `protobuf:"varint,4,opt,name=blocked_reason,json=blockedReason,proto3,enum=delidev.v1.SubscriptionRecoveryBlockedReason" json:"blocked_reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecoverSubscriptionResponse) Reset() {
+	*x = RecoverSubscriptionResponse{}
+	mi := &file_delidev_v1_subscription_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecoverSubscriptionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecoverSubscriptionResponse) ProtoMessage() {}
+
+func (x *RecoverSubscriptionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_subscription_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecoverSubscriptionResponse.ProtoReflect.Descriptor instead.
+func (*RecoverSubscriptionResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *RecoverSubscriptionResponse) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *RecoverSubscriptionResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *RecoverSubscriptionResponse) GetOutcome() SubscriptionRecoveryOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_UNSPECIFIED
+}
+
+func (x *RecoverSubscriptionResponse) GetBlockedReason() SubscriptionRecoveryBlockedReason {
+	if x != nil {
+		return x.BlockedReason
+	}
+	return SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED
+}
+
 type NativeSubscriptionDiagnostic struct {
 	state           protoimpl.MessageState            `protogen:"open.v1"`
 	DetectedVersion string                            `protobuf:"bytes,1,opt,name=detected_version,json=detectedVersion,proto3" json:"detected_version,omitempty"`
@@ -2157,7 +2819,7 @@ type NativeSubscriptionDiagnostic struct {
 
 func (x *NativeSubscriptionDiagnostic) Reset() {
 	*x = NativeSubscriptionDiagnostic{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[20]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2169,7 +2831,7 @@ func (x *NativeSubscriptionDiagnostic) String() string {
 func (*NativeSubscriptionDiagnostic) ProtoMessage() {}
 
 func (x *NativeSubscriptionDiagnostic) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[20]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2182,7 +2844,7 @@ func (x *NativeSubscriptionDiagnostic) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeSubscriptionDiagnostic.ProtoReflect.Descriptor instead.
 func (*NativeSubscriptionDiagnostic) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{20}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *NativeSubscriptionDiagnostic) GetDetectedVersion() string {
@@ -2231,7 +2893,7 @@ type NativeSubscriptionIdentity struct {
 
 func (x *NativeSubscriptionIdentity) Reset() {
 	*x = NativeSubscriptionIdentity{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[21]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2243,7 +2905,7 @@ func (x *NativeSubscriptionIdentity) String() string {
 func (*NativeSubscriptionIdentity) ProtoMessage() {}
 
 func (x *NativeSubscriptionIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[21]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2256,7 +2918,7 @@ func (x *NativeSubscriptionIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeSubscriptionIdentity.ProtoReflect.Descriptor instead.
 func (*NativeSubscriptionIdentity) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{21}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *NativeSubscriptionIdentity) GetProfileId() string {
@@ -2285,7 +2947,7 @@ type SubmitSubscriptionLoginCodeRequest struct {
 
 func (x *SubmitSubscriptionLoginCodeRequest) Reset() {
 	*x = SubmitSubscriptionLoginCodeRequest{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[22]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2297,7 +2959,7 @@ func (x *SubmitSubscriptionLoginCodeRequest) String() string {
 func (*SubmitSubscriptionLoginCodeRequest) ProtoMessage() {}
 
 func (x *SubmitSubscriptionLoginCodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[22]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2310,7 +2972,7 @@ func (x *SubmitSubscriptionLoginCodeRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use SubmitSubscriptionLoginCodeRequest.ProtoReflect.Descriptor instead.
 func (*SubmitSubscriptionLoginCodeRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{22}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *SubmitSubscriptionLoginCodeRequest) GetMutation() *Mutation {
@@ -2343,7 +3005,7 @@ type SubmitSubscriptionLoginCodeResponse struct {
 
 func (x *SubmitSubscriptionLoginCodeResponse) Reset() {
 	*x = SubmitSubscriptionLoginCodeResponse{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[23]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2355,7 +3017,7 @@ func (x *SubmitSubscriptionLoginCodeResponse) String() string {
 func (*SubmitSubscriptionLoginCodeResponse) ProtoMessage() {}
 
 func (x *SubmitSubscriptionLoginCodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[23]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2368,7 +3030,7 @@ func (x *SubmitSubscriptionLoginCodeResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use SubmitSubscriptionLoginCodeResponse.ProtoReflect.Descriptor instead.
 func (*SubmitSubscriptionLoginCodeResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{23}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SubmitSubscriptionLoginCodeResponse) GetAccepted() bool {
@@ -2391,7 +3053,7 @@ type TakeSubscriptionLoginCodeRequest struct {
 
 func (x *TakeSubscriptionLoginCodeRequest) Reset() {
 	*x = TakeSubscriptionLoginCodeRequest{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[24]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2403,7 +3065,7 @@ func (x *TakeSubscriptionLoginCodeRequest) String() string {
 func (*TakeSubscriptionLoginCodeRequest) ProtoMessage() {}
 
 func (x *TakeSubscriptionLoginCodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[24]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2416,7 +3078,7 @@ func (x *TakeSubscriptionLoginCodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TakeSubscriptionLoginCodeRequest.ProtoReflect.Descriptor instead.
 func (*TakeSubscriptionLoginCodeRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{24}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *TakeSubscriptionLoginCodeRequest) GetAccountId() string {
@@ -2464,7 +3126,7 @@ type TakeSubscriptionLoginCodeResponse struct {
 
 func (x *TakeSubscriptionLoginCodeResponse) Reset() {
 	*x = TakeSubscriptionLoginCodeResponse{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[25]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2476,7 +3138,7 @@ func (x *TakeSubscriptionLoginCodeResponse) String() string {
 func (*TakeSubscriptionLoginCodeResponse) ProtoMessage() {}
 
 func (x *TakeSubscriptionLoginCodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[25]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2489,7 +3151,7 @@ func (x *TakeSubscriptionLoginCodeResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use TakeSubscriptionLoginCodeResponse.ProtoReflect.Descriptor instead.
 func (*TakeSubscriptionLoginCodeResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{25}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *TakeSubscriptionLoginCodeResponse) GetCode() []byte {
@@ -2523,7 +3185,7 @@ type RequestSubscriptionObservationRequest struct {
 
 func (x *RequestSubscriptionObservationRequest) Reset() {
 	*x = RequestSubscriptionObservationRequest{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[26]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2535,7 +3197,7 @@ func (x *RequestSubscriptionObservationRequest) String() string {
 func (*RequestSubscriptionObservationRequest) ProtoMessage() {}
 
 func (x *RequestSubscriptionObservationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[26]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2548,7 +3210,7 @@ func (x *RequestSubscriptionObservationRequest) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use RequestSubscriptionObservationRequest.ProtoReflect.Descriptor instead.
 func (*RequestSubscriptionObservationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{26}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *RequestSubscriptionObservationRequest) GetMutation() *Mutation {
@@ -2625,7 +3287,7 @@ type RequestSubscriptionObservationResponse struct {
 
 func (x *RequestSubscriptionObservationResponse) Reset() {
 	*x = RequestSubscriptionObservationResponse{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[27]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2637,7 +3299,7 @@ func (x *RequestSubscriptionObservationResponse) String() string {
 func (*RequestSubscriptionObservationResponse) ProtoMessage() {}
 
 func (x *RequestSubscriptionObservationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[27]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2650,7 +3312,7 @@ func (x *RequestSubscriptionObservationResponse) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use RequestSubscriptionObservationResponse.ProtoReflect.Descriptor instead.
 func (*RequestSubscriptionObservationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{27}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *RequestSubscriptionObservationResponse) GetAccount() *Resource {
@@ -2683,7 +3345,7 @@ type RefreshAllSubscriptionQuotasRequest struct {
 
 func (x *RefreshAllSubscriptionQuotasRequest) Reset() {
 	*x = RefreshAllSubscriptionQuotasRequest{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[28]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2695,7 +3357,7 @@ func (x *RefreshAllSubscriptionQuotasRequest) String() string {
 func (*RefreshAllSubscriptionQuotasRequest) ProtoMessage() {}
 
 func (x *RefreshAllSubscriptionQuotasRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[28]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2708,7 +3370,7 @@ func (x *RefreshAllSubscriptionQuotasRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use RefreshAllSubscriptionQuotasRequest.ProtoReflect.Descriptor instead.
 func (*RefreshAllSubscriptionQuotasRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{28}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *RefreshAllSubscriptionQuotasRequest) GetRequestId() string {
@@ -2730,7 +3392,7 @@ type RefreshAllSubscriptionQuotasResponse struct {
 
 func (x *RefreshAllSubscriptionQuotasResponse) Reset() {
 	*x = RefreshAllSubscriptionQuotasResponse{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[29]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2742,7 +3404,7 @@ func (x *RefreshAllSubscriptionQuotasResponse) String() string {
 func (*RefreshAllSubscriptionQuotasResponse) ProtoMessage() {}
 
 func (x *RefreshAllSubscriptionQuotasResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[29]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2755,7 +3417,7 @@ func (x *RefreshAllSubscriptionQuotasResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use RefreshAllSubscriptionQuotasResponse.ProtoReflect.Descriptor instead.
 func (*RefreshAllSubscriptionQuotasResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{29}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *RefreshAllSubscriptionQuotasResponse) GetAccounts() []string {
@@ -2791,7 +3453,7 @@ type ReconcileSubscriptionCreditRequest struct {
 
 func (x *ReconcileSubscriptionCreditRequest) Reset() {
 	*x = ReconcileSubscriptionCreditRequest{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[30]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2803,7 +3465,7 @@ func (x *ReconcileSubscriptionCreditRequest) String() string {
 func (*ReconcileSubscriptionCreditRequest) ProtoMessage() {}
 
 func (x *ReconcileSubscriptionCreditRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[30]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2816,7 +3478,7 @@ func (x *ReconcileSubscriptionCreditRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ReconcileSubscriptionCreditRequest.ProtoReflect.Descriptor instead.
 func (*ReconcileSubscriptionCreditRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{30}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ReconcileSubscriptionCreditRequest) GetMutation() *Mutation {
@@ -2857,7 +3519,7 @@ type ReconcileSubscriptionCreditResponse struct {
 
 func (x *ReconcileSubscriptionCreditResponse) Reset() {
 	*x = ReconcileSubscriptionCreditResponse{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[31]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2869,7 +3531,7 @@ func (x *ReconcileSubscriptionCreditResponse) String() string {
 func (*ReconcileSubscriptionCreditResponse) ProtoMessage() {}
 
 func (x *ReconcileSubscriptionCreditResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[31]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2882,7 +3544,7 @@ func (x *ReconcileSubscriptionCreditResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ReconcileSubscriptionCreditResponse.ProtoReflect.Descriptor instead.
 func (*ReconcileSubscriptionCreditResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{31}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ReconcileSubscriptionCreditResponse) GetAccount() *Resource {
@@ -2913,7 +3575,7 @@ type ClaimSubscriptionObservationRequest struct {
 
 func (x *ClaimSubscriptionObservationRequest) Reset() {
 	*x = ClaimSubscriptionObservationRequest{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[32]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2925,7 +3587,7 @@ func (x *ClaimSubscriptionObservationRequest) String() string {
 func (*ClaimSubscriptionObservationRequest) ProtoMessage() {}
 
 func (x *ClaimSubscriptionObservationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[32]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2938,7 +3600,7 @@ func (x *ClaimSubscriptionObservationRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ClaimSubscriptionObservationRequest.ProtoReflect.Descriptor instead.
 func (*ClaimSubscriptionObservationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{32}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ClaimSubscriptionObservationRequest) GetMutation() *Mutation {
@@ -2992,7 +3654,7 @@ type ClaimSubscriptionObservationResponse struct {
 
 func (x *ClaimSubscriptionObservationResponse) Reset() {
 	*x = ClaimSubscriptionObservationResponse{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[33]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3004,7 +3666,7 @@ func (x *ClaimSubscriptionObservationResponse) String() string {
 func (*ClaimSubscriptionObservationResponse) ProtoMessage() {}
 
 func (x *ClaimSubscriptionObservationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[33]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3017,7 +3679,7 @@ func (x *ClaimSubscriptionObservationResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ClaimSubscriptionObservationResponse.ProtoReflect.Descriptor instead.
 func (*ClaimSubscriptionObservationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{33}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ClaimSubscriptionObservationResponse) GetOperationJson() []byte {
@@ -3043,7 +3705,7 @@ type PublishSubscriptionObservationRequest struct {
 
 func (x *PublishSubscriptionObservationRequest) Reset() {
 	*x = PublishSubscriptionObservationRequest{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[34]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3055,7 +3717,7 @@ func (x *PublishSubscriptionObservationRequest) String() string {
 func (*PublishSubscriptionObservationRequest) ProtoMessage() {}
 
 func (x *PublishSubscriptionObservationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[34]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3068,7 +3730,7 @@ func (x *PublishSubscriptionObservationRequest) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use PublishSubscriptionObservationRequest.ProtoReflect.Descriptor instead.
 func (*PublishSubscriptionObservationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{34}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *PublishSubscriptionObservationRequest) GetMutation() *Mutation {
@@ -3130,7 +3792,7 @@ type PublishSubscriptionObservationResponse struct {
 
 func (x *PublishSubscriptionObservationResponse) Reset() {
 	*x = PublishSubscriptionObservationResponse{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[35]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3142,7 +3804,7 @@ func (x *PublishSubscriptionObservationResponse) String() string {
 func (*PublishSubscriptionObservationResponse) ProtoMessage() {}
 
 func (x *PublishSubscriptionObservationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[35]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3155,7 +3817,7 @@ func (x *PublishSubscriptionObservationResponse) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use PublishSubscriptionObservationResponse.ProtoReflect.Descriptor instead.
 func (*PublishSubscriptionObservationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{35}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *PublishSubscriptionObservationResponse) GetAccount() *Resource {
@@ -3185,7 +3847,7 @@ type ForwardSubscriptionCallbackRequest struct {
 
 func (x *ForwardSubscriptionCallbackRequest) Reset() {
 	*x = ForwardSubscriptionCallbackRequest{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[36]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3197,7 +3859,7 @@ func (x *ForwardSubscriptionCallbackRequest) String() string {
 func (*ForwardSubscriptionCallbackRequest) ProtoMessage() {}
 
 func (x *ForwardSubscriptionCallbackRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[36]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3210,7 +3872,7 @@ func (x *ForwardSubscriptionCallbackRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ForwardSubscriptionCallbackRequest.ProtoReflect.Descriptor instead.
 func (*ForwardSubscriptionCallbackRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{36}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ForwardSubscriptionCallbackRequest) GetAccountId() string {
@@ -3243,7 +3905,7 @@ type ForwardSubscriptionCallbackResponse struct {
 
 func (x *ForwardSubscriptionCallbackResponse) Reset() {
 	*x = ForwardSubscriptionCallbackResponse{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[37]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3255,7 +3917,7 @@ func (x *ForwardSubscriptionCallbackResponse) String() string {
 func (*ForwardSubscriptionCallbackResponse) ProtoMessage() {}
 
 func (x *ForwardSubscriptionCallbackResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[37]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3268,7 +3930,7 @@ func (x *ForwardSubscriptionCallbackResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ForwardSubscriptionCallbackResponse.ProtoReflect.Descriptor instead.
 func (*ForwardSubscriptionCallbackResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{37}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ForwardSubscriptionCallbackResponse) GetAccepted() bool {
@@ -3294,7 +3956,7 @@ type CodexDiagnostic struct {
 
 func (x *CodexDiagnostic) Reset() {
 	*x = CodexDiagnostic{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[38]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3306,7 +3968,7 @@ func (x *CodexDiagnostic) String() string {
 func (*CodexDiagnostic) ProtoMessage() {}
 
 func (x *CodexDiagnostic) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[38]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3319,7 +3981,7 @@ func (x *CodexDiagnostic) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CodexDiagnostic.ProtoReflect.Descriptor instead.
 func (*CodexDiagnostic) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{38}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *CodexDiagnostic) GetDetectedVersion() string {
@@ -3386,7 +4048,7 @@ type GrokDiagnostic struct {
 
 func (x *GrokDiagnostic) Reset() {
 	*x = GrokDiagnostic{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[39]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3398,7 +4060,7 @@ func (x *GrokDiagnostic) String() string {
 func (*GrokDiagnostic) ProtoMessage() {}
 
 func (x *GrokDiagnostic) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[39]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3411,7 +4073,7 @@ func (x *GrokDiagnostic) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrokDiagnostic.ProtoReflect.Descriptor instead.
 func (*GrokDiagnostic) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{39}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *GrokDiagnostic) GetDetectedVersion() string {
@@ -3477,7 +4139,7 @@ type SetAutomaticResetCreditConsentRequest struct {
 
 func (x *SetAutomaticResetCreditConsentRequest) Reset() {
 	*x = SetAutomaticResetCreditConsentRequest{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[40]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3489,7 +4151,7 @@ func (x *SetAutomaticResetCreditConsentRequest) String() string {
 func (*SetAutomaticResetCreditConsentRequest) ProtoMessage() {}
 
 func (x *SetAutomaticResetCreditConsentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[40]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3502,7 +4164,7 @@ func (x *SetAutomaticResetCreditConsentRequest) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use SetAutomaticResetCreditConsentRequest.ProtoReflect.Descriptor instead.
 func (*SetAutomaticResetCreditConsentRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{40}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *SetAutomaticResetCreditConsentRequest) GetMutation() *Mutation {
@@ -3550,7 +4212,7 @@ type SetAutomaticResetCreditConsentResponse struct {
 
 func (x *SetAutomaticResetCreditConsentResponse) Reset() {
 	*x = SetAutomaticResetCreditConsentResponse{}
-	mi := &file_delidev_v1_subscription_proto_msgTypes[41]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3562,7 +4224,7 @@ func (x *SetAutomaticResetCreditConsentResponse) String() string {
 func (*SetAutomaticResetCreditConsentResponse) ProtoMessage() {}
 
 func (x *SetAutomaticResetCreditConsentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_subscription_proto_msgTypes[41]
+	mi := &file_delidev_v1_subscription_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3575,7 +4237,7 @@ func (x *SetAutomaticResetCreditConsentResponse) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use SetAutomaticResetCreditConsentResponse.ProtoReflect.Descriptor instead.
 func (*SetAutomaticResetCreditConsentResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{41}
+	return file_delidev_v1_subscription_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *SetAutomaticResetCreditConsentResponse) GetAccount() *Resource {
@@ -3723,7 +4385,56 @@ const file_delidev_v1_subscription_proto_rawDesc = "" +
 	"\ffinish_scope\x18\v \x01(\x0e2#.delidev.v1.SubscriptionFinishScopeR\vfinishScope\"h\n" +
 	"\x1aFinishSubscriptionResponse\x12.\n" +
 	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1a\n" +
-	"\breplayed\x18\x02 \x01(\bR\breplayed\"\xf4\x01\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"\x8e\x02\n" +
+	"&SyncSubscriptionRecoveryCaptureRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12\x19\n" +
+	"\blease_id\x18\x02 \x01(\tR\aleaseId\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x03 \x01(\tR\tmachineId\x12\x1f\n" +
+	"\vinstance_id\x18\x04 \x01(\tR\n" +
+	"instanceId\x12#\n" +
+	"\rgeneration_id\x18\x05 \x01(\tR\fgenerationId\x12\x1a\n" +
+	"\boriginal\x18\x06 \x01(\fR\boriginal\x12\x16\n" +
+	"\x06latest\x18\a \x01(\fR\x06latest\"d\n" +
+	"'SyncSubscriptionRecoveryCaptureResponse\x12\x1d\n" +
+	"\n" +
+	"capture_id\x18\x01 \x01(\tR\tcaptureId\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"\xf9\x01\n" +
+	"&ReadSubscriptionRecoveryCaptureRequest\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12\x19\n" +
+	"\blease_id\x18\x02 \x01(\tR\aleaseId\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x03 \x01(\tR\tmachineId\x12\x1f\n" +
+	"\vinstance_id\x18\x04 \x01(\tR\n" +
+	"instanceId\x120\n" +
+	"\x14original_instance_id\x18\x05 \x01(\tR\x12originalInstanceId\x12#\n" +
+	"\rgeneration_id\x18\x06 \x01(\tR\fgenerationId\"|\n" +
+	"'ReadSubscriptionRecoveryCaptureResponse\x12\x1d\n" +
+	"\n" +
+	"capture_id\x18\x01 \x01(\tR\tcaptureId\x12\x1a\n" +
+	"\boriginal\x18\x02 \x01(\fR\boriginal\x12\x16\n" +
+	"\x06latest\x18\x03 \x01(\fR\x06latest\"\xee\x03\n" +
+	"\x1aRecoverSubscriptionRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12\x19\n" +
+	"\blease_id\x18\x02 \x01(\tR\aleaseId\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x03 \x01(\tR\tmachineId\x12\x1f\n" +
+	"\vinstance_id\x18\x04 \x01(\tR\n" +
+	"instanceId\x120\n" +
+	"\x14original_instance_id\x18\x05 \x01(\tR\x12originalInstanceId\x12#\n" +
+	"\rgeneration_id\x18\x06 \x01(\tR\fgenerationId\x12>\n" +
+	"\x06report\x18\a \x01(\x0e2&.delidev.v1.SubscriptionRecoveryReportR\x06report\x12\x1d\n" +
+	"\n" +
+	"capture_id\x18\b \x01(\tR\tcaptureId\x127\n" +
+	"\x18settled_member_lease_ids\x18\t \x03(\tR\x15settledMemberLeaseIds\x12T\n" +
+	"\x0eblocked_reason\x18\n" +
+	" \x01(\x0e2-.delidev.v1.SubscriptionRecoveryBlockedReasonR\rblockedReason\"\x82\x02\n" +
+	"\x1bRecoverSubscriptionResponse\x12.\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\x12A\n" +
+	"\aoutcome\x18\x03 \x01(\x0e2'.delidev.v1.SubscriptionRecoveryOutcomeR\aoutcome\x12T\n" +
+	"\x0eblocked_reason\x18\x04 \x01(\x0e2-.delidev.v1.SubscriptionRecoveryBlockedReasonR\rblockedReason\"\xf4\x01\n" +
 	"\x1cNativeSubscriptionDiagnostic\x12)\n" +
 	"\x10detected_version\x18\x01 \x01(\tR\x0fdetectedVersion\x12)\n" +
 	"\x10required_version\x18\x02 \x01(\tR\x0frequiredVersion\x12C\n" +
@@ -3879,7 +4590,25 @@ const file_delidev_v1_subscription_proto_rawDesc = "" +
 	"\x17SubscriptionFinishScope\x12)\n" +
 	"%SUBSCRIPTION_FINISH_SCOPE_UNSPECIFIED\x10\x00\x12$\n" +
 	" SUBSCRIPTION_FINISH_SCOPE_MEMBER\x10\x01\x12#\n" +
-	"\x1fSUBSCRIPTION_FINISH_SCOPE_OWNER\x10\x02*\xa0\x01\n" +
+	"\x1fSUBSCRIPTION_FINISH_SCOPE_OWNER\x10\x02*\xe8\x01\n" +
+	"\x1aSubscriptionRecoveryReport\x12,\n" +
+	"(SUBSCRIPTION_RECOVERY_REPORT_UNSPECIFIED\x10\x00\x125\n" +
+	"1SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE\x10\x01\x12;\n" +
+	"7SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL\x10\x02\x12(\n" +
+	"$SUBSCRIPTION_RECOVERY_REPORT_BLOCKED\x10\x03*\xd3\x01\n" +
+	"\x1bSubscriptionRecoveryOutcome\x12-\n" +
+	")SUBSCRIPTION_RECOVERY_OUTCOME_UNSPECIFIED\x10\x00\x12*\n" +
+	"&SUBSCRIPTION_RECOVERY_OUTCOME_RESTORED\x10\x01\x12.\n" +
+	"*SUBSCRIPTION_RECOVERY_OUTCOME_DISCONNECTED\x10\x02\x12)\n" +
+	"%SUBSCRIPTION_RECOVERY_OUTCOME_BLOCKED\x10\x03*\xd8\x03\n" +
+	"!SubscriptionRecoveryBlockedReason\x124\n" +
+	"0SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED\x10\x00\x12E\n" +
+	"ASUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_PROOF_UNAVAILABLE\x10\x01\x12<\n" +
+	"8SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CLEANUP_UNCONFIRMED\x10\x02\x12C\n" +
+	"?SUBSCRIPTION_RECOVERY_BLOCKED_REASON_OWNERSHIP_EVIDENCE_INVALID\x10\x03\x12:\n" +
+	"6SUBSCRIPTION_RECOVERY_BLOCKED_REASON_MEMBERS_UNSETTLED\x10\x04\x12@\n" +
+	"<SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_USERS_ACTIVE\x10\x05\x125\n" +
+	"1SUBSCRIPTION_RECOVERY_BLOCKED_REASON_ACTIVE_OWNER\x10\x06*\xa0\x01\n" +
 	"\x17SubscriptionLoginMethod\x12)\n" +
 	"%SUBSCRIPTION_LOGIN_METHOD_UNSPECIFIED\x10\x00\x12.\n" +
 	"*SUBSCRIPTION_LOGIN_METHOD_BROWSER_CALLBACK\x10\x01\x12*\n" +
@@ -3933,7 +4662,7 @@ const file_delidev_v1_subscription_proto_rawDesc = "" +
 	" CODEX_DIAGNOSTIC_PHASE_EXECUTION\x10\n" +
 	"\x12\"\n" +
 	"\x1eCODEX_DIAGNOSTIC_PHASE_HISTORY\x10\v\x12\"\n" +
-	"\x1eCODEX_DIAGNOSTIC_PHASE_CLEANUP\x10\f2\x9f\x11\n" +
+	"\x1eCODEX_DIAGNOSTIC_PHASE_CLEANUP\x10\f2\xa1\x14\n" +
 	"\x13SubscriptionService\x12\x87\x01\n" +
 	"\x1eSetAutomaticResetCreditConsent\x121.delidev.v1.SetAutomaticResetCreditConsentRequest\x1a2.delidev.v1.SetAutomaticResetCreditConsentResponse\x12{\n" +
 	"\x1aCleanupFailedSubscriptions\x12-.delidev.v1.CleanupFailedSubscriptionsRequest\x1a..delidev.v1.CleanupFailedSubscriptionsResponse\x12\x81\x01\n" +
@@ -3952,7 +4681,10 @@ const file_delidev_v1_subscription_proto_rawDesc = "" +
 	"\x11WatchSubscription\x12$.delidev.v1.WatchSubscriptionRequest\x1a%.delidev.v1.WatchSubscriptionResponse0\x01\x12]\n" +
 	"\x10TakeSubscription\x12#.delidev.v1.TakeSubscriptionRequest\x1a$.delidev.v1.TakeSubscriptionResponse\x12~\n" +
 	"\x1bPublishSubscriptionProgress\x12..delidev.v1.PublishSubscriptionProgressRequest\x1a/.delidev.v1.PublishSubscriptionProgressResponse\x12c\n" +
-	"\x12FinishSubscription\x12%.delidev.v1.FinishSubscriptionRequest\x1a&.delidev.v1.FinishSubscriptionResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"\x12FinishSubscription\x12%.delidev.v1.FinishSubscriptionRequest\x1a&.delidev.v1.FinishSubscriptionResponse\x12\x8a\x01\n" +
+	"\x1fSyncSubscriptionRecoveryCapture\x122.delidev.v1.SyncSubscriptionRecoveryCaptureRequest\x1a3.delidev.v1.SyncSubscriptionRecoveryCaptureResponse\x12\x8a\x01\n" +
+	"\x1fReadSubscriptionRecoveryCapture\x122.delidev.v1.ReadSubscriptionRecoveryCaptureRequest\x1a3.delidev.v1.ReadSubscriptionRecoveryCaptureResponse\x12f\n" +
+	"\x13RecoverSubscription\x12&.delidev.v1.RecoverSubscriptionRequest\x1a'.delidev.v1.RecoverSubscriptionResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_subscription_proto_rawDescOnce sync.Once
@@ -3966,148 +4698,170 @@ func file_delidev_v1_subscription_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_subscription_proto_rawDescData
 }
 
-var file_delidev_v1_subscription_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
-var file_delidev_v1_subscription_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_delidev_v1_subscription_proto_enumTypes = make([]protoimpl.EnumInfo, 15)
+var file_delidev_v1_subscription_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
 var file_delidev_v1_subscription_proto_goTypes = []any{
-	(SubscriptionAction)(0),                        // 0: delidev.v1.SubscriptionAction
-	(SubscriptionLoginState)(0),                    // 1: delidev.v1.SubscriptionLoginState
-	(FailedSubscriptionCleanupState)(0),            // 2: delidev.v1.FailedSubscriptionCleanupState
-	(FailedSubscriptionCleanupOutcome)(0),          // 3: delidev.v1.FailedSubscriptionCleanupOutcome
-	(FailedSubscriptionCleanupReason)(0),           // 4: delidev.v1.FailedSubscriptionCleanupReason
-	(SubscriptionFinishScope)(0),                   // 5: delidev.v1.SubscriptionFinishScope
-	(SubscriptionLoginMethod)(0),                   // 6: delidev.v1.SubscriptionLoginMethod
-	(NativeSubscriptionDiagnosticPhase)(0),         // 7: delidev.v1.NativeSubscriptionDiagnosticPhase
-	(SubscriptionObservationAction)(0),             // 8: delidev.v1.SubscriptionObservationAction
-	(SubscriptionResetOutcome)(0),                  // 9: delidev.v1.SubscriptionResetOutcome
-	(GrokDiagnosticPhase)(0),                       // 10: delidev.v1.GrokDiagnosticPhase
-	(CodexDiagnosticPhase)(0),                      // 11: delidev.v1.CodexDiagnosticPhase
-	(*CleanupFailedSubscriptionsRequest)(nil),      // 12: delidev.v1.CleanupFailedSubscriptionsRequest
-	(*CleanupFailedSubscriptionsResponse)(nil),     // 13: delidev.v1.CleanupFailedSubscriptionsResponse
-	(*GetFailedSubscriptionCleanupRequest)(nil),    // 14: delidev.v1.GetFailedSubscriptionCleanupRequest
-	(*GetFailedSubscriptionCleanupResponse)(nil),   // 15: delidev.v1.GetFailedSubscriptionCleanupResponse
-	(*FailedSubscriptionCleanupJob)(nil),           // 16: delidev.v1.FailedSubscriptionCleanupJob
-	(*FailedSubscriptionCleanupResult)(nil),        // 17: delidev.v1.FailedSubscriptionCleanupResult
-	(*RequestSubscriptionRequest)(nil),             // 18: delidev.v1.RequestSubscriptionRequest
-	(*RequestSubscriptionResponse)(nil),            // 19: delidev.v1.RequestSubscriptionResponse
-	(*CancelSubscriptionRequest)(nil),              // 20: delidev.v1.CancelSubscriptionRequest
-	(*CancelSubscriptionResponse)(nil),             // 21: delidev.v1.CancelSubscriptionResponse
-	(*GetSubscriptionProgressRequest)(nil),         // 22: delidev.v1.GetSubscriptionProgressRequest
-	(*GetSubscriptionProgressResponse)(nil),        // 23: delidev.v1.GetSubscriptionProgressResponse
-	(*WatchSubscriptionRequest)(nil),               // 24: delidev.v1.WatchSubscriptionRequest
-	(*WatchSubscriptionResponse)(nil),              // 25: delidev.v1.WatchSubscriptionResponse
-	(*TakeSubscriptionRequest)(nil),                // 26: delidev.v1.TakeSubscriptionRequest
-	(*TakeSubscriptionResponse)(nil),               // 27: delidev.v1.TakeSubscriptionResponse
-	(*PublishSubscriptionProgressRequest)(nil),     // 28: delidev.v1.PublishSubscriptionProgressRequest
-	(*PublishSubscriptionProgressResponse)(nil),    // 29: delidev.v1.PublishSubscriptionProgressResponse
-	(*FinishSubscriptionRequest)(nil),              // 30: delidev.v1.FinishSubscriptionRequest
-	(*FinishSubscriptionResponse)(nil),             // 31: delidev.v1.FinishSubscriptionResponse
-	(*NativeSubscriptionDiagnostic)(nil),           // 32: delidev.v1.NativeSubscriptionDiagnostic
-	(*NativeSubscriptionIdentity)(nil),             // 33: delidev.v1.NativeSubscriptionIdentity
-	(*SubmitSubscriptionLoginCodeRequest)(nil),     // 34: delidev.v1.SubmitSubscriptionLoginCodeRequest
-	(*SubmitSubscriptionLoginCodeResponse)(nil),    // 35: delidev.v1.SubmitSubscriptionLoginCodeResponse
-	(*TakeSubscriptionLoginCodeRequest)(nil),       // 36: delidev.v1.TakeSubscriptionLoginCodeRequest
-	(*TakeSubscriptionLoginCodeResponse)(nil),      // 37: delidev.v1.TakeSubscriptionLoginCodeResponse
-	(*RequestSubscriptionObservationRequest)(nil),  // 38: delidev.v1.RequestSubscriptionObservationRequest
-	(*RequestSubscriptionObservationResponse)(nil), // 39: delidev.v1.RequestSubscriptionObservationResponse
-	(*RefreshAllSubscriptionQuotasRequest)(nil),    // 40: delidev.v1.RefreshAllSubscriptionQuotasRequest
-	(*RefreshAllSubscriptionQuotasResponse)(nil),   // 41: delidev.v1.RefreshAllSubscriptionQuotasResponse
-	(*ReconcileSubscriptionCreditRequest)(nil),     // 42: delidev.v1.ReconcileSubscriptionCreditRequest
-	(*ReconcileSubscriptionCreditResponse)(nil),    // 43: delidev.v1.ReconcileSubscriptionCreditResponse
-	(*ClaimSubscriptionObservationRequest)(nil),    // 44: delidev.v1.ClaimSubscriptionObservationRequest
-	(*ClaimSubscriptionObservationResponse)(nil),   // 45: delidev.v1.ClaimSubscriptionObservationResponse
-	(*PublishSubscriptionObservationRequest)(nil),  // 46: delidev.v1.PublishSubscriptionObservationRequest
-	(*PublishSubscriptionObservationResponse)(nil), // 47: delidev.v1.PublishSubscriptionObservationResponse
-	(*ForwardSubscriptionCallbackRequest)(nil),     // 48: delidev.v1.ForwardSubscriptionCallbackRequest
-	(*ForwardSubscriptionCallbackResponse)(nil),    // 49: delidev.v1.ForwardSubscriptionCallbackResponse
-	(*CodexDiagnostic)(nil),                        // 50: delidev.v1.CodexDiagnostic
-	(*GrokDiagnostic)(nil),                         // 51: delidev.v1.GrokDiagnostic
-	(*SetAutomaticResetCreditConsentRequest)(nil),  // 52: delidev.v1.SetAutomaticResetCreditConsentRequest
-	(*SetAutomaticResetCreditConsentResponse)(nil), // 53: delidev.v1.SetAutomaticResetCreditConsentResponse
-	(*Mutation)(nil),                               // 54: delidev.v1.Mutation
-	(*Resource)(nil),                               // 55: delidev.v1.Resource
+	(SubscriptionAction)(0),                         // 0: delidev.v1.SubscriptionAction
+	(SubscriptionLoginState)(0),                     // 1: delidev.v1.SubscriptionLoginState
+	(FailedSubscriptionCleanupState)(0),             // 2: delidev.v1.FailedSubscriptionCleanupState
+	(FailedSubscriptionCleanupOutcome)(0),           // 3: delidev.v1.FailedSubscriptionCleanupOutcome
+	(FailedSubscriptionCleanupReason)(0),            // 4: delidev.v1.FailedSubscriptionCleanupReason
+	(SubscriptionFinishScope)(0),                    // 5: delidev.v1.SubscriptionFinishScope
+	(SubscriptionRecoveryReport)(0),                 // 6: delidev.v1.SubscriptionRecoveryReport
+	(SubscriptionRecoveryOutcome)(0),                // 7: delidev.v1.SubscriptionRecoveryOutcome
+	(SubscriptionRecoveryBlockedReason)(0),          // 8: delidev.v1.SubscriptionRecoveryBlockedReason
+	(SubscriptionLoginMethod)(0),                    // 9: delidev.v1.SubscriptionLoginMethod
+	(NativeSubscriptionDiagnosticPhase)(0),          // 10: delidev.v1.NativeSubscriptionDiagnosticPhase
+	(SubscriptionObservationAction)(0),              // 11: delidev.v1.SubscriptionObservationAction
+	(SubscriptionResetOutcome)(0),                   // 12: delidev.v1.SubscriptionResetOutcome
+	(GrokDiagnosticPhase)(0),                        // 13: delidev.v1.GrokDiagnosticPhase
+	(CodexDiagnosticPhase)(0),                       // 14: delidev.v1.CodexDiagnosticPhase
+	(*CleanupFailedSubscriptionsRequest)(nil),       // 15: delidev.v1.CleanupFailedSubscriptionsRequest
+	(*CleanupFailedSubscriptionsResponse)(nil),      // 16: delidev.v1.CleanupFailedSubscriptionsResponse
+	(*GetFailedSubscriptionCleanupRequest)(nil),     // 17: delidev.v1.GetFailedSubscriptionCleanupRequest
+	(*GetFailedSubscriptionCleanupResponse)(nil),    // 18: delidev.v1.GetFailedSubscriptionCleanupResponse
+	(*FailedSubscriptionCleanupJob)(nil),            // 19: delidev.v1.FailedSubscriptionCleanupJob
+	(*FailedSubscriptionCleanupResult)(nil),         // 20: delidev.v1.FailedSubscriptionCleanupResult
+	(*RequestSubscriptionRequest)(nil),              // 21: delidev.v1.RequestSubscriptionRequest
+	(*RequestSubscriptionResponse)(nil),             // 22: delidev.v1.RequestSubscriptionResponse
+	(*CancelSubscriptionRequest)(nil),               // 23: delidev.v1.CancelSubscriptionRequest
+	(*CancelSubscriptionResponse)(nil),              // 24: delidev.v1.CancelSubscriptionResponse
+	(*GetSubscriptionProgressRequest)(nil),          // 25: delidev.v1.GetSubscriptionProgressRequest
+	(*GetSubscriptionProgressResponse)(nil),         // 26: delidev.v1.GetSubscriptionProgressResponse
+	(*WatchSubscriptionRequest)(nil),                // 27: delidev.v1.WatchSubscriptionRequest
+	(*WatchSubscriptionResponse)(nil),               // 28: delidev.v1.WatchSubscriptionResponse
+	(*TakeSubscriptionRequest)(nil),                 // 29: delidev.v1.TakeSubscriptionRequest
+	(*TakeSubscriptionResponse)(nil),                // 30: delidev.v1.TakeSubscriptionResponse
+	(*PublishSubscriptionProgressRequest)(nil),      // 31: delidev.v1.PublishSubscriptionProgressRequest
+	(*PublishSubscriptionProgressResponse)(nil),     // 32: delidev.v1.PublishSubscriptionProgressResponse
+	(*FinishSubscriptionRequest)(nil),               // 33: delidev.v1.FinishSubscriptionRequest
+	(*FinishSubscriptionResponse)(nil),              // 34: delidev.v1.FinishSubscriptionResponse
+	(*SyncSubscriptionRecoveryCaptureRequest)(nil),  // 35: delidev.v1.SyncSubscriptionRecoveryCaptureRequest
+	(*SyncSubscriptionRecoveryCaptureResponse)(nil), // 36: delidev.v1.SyncSubscriptionRecoveryCaptureResponse
+	(*ReadSubscriptionRecoveryCaptureRequest)(nil),  // 37: delidev.v1.ReadSubscriptionRecoveryCaptureRequest
+	(*ReadSubscriptionRecoveryCaptureResponse)(nil), // 38: delidev.v1.ReadSubscriptionRecoveryCaptureResponse
+	(*RecoverSubscriptionRequest)(nil),              // 39: delidev.v1.RecoverSubscriptionRequest
+	(*RecoverSubscriptionResponse)(nil),             // 40: delidev.v1.RecoverSubscriptionResponse
+	(*NativeSubscriptionDiagnostic)(nil),            // 41: delidev.v1.NativeSubscriptionDiagnostic
+	(*NativeSubscriptionIdentity)(nil),              // 42: delidev.v1.NativeSubscriptionIdentity
+	(*SubmitSubscriptionLoginCodeRequest)(nil),      // 43: delidev.v1.SubmitSubscriptionLoginCodeRequest
+	(*SubmitSubscriptionLoginCodeResponse)(nil),     // 44: delidev.v1.SubmitSubscriptionLoginCodeResponse
+	(*TakeSubscriptionLoginCodeRequest)(nil),        // 45: delidev.v1.TakeSubscriptionLoginCodeRequest
+	(*TakeSubscriptionLoginCodeResponse)(nil),       // 46: delidev.v1.TakeSubscriptionLoginCodeResponse
+	(*RequestSubscriptionObservationRequest)(nil),   // 47: delidev.v1.RequestSubscriptionObservationRequest
+	(*RequestSubscriptionObservationResponse)(nil),  // 48: delidev.v1.RequestSubscriptionObservationResponse
+	(*RefreshAllSubscriptionQuotasRequest)(nil),     // 49: delidev.v1.RefreshAllSubscriptionQuotasRequest
+	(*RefreshAllSubscriptionQuotasResponse)(nil),    // 50: delidev.v1.RefreshAllSubscriptionQuotasResponse
+	(*ReconcileSubscriptionCreditRequest)(nil),      // 51: delidev.v1.ReconcileSubscriptionCreditRequest
+	(*ReconcileSubscriptionCreditResponse)(nil),     // 52: delidev.v1.ReconcileSubscriptionCreditResponse
+	(*ClaimSubscriptionObservationRequest)(nil),     // 53: delidev.v1.ClaimSubscriptionObservationRequest
+	(*ClaimSubscriptionObservationResponse)(nil),    // 54: delidev.v1.ClaimSubscriptionObservationResponse
+	(*PublishSubscriptionObservationRequest)(nil),   // 55: delidev.v1.PublishSubscriptionObservationRequest
+	(*PublishSubscriptionObservationResponse)(nil),  // 56: delidev.v1.PublishSubscriptionObservationResponse
+	(*ForwardSubscriptionCallbackRequest)(nil),      // 57: delidev.v1.ForwardSubscriptionCallbackRequest
+	(*ForwardSubscriptionCallbackResponse)(nil),     // 58: delidev.v1.ForwardSubscriptionCallbackResponse
+	(*CodexDiagnostic)(nil),                         // 59: delidev.v1.CodexDiagnostic
+	(*GrokDiagnostic)(nil),                          // 60: delidev.v1.GrokDiagnostic
+	(*SetAutomaticResetCreditConsentRequest)(nil),   // 61: delidev.v1.SetAutomaticResetCreditConsentRequest
+	(*SetAutomaticResetCreditConsentResponse)(nil),  // 62: delidev.v1.SetAutomaticResetCreditConsentResponse
+	(*Mutation)(nil),                                // 63: delidev.v1.Mutation
+	(*Resource)(nil),                                // 64: delidev.v1.Resource
 }
 var file_delidev_v1_subscription_proto_depIdxs = []int32{
-	16, // 0: delidev.v1.CleanupFailedSubscriptionsResponse.job:type_name -> delidev.v1.FailedSubscriptionCleanupJob
-	16, // 1: delidev.v1.GetFailedSubscriptionCleanupResponse.job:type_name -> delidev.v1.FailedSubscriptionCleanupJob
-	17, // 2: delidev.v1.GetFailedSubscriptionCleanupResponse.results:type_name -> delidev.v1.FailedSubscriptionCleanupResult
+	19, // 0: delidev.v1.CleanupFailedSubscriptionsResponse.job:type_name -> delidev.v1.FailedSubscriptionCleanupJob
+	19, // 1: delidev.v1.GetFailedSubscriptionCleanupResponse.job:type_name -> delidev.v1.FailedSubscriptionCleanupJob
+	20, // 2: delidev.v1.GetFailedSubscriptionCleanupResponse.results:type_name -> delidev.v1.FailedSubscriptionCleanupResult
 	2,  // 3: delidev.v1.FailedSubscriptionCleanupJob.state:type_name -> delidev.v1.FailedSubscriptionCleanupState
 	3,  // 4: delidev.v1.FailedSubscriptionCleanupResult.outcome:type_name -> delidev.v1.FailedSubscriptionCleanupOutcome
 	4,  // 5: delidev.v1.FailedSubscriptionCleanupResult.reason:type_name -> delidev.v1.FailedSubscriptionCleanupReason
-	54, // 6: delidev.v1.RequestSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
+	63, // 6: delidev.v1.RequestSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
 	0,  // 7: delidev.v1.RequestSubscriptionRequest.action:type_name -> delidev.v1.SubscriptionAction
-	55, // 8: delidev.v1.RequestSubscriptionResponse.account:type_name -> delidev.v1.Resource
-	54, // 9: delidev.v1.CancelSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
-	55, // 10: delidev.v1.CancelSubscriptionResponse.account:type_name -> delidev.v1.Resource
+	64, // 8: delidev.v1.RequestSubscriptionResponse.account:type_name -> delidev.v1.Resource
+	63, // 9: delidev.v1.CancelSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
+	64, // 10: delidev.v1.CancelSubscriptionResponse.account:type_name -> delidev.v1.Resource
 	1,  // 11: delidev.v1.GetSubscriptionProgressResponse.state:type_name -> delidev.v1.SubscriptionLoginState
-	50, // 12: delidev.v1.GetSubscriptionProgressResponse.diagnostic:type_name -> delidev.v1.CodexDiagnostic
-	6,  // 13: delidev.v1.GetSubscriptionProgressResponse.login_method:type_name -> delidev.v1.SubscriptionLoginMethod
-	32, // 14: delidev.v1.GetSubscriptionProgressResponse.native_diagnostic:type_name -> delidev.v1.NativeSubscriptionDiagnostic
-	51, // 15: delidev.v1.GetSubscriptionProgressResponse.grok_diagnostic:type_name -> delidev.v1.GrokDiagnostic
-	55, // 16: delidev.v1.WatchSubscriptionResponse.account:type_name -> delidev.v1.Resource
-	54, // 17: delidev.v1.TakeSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
+	59, // 12: delidev.v1.GetSubscriptionProgressResponse.diagnostic:type_name -> delidev.v1.CodexDiagnostic
+	9,  // 13: delidev.v1.GetSubscriptionProgressResponse.login_method:type_name -> delidev.v1.SubscriptionLoginMethod
+	41, // 14: delidev.v1.GetSubscriptionProgressResponse.native_diagnostic:type_name -> delidev.v1.NativeSubscriptionDiagnostic
+	60, // 15: delidev.v1.GetSubscriptionProgressResponse.grok_diagnostic:type_name -> delidev.v1.GrokDiagnostic
+	64, // 16: delidev.v1.WatchSubscriptionResponse.account:type_name -> delidev.v1.Resource
+	63, // 17: delidev.v1.TakeSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
 	0,  // 18: delidev.v1.TakeSubscriptionRequest.action:type_name -> delidev.v1.SubscriptionAction
 	1,  // 19: delidev.v1.PublishSubscriptionProgressRequest.state:type_name -> delidev.v1.SubscriptionLoginState
-	6,  // 20: delidev.v1.PublishSubscriptionProgressRequest.login_method:type_name -> delidev.v1.SubscriptionLoginMethod
-	32, // 21: delidev.v1.PublishSubscriptionProgressRequest.native_diagnostic:type_name -> delidev.v1.NativeSubscriptionDiagnostic
-	54, // 22: delidev.v1.FinishSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
-	33, // 23: delidev.v1.FinishSubscriptionRequest.native_identity:type_name -> delidev.v1.NativeSubscriptionIdentity
+	9,  // 20: delidev.v1.PublishSubscriptionProgressRequest.login_method:type_name -> delidev.v1.SubscriptionLoginMethod
+	41, // 21: delidev.v1.PublishSubscriptionProgressRequest.native_diagnostic:type_name -> delidev.v1.NativeSubscriptionDiagnostic
+	63, // 22: delidev.v1.FinishSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
+	42, // 23: delidev.v1.FinishSubscriptionRequest.native_identity:type_name -> delidev.v1.NativeSubscriptionIdentity
 	5,  // 24: delidev.v1.FinishSubscriptionRequest.finish_scope:type_name -> delidev.v1.SubscriptionFinishScope
-	55, // 25: delidev.v1.FinishSubscriptionResponse.account:type_name -> delidev.v1.Resource
-	7,  // 26: delidev.v1.NativeSubscriptionDiagnostic.phase:type_name -> delidev.v1.NativeSubscriptionDiagnosticPhase
-	54, // 27: delidev.v1.SubmitSubscriptionLoginCodeRequest.mutation:type_name -> delidev.v1.Mutation
-	54, // 28: delidev.v1.RequestSubscriptionObservationRequest.mutation:type_name -> delidev.v1.Mutation
-	8,  // 29: delidev.v1.RequestSubscriptionObservationRequest.action:type_name -> delidev.v1.SubscriptionObservationAction
-	55, // 30: delidev.v1.RequestSubscriptionObservationResponse.account:type_name -> delidev.v1.Resource
-	54, // 31: delidev.v1.ReconcileSubscriptionCreditRequest.mutation:type_name -> delidev.v1.Mutation
-	55, // 32: delidev.v1.ReconcileSubscriptionCreditResponse.account:type_name -> delidev.v1.Resource
-	54, // 33: delidev.v1.ClaimSubscriptionObservationRequest.mutation:type_name -> delidev.v1.Mutation
-	54, // 34: delidev.v1.PublishSubscriptionObservationRequest.mutation:type_name -> delidev.v1.Mutation
-	55, // 35: delidev.v1.PublishSubscriptionObservationResponse.account:type_name -> delidev.v1.Resource
-	11, // 36: delidev.v1.CodexDiagnostic.phase:type_name -> delidev.v1.CodexDiagnosticPhase
-	10, // 37: delidev.v1.GrokDiagnostic.phase:type_name -> delidev.v1.GrokDiagnosticPhase
-	54, // 38: delidev.v1.SetAutomaticResetCreditConsentRequest.mutation:type_name -> delidev.v1.Mutation
-	55, // 39: delidev.v1.SetAutomaticResetCreditConsentResponse.account:type_name -> delidev.v1.Resource
-	52, // 40: delidev.v1.SubscriptionService.SetAutomaticResetCreditConsent:input_type -> delidev.v1.SetAutomaticResetCreditConsentRequest
-	12, // 41: delidev.v1.SubscriptionService.CleanupFailedSubscriptions:input_type -> delidev.v1.CleanupFailedSubscriptionsRequest
-	14, // 42: delidev.v1.SubscriptionService.GetFailedSubscriptionCleanup:input_type -> delidev.v1.GetFailedSubscriptionCleanupRequest
-	38, // 43: delidev.v1.SubscriptionService.RequestSubscriptionObservation:input_type -> delidev.v1.RequestSubscriptionObservationRequest
-	40, // 44: delidev.v1.SubscriptionService.RefreshAllSubscriptionQuotas:input_type -> delidev.v1.RefreshAllSubscriptionQuotasRequest
-	42, // 45: delidev.v1.SubscriptionService.ReconcileSubscriptionCredit:input_type -> delidev.v1.ReconcileSubscriptionCreditRequest
-	44, // 46: delidev.v1.SubscriptionService.ClaimSubscriptionObservation:input_type -> delidev.v1.ClaimSubscriptionObservationRequest
-	46, // 47: delidev.v1.SubscriptionService.PublishSubscriptionObservation:input_type -> delidev.v1.PublishSubscriptionObservationRequest
-	18, // 48: delidev.v1.SubscriptionService.RequestSubscription:input_type -> delidev.v1.RequestSubscriptionRequest
-	20, // 49: delidev.v1.SubscriptionService.CancelSubscription:input_type -> delidev.v1.CancelSubscriptionRequest
-	22, // 50: delidev.v1.SubscriptionService.GetSubscriptionProgress:input_type -> delidev.v1.GetSubscriptionProgressRequest
-	34, // 51: delidev.v1.SubscriptionService.SubmitSubscriptionLoginCode:input_type -> delidev.v1.SubmitSubscriptionLoginCodeRequest
-	36, // 52: delidev.v1.SubscriptionService.TakeSubscriptionLoginCode:input_type -> delidev.v1.TakeSubscriptionLoginCodeRequest
-	48, // 53: delidev.v1.SubscriptionService.ForwardSubscriptionCallback:input_type -> delidev.v1.ForwardSubscriptionCallbackRequest
-	24, // 54: delidev.v1.SubscriptionService.WatchSubscription:input_type -> delidev.v1.WatchSubscriptionRequest
-	26, // 55: delidev.v1.SubscriptionService.TakeSubscription:input_type -> delidev.v1.TakeSubscriptionRequest
-	28, // 56: delidev.v1.SubscriptionService.PublishSubscriptionProgress:input_type -> delidev.v1.PublishSubscriptionProgressRequest
-	30, // 57: delidev.v1.SubscriptionService.FinishSubscription:input_type -> delidev.v1.FinishSubscriptionRequest
-	53, // 58: delidev.v1.SubscriptionService.SetAutomaticResetCreditConsent:output_type -> delidev.v1.SetAutomaticResetCreditConsentResponse
-	13, // 59: delidev.v1.SubscriptionService.CleanupFailedSubscriptions:output_type -> delidev.v1.CleanupFailedSubscriptionsResponse
-	15, // 60: delidev.v1.SubscriptionService.GetFailedSubscriptionCleanup:output_type -> delidev.v1.GetFailedSubscriptionCleanupResponse
-	39, // 61: delidev.v1.SubscriptionService.RequestSubscriptionObservation:output_type -> delidev.v1.RequestSubscriptionObservationResponse
-	41, // 62: delidev.v1.SubscriptionService.RefreshAllSubscriptionQuotas:output_type -> delidev.v1.RefreshAllSubscriptionQuotasResponse
-	43, // 63: delidev.v1.SubscriptionService.ReconcileSubscriptionCredit:output_type -> delidev.v1.ReconcileSubscriptionCreditResponse
-	45, // 64: delidev.v1.SubscriptionService.ClaimSubscriptionObservation:output_type -> delidev.v1.ClaimSubscriptionObservationResponse
-	47, // 65: delidev.v1.SubscriptionService.PublishSubscriptionObservation:output_type -> delidev.v1.PublishSubscriptionObservationResponse
-	19, // 66: delidev.v1.SubscriptionService.RequestSubscription:output_type -> delidev.v1.RequestSubscriptionResponse
-	21, // 67: delidev.v1.SubscriptionService.CancelSubscription:output_type -> delidev.v1.CancelSubscriptionResponse
-	23, // 68: delidev.v1.SubscriptionService.GetSubscriptionProgress:output_type -> delidev.v1.GetSubscriptionProgressResponse
-	35, // 69: delidev.v1.SubscriptionService.SubmitSubscriptionLoginCode:output_type -> delidev.v1.SubmitSubscriptionLoginCodeResponse
-	37, // 70: delidev.v1.SubscriptionService.TakeSubscriptionLoginCode:output_type -> delidev.v1.TakeSubscriptionLoginCodeResponse
-	49, // 71: delidev.v1.SubscriptionService.ForwardSubscriptionCallback:output_type -> delidev.v1.ForwardSubscriptionCallbackResponse
-	25, // 72: delidev.v1.SubscriptionService.WatchSubscription:output_type -> delidev.v1.WatchSubscriptionResponse
-	27, // 73: delidev.v1.SubscriptionService.TakeSubscription:output_type -> delidev.v1.TakeSubscriptionResponse
-	29, // 74: delidev.v1.SubscriptionService.PublishSubscriptionProgress:output_type -> delidev.v1.PublishSubscriptionProgressResponse
-	31, // 75: delidev.v1.SubscriptionService.FinishSubscription:output_type -> delidev.v1.FinishSubscriptionResponse
-	58, // [58:76] is the sub-list for method output_type
-	40, // [40:58] is the sub-list for method input_type
-	40, // [40:40] is the sub-list for extension type_name
-	40, // [40:40] is the sub-list for extension extendee
-	0,  // [0:40] is the sub-list for field type_name
+	64, // 25: delidev.v1.FinishSubscriptionResponse.account:type_name -> delidev.v1.Resource
+	63, // 26: delidev.v1.SyncSubscriptionRecoveryCaptureRequest.mutation:type_name -> delidev.v1.Mutation
+	63, // 27: delidev.v1.RecoverSubscriptionRequest.mutation:type_name -> delidev.v1.Mutation
+	6,  // 28: delidev.v1.RecoverSubscriptionRequest.report:type_name -> delidev.v1.SubscriptionRecoveryReport
+	8,  // 29: delidev.v1.RecoverSubscriptionRequest.blocked_reason:type_name -> delidev.v1.SubscriptionRecoveryBlockedReason
+	64, // 30: delidev.v1.RecoverSubscriptionResponse.account:type_name -> delidev.v1.Resource
+	7,  // 31: delidev.v1.RecoverSubscriptionResponse.outcome:type_name -> delidev.v1.SubscriptionRecoveryOutcome
+	8,  // 32: delidev.v1.RecoverSubscriptionResponse.blocked_reason:type_name -> delidev.v1.SubscriptionRecoveryBlockedReason
+	10, // 33: delidev.v1.NativeSubscriptionDiagnostic.phase:type_name -> delidev.v1.NativeSubscriptionDiagnosticPhase
+	63, // 34: delidev.v1.SubmitSubscriptionLoginCodeRequest.mutation:type_name -> delidev.v1.Mutation
+	63, // 35: delidev.v1.RequestSubscriptionObservationRequest.mutation:type_name -> delidev.v1.Mutation
+	11, // 36: delidev.v1.RequestSubscriptionObservationRequest.action:type_name -> delidev.v1.SubscriptionObservationAction
+	64, // 37: delidev.v1.RequestSubscriptionObservationResponse.account:type_name -> delidev.v1.Resource
+	63, // 38: delidev.v1.ReconcileSubscriptionCreditRequest.mutation:type_name -> delidev.v1.Mutation
+	64, // 39: delidev.v1.ReconcileSubscriptionCreditResponse.account:type_name -> delidev.v1.Resource
+	63, // 40: delidev.v1.ClaimSubscriptionObservationRequest.mutation:type_name -> delidev.v1.Mutation
+	63, // 41: delidev.v1.PublishSubscriptionObservationRequest.mutation:type_name -> delidev.v1.Mutation
+	64, // 42: delidev.v1.PublishSubscriptionObservationResponse.account:type_name -> delidev.v1.Resource
+	14, // 43: delidev.v1.CodexDiagnostic.phase:type_name -> delidev.v1.CodexDiagnosticPhase
+	13, // 44: delidev.v1.GrokDiagnostic.phase:type_name -> delidev.v1.GrokDiagnosticPhase
+	63, // 45: delidev.v1.SetAutomaticResetCreditConsentRequest.mutation:type_name -> delidev.v1.Mutation
+	64, // 46: delidev.v1.SetAutomaticResetCreditConsentResponse.account:type_name -> delidev.v1.Resource
+	61, // 47: delidev.v1.SubscriptionService.SetAutomaticResetCreditConsent:input_type -> delidev.v1.SetAutomaticResetCreditConsentRequest
+	15, // 48: delidev.v1.SubscriptionService.CleanupFailedSubscriptions:input_type -> delidev.v1.CleanupFailedSubscriptionsRequest
+	17, // 49: delidev.v1.SubscriptionService.GetFailedSubscriptionCleanup:input_type -> delidev.v1.GetFailedSubscriptionCleanupRequest
+	47, // 50: delidev.v1.SubscriptionService.RequestSubscriptionObservation:input_type -> delidev.v1.RequestSubscriptionObservationRequest
+	49, // 51: delidev.v1.SubscriptionService.RefreshAllSubscriptionQuotas:input_type -> delidev.v1.RefreshAllSubscriptionQuotasRequest
+	51, // 52: delidev.v1.SubscriptionService.ReconcileSubscriptionCredit:input_type -> delidev.v1.ReconcileSubscriptionCreditRequest
+	53, // 53: delidev.v1.SubscriptionService.ClaimSubscriptionObservation:input_type -> delidev.v1.ClaimSubscriptionObservationRequest
+	55, // 54: delidev.v1.SubscriptionService.PublishSubscriptionObservation:input_type -> delidev.v1.PublishSubscriptionObservationRequest
+	21, // 55: delidev.v1.SubscriptionService.RequestSubscription:input_type -> delidev.v1.RequestSubscriptionRequest
+	23, // 56: delidev.v1.SubscriptionService.CancelSubscription:input_type -> delidev.v1.CancelSubscriptionRequest
+	25, // 57: delidev.v1.SubscriptionService.GetSubscriptionProgress:input_type -> delidev.v1.GetSubscriptionProgressRequest
+	43, // 58: delidev.v1.SubscriptionService.SubmitSubscriptionLoginCode:input_type -> delidev.v1.SubmitSubscriptionLoginCodeRequest
+	45, // 59: delidev.v1.SubscriptionService.TakeSubscriptionLoginCode:input_type -> delidev.v1.TakeSubscriptionLoginCodeRequest
+	57, // 60: delidev.v1.SubscriptionService.ForwardSubscriptionCallback:input_type -> delidev.v1.ForwardSubscriptionCallbackRequest
+	27, // 61: delidev.v1.SubscriptionService.WatchSubscription:input_type -> delidev.v1.WatchSubscriptionRequest
+	29, // 62: delidev.v1.SubscriptionService.TakeSubscription:input_type -> delidev.v1.TakeSubscriptionRequest
+	31, // 63: delidev.v1.SubscriptionService.PublishSubscriptionProgress:input_type -> delidev.v1.PublishSubscriptionProgressRequest
+	33, // 64: delidev.v1.SubscriptionService.FinishSubscription:input_type -> delidev.v1.FinishSubscriptionRequest
+	35, // 65: delidev.v1.SubscriptionService.SyncSubscriptionRecoveryCapture:input_type -> delidev.v1.SyncSubscriptionRecoveryCaptureRequest
+	37, // 66: delidev.v1.SubscriptionService.ReadSubscriptionRecoveryCapture:input_type -> delidev.v1.ReadSubscriptionRecoveryCaptureRequest
+	39, // 67: delidev.v1.SubscriptionService.RecoverSubscription:input_type -> delidev.v1.RecoverSubscriptionRequest
+	62, // 68: delidev.v1.SubscriptionService.SetAutomaticResetCreditConsent:output_type -> delidev.v1.SetAutomaticResetCreditConsentResponse
+	16, // 69: delidev.v1.SubscriptionService.CleanupFailedSubscriptions:output_type -> delidev.v1.CleanupFailedSubscriptionsResponse
+	18, // 70: delidev.v1.SubscriptionService.GetFailedSubscriptionCleanup:output_type -> delidev.v1.GetFailedSubscriptionCleanupResponse
+	48, // 71: delidev.v1.SubscriptionService.RequestSubscriptionObservation:output_type -> delidev.v1.RequestSubscriptionObservationResponse
+	50, // 72: delidev.v1.SubscriptionService.RefreshAllSubscriptionQuotas:output_type -> delidev.v1.RefreshAllSubscriptionQuotasResponse
+	52, // 73: delidev.v1.SubscriptionService.ReconcileSubscriptionCredit:output_type -> delidev.v1.ReconcileSubscriptionCreditResponse
+	54, // 74: delidev.v1.SubscriptionService.ClaimSubscriptionObservation:output_type -> delidev.v1.ClaimSubscriptionObservationResponse
+	56, // 75: delidev.v1.SubscriptionService.PublishSubscriptionObservation:output_type -> delidev.v1.PublishSubscriptionObservationResponse
+	22, // 76: delidev.v1.SubscriptionService.RequestSubscription:output_type -> delidev.v1.RequestSubscriptionResponse
+	24, // 77: delidev.v1.SubscriptionService.CancelSubscription:output_type -> delidev.v1.CancelSubscriptionResponse
+	26, // 78: delidev.v1.SubscriptionService.GetSubscriptionProgress:output_type -> delidev.v1.GetSubscriptionProgressResponse
+	44, // 79: delidev.v1.SubscriptionService.SubmitSubscriptionLoginCode:output_type -> delidev.v1.SubmitSubscriptionLoginCodeResponse
+	46, // 80: delidev.v1.SubscriptionService.TakeSubscriptionLoginCode:output_type -> delidev.v1.TakeSubscriptionLoginCodeResponse
+	58, // 81: delidev.v1.SubscriptionService.ForwardSubscriptionCallback:output_type -> delidev.v1.ForwardSubscriptionCallbackResponse
+	28, // 82: delidev.v1.SubscriptionService.WatchSubscription:output_type -> delidev.v1.WatchSubscriptionResponse
+	30, // 83: delidev.v1.SubscriptionService.TakeSubscription:output_type -> delidev.v1.TakeSubscriptionResponse
+	32, // 84: delidev.v1.SubscriptionService.PublishSubscriptionProgress:output_type -> delidev.v1.PublishSubscriptionProgressResponse
+	34, // 85: delidev.v1.SubscriptionService.FinishSubscription:output_type -> delidev.v1.FinishSubscriptionResponse
+	36, // 86: delidev.v1.SubscriptionService.SyncSubscriptionRecoveryCapture:output_type -> delidev.v1.SyncSubscriptionRecoveryCaptureResponse
+	38, // 87: delidev.v1.SubscriptionService.ReadSubscriptionRecoveryCapture:output_type -> delidev.v1.ReadSubscriptionRecoveryCaptureResponse
+	40, // 88: delidev.v1.SubscriptionService.RecoverSubscription:output_type -> delidev.v1.RecoverSubscriptionResponse
+	68, // [68:89] is the sub-list for method output_type
+	47, // [47:68] is the sub-list for method input_type
+	47, // [47:47] is the sub-list for extension type_name
+	47, // [47:47] is the sub-list for extension extendee
+	0,  // [0:47] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_subscription_proto_init() }
@@ -4121,8 +4875,8 @@ func file_delidev_v1_subscription_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_subscription_proto_rawDesc), len(file_delidev_v1_subscription_proto_rawDesc)),
-			NumEnums:      12,
-			NumMessages:   42,
+			NumEnums:      15,
+			NumMessages:   48,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

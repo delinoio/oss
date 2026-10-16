@@ -15004,6 +15004,389 @@
       "member": "replayed",
       "number": 3,
       "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_MANAGED_CODEX_RECOVERY_V1",
+      "number": 72
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "SyncSubscriptionRecoveryCaptureRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "SyncSubscriptionRecoveryCaptureRequest",
+      "member": "lease_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "SyncSubscriptionRecoveryCaptureRequest",
+      "member": "machine_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "SyncSubscriptionRecoveryCaptureRequest",
+      "member": "instance_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "SyncSubscriptionRecoveryCaptureRequest",
+      "member": "generation_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "SyncSubscriptionRecoveryCaptureRequest",
+      "member": "original",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "SyncSubscriptionRecoveryCaptureRequest",
+      "member": "latest",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "SyncSubscriptionRecoveryCaptureResponse",
+      "member": "capture_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "SyncSubscriptionRecoveryCaptureResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "ReadSubscriptionRecoveryCaptureRequest",
+      "member": "account_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "ReadSubscriptionRecoveryCaptureRequest",
+      "member": "lease_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "ReadSubscriptionRecoveryCaptureRequest",
+      "member": "machine_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "ReadSubscriptionRecoveryCaptureRequest",
+      "member": "instance_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "ReadSubscriptionRecoveryCaptureRequest",
+      "member": "original_instance_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "ReadSubscriptionRecoveryCaptureRequest",
+      "member": "generation_id",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "ReadSubscriptionRecoveryCaptureResponse",
+      "member": "capture_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "ReadSubscriptionRecoveryCaptureResponse",
+      "member": "original",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "ReadSubscriptionRecoveryCaptureResponse",
+      "member": "latest",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryReport",
+      "member": "SUBSCRIPTION_RECOVERY_REPORT_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryReport",
+      "member": "SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryReport",
+      "member": "SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryReport",
+      "member": "SUBSCRIPTION_RECOVERY_REPORT_BLOCKED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryOutcome",
+      "member": "SUBSCRIPTION_RECOVERY_OUTCOME_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryOutcome",
+      "member": "SUBSCRIPTION_RECOVERY_OUTCOME_RESTORED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryOutcome",
+      "member": "SUBSCRIPTION_RECOVERY_OUTCOME_DISCONNECTED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryOutcome",
+      "member": "SUBSCRIPTION_RECOVERY_OUTCOME_BLOCKED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryBlockedReason",
+      "member": "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryBlockedReason",
+      "member": "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_PROOF_UNAVAILABLE",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryBlockedReason",
+      "member": "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CLEANUP_UNCONFIRMED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryBlockedReason",
+      "member": "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_OWNERSHIP_EVIDENCE_INVALID",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryBlockedReason",
+      "member": "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_MEMBERS_UNSETTLED",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryBlockedReason",
+      "member": "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_USERS_ACTIVE",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "enum",
+      "declaration": "SubscriptionRecoveryBlockedReason",
+      "member": "SUBSCRIPTION_RECOVERY_BLOCKED_REASON_ACTIVE_OWNER",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionRequest",
+      "member": "lease_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionRequest",
+      "member": "machine_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionRequest",
+      "member": "instance_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionRequest",
+      "member": "original_instance_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionRequest",
+      "member": "generation_id",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionRequest",
+      "member": "report",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionRequest",
+      "member": "capture_id",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionRequest",
+      "member": "settled_member_lease_ids",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionRequest",
+      "member": "blocked_reason",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionResponse",
+      "member": "outcome",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 3992,
+      "kind": "message",
+      "declaration": "RecoverSubscriptionResponse",
+      "member": "blocked_reason",
+      "number": 4,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -15445,6 +15828,33 @@
       "method": "RemoveWorker",
       "input": "RemoveWorkerRequest",
       "output": "RemoveWorkerResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 3992,
+      "service": "SubscriptionService",
+      "method": "SyncSubscriptionRecoveryCapture",
+      "input": "SyncSubscriptionRecoveryCaptureRequest",
+      "output": "SyncSubscriptionRecoveryCaptureResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 3992,
+      "service": "SubscriptionService",
+      "method": "ReadSubscriptionRecoveryCapture",
+      "input": "ReadSubscriptionRecoveryCaptureRequest",
+      "output": "ReadSubscriptionRecoveryCaptureResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 3992,
+      "service": "SubscriptionService",
+      "method": "RecoverSubscription",
+      "input": "RecoverSubscriptionRequest",
+      "output": "RecoverSubscriptionResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

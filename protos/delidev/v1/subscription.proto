@@ -50,6 +50,12 @@ service SubscriptionService {
   rpc TakeSubscription(TakeSubscriptionRequest) returns (TakeSubscriptionResponse);
   rpc PublishSubscriptionProgress(PublishSubscriptionProgressRequest) returns (PublishSubscriptionProgressResponse);
   rpc FinishSubscription(FinishSubscriptionRequest) returns (FinishSubscriptionResponse);
+  // Worker-only managed ChatGPT execution recovery, negotiated by Worker
+  // capability MANAGED_CODEX_RECOVERY_V1. None of these operations delivers a
+  // credential generation, admits a Take or replaces the original Finish receipt.
+  rpc SyncSubscriptionRecoveryCapture(SyncSubscriptionRecoveryCaptureRequest) returns (SyncSubscriptionRecoveryCaptureResponse);
+  rpc ReadSubscriptionRecoveryCapture(ReadSubscriptionRecoveryCaptureRequest) returns (ReadSubscriptionRecoveryCaptureResponse);
+  rpc RecoverSubscription(RecoverSubscriptionRequest) returns (RecoverSubscriptionResponse);
 }
 
 // Explicit server-owned cleanup of failed initial logins. No native login or
@@ -217,6 +223,97 @@ enum SubscriptionFinishScope {
 message FinishSubscriptionResponse {
   Resource account = 1;
   bool replayed = 2;
+}
+
+// Stores a server-vault protected capture of the latest validated bundle of one
+// live or fenced managed ChatGPT EXECUTE lease before the Worker deletes its
+// transient authentication. The mutation request_id is the durable capture
+// identity, id is the account and expected_revision the lease revision. The
+// capture grants no readiness, Take, quota access or redistribution.
+message SyncSubscriptionRecoveryCaptureRequest {
+  Mutation mutation = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string generation_id = 5;
+  // The exact unused bundle the lease took, used only to recognize remnants.
+  bytes original = 6;
+  // The latest validated bundle written back by the native process.
+  bytes latest = 7;
+}
+message SyncSubscriptionRecoveryCaptureResponse {
+  string capture_id = 1;
+  bool replayed = 2;
+}
+// Returns the lease's own capture to its original Worker for complete retained
+// history inspection. It is not a Take and never changes ownership.
+message ReadSubscriptionRecoveryCaptureRequest {
+  string account_id = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  // The currently authenticated Worker instance.
+  string instance_id = 4;
+  // The instance that held the lease when it was granted.
+  string original_instance_id = 5;
+  string generation_id = 6;
+}
+message ReadSubscriptionRecoveryCaptureResponse {
+  string capture_id = 1;
+  bytes original = 2;
+  bytes latest = 3;
+}
+// What the original Worker proved for one recovery attempt.
+enum SubscriptionRecoveryReport {
+  SUBSCRIPTION_RECOVERY_REPORT_UNSPECIFIED = 0;
+  // Process, profile and retained-file cleanup is proven and the protected
+  // capture holds the latest validated credentials.
+  SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE = 1;
+  // Cleanup is proven but no usable latest credentials exist.
+  SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL = 2;
+  // Cleanup is not proven; blocked_reason names why.
+  SUBSCRIPTION_RECOVERY_REPORT_BLOCKED = 3;
+}
+enum SubscriptionRecoveryOutcome {
+  SUBSCRIPTION_RECOVERY_OUTCOME_UNSPECIFIED = 0;
+  // One immutable generation was published and readiness restored.
+  SUBSCRIPTION_RECOVERY_OUTCOME_RESTORED = 1;
+  // All original references were retired and the account is disconnected.
+  SUBSCRIPTION_RECOVERY_OUTCOME_DISCONNECTED = 2;
+  // The account stays protected; blocked_reason names why.
+  SUBSCRIPTION_RECOVERY_OUTCOME_BLOCKED = 3;
+}
+enum SubscriptionRecoveryBlockedReason {
+  SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED = 0;
+  // Legacy evidence cannot prove the latest credentials or their cleanup.
+  SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_PROOF_UNAVAILABLE = 1;
+  SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CLEANUP_UNCONFIRMED = 2;
+  SUBSCRIPTION_RECOVERY_BLOCKED_REASON_OWNERSHIP_EVIDENCE_INVALID = 3;
+  SUBSCRIPTION_RECOVERY_BLOCKED_REASON_MEMBERS_UNSETTLED = 4;
+  SUBSCRIPTION_RECOVERY_BLOCKED_REASON_CREDENTIAL_USERS_ACTIVE = 5;
+  SUBSCRIPTION_RECOVERY_BLOCKED_REASON_ACTIVE_OWNER = 6;
+}
+// Settles one fenced managed ChatGPT EXECUTE lease under a durable recovery
+// request identity distinct from the original Take and Finish requests. The
+// mutation id is the account and expected_revision the lease revision.
+message RecoverSubscriptionRequest {
+  Mutation mutation = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string original_instance_id = 5;
+  string generation_id = 6;
+  SubscriptionRecoveryReport report = 7;
+  // The capture the cleanup report relies on.
+  string capture_id = 8;
+  // Every execution member of a shared owner that settled before retirement.
+  repeated string settled_member_lease_ids = 9;
+  SubscriptionRecoveryBlockedReason blocked_reason = 10;
+}
+message RecoverSubscriptionResponse {
+  Resource account = 1;
+  bool replayed = 2;
+  SubscriptionRecoveryOutcome outcome = 3;
+  SubscriptionRecoveryBlockedReason blocked_reason = 4;
 }
 
 enum SubscriptionLoginMethod {

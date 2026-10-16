@@ -136,8 +136,13 @@ const (
 	// protected Take, runs the native process in a fresh private home and returns
 	// the bundle through protected Finish. The default build never advertises it.
 	ManagedGrokSubscriptionsV1 WorkerCapability = "managed-grok-subscriptions-v1"
-	CodexQuotaBlockV1          WorkerCapability = "codex-quota-block-v1"
-	SubscriptionPaidCreditsV1  WorkerCapability = "subscription-paid-credits-v1"
+	// ManagedCodexRecoveryV1 (Worker capability 72) negotiates automatic recovery
+	// of a fenced managed ChatGPT execution lease: a protected capture of the latest
+	// validated bundle and a distinct durable recovery request settled by the
+	// original Worker. It requires ManagedCodexSubscriptionsV1.
+	ManagedCodexRecoveryV1    WorkerCapability = "managed-codex-recovery-v1"
+	CodexQuotaBlockV1         WorkerCapability = "codex-quota-block-v1"
+	SubscriptionPaidCreditsV1 WorkerCapability = "subscription-paid-credits-v1"
 
 	SubscriptionObservationsV1  WorkerCapability = "subscription-observations-v1"
 	NativeSessionCompactionV1   WorkerCapability = "native-session-compaction-v1"
@@ -384,4 +389,11 @@ type RepositoryInspectionInput struct {
 	PreferredRemote        string   `json:"preferred_remote,omitempty"`
 	RequiredRemotes        []string `json:"required_remotes,omitempty"`
 	ExpectedRemoteIdentity string   `json:"expected_remote_identity,omitempty"`
+}
+
+// ManagedCodexRecoveryPaired reports whether a Worker capability set keeps the
+// recovery capability bound to managed ChatGPT subscriptions. A set without the
+// recovery capability is trivially paired.
+func ManagedCodexRecoveryPaired(capabilities []WorkerCapability) bool {
+	return !slices.Contains(capabilities, ManagedCodexRecoveryV1) || slices.Contains(capabilities, ManagedCodexSubscriptionsV1)
 }
