@@ -133,3 +133,73 @@ func TestCodexNicknameKeepsLastValidAndUpdatesFromLaterObservation(t *testing.T)
 		t.Fatal("observed names do not join their batch", err)
 	}
 }
+
+func TestCodexNicknameRetainedOnlyAfterChildOwnershipIsProven(t *testing.T) {
+	c, turn := observationClient()
+	child, parent := domain.NewID(), c.thread
+	started := func(nickname string) (Event, error) {
+		thread := threadWire{ID: child, ParentThreadID: &parent, SessionID: domain.NewID(), CLIVersion: SupportedVersion, ModelProvider: c.execution.settings.Provider, Status: ThreadStatus{Type: ThreadIdle}, AgentNickname: json.RawMessage(nickname)}
+		return observeFixture(c, "thread/started", map[string]any{"thread": thread})
+	}
+	// A start notification may precede the original spawn evidence and for a
+	// foreign parent never proves ownership, so no name is retained.
+	for _, parentID := range []domain.ID{c.thread, domain.NewID()} {
+		parent = parentID
+		if event, err := started(`"Early"`); err != nil || event.Kind != MetadataEvent || len(c.subagentNames) != 0 || len(event.SubagentNames) != 0 {
+			t.Fatal("unproved child retained a nickname", err)
+		}
+	}
+	parent = c.thread
+	spawn := map[string]any{"type": "collabAgentToolCall", "id": "original-spawn", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{child}, "agentsStates": map[string]any{string(child): map[string]any{"status": "running", "message": nil}}}
+	proved, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn})
+	if err != nil || len(proved.Subagents) != 1 || len(c.subagentNames) != 0 {
+		t.Fatal("original spawn changed names", err)
+	}
+	named, err := started(`"Atlas"`)
+	if err != nil || namesByNative(c, named)[string(child)] != "Atlas" {
+		t.Fatal("proved child lost its nickname", err)
+	}
+	// A changed parent is rejected and must not replace the retained name.
+	parent = domain.NewID()
+	if _, err := started(`"Intruder"`); err == nil || c.subagentNames[string(child)] != "Atlas" {
+		t.Fatal("rejected notification replaced the retained nickname")
+	}
+	// Invalid nicknames never replace or create a retained name.
+	parent = c.thread
+	for _, raw := range []string{`null`, `"  "`} {
+		if _, err := started(raw); err != nil || c.subagentNames[string(child)] != "Atlas" {
+			t.Fatal("invalid nickname changed the retained name", raw, err)
+		}
+	}
+}
+
+func TestCodexNicknameInventoryStagesUntilBatchIsAccepted(t *testing.T) {
+	c, path := nicknameFixture(t, map[string]string{"0": `"Atlas"`, "1": `"Nova"`})
+	first, err := c.InspectDescendants(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := map[string]string{}
+	for key, value := range c.subagentNames {
+		before[key] = value
+	}
+	// A known child reported under a different parent proves no ownership; the
+	// whole inventory is rejected and no name from it is retained.
+	c.subagents[first.Subagents[1].NativeID] = func() domain.SubagentObservation {
+		o := c.subagents[first.Subagents[1].NativeID]
+		o.ParentID = string(domain.NewID())
+		return o
+	}()
+	writeNicknames(t, path, map[string]string{"0": `"Renamed"`, "1": `"Other"`})
+	if _, err := c.InspectDescendants(context.Background()); err == nil {
+		t.Fatal("inventory with a reparented child was accepted")
+	}
+	if len(c.subagentNames) != len(before) {
+		t.Fatal("rejected inventory changed the retained names")
+	}
+	for key, value := range before {
+		if c.subagentNames[key] != value {
+			t.Fatal("rejected inventory replaced a retained name", key)
+		}
+	}
+}
