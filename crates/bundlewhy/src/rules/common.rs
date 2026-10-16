@@ -1749,15 +1749,58 @@ fn literal_between(source: &str, ignored: &[(usize, usize)], from: usize, to: us
         .any(|range| range.0 >= from && range.0 < to && !is_comment_range(source, *range))
 }
 
+/// Length of the `function` or `class` keyword that starts at `index`, when it
+/// is the keyword of an expression: a whole word that is not a member name
+/// (`obj.function`, `#class`).
+fn function_or_class_keyword_len(
+    source: &str,
+    index: usize,
+    ignored: &[(usize, usize)],
+) -> Option<usize> {
+    let rest = &source[index..];
+    let length = ["function", "class"]
+        .into_iter()
+        .find(|keyword| rest.starts_with(keyword))?
+        .len();
+    if rest[length..]
+        .chars()
+        .next()
+        .is_some_and(is_identifier_part)
+        || source[..index]
+            .chars()
+            .next_back()
+            .is_some_and(is_identifier_part)
+    {
+        return None;
+    }
+    match previous_significant_token(source, index, ignored) {
+        Token::Punct("." | "#") => None,
+        _ => Some(length),
+    }
+}
+
 /// End of an expression-bodied arrow function whose body starts at `from`:
 /// the first top-level `;` or `,`, the closer of the enclosing group, or a
 /// line terminator at which automatic semicolon insertion starts a new
 /// statement ([`arrow_body_ends`]). A line terminator before a binary operator
 /// (`(eval) => 1` + CR + `+eval(code)`) continues the body.
+///
+/// A function or class expression at the top level of the body
+/// (`(eval) => function` + line break + `named() { ... }`) is one operand from
+/// its keyword to the closing brace of its body: the keyword cannot end an
+/// expression, so no line break or block comment with a line terminator
+/// between the keyword and that brace starts a new statement (a name, a
+/// parameter list, an `extends` clause or the `{` may all follow on a later
+/// line). Only the first brace group after the keyword counts as the body, so a
+/// brace in a return type or a type argument ends this guard early.
 fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -> usize {
     let bytes = source.as_bytes();
     let mut depth = 0usize;
     let mut index = from;
+    // True from a top-level `function` or `class` keyword to the `{` that
+    // opens its body, and then until that body closes.
+    let mut awaiting_body = false;
+    let mut in_body = false;
     while index < bytes.len() {
         let range = ignored.partition_point(|(start, _)| *start <= index);
         if let Some((start, stop)) = range.checked_sub(1).map(|found| ignored[found])
@@ -1775,6 +1818,7 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
                     // body continues after the comment.
                     IgnoredRange::LineBreakComment
                         if depth == 0
+                            && !awaiting_body
                             && arrow_body_ends(
                                 source,
                                 start,
@@ -1807,6 +1851,7 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
         let terminator = line_terminator_len(bytes, index);
         if terminator > 0 {
             if depth == 0
+                && !awaiting_body
                 && arrow_body_ends(
                     source,
                     index,
@@ -1820,10 +1865,29 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
             index += terminator;
             continue;
         }
+        if depth == 0
+            && !awaiting_body
+            && !in_body
+            && let Some(length) = function_or_class_keyword_len(source, index, ignored)
+        {
+            awaiting_body = true;
+            index += length;
+            continue;
+        }
         match bytes[index] {
+            b'{' if depth == 0 && awaiting_body => {
+                awaiting_body = false;
+                in_body = true;
+                depth += 1;
+            }
             b'(' | b'[' | b'{' => depth += 1,
             b')' | b']' | b'}' => match depth.checked_sub(1) {
-                Some(next) => depth = next,
+                Some(next) => {
+                    depth = next;
+                    if depth == 0 && in_body && bytes[index] == b'}' {
+                        in_body = false;
+                    }
+                }
                 None => return index,
             },
             b';' | b',' if depth == 0 => return index,
@@ -7796,6 +7860,88 @@ y=/process.env.F/.test(z),process.env.G"#;
             let source =
                 format!("switch (a) {{ case 1:{terminator}function eval() {{}} }} eval(code);");
             assert!(direct_eval_line(&source).is_some(), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn a_line_break_inside_a_function_or_class_expression_keeps_the_arrow_scope() {
+        for terminator in LINE_TERMINATORS {
+            // A line break (or a block comment that holds one) may sit between
+            // the keyword and the name, the parameter list, the `extends`
+            // clause or the body brace without ending the arrow body.
+            for body in [
+                "function {t} named() {{ return eval(code) }}",
+                "function named {t} () {{ return eval(code) }}",
+                "function () {t} {{ return eval(code) }}",
+                "function* {t} gen() {{ yield eval(code) }}",
+                "async function {t} named() {{ return eval(code) }}",
+                "function named() {t} {{ return eval(code) }}",
+                "class {t} A {{ m() {{ return eval(code) }} }}",
+                "class A {t} extends B {{ m() {{ return eval(code) }} }}",
+                "class A extends {t} B {{ m() {{ return eval(code) }} }}",
+                "class A extends B {t} {{ m() {{ return eval(code) }} }}",
+                "class {t} extends B {{ m() {{ return eval(code) }} }}",
+                "class {t} {{ m() {{ return eval(code) }} }}",
+            ] {
+                for line_break in [format!("/*{terminator}*/"), terminator.to_string()] {
+                    let source =
+                        format!("const f = (eval) => {}", body.replace("{t}", &line_break));
+                    assert!(direct_eval_offsets(&source).is_empty(), "{source:?}");
+                }
+            }
+            // The expression ends at the closing brace of its body, so a
+            // statement on the next line is outside the arrow.
+            for head in [
+                "function () {}",
+                "function named() {}",
+                "class A {}",
+                "class {}",
+            ] {
+                for line_break in [format!("/*{terminator}*/"), terminator.to_string()] {
+                    let source = format!("const f = (eval) => {head} {line_break} eval(code)");
+                    assert_eq!(
+                        direct_eval_offsets(&source),
+                        vec![source.rfind("eval(code)").unwrap()],
+                        "{source:?}"
+                    );
+                }
+            }
+            // A comma after the body still ends the arrow body.
+            let source =
+                format!("const f = (eval) => function /*{terminator}*/ f() {{}}, eval(code)");
+            assert_eq!(
+                direct_eval_offsets(&source),
+                vec![source.rfind("eval(code)").unwrap()],
+                "{source:?}"
+            );
+            // A word that only starts with the keyword and a member named like
+            // the keyword are not the keyword of an expression.
+            for operand in [
+                "functional",
+                "classy",
+                "obj.function",
+                "obj.class",
+                "obj?.class",
+            ] {
+                let source =
+                    format!("const f = (eval) => {operand} /*{terminator}*/ next = eval(code)");
+                assert_eq!(
+                    direct_eval_offsets(&source),
+                    vec![source.rfind("eval(code)").unwrap()],
+                    "{source:?}"
+                );
+            }
+            // `as` and `satisfies` do not continue an expression after a line
+            // break in TypeScript, so the next line is a new statement.
+            for operator in ["as T", "satisfies T"] {
+                let source =
+                    format!("const f = (eval) => value /*{terminator}*/ {operator} && eval(code)");
+                assert_eq!(
+                    direct_eval_offsets(&source),
+                    vec![source.rfind("eval(code)").unwrap()],
+                    "{source:?}"
+                );
+            }
         }
     }
 
