@@ -514,3 +514,7 @@ The managed shared Codex owner's account-wide history home is registered in plac
 selected managed profile owner and binds its directory identity, while an
 original Claude logout can finish a registry-only retry after its owned
 directory was removed.
+
+## Saved Worker deletion
+
+Settings > Runner Devices can delete a saved Worker through the dedicated, revision-bound `DeviceService.RemoveWorker` operation negotiated by `SYSTEM_CAPABILITY_WORKER_REMOVAL_V1 = 107`. Deletion revokes the Worker's server authorization and retires its machine record, which then leaves active saved-runner inventories and new execution choices. Session history, usage, schedules, cleanup records, original identities and files on the device are kept. The exact current app-managed local Worker, identified by the trusted native local-Worker proof and never by name or status, cannot be deleted. Follow the [protocol](protos-delidev-v1-contract.md#worker-removal-allocation), [server](cmds-delidev-contract.md#worker-removal), [client package](packages-delidev-api-client-contract.md#worker-removal-client) and [desktop](apps-delidev-desktop-contract.md#saved-worker-deletion) contracts. Older servers keep inspection and revocation only.

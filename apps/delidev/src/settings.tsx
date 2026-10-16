@@ -166,7 +166,16 @@ import {
   confirmedRepository,
   type ChooseRepositoryFolder,
 } from "./repository-registration";
-import type { ReadLocalWorkerProof } from "./local-worker";
+import {
+  LocalWorkerIdentityStatus,
+  useLocalWorkerIdentity,
+  type ReadLocalWorkerProof,
+} from "./local-worker";
+import {
+  WorkerRemovalDialog,
+  WorkerRemovalSupport,
+  workerRemovalSupport,
+} from "./worker-removal";
 import { SettingsLifetime, useSettingsOpening } from "./settings-lifetime";
 import {
   RunnerTailscalePresentation,
@@ -3437,6 +3446,8 @@ function SettingsWorkspace({
                             page={page}
                             nextPage={result.data?.nextPageToken ?? ""}
                             inspect={inspectMachine}
+                            readLocalWorker={readLocalWorker}
+                            refresh={() => void result.refetch()}
                           />
                           <div hidden={!inventoryActive}>
                             <ScrollContinuation
@@ -4060,6 +4071,8 @@ function RunnerDeviceInventory({
   page,
   nextPage,
   inspect,
+  readLocalWorker,
+  refresh,
 }: {
   query: ReturnType<typeof useResourceScrollQuery>;
   root: import("react").RefObject<HTMLElement | null>;
@@ -4070,16 +4083,106 @@ function RunnerDeviceInventory({
   page: string;
   nextPage: string;
   inspect: (row: Resource) => void;
+  readLocalWorker?: ReadLocalWorkerProof;
+  refresh: () => void;
 }) {
   const productLabel = useProductLabels();
   useLocale();
+  const section = useRef<HTMLElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const status = useQuery(
+    SystemQuery.getStatus,
+    {},
+    { enabled: active, retry: false },
+  );
+  const support = workerRemovalSupport(status.data, Boolean(status.error));
+  const { identity, refresh: reverify } = useLocalWorkerIdentity(
+    readLocalWorker,
+    active && support === WorkerRemovalSupport.Supported,
+  );
+  const [removing, setRemoving] = useState<Resource>();
+  // Authoritatively removed Workers stay hidden even if a cached or stale page
+  // still carries them; the server filters them from every later read.
+  const [deleted, setDeleted] = useState<ReadonlySet<string>>(new Set());
+  const [announcement, setAnnouncement] = useState("");
+  const pendingFocus = useRef<string | undefined>(undefined);
+  const focusRequested = useRef(false);
+  useEffect(() => {
+    if (!focusRequested.current) return;
+    focusRequested.current = false;
+    const next = pendingFocus.current;
+    pendingFocus.current = undefined;
+    const row = next
+      ? [
+          ...(section.current?.querySelectorAll<HTMLElement>(
+            "[data-machine-id]",
+          ) ?? []),
+        ].find((candidate) => candidate.dataset.machineId === next)
+      : undefined;
+    const action = row?.querySelector<HTMLElement>("button:not(:disabled)");
+    (action ?? heading.current)?.focus();
+  }, [deleted]);
+  const removed = (machine: Resource, name: string) => {
+    const rows = [
+      ...(section.current?.querySelectorAll<HTMLElement>("[data-machine-id]") ??
+        []),
+    ];
+    const index = rows.findIndex((row) => row.dataset.machineId === machine.id);
+    pendingFocus.current = rows
+      .slice(index + 1)
+      .find((row) => row.dataset.machineId !== machine.id)?.dataset.machineId;
+    focusRequested.current = true;
+    setDeleted((previous) => new Set(previous).add(machine.id));
+    setAnnouncement(copy("worker-removal.deleted", { v0: name }));
+    setRemoving(undefined);
+    refresh();
+  };
   return (
     <section
+      ref={section}
       data-settings-search-target="runner-inventory"
       className="settings-runner-inventory"
       aria-label={copy("settings.savedRunnerDevices_9e6092")}
     >
-      <h2>{copy("settings.savedRunnerDevices_9e6092")}</h2>
+      <h2 ref={heading} tabIndex={-1}>
+        {copy("settings.savedRunnerDevices_9e6092")}
+      </h2>
+      {announcement ? <p role="status">{announcement}</p> : null}
+      {support === WorkerRemovalSupport.Pending ? (
+        <p className="settings-runner-removal-note">
+          {copy("worker-removal.capabilityPending")}
+        </p>
+      ) : null}
+      {support === WorkerRemovalSupport.Unknown ? (
+        <p className="settings-runner-removal-note">
+          {copy("worker-removal.capabilityUnknown")}
+        </p>
+      ) : null}
+      {support === WorkerRemovalSupport.Unsupported ? (
+        <p className="settings-runner-removal-note">
+          {copy("worker-removal.unsupported")}
+        </p>
+      ) : null}
+      {support === WorkerRemovalSupport.Supported &&
+      identity.status === LocalWorkerIdentityStatus.Pending ? (
+        <p role="status" className="settings-runner-removal-note">
+          {copy("worker-removal.identityPending")}
+        </p>
+      ) : null}
+      {support === WorkerRemovalSupport.Supported &&
+      identity.status === LocalWorkerIdentityStatus.Unavailable ? (
+        <div className="settings-runner-removal-note">
+          <p>{copy("worker-removal.identityUnavailable")}</p>
+          <SettingsActionButton
+            icon={SettingsActionIcon.Retry}
+            type="button"
+            disabled={!readLocalWorker}
+            onClick={reverify}
+          >
+            {copy("worker-removal.identityRetry")}
+          </SettingsActionButton>
+        </div>
+      ) : null}
       {loading ? (
         <>
           <p role="status">{copy("settings.loadingRunnerDevices_a75d73")}</p>
@@ -4116,43 +4219,91 @@ function RunnerDeviceInventory({
         revision={paginationRevision}
       >
         {(rows) =>
-          rows.map((row) => {
-            const data = document(row);
-            return (
-              <article className="settings-runner-row" key={row.id}>
-                <div className="settings-runner-identity">
-                  <h3>{productResourceName(productLabel, row)}</h3>
-                  {text(data.health) ? (
-                    <p>
-                      <LocalizedText
-                        id="settings.status_ae149d"
-                        components={{ s0: <>{text(data.health)}</> }}
-                      />
-                    </p>
-                  ) : null}
-                  {text(data.harness) ? (
-                    <p>
-                      <LocalizedText
-                        id="settings.harness_db1faa"
-                        components={{ s0: <>{text(data.harness)}</> }}
-                      />
-                    </p>
-                  ) : null}
-                  <small>{productLabel(PresentationKind.Runner, row.id)}</small>
-                </div>
-                <div className="actions">
-                  <SettingsActionButton
-                    icon={SettingsActionIcon.Inspect}
-                    type="button"
-                    disabled={row.schemaVersion !== 1}
-                    onClick={() => inspect(row)}
-                  >
-                    {copy("settings.inspectInstalledHarnesses_45e943")}
-                  </SettingsActionButton>
-                </div>
-              </article>
-            );
-          })
+          rows
+            .filter(
+              (row) => !deleted.has(row.id) && document(row).retired !== true,
+            )
+            .map((row) => {
+              const data = document(row);
+              // Identity is the trusted native machine ID, never a name or status.
+              const current =
+                identity.status === LocalWorkerIdentityStatus.Verified &&
+                identity.machineId === row.id;
+              const mayDelete =
+                support === WorkerRemovalSupport.Supported &&
+                identity.status === LocalWorkerIdentityStatus.Verified &&
+                !current &&
+                row.schemaVersion === 1;
+              return (
+                <article
+                  className="settings-runner-row"
+                  key={row.id}
+                  data-machine-id={row.id}
+                >
+                  <div className="settings-runner-identity">
+                    <h3>{productResourceName(productLabel, row)}</h3>
+                    {text(data.health) ? (
+                      <p>
+                        <LocalizedText
+                          id="settings.status_ae149d"
+                          components={{ s0: <>{text(data.health)}</> }}
+                        />
+                      </p>
+                    ) : null}
+                    {text(data.harness) ? (
+                      <p>
+                        <LocalizedText
+                          id="settings.harness_db1faa"
+                          components={{ s0: <>{text(data.harness)}</> }}
+                        />
+                      </p>
+                    ) : null}
+                    <small>
+                      {productLabel(PresentationKind.Runner, row.id)}
+                    </small>
+                    {current ? (
+                      <>
+                        <span className="settings-runner-managed">
+                          {copy("worker-removal.managed")}
+                        </span>
+                        <p className="settings-runner-protected">
+                          {copy("worker-removal.protected")}
+                        </p>
+                      </>
+                    ) : null}
+                    {row.schemaVersion !== 1 ? (
+                      <p className="settings-runner-protected">
+                        {copy("worker-removal.schemaUnsupported")}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="actions settings-runner-actions">
+                    <SettingsActionButton
+                      icon={SettingsActionIcon.Inspect}
+                      type="button"
+                      disabled={row.schemaVersion !== 1}
+                      onClick={() => inspect(row)}
+                    >
+                      {copy("settings.inspectInstalledHarnesses_45e943")}
+                    </SettingsActionButton>
+                    {!current ? (
+                      <SettingsActionButton
+                        tone={SettingsActionTone.Danger}
+                        icon={SettingsActionIcon.Delete}
+                        type="button"
+                        disabled={!mayDelete}
+                        aria-label={copy("worker-removal.rowDeleteLabel", {
+                          v0: productResourceName(productLabel, row),
+                        })}
+                        onClick={() => setRemoving(row)}
+                      >
+                        {copy("worker-removal.rowDelete")}
+                      </SettingsActionButton>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            })
         }
       </ScrollPayloadWindow>
       {resources?.length === 0 ? (
@@ -4161,6 +4312,18 @@ function RunnerDeviceInventory({
             ? copy("settings.noSavedEntriesOnThisPage_ea1b6b")
             : copy("settings.noSavedEntries_a59b83")}
         </p>
+      ) : null}
+      {removing ? (
+        <WorkerRemovalDialog
+          machine={removing}
+          name={productResourceName(productLabel, removing)}
+          readLocalWorker={readLocalWorker}
+          active={active}
+          close={() => setRemoving(undefined)}
+          removed={(machine) =>
+            removed(machine, productResourceName(productLabel, removing))
+          }
+        />
       ) : null}
     </section>
   );

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/device.proto.
  */
 export const file_delidev_v1_device: GenFile = /*@__PURE__*/
-  fileDesc("ChdkZWxpZGV2L3YxL2RldmljZS5wcm90bxIKZGVsaWRldi52MSJzChRDcmVhdGVQYWlyaW5nUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEgwKBG5hbWUYAiABKAkSJAoEdHlwZRgDIAEoDjIWLmRlbGlkZXYudjEuRGV2aWNlVHlwZRITCgtjb2RlX2RpZ2VzdBgEIAEoDCJkChVDcmVhdGVQYWlyaW5nUmVzcG9uc2USJQoHcGFpcmluZxgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCLUAQoRUGFpckRldmljZVJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRISCgpwYWlyaW5nX2lkGAIgASgJEgwKBGNvZGUYAyABKAkSEQoJZGV2aWNlX2lkGAQgASgJEhkKEWNyZWRlbnRpYWxfZGlnZXN0GAUgASgMEhIKCm1hY2hpbmVfaWQYBiABKAkSFAoMbWFjaGluZV9qc29uGAcgASgMEhkKEW5ldHdvcmtfcmVjaXBpZW50GAggASgJEhYKDm5ldHdvcmtfa2V5X2lkGAkgASgJIoYBChJQYWlyRGV2aWNlUmVzcG9uc2USJAoGZGV2aWNlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIlCgdtYWNoaW5lGAIgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIRCglzZXJ2ZXJfaWQYAyABKAkSEAoIcmVwbGF5ZWQYBCABKAgiPQoTUmV2b2tlRGV2aWNlUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24iYgoUUmV2b2tlRGV2aWNlUmVzcG9uc2USJAoGZGV2aWNlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIKlkKCkRldmljZVR5cGUSGwoXREVWSUNFX1RZUEVfVU5TUEVDSUZJRUQQABIWChJERVZJQ0VfVFlQRV9DTElFTlQQARIWChJERVZJQ0VfVFlQRV9XT1JLRVIQAjKFAgoNRGV2aWNlU2VydmljZRJUCg1DcmVhdGVQYWlyaW5nEiAuZGVsaWRldi52MS5DcmVhdGVQYWlyaW5nUmVxdWVzdBohLmRlbGlkZXYudjEuQ3JlYXRlUGFpcmluZ1Jlc3BvbnNlEksKClBhaXJEZXZpY2USHS5kZWxpZGV2LnYxLlBhaXJEZXZpY2VSZXF1ZXN0Gh4uZGVsaWRldi52MS5QYWlyRGV2aWNlUmVzcG9uc2USUQoMUmV2b2tlRGV2aWNlEh8uZGVsaWRldi52MS5SZXZva2VEZXZpY2VSZXF1ZXN0GiAuZGVsaWRldi52MS5SZXZva2VEZXZpY2VSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
+  fileDesc("ChdkZWxpZGV2L3YxL2RldmljZS5wcm90bxIKZGVsaWRldi52MSJzChRDcmVhdGVQYWlyaW5nUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEgwKBG5hbWUYAiABKAkSJAoEdHlwZRgDIAEoDjIWLmRlbGlkZXYudjEuRGV2aWNlVHlwZRITCgtjb2RlX2RpZ2VzdBgEIAEoDCJkChVDcmVhdGVQYWlyaW5nUmVzcG9uc2USJQoHcGFpcmluZxgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCLUAQoRUGFpckRldmljZVJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRISCgpwYWlyaW5nX2lkGAIgASgJEgwKBGNvZGUYAyABKAkSEQoJZGV2aWNlX2lkGAQgASgJEhkKEWNyZWRlbnRpYWxfZGlnZXN0GAUgASgMEhIKCm1hY2hpbmVfaWQYBiABKAkSFAoMbWFjaGluZV9qc29uGAcgASgMEhkKEW5ldHdvcmtfcmVjaXBpZW50GAggASgJEhYKDm5ldHdvcmtfa2V5X2lkGAkgASgJIoYBChJQYWlyRGV2aWNlUmVzcG9uc2USJAoGZGV2aWNlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIlCgdtYWNoaW5lGAIgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIRCglzZXJ2ZXJfaWQYAyABKAkSEAoIcmVwbGF5ZWQYBCABKAgiPQoTUmV2b2tlRGV2aWNlUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24iYgoUUmV2b2tlRGV2aWNlUmVzcG9uc2USJAoGZGV2aWNlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIlUKE1JlbW92ZVdvcmtlclJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEhYKDnNjaGVtYV92ZXJzaW9uGAIgASgNImMKFFJlbW92ZVdvcmtlclJlc3BvbnNlEiUKB21hY2hpbmUYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgqWQoKRGV2aWNlVHlwZRIbChdERVZJQ0VfVFlQRV9VTlNQRUNJRklFRBAAEhYKEkRFVklDRV9UWVBFX0NMSUVOVBABEhYKEkRFVklDRV9UWVBFX1dPUktFUhACMtgCCg1EZXZpY2VTZXJ2aWNlElQKDUNyZWF0ZVBhaXJpbmcSIC5kZWxpZGV2LnYxLkNyZWF0ZVBhaXJpbmdSZXF1ZXN0GiEuZGVsaWRldi52MS5DcmVhdGVQYWlyaW5nUmVzcG9uc2USSwoKUGFpckRldmljZRIdLmRlbGlkZXYudjEuUGFpckRldmljZVJlcXVlc3QaHi5kZWxpZGV2LnYxLlBhaXJEZXZpY2VSZXNwb25zZRJRCgxSZXZva2VEZXZpY2USHy5kZWxpZGV2LnYxLlJldm9rZURldmljZVJlcXVlc3QaIC5kZWxpZGV2LnYxLlJldm9rZURldmljZVJlc3BvbnNlElEKDFJlbW92ZVdvcmtlchIfLmRlbGlkZXYudjEuUmVtb3ZlV29ya2VyUmVxdWVzdBogLmRlbGlkZXYudjEuUmVtb3ZlV29ya2VyUmVzcG9uc2VCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z", [file_delidev_v1_common]);
 
 /**
  * @generated from message delidev.v1.CreatePairingRequest
@@ -209,6 +209,61 @@ export const RevokeDeviceResponseSchema: GenMessage<RevokeDeviceResponse> = /*@_
   messageDesc(file_delidev_v1_device, 5);
 
 /**
+ * @generated from message delidev.v1.RemoveWorkerRequest
+ */
+export type RemoveWorkerRequest = Message<"delidev.v1.RemoveWorkerRequest"> & {
+  /**
+   * mutation.id is the original machine ID; expected_revision is its revision.
+   *
+   * @generated from field: delidev.v1.Mutation mutation = 1;
+   */
+  mutation?: Mutation | undefined;
+
+  /**
+   * Machine resource schema the caller observed. Only version 1 is supported.
+   *
+   * @generated from field: uint32 schema_version = 2;
+   */
+  schemaVersion: number;
+};
+
+/**
+ * Describes the message delidev.v1.RemoveWorkerRequest.
+ * Use `create(RemoveWorkerRequestSchema)` to create a new message.
+ */
+export const RemoveWorkerRequestSchema: GenMessage<RemoveWorkerRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_device, 6);
+
+/**
+ * @generated from message delidev.v1.RemoveWorkerResponse
+ */
+export type RemoveWorkerResponse = Message<"delidev.v1.RemoveWorkerResponse"> & {
+  /**
+   * The retired machine record; exact reads keep its original name and ID.
+   *
+   * @generated from field: delidev.v1.Resource machine = 1;
+   */
+  machine?: Resource | undefined;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 3;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.RemoveWorkerResponse.
+ * Use `create(RemoveWorkerResponseSchema)` to create a new message.
+ */
+export const RemoveWorkerResponseSchema: GenMessage<RemoveWorkerResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_device, 7);
+
+/**
  * @generated from enum delidev.v1.DeviceType
  */
 export enum DeviceType {
@@ -261,6 +316,17 @@ export const DeviceService: GenService<{
     methodKind: "unary";
     input: typeof RevokeDeviceRequestSchema;
     output: typeof RevokeDeviceResponseSchema;
+  },
+  /**
+   * Revokes a Worker's device authorization and retires its saved machine in one
+   * revision-bound transaction. Gated by SYSTEM_CAPABILITY_WORKER_REMOVAL_V1.
+   *
+   * @generated from rpc delidev.v1.DeviceService.RemoveWorker
+   */
+  removeWorker: {
+    methodKind: "unary";
+    input: typeof RemoveWorkerRequestSchema;
+    output: typeof RemoveWorkerResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_delidev_v1_device, 0);

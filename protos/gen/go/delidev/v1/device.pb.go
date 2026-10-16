@@ -479,6 +479,121 @@ func (x *RevokeDeviceResponse) GetReplayed() bool {
 	return false
 }
 
+type RemoveWorkerRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// mutation.id is the original machine ID; expected_revision is its revision.
+	Mutation *Mutation `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	// Machine resource schema the caller observed. Only version 1 is supported.
+	SchemaVersion uint32 `protobuf:"varint,2,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveWorkerRequest) Reset() {
+	*x = RemoveWorkerRequest{}
+	mi := &file_delidev_v1_device_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveWorkerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveWorkerRequest) ProtoMessage() {}
+
+func (x *RemoveWorkerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_device_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveWorkerRequest.ProtoReflect.Descriptor instead.
+func (*RemoveWorkerRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_device_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *RemoveWorkerRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *RemoveWorkerRequest) GetSchemaVersion() uint32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
+type RemoveWorkerResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The retired machine record; exact reads keep its original name and ID.
+	Machine       *Resource `protobuf:"bytes,1,opt,name=machine,proto3" json:"machine,omitempty"`
+	RequestId     string    `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool      `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveWorkerResponse) Reset() {
+	*x = RemoveWorkerResponse{}
+	mi := &file_delidev_v1_device_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveWorkerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveWorkerResponse) ProtoMessage() {}
+
+func (x *RemoveWorkerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_device_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveWorkerResponse.ProtoReflect.Descriptor instead.
+func (*RemoveWorkerResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_device_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RemoveWorkerResponse) GetMachine() *Resource {
+	if x != nil {
+		return x.Machine
+	}
+	return nil
+}
+
+func (x *RemoveWorkerResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *RemoveWorkerResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
 var File_delidev_v1_device_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_device_proto_rawDesc = "" +
@@ -521,17 +636,26 @@ const file_delidev_v1_device_proto_rawDesc = "" +
 	"\x06device\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x06device\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"n\n" +
+	"\x13RemoveWorkerRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12%\n" +
+	"\x0eschema_version\x18\x02 \x01(\rR\rschemaVersion\"\x81\x01\n" +
+	"\x14RemoveWorkerResponse\x12.\n" +
+	"\amachine\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\amachine\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
 	"\breplayed\x18\x03 \x01(\bR\breplayed*Y\n" +
 	"\n" +
 	"DeviceType\x12\x1b\n" +
 	"\x17DEVICE_TYPE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12DEVICE_TYPE_CLIENT\x10\x01\x12\x16\n" +
-	"\x12DEVICE_TYPE_WORKER\x10\x022\x85\x02\n" +
+	"\x12DEVICE_TYPE_WORKER\x10\x022\xd8\x02\n" +
 	"\rDeviceService\x12T\n" +
 	"\rCreatePairing\x12 .delidev.v1.CreatePairingRequest\x1a!.delidev.v1.CreatePairingResponse\x12K\n" +
 	"\n" +
 	"PairDevice\x12\x1d.delidev.v1.PairDeviceRequest\x1a\x1e.delidev.v1.PairDeviceResponse\x12Q\n" +
-	"\fRevokeDevice\x12\x1f.delidev.v1.RevokeDeviceRequest\x1a .delidev.v1.RevokeDeviceResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"\fRevokeDevice\x12\x1f.delidev.v1.RevokeDeviceRequest\x1a .delidev.v1.RevokeDeviceResponse\x12Q\n" +
+	"\fRemoveWorker\x12\x1f.delidev.v1.RemoveWorkerRequest\x1a .delidev.v1.RemoveWorkerResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_device_proto_rawDescOnce sync.Once
@@ -546,7 +670,7 @@ func file_delidev_v1_device_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_device_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_delidev_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_delidev_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_delidev_v1_device_proto_goTypes = []any{
 	(DeviceType)(0),               // 0: delidev.v1.DeviceType
 	(*CreatePairingRequest)(nil),  // 1: delidev.v1.CreatePairingRequest
@@ -555,27 +679,33 @@ var file_delidev_v1_device_proto_goTypes = []any{
 	(*PairDeviceResponse)(nil),    // 4: delidev.v1.PairDeviceResponse
 	(*RevokeDeviceRequest)(nil),   // 5: delidev.v1.RevokeDeviceRequest
 	(*RevokeDeviceResponse)(nil),  // 6: delidev.v1.RevokeDeviceResponse
-	(*Resource)(nil),              // 7: delidev.v1.Resource
-	(*Mutation)(nil),              // 8: delidev.v1.Mutation
+	(*RemoveWorkerRequest)(nil),   // 7: delidev.v1.RemoveWorkerRequest
+	(*RemoveWorkerResponse)(nil),  // 8: delidev.v1.RemoveWorkerResponse
+	(*Resource)(nil),              // 9: delidev.v1.Resource
+	(*Mutation)(nil),              // 10: delidev.v1.Mutation
 }
 var file_delidev_v1_device_proto_depIdxs = []int32{
-	0, // 0: delidev.v1.CreatePairingRequest.type:type_name -> delidev.v1.DeviceType
-	7, // 1: delidev.v1.CreatePairingResponse.pairing:type_name -> delidev.v1.Resource
-	7, // 2: delidev.v1.PairDeviceResponse.device:type_name -> delidev.v1.Resource
-	7, // 3: delidev.v1.PairDeviceResponse.machine:type_name -> delidev.v1.Resource
-	8, // 4: delidev.v1.RevokeDeviceRequest.mutation:type_name -> delidev.v1.Mutation
-	7, // 5: delidev.v1.RevokeDeviceResponse.device:type_name -> delidev.v1.Resource
-	1, // 6: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
-	3, // 7: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
-	5, // 8: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
-	2, // 9: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
-	4, // 10: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
-	6, // 11: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
-	9, // [9:12] is the sub-list for method output_type
-	6, // [6:9] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	0,  // 0: delidev.v1.CreatePairingRequest.type:type_name -> delidev.v1.DeviceType
+	9,  // 1: delidev.v1.CreatePairingResponse.pairing:type_name -> delidev.v1.Resource
+	9,  // 2: delidev.v1.PairDeviceResponse.device:type_name -> delidev.v1.Resource
+	9,  // 3: delidev.v1.PairDeviceResponse.machine:type_name -> delidev.v1.Resource
+	10, // 4: delidev.v1.RevokeDeviceRequest.mutation:type_name -> delidev.v1.Mutation
+	9,  // 5: delidev.v1.RevokeDeviceResponse.device:type_name -> delidev.v1.Resource
+	10, // 6: delidev.v1.RemoveWorkerRequest.mutation:type_name -> delidev.v1.Mutation
+	9,  // 7: delidev.v1.RemoveWorkerResponse.machine:type_name -> delidev.v1.Resource
+	1,  // 8: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
+	3,  // 9: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
+	5,  // 10: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
+	7,  // 11: delidev.v1.DeviceService.RemoveWorker:input_type -> delidev.v1.RemoveWorkerRequest
+	2,  // 12: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
+	4,  // 13: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
+	6,  // 14: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
+	8,  // 15: delidev.v1.DeviceService.RemoveWorker:output_type -> delidev.v1.RemoveWorkerResponse
+	12, // [12:16] is the sub-list for method output_type
+	8,  // [8:12] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_device_proto_init() }
@@ -590,7 +720,7 @@ func file_delidev_v1_device_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_device_proto_rawDesc), len(file_delidev_v1_device_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -14957,6 +14957,53 @@
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1",
       "number": 106
+    },
+    {
+      "issue": 4030,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_WORKER_REMOVAL_V1",
+      "number": 107
+    },
+    {
+      "issue": 4030,
+      "kind": "message",
+      "declaration": "RemoveWorkerRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4030,
+      "kind": "message",
+      "declaration": "RemoveWorkerRequest",
+      "member": "schema_version",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4030,
+      "kind": "message",
+      "declaration": "RemoveWorkerResponse",
+      "member": "machine",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4030,
+      "kind": "message",
+      "declaration": "RemoveWorkerResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 4030,
+      "kind": "message",
+      "declaration": "RemoveWorkerResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -15389,6 +15436,15 @@
       "method": "ReadPullRequestAvatar",
       "input": "ReadPullRequestAvatarRequest",
       "output": "ReadPullRequestAvatarResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 4030,
+      "service": "DeviceService",
+      "method": "RemoveWorker",
+      "input": "RemoveWorkerRequest",
+      "output": "RemoveWorkerResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

@@ -562,6 +562,10 @@ The generated System enum includes `SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101`.
 
 The generated Go and TypeScript bindings expose `SystemCapability.CLAUDE_SERVER_LOGIN_V1`, `SystemCapability.CLAUDE_MANAGED_EXECUTION_V1` and `WorkerCapability.MANAGED_CLAUDE_EXECUTION_V1`. The desktop starts a Runner-free Claude sign-in only when the server status advertises the first; it omits `machineId` from the request, treats the account document field `subscription.claude_credential = "server-token"` as the managed mode and never receives the token in any response.
 
+## Worker removal client
+
+The generated Go and TypeScript bindings expose `DeviceService.RemoveWorker` (including `DeviceQuery.removeWorker` for Connect Query) and `SystemCapability.WORKER_REMOVAL_V1`. Callers must check the capability from `GetStatus` before sending, bind the request to the machine ID, its exact revision and `schemaVersion = 1`, and retain the request UUID so an uncertain result is recovered only by replaying the exact original request. The package adds no wrapper and no generic-deletion fallback.
+
 ## Subagent display names
 
 Generated `Resource.subagentDisplay` (`SubagentDisplayName` with `childId` and `name`) and `PublishExecutionRequest.subagentNames` expose the additive [display-name metadata](protos-delidev-v1-contract.md#subagent-display-name-metadata). Consumers join the name to the Resource by the original child ID, accept at most 256 Unicode characters of non-blank, control-free text and otherwise fall back to the stable localized ordinal. Only Codex children use a name. Child `document_json` and its closed validators are unchanged.

@@ -18,3 +18,11 @@ export const pairDevice = DeviceService.method.pairDevice;
  * @generated from rpc delidev.v1.DeviceService.RevokeDevice
  */
 export const revokeDevice = DeviceService.method.revokeDevice;
+
+/**
+ * Revokes a Worker's device authorization and retires its saved machine in one
+ * revision-bound transaction. Gated by SYSTEM_CAPABILITY_WORKER_REMOVAL_V1.
+ *
+ * @generated from rpc delidev.v1.DeviceService.RemoveWorker
+ */
+export const removeWorker = DeviceService.method.removeWorker;

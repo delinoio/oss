@@ -266,3 +266,31 @@ func (t *Tx) Jobs(machine, parent domain.ID, state domain.JobState, after domain
 	}
 	return records, storageError(rows.Err())
 }
+
+// MaxMachineDevices bounds the Worker registrations inspected for one machine.
+const MaxMachineDevices = 64
+
+// WorkerDevicesForMachine returns every Worker-device record, revoked or not,
+// that was paired for the original machine. Client devices never match.
+func (t *Tx) WorkerDevicesForMachine(machine domain.ID) ([]Record, error) {
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT id,kind,revision,session_id,project_id,body,created_at,updated_at FROM entities WHERE kind=? AND json_extract(CAST(body AS TEXT),'$.type')='worker' AND json_extract(CAST(body AS TEXT),'$.machine_id')=? ORDER BY id LIMIT ?", domain.DeviceKind, machine, MaxMachineDevices+1)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	defer rows.Close()
+	var out []Record
+	for rows.Next() {
+		r, e := scan(rows)
+		if e != nil {
+			return nil, storageError(e)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, storageError(err)
+	}
+	if len(out) > MaxMachineDevices {
+		return nil, domain.Fail(domain.ResourceExhausted, "Too many Worker registrations belong to this machine.", "Inspect and revoke the registrations individually.")
+	}
+	return out, nil
+}

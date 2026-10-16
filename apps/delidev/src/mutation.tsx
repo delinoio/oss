@@ -205,6 +205,9 @@ function existingRepositoryConfiguration(key: string) {
   );
 }
 export const sessionInboxReadPrefix = "inbox-session-read:";
+/** Retained-mutation key prefix; one original request per saved machine. It is
+ * connection-owned so an uncertain deletion survives Settings category changes. */
+export const workerRemovalPrefix = "remove-worker:";
 /** The complete-inventory quota refresh is connection-owned so the automatic
  * foreground cadence and manual Settings Refresh all share one original request. */
 export const subscriptionQuotaAllKey = "subscription:quota:all";
@@ -213,6 +216,7 @@ function connectionOwned(key: string) {
   return (
     existingRepositoryConfiguration(key) ||
     key.startsWith(sessionInboxReadPrefix) ||
+    key.startsWith(workerRemovalPrefix) ||
     key === subscriptionQuotaAllKey
   );
 }

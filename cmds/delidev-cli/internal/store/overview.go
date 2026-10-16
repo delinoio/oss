@@ -36,7 +36,7 @@ func (t *Tx) Overview(active map[domain.ID]bool, now time.Time) (OverviewCounts,
 		{`SELECT COUNT(*) FROM entities WHERE kind='session' AND COALESCE(json_extract(body,'$.active_execution_id'),'')<>''`, &result.ActiveSessions},
 		{`SELECT COUNT(*) FROM entities i JOIN entities s ON s.id=i.session_id AND s.kind='session'
 WHERE ` + currentUnansweredInteraction, &result.PendingInteractions},
-		{`SELECT COUNT(*) FROM entities WHERE kind='machine'`, &result.RegisteredWorkers},
+		{`SELECT COUNT(*) FROM entities WHERE kind='machine' AND COALESCE(json_extract(CAST(body AS TEXT),'$.retired'),0)=0`, &result.RegisteredWorkers},
 	} {
 		if err := t.tx.QueryRowContext(t.ctx, query.sql).Scan(query.out); err != nil {
 			return OverviewCounts{}, storageError(err)

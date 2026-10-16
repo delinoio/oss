@@ -1,0 +1,70 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.worker-removal-dialog {
+  width: min(480px, calc(100% - 32px));
+}
+.worker-removal-dialog p {
+  overflow-wrap: anywhere;
+}
+.worker-removal-target {
+  margin-block: 16px;
+  font-weight: 600;
+}
+.worker-removal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}
+.worker-removal-actions button {
+  min-height: 40px;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* Solid danger confirmation. The semantic danger marker stays on the button;
+   repeated :root keeps this ahead of the shared outlined danger rule. */
+:root:root:root:root:root:root
+  button.worker-removal-confirm[data-action-tone="danger"] {
+  border-color: var(--danger-solid-background);
+  background: var(--danger-solid-background);
+  color: var(--danger-solid-text);
+}
+:root:root:root:root:root:root
+  button.worker-removal-confirm[data-action-tone="danger"]:hover:not(
+    :disabled
+  ) {
+  background: var(--danger-solid-background);
+  filter: brightness(0.94);
+}
+.settings-runner-row .settings-runner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.settings-runner-row .settings-runner-actions button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.settings-runner-protected {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.settings-runner-managed {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.settings-runner-removal-note {
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}

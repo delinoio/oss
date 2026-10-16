@@ -39,8 +39,11 @@ const (
 	// Independently negotiated OpenCode image attachments: the server freezes and
 	// dispatches them only to a Worker that holds the paired Worker capability.
 	// Requires capability 45.
-	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1          SystemCapability = 105
-	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1            SystemCapability = 106
+	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1 SystemCapability = 105
+	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1   SystemCapability = 106
+	// Dedicated revision-bound DeviceService.RemoveWorker: revokes a saved Worker
+	// and retires its machine record without deleting history or device files.
+	SystemCapability_SYSTEM_CAPABILITY_WORKER_REMOVAL_V1                 SystemCapability = 107
 	SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1         SystemCapability = 90
 	SystemCapability_SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1          SystemCapability = 93
 	SystemCapability_SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1             SystemCapability = 89
@@ -140,6 +143,7 @@ var (
 		104: "SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1",
 		105: "SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1",
 		106: "SYSTEM_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1",
+		107: "SYSTEM_CAPABILITY_WORKER_REMOVAL_V1",
 		90:  "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
 		93:  "SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1",
 		89:  "SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1",
@@ -223,6 +227,7 @@ var (
 		"SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1": 104,
 		"SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1":                105,
 		"SYSTEM_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1":                  106,
+		"SYSTEM_CAPABILITY_WORKER_REMOVAL_V1":                       107,
 		"SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1":               90,
 		"SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1":                93,
 		"SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1":                   89,
@@ -3071,7 +3076,7 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\x8b\x1f\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xb4\x1f\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12,\n" +
 	"(SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1\x10C\x121\n" +
@@ -3081,7 +3086,8 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"+SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1\x10g\x12=\n" +
 	"9SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1\x10h\x12.\n" +
 	"*SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1\x10i\x12,\n" +
-	"(SYSTEM_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1\x10j\x12/\n" +
+	"(SYSTEM_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1\x10j\x12'\n" +
+	"#SYSTEM_CAPABILITY_WORKER_REMOVAL_V1\x10k\x12/\n" +
 	"+SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1\x10Z\x12.\n" +
 	"*SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1\x10]\x12+\n" +
 	"'SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1\x10Y\x12,\n" +
