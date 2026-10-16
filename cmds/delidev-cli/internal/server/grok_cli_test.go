@@ -151,6 +151,46 @@ func TestGrokCLIPromptFiltersBothStreamsAndPublishesOnce(t *testing.T) {
 	}
 }
 
+func TestGrokCLIStartupDiagnosticSurvivesSettlement(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		installation domain.Installation
+		err          error
+		phase        domain.GrokPhase
+		code         domain.Code
+		version      string
+	}{
+		{name: "missing", installation: domain.Installation{State: domain.InstallationMissing}, phase: domain.GrokDiscovery, code: domain.NotFound},
+		{name: "denied", err: domain.Fail(domain.PermissionDenied, "private output", "private path"), phase: domain.GrokDiscovery, code: domain.PermissionDenied},
+		{name: "old version", installation: domain.Installation{State: domain.InstallationDetected, Version: "1.0.45"}, phase: domain.GrokVersion, code: domain.Unsupported, version: "1.0.45"},
+		{name: "original diagnostic", err: domain.WithGrokDiagnostic("1.0.52", domain.GrokVersion, domain.Fail(domain.Unsupported, "private output", "private path")), phase: domain.GrokVersion, code: domain.Unsupported, version: "1.0.52"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, root := nativeGrokFixture(t, "success")
+			f.service.grokCLIDiscover = func(context.Context, harness.DiscoveryConfig) (domain.Installation, error) {
+				return tc.installation, tc.err
+			}
+			response, err := f.grokLoginRequest(t, func(r *pb.RequestSubscriptionRequest) { r.DeviceCode = true })
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.service.runGrokLogin(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), f.input.AccountID)
+			progress := f.progressFor(response.OperationId)
+			d := progress.GrokDiagnostic
+			if progress.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_FAILED || d == nil || d.Phase != grokDiagnosticPhases[tc.phase] || d.Code != string(tc.code) || d.DetectedVersion != tc.version || d.CorrelationId != response.OperationId {
+				t.Fatalf("startup diagnostic lost: state=%v diagnostic=%v", progress.State, d)
+			}
+			_, account := f.record()
+			if account.Subscription.ServerOperation.GrokDiagnostic == nil || account.Subscription.ServerOperation.GrokDiagnostic.Validate() != nil {
+				t.Fatal("startup diagnostic was not durably validated")
+			}
+			if _, err := os.Stat(filepath.Join(root, "native-started")); !os.IsNotExist(err) {
+				t.Fatal("startup failure launched the CLI")
+			}
+		})
+	}
+}
+
 func TestGrokCLIPromptRejectsOtherOriginsAndMismatchedCodes(t *testing.T) {
 	for _, address := range []string{"https://evil.invalid/device", "https://accounts.x.ai/oauth2/device?user_code=WXYZ-5678"} {
 		t.Run(address, func(t *testing.T) {

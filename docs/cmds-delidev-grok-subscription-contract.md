@@ -15,6 +15,8 @@ Discovery probes only Grok on the server. Each account acquires its permanent
 below that profile and disables auto-update; it does not inherit the user's
 normal Grok home or provider credentials. Login does not require the ACP
 execution profile. Missing or unsupported CLI installations return a safe error.
+Login settlement preserves the original discovery/version phase, observed version
+and safe failure code in the original operation diagnostic.
 
 Before launching the CLI, the server requires the profile to contain no retained
 credential and records a durable exchange claim. A bounded output filter combines

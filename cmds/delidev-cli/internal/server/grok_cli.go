@@ -54,15 +54,17 @@ func (s *Service) openGrokCLI(ctx context.Context, id, operation domain.ID) (*se
 	}
 	root := filepath.Join(scope.Root, "subscription-runtime")
 	installation, err := discover(ctx, harness.DiscoveryConfig{Root: root, OwnerID: operation, Logger: s.logger, Profiles: scope.Profiles})
+	phase := domain.GrokDiscovery
 	if err == nil && installation.State != domain.InstallationDetected {
 		err = domain.InstallationProblem(installation.State)
 	}
 	if err == nil && !domain.GrokSubscriptionVersionAllowed(installation.Version) {
+		phase = domain.GrokVersion
 		err = domain.Fail(domain.Unsupported, "The server's Grok CLI version is unsupported.", "Update Grok Build on the server.")
 	}
 	if err != nil {
 		_ = home.Close()
-		return fail(err)
+		return fail(domain.WithGrokDiagnostic(installation.Version, phase, err))
 	}
 	return &serverGrokCLI{service: s, lease: lease, home: home, version: installation.Version, config: process.Config{
 		Directory: filepath.Join(root, "processes"), OwnerID: operation, Executable: installation.ResolvedPath,
@@ -121,8 +123,14 @@ func (s *Service) performGrokCLILogin(ctx context.Context, id domain.ID, origina
 	flow := &grokFlowState{ctx: ctx, original: original, cancelSeen: canceled}
 	runtime, err := s.openGrokCLI(ctx, id, original.ID)
 	if err != nil {
-		s.logger.WarnContext(ctx, "grok_cli_login_unavailable", "phase", domain.GrokDiscovery, "operation_id", original.ID, "correlation_id", original.ID, "code", domain.SafeError(err).Code)
-		return flow.failed(err)
+		out := flow.failed(err)
+		out.diagnostic = domain.GrokErrorDiagnostic(err)
+		phase, version := domain.GrokDiscovery, ""
+		if out.diagnostic != nil {
+			phase, version = out.diagnostic.Phase, out.diagnostic.DetectedVersion
+		}
+		s.logger.WarnContext(ctx, "grok_cli_login_unavailable", "phase", phase, "version", version, "operation_id", original.ID, "correlation_id", original.ID, "code", domain.SafeError(err).Code)
+		return out
 	}
 	defer runtime.close()
 	// A retained file is never proof of this new login. Keep it for explicit

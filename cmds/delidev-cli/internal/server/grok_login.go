@@ -266,10 +266,11 @@ func (c *grokCallbackServer) evaluate(rawQuery string) grokCallbackResult {
 
 // grokLoginOutcome is what one runner decided before settlement.
 type grokLoginOutcome struct {
-	state  domain.SubscriptionLoginState
-	reason subscription.GrokOAuthReason
-	code   domain.Code
-	bundle subscription.GrokBundle
+	state      domain.SubscriptionLoginState
+	reason     subscription.GrokOAuthReason
+	code       domain.Code
+	bundle     subscription.GrokBundle
+	diagnostic *domain.GrokDiagnostic
 }
 
 func grokReasonCode(reason subscription.GrokOAuthReason) domain.Code {
@@ -701,6 +702,10 @@ func (s *Service) finishGrokLogin(ctx context.Context, id domain.ID, o domain.Se
 				code = grokReasonCode(out.reason)
 			}
 			diagnostic = grokLocalDiagnostic("", domain.GrokLogin, code)
+			if out.diagnostic != nil && out.diagnostic.Validate() == nil {
+				copy := *out.diagnostic
+				diagnostic = &copy
+			}
 		}
 		if diagnostic != nil {
 			diagnostic.CorrelationID = string(op.ID)
