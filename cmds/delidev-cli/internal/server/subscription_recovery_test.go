@@ -233,13 +233,13 @@ func TestRecoveryCaptureIsReplayableAndNeverGrantsAuthority(t *testing.T) {
 	// A different identity, an unrelated original or a stale lease revision is refused.
 	other := subscriptionTestBundle("another-account", "rotated", time.Now().UTC())
 	defer clear(other)
-	if _, err := f.sync(domain.NewID(), f.original, other); err == nil {
-		t.Fatal("a capture for another provider identity was accepted")
+	if _, err := f.sync(domain.NewID(), f.original, other); err == nil || !recoveryBundleRejected(err) {
+		t.Fatal("a capture for another provider identity was not positively rejected", err)
 	}
 	unrelated := f.latest("unrelated")
 	defer clear(unrelated)
-	if _, err := f.sync(domain.NewID(), unrelated, latest); err == nil {
-		t.Fatal("a capture whose original is not the delivered generation was accepted")
+	if _, err := f.sync(domain.NewID(), unrelated, latest); err == nil || !recoveryBundleRejected(err) {
+		t.Fatal("a capture whose original is not the delivered generation was not positively rejected", err)
 	}
 }
 
@@ -383,8 +383,8 @@ func TestRecoveryOldPeersKeepTheExistingFence(t *testing.T) {
 	rf := &codexRecoveryFixture{subscriptionFixture: f, original: original, lease: lease}
 	latest := rf.latest("rotated")
 	defer clear(latest)
-	if _, err := rf.sync(domain.NewID(), original, latest); recoveryCode(err) != domain.RecoveryRequired {
-		t.Fatal("a Worker without the capability synchronized a capture", err)
+	if _, err := rf.sync(domain.NewID(), original, latest); recoveryCode(err) != domain.RecoveryRequired || recoveryBundleRejected(err) {
+		t.Fatal("a Worker without the capability synchronized a capture, or its refusal claimed a bundle rejection", err)
 	}
 	rf.fence()
 	if _, err := rf.recover(rf.recoverRequest(domain.NewID(), pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL, "")); recoveryCode(err) != domain.RecoveryRequired {
@@ -670,8 +670,8 @@ func TestRecoveryLegacyAuthenticationCapturesOnlyTheLatestBundle(t *testing.T) {
 	defer clear(f.original)
 	latest := f.latest("rotated")
 	defer clear(latest)
-	if _, err := f.sync(domain.NewID(), nil, latest); err == nil {
-		t.Fatal("a live lease captured without its unused original")
+	if _, err := f.sync(domain.NewID(), nil, latest); err == nil || recoveryBundleRejected(err) {
+		t.Fatal("a live lease captured without its unused original, or the refusal claimed the bundle was rejected", err)
 	}
 	f.fence()
 	capture := domain.NewID()
@@ -684,8 +684,16 @@ func TestRecoveryLegacyAuthenticationCapturesOnlyTheLatestBundle(t *testing.T) {
 	}
 	unrelated := subscriptionTestBundle("another-account", "rotated", time.Now().UTC())
 	defer clear(unrelated)
-	if _, err := f.sync(domain.NewID(), nil, unrelated); err == nil {
-		t.Fatal("a legacy capture changed the provider identity")
+	if _, err := f.sync(domain.NewID(), nil, unrelated); err == nil || !recoveryBundleRejected(err) {
+		t.Fatal("a legacy capture changed the provider identity without a positive rejection", err)
+	}
+	notRefresh := subscriptionTestBundle("fixture-account", "stale", time.Now().UTC().Add(-48*time.Hour))
+	defer clear(notRefresh)
+	if _, err := f.sync(domain.NewID(), nil, notRefresh); err == nil || !recoveryBundleRejected(err) {
+		t.Fatal("a legacy bundle that is not a refresh of the delivered generation was not positively rejected", err)
+	}
+	if _, err := f.sync(domain.NewID(), nil, []byte("not a bundle")); err == nil || !recoveryBundleRejected(err) {
+		t.Fatal("an unparsable legacy bundle was not positively rejected", err)
 	}
 	request := domain.NewID()
 	response, err := f.recover(f.recoverRequest(request, pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITH_CAPTURE, capture))
@@ -705,4 +713,10 @@ func TestRecoveryReadWithoutCaptureReportsTheClosedAbsence(t *testing.T) {
 	if err == nil || domain.SafeError(rpc.ClientError(err)).Cause != subscriptionRecoveryCaptureAbsentCause {
 		t.Fatal("a lease without a capture did not report the closed absence", err)
 	}
+}
+
+// recoveryBundleRejected reports whether a refusal is the distinct positive
+// rejection of the presented bundle itself.
+func recoveryBundleRejected(err error) bool {
+	return domain.SafeError(rpc.ClientError(err)).Cause == domain.SubscriptionRecoveryBundleRejectedCause
 }

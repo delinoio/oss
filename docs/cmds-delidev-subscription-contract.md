@@ -1195,7 +1195,13 @@ support that still hold a valid retained `auth.json` first capture that latest
 bundle (without an original) and then settle; retained authentication that is not
 a usable bundle is the proven absence of usable credentials; no evidence at all
 stays protected with the closed diagnostic `credential-proof-unavailable` and no
-fabricated receipt.
+fabricated receipt. A capture refusal proves the bundle unusable only when it
+carries the distinct cause `subscription_recovery_bundle_rejected` (the bundle is
+not the delivered generation or a refresh of it, is unparsable, or names another
+identity). Every other refusal, such as a binding or authorization failure, a
+withdrawn capability, stale lease evidence or a changed current instance, says
+nothing about the bundle: the Worker keeps the only surviving `auth.json` and
+retries.
 
 Settlement. `RecoverSubscription` uses a recovery request identity distinct from
 the original Take and Finish requests. With a valid capture the server publishes

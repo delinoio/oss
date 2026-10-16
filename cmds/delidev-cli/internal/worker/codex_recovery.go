@@ -499,8 +499,9 @@ func runCodexRecovery(ctx context.Context, config Config, client delidevv1connec
 // recoveryCredentials resolves the latest credential evidence. Evidence is the
 // protected capture when one was synchronized; otherwise legacy retained
 // authentication that validates is captured for the first time. Retained
-// authentication that does not validate is the proven absence of usable
-// credentials; no evidence at all stays protected.
+// authentication that does not validate, or that the server positively rejects
+// as a bundle, is the proven absence of usable credentials; any other capture
+// failure retains the file and retries, and no evidence at all stays protected.
 func recoveryCredentials(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, accountID domain.ID, lease domain.SubscriptionLease, evidence *recoveryEvidence, home string, missingHome bool) (latest, original, extra []byte, report pb.SubscriptionRecoveryReport, blocked *recoveryResult) {
 	block := func(reason domain.SubscriptionRecoveryBlockedReason) *recoveryResult {
 		logCodexRecovery(config.Logger, ctx, slog.LevelWarn, "codex_recovery_blocked", "account_id", accountID, "lease_id", lease.ID, "reason", reason)
@@ -558,11 +559,16 @@ func recoveryCredentials(ctx context.Context, config Config, client delidevv1con
 	}))
 	if syncErr != nil {
 		problem := domain.SafeError(rpc.ClientError(syncErr))
-		if problem.Code == domain.RecoveryRequired || problem.Code == domain.InvalidArgument {
-			// The server refused the retained bundle (a different identity or not a
-			// refresh of the delivered generation): it is not usable evidence.
+		if problem.Cause == domain.SubscriptionRecoveryBundleRejectedCause {
+			// Only the server's distinct positive rejection of the bundle itself (a
+			// different identity or not a refresh of the delivered generation) makes
+			// the retained file unusable evidence. Every other refusal (binding,
+			// authorization, withdrawn capability, stale lease evidence) says nothing
+			// about the bundle, so the only surviving credential stays in place.
+			logCodexRecovery(config.Logger, ctx, slog.LevelWarn, "codex_recovery_legacy_bundle_rejected", "account_id", accountID, "lease_id", lease.ID)
 			return nil, nil, raw, pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL, nil
 		}
+		logCodexRecovery(config.Logger, ctx, slog.LevelWarn, "codex_recovery_legacy_capture_retained", "account_id", accountID, "lease_id", lease.ID, "code", problem.Code)
 		clear(raw)
 		r := recoveryRetried(domain.RecoveryCleanupUnconfirmed)
 		return nil, nil, nil, 0, &r

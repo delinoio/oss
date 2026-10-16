@@ -46,6 +46,15 @@ func subscriptionRecoveryCaptureAbsent() *domain.Error {
 	return problem
 }
 
+// subscriptionRecoveryBundleRejected is the distinct positive result of a capture
+// whose bundle itself is refused. The code stays recovery-required; the cause is
+// what lets a Worker tell it from every binding or authorization refusal.
+func subscriptionRecoveryBundleRejected() *domain.Error {
+	problem := subscriptionDenied()
+	problem.Cause = domain.SubscriptionRecoveryBundleRejectedCause
+	return problem
+}
+
 // recoveryPhaseID derives the identifier of the intermediate settlement commit
 // from the recovery request identity. The request identity itself is reserved
 // for the final receipt, so a replay of the request can never observe a partly
@@ -288,15 +297,18 @@ func (s *Service) SyncSubscriptionRecoveryCapture(ctx context.Context, req *conn
 		}
 		clear(stored)
 		if !matches {
-			return nil, rpc.Error(subscriptionDenied(), c)
+			s.logger.WarnContext(ctx, "subscription_recovery_capture_bundle_rejected", "phase", subscriptionRecoveryPhase, "account_id", account, "lease_id", lease, "reason", "not-delivered-generation-or-refresh")
+			return nil, rpc.Error(subscriptionRecoveryBundleRejected(), c)
 		}
 		_, identity, err := subscription.Parse(req.Msg.Latest)
 		if err != nil {
-			return nil, rpc.Error(err, c)
+			s.logger.WarnContext(ctx, "subscription_recovery_capture_bundle_rejected", "phase", subscriptionRecoveryPhase, "account_id", account, "lease_id", lease, "reason", "unparsable")
+			return nil, rpc.Error(subscriptionRecoveryBundleRejected(), c)
 		}
 		identityCommitment := s.subscriptionIdentityCommitment(identity)
 		if identityCommitment != state.IdentityCommitment {
-			return nil, rpc.Error(subscriptionDenied(), c)
+			s.logger.WarnContext(ctx, "subscription_recovery_capture_bundle_rejected", "phase", subscriptionRecoveryPhase, "account_id", account, "lease_id", lease, "reason", "identity-changed")
+			return nil, rpc.Error(subscriptionRecoveryBundleRejected(), c)
 		}
 		entry := domain.SubscriptionRecoveryCapture{ID: capture, Lease: lease, Generation: generation, IdentityCommitment: identityCommitment, SyncedAt: time.Now().UTC().Truncate(time.Millisecond), OriginalCaptured: len(req.Msg.Original) != 0}
 		// Stage the protected references before the metadata that names them. A

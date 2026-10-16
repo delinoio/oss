@@ -23,6 +23,13 @@ const (
 	RecoveryActiveOwner                SubscriptionRecoveryBlockedReason = "active-owner"
 )
 
+// SubscriptionRecoveryBundleRejectedCause marks the one capture refusal that
+// positively rejects the presented bundle itself: it is not the delivered
+// generation or a refresh of it, it is unparsable or it names another identity.
+// Every other refusal (binding, authorization, capability or lease evidence) says
+// nothing about the bundle, so a Worker must keep its retained file for a retry.
+const SubscriptionRecoveryBundleRejectedCause = "subscription_recovery_bundle_rejected"
+
 func (r SubscriptionRecoveryBlockedReason) Valid() bool {
 	switch r {
 	case RecoveryCredentialProofUnavailable, RecoveryCleanupUnconfirmed, RecoveryOwnershipEvidenceInvalid, RecoveryMembersUnsettled, RecoveryCredentialUsersActive, RecoveryActiveOwner:

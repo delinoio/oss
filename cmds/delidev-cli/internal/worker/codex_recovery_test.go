@@ -345,6 +345,47 @@ func TestCodexRecoveryUnusableRetainedAuthenticationSettlesWithoutCredentials(t 
 	}
 }
 
+// Only the server's distinct positive bundle rejection lets the Worker settle
+// without credentials; every other capture refusal keeps the only surviving
+// credential file and retries.
+func TestCodexRecoveryLegacyCaptureRefusalKeepsTheCredentialUnlessTheBundleIsRejected(t *testing.T) {
+	rejected := domain.Fail(domain.RecoveryRequired, "The bundle is refused.", "")
+	rejected.Cause = domain.SubscriptionRecoveryBundleRejectedCause
+	for name, tc := range map[string]struct {
+		err     error
+		settles bool
+	}{
+		"bundle rejected":       {rpc.Error(rejected, ""), true},
+		"authorization refusal": {rpc.Error(domain.Fail(domain.RecoveryRequired, "The account cannot grant authority.", ""), ""), false},
+		"invalid request":       {rpc.Error(domain.Fail(domain.InvalidArgument, "The request is invalid.", ""), ""), false},
+		"unavailable transport": {connect.NewError(connect.CodeUnavailable, nil), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newRecoveryWorkerFixture(t)
+			f.server.syncError = tc.err
+			result := f.run()
+			if tc.settles {
+				if result.disposition != recoverySettled || f.authExists() {
+					t.Fatal("a positively rejected bundle did not settle without credentials", result)
+				}
+				if settling := f.server.settling(); len(settling) != 1 || settling[0].Report != pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL {
+					t.Fatal("a rejected bundle was not reported as the absence of credentials")
+				}
+				return
+			}
+			if result.disposition != recoveryRetry || result.reason != domain.RecoveryCleanupUnconfirmed {
+				t.Fatal("an unproven capture refusal did not retry", result)
+			}
+			if !f.authExists() {
+				t.Fatal("an unproven capture refusal deleted the only surviving credential")
+			}
+			if len(f.server.settling()) != 0 {
+				t.Fatal("an unproven capture refusal settled the lease")
+			}
+		})
+	}
+}
+
 func TestCodexRecoveryRejectsForeignOrRestoredEvidence(t *testing.T) {
 	cases := map[string]func(*recoveryWorkerFixture){
 		"other server":        func(f *recoveryWorkerFixture) { f.journal.Server = domain.NewID() },
