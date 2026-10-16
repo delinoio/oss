@@ -56,6 +56,11 @@ func (s *Service) sharedMemberAdmissible(state *domain.SubscriptionState, machin
 	if state.RunnableMembers() == 0 {
 		return busy()
 	}
+	// The complete member set must stay within one recovery settlement request, so
+	// a further member waits for the owner's retirement instead of being admitted.
+	if len(state.Members) >= domain.MaxSubscriptionMembers {
+		return busy()
+	}
 	// One job is owned by exactly one member, in any state.
 	if _, owned := state.MemberByOperation(operation); owned {
 		return subscriptionDenied()

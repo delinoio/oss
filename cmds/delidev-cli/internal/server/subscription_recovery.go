@@ -33,7 +33,8 @@ import (
 const subscriptionRecoveryPhase = "subscription-recovery"
 
 // maxRecoveryMembers bounds the member settlement list of one recovery request.
-const maxRecoveryMembers = 256
+// Member admission enforces the same bound, so every valid owner fits.
+const maxRecoveryMembers = domain.MaxSubscriptionMembers
 
 // subscriptionRecoveryCaptureAbsentCause marks a read of a lease that has no
 // capture, so a Worker can distinguish legacy evidence from a transport failure.

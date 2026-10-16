@@ -1181,6 +1181,10 @@ joined through the process journals before the home is touched; shared-owner
 members must each be retained members of the owner, and the owner Finish
 equivalent waits until the request lists every member the server holds. Dependent
 credential users (access-only quota or credit readers) block owner retirement.
+A shared owner retains at most 256 members in any state; admission refuses a
+further member with the existing exclusive-lease busy result, so the complete
+member set always fits one recovery request and every valid fenced owner stays
+recoverable.
 
 Reconciliation. The Worker reads its capture, removes only the original transient
 `auth.json` (when it equals the captured latest bundle), proves the retained
