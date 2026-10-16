@@ -338,8 +338,10 @@ only opaque profile/owner/generation/operation metadata and a keyed identity
 commitment; native credentials never transfer. One exclusive lease serializes
 lifecycle and execution, and original cleanup gates logout/deletion/recovery.
 No migration is added. Existing personal login import, external tokens,
-Console/API login, cross-device authentication and Claude quotas/credits remain
-excluded. Actual account and packaged-platform acceptance remain separate from
+Console/API login, cross-device authentication and Claude credits remain
+excluded from this device-owned lane; Claude usage limits come only from the
+separate, explicitly linked [server-owned usage tracking](cmds-delidev-subscription-contract.md#server-owned-claude-usage-tracking)
+under System 110. Actual account and packaged-platform acceptance remain separate from
 fixtures/builds. See [the subscription contract](cmds-delidev-subscription-contract.md#native-claude-subscriptions).
 The owner-approved native Claude subscription extension spans the existing
 subscription, desktop, harness, protocol and storage owners. Record System 38,
