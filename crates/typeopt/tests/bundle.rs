@@ -3648,7 +3648,9 @@ fn keeps_revision_data_outside_precache_calls() {
     let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
     chunks[1] = (
         "assets/index-AAAAAAAA.js",
-        r#"import{m as e}from"./settings-BBBBBBBB.js";import{p as t}from"./plain-CCCCCCCC.js";import{d}from"../config.js";console.log(e(2).verticalSpacing,t(),d[0].revision);"#,
+        // The manifest escapes to unknown code, so its keys keep their names
+        // (a tracked array of objects would have them renamed).
+        r#"import{m as e}from"./settings-BBBBBBBB.js";import{p as t}from"./plain-CCCCCCCC.js";import{d}from"../config.js";globalThis.manifest=d;console.log(e(2).verticalSpacing,t(),d[0].revision);"#,
     );
     chunks.push((
         "config.js",
@@ -4509,6 +4511,279 @@ fn keeps_behavior_of_class_member_edge_cases() {
         let code = format!("{code}export{{}};");
         run(&[("index.js", &code)]);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Arrays
+// ---------------------------------------------------------------------------
+
+/// A closed class whose instances the fixtures store in arrays.
+const ITEM: &str = "class Item{constructor(v){this.itemValue=v}readItem(){return this.itemValue}}";
+
+/// Runs `body` after the `Item` class as the only chunk and returns the
+/// optimized chunk.
+fn array_chunk(body: &str) -> (tempfile::TempDir, String) {
+    // An export makes the chunk a module rather than a classic script.
+    let code = format!("{ITEM}{body}export{{}};");
+    let (temp, _) = run(&[("index.js", &code)]);
+    let index = out(temp.path(), "index.js");
+    (temp, index)
+}
+
+/// Arrays that analyzed code creates, fills and reads let the objects stored
+/// in them be renamed; every fixture prints the same output in Node.
+#[test]
+fn renames_objects_stored_in_tracked_arrays() {
+    let cases: [(&str, &[&str]); 5] = [
+        // P1: push, unshift, for-of, pop, shift, at and length.
+        (
+            "const list=[];list.push(new Item(1));list.unshift(new Item(2));for(const it of \
+             list)console.log(it.readItem());console.log(list.length,list.at(0).itemValue,list.\
+             pop().readItem(),list.shift().itemValue);",
+            &["itemValue", "readItem"],
+        ),
+        // P2: proven numeric indexes. Reading a possibly missing element
+        // into unknown code would expose it, so only its type is printed.
+        (
+            "const list=[new Item(1),new Item(2)];for(let \
+             i=0;i<list.length;i++)console.log(list[i].readItem());list[list.length]=new \
+             Item(3);console.log(list[list.length-1].itemValue,typeof list[9]);",
+            &["itemValue", "readItem"],
+        ),
+        // P3: inline callbacks and the methods that return arrays.
+        (
+            "const list=[new Item(1),new \
+             Item(2)];list.forEach(x=>console.log(x.readItem()));const \
+             w=list.map(x=>({wrappedValue:x.itemValue}));console.log(w[0].wrappedValue,list.\
+             filter(x=>x.itemValue>1).length,list.find(function(x){return \
+             x.itemValue===2}).readItem(),list.some(x=>x.itemValue>1),list.slice(1)[0].itemValue,\
+             list.indexOf(list[0]));",
+            &["itemValue", "readItem", "wrappedValue"],
+        ),
+        // P4: an array in a closed class field.
+        (
+            "class Bag{constructor(){this.items=[]}add(i){this.items.push(i);return \
+             this.items[0]}}const b=new Bag;console.log(b.add(new Item(1)).readItem());",
+            &["itemValue", "readItem", "items", "add"],
+        ),
+        // P5: object literal elements and spread.
+        (
+            "const rows=[{rowLabel:\"a\",rowCount:1}];const \
+             all=[...rows,{rowLabel:\"b\",rowCount:2}];for(const r of \
+             all)console.log(r.rowLabel,r.rowCount);",
+            &["rowLabel", "rowCount"],
+        ),
+    ];
+    for (body, names) in cases {
+        let (_, index) = array_chunk(body);
+        for name in names {
+            assert!(!index.contains(name), "{name} kept in {body}:\n{index}");
+        }
+    }
+}
+
+/// Every fixture lets unknown code, or code the model does not cover, reach
+/// an array or its elements, so the names stay.
+#[test]
+fn keeps_names_of_arrays_that_unknown_code_can_observe() {
+    let cases: [(&str, &[&str]); 15] = [
+        // N1: an array passed to unknown code.
+        (
+            "const list=[new \
+             Item(1)];globalThis.read=l=>l[0].itemValue;console.log(globalThis.read(list));",
+            &["itemValue"],
+        ),
+        // N2: serialization.
+        (
+            "console.log(JSON.stringify([{rowLabel:1}]));",
+            &["rowLabel"],
+        ),
+        // N3: a callback with a `this` argument.
+        (
+            "const list=[new \
+             Item(1)];list.forEach(function(x){console.log(this.tag,x.itemValue)},{tag:1});",
+            &["itemValue"],
+        ),
+        // N4: a callback that is not an inline function.
+        (
+            "globalThis.cb=x=>console.log(x.itemValue);[new Item(1)].forEach(globalThis.cb);",
+            &["itemValue"],
+        ),
+        // N5: an inline callback on a receiver the analysis does not own.
+        (
+            "const ext={map(f){return f({})}};const \
+             r=(globalThis.e??ext).map(x=>({wrappedValue:1}));console.log(r.wrappedValue);",
+            &["wrappedValue"],
+        ),
+        // N6: an escaped array may have an own `push`.
+        (
+            "const list=[];globalThis.hook=l=>{l.push=x=>console.log(x.itemValue)};globalThis.\
+             hook(list);list.push(new Item(1));",
+            &["itemValue"],
+        ),
+        // N7: a hole read reaches a numeric `Object.prototype` member.
+        (
+            "Object.prototype[1]={itemValue:9};const list=[new \
+             Item(1)];console.log(list[1].itemValue);",
+            &["itemValue"],
+        ),
+        // N8: a patched built-in.
+        (
+            "Array.prototype.push=function(x){console.log(x.itemValue)};[].push(new Item(1));",
+            &["itemValue"],
+        ),
+        // N9: an unproven key.
+        (
+            "const list=[new Item(1)];const k=globalThis.k??\"0\";console.log(list[k].itemValue);",
+            &["itemValue"],
+        ),
+        // N11: an unmodeled method.
+        (
+            "const list=[new Item(2),new \
+             Item(1)];list.sort((a,b)=>a.itemValue-b.itemValue);console.log(list[0].itemValue);",
+            &["itemValue"],
+        ),
+        // N12: array destructuring.
+        (
+            "const [first]=[new Item(1)];console.log(Object.keys(first));",
+            &["itemValue"],
+        ),
+        // An element read that code passes to unknown code (a hole read
+        // returns undefined, but the analysis cannot tell).
+        (
+            "const list=[new Item(1),new Item(2)];console.log(list[9]);",
+            &["itemValue"],
+        ),
+        // A callback result that unknown code observes.
+        (
+            "const list=[new \
+             Item(1)];globalThis.out=list.map(x=>({wrappedValue:x.itemValue}));console.\
+             log(globalThis.out[0].wrappedValue);",
+            &["wrappedValue"],
+        ),
+        // Array methods are modeled only when the built-in is intact.
+        (
+            "Object.defineProperty(Array.prototype,\"at\",{value(i){console.log(this[i].\
+             itemValue);return this[i]}});const list=[new Item(1)];list.at(0);",
+            &["itemValue"],
+        ),
+        // `Array.prototype` used as a value hides patches from the scan.
+        (
+            "const P=Array.prototype;P.pop=function(){globalThis.seen=this[0].itemValue;return \
+             7};const list=[new Item(1)];console.log(list.pop(),globalThis.seen);",
+            &["itemValue"],
+        ),
+    ];
+    for (body, names) in cases {
+        let (_, index) = array_chunk(body);
+        for name in names {
+            assert!(index.contains(name), "{name} renamed in {body}:\n{index}");
+        }
+    }
+}
+
+/// A receiver that is an array or a closed class instance keeps both; the
+/// closed class has its own `length`.
+#[test]
+fn keeps_mixed_array_and_instance_receivers() {
+    let (_, index) = array_chunk(
+        "class Sized{constructor(){this.length=3}}const v=globalThis.k?[1,2]:new \
+         Sized;console.log(v.length);",
+    );
+    assert!(index.contains("length"), "{index}");
+}
+
+/// Arrays are never rename units: a program with only arrays has no object
+/// region and no property, and arrays beside objects add no region.
+#[test]
+fn reports_no_regions_for_arrays() {
+    let code = "const a=[1,2];const b=a.map(x=>x+1);b.push(a.length);console.log(a,b);export{};";
+    let (_, report) = run(&[("index.js", code)]);
+    assert_eq!(report["object_regions"], 0, "{report:#}");
+    assert_eq!(report["properties"], 0, "{report:#}");
+    let with_object = "const rows=[{rowLabel:1}];const copy=rows.slice(0);for(const r of \
+                       copy)console.log(r.rowLabel);export{};";
+    let (_, report) = run(&[("index.js", with_object)]);
+    assert_eq!(report["object_regions"], 1, "{report:#}");
+    assert_eq!(report["properties"], 1, "{report:#}");
+}
+
+/// Arrays that analyzed code keeps private let objects stored in them be
+/// renamed even when other arrays escape.
+#[test]
+fn renames_through_one_array_while_another_escapes() {
+    let (_, index) = array_chunk(
+        "const kept=[{keptLabel:1}];const \
+         leaked=[{leakedLabel:2}];globalThis.leak=leaked;console.log(kept[0].keptLabel,globalThis.\
+         leak.length);",
+    );
+    assert!(!index.contains("keptLabel"), "{index}");
+    assert!(index.contains("leakedLabel"), "{index}");
+}
+
+/// Debug logs report which array built-ins are modeled, how many array values
+/// exist and why arrays are preserved, with the array cause labels.
+#[test]
+fn logs_array_decisions_with_their_causes() {
+    let fixtures: [(&str, &str); 5] = [
+        (
+            "array:unmodeled-member",
+            "const list=[new Item(2),new \
+             Item(1)];list.sort((a,b)=>a.itemValue-b.itemValue);console.log(list[0].itemValue);",
+        ),
+        (
+            "access:mixed-array-receiver",
+            "class Sized{constructor(){this.length=3}}const v=globalThis.k?[1,2]:new \
+             Sized;console.log(v.length);",
+        ),
+        (
+            "store-into-array-length",
+            "const list=[];list.length={lengthLabel:1};console.log(list.length);",
+        ),
+        (
+            "sink:exposed-callback-result",
+            "const ext={map(f){return f({})}};const \
+             r=(globalThis.e??ext).map(x=>({wrappedValue:1}));console.log(r.wrappedValue);",
+        ),
+        (
+            "call-argument:escaped-array",
+            "const list=[];globalThis.hook=l=>{l.push=x=>console.log(x.itemValue)};globalThis.\
+             hook(list);list.push(new Item(1));",
+        ),
+    ];
+    for (label, body) in fixtures {
+        let code = format!("{ITEM}{body}export{{}};");
+        let temp = bundle(&[("index.js", &code)]);
+        let output = run_typeopt(temp.path(), &[]);
+        assert!(output.status.success());
+        let log = strip_ansi(&String::from_utf8_lossy(&output.stderr));
+        for event in [
+            "array builtins intact",
+            "array values allocated",
+            "array preservation causes",
+        ] {
+            assert!(log.contains(event), "{event} missing for {label}:\n{log}");
+        }
+        assert!(log.contains(label), "{label} missing in {body}:\n{log}");
+    }
+}
+
+/// Optimizing twice gives identical output: arrays do not make the analysis
+/// order-dependent.
+#[test]
+fn array_analysis_is_deterministic() {
+    let code = format!(
+        "{ITEM}const list=[new Item(1),new Item(2)];const \
+         w=list.map(x=>({{wrappedValue:x.itemValue}}));for(const it of \
+         w)console.log(it.wrappedValue);list.push(new \
+         Item(3));console.log(list.length);export{{}};"
+    );
+    let (first, _) = run(&[("index.js", &code)]);
+    let (second, _) = run(&[("index.js", &code)]);
+    assert_eq!(
+        out(first.path(), "index.js"),
+        out(second.path(), "index.js")
+    );
 }
 
 // ---------------------------------------------------------------------------

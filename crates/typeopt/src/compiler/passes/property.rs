@@ -32,6 +32,7 @@ use crate::{
 pub(in crate::compiler) fn plan(ctx: &mut Ctx, enabled: &PassSet, out: &mut Plan) -> Result<()> {
     let options = flow::Options {
         finite_keys: enabled.contains(PassId::FiniteKeyRewriting),
+        arrays: flow::ArrayBuiltins::detect(ctx),
     };
     let mut objects = flow::analyze(ctx, options)?;
     let regions = objects.len();

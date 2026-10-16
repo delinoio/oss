@@ -42,11 +42,20 @@
 //!   `x.m(…)` dispatches to the method that each instance resolves `m` to.
 //!   Names that instance code reads or writes become properties of the instance
 //!   even without a declaration.
+//! - Arrays: arrays created in analyzed code are container values (see
+//!   [`arrays`]) with one element cell. Their elements flow through literals,
+//!   spread, `push`-like methods, proven numeric indexes, `for…of` and inline
+//!   callbacks, under the same escape rules: an array that reaches unknown
+//!   code, an unmodeled member or a patchable built-in escapes with its
+//!   elements. Arrays have no properties and are never reported.
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
+mod arrays;
 mod classes;
 
 use anyhow::Result;
+pub(in crate::compiler) use arrays::{ArrayBuiltins, ArrayMethod};
+use arrays::{ArraySite, ELEMENTS, Iterate};
 
 use super::{
     analysis::{Ctx, RefKind, skip_outer, walk_up_outer},
@@ -62,6 +71,8 @@ use crate::{
 pub(super) struct Options {
     /// Coordinate finite computed keys with property renaming.
     pub finite_keys: bool,
+    /// Built-in `Array` operations that application code cannot replace.
+    pub arrays: ArrayBuiltins,
 }
 
 /// Property names with protocol meaning; they are never renamed.
@@ -98,6 +109,8 @@ enum Kind {
     Literal,
     /// The instances of a closed class (index into `Builder::classes`).
     Instance(usize),
+    /// An array created in analyzed code (see [`arrays`]); never reported.
+    Array,
 }
 
 #[derive(Clone, Copy)]
@@ -105,6 +118,11 @@ enum Key {
     Name(&'static str),
     Cell(CellId),
     Dynamic,
+    /// A proven numeric key. On an array it reads or writes the element
+    /// cell; on any other object it is an unresolved key. With a proof cell
+    /// the key is `x.length`, numeric only while every value of the cell is
+    /// an array.
+    Index(Option<CellId>),
 }
 
 /// A property load (`other` receives the field) or store (`other` flows
@@ -136,6 +154,8 @@ struct Dispatch {
     spread: bool,
     result: CellId,
     done: HashSet<Value>,
+    /// The call is a modeled `Array.prototype` method name.
+    array: Option<ArraySite>,
 }
 
 struct Graph {
@@ -159,10 +179,19 @@ struct Graph {
     /// Cells that unknown code reaches once an instance escapes: method
     /// parameters and results and the `this` cells of its class chain.
     exposure: HashMap<Value, Vec<CellId>>,
+    kinds: Vec<Kind>,
+    arrays: ArrayBuiltins,
+    iterations: Vec<Iterate>,
+    iteration_watchers: Vec<Vec<usize>>,
 }
 
 impl Graph {
-    fn new(objects: usize, names: Vec<&'static str>) -> Self {
+    fn new(
+        objects: usize,
+        names: Vec<&'static str>,
+        kinds: Vec<Kind>,
+        arrays: ArrayBuiltins,
+    ) -> Self {
         let mut graph = Self {
             cells: Vec::new(),
             succ: Vec::new(),
@@ -180,6 +209,10 @@ impl Graph {
             dispatch_watchers: Vec::new(),
             methods: HashMap::new(),
             exposure: HashMap::new(),
+            kinds,
+            arrays,
+            iterations: Vec::new(),
+            iteration_watchers: Vec::new(),
         };
         graph.cell(true);
         graph.cell(false);
@@ -195,6 +228,7 @@ impl Graph {
         self.succ.push(Vec::new());
         self.watchers.push(Vec::new());
         self.dispatch_watchers.push(Vec::new());
+        self.iteration_watchers.push(Vec::new());
         self.queued.push(false);
         id
     }
@@ -206,6 +240,7 @@ impl Graph {
         args: Vec<CellId>,
         spread: bool,
         result: CellId,
+        array: Option<ArraySite>,
     ) {
         let index = self.dispatches.len();
         self.dispatches.push(Dispatch {
@@ -215,6 +250,7 @@ impl Graph {
             spread,
             result,
             done: HashSet::new(),
+            array,
         });
         self.dispatch_watchers[receiver as usize].push(index);
         self.fire_dispatch(index);
@@ -231,11 +267,18 @@ impl Graph {
         let values = self.cells[receiver as usize].clone();
         if values.unknown {
             self.set_unknown(result);
+            self.expose_callback(index);
         }
         for value in values.values {
             if !self.dispatches[index].done.insert(value) {
                 continue;
             }
+            if self.is_array(value) {
+                self.fire_array(index, value);
+                continue;
+            }
+            // Any callback runs in code the analysis does not model.
+            self.expose_callback(index);
             match self.methods.get(&(value, name)).cloned() {
                 Some(Target::Summary {
                     params,
@@ -327,8 +370,9 @@ impl Graph {
             done: HashSet::new(),
         });
         self.watchers[receiver as usize].push(index);
-        if let Key::Cell(key) = key {
-            self.watchers[key as usize].push(index);
+        match key {
+            Key::Cell(key) | Key::Index(Some(key)) => self.watchers[key as usize].push(index),
+            _ => {}
         }
         self.fire(index);
     }
@@ -355,6 +399,12 @@ impl Graph {
                 (names, unknown)
             }
             Key::Dynamic => (Vec::new(), true),
+            // Resolved per receiver value below.
+            Key::Index(_) => (Vec::new(), false),
+        };
+        let index_key = match key {
+            Key::Index(proof) => Some(self.index_proven(proof)),
+            _ => None,
         };
         let objects: Vec<Value> = values
             .values
@@ -362,14 +412,35 @@ impl Graph {
             .copied()
             .filter(|&v| self.is_object(v))
             .collect();
+        // An index key reaches the elements of arrays only; any other object
+        // gets an unresolved key.
+        let unresolved_index = index_key
+            .is_some_and(|proven| !proven || objects.iter().any(|&object| !self.is_array(object)));
         if !store
             && (values.unknown
                 || objects.len() != values.values.len()
-                || (key_unknown && !objects.is_empty()))
+                || (key_unknown && !objects.is_empty())
+                || unresolved_index)
         {
             self.set_unknown(other);
         }
         for object in objects {
+            // `length` of an array is a number; elements live in one cell.
+            let array = self.is_array(object);
+            if array && matches!(key, Key::Name("length")) {
+                continue;
+            }
+            if let Some(proven) = index_key {
+                if proven && array && self.flows[index].done.insert((object, NO_TOKEN)) {
+                    let field = self.field(object, ELEMENTS);
+                    if store {
+                        self.edge(other, field);
+                    } else {
+                        self.edge(field, other);
+                    }
+                }
+                continue;
+            }
             for &(token, name) in &names {
                 if !self.flows[index].done.insert((object, token)) {
                     continue;
@@ -421,6 +492,9 @@ impl Graph {
             for dispatch in self.dispatch_watchers[cell as usize].clone() {
                 self.fire_dispatch(dispatch);
             }
+            for iteration in self.iteration_watchers[cell as usize].clone() {
+                self.fire_iterate(iteration);
+            }
         }
         Ok(steps)
     }
@@ -461,6 +535,8 @@ enum AccessKey {
     Computed(CellId),
     /// An unresolved key.
     Dynamic,
+    /// A proven numeric key (see [`Key::Index`]).
+    Index(Option<CellId>),
 }
 
 /// How an access uses the property.
@@ -490,6 +566,10 @@ struct MethodCall {
     receiver: CellId,
     name: &'static str,
     args: Vec<CellId>,
+    /// The array method that the call runs on array receivers when its shape
+    /// is understood and the built-in is intact; arrays are otherwise
+    /// unresolved receivers.
+    array: Option<ArrayMethod>,
 }
 
 #[derive(Clone, Copy)]
@@ -503,6 +583,10 @@ struct Store {
 #[derive(Clone, Copy)]
 struct Use {
     cell: CellId,
+    /// Array values are accepted in this context (a `for…of` operand or a
+    /// spread into a tracked array literal); `objects` still applies to
+    /// every other object.
+    arrays: bool,
     /// Objects escape with this reason.
     objects: Option<Preservation2>,
     /// Key literals escape (their text would be observed).
@@ -571,6 +655,16 @@ struct Builder<'a, 'c> {
     class_by_symbol: HashMap<SymbolId, usize>,
     /// What each object value stands for.
     kinds: Vec<Kind>,
+    /// Allocation sites of array values.
+    array_allocs: HashMap<Node, Value>,
+    /// Result cells of summarized callbacks (debug attribution).
+    exposed_callbacks: Vec<CellId>,
+    /// Summarized inline callbacks, by the call that passes them.
+    callbacks: HashMap<Node, usize>,
+    array_stats: arrays::ArrayStats,
+    /// Cached numeric proofs of bindings and the proofs in progress.
+    numeric_bindings: HashMap<SymbolId, bool>,
+    numeric_active: HashSet<SymbolId>,
     /// Dispatched calls and constructions.
     calls: Vec<MethodCall>,
     dispatched: HashSet<Node>,
@@ -944,6 +1038,10 @@ impl Builder<'_, '_> {
                 Some(&object) => self.graph.holding(object),
                 None => UNKNOWN,
             },
+            SyntaxKind::ArrayLiteralExpression => match self.array_allocs.get(&node) {
+                Some(&array) => self.graph.holding(array),
+                None => UNKNOWN,
+            },
             SyntaxKind::StringLiteral => match self.tokens.get(&node) {
                 Some(&token) => self.graph.holding(token),
                 None => UNKNOWN,
@@ -1010,6 +1108,8 @@ impl Builder<'_, '_> {
         let argument = node.argument_expression();
         if argument.kind() == SyntaxKind::StringLiteral {
             Key::Name(argument.text())
+        } else if let Some(key) = self.index_key(argument) {
+            key
         } else if self.options.finite_keys {
             Key::Cell(self.expr(argument))
         } else {
@@ -1215,6 +1315,8 @@ impl Builder<'_, '_> {
                     self.allocation(file, node);
                 } else if let Some(candidate) = closed.get(&node) {
                     self.class_allocation(file, node, candidate);
+                } else if Self::array_allocation_site(node) {
+                    self.array_allocation(file, node);
                 }
             }
             self.ctx.files[file].nodes = nodes;
@@ -1240,7 +1342,12 @@ impl Builder<'_, '_> {
                 }
             }
         }
-        self.graph = Graph::new(self.objects.len(), names);
+        self.graph = Graph::new(
+            self.objects.len(),
+            names,
+            self.kinds.clone(),
+            self.options.arrays,
+        );
         self.class_cells();
         // Function summaries.
         let mut boundaries = std::collections::BTreeMap::<FunctionBoundary, usize>::new();
@@ -1279,6 +1386,7 @@ impl Builder<'_, '_> {
             "function summaries classified"
         );
         self.summarize_members();
+        self.summarize_callbacks(&files);
         // Bindings: variables, parameters and destructured names.
         for &file in &files {
             let module = is_external_module(self.ctx.files[file].node);
@@ -1326,6 +1434,7 @@ impl Builder<'_, '_> {
                     SyntaxKind::VariableDeclaration => {
                         node.initializer().is_some()
                             || node.parent().parent().kind() == SyntaxKind::VariableStatement
+                            || self.for_of_binding(node)
                     }
                     SyntaxKind::Parameter => self.owners.contains_key(&node.parent()),
                     _ => self.supported_pattern(node.parent()),
@@ -1466,6 +1575,7 @@ impl Builder<'_, '_> {
                             Key::Name(_) => self.static_key(node.argument_expression(), false),
                             Key::Cell(cell) => AccessKey::Computed(cell),
                             Key::Dynamic => AccessKey::Dynamic,
+                            Key::Index(proof) => AccessKey::Index(proof),
                         }
                     };
                     let outer = walk_up_outer(node);
@@ -1516,6 +1626,8 @@ impl Builder<'_, '_> {
             SyntaxKind::NewExpression => {
                 self.expr(node);
             }
+            SyntaxKind::ArrayLiteralExpression => self.array_literal_edges(node),
+            SyntaxKind::ForOfStatement => self.for_of_edges(node),
             SyntaxKind::PropertyDeclaration | SyntaxKind::GetAccessor | SyntaxKind::SetAccessor => {
                 self.member_edges(node)
             }
@@ -1601,6 +1713,7 @@ impl Builder<'_, '_> {
     fn use_of(&mut self, node: Node) {
         let carrier = match node.kind() {
             SyntaxKind::ObjectLiteralExpression => self.allocations.contains_key(&node),
+            SyntaxKind::ArrayLiteralExpression => self.array_allocs.contains_key(&node),
             SyntaxKind::StringLiteral => self.tokens.contains_key(&node),
             SyntaxKind::Identifier
             | SyntaxKind::ParenthesizedExpression
@@ -1626,8 +1739,10 @@ impl Builder<'_, '_> {
         }
         let (objects, tokens, cause) = self.context(node);
         if objects.is_some() || tokens {
+            let arrays = objects.is_some() && self.arrays_accepted(node);
             self.uses.push(Use {
                 cell,
+                arrays,
                 objects,
                 tokens,
                 cause,
@@ -1806,6 +1921,8 @@ impl Builder<'_, '_> {
                 }
             }
             SyntaxKind::DeleteExpression => (Some(Preservation2::Operation), true, ""),
+            // Elements of a tracked array literal flow into its element cell.
+            SyntaxKind::ArrayLiteralExpression if self.array_allocs.contains_key(&parent) => ACCEPT,
             kind => escape(kind_label(kind)),
         }
     }
@@ -1837,9 +1954,14 @@ impl Builder<'_, '_> {
                         token_escaped: &mut Vec<bool>,
                         cell: CellId,
                         reason: Option<Preservation>,
-                        tokens: bool| {
+                        tokens: bool,
+                        arrays: bool| {
             for &value in &graph.cells[cell as usize].values {
                 if graph.is_object(value) {
+                    // A context may accept arrays and still escape the rest.
+                    if arrays && graph.is_array(value) {
+                        continue;
+                    }
                     if let Some(reason) = &reason {
                         reasons[value as usize].get_or_insert(reason.clone());
                     }
@@ -1855,6 +1977,7 @@ impl Builder<'_, '_> {
                 cell,
                 Some(Preservation::Escapes),
                 true,
+                false,
             );
             if debug {
                 for &value in &graph.cells[cell as usize].values {
@@ -1871,6 +1994,7 @@ impl Builder<'_, '_> {
                 cell,
                 Some(Preservation::TypeConstraint),
                 true,
+                false,
             );
         }
         stamp(&reasons, &mut causes, "type-constraint");
@@ -1881,28 +2005,56 @@ impl Builder<'_, '_> {
                 u.cell,
                 u.objects.map(Preservation2::reason),
                 u.tokens,
+                u.arrays,
             );
             if debug && u.objects.is_some() {
                 for &value in &graph.cells[u.cell as usize].values {
-                    if graph.is_object(value) && causes[value as usize].is_empty() {
+                    if graph.is_object(value)
+                        && !(u.arrays && graph.is_array(value))
+                        && causes[value as usize].is_empty()
+                    {
                         causes[value as usize] = if u.cause.is_empty() { "use" } else { u.cause };
                     }
                 }
             }
         }
         // Arguments of calls that may reach code without a summary escape.
+        // Calls on arrays that are escaped, or that the model does not
+        // cover, are attributed to the array.
         let mut escaping_calls = HashMap::<&str, usize>::new();
+        let mut unresolved: Vec<(&MethodCall, bool)> = Vec::new();
         for call in &self.calls {
             let receiver = &graph.cells[call.receiver as usize];
-            let resolved = !receiver.unknown
-                && !receiver.values.is_empty()
-                && receiver.values.iter().all(|&v| {
-                    matches!(
-                        graph.methods.get(&(v, call.name)),
-                        Some(Target::Summary { .. })
-                    )
-                });
+            let mut array_blocked = false;
+            let mut resolved = !receiver.unknown && !receiver.values.is_empty();
+            for &v in &receiver.values {
+                if graph.is_array(v) {
+                    if call.array.is_none() || graph.escaped[v as usize] {
+                        array_blocked = true;
+                        resolved = false;
+                    }
+                } else if !matches!(
+                    graph.methods.get(&(v, call.name)),
+                    Some(Target::Summary { .. })
+                ) {
+                    resolved = false;
+                }
+            }
             if resolved {
+                // Arguments that are not element inputs (an index or a bound)
+                // escape as they do for any call.
+                if call.array.is_some_and(ArrayMethod::escapes_arguments) {
+                    for &arg in &call.args {
+                        preserve(
+                            &mut reasons,
+                            &mut token_escaped,
+                            arg,
+                            Some(Preservation::Escapes),
+                            true,
+                            false,
+                        );
+                    }
+                }
                 continue;
             }
             if debug
@@ -1915,23 +2067,50 @@ impl Builder<'_, '_> {
             {
                 *escaping_calls.entry(call.name).or_default() += 1;
             }
-            for &arg in &call.args {
-                preserve(
-                    &mut reasons,
-                    &mut token_escaped,
-                    arg,
-                    Some(Preservation::Escapes),
-                    true,
-                );
-            }
+            unresolved.push((call, array_blocked));
         }
-        stamp(&reasons, &mut causes, "call-argument:method-call");
+        for (label, array_calls) in [
+            ("call-argument:escaped-array", true),
+            ("call-argument:method-call", false),
+        ] {
+            for &(call, array_blocked) in &unresolved {
+                if array_blocked != array_calls {
+                    continue;
+                }
+                for &arg in &call.args {
+                    preserve(
+                        &mut reasons,
+                        &mut token_escaped,
+                        arg,
+                        Some(Preservation::Escapes),
+                        true,
+                        false,
+                    );
+                }
+            }
+            stamp(&reasons, &mut causes, label);
+        }
         if debug {
             let mut escaping_calls: Vec<_> = escaping_calls.into_iter().collect();
             escaping_calls.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
             escaping_calls.truncate(30);
             tracing::debug!(?escaping_calls, "instances passed to unresolved calls");
         }
+        // The results of a summarized callback are unknown when unknown code
+        // can run it.
+        for &cell in &self.exposed_callbacks {
+            if graph.cells[cell as usize].unknown {
+                preserve(
+                    &mut reasons,
+                    &mut token_escaped,
+                    cell,
+                    Some(Preservation::Escapes),
+                    true,
+                    false,
+                );
+            }
+        }
+        stamp(&reasons, &mut causes, "sink:exposed-callback-result");
         // Values joined with unknown ones cannot be renamed alone (unknown
         // code may read an escaped object's fields, including key literals
         // stored there), and every cell joins the objects it may hold.
@@ -1961,12 +2140,16 @@ impl Builder<'_, '_> {
             let owned = receiver > EMPTY
                 && !cell.unknown
                 && !cell.values.is_empty()
-                && cell.values.iter().all(|&v| graph.is_object(v));
+                && cell
+                    .values
+                    .iter()
+                    .all(|&v| graph.is_object(v) && !graph.is_array(v));
             if !owned {
-                preserve(&mut reasons, &mut token_escaped, key, None, true);
+                preserve(&mut reasons, &mut token_escaped, key, None, true, false);
             }
         }
         // Writes into unknown receivers or unresolved keys escape the value.
+        let mut length_stores = Vec::new();
         for store in &self.stores {
             let receiver = &graph.cells[store.receiver as usize];
             let unresolved = store.receiver == UNKNOWN
@@ -1981,6 +2164,10 @@ impl Builder<'_, '_> {
                             || keys.values.is_empty()
                             || keys.values.iter().any(|&v| graph.is_object(v))
                     }
+                    Key::Index(proof) => {
+                        !graph.index_proven(proof)
+                            || receiver.values.iter().any(|&v| !graph.is_array(v))
+                    }
                 };
             if unresolved {
                 preserve(
@@ -1989,10 +2176,45 @@ impl Builder<'_, '_> {
                     store.value,
                     Some(Preservation::Escapes),
                     true,
+                    false,
                 );
+            }
+            if matches!(store.key, Key::Name("length"))
+                && receiver.values.iter().any(|&v| graph.is_array(v))
+            {
+                length_stores.push(store.value);
             }
         }
         stamp(&reasons, &mut causes, "store-into-unknown-receiver");
+        // `array.length = value` truncates or extends the array.
+        for value in length_stores {
+            preserve(
+                &mut reasons,
+                &mut token_escaped,
+                value,
+                Some(Preservation::Escapes),
+                true,
+                false,
+            );
+        }
+        stamp(&reasons, &mut causes, "store-into-array-length");
+        // Arrays: a receiver that mixes arrays with other objects, and
+        // members that the model does not cover, preserve the array. An
+        // array that a dispatch already escaped is preserved too.
+        let findings = self.array_findings();
+        for &object in &findings.mixed {
+            reasons[object].get_or_insert(Preservation::Escapes);
+        }
+        stamp(&reasons, &mut causes, "access:mixed-array-receiver");
+        for &object in &findings.unmodeled {
+            reasons[object].get_or_insert(Preservation::Escapes);
+        }
+        for object in 0..objects {
+            if self.is_array(object) && graph.escaped[object] {
+                reasons[object].get_or_insert(Preservation::Escapes);
+            }
+        }
+        stamp(&reasons, &mut causes, "array:unmodeled-member");
         let mut extras: Vec<Vec<&'static str>> = vec![Vec::new(); objects];
         // Names that code writes on each instance.
         let mut written: Vec<HashSet<&'static str>> = vec![HashSet::new(); objects];
@@ -2036,16 +2258,22 @@ impl Builder<'_, '_> {
         };
         for access in &self.accesses {
             let receiver = &graph.cells[access.receiver as usize];
+            // Arrays have no properties; their accesses are classified above.
             let members: Vec<usize> = receiver
                 .values
                 .iter()
-                .filter(|&&v| graph.is_object(v))
+                .filter(|&&v| graph.is_object(v) && !graph.is_array(v))
                 .map(|&v| v as usize)
                 .collect();
             if members.is_empty() {
                 continue;
             }
-            let mixed = receiver.unknown || members.len() != receiver.values.len();
+            let reaching = receiver
+                .values
+                .iter()
+                .filter(|&&v| graph.is_object(v))
+                .count();
+            let mixed = receiver.unknown || reaching != receiver.values.len();
             let names: Vec<&'static str> = match access.key {
                 AccessKey::Static { name, .. } => vec![name],
                 AccessKey::Computed(cell) => graph.cells[cell as usize]
@@ -2054,7 +2282,7 @@ impl Builder<'_, '_> {
                     .filter(|&&v| !graph.is_object(v))
                     .map(|&v| graph.names[(v - graph.objects) as usize])
                     .collect(),
-                AccessKey::Dynamic => Vec::new(),
+                AccessKey::Dynamic | AccessKey::Index(_) => Vec::new(),
             };
             for &object in &members {
                 if mixed {
@@ -2119,7 +2347,8 @@ impl Builder<'_, '_> {
                         }
                     }
                 }
-                AccessKey::Dynamic => {
+                // An index key on a value that is not an array is unresolved.
+                AccessKey::Dynamic | AccessKey::Index(_) => {
                     for &object in &members {
                         reasons[object].get_or_insert(Preservation::DynamicAccess);
                     }
@@ -2272,6 +2501,38 @@ impl Builder<'_, '_> {
             classes.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
             classes.truncate(30);
             tracing::debug!(renamed, preserved = ?classes, "class preservation causes");
+            // Arrays per cause, the most frequent first, and the members of
+            // arrays that the model does not cover.
+            let mut preserved = HashMap::<&str, usize>::new();
+            let mut intact = 0usize;
+            for (object, cause) in causes.iter().enumerate() {
+                if !self.is_array(object) {
+                    continue;
+                }
+                if reasons[object].is_none() {
+                    intact += 1;
+                } else {
+                    *preserved
+                        .entry(if cause.is_empty() {
+                            "unattributed"
+                        } else {
+                            cause
+                        })
+                        .or_default() += 1;
+                }
+            }
+            let mut preserved: Vec<_> = preserved.into_iter().collect();
+            preserved.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+            preserved.truncate(30);
+            let mut unmodeled_members: Vec<_> = findings.names.iter().collect();
+            unmodeled_members.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+            unmodeled_members.truncate(30);
+            tracing::debug!(
+                intact,
+                ?preserved,
+                ?unmodeled_members,
+                "array preservation causes"
+            );
         }
         Evaluation {
             reasons,
@@ -2466,10 +2727,17 @@ impl Builder<'_, '_> {
             }
             objects[index].preservation = reasons[index].clone();
         }
-        let mut merged = std::collections::BTreeMap::<usize, Object>::new();
+        // Regions in order of their first object. Arrays have no properties
+        // and are never reported, even as the root of a region.
+        let mut merged = Vec::<Object>::new();
+        let mut position = HashMap::<usize, usize>::new();
         for (index, object) in objects.into_iter().enumerate() {
+            if self.kinds[index] == Kind::Array {
+                continue;
+            }
             let id = root(&mut parents, index);
-            if let Some(target) = merged.get_mut(&id) {
+            if let Some(&target) = position.get(&id) {
+                let target = &mut merged[target];
                 if target.preservation.is_none() {
                     target.preservation = object.preservation;
                 }
@@ -2485,10 +2753,11 @@ impl Builder<'_, '_> {
                     }
                 }
             } else {
-                merged.insert(id, object);
+                position.insert(id, merged.len());
+                merged.push(object);
             }
         }
-        for object in merged.values_mut() {
+        for object in &mut merged {
             for property in &mut object.properties {
                 property
                     .occurrences
@@ -2498,7 +2767,7 @@ impl Builder<'_, '_> {
                     .dedup_by(|a, b| a.file == b.file && a.start == b.start && a.end == b.end);
             }
         }
-        Ok(merged.into_values().collect())
+        Ok(merged)
     }
 }
 
@@ -2643,7 +2912,7 @@ pub(super) fn analyze(ctx: &mut Ctx, options: Options) -> Result<Vec<Object>> {
     let mut builder = Builder {
         ctx,
         options,
-        graph: Graph::new(0, Vec::new()),
+        graph: Graph::new(0, Vec::new(), Vec::new(), ArrayBuiltins::NONE),
         symbols: HashMap::new(),
         bindings: HashMap::new(),
         expressions: HashMap::new(),
@@ -2670,6 +2939,12 @@ pub(super) fn analyze(ctx: &mut Ctx, options: Options) -> Result<Vec<Object>> {
         class_by_node: HashMap::new(),
         class_by_symbol: HashMap::new(),
         kinds: Vec::new(),
+        array_allocs: HashMap::new(),
+        exposed_callbacks: Vec::new(),
+        callbacks: HashMap::new(),
+        array_stats: arrays::ArrayStats::default(),
+        numeric_bindings: HashMap::new(),
+        numeric_active: HashSet::new(),
         calls: Vec::new(),
         dispatched: HashSet::new(),
         static_targets: HashMap::new(),

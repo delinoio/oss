@@ -280,13 +280,62 @@ impl Patches {
         self.records.insert((owner, member));
     }
 
-    fn contains(&self, owner: &Owner, member: &str) -> bool {
+    /// The record that lets application code replace `member` of `owner`, in
+    /// a stable textual form (`Array.push`, `*.push`, `Array.*`, `*.*`).
+    fn record(&self, owner: &Owner, member: &str) -> Option<String> {
         let member = Member::Named(member.to_owned());
-        [owner.clone(), Owner::Any].iter().any(|o| {
-            self.records.contains(&(o.clone(), member.clone()))
-                || self.records.contains(&(o.clone(), Member::Any))
-        })
+        [owner.clone(), Owner::Any]
+            .iter()
+            .flat_map(|o| [(o.clone(), member.clone()), (o.clone(), Member::Any)])
+            .filter(|record| self.records.contains(record))
+            .map(|(owner, member)| describe_record(&owner, &member))
+            .min()
     }
+
+    /// The first record (in textual order) that could give an array element
+    /// read or write a different meaning: a write to a member of `Array`,
+    /// `Object` or an unknown owner whose member is unknown or looks like a
+    /// numeric key (`1`, `-1`, `1.5`, `NaN`, `Infinity`, `undefined`).
+    /// Prototype getters and setters for such keys see array holes and
+    /// appended elements.
+    fn numeric_key_record(&self) -> Option<String> {
+        self.records
+            .iter()
+            .filter(|(owner, member)| {
+                let owner_matches = match owner {
+                    Owner::Any => true,
+                    Owner::Named(name) => matches!(name.as_str(), "Array" | "Object"),
+                    Owner::Global => false,
+                };
+                owner_matches
+                    && match member {
+                        Member::Any => true,
+                        Member::Named(name) => numeric_like_key(name),
+                    }
+            })
+            .map(|(owner, member)| describe_record(owner, member))
+            .min()
+    }
+}
+
+fn describe_record(owner: &Owner, member: &Member) -> String {
+    let owner = match owner {
+        Owner::Global => "globalThis",
+        Owner::Named(name) => name.as_str(),
+        Owner::Any => "*",
+    };
+    let member = match member {
+        Member::Named(name) => name.as_str(),
+        Member::Any => "*",
+    };
+    format!("{owner}.{member}")
+}
+
+/// A property name that array index reads and writes may produce: a number
+/// (any form), `NaN`, `Infinity` or `undefined`.
+fn numeric_like_key(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_digit() || matches!(c, '-' | '+' | '.'))
+        || matches!(name, "NaN" | "Infinity" | "undefined")
 }
 
 /// Global names that denote the global object itself.
@@ -887,16 +936,30 @@ impl Facts {
     /// Whether application code may replace member `member` of the global
     /// object (`owner == None`) or of built-in `owner` and its prototype.
     pub fn patched(&mut self, ctx: &mut Ctx, owner: Option<&str>, member: &str) -> bool {
+        self.patch_record(ctx, owner, member).is_some()
+    }
+
+    /// The patch record that makes [`Facts::patched`] true, for diagnostics.
+    pub fn patch_record(
+        &mut self,
+        ctx: &mut Ctx,
+        owner: Option<&str>,
+        member: &str,
+    ) -> Option<String> {
+        let owner = match owner {
+            Some(name) => Owner::Named(name.to_owned()),
+            None => Owner::Global,
+        };
+        self.patches(ctx).record(&owner, member)
+    }
+
+    fn patches(&mut self, ctx: &mut Ctx) -> &Patches {
         if self.patches.is_none() {
             let patches = scan_patches(ctx);
             tracing::debug!(records = patches.records.len(), "intrinsic patch scan");
             self.patches = Some(patches);
         }
-        let owner = match owner {
-            Some(name) => Owner::Named(name.to_owned()),
-            None => Owner::Global,
-        };
-        self.patches.as_ref().unwrap().contains(&owner, member)
+        self.patches.as_ref().unwrap()
     }
 
     /// `ident` is a read of the unmodified built-in global `name`.
@@ -1403,6 +1466,72 @@ pub(super) fn contains(outer: Node, inner: Node) -> bool {
 pub(in crate::compiler) fn builtin_intact(ctx: &mut Ctx, owner: &str, member: &str) -> bool {
     let mut facts = Facts::new();
     !facts.patched(ctx, None, owner) && !facts.patched(ctx, Some(owner), member)
+}
+
+/// The shared intrinsic patch scan, as the property flow queries it to decide
+/// which `Array` built-ins it may model.
+pub(in crate::compiler) struct PatchView {
+    facts: Facts,
+}
+
+pub(in crate::compiler) fn patch_view() -> PatchView {
+    PatchView {
+        facts: Facts::new(),
+    }
+}
+
+impl PatchView {
+    /// The record that lets application code replace `Array.prototype`
+    /// member `member` (or the `Array` constructor's), if any.
+    pub fn array_member(&mut self, ctx: &mut Ctx, member: &str) -> Option<String> {
+        self.facts.patch_record(ctx, Some("Array"), member)
+    }
+
+    /// The record that could change the meaning of element reads and writes
+    /// (see [`Patches::numeric_key_record`]), if any.
+    pub fn numeric_keys(&mut self, ctx: &mut Ctx) -> Option<String> {
+        self.facts.patches(ctx).numeric_key_record()
+    }
+
+    /// `Array.prototype` is used as a value (aliased, passed or returned), so
+    /// writes through the alias are invisible to the scan. Direct member
+    /// accesses and the first argument of a reflection writer are scanned.
+    pub fn array_prototype_aliased(&mut self, ctx: &mut Ctx) -> bool {
+        for index in 0..ctx.files.len() {
+            if ctx.files[index].js {
+                continue;
+            }
+            let nodes = ctx.files[index].nodes.clone();
+            for node in nodes {
+                if node.kind() != SyntaxKind::PropertyAccessExpression
+                    || node.name().text() != "prototype"
+                {
+                    continue;
+                }
+                let object = skip_outer(node.expression());
+                if lib_global_name(ctx, object) != Some("Array") {
+                    continue;
+                }
+                let outer = walk_up_outer(node);
+                let parent = outer.parent();
+                let member_access = matches!(
+                    parent.kind(),
+                    SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression
+                ) && parent.expression() == outer;
+                let reflection_target = parent.kind() == SyntaxKind::CallExpression
+                    && parent.arguments().first() == Some(outer)
+                    && {
+                        let callee = skip_outer(parent.expression());
+                        callee.kind() == SyntaxKind::PropertyAccessExpression
+                            && REFLECTION_WRITERS.contains(&callee.name().text())
+                    };
+                if !member_access && !reflection_target {
+                    return true;
+                }
+            }
+        }
+        false
+    }
 }
 
 /// The calls through a local alias `const d = Object.defineProperty` when

@@ -1281,12 +1281,18 @@ impl Builder<'_, '_> {
             }
         }
         let result = self.graph.cell(false);
+        let site = self.array_site(node, name);
+        let array = site
+            .as_ref()
+            .filter(|site| site.well_formed && self.options.arrays.enabled(site.method))
+            .map(|site| site.method);
         self.graph
-            .dispatch(receiver, name, args.clone(), spread, result);
+            .dispatch(receiver, name, args.clone(), spread, result, site);
         self.calls.push(MethodCall {
             receiver,
             name,
             args,
+            array,
         });
         self.dispatched.insert(node);
         result
@@ -1329,6 +1335,7 @@ impl Builder<'_, '_> {
             {
                 let receiver = self.expr(callee.expression());
                 if receiver <= EMPTY {
+                    self.expose_inline_callback(node);
                     return UNKNOWN;
                 }
                 self.dispatch_call(node, receiver, callee.name().text())
