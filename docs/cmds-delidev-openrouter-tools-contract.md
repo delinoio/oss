@@ -51,7 +51,10 @@ and recent context as input. It returns original output text to the native
 search client without inventing native reference IDs or encrypted output.
 This is a distinct tool request; the ordinary Responses relay does not inject
 tools or rewrite user requests. Remote failures remain failures and are not
-converted to search success.
+converted to search success. Incompatible observed tool responses return a
+non-retryable adapter error so native HTTP retry policy cannot repeat a tool
+operation that has already produced a response. Rejection logs retain only
+closed response status, incomplete reason and item counts.
 
 ## Results and lifecycle
 

@@ -126,3 +126,17 @@ func TestOpenRouterToolResponseNeverAdoptsInvalidBytesOrPartialText(t *testing.T
 		t.Fatal("failed search became success")
 	}
 }
+
+func TestOpenRouterIncompleteToolResultDoesNotInviteRetry(t *testing.T) {
+	f := openRouterFixture(t, StandaloneSearch, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","content":[{"type":"output_text","text":"private incomplete output"}]}]}`)
+	})
+	response, _, err := f.request(t, "/alpha/search", `{"id":"fixture","model":"fixed-model","commands":{"search_query":[{"q":"fixture"}]}}`, nil)
+	if err != nil || response.StatusCode != http.StatusUnprocessableEntity || f.calls.Load() != 1 {
+		t.Fatal("incomplete tool response invited retry", err, response.StatusCode)
+	}
+	if !strings.Contains(f.logs.String(), "max_output_tokens") || strings.Contains(f.logs.String(), "private incomplete output") {
+		t.Fatal("projection diagnostic lost closed failure or exposed content")
+	}
+}

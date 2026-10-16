@@ -471,8 +471,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if operation.openRouterTool() {
 		projected, projectErr := projectOpenRouterToolResponse(result, operation)
 		if projectErr != nil {
+			responseStatus, incompleteReason, messages, textParts, toolCalls := openRouterToolResponseShape(result)
+			h.logger.WarnContext(ctx, "codex_openrouter_tool_response_rejected", "operation", operation, "correlation_id", correlation, "response_status", responseStatus, "incomplete_reason", incompleteReason, "message_count", messages, "text_part_count", textParts, "tool_call_count", toolCalls)
 			code = domain.Unsupported
-			fail(http.StatusBadGateway, code)
+			// An incompatible completed response is not a transient gateway outage.
+			// A non-retryable status prevents native HTTP retries from repeating a
+			// provider tool operation whose result has already been observed.
+			fail(http.StatusUnprocessableEntity, code)
 			return
 		}
 		clear(result)

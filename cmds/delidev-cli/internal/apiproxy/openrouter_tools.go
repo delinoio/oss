@@ -165,3 +165,43 @@ func projectOpenRouterToolResponse(raw []byte, operation Operation) ([]byte, err
 	clear(bytes)
 	return json.Marshal(map[string]any{"created": *response.Created, "data": []any{map[string]string{"b64_json": response.Data[0].Base64}}})
 }
+
+// Retain only closed shape facts when a provider cannot satisfy the native
+// tool contract. Provider text, commands, arguments and locators stay private.
+func openRouterToolResponseShape(raw []byte) (status, incomplete string, messages, textParts, toolCalls int) {
+	var response struct {
+		Status     string `json:"status"`
+		Incomplete struct {
+			Reason string `json:"reason"`
+		} `json:"incomplete_details"`
+		Output []struct {
+			Type    string `json:"type"`
+			Content []struct {
+				Type string `json:"type"`
+			} `json:"content"`
+		} `json:"output"`
+	}
+	_ = json.Unmarshal(raw, &response)
+	status = "unknown"
+	if slices.Contains([]string{"completed", "incomplete", "in_progress", "failed", "queued", "cancelled"}, response.Status) {
+		status = response.Status
+	}
+	incomplete = "unknown"
+	if slices.Contains([]string{"max_output_tokens", "content_filter"}, response.Incomplete.Reason) {
+		incomplete = response.Incomplete.Reason
+	}
+	for _, item := range response.Output {
+		if item.Type == "message" {
+			messages++
+		}
+		if slices.Contains([]string{"function_call", "web_search_call", "web_fetch_call", "server_tool_call"}, item.Type) {
+			toolCalls++
+		}
+		for _, part := range item.Content {
+			if part.Type == "output_text" {
+				textParts++
+			}
+		}
+	}
+	return
+}
