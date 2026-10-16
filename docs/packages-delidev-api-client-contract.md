@@ -564,4 +564,4 @@ The generated Go and TypeScript bindings expose `SystemCapability.CLAUDE_SERVER_
 
 ## Subagent display names
 
-Generated `Resource.subagentDisplay` (`SubagentDisplayName` with `childId` and `name`) and `PublishExecutionRequest.subagentNames` expose the additive [display-name metadata](protos-delidev-v1-contract.md#subagent-display-name-metadata). Consumers join the name to the Resource by the original child ID, accept at most 256 Unicode characters of non-blank, control-free text and otherwise fall back to the stable localized ordinal. Child `document_json` and its closed validators are unchanged.
+Generated `Resource.subagentDisplay` (`SubagentDisplayName` with `childId` and `name`) and `PublishExecutionRequest.subagentNames` expose the additive [display-name metadata](protos-delidev-v1-contract.md#subagent-display-name-metadata). Consumers join the name to the Resource by the original child ID, accept at most 256 Unicode characters of non-blank, control-free text and otherwise fall back to the stable localized ordinal. Only Codex children use a name. Child `document_json` and its closed validators are unchanged.

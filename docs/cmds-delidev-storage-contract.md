@@ -1659,7 +1659,7 @@ identity and original deletion ownership. No schema or migration is added.
 
 ## Private subagent display name retention
 
-Optional private `SubagentRecord.display_name` retains the last valid bounded Codex nickname of one child under its original product ID. It is written in the same transaction and receipt as the child observation, retained when later observations omit it and updated by a later valid name. Backups retain it with the original child record, while Resource `document_json` always excludes the key and exposes it only as `Resource.subagent_display`. Historical records without the key need no backfill, and no schema or migration is added. Worker outbox journals retain the exact pending names beside the pending event.
+Optional private `SubagentRecord.display_name` retains the last valid bounded Codex nickname of one child under its original product ID. It is written in the same transaction and receipt as the child observation, retained when later observations omit it and updated by a later valid name. Backups retain it with the original child record, while Resource `document_json` always excludes the key and exposes it only as `Resource.subagent_display`; a retained name that is not a well-formed bounded JSON string is dropped from that projection. Historical records without the key need no backfill, and no schema or migration is added. Worker outbox journals retain the exact pending names beside the pending event.
 
 ## Persistent native profile storage
 
