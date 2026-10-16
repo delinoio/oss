@@ -4682,6 +4682,36 @@ fn keeps_names_of_arrays_that_unknown_code_can_observe() {
     }
 }
 
+/// Every write to `length` truncates or extends the array, so it is an escape
+/// boundary, and so is every operation spelled as a write.
+#[test]
+fn keeps_names_of_arrays_whose_length_is_written() {
+    let writes = [
+        "list.length=0",
+        "list[\"length\"]=0",
+        "list.length=list.length",
+        "list.length+=0",
+        "list.length*=1",
+        "list.length++",
+        "--list.length",
+        "try{delete list.length}catch{}",
+        "[list.length]=[0]",
+        "({length:list.length}={length:0})",
+        "for(list.length of[0]);",
+    ];
+    let renamed: Vec<&str> = writes
+        .into_iter()
+        .filter(|write| {
+            let body = format!(
+                "const list=[new \
+                 Item(1)];console.log(list[0].itemValue);{write};console.log(list.length);"
+            );
+            !array_chunk(&body).1.contains("itemValue")
+        })
+        .collect();
+    assert!(renamed.is_empty(), "names renamed for: {renamed:?}");
+}
+
 /// A receiver that is an array or a closed class instance keeps both; the
 /// closed class has its own `length`.
 #[test]

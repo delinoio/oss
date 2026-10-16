@@ -24,7 +24,9 @@
 //!   ([`Key::Index`]); on a value that is not an array an index key behaves as
 //!   an unresolved key;
 //! - `for (const|let x of arr)` loads the element cell into `x`;
-//! - `.length` yields a value that is never an object;
+//! - reading `.length` yields a value that is never an object; a write to it
+//!   (assignment, compound assignment, `++`, `--`, destructuring target)
+//!   truncates or extends the array and is an escape boundary;
 //! - the methods of [`ArrayMethod`] are modeled where a dispatched call meets
 //!   an array receiver (`Graph::fire_array`); instances of closed classes use
 //!   their own method tables.
@@ -927,7 +929,11 @@ impl Builder<'_, '_> {
                 findings.mixed.extend(members.iter().copied());
             }
             let modeled = match (&access.key, access.usage) {
-                (super::AccessKey::Static { name, .. }, Usage::Data) => *name == "length",
+                // Reading `length` yields a number; every write truncates or
+                // extends the array, so it is an escape boundary.
+                (super::AccessKey::Static { name, .. }, Usage::Data) => {
+                    *name == "length" && !access.write
+                }
                 (super::AccessKey::Static { name, .. }, Usage::Call) => {
                     ArrayMethod::from_name(name)
                         .is_some_and(|method| self.options.arrays.enabled(method))
