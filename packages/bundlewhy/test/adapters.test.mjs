@@ -341,12 +341,7 @@ for (const [name, buildOutput, hookMinify, expected] of [
     "{ mangle: false }",
     MangleSetting.Disabled,
   ],
-  [
-    "hook sets minify false",
-    "{}",
-    "false",
-    MangleSetting.Disabled,
-  ],
+  ["hook sets minify false", "{}", "false", MangleSetting.Disabled],
   [
     "hook enables mangle over a disabled config",
     "{ minify: { mangle: false } }",
