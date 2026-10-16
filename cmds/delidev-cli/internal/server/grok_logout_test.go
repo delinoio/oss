@@ -442,7 +442,7 @@ func TestGrokLogoutFaultInjectionNeverLosesTheCredentialWithoutRecovery(t *testi
 	}{
 		{"after the claim", grokLogoutAfterClaim, 0, true, true},
 		{"after the revocation", grokLogoutAfterRevoke, 1, true, true},
-		{"after the publication", grokLogoutAfterPublish, 1, true, false},
+		{"after the publication", grokLogoutAfterPublish, 1, true, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -464,9 +464,10 @@ func TestGrokLogoutFaultInjectionNeverLosesTheCredentialWithoutRecovery(t *testi
 			}
 			if tc.stage == grokLogoutAfterPublish {
 				// Published but not cleaned: the credential stays vault-owned and the
-				// account is disconnected with no recovery fence from the restart.
-				if a.Connection != nil || len(g.f.references()) != 1 {
-					t.Fatal("the publication crash must leave the unreferenced bundle for cleanup")
+				// disconnected account already carries the retained logout-cleanup
+				// recovery shape, which explicit cleanup or deletion consumes.
+				if a.Connection != nil || len(g.f.references()) != 1 || !a.Subscription.RecoveryRequired || !serverLogoutRecoveryCandidate(a) {
+					t.Fatal("the publication crash must leave the bundle under a recoverable cleanup shape")
 				}
 				return
 			}

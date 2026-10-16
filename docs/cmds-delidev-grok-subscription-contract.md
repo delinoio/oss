@@ -572,18 +572,26 @@ Lifecycle of one runner:
    restart. The credential is never deleted without a confirmed revocation, and a
    failed revocation never deletes it without the recovery state.
 5. After a confirmed revocation one transaction publishes the disconnected account
-   (no connection, generation, identity commitment or owner machine; health
-   `disconnected`; the operation `succeeded`). It requires that the account still
-   references the frozen generation and that no Worker lease or member exists: a
-   Worker lease is released only after its owner confirmed that its private home
-   holds neither `auth.json` nor `auth.json.lock`, so the absence of a lease is the
-   confirmation that every Worker copy was removed. Otherwise the logout settles
-   RECOVERY_REQUIRED.
+   (no connection, generation, identity commitment or owner machine). It requires
+   that the account still references the frozen generation and that no Worker lease
+   or member exists: a Worker lease is released only after its owner confirmed
+   that its private home holds neither `auth.json` nor `auth.json.lock`, so the
+   absence of a lease is the confirmation that every Worker copy was removed.
+   Otherwise the logout settles RECOVERY_REQUIRED. Because the protected vault
+   generation still exists at that commit, the same transaction already persists
+   the retained logout-cleanup recovery shape (health `failed`, RECOVERY_REQUIRED,
+   the original operation with a `cleanup` / `recovery_required` diagnostic and
+   its queued placeholder). A process death between the publication and the vault
+   removal therefore leaves a recoverable shape that explicit account deletion
+   consumes, never a disconnected `succeeded` account whose credential reference
+   blocks deletion.
 6. Only after the publication are the protected vault generations removed
-   (`cleanupSubscriptionReferences`, the vault generation path). A failed removal
-   leaves the retained logout-cleanup recovery shape (published disconnected
-   metadata, RECOVERY_REQUIRED, the original operation, a `cleanup` /
-   `recovery_required` diagnostic), exactly as the ChatGPT server logout does;
+   (`cleanupSubscriptionReferences`, the vault generation path). A confirmed
+   removal settles the account in a second transaction: health `disconnected`,
+   the operation `succeeded`, the cleanup diagnostic and the recovery fence
+   cleared, so a client may observe RECOVERY_REQUIRED for the short interval
+   between the two transactions. A failed removal, or a failure to record the
+   settlement, keeps the persisted shape exactly as the ChatGPT server logout does;
    `serverLogoutRecoveryOwner` accepts Grok accounts, and explicit account
    deletion consumes the shape (it removes the references, never sends another
    revocation and then deletes).

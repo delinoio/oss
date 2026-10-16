@@ -172,6 +172,29 @@ func TestGrokAccountDeletionIsBlockedByUnconfirmedCredentialRemoval(t *testing.T
 	}
 }
 
+// A process death after the disconnected account was published and before the
+// vault generations were removed must still leave a cleanup child that the
+// explicit deletion consumes, instead of an account whose credential reference
+// blocks every deletion.
+func TestGrokAccountDeletionRecoversALogoutThatDiedAfterThePublication(t *testing.T) {
+	d := newGrokDeletion(t)
+	d.f.service.grokLogoutCrash = func(stage grokLogoutStage) bool { return stage == grokLogoutAfterPublish }
+	d.grokLogoutRun.request()
+	d.run()
+	d.f.service.grokLogoutCrash = nil
+	d.restart()
+	a := d.account()
+	if a.Connection != nil || !serverLogoutRecoveryCandidate(a) || len(d.f.references()) != 1 {
+		t.Fatal("the publication crash must leave the logout-cleanup recovery shape with the reference retained")
+	}
+	if err := d.remove(context.Background(), d.request()); err != nil {
+		t.Fatalf("deletion could not recover the account: %v", err)
+	}
+	if d.exists() || len(d.f.references()) != 0 || d.idp.RevokeRequests != 1 {
+		t.Fatalf("exists = %v, references = %d, revocation requests = %d", d.exists(), len(d.f.references()), d.idp.RevokeRequests)
+	}
+}
+
 func TestGrokAccountDeletionOfADisconnectedAccountSendsNoRevocation(t *testing.T) {
 	d := newGrokDeletion(t)
 	if p := d.settle(); p.State != grokSucceeds {

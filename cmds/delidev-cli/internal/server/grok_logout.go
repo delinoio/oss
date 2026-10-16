@@ -37,9 +37,13 @@ import (
 //  4. After a confirmed revocation one transaction publishes the disconnected
 //     account (no connection, generation or identity), requiring that no Worker
 //     lease exists (every Worker home was confirmed clean by its original owner
-//     before its lease was released); only afterwards are the vault generations
-//     removed. A failed removal leaves the retained logout-cleanup recovery shape
-//     that explicit account deletion consumes.
+//     before its lease was released). That same transaction already persists the
+//     retained logout-cleanup recovery shape that explicit account deletion
+//     consumes, so no crash between the publication and the vault removal can
+//     leave an unrecoverable disconnected account whose credential survives.
+//     Only afterwards are the vault generations removed; a confirmed removal
+//     settles the account to SUCCEEDED in a second transaction, and a failed or
+//     interrupted removal keeps the persisted recovery shape.
 //
 // No token, path or identity appears in a log, an error, an event or a document.
 
@@ -371,16 +375,24 @@ func (s *Service) finishGrokLogout(ctx context.Context, id domain.ID, o domain.S
 			op.State = domain.SubscriptionRecovery
 			op.GrokDiagnostic = diagnostic
 		case domain.SubscriptionSucceeded:
+			// The disconnected metadata is published together with the retained
+			// logout-cleanup recovery shape: the protected generation still sits in
+			// the vault, and a crash before its removal must leave a recoverable
+			// child that a later deletion can consume. The cleanup confirmation
+			// settles the operation to SUCCEEDED afterwards.
 			op.NativeStarted = false
-			op.State = state
-			op.GrokDiagnostic = nil
-			st.Pending = nil
+			op.State = domain.SubscriptionRecovery
+			d := grokLocalDiagnostic("", domain.GrokCleanup, domain.RecoveryRequired)
+			d.CorrelationID = string(op.ID)
+			op.GrokDiagnostic = d
+			st.RecoveryRequired = true
+			st.Pending = operationPlaceholder(op)
 			st.AutomaticCreditConsent = nil
 			st.Generation = ""
 			st.IdentityCommitment = ""
 			st.OwnerMachineID = ""
 			a.Connection = nil
-			a.Health = domain.AccountDisconnected
+			a.Health = domain.AccountFailed
 			a.Validation, a.Catalog, a.Quota = nil, nil, nil
 			a.ConfirmedExhausted = false
 		default:
@@ -414,11 +426,12 @@ func (s *Service) finishGrokLogout(ctx context.Context, id domain.ID, o domain.S
 }
 
 // cleanupGrokLogoutCredentials removes every protected vault generation of the
-// account after the disconnected account was published. A failed removal is not
-// an error of the logout: it leaves the retained logout-cleanup recovery shape
-// (published disconnected metadata plus RECOVERY_REQUIRED and the original
-// operation), which explicit account deletion consumes. The caller holds the
-// account gate.
+// account after the disconnected account was published together with its
+// retained logout-cleanup recovery shape (published disconnected metadata plus
+// RECOVERY_REQUIRED and the original operation), which explicit account
+// deletion consumes. A confirmed removal settles the operation to SUCCEEDED; a
+// failed removal is not an error of the logout and leaves the shape in place.
+// The caller holds the account gate.
 func (s *Service) cleanupGrokLogoutCredentials(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation) error {
 	s.logger.InfoContext(ctx, "grok_logout_cleanup_started", "phase", grokCleanupPhase, "account_id", id, "operation_id", o.ID, "correlation_id", o.ID)
 	vault, err := s.secrets()
@@ -427,37 +440,39 @@ func (s *Service) cleanupGrokLogoutCredentials(ctx context.Context, id domain.ID
 		err = cleanupSubscriptionReferences(cleanupCtx, vault, id, "")
 		cancel()
 	}
-	if err == nil {
-		s.logger.InfoContext(ctx, "grok_logout_cleanup_confirmed", "phase", grokCleanupPhase, "account_id", id, "operation_id", o.ID, "correlation_id", o.ID)
-		return nil
+	if err != nil {
+		// The recovery shape was committed with the publication, so nothing more
+		// has to be persisted: the account stays fenced for explicit cleanup.
+		s.logger.WarnContext(ctx, "grok_logout_cleanup_pending", "phase", grokCleanupPhase, "account_id", id, "operation_id", o.ID, "correlation_id", o.ID, "code", domain.SafeError(err).Code)
+		return err
 	}
-	s.logger.WarnContext(ctx, "grok_logout_cleanup_pending", "phase", grokCleanupPhase, "account_id", id, "operation_id", o.ID, "correlation_id", o.ID, "code", domain.SafeError(err).Code)
 	bookkeeping, cancel := grokBookkeepingContext(ctx, grokBookkeepingTimeout)
 	defer cancel()
-	_, markErr := s.Store.Mutate(bookkeeping, domain.NewID(), "grok.logout.cleanup-recovery", struct{ Account, Operation domain.ID }{id, o.ID}, func(tx *store.Tx) (any, error) {
+	_, settleErr := s.Store.Mutate(bookkeeping, domain.NewID(), "grok.logout.cleanup-confirmed", struct{ Account, Operation domain.ID }{id, o.ID}, func(tx *store.Tx) (any, error) {
 		r, a, err := grokSubscriptionAccount(tx, id, 0)
 		if err != nil {
 			return nil, err
 		}
-		st := a.Subscription
-		if st == nil || st.ServerOperation == nil || st.ServerOperation.ID != o.ID || st.ServerOperation.State != domain.SubscriptionSucceeded || st.Generation != "" || a.Connection != nil {
+		if !serverLogoutRecoveryOwner(a, o.ID) {
 			return nil, subscriptionDenied()
 		}
-		op := st.ServerOperation
-		op.State = domain.SubscriptionRecovery
-		d := grokLocalDiagnostic("", domain.GrokCleanup, domain.RecoveryRequired)
-		d.CorrelationID = string(op.ID)
-		op.GrokDiagnostic = d
-		st.RecoveryRequired = true
-		st.Pending = operationPlaceholder(op)
-		a.Health = domain.AccountFailed
+		st := a.Subscription
+		st.ServerOperation.State = domain.SubscriptionSucceeded
+		st.ServerOperation.GrokDiagnostic = nil
+		st.Pending = nil
+		st.RecoveryRequired = false
+		a.Health = domain.AccountDisconnected
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return struct{}{}, err
 	})
-	if markErr != nil {
-		s.logger.Warn("grok_logout_cleanup_recovery_unconfirmed", "phase", grokCleanupPhase, "operation_id", o.ID, "correlation_id", o.ID, "code", domain.SafeError(markErr).Code)
+	if settleErr != nil {
+		// The credential is gone but the settlement is not durable: the retained
+		// recovery shape stays and a later cleanup or deletion consumes it.
+		s.logger.Warn("grok_logout_cleanup_settle_unconfirmed", "phase", grokCleanupPhase, "operation_id", o.ID, "correlation_id", o.ID, "code", domain.SafeError(settleErr).Code)
+		return settleErr
 	}
-	return err
+	s.logger.InfoContext(ctx, "grok_logout_cleanup_confirmed", "phase", grokCleanupPhase, "account_id", id, "operation_id", o.ID, "correlation_id", o.ID)
+	return nil
 }
 
 // grokDeleteLogoutID derives the operation id of the logout that one deletion
