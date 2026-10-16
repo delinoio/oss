@@ -45,17 +45,20 @@ type IdP struct {
 	SignWithOtherKey bool
 	IDTokenIssuer    string
 	IDTokenAudience  string
-	NonceOverride    string
-	IDTokenLifetime  time.Duration
-	TokenStatus      int
-	ExpiresIn        int
-	UserinfoStatus   int
-	Subject          string
-	Email            string
-	PrincipalType    string
-	PrincipalID      string
-	TeamID           string
-	UserinfoSubject  string
+	// TokenBody replaces the successful token response body verbatim, after the
+	// code was consumed, so a truncated or malformed success can be injected.
+	TokenBody       string
+	NonceOverride   string
+	IDTokenLifetime time.Duration
+	TokenStatus     int
+	ExpiresIn       int
+	UserinfoStatus  int
+	Subject         string
+	Email           string
+	PrincipalType   string
+	PrincipalID     string
+	TeamID          string
+	UserinfoSubject string
 	// BeforeToken runs inside the token handler before it answers.
 	BeforeToken func()
 
@@ -204,6 +207,11 @@ func (i *IdP) token(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost || !ok || entry.used || r.PostForm.Get("grant_type") != "authorization_code" || r.PostForm.Get("client_id") != ClientID ||
 		r.PostForm.Get("redirect_uri") != entry.redirect || base64.RawURLEncoding.EncodeToString(sum[:]) != entry.challenge || r.PostForm.Has("client_secret") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
+		return
+	}
+	if i.TokenBody != "" {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(i.TokenBody))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"access_token": i.AccessToken, "token_type": "Bearer", "expires_in": i.ExpiresIn, "refresh_token": i.RefreshToken, "id_token": i.idToken(entry.nonce)})

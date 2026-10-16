@@ -162,16 +162,33 @@ func TestGrokExchangeClassifiesOutcomes(t *testing.T) {
 			t.Fatal("a transport error must be uncertain and value-free")
 		}
 	})
-	t.Run("bad-success", func(t *testing.T) {
-		f := newGrokFlow(t)
-		client := &http.Client{Transport: roundTrip(func(*http.Request) (*http.Response, error) {
-			return recorded(func(w http.ResponseWriter) { fmt.Fprint(w, `{"access_token":"a","token_type":"mac","expires_in":5}`) }), nil
-		})}
-		_, err := subscription.ExchangeGrokCode(context.Background(), client, f.profile, f.endpoints, "code", f.auth.Verifier(), grokTestRedirect)
-		if reason, uncertain := subscription.GrokOAuthReasonOf(err); reason != subscription.GrokReasonTokenResponse || uncertain {
-			t.Fatalf("incomplete success was accepted: %v", err)
-		}
-	})
+	// A success answer proves nothing about the code: an unusable body is
+	// uncertain recovery, never a definitive failure that allows another login.
+	for name, serve := range map[string]func(http.ResponseWriter){
+		"incomplete-success": func(w http.ResponseWriter) { fmt.Fprint(w, `{"access_token":"a","token_type":"mac","expires_in":5}`) },
+		"truncated-json":     func(w http.ResponseWriter) { fmt.Fprint(w, `{"access_token":"a","token_type":"Bearer","expires_in":`) },
+		"not-json":           func(w http.ResponseWriter) { fmt.Fprint(w, "<html>ok</html>") },
+		"empty-body":         func(w http.ResponseWriter) {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newGrokFlow(t)
+			client := &http.Client{Transport: roundTrip(func(*http.Request) (*http.Response, error) { return recorded(serve), nil })}
+			_, err := subscription.ExchangeGrokCode(context.Background(), client, f.profile, f.endpoints, "code", f.auth.Verifier(), grokTestRedirect)
+			if reason, uncertain := subscription.GrokOAuthReasonOf(err); reason != subscription.GrokReasonTokenResponse || !uncertain {
+				t.Fatalf("an unusable success answer must be uncertain: %v", err)
+			}
+		})
+	}
+	for name, status := range map[string]int{"accepted": http.StatusAccepted, "redirect": http.StatusFound} {
+		t.Run(name, func(t *testing.T) {
+			f := newGrokFlow(t)
+			f.idp.TokenStatus = status
+			_, err := f.exchange()
+			if reason, uncertain := subscription.GrokOAuthReasonOf(err); reason != subscription.GrokReasonTokenUncertain || !uncertain {
+				t.Fatalf("a non-200 answer other than 4xx must stay uncertain: %v", err)
+			}
+		})
+	}
 }
 
 func TestGrokIDTokenValidation(t *testing.T) {

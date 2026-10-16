@@ -408,6 +408,8 @@ func TestGrokBrowserLoginFailuresNeverSendASecondTokenRequest(t *testing.T) {
 		{name: "userinfo subject mismatch", prepare: func(g *grokLoginRun) { g.idp.UserinfoSubject = "someone-else" }, state: grokFailedSt, tokens: 1, claimed: true, code: domain.Unavailable},
 		{name: "missing principal", prepare: func(g *grokLoginRun) { g.idp.PrincipalID = "" }, state: grokFailedSt, tokens: 1, claimed: true, code: domain.Unauthenticated},
 		{name: "token rejected", prepare: func(g *grokLoginRun) { g.idp.TokenStatus = http.StatusBadRequest }, state: grokFailedSt, tokens: 1, claimed: true, code: domain.Unauthenticated},
+		{name: "token success with a truncated body", prepare: func(g *grokLoginRun) { g.idp.TokenBody = `{"access_token":"a","token_type":"Bearer","expires_in":` }, state: grokRecovery, tokens: 1, claimed: true, recovery: true},
+		{name: "token success without the required fields", prepare: func(g *grokLoginRun) { g.idp.TokenBody = `{"access_token":"a","token_type":"mac","expires_in":5}` }, state: grokRecovery, tokens: 1, claimed: true, recovery: true},
 		{name: "token server error", prepare: func(g *grokLoginRun) { g.idp.TokenStatus = http.StatusBadGateway }, state: grokRecovery, tokens: 1, claimed: true, recovery: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -240,9 +240,12 @@ Lifecycle of one runner:
    sent. The claim is never cleared or rewritten.
 4. A definitive answer (HTTP 4xx, invalid ID token, userinfo or mapping failure)
    settles FAILED with a LOGIN `GrokDiagnostic` and the operation id as
-   correlation id. A transport error, timeout, 5xx or any interruption after the
-   claim (cancellation, expiry, server shutdown, restart) settles
-   RECOVERY_REQUIRED: the account stays fenced and the code is never sent again.
+   correlation id. Only an explicit OAuth rejection (HTTP 4xx) proves the code
+   was not consumed. A transport error, timeout, redirect, 5xx, a success status
+   other than 200, a 200 whose token response is truncated, malformed or
+   incomplete, or any interruption after the claim (cancellation, expiry, server
+   shutdown, restart) settles RECOVERY_REQUIRED: the account stays fenced and the
+   code is never sent again.
    Before the claim, cancellation settles CANCELED and the deadline EXPIRED.
 5. Success follows the Finish-equivalent server settlement: the sealed
    `GrokBundle` envelope is staged in the protected vault as the new

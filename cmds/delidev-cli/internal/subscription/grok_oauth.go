@@ -332,29 +332,37 @@ type grokTokenResponse struct {
 
 // ExchangeGrokCode sends exactly one authorization-code token request as the
 // public client (no client authentication). The caller must have written its
-// durable exchange claim first. A failure that cannot prove the code was not
-// consumed (transport error, timeout, 5xx, unreadable success) is Uncertain; a
-// 4xx answer is a definitive rejection.
+// durable exchange claim first. Only an explicit OAuth rejection (a 4xx answer)
+// proves that the code was not consumed. Every other outcome that is not a
+// complete, usable success (transport error, timeout, 3xx or 5xx answer, a
+// success status other than 200, and a 200 whose body is truncated, malformed
+// or incomplete) may have consumed the code and is Uncertain.
 func ExchangeGrokCode(ctx context.Context, client *http.Client, profile GrokOAuthProfile, endpoints GrokEndpoints, code string, verifier []byte, redirectURI string) (GrokTokens, error) {
 	form := url.Values{"grant_type": {"authorization_code"}, "client_id": {profile.ClientID}, "code": {code}, "code_verifier": {string(verifier)}, "redirect_uri": {redirectURI}}
 	payload := []byte(form.Encode())
 	defer clear(payload)
 	status, body, err := grokRoundTrip(ctx, client, http.MethodPost, endpoints.Token, payload, map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
 	defer clear(body)
-	if err != nil || status >= 500 {
+	if err != nil {
 		return GrokTokens{}, &GrokOAuthError{Reason: GrokReasonTokenUncertain, Uncertain: true}
 	}
-	if status != http.StatusOK {
+	if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
 		return GrokTokens{}, grokFail(GrokReasonTokenRejected)
 	}
+	if status != http.StatusOK {
+		return GrokTokens{}, &GrokOAuthError{Reason: GrokReasonTokenUncertain, Uncertain: true}
+	}
+	// The provider answered success, so the code may be consumed: an unusable
+	// body can never prove otherwise and is recovery, not a definitive failure.
+	unusable := &GrokOAuthError{Reason: GrokReasonTokenResponse, Uncertain: true}
 	var response grokTokenResponse
 	if grokDecode(body, &response) != nil {
-		return GrokTokens{}, &GrokOAuthError{Reason: GrokReasonTokenResponse}
+		return GrokTokens{}, unusable
 	}
 	seconds, err := response.ExpiresIn.Int64()
 	if err != nil || !strings.EqualFold(response.TokenType, "bearer") || seconds <= 0 || seconds > grokMaxExpiresIn ||
 		!grokSecret(response.AccessToken) || !grokSecret(response.RefreshToken) || !grokSecret(response.IDToken) {
-		return GrokTokens{}, grokFail(GrokReasonTokenResponse)
+		return GrokTokens{}, unusable
 	}
 	return GrokTokens{AccessToken: response.AccessToken, RefreshToken: response.RefreshToken, IDToken: response.IDToken, ExpiresIn: time.Duration(seconds) * time.Second}, nil
 }
