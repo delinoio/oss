@@ -141,7 +141,17 @@ func subscriptionRPC(ctx context.Context, config Config, credential Credential) 
 	if err != nil {
 		return nil, nil, err
 	}
-	return delidevv1connect.NewSubscriptionServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(128<<10), connect.WithSendMaxBytes(128<<10)), closeHTTP, nil
+	return delidevv1connect.NewSubscriptionServiceClient(httpClient, credential.Endpoint, subscriptionRPCOptions()...), closeHTTP, nil
+}
+
+// subscriptionRPCMaxBytes bounds one subscription message in either direction.
+// A recovery capture request or response carries both the original and the latest
+// maximum-size bundle plus protobuf framing and the mutation and ownership
+// fields, so the bound covers two maximum bundles with generous overhead.
+const subscriptionRPCMaxBytes = 2*subscription.MaxBundle + 64<<10
+
+func subscriptionRPCOptions() []connect.ClientOption {
+	return []connect.ClientOption{connect.WithReadMaxBytes(subscriptionRPCMaxBytes), connect.WithSendMaxBytes(subscriptionRPCMaxBytes)}
 }
 
 func takeManagedSubscription(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account, operation domain.ID, revision uint64, action pb.SubscriptionAction) (*managedSubscriptionLease, error) {

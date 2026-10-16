@@ -1224,6 +1224,11 @@ bounded memory. Pending entries, special files, unreadable entries, remnants and
 changed root identity still fail closed without deleting history, and the scan
 observes cancellation.
 
+Transport. A capture synchronization or read may carry both the original and the
+latest maximum-size (64 KiB) bundle plus protobuf framing, the mutation and the
+ownership fields, so the Worker's subscription client limits each message to two
+maximum bundles plus 64 KiB of overhead in both directions.
+
 Logging. Structured records use the phase `subscription-recovery` on the server
 and `codex-recovery` on the Worker with opaque account, lease, request and capture
 identifiers, counts, the closed blocked reason, the retry delay and the cleanup

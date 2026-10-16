@@ -699,3 +699,26 @@ func TestCodexRecoveryWatchLaneIgnoresRowsWithoutNegotiation(t *testing.T) {
 		t.Fatal("a Worker without the negotiated capability attempted recovery")
 	}
 }
+
+// The recovery capture carries both maximum-size bundles in each direction; the
+// subscription transport must neither refuse to send nor to read them.
+func TestSubscriptionTransportCarriesTwoMaximumBundles(t *testing.T) {
+	server := &recoveryServer{t: t, home: t.TempDir()}
+	original, latest := bytes.Repeat([]byte("o"), subscription.MaxBundle), bytes.Repeat([]byte("l"), subscription.MaxBundle)
+	server.capture = &pb.ReadSubscriptionRecoveryCaptureResponse{CaptureId: string(domain.NewID()), Original: original, Latest: latest}
+	httpServer := httptest.NewServer(mustHandler(server))
+	t.Cleanup(httpServer.Close)
+	client := delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, httpServer.URL, subscriptionRPCOptions()...)
+	request := &pb.SyncSubscriptionRecoveryCaptureRequest{
+		Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(domain.NewID()), ExpectedRevision: 1<<62 - 1},
+		LeaseId:  string(domain.NewID()), MachineId: string(domain.NewID()), InstanceId: string(domain.NewID()), GenerationId: string(domain.NewID()),
+		Original: original, Latest: latest,
+	}
+	if _, err := client.SyncSubscriptionRecoveryCapture(context.Background(), connect.NewRequest(request)); err != nil {
+		t.Fatal("two maximum bundles could not be sent", err)
+	}
+	read, err := client.ReadSubscriptionRecoveryCapture(context.Background(), connect.NewRequest(&pb.ReadSubscriptionRecoveryCaptureRequest{AccountId: string(domain.NewID()), LeaseId: string(domain.NewID()), MachineId: string(domain.NewID()), InstanceId: string(domain.NewID()), OriginalInstanceId: string(domain.NewID()), GenerationId: string(domain.NewID())}))
+	if err != nil || len(read.Msg.Original) != subscription.MaxBundle || len(read.Msg.Latest) != subscription.MaxBundle {
+		t.Fatal("two maximum bundles could not be read", err)
+	}
+}
