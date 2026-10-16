@@ -370,7 +370,7 @@ Omitting `--device-code` selects native browser login. Ordinary acceptance/statu
 
 Revoking a paired initiating client atomically cancels its still-queued login, refresh and logout operations. This grants no lease, changes no credential generation, and preserves logout's accepted execution revocation and any independently granted lease. A fresh authorized request may replace a canceled queued operation. Successful execution write-back may retain the newest protected generation but cannot restore readiness after accepted logout revocation; a fresh authorized logout must complete cleanup. Claimed operations retain their original ownership and recovery obligations; revocation never proves native cleanup.
 
-An independently authorized outbound `WatchSubscription` lane supports four concurrent account operations per Worker. `TakeSubscription`, `PublishSubscriptionProgress` and `FinishSubscription` are restricted to the selected current Worker/device/instance. Bundles travel only in the protected Take/Finish messages, with a 64 KiB bound; they never enter jobs, execution output, events or ordinary resource responses. Take receipt replay never redistributes a bundle or authorizes another native launch.
+An independently authorized outbound `WatchSubscription` lane supports four concurrent ordinary account operations per Worker, plus a separate pool of four recovery attempts that ordinary operations cannot occupy. `TakeSubscription`, `PublishSubscriptionProgress` and `FinishSubscription` are restricted to the selected current Worker/device/instance. Bundles travel only in the protected Take/Finish messages, with a 64 KiB bound; they never enter jobs, execution output, events or ordinary resource responses. Take receipt replay never redistributes a bundle or authorizes another native launch.
 
 One durable account lease spans login, refresh, execution or logout. Refresh/logout requests can wait behind an execution lease. Other sessions retain their selected account and wait after a definite busy refusal; unknown delivery is never retried. Other accounts acquire independent leases. Native execution uses an immutable subscription selector and the existing publication/history/workspace machinery. Its publication registration exposes no API proxy path and cannot obtain an API relay lease.
 
@@ -1158,10 +1158,14 @@ Offer and lane. `WatchSubscription` offers a fenced ChatGPT EXECUTE row
 (`RecoveryRequired`, lease action execute, matching machine) or a committed
 recovery settlement only to its original Worker and only with capability 72.
 Without a fenced row every ordinary row is offered. Otherwise recovery rows share
-the four-account lane bound with ordinary rows and keep at least one slot; both the
+each offered four-row window with ordinary rows and keep at least one slot; both the
 recovery rows and the ordinary rows are offered through rotating windows, so more
 than four fenced accounts, or more ordinary rows than the remaining slots, cannot
-starve each other. The Worker starts at most one in-flight
+starve each other. The Worker keeps two independent in-flight pools of four:
+ordinary account operations and recovery attempts (ChatGPT, Claude and Grok
+fenced-execution recovery). A full ordinary pool never blocks a recovery
+attempt and recovery never consumes an ordinary slot, so a continuous ordinary
+backlog cannot starve a fenced account. The Worker starts at most one in-flight
 attempt per account and retries transient failures after 1, 2, 4, 8 and 16
 seconds and then every 30 seconds. Missing or foreign proof is terminal for the
 current obligation: it is not retried until the lease, generation or settlement

@@ -364,8 +364,7 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 	}
 	defer stream.Close()
 	var wg sync.WaitGroup
-	var mu sync.Mutex
-	active := map[domain.ID]bool{}
+	slots := newWatchSlots()
 	recoveries := newCodexRecoveryLane()
 	failures := make(chan error, 1)
 	defer func() {
@@ -398,18 +397,14 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			if !recoveries.due(key, obligation) {
 				continue
 			}
-			mu.Lock()
-			if active[key] || len(active) >= codexRecoveryLaneBound {
-				mu.Unlock()
+			if !slots.acquire(key, watchSlotRecovery) {
 				continue
 			}
-			active[key] = true
-			mu.Unlock()
 			accountID := domain.ID(r.Id)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				defer func() { mu.Lock(); delete(active, key); mu.Unlock() }()
+				defer slots.release(key)
 				result := runCodexRecovery(ctx, config, client, credential, instance, accountID, account)
 				if result.disposition == recoverySettled {
 					recoveries.success(key)
@@ -435,17 +430,19 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 		} else {
 			continue
 		}
-		mu.Lock()
-		if active[op.ID] || len(active) >= 4 {
-			mu.Unlock()
+		// Fenced Claude and Grok executions are recovery obligations: they use
+		// the reserved recovery slots so an ordinary backlog cannot starve them.
+		class := watchSlotOrdinary
+		if account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil || grokExecutionRecovery(account) {
+			class = watchSlotRecovery
+		}
+		if !slots.acquire(op.ID, class) {
 			continue
 		}
-		active[op.ID] = true
-		mu.Unlock()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer func() { mu.Lock(); delete(active, op.ID); mu.Unlock() }()
+			defer slots.release(op.ID)
 			run := func() error {
 				if observation != nil && account.Subscription.Lease != nil {
 					handled, err := config.observations.run(ctx, domain.ID(r.Id), *observation)
