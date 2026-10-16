@@ -47,3 +47,7 @@
 - Explicit account deletion removes all server-owned profiles of the account before it is acknowledged (`deleteAccountNativeProfiles` in `resources.go`).
 - Retain history, caches and native-created helper links, and delete profiles only through explicit session, account or storage deletion. Credential-file retention and removal follow the contract below.
 - Follow the [persistent native profiles contract](../../../../docs/cmds-delidev-harness-contract.md#persistent-native-profiles).
+
+## Claude usage tracking
+
+`claude_usage_*.go` own the server-owned Claude usage login lifecycle (see the subscription contract). Keep one registered run per account, cancel-and-join a live run before any other action retires, disconnects or deletes its account, never hold the account gate while joining, record a durable cleanup intent before every vault write, keep the RPCs unserved until `claudeServerUsageAdvertised` is activated, and never log identity, quota values, credentials, approval codes, authorization addresses or paths.

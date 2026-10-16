@@ -635,6 +635,7 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 	}
 	if !replayed {
 		var keyless, subscriptionOwner bool
+		var subscriptionService domain.SubscriptionService
 		var legacyOperation domain.ID
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := tx.Authorize(); err != nil {
@@ -651,6 +652,7 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 			}
 			keyless, err = accountWithoutCredentials(tx, account)
 			subscriptionOwner = account.Type == domain.SubscriptionAccount
+			subscriptionService = account.SubscriptionService
 			if account.Subscription != nil && account.Subscription.ServerOperation != nil {
 				legacyOperation = account.Subscription.ServerOperation.ID
 			}
@@ -677,12 +679,20 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 			}
 			if subscriptionOwner {
 				// Explicit deletion of a subscription account owns the final
-				// removal of its retained AccountLogin generations, the ClaudeUsage
-				// references its retired usage connection still owes and credential
-				// files. Any other protected reference keeps the account.
+				// removal of its retained AccountLogin generations, retired ClaudeUsage
+				// references and credential files. Any other protected reference
+				// keeps the account.
 				for _, ref := range refs {
 					if ref.Purpose != credentials.AccountLogin && ref.Purpose != credentials.ClaudeUsage {
 						return protectedAccountDeletion
+					}
+				}
+				// The server-owned Claude usage connection is retired with the
+				// account: owed cleanup completes and every remaining claude-usage
+				// reference and the usage profile credentials are removed first.
+				if subscriptionService == domain.SubscriptionClaude {
+					if err := s.removeAccountClaudeUsage(ctx, domain.ID(id)); err != nil {
+						return credentialRemovalFailure{err}
 					}
 				}
 				if err := s.removeAccountCredentials(ctx, domain.ID(id), legacyOperation, true); err != nil {

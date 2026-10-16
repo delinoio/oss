@@ -103,27 +103,40 @@ func openManagedClaudeLogin(ctx context.Context, scope nativeScope, owner domain
 	if e != nil {
 		return nil, "", subscriptionDenied()
 	}
-	installation, e := harness.DiscoverClaude(ctx, harness.DiscoveryConfig{Root: runtimeRoot, OwnerID: owner, Logger: logger, Profiles: scope.Profiles})
+	installation, observed, e := discoverServerClaude(ctx, scope, runtimeRoot, owner, logger)
 	if e != nil {
-		return nil, "", managedClaudeDiscoveryError{e}
-	}
-	if installation.State != domain.InstallationDetected {
-		return nil, "", managedClaudeDiscoveryError{domain.InstallationProblem(installation.State)}
-	}
-	// Discovery already admitted this version through the baseline predicate and
-	// the native protocol checks; the observed value is the diagnostic authority.
-	observed = installation.Version
-	if !domain.HarnessVersionAllowed(domain.ClaudeCode, installation.Version) {
-		return nil, observed, domain.Fail(domain.Unsupported, "The Claude Code version installed on the server is not supported.", "Update Claude Code on the server, then try again.")
-	}
-	if !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.State != domain.ProtocolVerified || installation.Problem != nil || installation.ResolvedPath == "" {
-		return nil, observed, managedClaudeDiscoveryError{domain.Fail(domain.Unsupported, "The installed Claude Code protocol is unavailable.", "Refresh native discovery on the server.")}
+		return nil, observed, e
 	}
 	login, e := claude.StartSetupToken(ctx, claude.SetupTokenConfig{Version: installation.Version, Home: filepath.Join(home, "claude"), Process: process.Config{Directory: filepath.Join(runtimeRoot, "processes"), OwnerID: owner, Executable: installation.ResolvedPath, Cwd: home, Env: env, Logger: logger}})
 	if e != nil {
 		return nil, observed, e
 	}
 	return &serverClaudeRuntime{SetupTokenLogin: login, home: home, lease: lease, owner: owner, logger: logger}, observed, nil
+}
+
+// discoverServerClaude resolves the server's detected, protocol-verified Claude
+// Code installation for a server-owned native login. The returned string is the
+// observed executable version (empty when discovery did not reach a detected
+// installation), never the pinned baseline. A failure keeps the failing native
+// phase reachable through managedClaudeDiscoveryError.
+func discoverServerClaude(ctx context.Context, scope nativeScope, runtimeRoot string, owner domain.ID, logger *slog.Logger) (domain.Installation, string, error) {
+	installation, e := harness.DiscoverClaude(ctx, harness.DiscoveryConfig{Root: runtimeRoot, OwnerID: owner, Logger: logger, Profiles: scope.Profiles})
+	if e != nil {
+		return domain.Installation{}, "", managedClaudeDiscoveryError{e}
+	}
+	if installation.State != domain.InstallationDetected {
+		return domain.Installation{}, "", managedClaudeDiscoveryError{domain.InstallationProblem(installation.State)}
+	}
+	// Discovery already admitted this version through the baseline predicate and
+	// the native protocol checks; the observed value is the diagnostic authority.
+	observed := installation.Version
+	if !domain.HarnessVersionAllowed(domain.ClaudeCode, installation.Version) {
+		return domain.Installation{}, observed, domain.Fail(domain.Unsupported, "The Claude Code version installed on the server is not supported.", "Update Claude Code on the server, then try again.")
+	}
+	if !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.State != domain.ProtocolVerified || installation.Problem != nil || installation.ResolvedPath == "" {
+		return domain.Installation{}, observed, managedClaudeDiscoveryError{domain.Fail(domain.Unsupported, "The installed Claude Code protocol is unavailable.", "Refresh native discovery on the server.")}
+	}
+	return installation, observed, nil
 }
 
 // Close joins the original child and wipes its screen buffer. The permanent
@@ -227,6 +240,13 @@ func (s *Service) requestManagedClaude(ctx context.Context, req *connect.Request
 		Action   domain.SubscriptionAction
 		Actor    domain.Principal
 	}{domain.ID(m.Id), m.ExpectedRevision, action, actor}
+	if action == domain.SubscriptionLogout {
+		// A live usage login is canceled and joined before the logout is accepted,
+		// outside the account gate its own settlement needs.
+		if err := s.prepareClaudeUsageLogout(ctx, input.ID, input.Revision); err != nil {
+			return nil, rpc.Error(err, c)
+		}
+	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)

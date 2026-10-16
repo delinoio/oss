@@ -262,7 +262,7 @@ func TestBackupRestoreRetiresLinkedClaudeUsageAuthority(t *testing.T) {
 }
 
 func TestBackupRestoreRequiresSettledClaudeUsageOperations(t *testing.T) {
-	for _, phase := range []string{"login", "reading", "renewing", "rotation-uncertain", "settled"} {
+	for _, phase := range []string{"login", "confirming", "retired", "profile-cleanup", "reading", "renewing", "rotation-uncertain", "settled"} {
 		t.Run(phase, func(t *testing.T) {
 			s, _, ctx, in, _ := restoreFixture(t)
 			id := domain.NewID()
@@ -271,6 +271,12 @@ func TestBackupRestoreRequiresSettledClaudeUsageOperations(t *testing.T) {
 			switch phase {
 			case "login":
 				usage = &domain.ClaudeServerUsageState{Connection: domain.ClaudeUsageConnecting, Generation: domain.NewID(), Operation: &domain.ClaudeUsageOperation{ID: domain.NewID(), Epoch: domain.NewID(), Actor: domain.Principal{Type: domain.OwnerDevice}, State: domain.SubscriptionWaiting, StartedAt: now, ExpiresAt: now.Add(10 * time.Minute)}}
+			case "confirming":
+				usage = &domain.ClaudeServerUsageState{Connection: domain.ClaudeUsageConfirming, Generation: domain.NewID(), CredentialID: domain.NewID(), Identity: linkedClaudeUsageForRestore().Identity, Operation: &domain.ClaudeUsageOperation{ID: domain.NewID(), Epoch: domain.NewID(), Actor: domain.Principal{Type: domain.OwnerDevice}, State: domain.SubscriptionSucceeded, StartedAt: now, ExpiresAt: now.Add(10 * time.Minute)}}
+			case "retired":
+				usage = &domain.ClaudeServerUsageState{Connection: domain.ClaudeUsageReconnectRequired, Generation: domain.NewID(), RetiredCredentials: []domain.ID{domain.NewID()}}
+			case "profile-cleanup":
+				usage = &domain.ClaudeServerUsageState{Connection: domain.ClaudeUsageReconnectRequired, Generation: domain.NewID(), ProfileCleanup: true}
 			case "reading":
 				usage.Refresh = domain.ClaudeUsageReading
 			case "renewing":

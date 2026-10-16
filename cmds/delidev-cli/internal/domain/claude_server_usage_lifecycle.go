@@ -24,12 +24,6 @@ func (s ClaudeServerUsageState) OwesCleanup() bool {
 	return len(s.RetiredCredentials) != 0 || s.ProfileCleanup
 }
 
-// Droppable reports whether a settled section carries no live authority, no
-// evidence and no owed cleanup, so it can be removed from the account.
-func (s ClaudeServerUsageState) Droppable() bool {
-	return s.Connection == ClaudeUsageReconnectRequired && !s.OwesCleanup() && len(s.Windows) == 0 && s.LastSuccessAt == nil && s.Refresh == ClaudeUsageIdle && (s.Operation == nil || !s.Operation.Active())
-}
-
 // NewClaudeUsageLogin begins one usage login. previous is the current section
 // (nil when the account never connected usage). A new login is only allowed
 // from no section or from a settled reconnect-required section that owes no
@@ -104,14 +98,18 @@ func (s *ClaudeServerUsageState) RecordCredentialIntent(id ID) error {
 // credential was recorded by RecordCredentialIntent and is now owned by the
 // section instead of the retirement list. Nothing is linked or scheduled.
 // profileCleaned reports that the native credential storage of the usage
-// profile was proven removed after the capture.
-func (s *ClaudeServerUsageState) Stage(identity ClaudeUsageIdentity, credential ID, profileCleaned bool) error {
-	if s.Connection != ClaudeUsageConnecting || s.Operation == nil || s.Operation.State != SubscriptionWaiting || identity.Validate() != nil || credential.Validate() != nil || !slices.Contains(s.RetiredCredentials, credential) {
+// profile was proven removed after the capture. The identity review gets its
+// own bounded window starting at now, so a late browser approval can still be
+// reviewed.
+func (s *ClaudeServerUsageState) Stage(identity ClaudeUsageIdentity, credential ID, profileCleaned bool, now time.Time) error {
+	if s.Connection != ClaudeUsageConnecting || s.Operation == nil || s.Operation.State != SubscriptionWaiting || identity.Validate() != nil || credential.Validate() != nil || !slices.Contains(s.RetiredCredentials, credential) || !validClaudeUsageTime(now) {
 		return invalidClaudeServerUsage()
 	}
 	operation := *s.Operation
 	operation.State = SubscriptionSucceeded
 	operation.Diagnostic = nil
+	operation.StartedAt = now.UTC()
+	operation.ExpiresAt = now.UTC().Add(MaxClaudeUsageLoginWindow)
 	s.Operation = &operation
 	s.Connection = ClaudeUsageConfirming
 	s.Identity = &identity
@@ -175,11 +173,12 @@ func (s *ClaudeServerUsageState) MarkRecovery() bool {
 	return true
 }
 
-// DiscardConfirmation abandons an unlinked identity review (Back or Cancel).
+// DiscardConfirmation abandons an unlinked identity review: Back or Cancel
+// (SubscriptionCanceled) or an elapsed review window (SubscriptionExpired).
 // The staged credential moves to the retirement list and no usage is published.
 // It fails closed, without mutation, when the bounded list cannot hold it.
-func (s *ClaudeServerUsageState) DiscardConfirmation() error {
-	if s.Connection != ClaudeUsageConfirming || s.Operation == nil || s.CredentialID == "" {
+func (s *ClaudeServerUsageState) DiscardConfirmation(state SubscriptionLoginState) error {
+	if s.Connection != ClaudeUsageConfirming || s.Operation == nil || s.CredentialID == "" || state != SubscriptionCanceled && state != SubscriptionExpired {
 		return invalidClaudeServerUsage()
 	}
 	retired := slices.Clone(s.RetiredCredentials)
@@ -190,7 +189,7 @@ func (s *ClaudeServerUsageState) DiscardConfirmation() error {
 		return invalidClaudeServerUsage()
 	}
 	operation := *s.Operation
-	operation.State = SubscriptionCanceled
+	operation.State = state
 	operation.Diagnostic = nil
 	s.Operation = &operation
 	s.RetiredCredentials = retired

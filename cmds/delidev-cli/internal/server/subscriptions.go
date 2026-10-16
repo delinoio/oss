@@ -1600,6 +1600,7 @@ func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, ow
 	if err != nil {
 		return err
 	}
+	refs = accountLoginOnly(refs)
 	for _, ref := range refs {
 		if ref.Owner != owner || ref.Purpose != credentials.AccountLogin {
 			return subscriptionDenied()

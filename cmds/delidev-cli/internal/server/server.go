@@ -146,6 +146,12 @@ type Service struct {
 	prFixRequests         prFixRequestTracker
 	subscriptionOpen      serverSubscriptionOpener
 	claudeSetupOpen       managedClaudeOpener
+	// Server-owned Claude usage login: the run registry, the optional native
+	// seams of isolated tests and the activation override of isolated tests.
+	claudeUsage           claudeUsageRuns
+	claudeUsageOpen       claudeUsageOpener
+	claudeUsageRemove     claudeUsageStorageRemover
+	claudeUsageActiveTest bool
 	// serverCleanupRetryBase is the first delay before a failed server-owned
 	// credential cleanup is retried. Zero selects the default; tests shorten it.
 	serverCleanupRetryBase        time.Duration

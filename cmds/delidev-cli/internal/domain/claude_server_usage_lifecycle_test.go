@@ -53,14 +53,14 @@ func TestClaudeUsageLoginLifecycleReachesLinkedOnlyThroughReview(t *testing.T) {
 	validateLifecycle(t, "waiting", usage)
 	credential := NewID()
 	identity := ClaudeUsageIdentity{Email: "person@example.com", Plan: "max", Commitment: claudeUsageCommitment}
-	if usage.Stage(identity, credential, true) == nil {
+	if usage.Stage(identity, credential, true, claudeUsageNow) == nil {
 		t.Fatal("a credential without a recorded intent was staged")
 	}
 	if err := usage.RecordCredentialIntent(credential); err != nil {
 		t.Fatal(err)
 	}
 	validateLifecycle(t, "intent", usage)
-	if err := usage.Stage(identity, credential, true); err != nil {
+	if err := usage.Stage(identity, credential, true, claudeUsageNow); err != nil {
 		t.Fatal(err)
 	}
 	validateLifecycle(t, "stage", usage)
@@ -81,7 +81,7 @@ func TestClaudeUsageStageKeepsProfileCleanupWhenNativeRemovalIsUnproven(t *testi
 	_ = usage.MarkWaiting()
 	credential := NewID()
 	_ = usage.RecordCredentialIntent(credential)
-	if err := usage.Stage(ClaudeUsageIdentity{Email: "person@example.com", Commitment: claudeUsageCommitment}, credential, false); err != nil {
+	if err := usage.Stage(ClaudeUsageIdentity{Email: "person@example.com", Commitment: claudeUsageCommitment}, credential, false, claudeUsageNow); err != nil {
 		t.Fatal(err)
 	}
 	if !usage.ProfileCleanup || !usage.OwesCleanup() {
@@ -109,9 +109,6 @@ func TestClaudeUsageSettleAndDiscardKeepOwedCleanup(t *testing.T) {
 	if usage.Connection != ClaudeUsageReconnectRequired || usage.Operation.State != SubscriptionCanceled || !slices.Contains(usage.RetiredCredentials, intent) || !usage.ProfileCleanup {
 		t.Fatalf("settle lost owed cleanup: %+v", usage)
 	}
-	if usage.Droppable() {
-		t.Fatal("a section that owes cleanup was droppable")
-	}
 	for _, state := range []SubscriptionLoginState{SubscriptionSucceeded, SubscriptionPreparing, SubscriptionWaiting, SubscriptionRecovery} {
 		fresh := staged()
 		if fresh.Settle(state, nil) == nil {
@@ -119,17 +116,21 @@ func TestClaudeUsageSettleAndDiscardKeepOwedCleanup(t *testing.T) {
 		}
 	}
 	usage.ConfirmCleanup([]ID{intent}, true)
-	if !usage.Droppable() {
-		t.Fatal("a fully cleaned settled section stayed")
+	if usage.OwesCleanup() {
+		t.Fatal("confirmed cleanup stayed owed")
 	}
+	validateLifecycle(t, "cleaned", usage)
 
 	review, _ := NewClaudeUsageLogin(nil, NewID(), lifecycleOperation())
 	_ = review.MarkWaiting()
 	credential := NewID()
 	_ = review.RecordCredentialIntent(credential)
-	_ = review.Stage(ClaudeUsageIdentity{Email: "person@example.com", Commitment: claudeUsageCommitment}, credential, true)
-	if err := review.DiscardConfirmation(); err != nil {
+	_ = review.Stage(ClaudeUsageIdentity{Email: "person@example.com", Commitment: claudeUsageCommitment}, credential, true, claudeUsageNow)
+	if err := review.DiscardConfirmation(SubscriptionCanceled); err != nil {
 		t.Fatal(err)
+	}
+	if review.DiscardConfirmation(SubscriptionExpired) == nil {
+		t.Fatal("a discarded review was discarded again")
 	}
 	validateLifecycle(t, "discard", review)
 	if review.Identity != nil || review.CredentialID != "" || !slices.Contains(review.RetiredCredentials, credential) || review.Operation.State != SubscriptionCanceled {

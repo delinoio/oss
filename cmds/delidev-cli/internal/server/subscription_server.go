@@ -210,16 +210,20 @@ func (s *Service) initializeServerSubscriptions(ctx context.Context) error {
 			if err != nil {
 				return nil, err
 			}
-			if a.Subscription == nil || a.Subscription.ServerOperation == nil {
+			// The old epoch's native usage login is never relaunched; recovery only
+			// cleans up its profile and staged references.
+			fenced := s.fenceClaudeUsageLogin(&a)
+			if a.Subscription != nil && a.Subscription.ServerOperation != nil {
+				if o := a.Subscription.ServerOperation; o.Active() && o.Epoch != s.subscriptionServerEpoch() && !(o.State == domain.SubscriptionRecovery && a.Subscription.RecoveryRequired && a.Health == domain.AccountFailed) {
+					o.State = domain.SubscriptionRecovery
+					a.Subscription.RecoveryRequired = true
+					a.Health = domain.AccountFailed
+					fenced = true
+				}
+			}
+			if !fenced {
 				continue
 			}
-			o := a.Subscription.ServerOperation
-			if !o.Active() || o.Epoch == s.subscriptionServerEpoch() || o.State == domain.SubscriptionRecovery && a.Subscription.RecoveryRequired && a.Health == domain.AccountFailed {
-				continue
-			}
-			o.State = domain.SubscriptionRecovery
-			a.Subscription.RecoveryRequired = true
-			a.Health = domain.AccountFailed
 			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 				return nil, err
 			}
@@ -250,6 +254,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			grok               bool
 			grokRefresh        bool
 			grokLogout         bool
+			usage              bool
 		}
 		var candidates []candidate
 		eligible := map[domain.ID]bool{}
@@ -263,6 +268,14 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 				a, err := store.Decode[domain.Account](r)
 				if err != nil {
 					return err
+				}
+				if s.claudeUsageCleanupCandidate(a, now) {
+					// Owed usage cleanup is keyed by the section's usage generation so
+					// it never shares a retry schedule with execution cleanup.
+					eligible[a.Subscription.ClaudeUsage.Generation] = true
+					if retries[a.Subscription.ClaudeUsage.Generation].due(now) {
+						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ClaudeUsage.Generation, cleanup: true, usage: true})
+					}
 				}
 				if managedClaudeCandidate(a) && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() {
 					candidates = append(candidates, candidate{account: r.ID, claude: true})
@@ -311,7 +324,12 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			go func() {
 				defer workers.Done()
 				result := serverSubscriptionResult{account: next.account, operation: next.operation, cleanup: next.cleanup}
-				if next.grokLogout {
+				if next.usage {
+					if err := s.cleanupClaudeUsage(child, next.account); err != nil && child.Err() == nil {
+						result.failed = true
+						s.logger.WarnContext(child, "claude_usage_cleanup_pending", "usage_generation", next.operation, "code", domain.SafeError(err).Code)
+					}
+				} else if next.grokLogout {
 					s.runGrokLogout(child, next.account)
 				} else if next.grokRefresh {
 					s.runGrokRefresh(child, next.account)
