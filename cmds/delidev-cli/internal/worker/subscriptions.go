@@ -826,6 +826,14 @@ func clear2D(values [][]byte) {
 // changed root identity all fail closed and never delete history. Native-created
 // symbolic links are ordinary retained data: they are never followed or read.
 func scanRetainedAuthentication(ctx context.Context, home string, needles [][]byte) error {
+	return scanRetainedAuthenticationSkipping(ctx, home, needles, "")
+}
+
+// scanRetainedAuthenticationSkipping is scanRetainedAuthentication that leaves
+// one regular file, named relative to the home, out of the inspection. Recovery
+// uses it to prove the rest of the retained history clean while the only copy of
+// a rejected legacy credential file stays in place until the scan has passed.
+func scanRetainedAuthenticationSkipping(ctx context.Context, home string, needles [][]byte, skip string) error {
 	count, total := 0, int64(0)
 	fail := func(reason executionAuthenticationReason) error {
 		return &executionAuthenticationFailure{stage: executionAuthScan, reason: reason, count: count, bytes: total}
@@ -860,6 +868,9 @@ func scanRetainedAuthentication(ctx context.Context, home string, needles [][]by
 			return fail(executionAuthPending)
 		}
 		if entry.IsDir() {
+			return nil
+		}
+		if skip != "" && path == skip {
 			return nil
 		}
 		count++

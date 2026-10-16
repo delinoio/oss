@@ -375,6 +375,69 @@ func TestCodexRecoveryUnusableRetainedAuthenticationSettlesWithoutCredentials(t 
 	}
 }
 
+// Unusable or rejected retained authentication has no server capture, so the
+// file is the only copy of its evidence. It must survive a retained-history scan
+// that fails (a removable remnant or a canceled scan) so the next attempt still
+// holds the evidence, and is removed only once the whole scan has passed.
+func TestCodexRecoveryKeepsRejectedLegacyBytesUntilTheScanCommits(t *testing.T) {
+	rejected := domain.Fail(domain.RecoveryRequired, "The bundle is refused.", "")
+	rejected.Cause = domain.SubscriptionRecoveryBundleRejectedCause
+	for name, tc := range map[string]struct {
+		syncError error
+		garbage   []byte
+	}{
+		"unparsable":      {nil, []byte(`{"auth_mode":"chatgpt","tokens":"not usable"}`)},
+		"server rejected": {rpc.Error(rejected, ""), nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newRecoveryWorkerFixture(t)
+			f.server.syncError = tc.syncError
+			f.server.recoverOutcome = pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_DISCONNECTED
+			legacy := f.latest
+			if tc.garbage != nil {
+				legacy = tc.garbage
+				if err := security.WriteAtomic(filepath.Join(f.home, "auth.json"), legacy); err != nil {
+					t.Fatal(err)
+				}
+			}
+			remnant := filepath.Join(f.home, "rollout.jsonl")
+			if err := os.WriteFile(remnant, append([]byte("prefix "), legacy...), 0600); err != nil {
+				t.Fatal(err)
+			}
+			result := f.run()
+			if result.disposition != recoveryRetry || result.reason != domain.RecoveryCleanupUnconfirmed {
+				t.Fatal("a failed scan did not retry", result)
+			}
+			kept, err := os.ReadFile(filepath.Join(f.home, "auth.json"))
+			if err != nil || !bytes.Equal(kept, legacy) {
+				t.Fatal("a failed scan removed the only copy of the rejected bytes", err)
+			}
+			if len(f.server.settling()) != 0 || f.readJournal().RecoveryCleaned {
+				t.Fatal("a failed scan produced a cleanup checkpoint")
+			}
+			// A canceled scan keeps the evidence too.
+			canceled, cancel := context.WithCancel(context.Background())
+			cancel()
+			if err := os.Remove(remnant); err != nil {
+				t.Fatal(err)
+			}
+			if result := runCodexRecovery(canceled, f.config, f.client, f.credential, f.instance, f.accountID, f.accountValue()); result.disposition == recoverySettled || !f.authExists() {
+				t.Fatal("a canceled attempt removed the only copy of the rejected bytes", result)
+			}
+			// Once the problem is fixed the next attempt settles and removes it.
+			if result := f.run(); result.disposition != recoverySettled {
+				t.Fatal("the retained evidence did not recover after the scan problem was fixed", result)
+			}
+			if f.authExists() {
+				t.Fatal("the rejected authentication file survived a committed cleanup")
+			}
+			if settling := f.server.settling(); len(settling) != 1 || settling[0].Report != pb.SubscriptionRecoveryReport_SUBSCRIPTION_RECOVERY_REPORT_CLEANUP_WITHOUT_CREDENTIAL {
+				t.Fatal("the committed cleanup was not reported as the absence of credentials")
+			}
+		})
+	}
+}
+
 // Only the server's distinct positive bundle rejection lets the Worker settle
 // without credentials; every other capture refusal keeps the only surviving
 // credential file and retries.

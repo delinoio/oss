@@ -409,12 +409,19 @@ func recoveryMissingAncestor(root, home string) bool {
 // execution and proves, with a complete streaming inspection of the retained
 // history, that no credential remnant survives. A missing file is already
 // removed. A file that is not one of the exact captured bundles (latest or
-// original) or the retained legacy bytes stays in place.
+// original) or the retained legacy bytes stays in place. Retained legacy bytes
+// with no server capture are removed only after the scan has passed.
 func recoverAuthentication(ctx context.Context, home string, missingHome bool, latest, original, extra []byte) error {
 	if missingHome {
 		return nil
 	}
 	path := filepath.Join(home, "auth.json")
+	// keepFile marks retained legacy bytes that no server capture backs. The file
+	// is then the only copy of the evidence, so it stays in place until the
+	// retained-history scan has passed; a scan that fails for any reason (a
+	// cancellation, an unreadable entry or a removable remnant) leaves the next
+	// attempt the same evidence instead of a terminal absence of proof.
+	keepFile := false
 	closed, err := security.ReadPrivate(path, subscription.MaxBundle)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -426,17 +433,24 @@ func recoverAuthentication(ctx context.Context, home string, missingHome bool, l
 		// The captured original is the exact generation the Take delivered into
 		// the profile; an interrupted execution that never refreshed it leaves
 		// precisely those bytes, which are as authenticated as the latest bundle.
-		matches := len(latest) != 0 && bytes.Equal(closed, latest) || len(original) != 0 && bytes.Equal(closed, original) || len(extra) != 0 && bytes.Equal(closed, extra)
+		captured := len(latest) != 0 && bytes.Equal(closed, latest) || len(original) != 0 && bytes.Equal(closed, original)
+		legacy := len(extra) != 0 && bytes.Equal(closed, extra)
 		clear(closed)
-		if !matches {
+		if !captured && !legacy {
 			return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthBundle}
 		}
-		if err := os.Remove(path); err != nil {
-			return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
+		if captured {
+			if err := os.Remove(path); err != nil {
+				return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
+			}
+		} else {
+			keepFile = true
 		}
 	}
-	if err := security.SyncParent(path); err != nil {
-		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
+	if !keepFile {
+		if err := security.SyncParent(path); err != nil {
+			return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
+		}
 	}
 	var needles [][]byte
 	for _, bundle := range [][]byte{latest, original} {
@@ -454,7 +468,22 @@ func recoverAuthentication(ctx context.Context, home string, missingHome bool, l
 		_, _ = rand.Read(sentinel)
 		needles = append(needles, sentinel)
 	}
-	return scanRetainedAuthentication(ctx, home, needles)
+	skip := ""
+	if keepFile {
+		skip = "auth.json"
+	}
+	if err := scanRetainedAuthenticationSkipping(ctx, home, needles, skip); err != nil {
+		return err
+	}
+	if keepFile {
+		if err := os.Remove(path); err != nil {
+			return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
+		}
+		if err := security.SyncParent(path); err != nil {
+			return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
+		}
+	}
+	return nil
 }
 
 func logCodexRecovery(logger *slog.Logger, ctx context.Context, level slog.Level, message string, args ...any) {
