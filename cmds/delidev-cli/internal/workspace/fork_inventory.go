@@ -43,24 +43,29 @@ func newForkVerifyBudget(liveProofBytes uint64) (*snapshotCopyBudget, error) {
 // forkLiveConfigProofBytes sums the retained config proof bytes of every
 // independent Fork source that is still live. Groups are ordered from the most
 // authoritative holder (the snapshot) to later holders (prepared copies). A copy
-// whose source checkout appeared in an earlier group shares that group's parsed
-// proof buffers, because preparation reuses the snapshot proof, so it is counted
-// once. Copies within one group are always counted separately.
+// whose source checkout appeared in an earlier group reuses that group's parsed
+// proof buffers, so only the buffer and record-array backing is deduplicated; the
+// reusing copy still owns its own []string slice headers, which are charged.
+// Copies within one group are always counted separately.
 func forkLiveConfigProofBytes(groups ...[]forkCopy) (uint64, error) {
 	var total uint64
 	seen := map[string]bool{}
 	for _, group := range groups {
 		var added []string
 		for _, copy := range group {
-			if copy.gitInventory == nil || seen[copy.source] {
+			if copy.gitInventory == nil {
 				continue
 			}
-			retained := copy.gitInventory.configProof.retainedBytes
-			if retained > ^uint64(0)-total {
+			charge := copy.gitInventory.configProof.retainedBytes
+			if seen[copy.source] {
+				charge = min(charge, copy.gitInventory.configProof.sliceHeaderBytes())
+			} else {
+				added = append(added, copy.source)
+			}
+			if charge > ^uint64(0)-total {
 				return 0, forkSnapshotChanged()
 			}
-			total += retained
-			added = append(added, copy.source)
+			total += charge
 		}
 		for _, source := range added {
 			seen[source] = true

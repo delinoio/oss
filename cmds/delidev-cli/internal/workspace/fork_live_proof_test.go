@@ -41,6 +41,35 @@ func TestForkLiveConfigProofBytesSumsEveryRepository(t *testing.T) {
 	}
 }
 
+func presentProofCopy(source string, retained uint64, config, worktree bool) forkCopy {
+	copy := syntheticProofCopy(source, retained)
+	copy.gitInventory.configProof.config.present = config
+	copy.gitInventory.configProof.worktree.present = worktree
+	return copy
+}
+
+func TestForkLiveConfigProofBytesChargesReusedSliceHeaders(t *testing.T) {
+	snapshot := []forkCopy{presentProofCopy("/a", 1000, true, true), presentProofCopy("/b", 500, true, false), presentProofCopy("/none", 7, false, false)}
+	prepared := []forkCopy{presentProofCopy("/a", 1000, true, true), presentProofCopy("/b", 500, true, false), presentProofCopy("/none", 7, false, false)}
+	// Reused buffers are counted once; each reusing holder still owns one slice
+	// header per present layer: /a has two, /b has one, /none has none.
+	want := uint64(1000+500+7) + 2*forkConfigSliceHeaderBytes + forkConfigSliceHeaderBytes
+	got, err := forkLiveConfigProofBytes(snapshot, prepared)
+	if err != nil || got != want {
+		t.Fatalf("live proof total = %d, %v; want %d", got, err, want)
+	}
+	// A third holder of the same source is charged its headers again.
+	got, err = forkLiveConfigProofBytes(snapshot, prepared, []forkCopy{presentProofCopy("/a", 1000, true, true)})
+	if err != nil || got != want+2*forkConfigSliceHeaderBytes {
+		t.Fatalf("third holder total = %d, %v; want %d", got, err, want+2*forkConfigSliceHeaderBytes)
+	}
+	// The charge never exceeds what the proof retained in the first place.
+	got, err = forkLiveConfigProofBytes([]forkCopy{presentProofCopy("/tiny", 5, true, true)}, []forkCopy{presentProofCopy("/tiny", 5, true, true)})
+	if err != nil || got != 10 {
+		t.Fatalf("header charge exceeded the retained proof: %d, %v", got, err)
+	}
+}
+
 func TestForkLiveConfigProofBytesRejectsOverflow(t *testing.T) {
 	_, err := forkLiveConfigProofBytes([]forkCopy{syntheticProofCopy("/a", ^uint64(0)), syntheticProofCopy("/b", 1)})
 	if domain.SafeError(err).Code != domain.Conflict {

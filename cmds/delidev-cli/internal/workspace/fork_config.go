@@ -41,6 +41,18 @@ type forkConfigProof struct {
 	bound                 bool
 }
 
+// sliceHeaderBytes is the part of retainedBytes that a holder reusing this
+// proof's parsed buffers still owns itself: one []string header per present layer.
+func (p forkConfigProof) sliceHeaderBytes() uint64 {
+	var total uint64
+	for _, layer := range []forkConfigLayer{p.config, p.worktree} {
+		if layer.present {
+			total += forkConfigSliceHeaderBytes
+		}
+	}
+	return total
+}
+
 // forkRemoteName is the remote whose URL Fork preparation rewrites.
 func forkRemoteName(spec RepositorySpec) string {
 	if spec.PreferredRemote == "" {
