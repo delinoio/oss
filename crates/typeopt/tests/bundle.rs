@@ -5613,6 +5613,97 @@ fn renames_beside_writes_through_provably_local_receivers() {
     assert!(kept.is_empty(), "names kept beside: {kept:?}");
 }
 
+/// The labels of `cases` whose tracked names `kept` reports as renamed, and
+/// the labels where they survived.
+fn partition_by_kept(
+    cases: &[(&str, String)],
+    kept: impl Fn(&str) -> bool,
+) -> (Vec<String>, Vec<String>) {
+    let mut survived = Vec::new();
+    let mut renamed = Vec::new();
+    for (label, body) in cases {
+        if kept(body) {
+            survived.push((*label).to_owned());
+        } else {
+            renamed.push((*label).to_owned());
+        }
+    }
+    (survived, renamed)
+}
+
+/// A timer runs a string as code unless its callback is a function at run
+/// time. The checker's type is not that evidence: a string that is asserted
+/// (`@type {() => void}`) or annotated as callable has a call signature. Only
+/// a function expression or a reference to an unassigned function qualifies.
+#[test]
+fn keeps_names_for_timer_callbacks_without_runtime_evidence() {
+    let cases: Vec<(&str, String)> = vec![
+        (
+            "asserted union of a string and a function",
+            format!(
+                "const code=Math.random()>2?\"0\":()=>0;setTimeout(/** @type {{() => void}} */ \
+                 (code),0);{POP_TAIL}"
+            ),
+        ),
+        (
+            "callback parameter",
+            format!("function later(cb){{setTimeout(cb,0)}}later(()=>0);{POP_TAIL}"),
+        ),
+        (
+            "callback property",
+            format!("const job={{run:()=>0}};setTimeout(job.run,0);{POP_TAIL}"),
+        ),
+        (
+            "callback call result",
+            format!("function pick(){{return()=>0}}setTimeout(pick(),0);{POP_TAIL}"),
+        ),
+        (
+            "reassigned function variable",
+            format!("let tick=()=>0;tick=()=>1;setTimeout(tick,0);{POP_TAIL}"),
+        ),
+        (
+            "variable initialized with a conditional",
+            format!("const tick=Math.random()>2?\"0\":()=>0;setTimeout(tick,0);{POP_TAIL}"),
+        ),
+        (
+            "reassigned function declaration",
+            format!("function tick(){{}}tick=()=>1;setTimeout(tick,0);{POP_TAIL}"),
+        ),
+    ];
+    let (survived, renamed) = partition_by_kept(&cases, item_names_kept);
+    assert_eq!(survived.len(), cases.len(), "renamed for: {renamed:?}");
+    // Neighbors: a function expression or an unassigned function reference is
+    // runtime evidence and leaves array modeling on.
+    let accepted = [
+        ("arrow", "setTimeout(()=>0,0);"),
+        ("function expression", "setTimeout(function(){},0);"),
+        ("parenthesized arrow", "setTimeout((()=>0),0);"),
+        (
+            "arrow with a type cast around the function",
+            "setTimeout(/** @type {() => void} */ (()=>0),0);",
+        ),
+        (
+            "function held in a variable behind a cast",
+            "const code=/** @type {unknown} */ (()=>0);setTimeout(/** @type {() => void} */ \
+             (code),0);",
+        ),
+        (
+            "function declaration",
+            "function tick(){}setTimeout(tick,0);",
+        ),
+        ("const arrow", "const tick=()=>0;setTimeout(tick,0);"),
+        (
+            "var function expression",
+            "var tick=function(){};setTimeout(tick,0);",
+        ),
+        ("arrow with extra arguments", "setTimeout(a=>0,0,1);"),
+    ];
+    for (label, fixture) in accepted {
+        let body = format!("{fixture}{LIST_TAIL}");
+        assert!(!item_names_kept(&body), "names kept beside {label}");
+    }
+}
+
 /// The property that the hostile payloads of the unchecked-chunk fixtures read,
 /// spelled so that the chunk does not mention it (an excluded chunk that
 /// mentions `itemValue` would keep the name for that reason alone) and does not

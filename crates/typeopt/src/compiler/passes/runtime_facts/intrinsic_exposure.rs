@@ -92,7 +92,7 @@
 //! external runtime import as a numeric patch in project mode.
 use super::{Facts, GLOBAL_OBJECTS, Member, REFLECTION_WRITERS, lib_global_name, literal_member};
 use crate::compiler::{
-    analysis::{Ctx, skip_outer, walk_up_outer},
+    analysis::{Ctx, RefKind, skip_outer, walk_up_outer},
     api::*,
     has_esm_statements, uses_import_meta,
 };
@@ -761,27 +761,53 @@ fn global_member_exposure(
 }
 
 /// A timer call runs a string as code unless its first argument is a function.
+/// The proof is the expression itself, never its type: a string asserted or
+/// annotated as callable has a call signature and still runs as code.
 fn timer_exposure(ctx: &mut Ctx, call: Node) -> Option<IntrinsicExposure> {
     let Some(callback) = call.arguments().first() else {
         return Some(IntrinsicExposure::DynamicCode);
     };
-    let callback = skip_outer(callback);
-    if matches!(
-        callback.kind(),
-        SyntaxKind::ArrowFunction | SyntaxKind::FunctionExpression
-    ) {
-        return None;
-    }
-    let t = ctx.checker.get_type_at_location(callback);
-    if t.is_nil()
-        || ctx
-            .checker
-            .get_signatures_of_type(t, SignatureKind::Call)
-            .is_empty()
-    {
-        Some(IntrinsicExposure::DynamicCode)
-    } else {
-        None
+    (!runtime_function(ctx, skip_outer(callback))).then_some(IntrinsicExposure::DynamicCode)
+}
+
+/// `node` is a function at run time: a function or arrow expression, or a
+/// reference to an application function declaration, or to a variable
+/// initialized with a function expression, that nothing assigns again. A
+/// parameter, a property or a call result is not proven, whatever its
+/// type says.
+fn runtime_function(ctx: &mut Ctx, node: Node) -> bool {
+    match node.kind() {
+        SyntaxKind::ArrowFunction | SyntaxKind::FunctionExpression => true,
+        SyntaxKind::Identifier => {
+            let symbol = ctx.resolve(node);
+            if symbol.is_nil()
+                || ctx.js_referenced.contains(&symbol)
+                || ctx.refs(symbol).iter().any(|r| r.kind == RefKind::Write)
+            {
+                return false;
+            }
+            let declarations = ctx.checker.sym(symbol).declarations.to_vec();
+            !declarations.is_empty()
+                && declarations.into_iter().all(|declaration| {
+                    let application = !declaration.flags().intersects(NodeFlags::Ambient)
+                        && ctx.file_of_node(declaration).is_some();
+                    application
+                        && match declaration.kind() {
+                            SyntaxKind::FunctionDeclaration => true,
+                            // `const tick = () => …` and `var tick = function(){…}`.
+                            SyntaxKind::VariableDeclaration => {
+                                declaration.name().kind() == SyntaxKind::Identifier
+                                    && declaration.initializer().is_some()
+                                    && matches!(
+                                        skip_outer(declaration.initializer()).kind(),
+                                        SyntaxKind::ArrowFunction | SyntaxKind::FunctionExpression
+                                    )
+                            }
+                            _ => false,
+                        }
+                })
+        }
+        _ => false,
     }
 }
 
