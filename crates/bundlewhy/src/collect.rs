@@ -54,12 +54,17 @@ pub struct Collection {
 }
 
 /// Exact module ids of the helpers that the Vite build itself injects (Vite's
-/// `\0vite/preload-helper.js`, Rolldown's `\0rolldown/runtime.js`). Plugin
-/// virtual module ids are user-controlled, so a namespace prefix such as
-/// `\0vite/` or `\0rolldown/` proves nothing: only these verified ids are
-/// bundler-owned. Every other virtual module, including `\0virtual:*` and
-/// look-alike ids in these namespaces, keeps its source-map requirement.
-const VITE_OWNED_VIRTUAL_IDS: [&str; 2] = ["\0vite/preload-helper.js", "\0rolldown/runtime.js"];
+/// `\0vite/preload-helper.js` and `\0vite/modulepreload-polyfill.js`,
+/// Rolldown's `\0rolldown/runtime.js`). Plugin virtual module ids are
+/// user-controlled, so a namespace prefix such as `\0vite/` or `\0rolldown/`
+/// proves nothing: only these verified ids are bundler-owned. Every other
+/// virtual module, including `\0virtual:*` and look-alike ids in these
+/// namespaces, keeps its source-map requirement.
+const VITE_OWNED_VIRTUAL_IDS: [&str; 3] = [
+    "\0vite/preload-helper.js",
+    "\0vite/modulepreload-polyfill.js",
+    "\0rolldown/runtime.js",
+];
 
 impl Collection {
     /// Decodes the `bundler` field into the supported bundler. An unknown or
@@ -73,11 +78,11 @@ impl Collection {
     /// helper with no source file. Such a chunk has no original source a map
     /// could attribute, so a missing map cannot hide a source-backed
     /// candidate. Only Vite collections qualify: Rspack and unsupported
-    /// bundlers never treat a `\0vite/preload-helper.js` or
-    /// `\0rolldown/runtime.js` id as bundler-owned and keep the map
-    /// requirement for every chunk. Unknown ids, ids outside the
-    /// verified helper table, modules with a file path and chunks with no
-    /// listed modules are all treated as source-backed.
+    /// bundlers never treat a `\0vite/preload-helper.js`,
+    /// `\0vite/modulepreload-polyfill.js` or `\0rolldown/runtime.js` id as
+    /// bundler-owned and keep the map requirement for every chunk. Unknown ids,
+    /// ids outside the verified helper table, modules with a file path and
+    /// chunks with no listed modules are all treated as source-backed.
     pub fn is_virtual_only_chunk(&self, file: &str) -> bool {
         if self.bundler_choice() != Some(BundlerChoice::Vite) {
             return false;

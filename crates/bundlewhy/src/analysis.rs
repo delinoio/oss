@@ -4597,6 +4597,7 @@ mod tests {
     }
 
     const PRELOAD_HELPER: &str = "\u{0}vite/preload-helper.js";
+    const MODULEPRELOAD_POLYFILL: &str = "\u{0}vite/modulepreload-polyfill.js";
     const ROLLDOWN_RUNTIME: &str = "\u{0}rolldown/runtime.js";
     const HELPER_CODE: &str = "var e=Object.create;export{e as t};\n";
     const APP_MODULE: &str = "/__bundlewhy_project__/src/lazy/common.js";
@@ -4616,6 +4617,15 @@ mod tests {
                 map: ExtraMap::Absent,
             },
         ]
+    }
+
+    fn polyfill_chunk() -> ExtraChunk {
+        ExtraChunk {
+            file: "assets/modulepreload-polyfill-AbCd1234.js",
+            code: HELPER_CODE,
+            modules: vec![MODULEPRELOAD_POLYFILL],
+            map: ExtraMap::Absent,
+        }
     }
 
     fn vite_with_extra_chunks(
@@ -4717,6 +4727,121 @@ mod tests {
                 .note
                 .contains("no usable source map")
         );
+    }
+
+    #[test]
+    fn modulepreload_polyfill_only_chunk_without_map_is_not_a_missing_map() {
+        let baseline = run_fixture(BundlerChoice::Vite, |_| {});
+        let fixture = vite_with_extra_chunks(&[polyfill_chunk()], |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(missing_map_problems(analysis).is_empty());
+        assert_eq!(analysis.status, baseline.output.analysis.status);
+        for (left, right) in analysis
+            .coverage
+            .iter()
+            .zip(baseline.output.analysis.coverage.iter())
+        {
+            assert_eq!(left.state, right.state, "{:?}", left.category);
+            assert_eq!(left.note, right.note, "{:?}", left.category);
+        }
+        // The exempt chunk is still scanned and sized, with attribution
+        // honestly marked unavailable.
+        let chunk = analysis
+            .chunks
+            .iter()
+            .find(|chunk| chunk.file == "assets/modulepreload-polyfill-AbCd1234.js")
+            .unwrap();
+        assert!(chunk.raw_bytes > 0);
+        assert_eq!(
+            chunk.attribution,
+            crate::model::AttributionState::Unavailable
+        );
+    }
+
+    #[test]
+    fn modulepreload_polyfill_chunk_with_unusable_map_is_not_a_missing_map() {
+        let mut chunk = polyfill_chunk();
+        chunk.map = ExtraMap::EmptyMappings;
+        let fixture = vite_with_extra_chunks(&[chunk], |_| {});
+        assert!(missing_map_problems(&fixture.output.analysis).is_empty());
+    }
+
+    #[test]
+    fn all_three_verified_helpers_in_one_chunk_are_exempt() {
+        let combined = vec![ExtraChunk {
+            file: "assets/all-helpers-AAAA.js",
+            code: HELPER_CODE,
+            modules: vec![PRELOAD_HELPER, MODULEPRELOAD_POLYFILL, ROLLDOWN_RUNTIME],
+            map: ExtraMap::Absent,
+        }];
+        let fixture = vite_with_extra_chunks(&combined, |_| {});
+        assert!(missing_map_problems(&fixture.output.analysis).is_empty());
+    }
+
+    #[test]
+    fn modulepreload_polyfill_with_source_or_look_alike_keeps_the_map_requirement() {
+        for (file, extra) in [
+            ("assets/polyfill-app-AAAA.js", APP_MODULE),
+            (
+                "assets/polyfill-lookalike-AAAA.js",
+                "\u{0}vite/modulepreload-polyfill-2.js",
+            ),
+            ("assets/polyfill-virtual-AAAA.js", "\u{0}virtual:routes"),
+        ] {
+            let mixed = vec![ExtraChunk {
+                file,
+                code: HELPER_CODE,
+                modules: vec![MODULEPRELOAD_POLYFILL, extra],
+                map: ExtraMap::Absent,
+            }];
+            let fixture = vite_with_extra_chunks(&mixed, |_| {});
+            let analysis = &fixture.output.analysis;
+            assert_eq!(analysis.status, RunStatus::Partial, "{file}");
+            let problems = missing_map_problems(analysis);
+            assert_eq!(problems.len(), 1, "{file}");
+            assert!(problems[0].message.contains(file), "{file}");
+        }
+    }
+
+    #[test]
+    fn modulepreload_polyfill_record_with_a_path_keeps_the_map_requirement() {
+        let fixture = vite_with_extra_chunks(&[polyfill_chunk()], |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["id"] == MODULEPRELOAD_POLYFILL {
+                    module["path"] = "/x/modulepreload-polyfill.js".into();
+                }
+            }
+        });
+        let problems = missing_map_problems(&fixture.output.analysis);
+        assert_eq!(problems.len(), 1);
+        assert!(
+            problems[0]
+                .message
+                .contains("assets/modulepreload-polyfill-AbCd1234.js")
+        );
+    }
+
+    #[test]
+    fn modulepreload_polyfill_non_virtual_record_keeps_the_map_requirement() {
+        let fixture = vite_with_extra_chunks(&[polyfill_chunk()], |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["id"] == MODULEPRELOAD_POLYFILL {
+                    module["virtual"] = false.into();
+                }
+            }
+        });
+        assert_eq!(missing_map_problems(&fixture.output.analysis).len(), 1);
+    }
+
+    #[test]
+    fn modulepreload_polyfill_without_a_module_record_keeps_the_map_requirement() {
+        let fixture = vite_with_extra_chunks(&[polyfill_chunk()], |value| {
+            value["modules"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|module| module["id"] != MODULEPRELOAD_POLYFILL);
+        });
+        assert_eq!(missing_map_problems(&fixture.output.analysis).len(), 1);
     }
 
     #[test]
@@ -4853,6 +4978,20 @@ mod tests {
     }
 
     #[test]
+    fn rspack_modulepreload_polyfill_chunk_keeps_the_map_requirement() {
+        let fixture = fixture_with_extra_chunks(BundlerChoice::Rspack, &[polyfill_chunk()], |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert!(
+            problems[0]
+                .message
+                .contains("assets/modulepreload-polyfill-AbCd1234.js")
+        );
+    }
+
+    #[test]
     fn rspack_virtual_only_chunks_keep_the_map_requirement() {
         let baseline = run_fixture(BundlerChoice::Rspack, |_| {});
         let fixture = fixture_with_extra_chunks(BundlerChoice::Rspack, &helper_chunks(), |_| {});
@@ -4881,17 +5020,25 @@ mod tests {
     #[test]
     fn unsupported_bundler_collections_keep_the_map_requirement() {
         for bundler in ["", "webpack", "Vite", "rollup"] {
-            let fixture = vite_with_extra_chunks(&helper_chunks(), |value| {
+            let mut chunks = helper_chunks();
+            chunks.push(polyfill_chunk());
+            let fixture = vite_with_extra_chunks(&chunks, |value| {
                 value["bundler"] = serde_json::Value::String(bundler.to_owned());
             });
             let problems = missing_map_problems(&fixture.output.analysis);
-            let reported = problems
-                .iter()
-                .any(|problem| problem.message.contains("preload-helper"));
-            assert!(
-                reported,
-                "bundler {bundler:?} must keep the map requirement"
-            );
+            for needle in [
+                "preload-helper",
+                "rolldown-runtime",
+                "modulepreload-polyfill",
+            ] {
+                let reported = problems
+                    .iter()
+                    .any(|problem| problem.message.contains(needle));
+                assert!(
+                    reported,
+                    "bundler {bundler:?} must keep the map requirement for {needle}"
+                );
+            }
         }
     }
 
@@ -4920,9 +5067,12 @@ mod tests {
             };
         let helper = (PRELOAD_HELPER, true, None);
         let runtime = (ROLLDOWN_RUNTIME, true, None);
+        let polyfill = (MODULEPRELOAD_POLYFILL, true, None);
         let plugin = ("\u{0}virtual:routes", true, None);
         let pathed = (PRELOAD_HELPER, true, Some("/x/helper.js"));
         let real = (PRELOAD_HELPER, false, None);
+        let polyfill_pathed = (MODULEPRELOAD_POLYFILL, true, Some("/x/polyfill.js"));
+        let polyfill_real = (MODULEPRELOAD_POLYFILL, false, None);
         let app = (APP_MODULE, false, Some("/x/common.js"));
 
         // Chunk shape x bundler: only a Vite collection may suppress.
@@ -4951,6 +5101,76 @@ mod tests {
                     vec![helper, runtime],
                 ),
                 true,
+            ),
+            (
+                (
+                    "modulepreload polyfill only",
+                    vec![MODULEPRELOAD_POLYFILL],
+                    vec![polyfill],
+                ),
+                true,
+            ),
+            (
+                (
+                    "all three verified ids",
+                    vec![PRELOAD_HELPER, MODULEPRELOAD_POLYFILL, ROLLDOWN_RUNTIME],
+                    vec![helper, polyfill, runtime],
+                ),
+                true,
+            ),
+            (
+                (
+                    "polyfill plus look-alike",
+                    vec![
+                        MODULEPRELOAD_POLYFILL,
+                        "\u{0}vite/modulepreload-polyfill-2.js",
+                    ],
+                    vec![
+                        polyfill,
+                        ("\u{0}vite/modulepreload-polyfill-2.js", true, None),
+                    ],
+                ),
+                false,
+            ),
+            (
+                (
+                    "polyfill look-alike without extension",
+                    vec!["\u{0}vite/modulepreload-polyfill"],
+                    vec![("\u{0}vite/modulepreload-polyfill", true, None)],
+                ),
+                false,
+            ),
+            (
+                (
+                    "polyfill with file path",
+                    vec![MODULEPRELOAD_POLYFILL],
+                    vec![polyfill_pathed],
+                ),
+                false,
+            ),
+            (
+                (
+                    "polyfill non-virtual module",
+                    vec![MODULEPRELOAD_POLYFILL],
+                    vec![polyfill_real],
+                ),
+                false,
+            ),
+            (
+                (
+                    "polyfill id not collected",
+                    vec![MODULEPRELOAD_POLYFILL],
+                    vec![],
+                ),
+                false,
+            ),
+            (
+                (
+                    "polyfill plus source",
+                    vec![MODULEPRELOAD_POLYFILL, APP_MODULE],
+                    vec![polyfill, app],
+                ),
+                false,
             ),
             (
                 (
