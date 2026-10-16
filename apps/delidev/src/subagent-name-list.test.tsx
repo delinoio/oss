@@ -370,7 +370,11 @@ test("a currently observed row with unusable metadata clears its stale name, whi
     names.set(labelKey(observed), "Atlas");
     damage(observed);
     // Only the observed row is in this payload window.
-    retainSubagentLabels(labels, validateSubagentPage([observed], session)!, names);
+    retainSubagentLabels(
+      labels,
+      validateSubagentPage([observed], session)!,
+      names,
+    );
     expect(names.has(labelKey(observed)), label).toBe(false);
     expect(names.get(labelKey(kept)), label).toBe("Nova");
     expect(names.get(labelKey(other)), label).toBe("Iris");
@@ -379,7 +383,11 @@ test("a currently observed row with unusable metadata clears its stale name, whi
   }
   // A later valid observation restores the name.
   withSubagentName(observed, "Atlas II");
-  retainSubagentLabels(labels, validateSubagentPage([observed], session)!, names);
+  retainSubagentLabels(
+    labels,
+    validateSubagentPage([observed], session)!,
+    names,
+  );
   expect(names.get(labelKey(observed))).toBe("Atlas II");
 });
 
@@ -387,7 +395,10 @@ test("a parent card never shows a name that its currently observed row no longer
   const session = newRequestId();
   const rows = Array.from({ length: 2 }, () => subagentFixture(session));
   sharedExecution(rows);
-  const [parent, child] = rows as [(typeof rows)[number], (typeof rows)[number]];
+  const [parent, child] = rows as [
+    (typeof rows)[number],
+    (typeof rows)[number],
+  ];
   const record = readDocument(child);
   object(record.observation).parent_id = object(
     readDocument(parent).observation,
