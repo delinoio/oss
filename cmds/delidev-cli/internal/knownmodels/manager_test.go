@@ -64,15 +64,26 @@ func TestBundledOnlineCacheAndRestart(t *testing.T) {
 	raw := changedFixture(t, func(v map[string]any) {
 		model := v["services"].([]any)[0].(map[string]any)["models"].([]any)[0].(map[string]any)
 		model["native_id"] = "gpt-fixture-reviewed"
-		v["updated_at"] = "2026-10-07"
+		v["updated_at"] = "2026-10-17"
 	})
 	manager := New(root, fixtureTransport(raw), quiet())
 	initial := manager.List("chatgpt")
 	if initial.Source != Bundled || len(initial.Models) == 0 {
 		t.Fatalf("bundled: %+v", initial)
 	}
-	if len(manager.List("grok").Models) != 1 || manager.List("invalid").Models != nil {
+	if manager.List("invalid").Models != nil {
 		t.Fatal("service separation")
+	}
+	wantGrok := []struct{ id, name string }{{"grok-4.7", "Grok 4.7"}, {"grok-4.7-build-fast", "Grok 4.7 Build Fast"}, {"grok-4.6", "Grok 4.6"}, {"grok-4.5", "Grok 4.5"}}
+	grok := manager.List("grok").Models
+	if len(grok) != len(wantGrok) {
+		t.Fatalf("grok models: %+v", grok)
+	}
+	for index, want := range wantGrok {
+		got := grok[index]
+		if got.NativeID != want.id || got.DisplayName != want.name || got.Order != uint32(index) || len(got.SourceKeys) != 1 || got.SourceKeys[0] != "grok-build" {
+			t.Fatalf("grok model %d: %+v", index, got)
+		}
 	}
 	if err := manager.Refresh(context.Background()); err != nil {
 		t.Fatal(err)

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "catalog_version": "sha256:43a88b2f70272e893e30fa802ea679632a84d73512af775a65152e322fc7a460",
-  "updated_at": "2026-10-06",
+  "catalog_version": "sha256:9d839c69eb4156da9cada0faac5df0fe306b56aef8236bb819b90634652564c8",
+  "updated_at": "2026-10-16",
   "sources": [
     {
       "key": "codex",
@@ -41,56 +41,80 @@
         {
           "native_id": "gpt-6.1-sol",
           "display_name": "GPT-6.1-Sol",
-          "source_keys": ["codex", "openai-retirement"],
+          "source_keys": [
+            "codex",
+            "openai-retirement"
+          ],
           "minimum_harness_version": "0.153.0",
           "order": 0
         },
         {
           "native_id": "gpt-6-astra",
           "display_name": "GPT-6-Astra",
-          "source_keys": ["codex", "openai-retirement"],
+          "source_keys": [
+            "codex",
+            "openai-retirement"
+          ],
           "minimum_harness_version": "0.153.0",
           "order": 1
         },
         {
           "native_id": "gpt-6-sol",
           "display_name": "GPT-6-Sol",
-          "source_keys": ["codex", "openai-retirement"],
+          "source_keys": [
+            "codex",
+            "openai-retirement"
+          ],
           "minimum_harness_version": "0.155.0",
           "order": 2
         },
         {
           "native_id": "gpt-6-luna",
           "display_name": "GPT-6-Luna",
-          "source_keys": ["codex", "openai-retirement"],
+          "source_keys": [
+            "codex",
+            "openai-retirement"
+          ],
           "minimum_harness_version": "0.155.0",
           "order": 3
         },
         {
           "native_id": "gpt-5.6-sol",
           "display_name": "GPT-5.6-Sol",
-          "source_keys": ["codex", "openai-retirement"],
+          "source_keys": [
+            "codex",
+            "openai-retirement"
+          ],
           "minimum_harness_version": "0.144.0",
           "order": 4
         },
         {
           "native_id": "gpt-5.6-terra",
           "display_name": "GPT-5.6-Terra",
-          "source_keys": ["codex", "openai-retirement"],
+          "source_keys": [
+            "codex",
+            "openai-retirement"
+          ],
           "minimum_harness_version": "0.144.0",
           "order": 5
         },
         {
           "native_id": "gpt-5.6-luna",
           "display_name": "GPT-5.6-Luna",
-          "source_keys": ["codex", "openai-retirement"],
+          "source_keys": [
+            "codex",
+            "openai-retirement"
+          ],
           "minimum_harness_version": "0.144.0",
           "order": 6
         },
         {
           "native_id": "gpt-5.5",
           "display_name": "GPT-5.5",
-          "source_keys": ["codex", "openai-retirement"],
+          "source_keys": [
+            "codex",
+            "openai-retirement"
+          ],
           "minimum_harness_version": "0.124.0",
           "retirement_date": "2026-10-14",
           "order": 7
@@ -103,34 +127,48 @@
         {
           "native_id": "claude-fable-5-1",
           "display_name": "Claude Fable 5.1",
-          "source_keys": ["claude-code", "claude-models"],
+          "source_keys": [
+            "claude-code",
+            "claude-models"
+          ],
           "minimum_harness_version": "2.1.257",
           "order": 0
         },
         {
           "native_id": "claude-opus-5-5",
           "display_name": "Claude Opus 5.5",
-          "source_keys": ["claude-code", "claude-models"],
+          "source_keys": [
+            "claude-code",
+            "claude-models"
+          ],
           "minimum_harness_version": "2.1.280",
           "order": 1
         },
         {
           "native_id": "claude-sonnet-5-5",
           "display_name": "Claude Sonnet 5.5",
-          "source_keys": ["claude-code", "claude-models"],
+          "source_keys": [
+            "claude-code",
+            "claude-models"
+          ],
           "minimum_harness_version": "2.1.284",
           "order": 2
         },
         {
           "native_id": "claude-haiku-4-5-20251001",
           "display_name": "Claude Haiku 4.5",
-          "source_keys": ["claude-code", "claude-models"],
+          "source_keys": [
+            "claude-code",
+            "claude-models"
+          ],
           "order": 3
         },
         {
           "native_id": "claude-fable-5",
           "display_name": "Claude Fable 5",
-          "source_keys": ["claude-code"],
+          "source_keys": [
+            "claude-code"
+          ],
           "order": 4
         }
       ]
@@ -139,10 +177,36 @@
       "service": "grok",
       "models": [
         {
-          "native_id": "grok-build",
-          "display_name": "Grok Build",
-          "source_keys": ["grok-build"],
+          "native_id": "grok-4.7",
+          "display_name": "Grok 4.7",
+          "source_keys": [
+            "grok-build"
+          ],
           "order": 0
+        },
+        {
+          "native_id": "grok-4.7-build-fast",
+          "display_name": "Grok 4.7 Build Fast",
+          "source_keys": [
+            "grok-build"
+          ],
+          "order": 1
+        },
+        {
+          "native_id": "grok-4.6",
+          "display_name": "Grok 4.6",
+          "source_keys": [
+            "grok-build"
+          ],
+          "order": 2
+        },
+        {
+          "native_id": "grok-4.5",
+          "display_name": "Grok 4.5",
+          "source_keys": [
+            "grok-build"
+          ],
+          "order": 3
         }
       ]
     }

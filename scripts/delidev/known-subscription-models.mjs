@@ -361,18 +361,37 @@ export function extractClaude(config, overview) {
   }
   return ordered(result);
 }
+// Grok Build documentation names only an example default (`grok-build`) and one
+// web-search model, so it cannot enumerate the models the installed CLI offers.
+// The reviewed inventory below mirrors the ids printed by `grok models`, in
+// that order. The docs page stays the digest-pinned provenance source and its
+// structure is still checked so a documentation redesign fails closed.
+export const reviewedGrokModelIds = [
+  "grok-4.7",
+  "grok-4.7-build-fast",
+  "grok-4.6",
+  "grok-4.5",
+];
+const grokDisplayName = (id) =>
+  `Grok ${id
+    .slice("grok-".length)
+    .split("-")
+    .map((part, i) => (i === 0 ? part : part[0].toUpperCase() + part.slice(1)))
+    .join(" ")}`;
 export function extractGrok(markdown) {
-  const match = markdown.match(
-    /\[models\]\s*\n\s*default\s*=\s*"([a-z0-9-]+)"\s*# recommended for coding/,
-  );
-  if (!match) fail("Grok native default structure");
-  return ordered([
-    {
-      native_id: match[1],
-      display_name: "Grok Build",
+  if (
+    !/\[models\]\s*\n\s*default\s*=\s*"[a-z0-9-]+"\s*# recommended for coding/.test(
+      markdown,
+    )
+  )
+    fail("Grok native default structure");
+  return ordered(
+    reviewedGrokModelIds.map((id) => ({
+      native_id: id,
+      display_name: grokDisplayName(id),
       source_keys: ["grok-build"],
-    },
-  ]);
+    })),
+  );
 }
 export function buildCatalog(
   inputs,
