@@ -645,8 +645,7 @@ pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, us
         ':' => !is_case_label(prefix),
         _ if is_identifier_part(last) => match trailing_word(prefix) {
             "else" | "try" | "do" | "finally" | "static" => false,
-            "return" | "typeof" | "case" | "void" | "yield" | "throw" | "new" | "in" | "of"
-            | "delete" | "await" | "instanceof" | "default" => true,
+            word if OBJECT_VALUE_KEYWORDS.contains(&word) => true,
             _ => class_heading_precedes(code, prefix.len(), ignored),
         },
         _ => true,
@@ -1981,6 +1980,21 @@ fn is_case_label(prefix: &str) -> bool {
             .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
 }
 
+/// Whether the `?` at `index` of masked code is the question mark of a
+/// conditional expression, not part of `??`, `?.` (outside `?.5`) or an
+/// optional marker (`x?: T`).
+fn is_conditional_question(bytes: &[u8], index: usize) -> bool {
+    let next = bytes.get(index + 1).copied();
+    let previous = index
+        .checked_sub(1)
+        .and_then(|before| bytes.get(before))
+        .copied();
+    if next == Some(b'?') || previous == Some(b'?') || next == Some(b':') {
+        return false;
+    }
+    !(next == Some(b'.') && !bytes.get(index + 2).is_some_and(u8::is_ascii_digit))
+}
+
 /// What a `{` opens, as far as a lexical scan can tell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BraceKind {
@@ -2006,8 +2020,23 @@ const METHOD_MODIFIERS: [&str; 10] = [
     "abstract",
 ];
 
-/// Keywords after which an object literal can start.
-const OBJECT_VALUE_KEYWORDS: [&str; 5] = ["return", "default", "yield", "await", "throw"];
+/// Keywords after which an expression, and so an object literal, can start.
+/// [`brace_holds_members`] and the method scan share this one table.
+const OBJECT_VALUE_KEYWORDS: [&str; 13] = [
+    "return",
+    "typeof",
+    "case",
+    "void",
+    "yield",
+    "throw",
+    "new",
+    "in",
+    "of",
+    "delete",
+    "await",
+    "instanceof",
+    "default",
+];
 
 /// Lazily built lexical context that decides whether an `eval` name followed
 /// by a parameter list is a class or object method declaration.
@@ -2065,12 +2094,29 @@ impl<'a> MemberScan<'a> {
         }
         let is_object = match previous_significant_token(self.source, open, self.ignored) {
             Token::Punct(text) => match text {
-                "=" | "(" | "," | "[" | "?" | "|" | "&" => true,
-                // A property value (`{ key: { eval(x) {} } }`); a label or a
-                // `case` clause is a statement block and stays unplaced.
-                ":" => self
-                    .direct_enclosing_block(open)
-                    .is_some_and(|(outer, _)| self.brace_kind(outer) == BraceKind::ObjectLiteral),
+                // An opener, a comma, a spread, or any unary, binary, logical,
+                // nullish, assignment or conditional operator: each ends in one
+                // of these characters and is followed by an expression, so a
+                // brace there is an object literal (`typeof {`, `...{`,
+                // `a + {`, `a ?? {`, `a && {`, `a **= {`, `x ? {`, `a | {`).
+                "=" | "(" | "," | "[" | "?" | "|" | "&" | "..." | "+" | "-" | "*" | "/" | "%"
+                | "^" | "~" | "!" | "<" => true,
+                // `=>` opens a function body, a closing type-argument angle
+                // bracket is followed by a body (`interface I<T> {`), and any
+                // other `>` is a comparison or shift operator.
+                ">" => self.greater_than_precedes_object(open),
+                // A property value (`{ key: { eval(x) {} } }`) or the
+                // alternate of a conditional (`c ? a : { eval(x) {} }`); a
+                // label or a `case` clause is a statement block and stays
+                // unplaced.
+                ":" => {
+                    self.colon_ends_conditional(open)
+                        || self.direct_enclosing_block(open).is_some_and(|(outer, _)| {
+                            self.brace_kind(outer) == BraceKind::ObjectLiteral
+                        })
+                }
+                // The `${` of a template substitution holds an expression.
+                "{" => self.opens_template_substitution(open),
                 _ => false,
             },
             Token::Word { text, member } => !member && OBJECT_VALUE_KEYWORDS.contains(&text),
@@ -2081,6 +2127,57 @@ impl<'a> MemberScan<'a> {
         } else {
             BraceKind::Other
         }
+    }
+
+    /// Whether the `>` before the brace at `open` is a comparison or shift
+    /// operator. An arrow (`=>`) and the end of a type-argument list are not.
+    fn greater_than_precedes_object(&self, open: usize) -> bool {
+        let prefix = strip_comments_for_prefix(self.source, open, self.ignored);
+        !prefix.ends_with("=>")
+            && type_arguments_open(self.source, prefix.len() - 1, self.ignored).is_none()
+    }
+
+    /// Whether the `:` before the brace at `open` is the alternate branch of a
+    /// conditional expression: an unmatched `?` precedes it in the same
+    /// statement and brackets, after nested conditionals are paired off.
+    fn colon_ends_conditional(&self, open: usize) -> bool {
+        let bytes = self.code.as_bytes();
+        let mut index = strip_comments_for_prefix(self.source, open, self.ignored)
+            .len()
+            .saturating_sub(1);
+        // Colons that still wait for their `?`, starting with this one.
+        let mut pending = 1usize;
+        let mut depth = 0usize;
+        while index > 0 {
+            index -= 1;
+            match bytes[index] {
+                b')' | b']' | b'}' => depth += 1,
+                b'(' | b'[' | b'{' => match depth.checked_sub(1) {
+                    Some(next) => depth = next,
+                    None => return false,
+                },
+                b';' if depth == 0 => return false,
+                b':' if depth == 0 => pending += 1,
+                b'?' if depth == 0 && is_conditional_question(bytes, index) => {
+                    pending -= 1;
+                    if pending == 0 {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Whether the `{` before the brace at `open` is the `${` that starts a
+    /// template substitution. The previous-token scan reports that `${` as `{`.
+    fn opens_template_substitution(&self, open: usize) -> bool {
+        let end = strip_comments_for_prefix(self.source, open, self.ignored).len();
+        self.ignored.iter().any(|(start, finish)| {
+            let text = &self.source.as_bytes()[*start..(*finish).min(self.source.len())];
+            *finish == end && text.ends_with(b"${") && matches!(text.first(), Some(b'`' | b'}'))
+        })
     }
 
     /// Whether the offset starts a member in the body of a `kind` brace: the
@@ -2762,6 +2859,114 @@ y=/process.env.F/.test(z),process.env.G"#;
         }
     }
 
+    /// The offset-based expectation of a source whose only direct eval is the
+    /// first `eval(` that is followed by `marker`.
+    fn assert_reports_at(source: &str, marker: &str) {
+        let offset = source.find(marker).expect(source);
+        let (line, column) = line_and_column(source, offset);
+        assert_eq!(
+            direct_eval_line(source),
+            Some((line as u32, column as u32)),
+            "{source:?}"
+        );
+    }
+
+    #[test]
+    fn object_literals_after_every_expression_operator_hold_methods() {
+        let method = "{ eval(input) {} }";
+        let mut sources: Vec<String> = Vec::new();
+        // Keyword operators.
+        for keyword in [
+            "typeof", "void", "delete", "new", "return", "throw", "default", "yield", "await",
+        ] {
+            sources.push(format!("function* f() {{ {keyword} {method}; }}"));
+        }
+        sources.push(format!("async function f() {{ await {method}; }}"));
+        sources.push(format!("const v = x in {method};"));
+        sources.push(format!("const v = x instanceof {method};"));
+        sources.push(format!("for (const k of {method}) {{}}"));
+        sources.push(format!("switch (x) {{ case {method}: break; }}"));
+        sources.push(format!("export default {method};"));
+        // Unary, binary, logical, nullish and relational operators.
+        for operator in [
+            "!", "~", "+", "-", "left +", "left -", "left *", "left /", "left %", "left **",
+            "left &", "left |", "left ^", "left <<", "left >>", "left >>>", "left <", "left >",
+            "left <=", "left >=", "left ==", "left ===", "left !=", "left !==", "left &&",
+            "left ||", "left ??",
+        ] {
+            sources.push(format!("const v = {operator} {method};"));
+        }
+        // Assignment operators.
+        for operator in [
+            "=", "+=", "-=", "*=", "/=", "%=", "**=", "&=", "|=", "^=", "<<=", ">>=", ">>>=",
+            "&&=", "||=", "??=",
+        ] {
+            sources.push(format!("target {operator} {method};"));
+        }
+        // Spread, comma, conditional, call and index contexts.
+        for context in [
+            "[...{m}]",
+            "run(...{m})",
+            "({ ...{m} })",
+            "(left, {m})",
+            "left, {m}",
+            "c ? {m} : null",
+            "c ? null : {m}",
+            "a ? b ? c : d : {m}",
+            "a ? b : c ? d : {m}",
+            "a ? (b ? c : d) : {m}",
+            "({ k: c ? 1 : {m} })",
+            "({ k: c ? {m} : 1 })",
+            "({ k: {m} })",
+            "run(a, {m})",
+            "list[{m}]",
+            "[{m}]",
+            "(({m}))",
+        ] {
+            sources.push(format!("const v = {};", context.replace("{m}", method)));
+        }
+        // Arrow bodies and template substitutions.
+        for context in [
+            "() => ({m})",
+            "async () => ({m})",
+            "x => y => ({m})",
+            "(x) => (({m}))",
+            "`${{m}}`",
+            "`a${x}b${{m}}c`",
+            "`${`${{m}}`}`",
+            "`${ /* c */ {m}}`",
+        ] {
+            sources.push(format!("const v = {};", context.replace("{m}", method)));
+        }
+        for source in &sources {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+            // A real call next to the literal keeps its own location.
+            let with_call = format!("{source}\neval(code);");
+            assert_reports_at(&with_call, "eval(code)");
+        }
+    }
+
+    #[test]
+    fn braces_that_are_not_object_literals_keep_their_eval_reported() {
+        for source in [
+            "if (x) { eval(code) {} }",
+            "label: { eval(code) {} }",
+            "switch (x) { case 1: { eval(code) {} } }",
+            "const f = () => { eval(code) {} };",
+            "function run() { eval(code) {} }",
+            "a++\n{ eval(code) {} }",
+            "x = a ? b : c\nlabel: { eval(code) {} }",
+            "interface I<T> { eval(code) {} }",
+            "const v = f<A>\n{ eval(code) {} }",
+            "try { eval(code) {} } finally { }",
+            "do { eval(code) {} } while (x);",
+            "{ eval(code) {} }",
+            "x;\n{ eval(code) {} }",
+        ] {
+            assert_reports_at(source, "eval(code)");
+        }
+    }
+
     #[test]
     fn eval_methods_behind_type_arguments_are_declarations() {
         for source in [
@@ -2781,8 +2986,8 @@ y=/process.env.F/.test(z),process.env.G"#;
             "export default class<T extends { a: 1 }> { eval(value) {} }",
             "const C = class<T extends { a: 1 }> { eval(value) {} };",
             "const C = class D<T = { a: 1 }> extends B { eval(value) {} };",
-            "export abstract class C<T extends { a: 1 }> { abstract eval(value): void; \
-             eval(value) {} }",
+            "export abstract class C<T extends { a: 1 }> { abstract run(value): void; eval(value) \
+             {} }",
             "class C<T extends { a: 1 }> { run() {} eval(value) {} }",
             "class C<T extends { a: 1 }> { x: Array<number> = []; eval(value) {} }",
             "class C { eval(value: Array<{ a: 1 }>): Promise<{ b: 2 }> {} }",
