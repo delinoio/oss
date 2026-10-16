@@ -473,7 +473,7 @@ func (s *Service) logoutGrokBeforeDelete(ctx context.Context, id domain.ID, revi
 	if current != revision {
 		return revision, domain.Fail(domain.Conflict, "The account revision changed.", "Read current account status before confirming deletion again.")
 	}
-	if st == nil || st.RecoveryRequired || st.Pending != nil || st.Lease != nil || account.Removal != nil {
+	if st == nil || st.RecoveryRequired || st.Pending != nil || account.Removal != nil {
 		s.logger.WarnContext(ctx, "grok_delete_logout_blocked", "phase", grokLogoutPhase, "account_id", id, "reason", "account_busy")
 		return revision, protectedAccountDeletion
 	}
