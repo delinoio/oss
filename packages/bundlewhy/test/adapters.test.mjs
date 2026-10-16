@@ -8,8 +8,10 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  MangleSetting,
   normalizeCollectionRoot,
   normalizeViteModule,
+  resolveMangleSetting,
 } from "../../../crates/bundlewhy/adapters/vite.mjs";
 import {
   ExportUsageReason,
@@ -178,6 +180,64 @@ test("vite adapter rejects configurations with several outputs", () => {
     "BW_UNSUPPORTED_BUILD",
   );
 });
+
+// Mirrors the "Name mangling" rows of the Vite collection contract: Vite
+// lets an explicit `output.minify` replace the value it derives from
+// `build.minify`, and Rolldown mangles unless the effective option disables it.
+const mangleShapes = [
+  { name: "absent output with oxc", minify: "oxc", output: undefined, expected: MangleSetting.Enabled },
+  { name: "absent output with minify false", minify: false, output: undefined, expected: MangleSetting.Disabled },
+  { name: "output without minify", minify: "oxc", output: {}, expected: MangleSetting.Enabled },
+  { name: "output.minify false", minify: "oxc", output: { minify: false }, expected: MangleSetting.Disabled },
+  { name: "output.minify dce-only", minify: "oxc", output: { minify: "dce-only" }, expected: MangleSetting.Disabled },
+  { name: "output.minify true", minify: "oxc", output: { minify: true }, expected: MangleSetting.Enabled },
+  { name: "mangle false", minify: "oxc", output: { minify: { compress: true, mangle: false, codegen: true } }, expected: MangleSetting.Disabled },
+  { name: "mangle true", minify: "oxc", output: { minify: { mangle: true } }, expected: MangleSetting.Enabled },
+  { name: "mangle options object", minify: "oxc", output: { minify: { mangle: { toplevel: true } } }, expected: MangleSetting.Enabled },
+  { name: "options object without mangle", minify: "oxc", output: { minify: { compress: true } }, expected: MangleSetting.Enabled },
+  { name: "single-entry array with mangle false", minify: "oxc", output: [{ minify: { mangle: false } }], expected: MangleSetting.Disabled },
+  { name: "single-entry array with mangle true", minify: "oxc", output: [{ minify: { mangle: true } }], expected: MangleSetting.Enabled },
+  { name: "array with one mangling entry", minify: "oxc", output: [{ minify: false }, { minify: true }], expected: MangleSetting.Enabled },
+  { name: "unrecognized value", minify: "oxc", output: { minify: "full" }, expected: MangleSetting.Enabled },
+];
+
+for (const shape of mangleShapes) {
+  test(`vite mangle setting (${shape.name})`, () => {
+    assert.equal(
+      resolveMangleSetting(shape.minify, shape.output),
+      shape.expected,
+    );
+  });
+}
+
+for (const [name, output, expected] of [
+  ["mangle false", "{ minify: { compress: true, mangle: false, codegen: true } }", MangleSetting.Disabled],
+  ["dce-only", "{ minify: 'dce-only' }", MangleSetting.Disabled],
+  ["mangle true", "{ minify: { mangle: true } }", MangleSetting.Enabled],
+  ["absent", "{}", MangleSetting.Enabled],
+]) {
+  test(`vite adapter collects the effective mangle setting (${name})`, () => {
+    const projectRoot = path.join(root, "fixtures/vite-app");
+    const { dir, file } = writeConfig(
+      "vite.config.mjs",
+      `export default { build: { minify: 'oxc', rolldownOptions: { output: ${output} } } };\n`,
+    );
+    const { status, events, collection } = runAdapter(
+      "vite",
+      "vite-app",
+      path.relative(projectRoot, file),
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+    assert.equal(status, 0, JSON.stringify(events));
+    assert.equal(collection.mangle, expected);
+    assert.equal(
+      collection.configSummary["build.rolldownOptions.output.minify.mangle"],
+      expected,
+    );
+    assert.equal(collection.defaultMinifier, true);
+    assert.equal(collection.minifyEnabled, true);
+  });
+}
 
 test("unframed JSON printed by project configuration is not a protocol event", () => {
   const projectRoot = path.join(root, "fixtures/vite-app");

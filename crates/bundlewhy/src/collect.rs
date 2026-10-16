@@ -20,6 +20,9 @@ pub struct Collection {
     pub minifier_version: String,
     pub default_minifier: bool,
     pub minify_enabled: bool,
+    /// Effective output name-mangling setting. Absent in older collections,
+    /// which keeps the default (`Enabled`).
+    pub mangle: Mangle,
     pub adapter_id: String,
     pub adapter_version: String,
     pub overrides: Vec<String>,
@@ -117,6 +120,20 @@ pub struct CollectedSkippedProvider {
     /// Export path segments; meaningful only when `scope` is `Named`.
     pub export: Vec<String>,
     pub edges: u32,
+}
+
+/// Whether the minifier mangles local names for the analyzed output. An
+/// unrecognized value (for example from a newer adapter) is treated as
+/// `Enabled`, which keeps every mangling-dependent detector active.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Mangle {
+    /// The configuration keeps every name, so retained names prove nothing
+    /// about their cause.
+    Disabled,
+    #[default]
+    #[serde(other)]
+    Enabled,
 }
 
 /// Which export of the provider module a dropped edge targeted.
@@ -255,4 +272,21 @@ pub struct CollectedChunk {
     /// (`OutputChunk.dynamicImports`). `None` when the adapter did not collect
     /// them.
     pub dynamic_imports: Option<Vec<String>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mangle_defaults_to_enabled_and_decodes_known_values() {
+        let older: Collection = serde_json::from_str("{}").unwrap();
+        assert_eq!(older.mangle, Mangle::Enabled);
+        let disabled: Collection = serde_json::from_str(r#"{"mangle":"disabled"}"#).unwrap();
+        assert_eq!(disabled.mangle, Mangle::Disabled);
+        let enabled: Collection = serde_json::from_str(r#"{"mangle":"enabled"}"#).unwrap();
+        assert_eq!(enabled.mangle, Mangle::Enabled);
+        let unknown: Collection = serde_json::from_str(r#"{"mangle":"partial"}"#).unwrap();
+        assert_eq!(unknown.mangle, Mangle::Enabled);
+    }
 }

@@ -1969,6 +1969,11 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
     if !collection.minify_enabled || !collection.default_minifier {
         return;
     }
+    // With mangling disabled by configuration every name survives whether or
+    // not a direct eval is present, so eval cannot be blamed for them.
+    if collection.mangle == crate::collect::Mangle::Disabled {
+        return;
+    }
     for module in &collection.modules {
         if context.is_cancelled() {
             return;
@@ -2105,6 +2110,14 @@ mod tests {
     const UNARY_KEYWORDS: [&str; 4] = ["typeof", "await", "void", "delete"];
 
     fn eval_rule_drafts(source: &str, engine_reports_eval: bool) -> Vec<DiagnosticDraft> {
+        eval_rule_drafts_with_mangle(source, engine_reports_eval, crate::collect::Mangle::Enabled)
+    }
+
+    fn eval_rule_drafts_with_mangle(
+        source: &str,
+        engine_reports_eval: bool,
+        mangle: crate::collect::Mangle,
+    ) -> Vec<DiagnosticDraft> {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let source_path = root.join("src/main.js");
@@ -2117,6 +2130,7 @@ mod tests {
         let collection = crate::collect::Collection {
             default_minifier: true,
             minify_enabled: true,
+            mangle,
             logs: if engine_reports_eval {
                 vec![crate::collect::EngineLog {
                     code: Some("EVAL".to_owned()),
@@ -2748,6 +2762,33 @@ y=/process.env.F/.test(z),process.env.G"#;
             // Engine-reported evals are unaffected by the source scan.
             assert_eq!(eval_rule_drafts(&shadowed, true).len(), 1);
         }
+    }
+
+    #[test]
+    fn disabled_mangling_never_blames_direct_eval() {
+        use crate::collect::Mangle;
+        let source = "const longLocalName = 1;\neval(code);";
+        // Source-scan evidence and engine-reported evidence both stop at the
+        // configuration: names survive without eval.
+        for engine_reports_eval in [false, true] {
+            assert!(
+                eval_rule_drafts_with_mangle(source, engine_reports_eval, Mangle::Disabled)
+                    .is_empty()
+            );
+        }
+        // Enabled mangling keeps the finding and its chunk evidence.
+        let drafts = eval_rule_drafts_with_mangle(source, false, Mangle::Enabled);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+        assert!(drafts[0].evidence.iter().any(|entry| {
+            entry.provenance == "generated chunk text" && entry.detail.contains("longLocalName")
+        }));
+        // Disabled mangling without any eval is also empty, so eval is not the
+        // cause of the preserved names.
+        assert!(
+            eval_rule_drafts_with_mangle("const longLocalName = 1;", false, Mangle::Disabled)
+                .is_empty()
+        );
     }
 
     #[test]
