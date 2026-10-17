@@ -55,8 +55,10 @@ func (s *Server) SetAutoTopUp(ctx context.Context, r *connect.Request[pb.SetAuto
 			}
 			// Queued charges carry their amount in the job payload, so disabling the
 			// setting must also end work that has never reached the provider. Running,
-			// reconciling, attempted and externally identified jobs stay untouched.
-			tag, e := c.tx.Exec(c.ctx, "UPDATE jobs SET state='done',error_category='auto_topup_disabled',updated_at=$2 WHERE tenant_id=$1 AND kind='auto_topup' AND state='pending' AND attempts=0 AND external_id=''", q.TenantId, c.now)
+			// reconciling, attempted and externally identified jobs stay untouched. An
+			// operator retry resets the attempt count but keeps the failure category, so
+			// a retained category marks a charge that was attempted before.
+			tag, e := c.tx.Exec(c.ctx, "UPDATE jobs SET state='done',error_category='auto_topup_disabled',updated_at=$2 WHERE tenant_id=$1 AND kind='auto_topup' AND state='pending' AND attempts=0 AND external_id='' AND error_category=''", q.TenantId, c.now)
 			if e != nil {
 				return e
 			}

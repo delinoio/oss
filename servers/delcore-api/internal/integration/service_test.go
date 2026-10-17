@@ -2294,6 +2294,39 @@ func TestDisablingAutoTopupKeepsAttemptedCharges(t *testing.T) {
 	}
 }
 
+func TestDisablingAutoTopupKeepsOperatorRetriedCharge(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	job := key()
+	// The provider definitively rejected this charge, so it failed without an
+	// external identity. The operator then explicitly retried it.
+	if _, e := db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,error_category,available_at,created_at,updated_at) VALUES($1,$2,'auto_topup',$1::uuid::text,'{"amount":"10","minor_units":"1000","currency":"USD"}','failed',3,'provider_rejected',now(),now(),now())`, job, tenant); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := client.RetryJob(ctx, req(&pb.RetryJobRequest{RequestKey: key(), JobId: job, Reason: "provider recovered"}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	jobState := func() (string, int, string) {
+		t.Helper()
+		var state, category string
+		var attempts int
+		if e := db.Pool.QueryRow(ctx, "SELECT state,attempts,error_category FROM jobs WHERE id=$1", job).Scan(&state, &attempts, &category); e != nil {
+			t.Fatal(e)
+		}
+		return state, attempts, category
+	}
+	if state, attempts, _ := jobState(); state != "pending" || attempts != 0 {
+		t.Fatal("retry fixture", state, attempts)
+	}
+	if _, e := client.SetAutoTopUp(ctx, req(&pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: false}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	if state, _, category := jobState(); state != "pending" || category != "provider_rejected" {
+		t.Fatal("disable stopped an operator-requested retry of an attempted charge", state, category)
+	}
+}
+
 func TestDeletionStopsDefinitivelyRejectedSubscriptions(t *testing.T) {
 	for _, withdraw := range []bool{false, true} {
 		t.Run(fmt.Sprintf("withdraw=%t", withdraw), func(t *testing.T) {
