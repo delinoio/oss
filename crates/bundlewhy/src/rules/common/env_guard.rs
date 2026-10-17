@@ -1052,9 +1052,27 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Whether the word at `offset` tokens ahead is `using` and starts a
+    /// resource declaration (`using x`) and not the identifier `using`
+    /// (`using = 1`, `using of x`, `using in x`).
+    fn using_declaration_follows(&self, offset: usize) -> bool {
+        is_word(self.at(offset), "using")
+            && self.at(offset + 1).is_some_and(|next| {
+                !next.newline
+                    && next.kind == TokenKind::Word
+                    && !matches!(next.text, "in" | "of" | "instanceof")
+            })
+    }
+
     fn parse_for(&mut self) {
         self.bump();
         self.eat_word("await");
+        // The matching `)` ends the head, wherever the head parse stops.
+        let head_close = self.close.get(self.pos).copied().filter(|&close| {
+            close != usize::MAX
+                && close > self.pos
+                && is_punct(self.tokens.get(close).copied(), ")")
+        });
         if !self.eat_punct("(") {
             return;
         }
@@ -1063,7 +1081,12 @@ impl<'a> Parser<'a> {
         } else if self.is_word("var")
             || self.is_word("const")
             || (self.is_word("let") && self.declaration_follows())
+            || self.using_declaration_follows(0)
         {
+            self.parse_declarations();
+        } else if is_word(self.tok(), "await") && self.using_declaration_follows(1) {
+            // `await using x`
+            self.bump();
             self.parse_declarations();
         } else {
             self.parse_expr();
@@ -1088,6 +1111,13 @@ impl<'a> Parser<'a> {
             self.eat_punct(")");
         }
         self.no_in = saved;
+        // A head that was not parsed to its end must not leave tokens in front
+        // of the body, where they would be read as the body statement.
+        if let Some(close) = head_close
+            && self.pos <= close
+        {
+            self.pos = close + 1;
+        }
         self.parse_jump_body(Jump::Loop);
     }
 
@@ -4641,6 +4671,84 @@ mod tests {
             (
                 "finally break to an unknown label",
                 "(function(){try{return process.env.FLAG}finally{break missing}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves a using loop",
+                "(function(){for(using x of values){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves an await using loop",
+                "(function(){for(await using x of values){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves a for await using loop",
+                "(function(){for await(using x of values){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves a for await await using loop",
+                "(function(){for await(await using x of values){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves a using loop with an initializer",
+                "(function(){for(using x=open();;){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally continue leaves a using loop",
+                "(function(){for(using x of values){try{return \
+                 process.env.FLAG}finally{continue}}})()&&run()",
+                None,
+            ),
+            (
+                "finally labelled break leaves a using loop",
+                "(function(){outer:for(using x of values){try{return \
+                 process.env.FLAG}finally{break outer}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break stays in a using loop",
+                "(function(){try{return process.env.FLAG}finally{for(using x of \
+                 values){break}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break stays in an await using loop",
+                "(function(){try{return process.env.FLAG}finally{for(await using x of \
+                 values){break}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break leaves a loop over the identifier using",
+                "(function(){for(using in values){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves a loop that assigns the identifier using",
+                "(function(){for(using=0;using<2;using++){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break stays in a loop that assigns the identifier using",
+                "(function(){try{return \
+                 process.env.FLAG}finally{for(using=0;using<2;using++){break}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break leaves a loop over await applied to using",
+                "(function(){for(await using in values){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
                 None,
             ),
             // A constructor call ignores a primitive result.
