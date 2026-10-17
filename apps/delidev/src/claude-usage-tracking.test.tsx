@@ -485,6 +485,53 @@ it("does not open the browser by itself in a reopened dialog but offers Open bro
   expect(value.start).not.toHaveBeenCalled();
 });
 
+it("disposes the old browser binding when another waiting login replaces the operation", async () => {
+  const replacement = newRequestId();
+  let current = operationId;
+  const value = mount({
+    usage: {
+      connection: "connecting",
+      generation,
+      operation: operation("waiting"),
+    },
+    progress: () => ({
+      state: ClaudeUsageLoginState.WAITING,
+      operationId: current,
+      usageGeneration: generation,
+      url: authorization(),
+      codeRequested: false,
+    }),
+  });
+  const section = await state(ClaudeUsageView.Waiting);
+  const open = within(section).getByRole("button", {
+    name: "Open browser again",
+  });
+  await waitFor(() => expect((open as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(open);
+  await waitFor(() => expect(value.native).toHaveBeenCalledTimes(1));
+  const opening = value.native.mock.calls[0][0];
+  // Another client replaces the waiting login; the section stays Waiting.
+  current = replacement;
+  value.set({
+    connection: "connecting",
+    generation,
+    operation: operation("waiting", { id: replacement }),
+  });
+  await waitFor(() =>
+    expect(
+      value.native.mock.calls.some(
+        (call) => call[0] === opening && call[1] === OAuthNativeAction.Dispose,
+      ),
+    ).toBe(true),
+  );
+  // Nothing opened the replacement automatically.
+  expect(
+    value.native.mock.calls.filter(
+      (call) => call[1] !== OAuthNativeAction.Dispose,
+    ),
+  ).toHaveLength(1);
+});
+
 it("rotates the opening identity after a failed browser open and records the failure", async () => {
   const value = mount({
     usage: {

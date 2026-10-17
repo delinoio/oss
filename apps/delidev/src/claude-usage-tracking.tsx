@@ -490,6 +490,17 @@ export function useClaudeUsageTracking(options: ClaudeUsageTrackingOptions): {
       setBrowserFailed(false);
       return;
     }
+    // A binding belongs to the login operation it opened. When an account read
+    // replaces the waiting operation with another one (for example a login
+    // started by another client), the obsolete native authority is disposed at
+    // that ownership transition, not only when the task hides or unmounts.
+    if (
+      binding.current &&
+      binding.current.operation !== (operation?.id ?? "")
+    ) {
+      disposeBinding();
+      setBrowserFailed(false);
+    }
     // A hidden Manage task owns no browser: the binding is disposed and the
     // login never opens one automatically until the explicit open action.
     if (!active) {
