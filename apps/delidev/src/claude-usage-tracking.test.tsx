@@ -111,6 +111,7 @@ let revision = 3n;
 function accountOf(
   usage: Record<string, unknown> | undefined,
   connected = true,
+  observation?: Record<string, unknown>,
 ): Resource {
   return create(ResourceSchema, {
     id: accountId,
@@ -128,6 +129,7 @@ function accountOf(
         claude_credential: "server-token",
         generation: newRequestId(),
         ...(usage ? { claude_usage: usage } : {}),
+        ...(observation ? { observation } : {}),
       },
     }),
   });
@@ -137,6 +139,8 @@ const accountId = newRequestId();
 interface Options {
   usage?: Record<string, unknown>;
   connected?: boolean;
+  /** An existing quota observation owner of the account document. */
+  observation?: Record<string, unknown>;
   capabilities?: SystemCapability[] | "loading" | "error";
   progress?: () => Record<string, unknown>;
   dialog?: (close: () => void) => void;
@@ -149,10 +153,14 @@ const available = [
 ];
 
 function mount(options: Options = {}) {
-  let current = accountOf(options.usage, options.connected ?? true);
+  let current = accountOf(
+    options.usage,
+    options.connected ?? true,
+    options.observation,
+  );
   const set = (usage: Record<string, unknown> | undefined) => {
     revision += 1n;
-    current = accountOf(usage, options.connected ?? true);
+    current = accountOf(usage, options.connected ?? true, options.observation);
     return current;
   };
   const respond = (usage?: Record<string, unknown>) => ({
@@ -770,6 +778,21 @@ it("disconnects usage only after a confirmation bound to the usage generation", 
   };
   expect(request.usageGeneration).toBe(generation);
   expect(request.mutation.id).toBe(accountId);
+});
+
+it("blocks usage actions while a quota observation owns the account", async () => {
+  const value = mount({
+    usage: linked(),
+    observation: { phase: "queued" },
+  });
+  const section = await state(ClaudeUsageView.Linked);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const disconnect = within(section).getByRole("button", {
+    name: "Disconnect usage",
+  }) as HTMLButtonElement;
+  expect(disconnect.disabled).toBe(true);
+  fireEvent.click(disconnect);
+  expect(value.disconnect).not.toHaveBeenCalled();
 });
 
 it("marks an observation older than five minutes as stale", async () => {

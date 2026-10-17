@@ -188,7 +188,12 @@ function NativeManagedSubscriptionAccount({
       operation.uncertain ||
       Boolean(text(pending.id)) ||
       state.recovery_required === true ||
-      Boolean(data.removal),
+      Boolean(data.removal) ||
+      // A queued, sending or uncertain quota observation owns the account like
+      // the existing management controller: no competing usage operation.
+      ["queued", "sending", "uncertain"].includes(
+        text(object(state.observation).phase),
+      ),
     refreshing,
     accept: acceptAccount,
     reread: () => {
