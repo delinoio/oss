@@ -36,13 +36,8 @@ func prepareOpenRouterToolRequest(raw []byte, scope Scope, operation Operation) 
 			Reasoning       json.RawMessage            `json:"reasoning"`
 			MaxOutputTokens *uint64                    `json:"max_output_tokens"`
 		}
-		if domain.DecodeBounded(raw, &request, maxBody) != nil || request.Model != scope.NativeModel || domain.Text(request.ID, "native search session", 256, true) != nil || len(request.Commands) == 0 || len(request.Commands) > 8 {
+		if domain.DecodeBounded(raw, &request, maxBody) != nil || request.Model != scope.NativeModel || domain.Text(request.ID, "native search session", 256, true) != nil || !validNativeSearchCommands(request.Commands) {
 			return nil, openRouterToolError()
-		}
-		for command := range request.Commands {
-			if !slices.Contains([]string{"search_query", "image_query", "open", "click", "find", "calculator", "time", "response_length"}, command) {
-				return nil, openRouterToolError()
-			}
 		}
 		// The dedicated adapter makes one same-account, same-model Responses
 		// request. Its server tools execute remotely; the ordinary Responses relay
