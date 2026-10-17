@@ -152,6 +152,13 @@ export const dropdownInventory: readonly DropdownInventoryEntry[] = [
     evidence: "reserved 280px region; pnpm test:worker-model-layout",
   },
   {
+    file: "inline-choice-list.tsx",
+    family: "New session Project inline choice list",
+    treatment: DropdownTreatment.ReservedRegion,
+    evidence:
+      "always-expanded list with no open state; its viewport is sized to at most five rows before any interaction, so choosing or focusing a row never moves other content",
+  },
+  {
     file: "disclosure.tsx",
     family: "Persistent disclosure",
     treatment: DropdownTreatment.PersistentDisclosure,
