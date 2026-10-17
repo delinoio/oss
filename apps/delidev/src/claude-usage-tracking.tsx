@@ -1046,7 +1046,7 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
           <h4>{copy("claude-usage.confirmTitle")}</h4>
           {review
             ? identity(review)
-            : usage?.identity
+            : usage?.identity?.email
               ? identity(usage.identity)
               : null}
           {!review ? (

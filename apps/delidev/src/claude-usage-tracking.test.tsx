@@ -1571,3 +1571,41 @@ it("keeps the original start retry visible after the lifecycle advances past not
   );
   expect(second.mutation.requestId).toBe(first.mutation.requestId);
 });
+
+it("reads a confirming identity that carries only its commitment and still detects a changed review", async () => {
+  expect(
+    claudeUsageSection({
+      claude_usage: {
+        connection: "confirming",
+        generation,
+        operation: operation("succeeded"),
+        identity: { commitment },
+      },
+    }),
+  ).toMatchObject({
+    kind: "present",
+    usage: { identity: { email: "", commitment } },
+  });
+  // A linked connection still requires the reviewed email to be readable.
+  expect(
+    claudeUsageSection({
+      claude_usage: linked({ identity: { commitment } }),
+    }).kind,
+  ).toBe("unreadable");
+  const value = mount({
+    usage: {
+      connection: "confirming",
+      generation,
+      operation: operation("succeeded"),
+      identity: { commitment: "cd".repeat(32) },
+    },
+    progress: confirmingProgress,
+  });
+  const section = await state(ClaudeUsageView.Confirmation);
+  await screen.findByText(/signed-in account changed after it was reviewed/);
+  const link = within(section).getByRole("button", {
+    name: "Link usage account",
+  });
+  expect((link as HTMLButtonElement).disabled).toBe(true);
+  expect(value.confirm).not.toHaveBeenCalled();
+});

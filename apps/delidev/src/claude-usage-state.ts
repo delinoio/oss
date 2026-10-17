@@ -129,15 +129,22 @@ const instant = (value: unknown): string | undefined => {
   return raw && Number.isFinite(Date.parse(raw)) ? raw : undefined;
 };
 
+/**
+ * Reads the reviewed identity of the document. While the login awaits
+ * confirmation the server keeps the reviewed text out of generic account reads
+ * and exposes only the opaque commitment, so an identity without an email is
+ * readable and carries only its commitment.
+ */
 function identityOf(value: unknown): ClaudeUsageIdentity | undefined {
   const raw = object(value),
-    email = text(raw.email);
-  return email
+    email = text(raw.email),
+    commitment = text(raw.commitment);
+  return email || commitment
     ? {
         email,
         organization: text(raw.organization),
         plan: text(raw.plan),
-        commitment: text(raw.commitment),
+        commitment,
       }
     : undefined;
 }
@@ -193,7 +200,7 @@ export function claudeUsageSection(
   const identity = identityOf(raw.identity);
   if (
     connection === ClaudeUsageConnection.Linked &&
-    (!identity || raw.published !== true || !instant(raw.linked_at))
+    (!identity?.email || raw.published !== true || !instant(raw.linked_at))
   )
     return { kind: "unreadable" };
   const lastSuccessAt = raw.last_success_at
