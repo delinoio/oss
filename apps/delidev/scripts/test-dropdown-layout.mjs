@@ -153,7 +153,23 @@ const families = [
     popup: ".subscription-more-panel",
     popupOf: (page) => page.locator(".subscription-more-panel"),
     items: "button",
-    mutations: async () => "",
+    // Every non-read RPC the fixture transport receives (see
+    // `__subscriptionFixture` in settings-layout.fixture.tsx).
+    mutations: (page) =>
+      page.evaluate(() => window.__subscriptionFixture.writes.join(",")),
+    // The counter is only evidence if it can fail: one real write RPC must
+    // change it.
+    selfCheck: async (page) => {
+      const before = await page.evaluate(
+        () => window.__subscriptionFixture.writes.length,
+      );
+      await page.evaluate(() => window.__subscriptionFixture.probe());
+      assert.equal(
+        await page.evaluate(() => window.__subscriptionFixture.writes.length),
+        before + 1,
+        "the subscription write counter observes a write RPC",
+      );
+    },
   },
 ].filter(
   (family) =>
@@ -253,6 +269,7 @@ try {
             `${origin}/${family.entry}.html?language=${language}&theme=${theme}${family.query ?? ""}`,
           );
           await family.ready(page, language);
+          if (family.selfCheck) await family.selfCheck(page);
           const count = await family.triggers(page).count();
           assert(count > 0, `${family.id}: no triggers`);
           // First and last row: the last one sits closest to the lower edge.
