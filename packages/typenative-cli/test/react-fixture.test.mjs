@@ -22,3 +22,26 @@ test("React fixture rejects cloning that ignores the requested props", () => {
     /React core probe failed/,
   );
 });
+
+test("React fixture rejects clones that mutate the source element", () => {
+  for (const returnOriginal of [true, false]) {
+    assert.throws(
+      () =>
+        runInNewContext(source, {
+          ...React,
+          console: { log() {} },
+          createElement: (...args) => {
+            const element = React.createElement(...args);
+            return { ...element, props: { ...element.props } };
+          },
+          cloneElement: (element, overrides) => {
+            Object.assign(element.props, overrides);
+            return returnOriginal
+              ? element
+              : { ...element, props: { ...element.props } };
+          },
+        }),
+      /React core probe failed/,
+    );
+  }
+});
