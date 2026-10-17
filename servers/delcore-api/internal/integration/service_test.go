@@ -1564,3 +1564,156 @@ func TestZeroBalanceNoticeMatchesAllowanceExhaustion(t *testing.T) {
 	}
 	check(true)
 }
+
+func TestNegativePostpaidCorrectionCarriesToNextUsageBill(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	service := key()
+	if _, e := db.Pool.Exec(ctx, "INSERT INTO services VALUES($1,'carry','carry','{}','{}')", service); e != nil {
+		t.Fatal(e)
+	}
+	now := time.Now().UTC()
+	start := now.Add(-72 * time.Hour)
+	end := now.Add(-48 * time.Hour)
+	appendAmount := func(amount string, period time.Time) {
+		t.Helper()
+		if _, e := db.Pool.Exec(ctx, "INSERT INTO ledger(id,tenant_id,service_id,meter,kind,amount,period_start,period_end,source_key,created_at) VALUES($1,$2,$3,'units','postpaid',$4,$5,$6,$1::uuid::text,$7)", key(), tenant, service, amount, period, period.Add(24*time.Hour), now); e != nil {
+			t.Fatal(e)
+		}
+	}
+	w := &worker.Worker{DB: db, Config: cfg}
+	appendAmount("-10", start)
+	if e := w.Maintain(ctx, now); e != nil {
+		t.Fatal(e)
+	}
+	var first string
+	if e := db.Pool.QueryRow(ctx, "SELECT id::text FROM jobs WHERE tenant_id=$1 AND kind='settlement'", tenant).Scan(&first); e != nil {
+		t.Fatal(e)
+	}
+	pay := func(job, txn, units string) {
+		t.Helper()
+		var payment provider.Transaction
+		raw := fmt.Sprintf(`{"id":%q,"status":"completed","currency_code":"USD","custom_data":{"delcore_job_id":%q,"delcore_tenant_id":%q},"details":{"totals":{"subtotal":%q}}}`, txn, job, tenant, units)
+		if e := json.Unmarshal([]byte(raw), &payment); e != nil {
+			t.Fatal(e)
+		}
+		if e := w.ApplyTransaction(ctx, payment, now); e != nil {
+			t.Fatal(e)
+		}
+	}
+	pay(first, "txn_first", "1000")
+	appendAmount("4", start)
+	for i := 0; i < 2; i++ {
+		if e := w.Maintain(ctx, now); e != nil {
+			t.Fatal(e)
+		}
+	}
+	var count int
+	if e := db.Pool.QueryRow(ctx, "SELECT count(*) FROM jobs WHERE tenant_id=$1 AND kind='settlement'", tenant).Scan(&count); e != nil || count != 1 {
+		t.Fatal("credit triggered a charge", count, e)
+	}
+	// A restarted worker must still subtract the old four-unit credit from the
+	// next six-unit usage bill, preserving both periods in the settlement lines.
+	w = &worker.Worker{DB: db, Config: cfg}
+	appendAmount("-6", end)
+	if e := w.Maintain(ctx, now); e != nil {
+		t.Fatal(e)
+	}
+	var next, units, amount string
+	if e := db.Pool.QueryRow(ctx, "SELECT id::text,payload->>'minor_units',payload->>'amount' FROM jobs WHERE tenant_id=$1 AND kind='settlement' AND id<>$2", tenant, first).Scan(&next, &units, &amount); e != nil || units != "200" || amount != "2" {
+		t.Fatal("credit lost", units, amount, e)
+	}
+	if e := db.Pool.QueryRow(ctx, "SELECT count(*) FROM settlements WHERE job_id=$1", next).Scan(&count); e != nil || count != 2 {
+		t.Fatal("period attribution lost", count, e)
+	}
+	pay(next, "txn_next", "200")
+	var balance string
+	if e := db.Pool.QueryRow(ctx, "SELECT sum(amount)::text FROM ledger WHERE tenant_id=$1 AND kind IN ('postpaid','settlement')", tenant).Scan(&balance); e != nil {
+		t.Fatal(e)
+	}
+	value, e := accounting.Parse(balance)
+	if e != nil || value.Cmp(accounting.Zero()) != 0 {
+		t.Fatal("settled balance", balance, e)
+	}
+}
+
+func TestOperatorUsageRefundReleasesDeletionHold(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	service := key()
+	cfg.PaddleCreditProductID = "pro_usage_refund"
+	if _, e := db.Pool.Exec(ctx, "INSERT INTO services VALUES($1,'refund','refund','{}','{}')", service); e != nil {
+		t.Fatal(e)
+	}
+	now := time.Now().UTC()
+	start := now.Add(-48 * time.Hour)
+	end := now.Add(-24 * time.Hour)
+	add := func(value string) {
+		t.Helper()
+		if _, e := db.Pool.Exec(ctx, "INSERT INTO ledger(id,tenant_id,service_id,meter,kind,amount,period_start,period_end,source_key,created_at) VALUES($1,$2,$3,'units','postpaid',$4,$5,$6,$1::uuid::text,$7)", key(), tenant, service, value, start, end, now); e != nil {
+			t.Fatal(e)
+		}
+	}
+	w := &worker.Worker{DB: db, Config: cfg}
+	add("-10")
+	if e := w.Maintain(ctx, now); e != nil {
+		t.Fatal(e)
+	}
+	var job string
+	if e := db.Pool.QueryRow(ctx, "SELECT id::text FROM jobs WHERE tenant_id=$1 AND kind='settlement'", tenant).Scan(&job); e != nil {
+		t.Fatal(e)
+	}
+	var payment provider.Transaction
+	raw := fmt.Sprintf(`{"id":"txn_refund_usage","status":"completed","currency_code":"USD","custom_data":{"delcore_job_id":%q,"delcore_tenant_id":%q},"details":{"totals":{"subtotal":"1000"},"line_items":[{"id":"txnitm_usage","price_id":"pri_usage_refund","totals":{"subtotal":"1000"}}]},"items":[{"quantity":1,"price":{"id":"pri_usage_refund","product_id":"pro_usage_refund","custom_data":{"delcore_job_id":%q,"delcore_tenant_id":%q}}}]}`, job, tenant, job, tenant)
+	if e := json.Unmarshal([]byte(raw), &payment); e != nil {
+		t.Fatal(e)
+	}
+	if e := w.ApplyTransaction(ctx, payment, now); e != nil {
+		t.Fatal(e)
+	}
+	add("4")
+	if _, e := client.DeleteTenant(ctx, req(&pb.DeleteTenantRequest{RequestKey: key(), TenantId: tenant}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	future := now.Add(time.Duration(cfg.ReportingGraceSeconds+cfg.DeletionGraceSeconds+10) * time.Second)
+	check := func(want string) {
+		t.Helper()
+		if e := w.Maintain(ctx, future); e != nil {
+			t.Fatal(e)
+		}
+		var amount string
+		if e := db.Pool.QueryRow(ctx, "SELECT sum(amount)::text FROM ledger WHERE tenant_id=$1 AND kind IN ('postpaid','settlement')", tenant).Scan(&amount); e != nil {
+			t.Fatal(e)
+		}
+		d, e := accounting.Parse(amount)
+		if e != nil || d.String() != want {
+			t.Fatal("incorrect refund balance", amount, want, e)
+		}
+	}
+	event := func(adjustment, item, status string, at time.Time) {
+		t.Helper()
+		v := provider.Event{ID: key(), Type: "adjustment.updated", OccurredAt: at, Data: json.RawMessage(fmt.Sprintf(`{"id":%q,"action":"refund","status":%q,"transaction_id":"txn_refund_usage","currency_code":"USD","totals":{"subtotal":"400"},"items":[{"item_id":%q,"totals":{"subtotal":"400"}}]}`, adjustment, status, item))}
+		raw, _ := json.Marshal(v)
+		if _, e := db.Pool.Exec(ctx, "INSERT INTO webhooks(event_id,payload,received_at,occurred_at) VALUES($1,$2,now(),$3)", v.ID, raw, at); e != nil {
+			t.Fatal(e)
+		}
+		if e := w.ProcessWebhook(ctx, v.ID); e != nil {
+			t.Fatal(e)
+		}
+	}
+	check("4")
+	event("adj_fixed", "txnitm_fixed", "approved", now)
+	check("4")
+	event("adj_usage", "txnitm_usage", "pending_approval", now)
+	check("4")
+	event("adj_usage", "txnitm_usage", "approved", now.Add(time.Second))
+	event("adj_usage", "txnitm_usage", "approved", now.Add(time.Second))
+	event("adj_usage", "txnitm_usage", "reversed", now) // stale
+	check("0")
+	var deleted bool
+	if e := db.Pool.QueryRow(ctx, "SELECT deleted_at IS NOT NULL FROM tenants WHERE id=$1", tenant).Scan(&deleted); e != nil || !deleted {
+		t.Fatal("refund did not release deletion", deleted, e)
+	}
+}

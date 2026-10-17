@@ -81,14 +81,25 @@ func (w *Worker) settle(ctx context.Context, tx pgx.Tx, now time.Time) error {
 		// Meter totals have already been rounded in roundUsage. Purchased credit
 		// allocations may be fractional while other periods remain open. Carry
 		// that fraction across invoices by rounding cumulative tenant receivables.
-		var cumulativeText, paidText string
-		if e = tx.QueryRow(ctx, `SELECT (-COALESCE(sum(l.amount),0))::text,COALESCE((SELECT sum(billed_minor) FROM settlements WHERE tenant_id=$1),0)::text FROM ledger l JOIN tenants t ON t.id=l.tenant_id WHERE l.tenant_id=$1 AND l.kind='postpaid' AND (l.period_end<=$2 OR t.deleting_at<$3)`, tenant, now, now.Add(-time.Duration(w.Config.ReportingGraceSeconds)*time.Second)).Scan(&cumulativeText, &paidText); e != nil {
+		var cumulativeText, paidText, claimedText string
+		if e = tx.QueryRow(ctx, `SELECT (-COALESCE(sum(l.amount),0))::text,COALESCE((SELECT sum(billed_minor) FROM settlements WHERE tenant_id=$1),0)::text,COALESCE((SELECT sum(amount) FROM settlements WHERE tenant_id=$1),0)::text FROM ledger l JOIN tenants t ON t.id=l.tenant_id WHERE l.tenant_id=$1 AND l.kind='postpaid' AND (l.period_end<=$2 OR t.deleting_at<$3)`, tenant, now, now.Add(-time.Duration(w.Config.ReportingGraceSeconds)*time.Second)).Scan(&cumulativeText, &paidText, &claimedText); e != nil {
 			return e
 		}
 		cumulative, e := accounting.Parse(cumulativeText)
 		if e != nil {
 			return e
 		}
+		claimed, e := accounting.Parse(claimedText)
+		if e != nil {
+			return e
+		}
+		amount := cumulative.Sub(claimed)
+		// Invoice refunds are tenant-level offsets. Preserve the meter lines and
+		// record their balancing allocation separately instead of inventing a meter.
+		if difference := amount.Sub(b.amount); difference.Cmp(accounting.Zero()) != 0 {
+			b.lines = append(b.lines, line{"", "", b.lines[0].start, b.lines[0].end, difference, new(big.Int)})
+		}
+		b.amount = amount
 		units, e := cumulative.MinorUnits(w.Config.MinorUnits)
 		if e != nil {
 			return e
@@ -102,6 +113,9 @@ func (w *Worker) settle(ctx context.Context, tx pgx.Tx, now time.Time) error {
 			b.lines[0].units.Add(b.lines[0].units, new(big.Int).Sub(units, b.units))
 		}
 		b.units = units
+		if b.amount.Cmp(accounting.Zero()) == 0 && b.units.Sign() == 0 {
+			continue
+		}
 		// A net credit remains an adjustment for the next bill. Do not request a
 		// provider refund or discard its original service and period attribution.
 		if b.units.Sign() < 0 {
@@ -117,7 +131,7 @@ func (w *Worker) settle(ctx context.Context, tx pgx.Tx, now time.Time) error {
 			return e
 		}
 		for _, l := range b.lines {
-			if _, e = tx.Exec(ctx, "INSERT INTO settlements(id,tenant_id,period_start,period_end,service_id,meter,amount,source_key,job_id,created_at,billed_minor) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", id(), tenant, l.start, l.end, l.service, l.meter, l.amount.String(), jobID+":"+l.service+":"+l.meter+":"+l.start.Format(time.RFC3339Nano), jobID, now, l.units.String()); e != nil {
+			if _, e = tx.Exec(ctx, "INSERT INTO settlements(id,tenant_id,period_start,period_end,service_id,meter,amount,source_key,job_id,created_at,billed_minor) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", id(), tenant, l.start, l.end, nullableService(l.service), l.meter, l.amount.String(), jobID+":"+l.service+":"+l.meter+":"+l.start.Format(time.RFC3339Nano), jobID, now, l.units.String()); e != nil {
 				return e
 			}
 		}
@@ -128,4 +142,11 @@ func (w *Worker) settle(ctx context.Context, tx pgx.Tx, now time.Time) error {
 		}
 	}
 	return nil
+}
+
+func nullableService(service string) any {
+	if service == "" {
+		return nil
+	}
+	return service
 }

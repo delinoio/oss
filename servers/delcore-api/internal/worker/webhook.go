@@ -182,6 +182,18 @@ func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Tra
 		}
 		_, e = tx.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'credit',$3,$4,$5) ON CONFLICT(source_key) DO NOTHING", id(), j.Tenant, p.Amount, "payment:"+t.ID, at)
 	case "settlement":
+		for _, line := range t.Details.LineItems {
+			if line.ID == "" || line.Totals.Subtotal != p.MinorUnits {
+				continue
+			}
+			for _, item := range t.Items {
+				if item.Price.ID == line.PriceID && item.Price.ProductID == w.Config.PaddleCreditProductID && item.Price.Custom.JobID == j.ID && item.Price.Custom.TenantID == j.Tenant {
+					if e = recordSettlementLine(ctx, tx, t.ID, line.ID, j.ID, p.Amount, p.MinorUnits); e != nil {
+						return e
+					}
+				}
+			}
+		}
 		_, e = tx.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'settlement',$3,$4,$5) ON CONFLICT(source_key) DO NOTHING", id(), j.Tenant, p.Amount, "payment:"+t.ID, at)
 	case "subscription":
 		if !matchesPrices(t, p.ExternalPrices) {
@@ -366,6 +378,11 @@ func (w *Worker) adjustmentEvent(ctx context.Context, tx pgx.Tx, event provider.
 			return e
 		}
 	}
+	if v.Action == "refund" {
+		if e = w.applySettlementRefund(ctx, tx, event, tenant, v.ID, v.TransactionID, v.Status); e != nil {
+			return e
+		}
+	}
 	_, e = tx.Exec(ctx, "INSERT INTO adjustment_effects VALUES($1,$2,$3,$4) ON CONFLICT(external_id) DO UPDATE SET amount=EXCLUDED.amount,occurred_at=EXCLUDED.occurred_at", v.ID, v.TransactionID, effect, event.OccurredAt)
 	return e
 }
@@ -381,10 +398,11 @@ func (w *Worker) applyRenewalSettlements(ctx context.Context, tx pgx.Tx, t provi
 		if u, e := uuid.Parse(jobID); e != nil || u.Version() != 7 {
 			continue
 		}
-		subtotal := ""
+		subtotal, itemID := "", ""
 		for _, line := range t.Details.LineItems {
 			if line.PriceID == item.Price.ID {
 				subtotal = line.Totals.Subtotal
+				itemID = line.ID
 			}
 		}
 		var tenant, amount string
@@ -394,6 +412,11 @@ func (w *Worker) applyRenewalSettlements(ctx context.Context, tx pgx.Tx, t provi
 		}
 		if e != nil {
 			return e
+		}
+		if itemID != "" {
+			if e = recordSettlementLine(ctx, tx, t.ID, itemID, jobID, amount, subtotal); e != nil {
+				return e
+			}
 		}
 		if _, e = tx.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'settlement',$3,$4,$5) ON CONFLICT(source_key) DO NOTHING", id(), tenant, amount, "settlement-job:"+jobID, at); e != nil {
 			return e

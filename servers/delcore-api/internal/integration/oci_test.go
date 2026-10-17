@@ -5,9 +5,11 @@ package integration
 
 import (
 	"encoding/json"
+	"github.com/delinoio/oss/servers/delcore-api/migrations"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -90,10 +92,10 @@ func TestOCI(t *testing.T) {
 	mustFail("run", "--rm", image) // Missing configuration.
 	mustFail(args...)              // Empty schema must never be migrated by normal startup.
 	run(append(args, "-migrate")...)
-	run("exec", name, "psql", "-U", "postgres", "-d", "delcore", "-c", "UPDATE delcore_schema SET version=999 WHERE version=4")
+	run("exec", name, "psql", "-U", "postgres", "-d", "delcore", "-c", "UPDATE delcore_schema SET version=999 WHERE version="+strconv.Itoa(migrations.Version))
 	mustFail(args...)
 	mustFail(append(args, "-migrate")...)
-	run("exec", name, "psql", "-U", "postgres", "-d", "delcore", "-c", "UPDATE delcore_schema SET version=4 WHERE version=999")
+	run("exec", name, "psql", "-U", "postgres", "-d", "delcore", "-c", "UPDATE delcore_schema SET version="+strconv.Itoa(migrations.Version)+" WHERE version=999")
 	app := name + "-app"
 	run("run", "-d", "--name", app, "--network", "container:"+name, "-v", dir+":/fixture:ro", image, "-config", "/fixture/config.json")
 	t.Cleanup(func() { exec.Command("docker", "rm", "-f", app).Run() })
@@ -163,7 +165,7 @@ INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,upd
 		t.Fatal(e)
 	}
 	run(append(args, "-migrate")...)
-	if version := run("exec", name, "psql", "-U", "postgres", "-d", "restored", "-Atc", "SELECT max(version) FROM delcore_schema"); version != "4" {
+	if version := run("exec", name, "psql", "-U", "postgres", "-d", "restored", "-Atc", "SELECT max(version) FROM delcore_schema"); version != strconv.Itoa(migrations.Version) {
 		t.Fatal("restored schema", version)
 	}
 }

@@ -184,6 +184,7 @@ type Transaction struct {
 	} `json:"custom_data"`
 	Details struct {
 		LineItems []struct {
+			ID      string `json:"id"`
 			PriceID string `json:"price_id"`
 			Totals  struct {
 				Subtotal string `json:"subtotal"`

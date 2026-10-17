@@ -20,6 +20,8 @@ Occurrence timestamps use PostgreSQL microsecond precision. The service normaliz
 
 Deletion and withdrawal return a failed precondition while a previously attempted subscription intent remains incomplete. Unattempted subscription intents are stopped atomically when deletion starts.
 
+Negative postpaid corrections carry forward against usage charges. Operators refund any remainder in Paddle on cancellation. Confirmed usage-line refunds clear the corresponding settlement balance; fixed subscription refunds do not clear usage debt.
+
 ## Storage
 
 Wire messages are not the database schema. Historical pricing and usage identities survive replay and corrections. See the server contract for retention boundaries.
