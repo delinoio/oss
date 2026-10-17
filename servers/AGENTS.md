@@ -18,3 +18,5 @@
 - [Repository Environment Contract](../docs/repository-environment-contract.md)
 - [servers-devhud-api-contract](../docs/servers-devhud-api-contract.md)
 - [servers-devhud-release-controller-contract](../docs/servers-devhud-release-controller-contract.md)
+
+- [Delcore server contract](../docs/servers-delcore-api-contract.md)
