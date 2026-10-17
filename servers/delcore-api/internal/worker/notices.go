@@ -88,7 +88,7 @@ func (w *Worker) notices(ctx context.Context, tx pgx.Tx, now time.Time) error {
 			if r.active {
 				keep = r.reason
 			}
-			if e = supersedeNotices(ctx, tx, v.tenant, r.family, keep); e != nil {
+			if e = w.supersedeNotices(ctx, tx, v.tenant, r.family, keep, now); e != nil {
 				return e
 			}
 			if !r.active {
@@ -110,8 +110,36 @@ func (w *Worker) notices(ctx context.Context, tx pgx.Tx, now time.Time) error {
 	return nil
 }
 
-// supersedeNotices deactivates the active notices of one family except keep.
-func supersedeNotices(ctx context.Context, tx pgx.Tx, tenant, family, keep string) error {
-	_, e := tx.Exec(ctx, "UPDATE billing_notices SET active=false WHERE tenant_id=$1 AND active AND (reason=$2 OR starts_with(reason,$3)) AND reason<>$4", tenant, family, family+":", keep)
-	return e
+// supersedeNotices deactivates the active notices of one family except keep, and
+// ends their undelivered emails. A pending or retrying email still describes a
+// condition that no longer holds, so it must not reach the tenant. Running and sent
+// emails are left alone.
+func (w *Worker) supersedeNotices(ctx context.Context, tx pgx.Tx, tenant, family, keep string, now time.Time) error {
+	rows, e := tx.Query(ctx, "UPDATE billing_notices SET active=false WHERE tenant_id=$1 AND active AND (reason=$2 OR starts_with(reason,$3)) AND reason<>$4 RETURNING reason", tenant, family, family+":", keep)
+	if e != nil {
+		return e
+	}
+	var reasons []string
+	for rows.Next() {
+		var reason string
+		if e = rows.Scan(&reason); e != nil {
+			rows.Close()
+			return e
+		}
+		reasons = append(reasons, reason)
+	}
+	rows.Close()
+	if e = rows.Err(); e != nil {
+		return e
+	}
+	for _, reason := range reasons {
+		tag, e := tx.Exec(ctx, "UPDATE jobs SET state='done',error_category='notice_superseded',updated_at=$3 WHERE tenant_id=$1 AND kind='email' AND state='pending' AND starts_with(dedup_key,$2)", tenant, "notice:"+tenant+":"+reason+":", now)
+		if e != nil {
+			return e
+		}
+		if w.Log != nil {
+			w.Log.InfoContext(ctx, "billing notice superseded", "tenant_id", tenant, "family", family, "canceled_emails", tag.RowsAffected())
+		}
+	}
+	return nil
 }

@@ -3077,8 +3077,69 @@ func TestExpiryNoticeRepeatsWhenRenewalWasNotObservedByMaintenance(t *testing.T)
  FROM jobs WHERE tenant_id=$1 AND kind='email' AND dedup_key LIKE 'notice:%:period_expired:%'`, f.tenant).Scan(&total, &pending, &active); e != nil {
 		t.Fatal(e)
 	}
-	if total != 2 || pending != 2 || active != 1 {
-		t.Fatal("second expiry did not notify again", total, pending, active)
+	if total != 2 || pending != 1 || active != 1 {
+		t.Fatal("second expiry did not replace the first notice", total, pending, active)
+	}
+}
+
+func TestRenewalCancelsUndeliveredExpiryNotice(t *testing.T) {
+	f := newSubscriptionOrderFixture(t)
+	ctx := context.Background()
+	f.pay(t)
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE users SET email='owner@example.test' WHERE id=$1", f.userID); e != nil {
+		t.Fatal(e)
+	}
+	sent := 0
+	mock := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		sent++
+		rw.Header().Set("Content-Type", "application/json")
+		io.WriteString(rw, `{"success":true,"result":{"queued":[{"email":"owner@example.test"}]}}`)
+	}))
+	defer mock.Close()
+	cfg := f.cfg
+	cfg.EmailURL = mock.URL
+	cfg.EmailAccount = "fixture"
+	cfg.EmailSender = "sender@example.test"
+	cfg.EmailToken = "fixture"
+	w := &worker.Worker{DB: f.db, Config: cfg, Provider: provider.New(cfg), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	// The paid period ended on the real clock, so maintenance queues the notice.
+	end := time.Now().UTC().Truncate(time.Microsecond).Add(-2 * time.Hour)
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE tenants SET period_start=$2,period_end=$3 WHERE id=$1", f.tenant, end.AddDate(0, -1, 0), end); e != nil {
+		t.Fatal(e)
+	}
+	if e := w.Maintain(ctx, time.Now().UTC()); e != nil {
+		t.Fatal(e)
+	}
+	jobState := func() (string, string) {
+		t.Helper()
+		var state, category string
+		if e := f.db.Pool.QueryRow(ctx, "SELECT state,error_category FROM jobs WHERE tenant_id=$1 AND kind='email' AND dedup_key LIKE 'notice:%:period_expired:%'", f.tenant).Scan(&state, &category); e != nil {
+			t.Fatal(e)
+		}
+		return state, category
+	}
+	if state, _ := jobState(); state != "pending" {
+		t.Fatal("expiry notice was not queued", state)
+	}
+	// The renewal is confirmed before the queued email is sent.
+	if e := w.ApplyTransaction(ctx, expiryRenewal(f, end), time.Now().UTC()); e != nil {
+		t.Fatal(e)
+	}
+	if e := w.Step(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if state, category := jobState(); state != "done" || category != "notice_superseded" || sent != 0 {
+		t.Fatal("stale expiry email stayed deliverable", state, category, sent)
+	}
+	// A notice for a condition that still holds is delivered.
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE tenants SET operator_block=true WHERE id=$1", f.tenant); e != nil {
+		t.Fatal(e)
+	}
+	if e := w.Step(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if sent != 1 {
+		t.Fatal("active notice was not delivered", sent)
 	}
 }
 
