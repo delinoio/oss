@@ -404,6 +404,13 @@ export function useClaudeUsageTracking(options: ClaudeUsageTrackingOptions): {
       setBrowserFailed(false);
       return;
     }
+    // A hidden Manage task owns no browser: the binding is disposed and the
+    // login never opens one automatically until the explicit open action.
+    if (!active) {
+      disposeBinding();
+      if (operation) opened.current = operation.id;
+      return;
+    }
     // Only the client that started this login opens the browser by itself; a
     // reopened dialog offers the explicit Open browser again action.
     if (
@@ -416,7 +423,7 @@ export function useClaudeUsageTracking(options: ClaudeUsageTrackingOptions): {
       opened.current = operation.id;
       openBrowser();
     }
-  }, [waiting, authorizationURL, operation?.id, native, startedHere]);
+  }, [waiting, active, authorizationURL, operation?.id, native, startedHere]);
   useEffect(
     () => () => {
       disposeBinding();

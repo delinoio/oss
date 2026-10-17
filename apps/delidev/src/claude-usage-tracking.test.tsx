@@ -229,10 +229,15 @@ function mount(options: Options = {}) {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const close = vi.fn();
+  let isActive = true;
   const body = () => (
-    <ManagedSubscriptionAccount initial={current} active close={close} />
+    <ManagedSubscriptionAccount
+      initial={current}
+      active={isActive}
+      close={close}
+    />
   );
-  const tree = (
+  const tree = () => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <OAuthNativeProvider control={native}>
@@ -257,9 +262,15 @@ function mount(options: Options = {}) {
       </QueryClientProvider>
     </TransportProvider>
   );
-  const view = render(tree);
+  const view = render(tree());
   return {
     ...view,
+    client,
+    /** Hides or shows the Manage task the way an overlay does. */
+    setActive: (next: boolean) => {
+      isActive = next;
+      view.rerender(tree());
+    },
     set,
     close,
     status,
@@ -606,6 +617,32 @@ it("hides without cancelling on Escape, disposes the browser binding and keeps t
   expect(value.cancel).not.toHaveBeenCalled();
   expect(value.disconnect).not.toHaveBeenCalled();
   expect(value.native.mock.calls.at(-1)?.[1]).toBe(OAuthNativeAction.Dispose);
+});
+
+it("disposes the browser binding and never opens one automatically while Manage is hidden", async () => {
+  const value = mount({
+    usage: {
+      connection: "connecting",
+      generation,
+      operation: operation("waiting"),
+    },
+    progress: waitingProgress(),
+  });
+  const section = await state(ClaudeUsageView.Waiting);
+  const open = within(section).getByRole("button", {
+    name: "Open browser again",
+  });
+  await waitFor(() => expect((open as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(open);
+  await waitFor(() => expect(value.native).toHaveBeenCalledTimes(1));
+  value.setActive(false);
+  await waitFor(() =>
+    expect(value.native.mock.calls.at(-1)?.[1]).toBe(OAuthNativeAction.Dispose),
+  );
+  const calls = value.native.mock.calls.length;
+  value.setActive(true);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(value.native).toHaveBeenCalledTimes(calls);
 });
 
 it("shows the reviewed identity, goes back by discarding, and links only the reviewed commitment", async () => {
