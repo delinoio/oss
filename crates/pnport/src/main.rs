@@ -307,6 +307,14 @@ fn execute(cli: &Cli) -> Result<i32> {
 }
 
 fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<PathBuf> {
+    // Windows keeps short names and caller casing in GetCurrentDirectory,
+    // while the graph is rooted at the canonical manifest directory. Resolve
+    // the existing cwd through the same guarded native lookup as file reads so
+    // direct dependency bins retain their package owner under those aliases.
+    #[cfg(windows)]
+    let native_cwd = pnport_core::windows::lookup_spelling(cwd, &view.graph)?;
+    #[cfg(windows)]
+    let cwd = native_cwd.as_path();
     let path = Path::new(command);
     if path.components().count() > 1 || path.is_absolute() {
         return Ok(cwd.join(path));

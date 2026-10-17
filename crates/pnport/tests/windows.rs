@@ -852,6 +852,11 @@ fn completion_port_directory_queries(root: &Path) {
     // `FileReplaceCompletionInformation` changes or removes the association
     // without `FileCompletionInformation`, and the recorded state must follow.
     let directory = open(root, true);
+    // Replacement changes an existing native association. Installing it on
+    // an unassociated object returns STATUS_INVALID_PARAMETER on Windows 2022.
+    // Keep both replacement and removal assertions after a real association.
+    let original_port = associate(directory);
+    assert!(!original_port.is_null(), "create original port");
     let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, std::ptr::null_mut(), 1, 0) };
     assert!(!port.is_null(), "create replacement port");
     // `FileReplaceCompletionInformation` is available on every supported
@@ -892,6 +897,7 @@ fn completion_port_directory_queries(root: &Path) {
     unsafe {
         CloseHandle(directory);
         CloseHandle(port);
+        CloseHandle(original_port);
     }
 
     // A read-only managed directory (a dependency container with merged
@@ -906,6 +912,11 @@ fn completion_port_directory_queries(root: &Path) {
         let status = query(container, api, None);
         assert!(status >= 0, "{api:?} read-only unassociated {status:#x}");
     }
+    let original_container_port = associate(container);
+    assert!(
+        !original_container_port.is_null(),
+        "associate read-only container"
+    );
     let installed = replace_completion_port(container, container_port);
     assert!(
         installed >= 0,
@@ -928,6 +939,7 @@ fn completion_port_directory_queries(root: &Path) {
     unsafe {
         CloseHandle(container);
         CloseHandle(container_port);
+        CloseHandle(original_container_port);
     }
 
     // A native-backed directory (no merged entries) keeps the native syscall.
@@ -964,32 +976,37 @@ fn zip_library_mapping_cache_and_direct_dependency_binary() {
                 String::from_utf8_lossy(&output.stdout)
             );
         }
-        let output = Command::new(binary())
-            .arg("--project")
-            .arg(&root)
-            .arg("--cache-dir")
-            .arg(&cache)
-            .args([
-                "--log-level=debug",
-                "--color=never",
-                "run",
-                "--",
-                "native-fixture",
-                "--exact",
-                "native_child",
-                "--nocapture",
-            ])
-            .env(MODE, "read")
-            .env(PROJECT, &root)
-            .current_dir(&root)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "ZIP executable failed: {} {}",
-            String::from_utf8_lossy(&output.stderr),
-            String::from_utf8_lossy(&output.stdout)
-        );
+        // Exercise the runner's TEMP alias and a deliberately different case.
+        // The manifest is canonicalized independently of the caller's cwd.
+        for cwd in [root.clone(), root.with_file_name("PROJECT 한글 SPACE")] {
+            let output = Command::new(binary())
+                .arg("--project")
+                .arg(&root)
+                .arg("--cache-dir")
+                .arg(&cache)
+                .args([
+                    "--log-level=debug",
+                    "--color=never",
+                    "run",
+                    "--",
+                    "native-fixture",
+                    "--exact",
+                    "native_child",
+                    "--nocapture",
+                ])
+                .env(MODE, "read")
+                .env(PROJECT, &root)
+                .current_dir(&cwd)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "ZIP executable failed from {}: {} {}",
+                cwd.display(),
+                String::from_utf8_lossy(&output.stderr),
+                String::from_utf8_lossy(&output.stdout)
+            );
+        }
     }
 }
 
@@ -1149,7 +1166,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = process.argv[1];
-const stage = value => process.stderr.write(JSON.stringify({event: 'pnport_node_fixture', pid: process.pid, arch: process.arch, stage: value}) + '\n');
+const stage = value => fs.writeSync(2, JSON.stringify({event: 'pnport_node_fixture', pid: process.pid, arch: process.arch, stage: value}) + '\n');
 stage('read');
 const dependency = path.join(root, 'node_modules/example/data.txt');
 assert.equal(fs.readFileSync(dependency, 'utf8'), 'dependency');

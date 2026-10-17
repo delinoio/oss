@@ -346,7 +346,18 @@ unsafe fn mapped(
     let mut attributes = ptr::read(attributes);
     attributes.RootDirectory = ptr::null_mut();
     attributes.ObjectName = &mut name;
-    call(&mut attributes, Some(translation))
+    tracing::debug!(
+        action = "windows_mapped_call",
+        write,
+        "Calling a translated native file operation"
+    );
+    let status = call(&mut attributes, Some(translation));
+    tracing::debug!(
+        action = "windows_mapped_result",
+        status,
+        "Completed a translated native file operation"
+    );
+    status
 }
 
 fn writable(file: HANDLE) -> bool {

@@ -63,6 +63,12 @@ Exact native control endpoints used by the DLL loader, console, Node crypto
 provider and Winsock retain their operating-system semantics. This does not
 admit raw disk-device paths past package classification.
 
+Initial direct-dependency command lookup resolves the existing Windows caller
+cwd through the guarded native spelling lookup before selecting its PnP owner.
+Short directory names and caller casing must identify the same package as the
+canonical manifest path. This preserves declared-bin precedence, ambiguity and
+package-escape rejection; it does not broaden the dependency search.
+
 Native process creation resolves a partial `lpApplicationName` against the
 caller's current drive and directory, never against the requested child
 `lpCurrentDirectory`. The Windows adapter keeps that rule for `CreateProcessW`
