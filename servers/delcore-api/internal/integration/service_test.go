@@ -1479,3 +1479,34 @@ func TestCancellationSuspendsAutomaticTopups(t *testing.T) {
 		t.Fatal("automatic charge survived cancellation", suspended, pending, total, e)
 	}
 }
+
+func TestAuditRetentionIncludesActiveTenants(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	now := time.Now().UTC()
+	cfg.AuditRetentionSeconds = 60
+	for _, old := range []bool{false, true} {
+		for _, scoped := range []bool{false, true} {
+			var target any
+			if scoped {
+				target = tenant
+			}
+			at := now
+			if old {
+				at = now.Add(-2 * time.Minute)
+			}
+			if _, e := db.Pool.Exec(ctx, "INSERT INTO audit(id,tenant_id,actor_id,action,reason,correlation_id,created_at) VALUES($1,$2,'retention-fixture','test','test',$1,$3)", key(), target, at); e != nil {
+				t.Fatal(e)
+			}
+		}
+	}
+	w := &worker.Worker{DB: db, Config: cfg}
+	if e := w.Maintain(ctx, now); e != nil {
+		t.Fatal(e)
+	}
+	var total, old int
+	if e := db.Pool.QueryRow(ctx, "SELECT count(*),count(*) FILTER(WHERE created_at<$1) FROM audit WHERE actor_id='retention-fixture'", now.Add(-time.Minute)).Scan(&total, &old); e != nil || total != 2 || old != 0 {
+		t.Fatal("audit cutoff not applied", total, old, e)
+	}
+}

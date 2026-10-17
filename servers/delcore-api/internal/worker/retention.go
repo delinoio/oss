@@ -8,6 +8,11 @@ import (
 )
 
 func (w *Worker) retain(ctx context.Context, tx pgx.Tx, now time.Time) error {
+	if w.Config.AuditRetentionSeconds > 0 {
+		if _, e := tx.Exec(ctx, "DELETE FROM audit WHERE created_at<$1", now.Add(-time.Duration(w.Config.AuditRetentionSeconds)*time.Second)); e != nil {
+			return e
+		}
+	}
 	// Normalized quantities and price attribution are accounting evidence; keep
 	// them past raw-usage retention while their accounting retention is required.
 	cutoff := now.Add(-time.Duration(max(w.Config.RawUsageRetentionSeconds, w.Config.AccountingRetentionSeconds)) * time.Second)
@@ -35,10 +40,6 @@ func (w *Worker) retain(ctx context.Context, tx pgx.Tx, now time.Time) error {
 	if _, e := tx.Exec(ctx, "SELECT set_config('delcore.retention','off',true)"); e != nil {
 		return e
 	}
-	if w.Config.AuditRetentionSeconds > 0 {
-		if _, e := tx.Exec(ctx, "DELETE FROM audit WHERE created_at<$1 AND (tenant_id IS NULL OR tenant_id IN (SELECT id FROM tenants WHERE deleted_at IS NOT NULL))", now.Add(-time.Duration(w.Config.AuditRetentionSeconds)*time.Second)); e != nil {
-			return e
-		}
-	}
+
 	return nil
 }
