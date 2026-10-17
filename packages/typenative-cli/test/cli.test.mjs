@@ -332,3 +332,17 @@ test(
     assert.equal(records.at(-1).code, Code.Artifact);
   },
 );
+
+test("doctor rejects an explicitly empty ScriptC executable", () => {
+  for (const args of [["--scriptc="], ["--scriptc", ""]]) {
+    const result = invoke([
+      "doctor",
+      "--target",
+      "linux-x64",
+      ...args,
+      "--json",
+    ]);
+    assert.equal(result.status, 1);
+    assert.equal(JSON.parse(result.stdout).code, Code.Arguments);
+  }
+});

@@ -111,6 +111,11 @@ try {
         Code.Host,
         "Select one of the documented targets with --target.",
       );
+    if (values.scriptc === "")
+      throw new DiagnosticError(
+        Code.Arguments,
+        "ScriptC executable must not be empty.",
+      );
     const compiler = resolveExecutable(values.scriptc ?? "scriptc");
     const checks = inspectTools(target, compiler);
     const ok = checks.every((check) => check.ok);
