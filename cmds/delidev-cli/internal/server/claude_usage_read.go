@@ -318,7 +318,9 @@ func (s *Service) performClaudeUsageRead(read *claudeUsageRead, logger *slog.Log
 			outcome = s.backedOff(failedRead(result.Kind.failure(), nil), result.RetryAfter)
 		case claudeFetchUnavailable:
 			outcome = failedRead(domain.ClaudeUsageFailureUnavailable, nil)
-			if result.RetryAfter != "" {
+			// Only a usable provider deadline pauses reads; a malformed header on an
+			// unavailable answer must not turn into the default throttling pause.
+			if _, usable := domain.ParseClaudeUsageRetryAfter(result.RetryAfter, s.claudeUsageNow()); usable {
 				outcome = s.backedOff(outcome, result.RetryAfter)
 			}
 		default:

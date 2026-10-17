@@ -466,6 +466,48 @@ func TestClaudeUsageThrottlingHonorsRetryAfterAndCannotBeBypassed(t *testing.T) 
 	}
 }
 
+// An unavailable answer pauses reads only when it carries a usable provider
+// deadline: a malformed Retry-After must not become the default throttling pause.
+func TestClaudeUsageUnavailablePausesOnlyOnAUsableRetryAfter(t *testing.T) {
+	cases := []struct {
+		name   string
+		header string
+		pause  time.Duration
+	}{
+		{"seconds", "120", 2 * time.Minute},
+		{"malformed", "soon", 0},
+		{"absent", "", 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newReadFixture(t, func(n *fakeUsageNative) { n.expiresIn = 1000 * time.Hour })
+			if err := f.refreshAndWait(); err != nil {
+				t.Fatal(err)
+			}
+			f.clock.Advance(5 * time.Minute)
+			f.provider.handler = func(int, *http.Request) (*http.Response, error) {
+				if c.header == "" {
+					return usageResponse(503, "busy"), nil
+				}
+				return usageResponse(503, "busy", "Retry-After", c.header), nil
+			}
+			if err := f.refreshAndWait(); err != nil {
+				t.Fatal(err)
+			}
+			section := f.section()
+			if section.Failure != domain.ClaudeUsageFailureUnavailable {
+				t.Fatalf("failure = %q", section.Failure)
+			}
+			if c.pause == 0 && section.BackoffUntil != nil {
+				t.Fatalf("a malformed or missing Retry-After suppressed reads until %v", section.BackoffUntil)
+			}
+			if c.pause != 0 && (section.BackoffUntil == nil || section.BackoffUntil.Sub(f.clock.Now().Add(c.pause)).Abs() > time.Second) {
+				t.Fatalf("a usable Retry-After was not honored: %v", section.BackoffUntil)
+			}
+		})
+	}
+}
+
 func TestClaudeUsageScheduledReadsAreDueExactlyAtFourMinutes(t *testing.T) {
 	f := newReadFixture(t, nil)
 	// Maintenance reads a never-read connection at once, then waits four minutes.

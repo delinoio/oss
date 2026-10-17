@@ -44,27 +44,38 @@ const (
 // unusable value selects ClaudeUsageDefaultBackoff, and every honored value is
 // clamped to [ClaudeUsageMinBackoff, ClaudeUsageMaxBackoff].
 func ClaudeUsageBackoffDelay(retryAfter string, now time.Time) time.Duration {
+	if delay, ok := ParseClaudeUsageRetryAfter(retryAfter, now); ok {
+		return delay
+	}
+	return ClaudeUsageDefaultBackoff
+}
+
+// ParseClaudeUsageRetryAfter reports the bounded delay a Retry-After header
+// value requests. It is false for a missing, oversized or malformed value, so a
+// caller that pauses reads only on a usable provider deadline (an unavailable
+// answer) can tell it from the default that throttling answers fall back to.
+func ParseClaudeUsageRetryAfter(retryAfter string, now time.Time) (time.Duration, bool) {
 	value := strings.TrimSpace(retryAfter)
 	if value == "" || len(value) > 64 {
-		return ClaudeUsageDefaultBackoff
+		return 0, false
 	}
 	var delay time.Duration
 	if seconds, err := strconv.ParseUint(value, 10, 63); err == nil {
 		// Compare in seconds first so a huge value never overflows a Duration.
 		if seconds >= uint64(ClaudeUsageMaxBackoff/time.Second) {
-			return ClaudeUsageMaxBackoff
+			return ClaudeUsageMaxBackoff, true
 		}
 		delay = time.Duration(seconds) * time.Second
 	} else if allDigits(value) {
-		return ClaudeUsageMaxBackoff
+		return ClaudeUsageMaxBackoff, true
 	} else {
 		at, ok := parseClaudeUsageHTTPDate(value)
 		if !ok {
-			return ClaudeUsageDefaultBackoff
+			return 0, false
 		}
 		delay = at.Sub(now)
 	}
-	return min(max(delay, ClaudeUsageMinBackoff), ClaudeUsageMaxBackoff)
+	return min(max(delay, ClaudeUsageMinBackoff), ClaudeUsageMaxBackoff), true
 }
 
 func allDigits(value string) bool {

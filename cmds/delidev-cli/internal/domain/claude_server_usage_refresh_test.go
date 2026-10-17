@@ -2,6 +2,8 @@
 package domain
 
 import (
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -269,5 +271,27 @@ func TestClaudeUsageFenceInterruptedReadNeverRepeatsARenewal(t *testing.T) {
 	validateLifecycle(t, "fenced renewal", usage)
 	if usage.FenceInterruptedRead() {
 		t.Fatal("a fenced section changed again")
+	}
+}
+
+func TestParseClaudeUsageRetryAfterSeparatesUsableFromMalformedValues(t *testing.T) {
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	for _, value := range []string{"", "soon", "-5", "1.5", strings.Repeat("9x", 40)} {
+		if delay, ok := ParseClaudeUsageRetryAfter(value, now); ok || delay != 0 {
+			t.Fatalf("%q was treated as usable: %v", value, delay)
+		}
+		if got := ClaudeUsageBackoffDelay(value, now); got != ClaudeUsageDefaultBackoff {
+			t.Fatalf("%q did not select the default backoff: %v", value, got)
+		}
+	}
+	if delay, ok := ParseClaudeUsageRetryAfter("120", now); !ok || delay != 2*time.Minute {
+		t.Fatalf("seconds: %v %v", delay, ok)
+	}
+	if delay, ok := ParseClaudeUsageRetryAfter("999999999999", now); !ok || delay != ClaudeUsageMaxBackoff {
+		t.Fatalf("huge seconds: %v %v", delay, ok)
+	}
+	date := now.Add(10 * time.Minute).Format(http.TimeFormat)
+	if delay, ok := ParseClaudeUsageRetryAfter(date, now); !ok || delay != 10*time.Minute {
+		t.Fatalf("date: %v %v", delay, ok)
 	}
 }
