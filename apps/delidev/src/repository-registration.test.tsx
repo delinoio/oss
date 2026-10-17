@@ -53,6 +53,7 @@ import {
 } from "./repository-registration";
 import { i18n, SupportedLanguage, copy } from "./localization";
 import { dispatchAnimation } from "./entrance-test-support";
+import { pressEnter } from "./test-form-enter";
 
 const metadata = {
   root: "/canonical/oss",
@@ -2632,4 +2633,355 @@ it("does not replay the Add repository entrance for clone job progress", async (
   } finally {
     delete document.documentElement.dataset.animation;
   }
+});
+
+// Enter submission: the Add repository dialog is one semantic form whose
+// primary control is portaled into the task footer. Enter, pointer activation
+// and form submission all reach one guarded owner callback.
+const repositoryDialog = () =>
+  screen.getByRole("dialog", { name: "Add repository" });
+const repositoryForm = () =>
+  repositoryDialog().querySelector<HTMLFormElement>("form")!;
+const primaryAction = (name: string) =>
+  within(repositoryDialog()).getByRole("button", {
+    name,
+  }) as HTMLButtonElement;
+const savedDocument = (f: ReturnType<typeof fixture>, call = 0) =>
+  JSON.parse(new TextDecoder().decode(f.save.mock.calls[call][0].documentJson));
+// Machine identities are random per fixture; compare everything else exactly.
+const scrub = (value: unknown, machineId: string): unknown =>
+  JSON.parse(
+    JSON.stringify(value, (_key, item) =>
+      typeof item === "bigint" ? String(item) : item,
+    ).replaceAll(machineId, "MACHINE"),
+  );
+async function fillRemoteRepository(f: ReturnType<typeof fixture>) {
+  await f.add(false);
+  fireEvent.change(screen.getByRole("textbox", { name: "Repository name" }), {
+    target: { value: "oss" },
+  });
+  await waitFor(() =>
+    expect(primaryAction("Add repository").disabled).toBe(false),
+  );
+}
+
+it("owns Add repository as a semantic form with a portaled primary submit control", async () => {
+  const f = fixture(metadata, true);
+  f.mount();
+  await fillRemoteRepository(f);
+  const dialog = repositoryDialog();
+  const form = repositoryForm();
+  expect(form.id).not.toBe("");
+  expect(dialog.querySelectorAll("form")).toHaveLength(1);
+  expect(form.querySelector("form")).toBeNull();
+  expect(form.noValidate).toBe(true);
+  const primary = primaryAction("Add repository");
+  // The footer is a sibling of the scrolling body, so ownership comes from the
+  // `form` attribute rather than DOM nesting.
+  expect(form.contains(primary)).toBe(false);
+  expect(primary.getAttribute("form")).toBe(form.id);
+  expect(primary.form).toBe(form);
+  expect(primary.type).toBe("submit");
+  // Every other button the form owns, inline or portaled, stays a plain button.
+  fireEvent.click(
+    within(dialog).getByRole("button", {
+      name: "Connect a Local folder (optional)",
+    }),
+  );
+  fireEvent.click(
+    within(dialog).getByRole("button", {
+      name: "Clone to this computer (optional)",
+    }),
+  );
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Enter a path…" }),
+  );
+  const owned = [...document.querySelectorAll("button")].filter(
+    (button) => button.form === form,
+  );
+  expect(owned.length).toBeGreaterThan(3);
+  const submitters = owned.filter((button) => button.type === "submit");
+  expect(submitters).toEqual([primaryAction("Clone & add repository")]);
+  for (const button of owned.filter((button) => !submitters.includes(button)))
+    expect(button.type, button.textContent ?? "").toBe("button");
+  const cancel = within(dialog).getByRole("button", { name: "Cancel" });
+  expect(cancel.getAttribute("type")).toBe("button");
+  expect(cancel.getAttribute("form")).toBe(form.id);
+});
+
+it.each(["Git URL", "Repository name"])(
+  "submits Add repository once with Enter from %s using the pointer payload",
+  async (field) => {
+    const clicked = fixture();
+    clicked.mount();
+    await fillRemoteRepository(clicked);
+    fireEvent.click(primaryAction("Add repository"));
+    await waitFor(() => expect(clicked.save).toHaveBeenCalledTimes(1));
+    const expected = savedDocument(clicked);
+    const expectedRequest = clicked.save.mock.calls[0][0] as {
+      mutation?: { requestId: string; expectedRevision: bigint };
+    };
+    expect(expectedRequest.mutation?.expectedRevision).toBe(0n);
+    cleanup();
+
+    const f = fixture();
+    f.mount();
+    await fillRemoteRepository(f);
+    const input = screen.getByRole("textbox", { name: field });
+    expect(pressEnter(input)).toBe(1);
+    await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+    const request = f.save.mock.calls[0][0] as typeof expectedRequest;
+    expect(savedDocument(f)).toEqual(expected);
+    expect(request.mutation?.expectedRevision).toBe(0n);
+    // Every submission allocates its own request identity.
+    expect(request.mutation?.requestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(request.mutation?.requestId).not.toBe(
+      expectedRequest.mutation?.requestId,
+    );
+    for (const operation of [f.choose, f.proof, f.inspected, f.clone])
+      expect(operation).not.toHaveBeenCalled();
+  },
+);
+
+it("submits the connected-folder registration with Enter without changing its guards", async () => {
+  const clicked = fixture();
+  clicked.mount();
+  await clicked.chooseAndReview();
+  fireEvent.click(primaryAction("Add repository"));
+  await waitFor(() => expect(clicked.save).toHaveBeenCalledTimes(1));
+  const expected = scrub(savedDocument(clicked), clicked.machine.id);
+  cleanup();
+
+  const f = fixture();
+  f.mount();
+  await f.add();
+  // The inspected folder is required for confirmation, so Enter before the
+  // canonical checkout exists must not register the bare URL as a draft.
+  fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  await screen.findByRole("region", { name: "Repository detected" });
+  await waitFor(() =>
+    expect(primaryAction("Add repository").disabled).toBe(false),
+  );
+  expect(pressEnter(screen.getByRole("textbox", { name: "Git URL" }))).toBe(1);
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  expect(scrub(savedDocument(f), f.machine.id)).toEqual(expected);
+  expect(savedDocument(f).checkouts).toEqual([
+    { machine_id: f.machine.id, path: "/canonical/oss" },
+  ]);
+});
+
+it("does not submit an incomplete or unconfirmed Add repository draft with Enter", async () => {
+  const f = fixture();
+  f.mount();
+  await f.add();
+  const url = screen.getByRole("textbox", { name: "Git URL" });
+  // The Local folder disclosure requires an inspected checkout before saving.
+  await waitFor(() =>
+    expect(primaryAction("Add repository").disabled).toBe(true),
+  );
+  expect(pressEnter(url)).toBe(0);
+  expect(
+    pressEnter(screen.getByRole("textbox", { name: "Repository name" })),
+  ).toBe(0);
+  // A script-owned submit follows the same owner guard as the disabled control.
+  fireEvent.submit(repositoryForm());
+  fireEvent.change(url, { target: { value: "not a repository" } });
+  expect(pressEnter(url)).toBe(0);
+  fireEvent.submit(repositoryForm());
+  expect(f.save).not.toHaveBeenCalled();
+  for (const operation of [f.choose, f.proof, f.inspected, f.clone])
+    expect(operation).not.toHaveBeenCalled();
+});
+
+it("keeps composition, held, modified and handled Enter presses from submitting", async () => {
+  const f = fixture();
+  f.mount();
+  await fillRemoteRepository(f);
+  const name = screen.getByRole("textbox", { name: "Repository name" });
+  expect(pressEnter(name, { composing: true })).toBe(0);
+  expect(pressEnter(name, { keyCode: 229 })).toBe(0);
+  expect(pressEnter(name, { repeat: true })).toBe(0);
+  for (const modifier of ["shiftKey", "ctrlKey", "altKey", "metaKey"] as const)
+    expect(pressEnter(name, { [modifier]: true }), modifier).toBe(0);
+  // Another control consumed the press before the form saw it.
+  name.addEventListener("keydown", (event) => event.preventDefault(), {
+    once: true,
+  });
+  expect(pressEnter(name)).toBe(0);
+  expect(f.save).not.toHaveBeenCalled();
+  expect(pressEnter(name)).toBe(1);
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+});
+
+it("admits only one Add repository save while Enter is repeated during the request", async () => {
+  const f = fixture();
+  const gate = deferred<{ job: Resource }>();
+  f.save.mockImplementationOnce(async () => gate.promise);
+  f.mount();
+  await fillRemoteRepository(f);
+  const name = screen.getByRole("textbox", { name: "Repository name" });
+  expect(pressEnter(name)).toBe(1);
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(primaryAction("Add repository").disabled).toBe(true),
+  );
+  expect(pressEnter(name)).toBe(0);
+  expect(pressEnter(name, { repeat: true })).toBe(0);
+  fireEvent.submit(repositoryForm());
+  fireEvent.click(primaryAction("Add repository"));
+  expect(f.save).toHaveBeenCalledTimes(1);
+  const job = row(EntityKind.JOB, {
+    state: "succeeded",
+    output: { id: newRequestId(), revision: 1 },
+  });
+  f.resources.set(job.id, job);
+  await act(async () => gate.resolve({ job }));
+  expect(f.save).toHaveBeenCalledTimes(1);
+});
+
+it("retains the exact Add repository request through an uncertain response without Enter replay", async () => {
+  const f = fixture();
+  f.save.mockRejectedValueOnce(new ConnectError("lost", Code.Unavailable));
+  f.mount();
+  await fillRemoteRepository(f);
+  const name = screen.getByRole("textbox", { name: "Repository name" });
+  expect(pressEnter(name)).toBe(1);
+  const retry = await screen.findByRole("button", {
+    name: "Retry the same repository save",
+  });
+  expect(f.save).toHaveBeenCalledTimes(1);
+  // An uncertain operation can only be repeated through its exact retry.
+  expect(primaryAction("Add repository").disabled).toBe(true);
+  expect(pressEnter(screen.getByRole("textbox", { name: "Git URL" }))).toBe(0);
+  expect(pressEnter(name)).toBe(0);
+  fireEvent.submit(repositoryForm());
+  expect(f.save).toHaveBeenCalledTimes(1);
+  expect(retry.getAttribute("type")).toBe("button");
+  fireEvent.click(retry);
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(2));
+  expect(f.save.mock.calls[1][0]).toEqual(f.save.mock.calls[0][0]);
+});
+
+it.each(["Git URL", "Clone to"])(
+  "starts the Clone branch once with Enter from %s using the pointer payload",
+  async (field) => {
+    const clicked = fixture(metadata, true);
+    clicked.mount();
+    await clicked.add();
+    cloneInputs();
+    const button = primaryAction("Clone & add repository");
+    await waitFor(() => expect(button.disabled).toBe(false));
+    fireEvent.click(button);
+    await waitFor(() => expect(clicked.clone).toHaveBeenCalledTimes(1));
+    const expected = scrub(
+      { ...clicked.clone.mock.calls[0][0], requestId: "" },
+      clicked.machine.id,
+    );
+    const expectedRequestId = clicked.clone.mock.calls[0][0].requestId;
+    cleanup();
+
+    const f = fixture(metadata, true);
+    f.mount();
+    await f.add();
+    cloneInputs();
+    await waitFor(() =>
+      expect(primaryAction("Clone & add repository").disabled).toBe(false),
+    );
+    expect(primaryAction("Clone & add repository").type).toBe("submit");
+    expect(pressEnter(screen.getByRole("textbox", { name: field }))).toBe(1);
+    await waitFor(() => expect(f.clone).toHaveBeenCalledTimes(1));
+    const request = f.clone.mock.calls[0][0];
+    expect(scrub({ ...request, requestId: "" }, f.machine.id)).toEqual(
+      expected,
+    );
+    expect(request.requestId).not.toBe(expectedRequestId);
+    expect(f.proof).toHaveBeenCalledTimes(1);
+    expect(f.save).not.toHaveBeenCalled();
+    expect(f.inspected).not.toHaveBeenCalled();
+  },
+);
+
+it("blocks Clone Enter until the destination is valid and never replays an uncertain clone", async () => {
+  const f = fixture(metadata, true);
+  f.clone.mockRejectedValueOnce(
+    new ConnectError("Response lost", Code.Unavailable),
+  );
+  f.mount();
+  await f.add();
+  const toggle = screen.getByRole("button", {
+    name: "Clone to this computer (optional)",
+  });
+  fireEvent.click(toggle);
+  const url = screen.getByRole("textbox", { name: "Git URL" });
+  // Without a parent folder the primary control is disabled and Enter is inert.
+  expect(primaryAction("Clone & add repository").disabled).toBe(true);
+  expect(pressEnter(url)).toBe(0);
+  expect(f.proof).not.toHaveBeenCalled();
+  cloneInputs();
+  await waitFor(() =>
+    expect(primaryAction("Clone & add repository").disabled).toBe(false),
+  );
+  expect(pressEnter(url, { composing: true })).toBe(0);
+  expect(f.clone).not.toHaveBeenCalled();
+  expect(pressEnter(url)).toBe(1);
+  const retry = await screen.findByRole("button", {
+    name: "Retry the same clone request",
+  });
+  expect(pressEnter(url)).toBe(0);
+  fireEvent.submit(repositoryForm());
+  expect(f.clone).toHaveBeenCalledTimes(1);
+  fireEvent.click(retry);
+  await waitFor(() => expect(f.clone).toHaveBeenCalledTimes(2));
+  expect(f.clone.mock.calls[1][0]).toEqual(f.clone.mock.calls[0][0]);
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("keeps Enter in the nested GitHub chooser from submitting the Add repository form", async () => {
+  const f = fixture(metadata, true);
+  const profile = connectedProfile(f);
+  f.mount();
+  await fillRemoteRepository(f);
+  const parent = repositoryDialog();
+  const opener = await screen.findByRole("button", {
+    name: "Choose from GitHub",
+  });
+  expect(opener.getAttribute("type")).toBe("button");
+  fireEvent.click(opener);
+  const child = screen.getByRole("dialog", {
+    name: "Choose a GitHub repository",
+  });
+  expect(repositoryForm().contains(child)).toBe(false);
+  fireEvent.click(
+    within(child).getByRole("combobox", { name: "GitHub profile" }),
+  );
+  fireEvent.click(screen.getByRole("option", { name: resourceName(profile) }));
+  await screen.findByRole("button", {
+    name: "delinoio/oss Private · Archived",
+  });
+  const filter = within(child).getByRole("textbox", {
+    name: "Filter this page",
+  });
+  expect((filter as HTMLInputElement).form).toBeNull();
+  // The chooser owns its Enter: it neither saves nor reaches the parent form.
+  expect(pressEnter(filter)).toBe(0);
+  expect(pressEnter(filter, { repeat: true })).toBe(0);
+  expect(f.save).not.toHaveBeenCalled();
+  expect(f.clone).not.toHaveBeenCalled();
+  expect(child.isConnected).toBe(true);
+  fireEvent(child, new Event("cancel", { bubbles: true, cancelable: true }));
+  expect(
+    screen.queryByRole("dialog", { name: "Choose a GitHub repository" }),
+  ).toBeNull();
+  expect(screen.getByRole("dialog", { name: "Add repository" })).toBe(parent);
+  expect(document.activeElement).toBe(opener);
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Repository name",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("oss");
+  // After dismissal the parent form owns Enter again.
+  expect(pressEnter(screen.getByRole("textbox", { name: "Git URL" }))).toBe(1);
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
 });

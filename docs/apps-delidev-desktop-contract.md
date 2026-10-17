@@ -892,6 +892,91 @@ Validate the complete 50-record child page before rendering content, including e
 
 Every `input`, `textarea` and `select`, including checkboxes, radios and file pickers, retains its ordinary appearance when focused by a pointer, Tab or programmatic autofocus. Do not add a focus ring, glow, shadow or focus-induced border-color change. Suppress browser focus outlines in shared CSS and exclude these elements from category-specific focus rules. Preserve ordinary borders and static checkbox outlines, selected states, insertion carets, labels, validation states, keyboard operation, focus order and existing focus handoffs. Buttons, navigation, disclosures and other focusable content retain their existing visible focus indicators. Apply this treatment in Light, Dark and System appearance throughout the desktop frontend; category-specific focus requirements apply only to other focusable elements.
 
+### Desktop form submission and Enter
+
+Plain Enter in an eligible single-line input activates the current primary action
+of the form that owns that input, once. This is a desktop-only contract; mobile
+form behavior, visible text, layout and localization are unchanged. No RPC, schema,
+capability, persistence or feature flag is involved, and no input value is logged.
+
+#### Owner contract
+
+- A form owner renders one semantic `<form>` with a stable id (`useId()`), sets
+  `noValidate` so its own callback remains the validation authority, and renders
+  exactly one `type="submit"` primary control. Every other control the form owns
+  (Cancel, Retry, disclosures, pickers, Browse, remediation) is `type="button"`.
+- Task footers are portaled outside the scrolling body, so
+  `SettingsTaskActions form={id}` associates the footer controls with the form through
+  the `form` attribute. Inline footers keep working because the attribute is also
+  valid inside the form. Do not nest forms and do not add a document-wide
+  Enter-to-click handler.
+- Pointer activation, Enter and script-initiated submission all reach one owner
+  callback (`onSubmit`). The primary control has no separate `onClick`. The callback
+  rechecks the exact disabled conditions of the primary control (busy, pending,
+  uncertain, invalid, inactive) before allocating a request identity, so a blocked
+  submission never starts an operation, never creates a fresh request id and never
+  replaces a retained request. Uncertain operations stay retry-only through their
+  existing exact-retry control.
+- A secondary or destructive control is never promoted to the Enter action because it
+  is visually emphasized. A form that has an explicit confirmation keeps it.
+
+#### Enter guard helper (`apps/delidev/src/form-enter.ts`)
+
+The browser performs implicit submission: for an unprevented Enter in a text-like
+input it clicks the form's default button (the first submit control associated with
+the form, including `form=` controls outside the element) unless that button is
+disabled. The helper only removes presses that must not reach it:
+
+- `guardEnterSubmission` is the form's `onKeyDown`. It cancels the keydown default
+  for an Enter on an input owned by that form when the press is IME composition
+  (`isComposing` or keyCode 229), a held-key repeat, modified (Shift, Control, Alt
+  or Meta), already handled (`defaultPrevented`), aimed at an input that controls an
+  open popup (`aria-expanded="true"`), or aimed at a form-owned input that is not a
+  single-line text input (checkbox, radio, range, date and similar).
+- Eligible input types are text, search, url, tel, email, password, number and the
+  default type. Buttons, submit/reset/image/file inputs, selects, textareas,
+  summaries, links and every control owned by another form (including a portaled
+  nested dialog whose events bubble through React) are not judged by the guard, so
+  their native Enter behavior, multiline newlines and the owning dialog's own Enter
+  handling are preserved.
+- `classifyEnterSubmission` exposes the decision (`EnterSubmitBlock` enum) for owners
+  that need it and for tests; it never submits or clicks anything.
+- `consumeFormSubmit` is the first line of every owner `onSubmit`. It claims only the
+  form's own submit event (cancelling navigation and stopping propagation to
+  enclosing forms) and returns `false` for a submit that originated in another form.
+- Completion lists and comboboxes consume Enter for their own selection by calling
+  `preventDefault` on that keydown; the guard honors it. Wizard owners route Enter
+  through their Next callback and submit only on the final step; that conversion is
+  tracked in the inventory.
+- `apps/delidev/src/test-form-enter.ts` provides `pressEnter` for jsdom tests: it
+  dispatches the real keydown and, only when nothing cancelled it, clicks the form's
+  default submit control unless disabled, mirroring browser implicit submission.
+
+#### Owner inventory
+
+Status values are closed: `converted` (form owner added with the guarded callback and
+tests), `planned` (not yet wired to `guardEnterSubmission` and `consumeFormSubmit`, so
+no one-fire Enter, held-key or IME guarantee is claimed yet; this includes surfaces
+that already own a native form and click-only input workflows), `composer` (message
+composer or interaction answer whose Enter semantics belong to its send contract and
+are unchanged by the shared guard) and `not-applicable` (no single-line text input
+owned by the surface).
+
+| Owner (`apps/delidev/src`)                                                                                                                                                                                                                                                                                                                                                                                                           | Surface                                           | Status                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `repository-registration.tsx`                                                                                                                                                                                                                                                                                                                                                                                                        | Add repository (URL/name, optional folder, Clone) | `converted`                                                                                                   |
+| `saved-connections.tsx`                                                                                                                                                                                                                                                                                                                                                                                                              | Rename connection, Add server                     | `planned`                                                                                                     |
+| `worker-network-native.tsx`                                                                                                                                                                                                                                                                                                                                                                                                          | Encrypted network import                          | `planned`                                                                                                     |
+| `project-creation.tsx`                                                                                                                                                                                                                                                                                                                                                                                                               | Project creation wizard                           | `planned` (already owns a form; step-advance Enter and the shared guard are not wired yet)                    |
+| `account-oauth.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                  | Gemini project id                                 | `planned`                                                                                                     |
+| `configuration-transfer.tsx`                                                                                                                                                                                                                                                                                                                                                                                                         | Portable configuration wizard                     | `planned`                                                                                                     |
+| `settings.tsx`, `network-settings.tsx`, `machine-settings.tsx`, `pricing.tsx`, `notification-settings.tsx`, `integrations.tsx`, `pairing-grant.tsx`, `ssh-setup.tsx`, `account-connection.tsx`, `account-settings.tsx`, `claude-subscription-login.tsx`, `grok-subscription-login.tsx`, `opencode-go-account.tsx`, `subscription-onboarding.tsx`, `github-onboarding.tsx`, `schedule-creation.tsx`, `agent-worker-source-wizard.tsx` | Settings and onboarding task forms                | `planned`                                                                                                     |
+| `new-session.tsx`, `session.tsx`, `session-fork.tsx`, `session-browser.tsx`, `queue.tsx`, `interactions.tsx`, `native-*-response.tsx`, `native-grok-interactions.tsx`                                                                                                                                                                                                                                                                | Composers and interaction answers                 | `composer`; Enter/Shift+Enter, completion precedence and custom send bindings keep their existing contracts   |
+| `appearance-controls.tsx`, `updates.tsx`, `usage.tsx`, `views.tsx`, `schedules.tsx`, `local-reviews.tsx`, `pull-requests.tsx`, `request-diagnostics.tsx`, `session-budget.tsx`, `session-diff.tsx`, `session-name-editor.tsx`                                                                                                                                                                                                        | Inline filters, renames and small editors         | `planned`                                                                                                     |
+| `subscription-quota.tsx`, `backups.tsx`                                                                                                                                                                                                                                                                                                                                                                                              | Confirmation and checkbox actions only            | `not-applicable`                                                                                              |
+| `configuration-fields.tsx` (`TextField`), `repository-clone-fields.tsx`, `provider-model-settings.tsx`, `native-model-settings.tsx`, `api-format-fields.tsx`, `codex-subagent-configuration.tsx`, `remediation-policy.tsx`, `starting-branches.tsx`, `scroll-picker.tsx`, `reasoning-effort-field.tsx`, `language.tsx`                                                                                                               | Reusable fields                                   | `not-applicable` (the containing owner supplies the form)                                                     |
+| `repository-github-picker.tsx`                                                                                                                                                                                                                                                                                                                                                                                                       | GitHub repository chooser                         | `not-applicable`: portaled read-only dialog that stops its own keydown, so Enter never reaches Add repository |
+
 ### Shared tab strip presentation
 
 One static stylesheet, `apps/delidev/src/tab-strip.css`, owns the flat underline tab treatment for Project editing (`project-edit-tabs.tsx`), Usage, Backups operation history, every session workspace tab (`session-tab-bar.tsx`) and both terminal selector modes (`session-terminals.tsx`). The shared classes are `tab-strip` (strip), `tab-item` (selectable unit), `tab-label` (label button), `is-selected` (selected state; `aria-selected="true"` is equivalent) and `tab-close` (close button). `tab-item-dynamic` marks items with user-dependent labels. This is presentation only: each surface keeps its own component, controller, roles, keys and callbacks, and the stylesheet creates no resource, mutation or query.
@@ -4905,7 +4990,7 @@ When the outer GitHub profile inventory moves to another page, clear the
 selected profile and repository page before exposing the new page. The picker
 must never retain repository rows from a profile that is no longer selected.
 
-Add repository is a native child dialog over the mounted Repositories list, with a 640px maximum width, 24px padding, theme colors and 40px controls with 8px corners. Its content scrolls vertically within the viewport and footer actions wrap at narrow widths and 200% zoom. The header X is the only dismissal action; the footer retains business actions only. Initial focus goes to the primary Git URL field; native modal behavior contains keyboard focus. X and Escape restore the still-connected Add repository opener. The dialog owns a nested visit/read/mutation scope: closing it discards temporary inputs, reads and exact uncertain presentation requests, while accepted server jobs remain authoritative. Late callbacks cannot reopen it or initiate follow-up work. Leaving Settings also disposes this child scope.
+Add repository is a native child dialog over the mounted Repositories list, with a 640px maximum width, 24px padding, theme colors and 40px controls with 8px corners. Its content scrolls vertically within the viewport and footer actions wrap at narrow widths and 200% zoom. The header X is the only dismissal action; the footer retains business actions only. Add repository is one semantic form (see [Desktop form submission and Enter](#desktop-form-submission-and-enter)): plain Enter in the Git URL, Repository name or Clone destination inputs activates the current primary action once, either Clone & add repository or Add repository, with the same payload and guards as pointer activation. Disabled, busy, uncertain and incomplete drafts, IME composition, held Enter and modified Enter submit nothing and create no request identity. The nested GitHub chooser owns its own Enter. Enter in the optional manual checkout path input also activates the primary action rather than Inspect folder, which remains an explicit pointer or keyboard button activation. Initial focus goes to the primary Git URL field; native modal behavior contains keyboard focus. X and Escape restore the still-connected Add repository opener. The dialog owns a nested visit/read/mutation scope: closing it discards temporary inputs, reads and exact uncertain presentation requests, while accepted server jobs remain authoritative. Late callbacks cannot reopen it or initiate follow-up work. Leaving Settings also disposes this child scope.
 
 Project forms retain ordered repositories and an explicitly selected primary repository. Removing the primary clears that choice without selecting a replacement. Agent/account restrictions preserve the difference between unrestricted selection and an explicitly configured empty list, which permits none.
 
