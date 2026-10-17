@@ -2327,6 +2327,147 @@ func TestDisablingAutoTopupKeepsOperatorRetriedCharge(t *testing.T) {
 	}
 }
 
+// billingWindowAutoTopup queues an automatic top-up for a tenant whose confirmed
+// period ends inside Paddle's thirty minute modification window, then lets the
+// worker defer it. It returns the job, a worker, and a counter of provider charge
+// requests that is shared with the mock provider.
+func billingWindowAutoTopup(t *testing.T, retriedRejection bool) (db *postgres.Store, client delcorev1connect.DelcoreServiceClient, w *worker.Worker, tenant, job string, charges *int) {
+	t.Helper()
+	var cfg config.Config
+	db, client, cfg = setup(t)
+	ctx := context.Background()
+	_, tenant = bootstrap(t, client)
+	cfg.PaddleCreditProductID = "pro_fixture"
+	cfg.PaddleToken = "fixture"
+	if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='sub_window',external_customer_id='ctm_window',period_end=now()+interval '10 minutes' WHERE id=$1", tenant); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := client.SetAutoTopUp(ctx, req(&pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: true, Threshold: "5", Amount: "10", MonthlyCap: "100"}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	count := 0
+	charges = &count
+	mock := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/charge") {
+			count++
+		}
+		rw.WriteHeader(http.StatusBadRequest)
+	}))
+	t.Cleanup(mock.Close)
+	cfg.PaddleURL = mock.URL
+	w = &worker.Worker{DB: db, Config: cfg, Provider: provider.New(cfg), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if retriedRejection {
+		// The provider definitively rejected this charge earlier and an operator
+		// explicitly retried it, which resets the attempts but keeps the category.
+		job = key()
+		if _, e := db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,error_category,available_at,created_at,updated_at) VALUES($1,$2,'auto_topup',$1::uuid::text,'{"amount":"10","minor_units":"1000","currency":"USD"}','failed',3,'provider_rejected',now(),now(),now())`, job, tenant); e != nil {
+			t.Fatal(e)
+		}
+		if _, e := client.RetryJob(ctx, req(&pb.RetryJobRequest{RequestKey: key(), JobId: job, Reason: "provider recovered"}, "owner")); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if e := w.Step(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if job == "" {
+		if e := db.Pool.QueryRow(ctx, "SELECT id::text FROM jobs WHERE tenant_id=$1 AND kind='auto_topup'", tenant).Scan(&job); e != nil {
+			t.Fatal("automatic top-up was not queued", e)
+		}
+	}
+	return db, client, w, tenant, job, charges
+}
+
+func autoTopupJob(t *testing.T, db *postgres.Store, job string) (state string, attempts int, category string) {
+	t.Helper()
+	if e := db.Pool.QueryRow(context.Background(), "SELECT state,attempts,error_category FROM jobs WHERE id=$1", job).Scan(&state, &attempts, &category); e != nil {
+		t.Fatal(e)
+	}
+	return state, attempts, category
+}
+
+func TestDisableAndCancelStopBillingWindowDeferredAutoTopup(t *testing.T) {
+	for _, action := range []string{"disable", "cancel"} {
+		t.Run(action, func(t *testing.T) {
+			db, client, w, tenant, job, charges := billingWindowAutoTopup(t, false)
+			ctx := context.Background()
+			// The worker returned the job to pending without contacting the provider.
+			if state, attempts, category := autoTopupJob(t, db, job); state != "pending" || attempts != 0 || category != "provider_billing_window" || *charges != 0 {
+				t.Fatal("billing window fixture", state, attempts, category, *charges)
+			}
+			var e error
+			want := "auto_topup_disabled"
+			if action == "disable" {
+				_, e = client.SetAutoTopUp(ctx, req(&pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: false}, "owner"))
+			} else {
+				want = "subscription_canceled"
+				_, e = client.CancelSubscription(ctx, req(&pb.CancelSubscriptionRequest{RequestKey: key(), TenantId: tenant}, "owner"))
+			}
+			if e != nil {
+				t.Fatal(e)
+			}
+			if state, _, category := autoTopupJob(t, db, job); state != "done" || category != want {
+				t.Fatal("deferred unattempted charge survived", action, state, category)
+			}
+			// Once the billing window opens, the stopped charge must not reach Paddle.
+			if _, e = db.Pool.Exec(ctx, "UPDATE tenants SET period_end=now()+interval '10 days' WHERE id=$1", tenant); e != nil {
+				t.Fatal(e)
+			}
+			if _, e = db.Pool.Exec(ctx, "UPDATE jobs SET available_at=now()+interval '1 hour' WHERE tenant_id=$1 AND kind='cancel'", tenant); e != nil {
+				t.Fatal(e)
+			}
+			if e = w.Step(ctx); e != nil {
+				t.Fatal(e)
+			}
+			if *charges != 0 {
+				t.Fatal("stopped charge reached the provider", *charges)
+			}
+		})
+	}
+}
+
+func TestDisableAndCancelKeepOperatorRetriedChargeThroughBillingWindow(t *testing.T) {
+	for _, action := range []string{"disable", "cancel"} {
+		t.Run(action, func(t *testing.T) {
+			db, client, w, tenant, job, charges := billingWindowAutoTopup(t, true)
+			ctx := context.Background()
+			// Deferring the retry inside the billing window must keep the evidence that
+			// the provider rejected this charge before.
+			if state, attempts, category := autoTopupJob(t, db, job); state != "pending" || attempts != 0 || category != "provider_rejected" || *charges != 0 {
+				t.Fatal("billing window deferral dropped the rejection evidence", state, attempts, category, *charges)
+			}
+			var e error
+			if action == "disable" {
+				_, e = client.SetAutoTopUp(ctx, req(&pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: false}, "owner"))
+			} else {
+				_, e = client.CancelSubscription(ctx, req(&pb.CancelSubscriptionRequest{RequestKey: key(), TenantId: tenant}, "owner"))
+			}
+			if e != nil {
+				t.Fatal(e)
+			}
+			if state, _, category := autoTopupJob(t, db, job); state != "pending" || category != "provider_rejected" {
+				t.Fatal("attempted charge was stopped", action, state, category)
+			}
+			// The retried charge continues once the billing window opens.
+			if _, e = db.Pool.Exec(ctx, "UPDATE tenants SET period_end=now()+interval '10 days' WHERE id=$1", tenant); e != nil {
+				t.Fatal(e)
+			}
+			if _, e = db.Pool.Exec(ctx, "UPDATE jobs SET available_at=now()+interval '1 hour' WHERE tenant_id=$1 AND kind='cancel'", tenant); e != nil {
+				t.Fatal(e)
+			}
+			if _, e = db.Pool.Exec(ctx, "UPDATE jobs SET available_at=now() WHERE id=$1", job); e != nil {
+				t.Fatal(e)
+			}
+			if e = w.Step(ctx); e != nil {
+				t.Fatal(e)
+			}
+			if *charges != 1 {
+				t.Fatal("retried charge did not continue", *charges)
+			}
+		})
+	}
+}
+
 func TestDeletionStopsDefinitivelyRejectedSubscriptions(t *testing.T) {
 	for _, withdraw := range []bool{false, true} {
 		t.Run(fmt.Sprintf("withdraw=%t", withdraw), func(t *testing.T) {

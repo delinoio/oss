@@ -55,10 +55,8 @@ func (s *Server) SetAutoTopUp(ctx context.Context, r *connect.Request[pb.SetAuto
 			}
 			// Queued charges carry their amount in the job payload, so disabling the
 			// setting must also end work that has never reached the provider. Running,
-			// reconciling, attempted and externally identified jobs stay untouched. An
-			// operator retry resets the attempt count but keeps the failure category, so
-			// a retained category marks a charge that was attempted before.
-			tag, e := c.tx.Exec(c.ctx, "UPDATE jobs SET state='done',error_category='auto_topup_disabled',updated_at=$2 WHERE tenant_id=$1 AND kind='auto_topup' AND state='pending' AND attempts=0 AND external_id='' AND error_category=''", q.TenantId, c.now)
+			// reconciling, attempted and externally identified jobs stay untouched.
+			tag, e := c.tx.Exec(c.ctx, "UPDATE jobs SET state='done',error_category='auto_topup_disabled',updated_at=$2 WHERE tenant_id=$1 AND "+unattemptedAutoTopUp, q.TenantId, c.now)
 			if e != nil {
 				return e
 			}
@@ -286,7 +284,7 @@ func (s *Server) CancelSubscription(ctx context.Context, r *connect.Request[pb.C
 		if _, e := c.tx.Exec(c.ctx, "UPDATE tenants SET auto_suspended=true WHERE id=$1", r.Msg.TenantId); e != nil {
 			return e
 		}
-		if _, e := c.tx.Exec(c.ctx, "UPDATE jobs SET state='done',error_category='subscription_canceled',updated_at=$2 WHERE tenant_id=$1 AND kind='auto_topup' AND state='pending' AND attempts=0 AND external_id=''", r.Msg.TenantId, c.now); e != nil {
+		if _, e := c.tx.Exec(c.ctx, "UPDATE jobs SET state='done',error_category='subscription_canceled',updated_at=$2 WHERE tenant_id=$1 AND "+unattemptedAutoTopUp, r.Msg.TenantId, c.now); e != nil {
 			return e
 		}
 		id, e := c.job(r.Msg.TenantId, "cancel", "request:"+r.Msg.RequestKey, map[string]any{"effective_from": "next_billing_period"})
@@ -480,6 +478,15 @@ func (s *Server) ListAudit(ctx context.Context, r *connect.Request[pb.ListAuditR
 		return rows.Err()
 	})
 }
+
+// unattemptedAutoTopUp selects automatic top-up jobs that never reached the
+// provider: queued with no attempts and no external identity. A deferral inside
+// the Paddle billing window returns the job to pending with its attempt count
+// restored, so that category still marks unattempted work. An operator retry of a
+// provider-rejected charge also resets the attempt count, but it keeps the
+// provider_rejected category (the worker keeps it through a billing-window
+// deferral), which marks a charge that was attempted before and must continue.
+const unattemptedAutoTopUp = "kind='auto_topup' AND state='pending' AND attempts=0 AND external_id='' AND error_category IN ('','provider_billing_window')"
 
 // A pending job with no attempts has never reached the provider, and a job the
 // provider definitively rejected without creating anything has nothing left to
