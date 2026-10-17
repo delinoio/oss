@@ -117,7 +117,8 @@ func (s *Store) Transaction(ctx context.Context, fn func(pgx.Tx) error) error {
 	}
 	defer tx.Rollback(ctx)
 	// Single-instance v1 serializes state transitions. External requests never run
-	// under this lock. Remove only with per-aggregate locking and concurrency tests.
+	// under this lock. Remove only with per-aggregate locking and concurrency tests;
+	// integration/auto_topup_serialization_test.go fails without this lock.
 	if _, e = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(41820003)"); e != nil {
 		return e
 	}
