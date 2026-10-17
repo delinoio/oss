@@ -453,7 +453,8 @@ try {
             if (family.anchored) {
               await page.mouse.click(1, height - 1);
               await frames(page);
-              if (await popup.count()) await page.keyboard.press("Escape");
+              // The press alone must close them; no second dismissal path.
+              await assertClosed("outside pointer");
             } else await page.keyboard.press("Escape");
             await restoreScroll("outside");
             await assertClosed("outside");
