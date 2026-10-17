@@ -147,12 +147,19 @@ func TestServiceShutdownWaitsForManagedArtifacts(t *testing.T) {
 				}()
 				defer func() { cancel(); <-finished }()
 				// Observe the durable Stop request before checking the pending native action.
+				// A ready artifact lets shutdown complete immediately after Stop is
+				// committed, so a buffered service result is not evidence that Stop was
+				// skipped. Poll only the durable flag here; the result is consumed once
+				// by the completion assertion below.
 				for !m.Store.View().Stopping {
 					select {
-					case err := <-done:
-						t.Fatalf("service returned before Stop: %v", err)
 					case <-ctx.Done():
-						t.Fatal("Stop request not observed")
+						select {
+						case err := <-done:
+							t.Fatalf("Stop request not observed; service returned: %v", err)
+						default:
+							t.Fatal("Stop request not observed")
+						}
 					case <-time.After(time.Millisecond):
 					}
 				}
