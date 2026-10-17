@@ -14,8 +14,8 @@
 //! ordinary call.
 
 use super::common::{
-    AwaitWord, arrow_body_ends, brace_holds_members, class_heading_precedes, is_identifier_part,
-    is_line_terminator,
+    AwaitWord, HeritageCache, arrow_body_ends, brace_holds_members, class_heading_precedes,
+    is_identifier_part, is_line_terminator,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -83,6 +83,8 @@ struct Scan<'a> {
     tokens: Vec<Token>,
     /// For every closing token, the index of its opening token.
     matching_open: Vec<Option<usize>>,
+    /// Heritage-expression decisions shared by every class-heading query.
+    heritage: HeritageCache,
 }
 
 /// Byte offsets of every `await` that is the unary operator and is followed by
@@ -103,6 +105,7 @@ pub(super) fn await_operator_offsets(code: &str, ignored: &[(usize, usize)]) -> 
         ignored,
         tokens: tokenize(code, ignored),
         matching_open: Vec::new(),
+        heritage: HeritageCache::default(),
     };
     scan.matching_open = vec![None; scan.tokens.len()];
     scan.classify()
@@ -276,7 +279,12 @@ impl Scan<'_> {
     fn encloses_members(&self, enclosing: Option<usize>) -> bool {
         enclosing.is_some_and(|open| {
             self.tokens[open].kind == Kind::Punct(b'{')
-                && brace_holds_members(self.code, self.tokens[open].start, self.ignored)
+                && brace_holds_members(
+                    self.code,
+                    self.tokens[open].start,
+                    self.ignored,
+                    &self.heritage,
+                )
         })
     }
 
@@ -326,7 +334,12 @@ impl Scan<'_> {
                     return None;
                 }
                 // `class A extends mix(B) {` heads a class body.
-                if class_heading_precedes(self.code, self.tokens[previous].end, self.ignored) {
+                if class_heading_precedes(
+                    self.code,
+                    self.tokens[previous].end,
+                    self.ignored,
+                    &self.heritage,
+                ) {
                     return None;
                 }
                 // `function name() {}` and `function* name() {}`.
@@ -476,7 +489,12 @@ impl Scan<'_> {
                     // `static {` is a static block and its `{` is not.
                     let class_body = function.is_none()
                         && has_class_word
-                        && class_heading_precedes(self.code, token.start, self.ignored);
+                        && class_heading_precedes(
+                            self.code,
+                            token.start,
+                            self.ignored,
+                            &self.heritage,
+                        );
                     frames.push(Frame {
                         kind: FrameKind::Group,
                         is_async,

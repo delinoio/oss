@@ -1,7 +1,8 @@
 //! Rules shared by both engines: duplicate packages and minifier blockers.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::Path,
     sync::LazyLock,
 };
@@ -714,12 +715,23 @@ fn trailing_word(text: &str) -> &str {
     &text[start..]
 }
 
+/// Memo of heritage-expression decisions for one chunk, keyed by the offset of
+/// the closing `}`. Every `{` of a chunk asks whether a class heading precedes
+/// it, and the answer for a brace pair never changes, so each pair is decided
+/// once instead of once per later brace.
+#[derive(Default)]
+pub(super) struct HeritageCache {
+    starts: RefCell<HashMap<usize, Option<usize>>>,
+}
+
 /// Whether the `{` at `open` starts an object literal or a class body, whose
 /// members may be named like control keywords, instead of a statement block.
 ///
 /// Decided from the code before the brace, comments removed:
-/// - blocks follow `)`, `;`, `{`, `}`, `=>`, a statement keyword (`else`,
-///   `try`, `do`, `finally`, `static`) or the start of the code;
+/// - blocks follow `)`, `;`, `{`, `=>`, a statement keyword (`else`, `try`,
+///   `do`, `finally`, `static`) or the start of the code;
+/// - a `}` ends a block unless it closes a class or function expression in the
+///   heritage clause of a class heading (`class C extends class {} {`);
 /// - an object literal follows an operator, an opener, a comma, a colon that is
 ///   not a `case` label, or an expression keyword such as `return`;
 /// - a class body follows a heading that contains `class`, even when the
@@ -727,7 +739,12 @@ fn trailing_word(text: &str) -> &str {
 ///
 /// This is a lexical guess, not a parse. A brace that cannot be classified is
 /// treated as holding members, which keeps its keyword-named calls unguarded.
-pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, usize)]) -> bool {
+pub(super) fn brace_holds_members(
+    code: &str,
+    open: usize,
+    ignored: &[(usize, usize)],
+    cache: &HeritageCache,
+) -> bool {
     let prefix = strip_comments_for_prefix(code, open, ignored);
     if prefix.ends_with("=>") {
         return false;
@@ -736,13 +753,13 @@ pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, us
         return false;
     };
     match last {
-        ')' => class_heading_precedes(code, prefix.len(), ignored),
-        ';' | '{' | '}' => false,
+        ')' | '}' => class_heading_precedes(code, prefix.len(), ignored, cache),
+        ';' | '{' => false,
         ':' => !is_case_label(prefix, ignored),
         _ if is_identifier_part(last) => match trailing_word(prefix) {
             "else" | "try" | "do" | "finally" | "static" => false,
             word if OBJECT_VALUE_KEYWORDS.contains(&word) => true,
-            _ => class_heading_precedes(code, prefix.len(), ignored),
+            _ => class_heading_precedes(code, prefix.len(), ignored, cache),
         },
         _ => true,
     }
@@ -754,8 +771,13 @@ pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, us
 /// `}`, or at an unbalanced opener. A type-argument list (`class C<T extends {
 /// a: 1 }>`, `extends B<{ a: 1 }>`) is skipped as a whole, so the braces and
 /// `=` inside it do not end the head.
-pub(super) fn class_heading_precedes(code: &str, end: usize, ignored: &[(usize, usize)]) -> bool {
-    class_heading_scan(code, end, ignored, false)
+pub(super) fn class_heading_precedes(
+    code: &str,
+    end: usize,
+    ignored: &[(usize, usize)],
+    cache: &HeritageCache,
+) -> bool {
+    class_heading_scan(code, end, ignored, false, cache)
 }
 
 /// Shared body of [`class_heading_precedes`]. `stop_at_assignment` also ends
@@ -766,88 +788,195 @@ fn class_heading_scan(
     end: usize,
     ignored: &[(usize, usize)],
     stop_at_assignment: bool,
+    cache: &HeritageCache,
 ) -> bool {
-    class_keyword_scan(code, end, ignored, stop_at_assignment).is_some()
+    class_keyword_scan(code, end, ignored, stop_at_assignment, cache).is_some()
+}
+
+/// What a backwards head scan reports.
+enum HeadStep {
+    /// The offset of the `class` keyword that starts the head.
+    Found(usize),
+    /// The head holds no `class` keyword.
+    Missing,
+    /// A top-level `}` at this offset may close a heritage expression.
+    Brace(usize),
+}
+
+/// One backwards head scan. The scan is resumable so that nested heritage
+/// expressions run on an explicit stack instead of the call stack.
+struct HeadScan {
+    end: usize,
+    position: usize,
+    depth: usize,
+    /// End offset of the identifier-like word being read backwards.
+    word_end: Option<usize>,
+    stop_at_assignment: bool,
+    /// The `}` whose heritage expression this scan decides, if any.
+    close: Option<usize>,
+}
+
+impl HeadScan {
+    fn new(end: usize, stop_at_assignment: bool, close: Option<usize>) -> Self {
+        Self {
+            end,
+            position: end,
+            depth: 0,
+            word_end: None,
+            stop_at_assignment,
+            close,
+        }
+    }
+
+    fn is_class(&self, code: &str, word_start: usize, word_end: usize) -> bool {
+        // `class` is a keyword unless it names a member (`a.class`, `#class`)
+        // or a property or method (`class: {`, `class() {`).
+        &code[word_start..word_end] == "class"
+            && !code[..word_start].trim_end().ends_with(['.', '#'])
+            && !code[word_end..self.end]
+                .trim_start()
+                .starts_with([':', '(', '=', ','])
+    }
+
+    /// Reads backwards until the head is decided or a top-level `}` needs a
+    /// decision. After [`HeadStep::Brace`] the caller either moves `position`
+    /// to the start of the heritage expression or ends the scan.
+    fn advance(&mut self, code: &str, ignored: &[(usize, usize)]) -> HeadStep {
+        // Walk char boundaries only: `position` is always the start of a char.
+        while let Some(character) = code[..self.position].chars().next_back() {
+            let width = character.len_utf8();
+            self.position -= width;
+            let position = self.position;
+            if !in_ranges(ignored, position) && is_identifier_part(character) {
+                self.word_end.get_or_insert(position + width);
+                continue;
+            }
+            if let Some(finish) = self.word_end.take()
+                && self.depth == 0
+                && self.is_class(code, position + width, finish)
+            {
+                return HeadStep::Found(position + width);
+            }
+            if in_ranges(ignored, position) {
+                continue;
+            }
+            match character {
+                ')' | ']' => self.depth += 1,
+                '(' | '[' => {
+                    let Some(depth) = self.depth.checked_sub(1) else {
+                        return HeadStep::Missing;
+                    };
+                    self.depth = depth;
+                }
+                // The `>` of an arrow (`=>`) never closes a type-argument list.
+                '>' if self.depth == 0 && !code[..position].ends_with('=') => {
+                    if let Some(open) = type_arguments_open(code, position, ignored) {
+                        self.position = open;
+                    }
+                }
+                '}' if self.depth == 0 => return HeadStep::Brace(position),
+                '{' | ';' if self.depth == 0 => return HeadStep::Missing,
+                '=' if self.depth == 0 && self.stop_at_assignment => return HeadStep::Missing,
+                _ => {}
+            }
+        }
+        match self.word_end {
+            Some(finish) if self.depth == 0 && self.is_class(code, 0, finish) => HeadStep::Found(0),
+            _ => HeadStep::Missing,
+        }
+    }
 }
 
 /// The offset of the `class` keyword that starts the head ending at `end`, or
 /// `None` when the head holds none. The scan is described on
 /// [`class_heading_precedes`].
 ///
-/// A class expression in the heritage clause (`class C extends class {} {`)
-/// has a body of its own. When a top-level `}` closes the body of a class
-/// expression whose `class` keyword follows `extends`, the scan jumps to that
-/// keyword and keeps reading the outer head. Any other `}` ends the head.
+/// A class or function expression in the heritage clause (`class C extends
+/// class {} {`, `class C extends function () {} {`) has a body of its own. When
+/// a top-level `}` closes the body of such an expression that follows
+/// `extends`, the scan jumps to the start of the expression and keeps reading
+/// the outer head. Any other `}` ends the head.
+///
+/// Nested heritage expressions run on an explicit stack, and each decided brace
+/// pair is memoised in `cache`, so neither deep nesting nor a long run of
+/// sibling brace pairs can overflow the stack or rescan the same text.
 fn class_keyword_scan(
     code: &str,
     end: usize,
     ignored: &[(usize, usize)],
     stop_at_assignment: bool,
+    cache: &HeritageCache,
 ) -> Option<usize> {
-    let mut depth = 0usize;
-    // End offset of the identifier-like word being read backwards.
-    let mut word_end: Option<usize> = None;
-    let is_class = |word_start: usize, word_end: usize| {
-        // `class` is a keyword unless it names a member (`a.class`, `#class`)
-        // or a property or method (`class: {`, `class() {`).
-        &code[word_start..word_end] == "class"
-            && !code[..word_start].trim_end().ends_with(['.', '#'])
-            && !code[word_end..end]
-                .trim_start()
-                .starts_with([':', '(', '=', ','])
-    };
-    // Walk char boundaries only: `position` is always the start of a char.
-    let mut position = end;
-    while let Some(character) = code[..position].chars().next_back() {
-        let width = character.len_utf8();
-        position -= width;
-        if !in_ranges(ignored, position) && is_identifier_part(character) {
-            word_end.get_or_insert(position + width);
-            continue;
-        }
-        if let Some(finish) = word_end.take()
-            && depth == 0
-            && is_class(position + width, finish)
-        {
-            return Some(position + width);
-        }
-        if in_ranges(ignored, position) {
-            continue;
-        }
-        match character {
-            ')' | ']' => depth += 1,
-            '(' | '[' => depth = depth.checked_sub(1)?,
-            // The `>` of an arrow (`=>`) never closes a type-argument list.
-            '>' if depth == 0 && !code[..position].ends_with('=') => {
-                if let Some(open) = type_arguments_open(code, position, ignored) {
-                    position = open;
+    let mut stack = vec![HeadScan::new(end, stop_at_assignment, None)];
+    loop {
+        let scan = stack.last_mut()?;
+        // `Some(found)` once the innermost scan has ended.
+        let mut finished = match scan.advance(code, ignored) {
+            HeadStep::Found(keyword) => Some(Some(keyword)),
+            HeadStep::Missing => Some(None),
+            HeadStep::Brace(close) => {
+                let known = cache.starts.borrow().get(&close).copied();
+                match known {
+                    Some(Some(start)) => {
+                        scan.position = start;
+                        None
+                    }
+                    Some(None) => Some(None),
+                    None => match heritage_expression(code, close, ignored) {
+                        HeritageExpression::Decided(decision) => {
+                            cache.starts.borrow_mut().insert(close, decision);
+                            match decision {
+                                Some(start) => {
+                                    scan.position = start;
+                                    None
+                                }
+                                None => Some(None),
+                            }
+                        }
+                        HeritageExpression::ClassBody(open) => {
+                            stack.push(HeadScan::new(open, true, Some(close)));
+                            None
+                        }
+                    },
                 }
             }
-            '}' if depth == 0 => {
-                position = heritage_class_expression_start(code, position, ignored)?;
+        };
+        while let Some(found) = finished.take() {
+            let scan = stack.pop()?;
+            let Some(close) = scan.close else {
+                return found;
+            };
+            let start = found.filter(|keyword| extends_precedes(code, *keyword, ignored));
+            cache.starts.borrow_mut().insert(close, start);
+            let parent = stack.last_mut()?;
+            match start {
+                Some(start) => parent.position = start,
+                None => finished = Some(None),
             }
-            '{' | ';' if depth == 0 => return None,
-            '=' if depth == 0 && stop_at_assignment => return None,
-            _ => {}
         }
     }
-    word_end
-        .filter(|finish| depth == 0 && is_class(0, *finish))
-        .map(|_| 0)
 }
 
-/// The offset of the `class` keyword of the class expression whose body ends
-/// with the `}` at `close`, when that keyword directly follows `extends`
-/// (`class C extends class { ... } {`). `None` for any other brace pair.
-fn heritage_class_expression_start(
-    code: &str,
-    close: usize,
-    ignored: &[(usize, usize)],
-) -> Option<usize> {
+/// How the brace pair that ends with a top-level `}` reads as a heritage
+/// expression.
+enum HeritageExpression {
+    /// Decided without a nested scan: the offset of the expression start when
+    /// it follows `extends`, or `None` for any other brace pair.
+    Decided(Option<usize>),
+    /// A class body opened at this offset; its heading decides the pair.
+    ClassBody(usize),
+}
+
+/// Reads the brace pair that ends with the `}` at `close` as the body of a
+/// heritage expression (`class C extends class { ... } {`,
+/// `class C extends function () { ... } {`).
+fn heritage_expression(code: &str, close: usize, ignored: &[(usize, usize)]) -> HeritageExpression {
     let mut nesting = 0usize;
     let mut position = close;
     let open = loop {
-        let character = code[..position].chars().next_back()?;
+        let Some(character) = code[..position].chars().next_back() else {
+            return HeritageExpression::Decided(None);
+        };
         position -= character.len_utf8();
         if in_ranges(ignored, position) {
             continue;
@@ -861,9 +990,67 @@ fn heritage_class_expression_start(
             _ => {}
         }
     };
-    let keyword = class_keyword_scan(code, open, ignored, true)?;
-    let before = strip_comments_for_prefix(code, keyword, ignored);
-    (trailing_word(before) == "extends").then_some(keyword)
+    match function_expression_start(code, open, ignored) {
+        Some(start) => {
+            HeritageExpression::Decided(extends_precedes(code, start, ignored).then_some(start))
+        }
+        None => HeritageExpression::ClassBody(open),
+    }
+}
+
+/// Whether the word before `start`, comments removed, is `extends`.
+fn extends_precedes(code: &str, start: usize, ignored: &[(usize, usize)]) -> bool {
+    trailing_word(strip_comments_for_prefix(code, start, ignored)) == "extends"
+}
+
+/// The offset where the function expression whose body opens at `open` starts
+/// (`async function* name(params) {`, with `async` included), or `None` when
+/// the text before the brace is not a function head.
+fn function_expression_start(code: &str, open: usize, ignored: &[(usize, usize)]) -> Option<usize> {
+    let prefix = strip_comments_for_prefix(code, open, ignored);
+    if !prefix.ends_with(')') {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut position = prefix.len();
+    let parameters_open = loop {
+        let character = code[..position].chars().next_back()?;
+        position -= character.len_utf8();
+        if in_ranges(ignored, position) {
+            continue;
+        }
+        match character {
+            ')' | ']' => depth += 1,
+            '(' | '[' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    break position;
+                }
+            }
+            _ => {}
+        }
+    };
+    let mut head = strip_comments_for_prefix(code, parameters_open, ignored);
+    let name = trailing_word(head);
+    if name != "function" {
+        head = strip_comments_for_prefix(code, head.len() - name.len(), ignored);
+    }
+    if head.ends_with('*') {
+        head = strip_comments_for_prefix(code, head.len() - 1, ignored);
+    }
+    if trailing_word(head) != "function" {
+        return None;
+    }
+    let mut start = head.len() - "function".len();
+    // `a.function (` and `#function (` name a member, not a function head.
+    if code[..start].trim_end().ends_with(['.', '#']) {
+        return None;
+    }
+    let before = strip_comments_for_prefix(code, start, ignored);
+    if trailing_word(before) == "async" {
+        start = before.len() - "async".len();
+    }
+    Some(start)
 }
 
 /// The offset of the `<` that opens the type-argument list closed by the `>` at
@@ -2562,6 +2749,7 @@ struct MemberScan<'a> {
     ignored: &'a [(usize, usize)],
     code: String,
     blocks: Vec<(usize, usize)>,
+    heritage: HeritageCache,
 }
 
 impl<'a> MemberScan<'a> {
@@ -2573,6 +2761,7 @@ impl<'a> MemberScan<'a> {
             ignored,
             code,
             blocks,
+            heritage: HeritageCache::default(),
         }
     }
 
@@ -2602,7 +2791,7 @@ impl<'a> MemberScan<'a> {
     /// the masked code by character, so non-ASCII names and type-argument
     /// lists with braces (`class C<T extends { a: 1 }> {`) are handled.
     fn has_class_header(&self, open: usize) -> bool {
-        class_heading_scan(&self.code, open, &[], true)
+        class_heading_scan(&self.code, open, &[], true, &self.heritage)
     }
 
     fn brace_kind(&self, open: usize) -> BraceKind {
@@ -4574,11 +4763,20 @@ y=/process.env.F/.test(z),process.env.G"#;
             "const D = class C extends class {} { eval(value) {} };",
             "class C extends class<T extends { a: 1 }> {} { eval(value) {} }",
             "class C extends class { eval(v) {} } { eval(value) {} }",
+            "class C extends function () {} { eval(value) {} }",
+            "class C extends function named(a, b = {}) { return { a } } { eval(value) {} }",
+            "class C extends async function* () {} { eval(value) {} }",
+            "class C extends function () {} /* c */ { eval(value) {} }",
         ]);
         // A class expression that is not the heritage ends the head, so the
         // block after it keeps its finding.
         assert_all_reported(&[
             ("const D = class {}\n{ eval(code) {} }", "eval(code)"),
+            ("const D = function () {}\n{ eval(code) {} }", "eval(code)"),
+            (
+                "class C extends B { m() {} }\n{ eval(code) {} }",
+                "eval(code)",
+            ),
             ("class C extends B {}\n{ eval(code) {} }", "eval(code)"),
             (
                 "const D = class extends B {};\nif (x) { eval(code) {} }",
@@ -9043,6 +9241,93 @@ y=/process.env.F/.test(z),process.env.G"#;
         code.push_str("export {}");
         let ignored = non_code_ranges(&code);
         assert_eq!(await_operator_offsets(&code, &ignored).len(), 3000);
+    }
+
+    #[test]
+    fn async_methods_after_heritage_expressions_keep_their_context() {
+        let gate = await_gate();
+        for heritage in [
+            "class {}",
+            "class { run() {} }",
+            "class B { x = { a: { b: 1 } } }",
+            "class extends class {} {}",
+            "class /* c */ {} // d\n",
+            "function () {}",
+            "function* () { return { a: 1 } }",
+            "function named(a = {}, b = [{}]) { if (a) { run() } }",
+            "async function () {}",
+            "(class {})",
+            "(function () {})",
+            "Base",
+            "mix(Base)",
+            "mix({ a: 1 })",
+        ] {
+            for wrapper in ["{}", "function outer() { {} }"] {
+                let class = format!(
+                    "class C extends {heritage} {{ async m() {{ {gate} }} static async s() {{ \
+                     {gate} }} }}"
+                );
+                let code = wrapper.replace("{}", &class);
+                assert_await_is_an_operator(&code);
+                // The same layout with a plain method keeps `await` a call.
+                let plain = code
+                    .replace("async m", "m")
+                    .replace("static async s", "static s");
+                assert_await_is_a_call(&plain);
+            }
+        }
+    }
+
+    #[test]
+    fn ordinary_blocks_are_not_member_enclosures_for_async_methods() {
+        let gate = await_gate();
+        for block in [
+            "function f() {}",
+            "if (a) {}",
+            "class A {}",
+            "class A extends B {}",
+            "class A extends class {} {}",
+            "const f = function () {}",
+        ] {
+            // The brace after `foo()` is a block, so the enclosing async
+            // context stays.
+            let code = format!("async function outer() {{ {block}\n{{ foo()\n{{ {gate} }} }} }}");
+            assert_await_is_an_operator(&code);
+        }
+    }
+
+    #[test]
+    fn heritage_scans_survive_long_and_deep_brace_runs() {
+        let cache = HeritageCache::default();
+        // Sibling brace pairs never nest, however many precede the brace.
+        let siblings = format!(
+            "{}{{",
+            "function f() {} class A extends B {} ".repeat(20_000)
+        );
+        assert!(!brace_holds_members(
+            &siblings,
+            siblings.len() - 1,
+            &[],
+            &cache
+        ));
+        assert!(!class_heading_precedes(
+            &siblings,
+            siblings.len() - 1,
+            &[],
+            &cache
+        ));
+        // Heritage expressions nested deeply decide the outermost class
+        // heading without recursion.
+        let depth = 2_000;
+        let nested = format!(
+            "class A extends {}class {{}}{} {{",
+            "class extends ".repeat(depth),
+            " {}".repeat(depth)
+        );
+        let cache = HeritageCache::default();
+        assert!(brace_holds_members(&nested, nested.len() - 1, &[], &cache));
+        // A memoised decision answers the same question again.
+        assert!(brace_holds_members(&nested, nested.len() - 1, &[], &cache));
     }
 
     #[test]
