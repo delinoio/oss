@@ -12,7 +12,7 @@ import {
   versions,
 } from "../dist/core.js";
 
-import { finalizeNativeResult } from "./native-result.mjs";
+import { createNativeResult, finalizeNativeResult } from "./native-result.mjs";
 
 const start = performance.now();
 const buildId = randomUUID();
@@ -34,19 +34,21 @@ async function run(command, args, cwd) {
   return result;
 }
 function report(status, details = {}) {
-  outcome = {
-    schemaVersion: 1,
-    buildId,
-    check: "react-core-subset",
-    versions,
-    target: target ?? null,
-    phase,
+  outcome = createNativeResult(
     status,
-    fullReactConformance: "unverified",
-    rendererAcceptance: "unverified",
-    engineAbsence: "unverified",
-    ...details,
-  };
+    {
+      schemaVersion: 1,
+      buildId,
+      check: "react-core-subset",
+      versions,
+      target: target ?? null,
+      phase,
+      fullReactConformance: "unverified",
+      rendererAcceptance: "unverified",
+      engineAbsence: "unverified",
+    },
+    details,
+  );
 }
 try {
   if (!target) throw new Error("TN_HOST_UNSUPPORTED");

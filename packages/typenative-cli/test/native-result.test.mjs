@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { finalizeNativeResult } from "./native-result.mjs";
+import { createNativeResult, finalizeNativeResult } from "./native-result.mjs";
 
 test("native success waits for successful artifact cleanup", async () => {
   let release;
@@ -39,3 +39,19 @@ for (const status of ["passed", "failed"]) {
     );
   });
 }
+
+test("native records always include diagnostic code and nullable source location", () => {
+  for (const status of ["passed", "failed"]) {
+    const result = createNativeResult(status, { phase: "compile" });
+    assert.equal(
+      result.code,
+      status === "passed" ? "TN_OK" : "TN_NATIVE_PROBE_FAILED",
+    );
+    assert.equal(result.sourceLocation, null);
+    assert.equal(result.phase, "compile");
+  }
+  assert.equal(
+    createNativeResult("failed", {}, { code: "TN_REACT_COMPILE_FAILED" }).code,
+    "TN_REACT_COMPILE_FAILED",
+  );
+});

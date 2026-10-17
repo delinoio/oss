@@ -17,6 +17,8 @@ test("native probe failures carry unique invocation identifiers", () => {
     assert.equal(result.stderr, "");
     const record = JSON.parse(result.stdout);
     assert.equal(record.status, "failed");
+    assert.equal(record.sourceLocation, null);
+    assert.match(record.code, /^TN_/);
     assert.match(record.buildId, /^[0-9a-f-]{36}$/);
     return record;
   });
