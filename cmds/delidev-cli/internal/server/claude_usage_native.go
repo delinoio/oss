@@ -221,7 +221,8 @@ type claudeUsageRenewal interface {
 	// Capture reads the rotated credential and identity from the joined profile.
 	// The caller clears the returned bundle.
 	Capture(context.Context) (claudeUsageCapture, error)
-	// Release drops the exclusive profile lease. It is safe to call repeatedly.
+	// Release drops the exclusive profile lease. It is safe to call repeatedly:
+	// a failed release is retried by the next call until it is confirmed.
 	Release() error
 }
 
@@ -231,14 +232,13 @@ type claudeUsageRenewal interface {
 type claudeUsageRenewer func(context.Context, nativeScope, domain.ID, subscription.ClaudeUsageBundle, *slog.Logger) (claudeUsageRenewal, string, error)
 
 type claudeUsageRenewalRuntime struct {
-	lease   *nativeprofile.Lease
+	lease   usageProfileLease
 	config  claude.AuthConfig
 	storage claude.UsageStorage
 	bundle  subscription.ClaudeUsageBundle
 
-	leaseOnce sync.Once
-	mu        sync.Mutex
-	joined    bool
+	mu     sync.Mutex
+	joined bool
 }
 
 func openClaudeUsageRenewal(ctx context.Context, scope nativeScope, owner domain.ID, bundle subscription.ClaudeUsageBundle, logger *slog.Logger) (returned claudeUsageRenewal, observed string, err error) {
@@ -300,8 +300,9 @@ func (r *claudeUsageRenewalRuntime) Capture(ctx context.Context) (claudeUsageCap
 	return claudeUsageCapture{Bundle: bundle, Identity: identity}, nil
 }
 
+// Release drops the exclusive profile lease. A failed close is reported again
+// by every later call until the lock release is confirmed, like the login
+// runtime: the lease itself makes a confirmed close final.
 func (r *claudeUsageRenewalRuntime) Release() error {
-	var err error
-	r.leaseOnce.Do(func() { err = r.lease.Close() })
-	return err
+	return r.lease.Close()
 }

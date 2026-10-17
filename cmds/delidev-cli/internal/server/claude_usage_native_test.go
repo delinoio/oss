@@ -52,3 +52,18 @@ func TestCloseUsageProfileLeasePropagatesAnUnconfirmedRelease(t *testing.T) {
 		t.Fatalf("an earlier failure was dropped: %v", err)
 	}
 }
+
+// The renewal runtime shares the retry contract of the login runtime.
+func TestClaudeUsageRenewalRuntimeReleaseRetriesAFailedLeaseClose(t *testing.T) {
+	lease := &flakyUsageLease{failures: 1}
+	runtime := &claudeUsageRenewalRuntime{lease: lease}
+	if err := runtime.Release(); err == nil {
+		t.Fatal("the first failed release was reported as success")
+	}
+	if err := runtime.Release(); err != nil {
+		t.Fatalf("the retried release did not confirm: %v", err)
+	}
+	if lease.calls != 2 {
+		t.Fatalf("the lease was closed %d times", lease.calls)
+	}
+}
