@@ -102,6 +102,6 @@ jobs:
         with: { lfs: true, persist-credentials: false }
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with: { go-version-file: go.mod, cache: false }
-      - name: Verify native namespace claims and inventory bounds
+      - name: Verify Windows worker regression packages
         shell: pwsh
-        run: go test ./cmds/delidev-cli/internal/workspace -run '^(TestClaimedRemovalPreservesUncapturedWritesDuringUnlink|TestSnapshotCreatePublicationFailureRetainsOriginalRecovery|TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart|TestSnapshotObservationSharesBudgetBeforeHashing|TestSnapshotObservationStopsAtAggregateGitInventory|TestSnapshotAdmissionReservesPrivatePathHeadroom)$' -count=1 -timeout=45m -v
+        run: go test ./cmds/delidev-cli/internal/security ./cmds/delidev-cli/internal/nativeprofile ./cmds/delidev-cli/internal/subscription ./cmds/delidev-cli/internal/worker -count=1 -timeout=45m
