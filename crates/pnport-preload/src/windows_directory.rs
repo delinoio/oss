@@ -155,7 +155,11 @@ unsafe fn query(
     // Native-backed directories with no merged entries use the native syscall.
     // `NtQueryDirectoryFileEx` accepts a null context for a handle associated
     // with a completion port, so the association is tracked per open object.
-    if apc.is_some() || !context.is_null() || owned.completion_port.load(Ordering::Acquire) {
+    // Hold the association state for the whole emulation: a concurrent
+    // association request waits for this query instead of installing a port
+    // while a packet-less result is being produced.
+    let association = owned.completion_port();
+    if apc.is_some() || !context.is_null() || *association {
         tracing::debug!(
             action = "windows_directory_query_rejected",
             callback = apc.is_some() || !context.is_null(),

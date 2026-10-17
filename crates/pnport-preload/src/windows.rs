@@ -15,10 +15,7 @@ use std::{
     os::windows::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
     ptr,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex, OnceLock,
-    },
+    sync::{Arc, Mutex, OnceLock, PoisonError, RwLock, RwLockReadGuard},
 };
 
 use ntapi::ntioapi::*;
@@ -92,11 +89,22 @@ impl Drop for Guard {
 struct OpenFile {
     translation: Translation,
     listing: Mutex<Option<directory::Listing>>,
-    /// Set once the native file object is associated with an I/O completion
-    /// port (`FileCompletionInformation`). Duplicated handles share this
-    /// state because they share the `Arc<OpenFile>`, as they share the native
-    /// file object.
-    completion_port: AtomicBool,
+    /// Whether the native file object is associated with an I/O completion
+    /// port (`FileCompletionInformation`). Duplicated handles share this state
+    /// because they share the `Arc<OpenFile>`, as they share the native file
+    /// object. An association request holds the write lock across the native
+    /// call and the state update, and a merged directory query holds the read
+    /// lock for its whole emulation, so a query never observes a half-applied
+    /// association.
+    completion_port: RwLock<bool>,
+}
+impl OpenFile {
+    fn completion_port(&self) -> RwLockReadGuard<'_, bool> {
+        // The guarded value is a plain flag, so a poisoned lock is still valid.
+        self.completion_port
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
 }
 struct Runtime {
     view: View,
@@ -163,7 +171,7 @@ fn track(handle: HANDLE, translation: Translation) {
                 Arc::new(OpenFile {
                     translation,
                     listing: Mutex::new(None),
-                    completion_port: AtomicBool::new(false),
+                    completion_port: RwLock::new(false),
                 }),
             );
         }
@@ -444,19 +452,25 @@ hook!(SET_INFO, ntapi::ntioapi::NtSetInformationFile, c"NtSetInformationFile", (
             if let Err(status) = translate(&target, true) { return status; }
         } else { match object_path(&mut attrs) { Ok(Some(path)) => if let Err(status) = translate(&path, true) { return status; }, _ => return UNSUPPORTED } }
     }
-    let status = (SET_INFO.real())(file,ios,buffer,length,class);
-    // Record the association only after the native association succeeded so a
-    // rejected association never changes directory query behavior.
-    if status >= 0 && class == FileCompletionInformation {
+    if class == FileCompletionInformation {
         if let Some(owned) = handle(file) {
-            owned.completion_port.store(true, Ordering::Release);
-            tracing::debug!(
-                action = "windows_completion_port_recorded",
-                "Recorded an I/O completion port association on a managed handle"
-            );
+            // Serialize the native association request and the recorded state
+            // against merged directory queries on this file object. The state
+            // is recorded only if the native request succeeds so a rejected
+            // request never changes directory query behavior.
+            let mut associated = owned.completion_port.write().unwrap_or_else(PoisonError::into_inner);
+            let status = (SET_INFO.real())(file,ios,buffer,length,class);
+            if status >= 0 {
+                *associated = true;
+                tracing::debug!(
+                    action = "windows_completion_port_recorded",
+                    "Recorded an I/O completion port association on a managed handle"
+                );
+            }
+            return status;
         }
     }
-    status
+    (SET_INFO.real())(file,ios,buffer,length,class)
 });
 hook!(CLOSE, ntapi::ntobapi::NtClose, c"NtClose", (file: HANDLE) -> NTSTATUS, {
     let Some(_guard) = Guard::enter() else { return (CLOSE.real())(file); };
