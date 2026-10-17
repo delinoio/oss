@@ -153,7 +153,8 @@ export interface ClaudeUsageModel {
   submitCode: (value: string) => boolean;
   link: () => void;
   cancelLogin: () => void;
-  disconnectUsage: () => void;
+  /** Disconnects only the usage generation the confirmation reviewed. */
+  disconnectUsage: (reviewedGeneration: string) => void;
   openBrowser: () => void;
 }
 
@@ -533,10 +534,11 @@ export function useClaudeUsageTracking(options: ClaudeUsageTrackingOptions): {
         usageGeneration: usage.generation,
       });
     },
-    disconnectUsage: () => {
+    disconnectUsage: (reviewedGeneration) => {
       if (
         !ready ||
         !usage ||
+        usage.generation !== reviewedGeneration ||
         ![
           ClaudeUsageView.Linked,
           ClaudeUsageView.Stale,
@@ -606,7 +608,8 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
     heading = useRef<HTMLHeadingElement>(null),
     code = useRef<HTMLInputElement>(null),
     visible = useSettingsTaskVisible();
-  const [confirmation, setConfirmation] = useState(false),
+  // The confirmation is bound to the usage generation it was opened for.
+  const [confirmation, setConfirmation] = useState<string>(),
     [invalidCode, setInvalidCode] = useState(false);
   const { view, usage } = model;
   const busy = !model.ready;
@@ -633,8 +636,17 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
       heading.current?.focus({ preventScroll: true });
   }, [view]);
   useEffect(() => {
-    if (!model.active || !visible) setConfirmation(false);
+    if (!model.active || !visible) setConfirmation(undefined);
   }, [model.active, visible]);
+  // Another client may disconnect and reconnect usage while the confirmation is
+  // open: a different generation closes it and needs a fresh confirmation.
+  useEffect(() => {
+    setConfirmation((reviewed) =>
+      reviewed !== undefined && reviewed !== usage?.generation
+        ? undefined
+        : reviewed,
+    );
+  }, [usage?.generation]);
 
   const linkedFamily = [
     ClaudeUsageView.Linked,
@@ -674,7 +686,7 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
       type="button"
       disabled={busy}
       onClick={() => {
-        if (!busy) setConfirmation(true);
+        if (!busy && usage) setConfirmation(usage.generation);
       }}
     >
       {copy("claude-usage.disconnect")}
@@ -1110,12 +1122,12 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
         }
         summary={<p>{copy("claude-usage.requestFailed")}</p>}
       />
-      {confirmation ? (
+      {confirmation !== undefined && confirmation === usage?.generation ? (
         <SettingsTaskDialog
           title={copy("claude-usage.disconnectTitle")}
           size={SettingsDialogSize.Confirmation}
           focus={SettingsDialogFocus.Cancel}
-          close={() => setConfirmation(false)}
+          close={() => setConfirmation(undefined)}
         >
           <section aria-label={copy("claude-usage.disconnectConfirmation")}>
             <p>{copy("claude-usage.disconnectBody")}</p>
@@ -1126,8 +1138,8 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
                 disabled={busy}
                 onClick={() => {
                   if (busy) return;
-                  model.disconnectUsage();
-                  setConfirmation(false);
+                  model.disconnectUsage(confirmation);
+                  setConfirmation(undefined);
                 }}
               >
                 {copy("claude-usage.confirmDisconnect")}
@@ -1135,7 +1147,7 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
               <SettingsTaskDismissButton
                 data-settings-task-cancel
                 type="button"
-                onClick={() => setConfirmation(false)}
+                onClick={() => setConfirmation(undefined)}
               >
                 {copy("claude-usage.keepTracking")}
               </SettingsTaskDismissButton>

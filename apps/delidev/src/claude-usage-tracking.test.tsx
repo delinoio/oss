@@ -795,6 +795,24 @@ it("blocks usage actions while a quota observation owns the account", async () =
   expect(value.disconnect).not.toHaveBeenCalled();
 });
 
+it("closes a disconnect confirmation when another client replaced the usage generation", async () => {
+  const value = mount({ usage: linked(), dialog: () => undefined });
+  const section = await state(ClaudeUsageView.Linked);
+  const open = within(section).getByRole("button", {
+    name: "Disconnect usage",
+  });
+  await waitFor(() => expect((open as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(open);
+  await screen.findByRole("button", { name: "Confirm disconnect" });
+  value.set(linked({ generation: newRequestId() }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Confirm disconnect" }),
+    ).toBeNull(),
+  );
+  expect(value.disconnect).not.toHaveBeenCalled();
+});
+
 it("marks an observation older than five minutes as stale", async () => {
   mount({
     usage: linked({
