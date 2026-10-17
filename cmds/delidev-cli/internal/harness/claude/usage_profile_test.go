@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -75,6 +77,23 @@ func TestUsageKeychainServiceIsDerivedFromTheExactProfileDirectory(t *testing.T)
 	a, b := UsageKeychainService("/data/p/one/claude"), UsageKeychainService("/data/p/two/claude")
 	if a == b || a != UsageKeychainService("/data/p/one/claude") || !strings.HasPrefix(a, "Claude Code-credentials-") || len(a) != len("Claude Code-credentials-")+8 {
 		t.Fatalf("unexpected derivation %q %q", a, b)
+	}
+}
+
+// The Keychain account label is the operating system identity the original CLI
+// resolves, never the process's USER variable, which can be stale or overridden.
+func TestUsageKeychainAccountIgnoresTheUserEnvironment(t *testing.T) {
+	current, err := user.LookupId(strconv.Itoa(os.Geteuid()))
+	if err != nil {
+		t.Skip("the operating system user is not resolvable on this host")
+	}
+	t.Setenv("USER", "stale-environment-user")
+	if got := UsageKeychainAccount(); got != current.Username || got == "stale-environment-user" {
+		t.Fatalf("the Keychain account %q was not the operating system user", got)
+	}
+	t.Setenv("USER", "")
+	if got := UsageKeychainAccount(); got != current.Username {
+		t.Fatalf("an empty USER changed the Keychain account to %q", got)
 	}
 }
 

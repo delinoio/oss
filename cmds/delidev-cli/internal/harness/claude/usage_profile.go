@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -133,15 +134,17 @@ func UsageKeychainService(configDir string) string {
 }
 
 // UsageKeychainAccount is the Keychain account the original CLI uses: the
-// current operating system user.
+// operating system user the process runs as. The profile's child environment
+// never carries USER, so the CLI resolves the same identity from the operating
+// system and a stale or overridden USER of this process must not choose the
+// account label. An identity that cannot be resolved yields the empty account,
+// which makes the macOS adapter fail closed.
 func UsageKeychainAccount() string {
-	if name := os.Getenv("USER"); name != "" {
-		return name
+	current, err := user.LookupId(strconv.Itoa(os.Geteuid()))
+	if err != nil {
+		return ""
 	}
-	if current, err := user.Current(); err == nil {
-		return current.Username
-	}
-	return ""
+	return current.Username
 }
 
 // UsageStorage addresses the native credential storage of exactly one usage
