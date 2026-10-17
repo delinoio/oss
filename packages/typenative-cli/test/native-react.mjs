@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   hostTarget,
   isNativeExecutable,
-  runTool,
+  runProbeTool,
   Target,
   versions,
 } from "../dist/core.js";
@@ -24,6 +24,15 @@ if (!isAbsolute(compiler) && /[/\\]/.test(compiler))
 let directory;
 let phase = "prerequisites";
 let outcome;
+const controller = new AbortController();
+const interrupt = () => controller.abort();
+process.on("SIGINT", interrupt);
+process.on("SIGTERM", interrupt);
+async function run(command, args, cwd) {
+  const result = await runProbeTool(command, args, cwd, controller.signal);
+  if (controller.signal.aborted) throw new Error("TN_PROBE_INTERRUPTED");
+  return result;
+}
 function report(status, details = {}) {
   outcome = {
     schemaVersion: 1,
@@ -41,7 +50,7 @@ function report(status, details = {}) {
 }
 try {
   if (!target) throw new Error("TN_HOST_UNSUPPORTED");
-  const version = runTool(compiler, ["--version"]);
+  const version = await run(compiler, ["--version"]);
   if (
     version.failed ||
     version.status !== 0 ||
@@ -60,7 +69,7 @@ try {
     target === Target.Windows ? "react-probe.exe" : "react-probe",
   );
   phase = "compile";
-  const result = runTool(compiler, [
+  const result = await run(compiler, [
     "build",
     source,
     "--npm-static",
@@ -107,7 +116,7 @@ try {
     const bytes = await readFile(artifact);
     if (!isNativeExecutable(bytes, target))
       throw new Error("TN_NATIVE_ARTIFACT_INVALID");
-    const executed = runTool(artifact, [], directory);
+    const executed = await run(artifact, [], directory);
     if (
       executed.failed ||
       executed.status !== 0 ||
@@ -130,6 +139,12 @@ try {
   const result = await finalizeNativeResult(outcome, async () => {
     if (directory) await rm(directory, { recursive: true, force: true });
   });
+  if (controller.signal.aborted && result.phase !== "cleanup") {
+    result.status = "failed";
+    result.code = "TN_PROBE_INTERRUPTED";
+  }
+  process.removeListener("SIGINT", interrupt);
+  process.removeListener("SIGTERM", interrupt);
   process.stdout.write(
     JSON.stringify({
       ...result,
