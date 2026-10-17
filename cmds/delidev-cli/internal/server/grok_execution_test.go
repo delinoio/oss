@@ -5,12 +5,15 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -733,6 +736,128 @@ func TestGrokExecutionCleanupOnlyReportOnALateReplacementIsRefused(t *testing.T)
 	}
 	if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady || a.Subscription.Generation != generation {
 		t.Fatal("the cleanup-only report did not release the lease")
+	}
+}
+
+// breakWorkerInstanceReads makes every read of the machine's current Worker
+// instance fail with a storage error, the way a transient database failure
+// does, without replacing the instance. The returned function repairs the row.
+func (f *grokFixture) breakWorkerInstanceReads() (restore func()) {
+	f.t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(f.service.Store.Root(), "state.sqlite"))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	var seen int64
+	if err := db.QueryRow("SELECT last_seen FROM worker_instances").Scan(&seen); err != nil {
+		f.t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE worker_instances SET last_seen='unreadable'"); err != nil {
+		f.t.Fatal(err)
+	}
+	return func() {
+		if _, err := db.Exec("UPDATE worker_instances SET last_seen=?", seen); err != nil {
+			f.t.Fatal(err)
+		}
+		db.Close()
+	}
+}
+
+// recordLogs records the message of every log record of the service.
+func (f *grokFixture) recordLogs(also func(message string)) func() []string {
+	var mu sync.Mutex
+	var messages []string
+	f.service.logger = slog.New(finishHook{slog.NewJSONHandler(io.Discard, nil), func(message string) {
+		mu.Lock()
+		messages = append(messages, message)
+		mu.Unlock()
+		if also != nil {
+			also(message)
+		}
+	}})
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(messages)
+	}
+}
+
+// A failed Worker-instance lookup is not a replacement. When the first read of
+// the instance fails, the report is neither accepted nor refused as a
+// replacement: the request aborts before anything is fenced, so the lease stays
+// held and unfenced for the same owner's retry.
+func TestGrokExecutionInstanceLookupFailureAbortsFinishWithoutFencing(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+	lease, err := f.takeExecution(w, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := f.recordLogs(nil)
+	restore := f.breakWorkerInstanceReads()
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, true, false, true); err == nil {
+		t.Fatal("a Finish was accepted although the Worker instance could not be read")
+	}
+	restore()
+	_, a := f.record()
+	if a.Subscription.Lease == nil || a.Subscription.RecoveryRequired || a.Health == domain.AccountFailed || a.Subscription.Generation != generation {
+		t.Fatal("a failed instance lookup fenced or released the lease")
+	}
+	if slices.Contains(messages(), "grok_subscription_replacement_fenced") || slices.Contains(messages(), "grok_subscription_finish_refused") {
+		t.Fatal("a failed instance lookup was handled as a replacement")
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, true, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady {
+		t.Fatal("the retried Finish did not release the lease once the instance could be read")
+	}
+}
+
+// The same holds when the instance can be read at validation but not inside the
+// settlement transaction: the settlement does not commit and is not treated as a
+// replacement, so the instance-wide lost-Worker fence is never persisted for a
+// storage failure. The ordinary post-validation owner fence still holds the
+// lease for the original cleanup-only recovery, as for every other settlement
+// failure, and that report releases it.
+func TestGrokExecutionInstanceLookupFailureWhileSettlingIsNotAReplacement(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+	lease, err := f.takeExecution(w, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restore func()
+	messages := f.recordLogs(func(message string) {
+		if message == "grok_subscription_finish_validated" && restore == nil {
+			restore = f.breakWorkerInstanceReads()
+		}
+	})
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, true, false, true); err == nil {
+		t.Fatal("a Finish was accepted although the Worker instance could not be read while settling")
+	}
+	if restore == nil {
+		t.Fatal("the settlement was not reached")
+	}
+	restore()
+	got := messages()
+	if slices.Contains(got, "grok_subscription_replacement_fenced") || slices.Contains(got, "grok_subscription_replacement_fence_unconfirmed") || slices.Contains(got, "grok_subscription_finish_refused") {
+		t.Fatal("a failed instance lookup was handled as a replacement")
+	}
+	if !slices.Contains(got, "grok_subscription_finish_instance_lookup_failed") {
+		t.Fatal("the failed lookup was not logged")
+	}
+	_, a := f.record()
+	if a.Subscription.Lease == nil || a.Subscription.Generation != generation {
+		t.Fatal("a failed settlement released the lease or changed the generation")
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady || a.Subscription.Generation != generation {
+		t.Fatal("the original owner could not settle the lease")
 	}
 }
 

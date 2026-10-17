@@ -65,6 +65,18 @@ func (s *Service) grokExecutionLeaseView(ctx context.Context, tx *store.Tx, id, 
 	return r, a, *l, nil
 }
 
+// workerInstanceReplaced reports whether the machine's current Worker instance
+// differs from the one that owns the lease. Unlike currentInstance it does not
+// fold a failed lookup into the answer: a storage error is returned as an error
+// so it can never be mistaken for a replacement, which fences the lease.
+func workerInstanceReplaced(tx *store.Tx, machine, instance domain.ID) (bool, error) {
+	current, _, err := tx.WorkerInstance(machine)
+	if err != nil {
+		return false, err
+	}
+	return current != instance, nil
+}
+
 // grokExecuteLease reports whether the account currently holds the named Execute
 // lease. A lease that is gone or of another action returns false, so a replayed
 // Finish of a released lease reaches the receipt replay of the shared Finish.
@@ -308,6 +320,7 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 				s.logger.Warn("grok_subscription_replacement_fence_unconfirmed", "phase", grokExecutionPhase, "account_id", m.Id, "lease_id", req.Msg.LeaseId, "code", domain.SafeError(err).Code)
 			} else {
 				fenced = true
+				s.logger.Info("grok_subscription_replacement_fenced", "phase", grokExecutionPhase, "account_id", m.Id, "lease_id", req.Msg.LeaseId)
 			}
 		}
 		if owned && !fenced {
@@ -336,7 +349,13 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 			if err != nil {
 				return err
 			}
-			replaced = currentInstance(tx, input.Machine, input.Instance) != nil
+			// A failed lookup aborts the request: only a verified mismatch is a
+			// replacement, so replaced stays false and nothing is fenced for it.
+			changed, err := workerInstanceReplaced(tx, input.Machine, input.Instance)
+			if err != nil {
+				return err
+			}
+			replaced = changed
 			return nil
 		})
 		if err != nil {
@@ -430,7 +449,13 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 			if err != nil {
 				return nil, err
 			}
-			replacedNow := currentInstance(tx, input.Machine, input.Instance) != nil
+			// A failed lookup aborts the settlement without marking a replacement, so
+			// the instance-wide fence is only ever persisted for a verified mismatch.
+			replacedNow, err := workerInstanceReplaced(tx, input.Machine, input.Instance)
+			if err != nil {
+				s.logger.WarnContext(ctx, "grok_subscription_finish_instance_lookup_failed", "phase", grokExecutionPhase, "account_id", input.Account, "lease_id", input.Lease, "code", domain.SafeError(err).Code)
+				return nil, err
+			}
 			state := a.Subscription
 			if state.RecoveryRequired != original.Subscription.RecoveryRequired || state.Generation != input.Generation || state.Lease.Revision != input.Revision || !state.RecoveryRequired && state.Lease.Epoch != s.subscriptionServerEpoch() {
 				return nil, subscriptionDenied()
