@@ -334,6 +334,19 @@ func TestPaidActivationAndRenewal(t *testing.T) {
 	if _, e = db.Pool.Exec(ctx, "UPDATE tenants SET renewal_failed=true WHERE id=$1", tenant); e != nil {
 		t.Fatal(e)
 	}
+	change, e = client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: tenant, PlanId: paid.Msg.Plan.Id, PriceIds: []string{price.Msg.Price.Id}, ReturnUrl: cfg.ReturnURLs[0]}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	transaction.ID = "txn_change"
+	transaction.Custom.JobID = change.Msg.JobId
+	if e = w.ApplyTransaction(ctx, transaction, now.Add(time.Second)); e != nil {
+		t.Fatal(e)
+	}
+	var stillBlocked bool
+	if e = db.Pool.QueryRow(ctx, "SELECT renewal_failed FROM tenants WHERE id=$1", tenant).Scan(&stillBlocked); e != nil || !stillBlocked {
+		t.Fatal("unrelated payment cleared renewal failure", e)
+	}
 	transaction.ID = "txn_renewal"
 	transaction.Origin = "subscription_recurring"
 	transaction.BillingPeriod.StartsAt = transaction.BillingPeriod.EndsAt

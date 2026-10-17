@@ -186,7 +186,7 @@ func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Tra
 			periodStart = t.BillingPeriod.StartsAt
 			periodEnd = t.BillingPeriod.EndsAt
 		}
-		_, e = tx.Exec(ctx, "UPDATE tenants SET plan_id=$2,external_customer_id=$3,external_subscription_id=$4,period_start=$5,period_end=$6,renewal_failed=false WHERE id=$1", j.Tenant, p.PlanID, t.CustomerID, t.SubscriptionID, periodStart, periodEnd)
+		_, e = tx.Exec(ctx, "UPDATE tenants SET plan_id=$2,external_customer_id=$3,external_subscription_id=$4,period_start=$5,period_end=$6 WHERE id=$1", j.Tenant, p.PlanID, t.CustomerID, t.SubscriptionID, periodStart, periodEnd)
 		if e != nil {
 			return e
 		}
