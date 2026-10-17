@@ -40,7 +40,7 @@ func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
 				return e
 			}
 		}
-		rows, e := tx.Query(ctx, `SELECT t.id::text,t.auto_amount::text FROM tenants t WHERE t.auto_amount IS NOT NULL AND NOT t.auto_suspended AND t.deleting_at IS NULL AND t.deleted_at IS NULL AND NOT t.operator_block AND NOT t.renewal_failed
+		rows, e := tx.Query(ctx, `SELECT t.id::text,t.auto_amount::text FROM tenants t WHERE t.auto_amount IS NOT NULL AND t.external_subscription_id<>'' AND t.period_end>now() AND NOT t.auto_suspended AND t.deleting_at IS NULL AND t.deleted_at IS NULL AND NOT t.operator_block AND NOT t.renewal_failed
    AND NOT EXISTS(SELECT 1 FROM disputes WHERE tenant_id=t.id AND active)
    AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)<t.auto_threshold
    AND NOT EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind='auto_topup' AND state IN ('pending','running','reconcile'))

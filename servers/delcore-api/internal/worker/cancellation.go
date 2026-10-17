@@ -11,7 +11,7 @@ import (
 func (w *Worker) activateFree(ctx context.Context, tx pgx.Tx, tenant string, at time.Time) error {
 	start := time.Date(at.Year(), at.Month(), 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(0, 1, 0)
-	_, e := tx.Exec(ctx, "UPDATE tenants SET plan_id=(SELECT id FROM plans WHERE is_default AND free),external_subscription_id='',period_start=$2,period_end=$3 WHERE id=$1", tenant, start, end)
+	_, e := tx.Exec(ctx, "UPDATE tenants SET plan_id=(SELECT id FROM plans WHERE is_default AND free),external_subscription_id='',auto_suspended=true,period_start=$2,period_end=$3 WHERE id=$1", tenant, start, end)
 	if e != nil {
 		return e
 	}

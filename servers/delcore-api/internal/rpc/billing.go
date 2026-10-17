@@ -57,12 +57,12 @@ func (s *Server) SetAutoTopUp(ctx context.Context, r *connect.Request[pb.SetAuto
 		if e1 != nil || e2 != nil || e3 != nil || len(q.Threshold) > 64 || len(q.Amount) > 64 || len(q.MonthlyCap) > 64 || threshold.Cmp(accounting.Zero()) < 0 || amount.Cmp(accounting.Zero()) <= 0 || cap.Cmp(amount) < 0 || !amount.IsMinorExact(c.s.Config.MinorUnits) {
 			return invalid("invalid automatic top-up settings")
 		}
-		tag, e := c.tx.Exec(c.ctx, "UPDATE tenants SET auto_threshold=$2,auto_amount=$3,auto_cap=$4,auto_suspended=false WHERE id=$1 AND deleting_at IS NULL", q.TenantId, threshold.String(), amount.String(), cap.String())
+		tag, e := c.tx.Exec(c.ctx, "UPDATE tenants SET auto_threshold=$2,auto_amount=$3,auto_cap=$4,auto_suspended=false WHERE id=$1 AND deleting_at IS NULL AND external_subscription_id<>'' AND NOT renewal_failed AND period_end>$5", q.TenantId, threshold.String(), amount.String(), cap.String(), c.now)
 		if e != nil {
 			return e
 		}
 		if tag.RowsAffected() != 1 {
-			return precondition("tenant is deleting")
+			return precondition("automatic top-ups require an active Paddle subscription")
 		}
 		return c.audit(q.TenantId, "billing.auto_topup", "")
 	})

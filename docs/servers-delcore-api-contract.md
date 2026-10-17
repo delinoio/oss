@@ -70,7 +70,7 @@ Authenticated users, registered M2M consumer services, tenant administrators and
 - Use exact decimal arithmetic without binary floating point. Preserve unrounded credit ledger precision; round monthly service/meter totals to currency minor units using half-up rounding.
 - Late usage uses the price applicable when it occurred and becomes an adjustment on the next bill, retaining its original period. Bound accepted lateness through operator configuration.
 - Purchased credits represent monetary balances and do not expire.
-- Support manual and automatic top-ups. Automatic top-up settings require a threshold, amount, and monthly cap.
+- Support manual top-ups for all tenants. Automatic top-ups require an active Paddle subscription; tenants without one use manual top-ups. Automatic top-up settings require a threshold, amount, and monthly cap.
 - Permit only one in-flight automatic top-up per tenant. Suspend automatic top-ups after payment failure.
 - A plan determines whether depleted credits cause blocking or postpaid continuation.
 - For plans without postpaid continuation, record already-incurred excess usage as negative credit balance, block subsequent paid use, and offset debt with the next top-up.

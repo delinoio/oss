@@ -400,6 +400,9 @@ func TestMaintenanceAndDeletionHolds(t *testing.T) {
 	now := time.Now().UTC()
 	cfg.DeletionGraceSeconds = 10
 	cfg.WebhookRetentionSeconds = 3600
+	if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='sub_auto' WHERE id=$1", tenant); e != nil {
+		t.Fatal(e)
+	}
 	_, e := client.SetAutoTopUp(ctx, req(&pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: true, Threshold: "5", Amount: "10", MonthlyCap: "20"}, "owner"))
 	if e != nil {
 		t.Fatal(e)
@@ -429,6 +432,9 @@ func TestMaintenanceAndDeletionHolds(t *testing.T) {
 	}
 	if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM jobs WHERE kind='auto_topup'").Scan(&count); e != nil || count != 2 {
 		t.Fatal("monthly cap not enforced", count, e)
+	}
+	if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='' WHERE id=$1", tenant); e != nil {
+		t.Fatal(e)
 	}
 	_, e = db.Pool.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'credit',10,'fixture',now())", key(), tenant)
 	if e != nil {
@@ -1091,7 +1097,7 @@ func TestEmptyMutationResponsesReplay(t *testing.T) {
 	db, client, _ := setup(t)
 	ctx := context.Background()
 	_, tenant := bootstrap(t, client)
-	q := &pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: true, Threshold: "5", Amount: "10", MonthlyCap: "20"}
+	q := &pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: false}
 	for i := 0; i < 2; i++ {
 		if _, e := client.SetAutoTopUp(ctx, req(q, "owner")); e != nil {
 			t.Fatal("empty response retry", e)
@@ -1106,5 +1112,28 @@ func TestEmptyMutationResponsesReplay(t *testing.T) {
 		if _, e := client.DeleteTenant(ctx, req(deletion, "owner")); e != nil {
 			t.Fatal("deletion retry", e)
 		}
+	}
+}
+
+func TestAutoTopupRequiresActiveSubscription(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	for _, state := range []string{"free", "active", "failed"} {
+		if state != "free" {
+			if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='sub_auto',renewal_failed=$2 WHERE id=$1", tenant, state == "failed"); e != nil {
+				t.Fatal(e)
+			}
+		}
+		_, e := client.SetAutoTopUp(ctx, req(&pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: true, Threshold: "5", Amount: "10", MonthlyCap: "20"}, "owner"))
+		if state == "active" && e != nil {
+			t.Fatal(e)
+		}
+		if state != "active" && connect.CodeOf(e) != connect.CodeFailedPrecondition {
+			t.Fatal("inactive subscription accepted", e)
+		}
+	}
+	if _, e := client.RequestTopUp(ctx, req(&pb.RequestTopUpRequest{RequestKey: key(), TenantId: tenant, Amount: "10", ReturnUrl: cfg.ReturnURLs[0]}, "owner")); e != nil {
+		t.Fatal("manual recovery unavailable", e)
 	}
 }
