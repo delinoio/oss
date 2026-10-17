@@ -467,7 +467,48 @@ try {
             await restoreScroll("owner restored");
             await assertPlacement("owner restored");
 
+            // Scrolling the input completely out of its clipping owner dismisses
+            // the popup instead of leaving it beside unrelated content, and
+            // retains the typed draft. A spacer gives the owner room to scroll
+            // even when the form is shorter than the viewport.
+            await input.fill("zz");
+            const scrolledOut = await input.evaluate(async (node) => {
+              for (
+                let owner = node.parentElement;
+                owner;
+                owner = owner.parentElement
+              ) {
+                if (!/(auto|scroll)/.test(getComputedStyle(owner).overflowY))
+                  continue;
+                const spacer = document.createElement("div");
+                spacer.dataset.spacer = "true";
+                spacer.style.height = "4000px";
+                owner.append(spacer);
+                if (owner.scrollHeight - owner.clientHeight < 100) {
+                  spacer.remove();
+                  continue;
+                }
+                const ownerBox = owner.getBoundingClientRect(),
+                  box = node.getBoundingClientRect();
+                owner.scrollTop += box.bottom - ownerBox.top + 8;
+                return true;
+              }
+              return false;
+            });
+            assert(scrolledOut, `${state}: a clipping scroll owner exists`);
+            await frames(page);
+            await assertClosed("scrolled out of the owner");
+            assert.equal(await input.inputValue(), "zz", state);
+            await input.evaluate(() =>
+              document.querySelector("[data-spacer]").remove(),
+            );
+            await frames(page);
+            await restoreScroll("scrolled out");
+            await assertStable("scrolled out");
+            await input.fill("");
+
             // Near the bottom edge the popup flips above and stays clamped.
+            await input.click();
             await input.press("Escape");
             await input.evaluate((node) => {
               for (
