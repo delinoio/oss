@@ -220,9 +220,13 @@ func (a *apiBinding) validateConfig(config map[string]json.RawMessage) error {
 	if a.openRouterTools {
 		var features map[string]json.RawMessage
 		var standalone bool
+		var imageGeneration *bool
 		var mode string
 		if json.Unmarshal(config["features"], &features) != nil || json.Unmarshal(features["standalone_web_search"], &standalone) != nil || !standalone || json.Unmarshal(config["web_search"], &mode) != nil || mode != "live" {
 			return apiConfigMismatch("tool-profile")
+		}
+		if json.Unmarshal(features["image_generation"], &imageGeneration) != nil || imageGeneration == nil || *imageGeneration {
+			return apiConfigMismatch("image-tool-profile")
 		}
 	}
 	// config/read serializes all optional native provider fields as null. Only

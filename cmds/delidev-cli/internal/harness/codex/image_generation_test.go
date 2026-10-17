@@ -166,12 +166,14 @@ func TestNativeImageGenerationActivationRequiresOriginalManagedAssignment(t *tes
 	if len(valid.Process.Args) != 2 || valid.Process.Args[1] != "features.image_generation=true" {
 		t.Fatal("native feature not requested")
 	}
-	for _, kind := range []string{"proxy", "Sidechat", "no-auth", "probe", "no-root", "no-machine"} {
+	for _, kind := range []string{"proxy", "OpenRouter", "Sidechat", "no-auth", "probe", "no-root", "no-machine"} {
 		config := valid
 		config.Process.Args = nil
 		switch kind {
 		case "proxy":
 			config.API = &APIConfig{}
+		case "OpenRouter":
+			config.API = &APIConfig{OpenRouterTools: true}
 		case "Sidechat":
 			config.Sidechat = ReadOnlySidechatV1
 		case "no-auth":
@@ -196,6 +198,31 @@ func TestNativeImageGenerationActivationRequiresOriginalManagedAssignment(t *tes
 	readonly := Client{imageObservations: (Config{Mode: ThreadProtocol, ManagedAuthentication: true, Sidechat: ReadOnlySidechatV1, ImageRoot: t.TempDir()}).imageObservationProfile()}
 	if readonly.nativeFrameLimit() != 16<<20 {
 		t.Fatal("original image-bearing history truncated for read-only Sidechat")
+	}
+}
+
+func TestOpenRouterImageFramesDoNotEnableBuiltInGeneration(t *testing.T) {
+	config := Config{Mode: ThreadProtocol, DynamicTools: true, API: &APIConfig{OpenRouterTools: true}, ImageRoot: t.TempDir(), ImageMachineID: domain.NewID()}
+	if err := configureImageGeneration(&config); err != nil || len(config.Process.Args) != 2 || config.Process.Args[1] != "features.image_generation=false" {
+		t.Fatal("API execution enabled built-in generation", err)
+	}
+	client := Client{imageObservations: config.imageObservationProfile()}
+	if !client.imageObservations || client.nativeFrameLimit() != enlargedNativeFrameBytes {
+		t.Fatal("dynamic image reply lost its enlarged frame")
+	}
+	for _, change := range []func(*Config){
+		func(c *Config) { c.API = &APIConfig{} },
+		func(c *Config) { c.DynamicTools = false },
+		func(c *Config) { c.Sidechat = ReadOnlySidechatV1 },
+		func(c *Config) { c.ImageRoot = "" },
+		func(c *Config) { c.ImageMachineID = "" },
+		func(c *Config) { c.EnableImageGeneration = true },
+	} {
+		invalid := config
+		change(&invalid)
+		if invalid.imageObservationProfile() {
+			t.Fatal("unsupported API scope acquired enlarged dynamic frames")
+		}
 	}
 }
 

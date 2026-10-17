@@ -26,6 +26,9 @@ remain mandatory. The private native forwarder admits these paths only for a
 selected tool execution. No caller-selected URL or model fallback is accepted.
 
 Codex reserves its built-in `image_gen` namespace for managed authentication.
+API executions explicitly disable the built-in `image_generation` feature.
+The selected adapter independently admits enlarged dynamic-image reply and
+history frames, and verifies the effective feature remains disabled before input.
 New selected API threads register the native dynamic tool
 `delidev_image.imagegen`; native Resume retains that original specification.
 Older threads do not acquire a new backend during continuation. The dynamic

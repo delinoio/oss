@@ -111,7 +111,7 @@ func TestManualNativeOpenRouterToolProfileDispatchesImageAndSearch(t *testing.T)
 	defer provider.Close()
 	cfg := nativeFixtureConfig(t, binary, provider.URL)
 	cfg.Version = observed
-	cfg.DynamicTools, cfg.EnableImageGeneration = true, true
+	cfg.DynamicTools = true
 	cfg.ImageRoot, cfg.ImageMachineID = t.TempDir(), domain.NewID()
 	cfg.API = &APIConfig{OpenRouterTools: true, ServerOrigin: provider.URL, Token: apiFixtureToken()}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -121,6 +121,9 @@ func TestManualNativeOpenRouterToolProfileDispatchesImageAndSearch(t *testing.T)
 		t.Fatal(err)
 	}
 	defer client.Close()
+	if client.imageGeneration || !client.imageObservations || client.nativeFrameLimit() != enlargedNativeFrameBytes {
+		t.Fatal("selected API image adapter acquired built-in image authority or lost its frame profile")
+	}
 	settings := ThreadSettings{Model: "openai/gpt-6-luna", Provider: APIProvider, Effort: "high", Cwd: cfg.Process.Cwd, Options: domain.AgentOptions{Permission: domain.PermissionFullAccess, ApprovalPolicy: "on-request"}}
 	if _, err := client.StartThread(ctx, domain.NewID(), settings); err != nil {
 		t.Fatal(err)

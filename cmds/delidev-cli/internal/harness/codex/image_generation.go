@@ -180,7 +180,12 @@ func (config Config) imageObservationProfile() bool {
 	if config.FrameProfile == ForkHistoryFrameProfile {
 		return config.Mode == ThreadProtocol && config.ManagedAuthentication && config.ManagedForkHistory && config.API == nil && config.Sidechat == ""
 	}
-	if config.Mode != ThreadProtocol || !(config.ManagedAuthentication && config.API == nil || config.API != nil && config.API.OpenRouterTools) || config.ImageRoot == "" {
+	if config.API != nil {
+		// The selected dynamic image backend needs large replies and retained
+		// history, but never grants the built-in OpenAI image tool authority.
+		return config.Mode == ThreadProtocol && config.API.OpenRouterTools && config.DynamicTools && !config.EnableImageGeneration && config.Sidechat == "" && config.ImageRoot != "" && config.ImageMachineID.Validate() == nil
+	}
+	if config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.ImageRoot == "" {
 		return false
 	}
 	if config.EnableImageGeneration {
@@ -193,7 +198,7 @@ func (config Config) imageObservationProfile() bool {
 // read verifies the request; actual account/provider proof remains independent.
 func configureImageGeneration(config *Config) error {
 	if config.EnableImageGeneration {
-		if config.Mode != ThreadProtocol || !(config.ManagedAuthentication && config.API == nil || config.API != nil && config.API.OpenRouterTools) || config.Sidechat != "" || config.ImageRoot == "" || config.ImageMachineID.Validate() != nil {
+		if config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ImageRoot == "" || config.ImageMachineID.Validate() != nil {
 			return incompatible()
 		}
 		config.Process.Args = append(config.Process.Args, "-c", "features.image_generation=true")
