@@ -137,11 +137,9 @@ console.log(total, describeLongName("items", total));
     let main = emitted(temp.path(), "main.ts");
     assert!(!main.contains("function square"), "{main}");
     assert!(main.contains("side * side + i * i"), "{main}");
-    // `total` changes inside the loop and `+` may run user code first.
-    assert!(
-        main.contains("describeLongName(\"items\", total)"),
-        "{main}"
-    );
+    // `total` changes inside the loop, but only module-level code writes it,
+    // so user code run by `+` cannot change it before the body reads it.
+    assert!(main.contains("\"items\" + \":\" + total"), "{main}");
     same_behavior(temp.path());
 }
 
@@ -239,6 +237,54 @@ console.log(afterBump(bump()), afterBump(bump()));
         )],
         "afterBump(",
     );
+}
+
+#[test]
+fn keeps_reads_of_bindings_that_other_functions_write() {
+    assert_not_inlined(
+        &[(
+            "main.ts",
+            r#"let shared = 0;
+function bump(): number {
+  shared += 1;
+  console.log("bump", shared);
+  return shared;
+}
+function after(value: number) {
+  return bump() + value;
+}
+console.log(after(shared), after(shared));
+"#,
+        )],
+        "after(",
+    );
+}
+
+#[test]
+fn inlines_reads_of_function_private_mutable_bindings_after_body_effects() {
+    let files: &[(&str, &str)] = &[(
+        "main.ts",
+        r#"function log(label: string): number {
+  console.log(label);
+  return label.length;
+}
+function tagged(value: number) {
+  return log("tag") + value;
+}
+function run(start: number) {
+  let local = start;
+  local += 1;
+  return tagged(local);
+}
+console.log(run(1), run(5));
+"#,
+    )];
+    let temp = project(files);
+    let report = optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    let main = emitted(temp.path(), "main.ts");
+    assert!(main.contains("log(\"tag\") + local"), "{main}\n{report:#}");
+    assert!(!main.contains("tagged("), "{main}");
+    same_behavior(temp.path());
 }
 
 #[test]
