@@ -146,10 +146,47 @@ func (s *Service) requestClaudeUsageRefresh(ctx context.Context, req *connect.Re
 	case err == nil:
 		s.logger.InfoContext(ctx, "claude_usage_refresh_accepted", "account_id", account, "operation_id", operation, "coalesced", false)
 	case errors.Is(err, errClaudeUsageBusy):
-		// Single-flight: the running read answers this request too.
+		// Single-flight: the running read answers this request too, but only
+		// after the request was validated and durably claimed, so an exact retry
+		// replays instead of starting another provider read.
+		if err := s.claimCoalescedClaudeUsageRefresh(ctx, account, operation, actor, claudeUsageFence{connection: connection, generation: generation}, input); err != nil {
+			return fail(err)
+		}
 		s.logger.InfoContext(ctx, "claude_usage_refresh_accepted", "account_id", account, "operation_id", operation, "coalesced", true)
 	default:
 		return fail(err)
 	}
 	return respond(false)
+}
+
+// claimCoalescedClaudeUsageRefresh records the receipt of an explicit refresh
+// that coalesced into a running read. It applies the admission's validation (a
+// linked connection, the confirmed execution connection and generation, a valid
+// actor) and writes only the durable claim under the admission's receipt name, so
+// the exact retained request replays after the running read finishes instead of
+// starting a second provider read.
+func (s *Service) claimCoalescedClaudeUsageRefresh(ctx context.Context, account, operation domain.ID, actor domain.Principal, fence claudeUsageFence, input any) error {
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	_, err = s.Store.Mutate(ctx, operation, "claude.usage.read.claim", input, func(tx *store.Tx) (any, error) {
+		_, a, err := claudeUsageAccountTx(tx, account, 0)
+		if err != nil {
+			return nil, err
+		}
+		usage := a.Subscription.ClaudeUsage
+		if a.Connection == nil || a.Removal != nil || usage == nil || usage.Connection != domain.ClaudeUsageLinked {
+			return nil, claudeUsageConflict("The Claude usage connection is not linked.")
+		}
+		if fence.connection != "" && (a.Connection.ID != fence.connection || a.Subscription.Generation != fence.generation) {
+			return nil, domain.Fail(domain.Conflict, "The confirmed account generation changed.", "Read the current account and confirm the original operation again before sending.")
+		}
+		if subscriptionActorValid(tx, actor) != nil {
+			return nil, subscriptionDenied()
+		}
+		return struct{}{}, nil
+	})
+	return err
 }

@@ -587,6 +587,48 @@ func TestClaudeUsageOverlappingTriggersShareOneRead(t *testing.T) {
 	}
 }
 
+// A request that coalesced into a running read is validated and durably claimed
+// like an admitted one, so retrying it exactly after the read finished replays
+// instead of fetching again, and an unfenced stale request is refused while the
+// read runs.
+func TestClaudeUsageCoalescedRefreshIsClaimedAndReplaysAfterTheReadFinishes(t *testing.T) {
+	f := newReadFixture(t, nil)
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	f.provider.handler = func(int, *http.Request) (*http.Response, error) {
+		once.Do(func() { close(started) })
+		<-release
+		return usageResponse(200, usageBody), nil
+	}
+	if _, err := f.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	stale := f.refreshRequest(domain.NewID())
+	stale.GenerationId = string(domain.NewID())
+	if _, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, stale)); connectCode(err) == 0 {
+		t.Fatal("a stale generation was acknowledged by the busy shortcut")
+	}
+	coalesced := f.refreshRequest(domain.NewID())
+	first, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, coalesced))
+	if err != nil || first.Msg.Replayed {
+		t.Fatalf("the coalesced refresh was not accepted: %v %+v", err, first)
+	}
+	close(release)
+	f.await()
+	if f.provider.count() != 1 {
+		t.Fatalf("coalescing sent %d provider requests", f.provider.count())
+	}
+	retried, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, coalesced))
+	if err != nil || !retried.Msg.Replayed || retried.Msg.OperationId != coalesced.Mutation.RequestId {
+		t.Fatalf("the coalesced request did not replay: %v %+v", err, retried)
+	}
+	f.await()
+	if f.provider.count() != 1 {
+		t.Fatalf("the retried coalesced request started another provider read: %d", f.provider.count())
+	}
+}
+
 func TestClaudeUsageRefreshReceiptReplayNeverReadsAgain(t *testing.T) {
 	f := newReadFixture(t, nil)
 	request := f.refreshRequest(domain.NewID())
