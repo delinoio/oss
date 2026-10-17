@@ -802,6 +802,25 @@ fn completion_port_directory_queries(root: &Path) {
     } else {
         eprintln!("FileReplaceCompletionInformation is unavailable: {installed:#x}");
     }
+    // An unreadable replacement payload must surface the native failure
+    // instead of faulting the detour, and must not change the recorded state.
+    let unreadable = unsafe {
+        let mut ios: IO_STATUS_BLOCK = std::mem::zeroed();
+        NtSetInformationFile(
+            directory,
+            &mut ios,
+            // Page zero is never mapped, so the native probe rejects the
+            // pointer while the detour must not dereference it.
+            0x10 as *mut c_void,
+            (2 * std::mem::size_of::<usize>()) as u32,
+            FILE_REPLACE_COMPLETION_INFORMATION,
+        )
+    };
+    assert!(unreadable < 0, "unreadable payload status {unreadable:#x}");
+    for api in apis {
+        let status = query(directory, api, None);
+        assert!(status >= 0, "{api:?} after unreadable payload {status:#x}");
+    }
     unsafe {
         CloseHandle(directory);
         CloseHandle(port);

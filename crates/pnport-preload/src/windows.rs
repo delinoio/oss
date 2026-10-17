@@ -434,6 +434,12 @@ hook!(WRITE, ntapi::ntioapi::NtWriteFile, c"NtWriteFile", (file: HANDLE, event: 
 /// `FileReplaceCompletionInformation` (Windows 8.1+) changes the port, or
 /// removes the association when `FILE_COMPLETION_INFORMATION::Port` is null.
 /// Returns `None` when the replacement payload cannot be read.
+///
+/// The caller's buffer is not validated yet: the native call has not run, so
+/// an unreadable non-null pointer must produce the native failure instead of
+/// a fault in this process. The payload is therefore copied with
+/// `ReadProcessMemory` on the current process, which reports an unreadable
+/// range as an error instead of raising an access violation.
 unsafe fn completion_port_request(
     class: FILE_INFORMATION_CLASS,
     buffer: PVOID,
@@ -445,8 +451,25 @@ unsafe fn completion_port_request(
     if buffer.is_null() || (length as usize) < std::mem::size_of::<FILE_COMPLETION_INFORMATION>() {
         return None;
     }
-    let request = ptr::read_unaligned(buffer.cast::<FILE_COMPLETION_INFORMATION>());
-    Some(!request.Port.is_null())
+    let size = std::mem::size_of::<FILE_COMPLETION_INFORMATION>();
+    let mut request = std::mem::MaybeUninit::<FILE_COMPLETION_INFORMATION>::uninit();
+    let mut copied = 0;
+    let read = winapi::um::memoryapi::ReadProcessMemory(
+        winapi::um::processthreadsapi::GetCurrentProcess(),
+        buffer,
+        request.as_mut_ptr().cast(),
+        size,
+        &mut copied,
+    );
+    if read == 0 || copied != size {
+        tracing::debug!(
+            action = "windows_completion_port_payload_unreadable",
+            class,
+            "Could not read the completion port replacement payload before the native call"
+        );
+        return None;
+    }
+    Some(!request.assume_init().Port.is_null())
 }
 hook!(SET_INFO, ntapi::ntioapi::NtSetInformationFile, c"NtSetInformationFile", (file: HANDLE, ios: PIO_STATUS_BLOCK, buffer: PVOID, length: ULONG, class: FILE_INFORMATION_CLASS) -> NTSTATUS, {
     let Some(_guard) = Guard::enter() else { return (SET_INFO.real())(file,ios,buffer,length,class); };
