@@ -990,3 +990,39 @@ func TestDeletionDistinguishesRejectedAndUnknownPurchases(t *testing.T) {
 		})
 	}
 }
+
+func TestRecoveredSubscriptionMutationUsesKnownSubscription(t *testing.T) {
+	for _, kind := range []string{"cancel", "subscription"} {
+		t.Run(kind, func(t *testing.T) {
+			db, client, cfg := setup(t)
+			ctx := context.Background()
+			_, tenant := bootstrap(t, client)
+			if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='sub_recovered' WHERE id=$1", tenant); e != nil {
+				t.Fatal(e)
+			}
+			jobID := key()
+			if _, e := db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,available_at,created_at,updated_at) VALUES($1,$2,$3,$1::uuid::text,'{"timing":"do_not_bill","external_price_ids":["pri_new"]}','running',now(),now(),now())`, jobID, tenant, kind); e != nil {
+				t.Fatal(e)
+			}
+			mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "GET" || r.URL.Path != "/subscriptions/sub_recovered" {
+					t.Errorf("unexpected recovery request %s %s", r.Method, r.URL.Path)
+				}
+				io.WriteString(w, `{"data":{"id":"sub_recovered","status":"active","items":[{"price":{"id":"pri_new"},"quantity":1}],"scheduled_change":{"action":"cancel"}}}`)
+			}))
+			defer mock.Close()
+			cfg.PaddleURL = mock.URL
+			w := &worker.Worker{DB: db, Config: cfg, Provider: provider.New(cfg), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+			if e := w.Recover(ctx); e != nil {
+				t.Fatal(e)
+			}
+			if e := w.Step(ctx); e != nil {
+				t.Fatal(e)
+			}
+			var state, external string
+			if e := db.Pool.QueryRow(ctx, "SELECT state,external_id FROM jobs WHERE id=$1", jobID).Scan(&state, &external); e != nil || state != "reconcile" || external != "sub_recovered" {
+				t.Fatal(state, external, e)
+			}
+		})
+	}
+}

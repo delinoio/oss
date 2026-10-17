@@ -13,6 +13,13 @@ import (
 )
 
 func (w *Worker) reconcile(ctx context.Context, j job) error {
+	// A crash can occur before finish persists the response ID. Subscription
+	// mutations already have an authoritative target on the tenant.
+	if j.ExternalID == "" && (j.Kind == "cancel" || j.Kind == "subscription") {
+		if e := w.DB.Pool.QueryRow(ctx, "SELECT external_subscription_id FROM tenants WHERE id=$1", j.Tenant).Scan(&j.ExternalID); e != nil {
+			return e
+		}
+	}
 	if j.ExternalID == "" {
 		// Search provider state once before requiring operator review. Absence
 		// from a bounded page is never proof that a charge did not happen.
@@ -64,6 +71,30 @@ func (w *Worker) reconcile(ctx context.Context, j job) error {
 				return w.finish(ctx, j, "done", "", j.ExternalID)
 			}
 			return w.finish(ctx, j, "reconcile", "awaiting_renewal", j.ExternalID)
+		}
+		if j.Kind == "subscription" {
+			var p struct {
+				Timing         string   `json:"timing"`
+				ExternalPrices []string `json:"external_price_ids"`
+			}
+			if json.Unmarshal(j.Payload, &p) != nil {
+				return w.finish(ctx, j, "failed", "invalid_payload", j.ExternalID)
+			}
+			if p.Timing == "do_not_bill" {
+				raw, e := w.Provider.Request(ctx, http.MethodGet, "/subscriptions/"+url.PathEscape(j.ExternalID), nil)
+				if e != nil {
+					return w.retry(ctx, j, e, true)
+				}
+				var state provider.Transaction
+				if json.Unmarshal(raw, &state) != nil || state.ID != j.ExternalID {
+					return w.retry(ctx, j, provider.ErrAmbiguous, true)
+				}
+				if !matchesPrices(state, p.ExternalPrices) {
+					return w.finish(ctx, j, "failed", "subscription_mismatch", j.ExternalID)
+				}
+				// Accepted no-charge changes become entitlements only on a paid renewal.
+				return w.finish(ctx, j, "reconcile", "awaiting_renewal", j.ExternalID)
+			}
 		}
 		raw, e := w.Provider.Request(ctx, http.MethodGet, "/transactions?subscription_id="+url.QueryEscape(j.ExternalID)+"&per_page=200&order_by=created_at[DESC]", nil)
 		if e != nil {
