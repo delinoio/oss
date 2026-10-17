@@ -902,7 +902,10 @@ func TestPurposeHarnessMatrixAcrossAcquireRegisterLegacyAndLookup(t *testing.T) 
 				root := testRoot(t)
 				r, _ := workerRegistry(t, root, nil)
 				key := keyFor(purpose, harness, domain.NewID(), domain.NewID())
-				defined := (purpose != PurposeSharedOwner || harness == domain.Codex) && (purpose != PurposeUsage || harness == domain.ClaudeCode)
+				// The usage purpose is Claude Code and server only; this matrix
+				// uses a Worker registry, so it is undefined here (see
+				// TestUsageProfileIsServerOwnedManagedAndNeverAdopted).
+				defined := (purpose != PurposeSharedOwner || harness == domain.Codex) && purpose != PurposeUsage
 				relative := "retained/" + string(purpose) + "-" + string(harness)
 				home := filepath.Join(root, filepath.FromSlash(relative))
 				if err := security.PrivateDir(home); err != nil {
@@ -974,6 +977,77 @@ func TestPurposeHarnessMatrixAcrossAcquireRegisterLegacyAndLookup(t *testing.T) 
 				}
 			})
 		}
+	}
+}
+
+func serverRegistry(t *testing.T, root string) *Registry {
+	t.Helper()
+	r, err := Open(Config{Root: root, Owner: OwnerServer, Server: domain.NewID()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// The exclusive usage profile belongs to the DeliDev server and is always
+// created as a managed profile: a Worker registry, a legacy registration and a
+// restored legacy entry are all refused.
+func TestUsageProfileIsServerOwnedManagedAndNeverAdopted(t *testing.T) {
+	ctx := context.Background()
+	account := domain.NewID()
+	key := Key{Harness: domain.ClaudeCode, Purpose: PurposeUsage, Account: account}
+
+	worker, _ := workerRegistry(t, testRoot(t), nil)
+	if _, err := worker.Acquire(ctx, key); err == nil {
+		t.Fatal("a Worker registry acquired the usage profile")
+	}
+	if err := (Key{Owner: OwnerWorker, Machine: domain.NewID(), Harness: domain.ClaudeCode, Purpose: PurposeUsage, Account: account}).Validate(); err == nil {
+		t.Fatal("a Worker-owned usage key was valid")
+	}
+
+	root := testRoot(t)
+	server := serverRegistry(t, root)
+	relative := "legacy/usage-" + string(account)
+	if err := security.PrivateDir(filepath.Join(root, filepath.FromSlash(relative))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.RegisterLegacy(ctx, key, relative); err == nil {
+		t.Fatal("an existing directory was adopted as the usage profile")
+	}
+	if _, found, _ := server.Lookup(ctx, key); found {
+		t.Fatal("a rejected registration registered the key")
+	}
+	lease, err := server.Acquire(ctx, key)
+	if err != nil || lease.Origin != OriginManaged || !lease.Created {
+		t.Fatalf("the server did not create a managed usage profile: %v", err)
+	}
+	_ = lease.Close()
+
+	// A restored registry that binds the usage purpose to a legacy directory is
+	// invalid as a whole and is never rewritten.
+	raw, err := os.ReadFile(server.registryPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file registryFile
+	if err := json.Unmarshal(raw, &file); err != nil || len(file.Profiles) != 1 {
+		t.Fatalf("registry %s: %v", raw, err)
+	}
+	file.Profiles[0].Origin, file.Profiles[0].Path = OriginLegacy, relative
+	tampered, err := json.Marshal(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(server.registryPath(), tampered, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := server.Lookup(ctx, key); err == nil {
+		t.Fatal("a legacy usage entry was loaded")
+	} else if reason, ok := Reasoned(err); !ok || reason != ReasonRegistryInvalid {
+		t.Fatalf("restored registry was not rejected as invalid: %v", err)
+	}
+	if after, _ := os.ReadFile(server.registryPath()); !bytes.Equal(after, tampered) {
+		t.Fatal("the invalid registry was rewritten")
 	}
 }
 

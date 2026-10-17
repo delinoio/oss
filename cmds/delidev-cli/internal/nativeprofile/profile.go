@@ -125,6 +125,10 @@ func (k Key) Validate() error {
 	if !ok || !k.Purpose.harnessAllowed(k.Harness) {
 		return invalidKey()
 	}
+	// The usage profile is DeliDev-server-owned: a Worker registry never holds it.
+	if k.Purpose == PurposeUsage && k.Owner != OwnerServer {
+		return invalidKey()
+	}
 	switch k.Owner {
 	case OwnerServer:
 		if k.Machine != "" {

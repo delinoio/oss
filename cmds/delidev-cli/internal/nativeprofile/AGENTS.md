@@ -10,7 +10,7 @@
 - A deletion scope succeeds only when no matching profile remains: any locked, referenced or unremovable match must return an error even when other matches were already removed.
 - Creation is all-or-nothing: close the lease on every failure and roll back a new directory unless its registry entry is proven durable.
 - Registry load validates every entry's owner kind, server, machine and (for legacy entries) the normalized local path below the owner root; reject the whole root otherwise.
-- The `usage` purpose is the exclusive Claude Code usage-tracking profile of one server-token account. Only the Claude usage adapter may read or remove its native credential storage; never enumerate, adopt or share it with execution, personal or legacy profiles.
+- The `usage` purpose is the exclusive Claude Code usage-tracking profile of one server-token account. Only the Claude usage adapter may read or remove its native credential storage; never enumerate, adopt or share it with execution, personal or legacy profiles. It is valid only for a server-owned registry and only as a managed profile: reject Worker keys, `RegisterLegacy` and legacy-origin entries at key and registry validation.
 - Write credential files through `subscription.WriteCredentialFile` so interrupted-write temporaries stay attributable and are retired with the credential files.
 
 ## Owning contracts
