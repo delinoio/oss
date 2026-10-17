@@ -236,7 +236,10 @@ providers by an `id IN (eligible ids)` clause ahead of `LIMIT`, so a qualifying
 provider after any number of ineligible ones is reachable and a page is never
 filtered after the fact. Every stored account record is decoded before any
 eligibility test, so an account whose field has the wrong JSON type fails the
-request instead of being skipped. A provider that owns a connected account is
+request instead of being skipped. A decoded account is also run through
+`Account.Validate`; an account that decodes but fails validation (for example
+an unknown health or type, or a malformed provider ID) fails the request with
+`recovery_required` rather than being treated as not selectable. A provider that owns a connected account is
 decoded and run through `Provider.Validate` before its compatibility is tested;
 a provider that decodes but fails validation (for example an insecure custom
 endpoint) fails the request with `recovery_required` rather than being omitted

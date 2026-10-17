@@ -258,6 +258,14 @@ func selectableAccountProviders(tx *Tx, protocol domain.APIProtocol) (map[domain
 			if err != nil {
 				return nil, err
 			}
+			// JSON that decodes can still violate the account contract (unknown
+			// health or type, malformed provider ID). The boolean predicates below
+			// would collapse that into "not selectable" and report a false absence,
+			// so an invalid saved account fails the read instead.
+			if err := account.Validate(); err != nil {
+				slog.Error("provider inventory filter found an invalid saved account", "account_id", record.ID, "error", err)
+				return nil, domain.Fail(domain.RecoveryRequired, "A saved account record is invalid.", "Preserve the server data and repair or remove the invalid account before filtering by API format.")
+			}
 			// Cheap account-only checks run first so a provider is loaded only for
 			// accounts that could be selectable; every record was already decoded.
 			if account.ProviderID == "" || eligible[account.ProviderID] || !providers.AccountConnectedForSelection(account) {
