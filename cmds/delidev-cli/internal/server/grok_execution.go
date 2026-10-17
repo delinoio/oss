@@ -290,8 +290,27 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 	c := req.Header().Get(rpc.CorrelationHeader)
 	m := req.Msg.Mutation
 	owned := false
+	// replaced reports that the machine's current Worker instance is no longer
+	// the lease owner. The asynchronous lost-Worker fence may not have run yet,
+	// so Finish decides this itself instead of waiting for it, and it persists
+	// that fence itself when it refuses a report because of the replacement.
+	replaced := false
 	defer func() {
-		if returned != nil && owned {
+		if returned == nil {
+			return
+		}
+		fenced := false
+		if replaced {
+			// The same fence the lost-Worker callback records, so a refused report
+			// never leaves the lease held without the recovery obligation (new Takes
+			// would stay busy while the recovery watch ignored the unfenced lease).
+			if err := s.retainLostSubscriptionLeases(domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), true); err != nil {
+				s.logger.Warn("grok_subscription_replacement_fence_unconfirmed", "phase", grokExecutionPhase, "account_id", m.Id, "lease_id", req.Msg.LeaseId, "code", domain.SafeError(err).Code)
+			} else {
+				fenced = true
+			}
+		}
+		if owned && !fenced {
 			if err := s.markSubscriptionRecovery(domain.ID(m.Id)); err != nil {
 				s.logger.Warn("grok_subscription_recovery_unconfirmed", "phase", grokExecutionPhase, "account_id", m.Id, "code", domain.SafeError(err).Code)
 			}
@@ -309,10 +328,6 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 	}
 	if !replayed {
 		var original domain.Account
-		// replaced reports that the machine's current Worker instance is no longer
-		// the lease owner. The asynchronous lost-Worker fence may not have run yet,
-		// so Finish decides this itself instead of waiting for it.
-		replaced := false
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := tx.Authorize(); err != nil {
 				return err

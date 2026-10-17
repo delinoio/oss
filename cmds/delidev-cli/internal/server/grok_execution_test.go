@@ -632,6 +632,50 @@ func TestGrokExecutionReplacedInstanceFinishIsCleanupOnlyBeforeTheAsyncFence(t *
 	}
 }
 
+// A report refused because its instance was replaced persists the recovery fence
+// itself. The asynchronous lost-Worker fence may not have run yet (or its single
+// attempt may have failed), and an unfenced lease would keep every new Take busy
+// while the recovery watch ignored it.
+func TestGrokExecutionReplacedInstanceRefusalPersistsTheRecoveryFence(t *testing.T) {
+	for _, tc := range []struct {
+		name                      string
+		refresh, success, cleanup bool
+	}{
+		{"rotated bundle", true, true, true},
+		{"execution success", false, true, true},
+		{"unconfirmed cleanup", false, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newGrokFixture(t)
+			generation := f.login("synthetic-principal-1")
+			w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+			lease, err := f.takeExecution(w, domain.NewID())
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.replaceInstance(w)
+			request := domain.NewID()
+			var bundle []byte
+			if tc.refresh {
+				bundle = f.grokRotatedEnvelope(request)
+			}
+			if _, err := f.finishExecution(w, lease, request, bundle, tc.success, tc.refresh, tc.cleanup); err == nil {
+				t.Fatal("a replaced instance was accepted")
+			}
+			_, a := f.record()
+			if !a.Subscription.RecoveryRequired || a.Health != domain.AccountFailed || a.Subscription.Lease == nil || a.Subscription.Generation != generation {
+				t.Fatal("the refusal left the lease held without the recovery fence")
+			}
+			if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err != nil {
+				t.Fatal(err)
+			}
+			if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady {
+				t.Fatal("the original owner could not settle the fenced lease")
+			}
+		})
+	}
+}
+
 // Recovery from a replaced instance restores readiness only while the stored
 // generation still opens, as for every other fence.
 func TestGrokExecutionReplacedInstanceRecoveryKeepsAnUnusableGenerationFailed(t *testing.T) {
