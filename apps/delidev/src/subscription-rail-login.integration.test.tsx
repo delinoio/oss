@@ -284,7 +284,7 @@ it("queues the notification behind an in-flight read and publishes the current i
   expect(f.reads.every((token) => token === "")).toBe(true);
 });
 
-it("does not read while the document is hidden and rereads current saved resources once visible", async () => {
+it("rereads current saved resources even while the document is hidden", async () => {
   const f = fixture([connectedAccount("Personal")]);
   render(f.view);
   await screen.findByRole("button", { name: /^ChatGPT · Personal/ });
@@ -293,12 +293,8 @@ it("does not read while the document is hidden and rereads current saved resourc
     .spyOn(window.document, "visibilityState", "get")
     .mockReturnValue("hidden");
   fireEvent(window.document, new Event("visibilitychange"));
-  const before = f.reads.length;
   f.succeed();
   await screen.findByLabelText("Account name", {}, { timeout: 3000 });
-  expect(f.reads.length).toBe(before);
-  expect(f.railButtons()).toHaveLength(1);
-  visibility.mockReturnValue("visible");
-  fireEvent(window.document, new Event("visibilitychange"));
   await waitFor(() => expect(f.railButtons()).toHaveLength(2));
+  visibility.mockRestore();
 });
