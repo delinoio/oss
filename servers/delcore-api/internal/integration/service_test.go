@@ -1960,6 +1960,25 @@ func TestRetainedStateOrdersAgainstProviderPaymentTime(t *testing.T) {
 	})
 }
 
+// TestInitialPaymentAdvancesOrderingWatermark proves that a confirmed initial
+// payment makes older delayed subscription notifications stale.
+func TestInitialPaymentAdvancesOrderingWatermark(t *testing.T) {
+	f := newSubscriptionOrderFixture(t)
+	f.pay(t)
+	if state, at := f.retained(t); state != "active" || !at.Equal(f.at) {
+		t.Fatal("payment did not record the ordering watermark", state, at)
+	}
+	f.deliver(t, "evt_delayed_cancel", "canceled", f.at.Add(-time.Hour))
+	f.deliver(t, "evt_delayed_past_due", "past_due", f.at.Add(-time.Minute))
+	if s := f.state(t); s.free || s.renewalFailed || s.activePaid != 1 || s.subscription != "sub_order" {
+		t.Fatal("delayed notification older than the payment undid it", s)
+	}
+	f.deliver(t, "evt_newer_past_due", "past_due", f.at.Add(time.Minute))
+	if s := f.state(t); s.free || !s.renewalFailed {
+		t.Fatal("notification newer than the payment ignored", s)
+	}
+}
+
 func TestSubscriptionStatusAloneGrantsAndClearsNothing(t *testing.T) {
 	f := newSubscriptionOrderFixture(t)
 	f.deliver(t, "evt_active_early", "active", f.at.Add(time.Hour))

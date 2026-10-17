@@ -445,32 +445,33 @@ func (w *Worker) applyRenewalSettlements(ctx context.Context, tx pgx.Tx, t provi
 
 // applyRetainedSubscriptionState applies the provider state that was retained for
 // a subscription and occurred after the confirmed payment. Older or active state
-// never grants or clears anything. It runs in the payment transaction.
+// never grants or clears anything. The confirmed payment then becomes the
+// subscription's ordering watermark so delayed notifications older than it stay
+// stale regardless of delivery order. It runs in the payment transaction.
 func (w *Worker) applyRetainedSubscriptionState(ctx context.Context, tx pgx.Tx, tenant, subscription string, at time.Time) error {
 	var occurred time.Time
 	var state string
 	e := tx.QueryRow(ctx, "SELECT occurred_at,state FROM provider_objects WHERE external_id=$1", subscription).Scan(&occurred, &state)
-	if errors.Is(e, pgx.ErrNoRows) {
-		return nil
-	}
-	if e != nil {
+	if e != nil && !errors.Is(e, pgx.ErrNoRows) {
 		return e
 	}
-	if !occurred.After(at) {
-		return nil
-	}
-	switch state {
-	case "canceled":
-		if w.Log != nil {
-			w.Log.WarnContext(ctx, "applying retained subscription cancellation", "tenant_id", tenant, "subscription_id", subscription, "state", state)
+	if e == nil && occurred.After(at) {
+		switch state {
+		case "canceled":
+			if w.Log != nil {
+				w.Log.WarnContext(ctx, "applying retained subscription cancellation", "tenant_id", tenant, "subscription_id", subscription, "state", state)
+			}
+			e = w.activateFree(ctx, tx, tenant, occurred)
+		case "past_due":
+			if w.Log != nil {
+				w.Log.WarnContext(ctx, "applying retained subscription payment failure", "tenant_id", tenant, "subscription_id", subscription, "state", state)
+			}
+			_, e = tx.Exec(ctx, "UPDATE tenants SET renewal_failed=true WHERE id=$1", tenant)
 		}
-		return w.activateFree(ctx, tx, tenant, occurred)
-	case "past_due":
-		if w.Log != nil {
-			w.Log.WarnContext(ctx, "applying retained subscription payment failure", "tenant_id", tenant, "subscription_id", subscription, "state", state)
+		if e != nil {
+			return e
 		}
-		_, e = tx.Exec(ctx, "UPDATE tenants SET renewal_failed=true WHERE id=$1", tenant)
-		return e
 	}
-	return nil
+	_, e = tx.Exec(ctx, "INSERT INTO provider_objects VALUES($1,$2,'active') ON CONFLICT(external_id) DO UPDATE SET occurred_at=EXCLUDED.occurred_at,state='active' WHERE provider_objects.occurred_at<EXCLUDED.occurred_at", subscription, at)
+	return e
 }
