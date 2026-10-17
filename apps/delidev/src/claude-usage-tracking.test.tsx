@@ -783,6 +783,12 @@ it("keeps terminal actions disabled until the account document reflects the prog
   expect(again().disabled).toBe(true);
   fireEvent.click(again());
   expect(value.start).not.toHaveBeenCalled();
+  // The parent lifecycle admission is held too: Log out would otherwise submit
+  // the stale document revision.
+  const logOut = screen.getByRole("button", {
+    name: "Log out",
+  }) as HTMLButtonElement;
+  expect(logOut.disabled).toBe(true);
   // The revised document arrives through the account read.
   value.set({
     connection: "connecting",
@@ -790,6 +796,7 @@ it("keeps terminal actions disabled until the account document reflects the prog
     operation: operation("failed"),
   });
   await waitFor(() => expect(again().disabled).toBe(false));
+  expect(logOut.disabled).toBe(false);
   fireEvent.click(again());
   await waitFor(() => expect(value.start).toHaveBeenCalledTimes(1));
   expect(value.start.mock.calls[0][0].mutation.expectedRevision).toBe(revision);

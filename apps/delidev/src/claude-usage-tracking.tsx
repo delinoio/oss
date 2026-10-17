@@ -680,7 +680,9 @@ export function useClaudeUsageTracking(options: ClaudeUsageTrackingOptions): {
   return {
     section: model && enabled ? <ClaudeUsageSection model={model} /> : null,
     refreshQuota,
-    busy: pending,
+    // The parent admission lock also covers the wait for the revised document,
+    // so no lifecycle action captures the stale revision.
+    busy: pending || awaitingDocument,
   };
 }
 
