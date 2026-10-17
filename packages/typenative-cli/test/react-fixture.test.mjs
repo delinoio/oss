@@ -45,3 +45,20 @@ test("React fixture rejects clones that mutate the source element", () => {
     );
   }
 });
+
+test("React fixture rejects clones that lose type or children", () => {
+  for (const cloneElement of [
+    () => React.createElement("div", { title: "updated" }, "hello"),
+    () => React.createElement("button", { title: "updated" }),
+  ]) {
+    assert.throws(
+      () =>
+        runInNewContext(source, {
+          ...React,
+          console: { log() {} },
+          cloneElement,
+        }),
+      /React core probe failed/,
+    );
+  }
+});
