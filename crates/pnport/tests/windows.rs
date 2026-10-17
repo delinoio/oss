@@ -850,10 +850,14 @@ fn completion_port_directory_queries(root: &Path) {
         let native = open(&plain, true);
         let port = associate(native);
         assert!(!port.is_null(), "native association failed");
+        // Null APC context uses the explicit event on this native query;
+        // Windows does not enqueue a completion packet for it. Keep the
+        // associated-port rejection checks below separate from this control.
         for api in apis {
-            let status = query(native, api, Some(port));
+            let status = query(native, api, None);
             assert!(status >= 0, "{api:?} native status {status:#x}");
         }
+        assert_no_packet(port);
         unsafe {
             CloseHandle(native);
             CloseHandle(port);
