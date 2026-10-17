@@ -30,7 +30,8 @@ import "./anchored-popup.css";
  *   changes while the user filters.
  * - Dismissal semantics (Escape, Tab, outside pointer, blur) stay with the
  *   consumer. The hook only calls `onInvalid` when the popup can no longer be
- *   presented (anchor detached, disabled, inert, hidden or in a closed dialog);
+ *   presented (anchor detached, disabled, inert, hidden, in a closed dialog or
+ *   scrolled completely out of the box visible through its clipping ancestors);
  *   the consumer must close in response.
  * - Geometry comes from `picker-overlay.ts`: 4px gap below the anchor, 8px
  *   inset from the boundary, 280px maximum height, flip above when the space
@@ -69,6 +70,78 @@ export interface AnchoredPopupOptions {
    * back to the visual viewport.
    */
   boundary?: (anchor: HTMLElement) => HTMLElement | null | undefined;
+}
+
+function clipsOverflow(style: CSSStyleDeclaration): boolean {
+  return [style.overflow, style.overflowX, style.overflowY].some(
+    (value) => value !== "" && value !== "visible",
+  );
+}
+
+/**
+ * True when the anchor lies completely outside the box that its clipping
+ * ancestors leave visible, so a pointer or a person can no longer reach it.
+ *
+ * Every ancestor whose overflow is not `visible` (a scrolling list, the tray
+ * that contains the list, the Settings task body or content pane) and the
+ * window itself clip the anchor, so the visible box is the intersection of all
+ * of their boxes, not only the nearest one. An absolutely positioned anchor is only clipped by
+ * ancestors from its containing block outwards and a fixed one by none. An
+ * ancestor without a measurable box (`display: contents`, detached or not yet
+ * laid out) never dismisses. This is geometry only: it neither scrolls nor
+ * writes anything, and the popup itself may still extend past these boxes.
+ */
+export function isAnchorClippedOut(anchor: HTMLElement): boolean {
+  let position = getComputedStyle(anchor).position;
+  if (position === "fixed") return false;
+  let left = Number.NEGATIVE_INFINITY,
+    top = Number.NEGATIVE_INFINITY,
+    right = Number.POSITIVE_INFINITY,
+    bottom = Number.POSITIVE_INFINITY,
+    clipped = false;
+  for (
+    let owner = anchor.parentElement;
+    owner && owner !== document.body && owner !== document.documentElement;
+    owner = owner.parentElement
+  ) {
+    const style = getComputedStyle(owner);
+    if (style.display === "contents") continue;
+    // An absolutely positioned descendant escapes every ancestor before its
+    // containing block.
+    if (position === "absolute" && (style.position || "static") === "static")
+      continue;
+    if (clipsOverflow(style)) {
+      const rect = owner.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        clipped = true;
+        left = Math.max(left, rect.left);
+        top = Math.max(top, rect.top);
+        right = Math.min(right, rect.right);
+        bottom = Math.min(bottom, rect.bottom);
+      }
+    }
+    position = style.position;
+    if (position === "fixed") break;
+  }
+  const target = anchor.getBoundingClientRect();
+  // The window is the root clipping box: a page that scrolls an anchor out of
+  // the window leaves nothing to present the popup beside. An anchor without a
+  // measurable box (not laid out) is never judged by the window.
+  if (target.width > 0 && target.height > 0) {
+    clipped = true;
+    left = Math.max(left, 0);
+    top = Math.max(top, 0);
+    right = Math.min(right, window.innerWidth);
+    bottom = Math.min(bottom, window.innerHeight);
+  }
+  if (!clipped) return false;
+  if (right <= left || bottom <= top) return true;
+  return (
+    target.bottom <= top ||
+    target.top >= bottom ||
+    target.right <= left ||
+    target.left >= right
+  );
 }
 
 /** Visual viewport intersected with an explicit owning surface. */
@@ -113,6 +186,13 @@ export function useAnchoredPopup(options: AnchoredPopupOptions): void {
         opener.matches(":disabled") ||
         (dialog && !dialog.open)
       ) {
+        current.onInvalid();
+        return false;
+      }
+      // An anchor scrolled completely out of any clipping ancestor is no
+      // longer visible. Clamping would draw the popup beside unrelated content
+      // while its actions still target the hidden anchor, so close instead.
+      if (isAnchorClippedOut(opener)) {
         current.onInvalid();
         return false;
       }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useRef, useState } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
@@ -24,6 +24,7 @@ const rectOf = ({ left, top, width, height }: Rect): DOMRect =>
   }) as DOMRect;
 
 let anchorRect: Rect, popupRect: Rect, popupScroll: number;
+let clipRects: Record<string, Rect>;
 let viewport: { width: number; height: number };
 let shown: ReturnType<typeof vi.fn>, hidden: ReturnType<typeof vi.fn>;
 const invalid = vi.fn();
@@ -49,6 +50,7 @@ beforeEach(() => {
   popupRect = { left: 0, top: 0, width: 220, height: 120 };
   popupScroll = 118;
   viewport = { width: 800, height: 600 };
+  clipRects = {};
   disconnects = 0;
   observers = [];
   invalid.mockClear();
@@ -79,6 +81,15 @@ beforeEach(() => {
     function (this: HTMLElement) {
       if (this.dataset.testPopup) return rectOf(popupRect);
       if (this.dataset.testAnchor) return rectOf(anchorRect);
+      if (this.dataset.testClip)
+        return rectOf(
+          clipRects[this.dataset.testClip] ?? {
+            left: 0,
+            top: 0,
+            width: 0,
+            height: 0,
+          },
+        );
       if (this.dataset.testBoundary)
         return rectOf({ left: 20, top: 60, width: 400, height: 300 });
       return rectOf({ left: 0, top: 0, width: 0, height: 0 });
@@ -94,13 +105,21 @@ afterEach(() => {
   delete (HTMLElement.prototype as { scrollHeight?: unknown }).scrollHeight;
 });
 
+// Wrappers around the anchor, outermost first; each one is a clipping (or
+// deliberately non-clipping) ancestor whose box comes from `clipRects`.
+type ClipOwner = { id: string; style: CSSProperties };
 function Fixture({
   initial = true,
   withBoundary = false,
+  clips = [],
+  anchorStyle,
   ...options
-}: { initial?: boolean; withBoundary?: boolean } & Partial<
-  Pick<AnchoredPopupOptions, "width" | "align">
->) {
+}: {
+  initial?: boolean;
+  withBoundary?: boolean;
+  clips?: ClipOwner[];
+  anchorStyle?: CSSProperties;
+} & Partial<Pick<AnchoredPopupOptions, "width" | "align">>) {
   const [open, setOpen] = useState(initial);
   const anchor = useRef<HTMLButtonElement>(null);
   const popup = useRef<HTMLDivElement>(null);
@@ -122,6 +141,7 @@ function Fixture({
       <button
         ref={anchor}
         data-test-anchor="true"
+        style={anchorStyle}
         onClick={() => setOpen((value) => !value)}
       >
         Anchor
@@ -138,10 +158,18 @@ function Fixture({
       ) : null}
     </>
   );
+  const wrapped = clips.reduceRight(
+    (inner, owner) => (
+      <div data-test-clip={owner.id} style={owner.style}>
+        {inner}
+      </div>
+    ),
+    content,
+  );
   return withBoundary ? (
-    <section data-test-boundary="true">{content}</section>
+    <section data-test-boundary="true">{wrapped}</section>
   ) : (
-    content
+    wrapped
   );
 }
 const popupNode = (container: HTMLElement) =>
@@ -291,4 +319,162 @@ test("an anchor inside a closed dialog invalidates the popup", () => {
   expect(invalid).toHaveBeenCalled();
   expect(shown).not.toHaveBeenCalled();
   expect(container.querySelector("[data-test-popup]")).toBeNull();
+});
+
+const auto: CSSProperties = { overflow: "auto" };
+const rowRect: Rect = { left: 40, top: 100, width: 220, height: 40 };
+
+test("closes when the anchor scrolls completely out of its clipping owner", () => {
+  clipRects = { list: { left: 0, top: 0, width: 400, height: 300 } };
+  const { container } = render(
+    <Fixture clips={[{ id: "list", style: auto }]} />,
+  );
+  expect(invalid).not.toHaveBeenCalled();
+  expect(popupNode(container).style.top).toBe("144px");
+  // Partially visible rows keep their menu.
+  anchorRect = { ...rowRect, top: 280 };
+  fireEvent.scroll(document.body);
+  expect(invalid).not.toHaveBeenCalled();
+  expect(popupNode(container).style.top).toBe("324px");
+  // Scrolled entirely below, then entirely above, the owner's box.
+  anchorRect = { ...rowRect, top: 300 };
+  fireEvent.scroll(document.body);
+  expect(invalid).toHaveBeenCalledOnce();
+  expect(container.querySelector("[data-test-popup]")).toBeNull();
+  expect(hidden).toHaveBeenCalled();
+});
+
+test("closes when the anchor leaves the box of an outer clipping ancestor only", () => {
+  // The inner list still contains the row, but the tray that scrolls the whole
+  // list away does not: every clipping ancestor counts, not only the nearest.
+  clipRects = {
+    tray: { left: 0, top: 400, width: 400, height: 200 },
+    list: { left: 0, top: 0, width: 400, height: 300 },
+  };
+  const { container } = render(
+    <Fixture
+      clips={[
+        { id: "tray", style: { overflowY: "scroll" } },
+        { id: "list", style: auto },
+      ]}
+    />,
+  );
+  // The anchor starts inside the list, but the tray scrolled it away from view.
+  expect(invalid).toHaveBeenCalledOnce();
+  expect(container.querySelector("[data-test-popup]")).toBeNull();
+});
+
+test("uses the intersection of nested clipping owners", () => {
+  clipRects = {
+    outer: { left: 0, top: 0, width: 400, height: 500 },
+    inner: { left: 0, top: 0, width: 400, height: 300 },
+  };
+  const { container } = render(
+    <Fixture
+      clips={[
+        { id: "outer", style: { overflow: "hidden" } },
+        { id: "inner", style: auto },
+      ]}
+    />,
+  );
+  expect(invalid).not.toHaveBeenCalled();
+  // Visible through the outer owner but below the inner one.
+  anchorRect = { ...rowRect, top: 320 };
+  fireEvent.scroll(document.body);
+  expect(invalid).toHaveBeenCalledOnce();
+  expect(container.querySelector("[data-test-popup]")).toBeNull();
+});
+
+test("owners that do not intersect leave nothing visible", () => {
+  clipRects = {
+    outer: { left: 0, top: 0, width: 400, height: 100 },
+    inner: { left: 0, top: 200, width: 400, height: 100 },
+  };
+  render(
+    <Fixture
+      clips={[
+        { id: "outer", style: auto },
+        { id: "inner", style: auto },
+      ]}
+    />,
+  );
+  expect(invalid).toHaveBeenCalledOnce();
+});
+
+test("ancestors that do not clip, or have no measurable box, never close the popup", () => {
+  clipRects = {
+    plain: { left: 500, top: 500, width: 50, height: 50 },
+    contents: { left: 500, top: 500, width: 50, height: 50 },
+    unmeasured: { left: 0, top: 0, width: 0, height: 0 },
+  };
+  const { container } = render(
+    <Fixture
+      clips={[
+        { id: "plain", style: { overflow: "visible" } },
+        { id: "contents", style: { display: "contents", overflow: "auto" } },
+        { id: "unmeasured", style: auto },
+      ]}
+    />,
+  );
+  fireEvent.scroll(document.body);
+  expect(invalid).not.toHaveBeenCalled();
+  expect(popupNode(container).style.top).toBe("144px");
+});
+
+test("a fixed anchor is not clipped and an absolute one only from its containing block", () => {
+  clipRects = {
+    list: { left: 0, top: 400, width: 400, height: 100 },
+    containing: { left: 0, top: 0, width: 400, height: 300 },
+  };
+  const fixed = render(
+    <Fixture
+      anchorStyle={{ position: "fixed" }}
+      clips={[{ id: "list", style: auto }]}
+    />,
+  );
+  expect(invalid).not.toHaveBeenCalled();
+  fixed.unmount();
+  // The scrolling list is not the containing block of the absolute anchor, so
+  // it does not clip it; the positioned ancestor beyond it does.
+  const absolute = render(
+    <Fixture
+      anchorStyle={{ position: "absolute" }}
+      clips={[
+        {
+          id: "containing",
+          style: { overflow: "hidden", position: "relative" },
+        },
+        { id: "list", style: auto },
+      ]}
+    />,
+  );
+  expect(invalid).not.toHaveBeenCalled();
+  expect(popupNode(absolute.container).style.top).toBe("144px");
+  anchorRect = { ...rowRect, top: 320 };
+  fireEvent.scroll(document.body);
+  expect(invalid).toHaveBeenCalledOnce();
+});
+
+test("closes when the page scrolls the anchor out of the window", () => {
+  const { container } = render(<Fixture />);
+  expect(invalid).not.toHaveBeenCalled();
+  // Partly inside the window keeps the popup.
+  anchorRect = { ...rowRect, top: viewport.height - 10 };
+  fireEvent.scroll(document.body);
+  expect(invalid).not.toHaveBeenCalled();
+  // It flips above the anchor instead of leaving the window.
+  expect(Number.parseFloat(popupNode(container).style.top)).toBeLessThan(
+    viewport.height,
+  );
+  anchorRect = { ...rowRect, top: viewport.height };
+  fireEvent.scroll(document.body);
+  expect(invalid).toHaveBeenCalledOnce();
+  expect(container.querySelector("[data-test-popup]")).toBeNull();
+});
+
+test("an anchor without a measurable box is not judged by the window", () => {
+  anchorRect = { left: 0, top: 0, width: 0, height: 0 };
+  const { container } = render(<Fixture />);
+  expect(invalid).not.toHaveBeenCalled();
+  expect(popupNode(container)).toBeTruthy();
 });
