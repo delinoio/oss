@@ -373,6 +373,7 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 			return nil, rpc.Error(subscriptionDenied(), c)
 		}
 		owned = true
+		s.logger.DebugContext(ctx, "grok_subscription_finish_validated", "phase", grokExecutionPhase, "account_id", input.Account, "lease_id", input.Lease, "recovery_fence", recoveryFence, "replaced_instance", replaced, "success", input.Success, "refresh", input.Refresh, "cleanup_confirmed", input.Cleanup)
 		credentialUsable := false
 		if recoveryFence {
 			credentialUsable = s.grokCredentialUsable(ctx, input.Account, input.Generation)
@@ -435,10 +436,14 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 				return nil, subscriptionDenied()
 			}
 			switch {
-			case replacedNow && !replaced && !cleanupOnly:
+			case replacedNow && !recoveryFence:
 				// The instance was replaced after the report was validated as the
-				// current owner's. Refuse it whole: the staged generation is retired
-				// and the lease stays for the original cleanup-only recovery.
+				// current owner's, whatever it carries: a cleanup-only report that
+				// found the lease unfenced is the unverified-exit report and would
+				// only fence it. Refuse it whole: the staged generation is retired and
+				// the lease is fenced here for the original cleanup-only recovery,
+				// which a fully validated report then settles.
+				replaced = true
 				s.logger.WarnContext(ctx, "grok_subscription_finish_refused", "phase", grokExecutionPhase, "account_id", input.Account, "lease_id", input.Lease, "recovery_fence", recoveryFence, "replaced_instance", true)
 				return nil, subscriptionDenied()
 			case !input.Cleanup:

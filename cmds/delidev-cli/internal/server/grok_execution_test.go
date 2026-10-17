@@ -6,6 +6,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -673,6 +675,64 @@ func TestGrokExecutionReplacedInstanceRefusalPersistsTheRecoveryFence(t *testing
 				t.Fatal("the original owner could not settle the fenced lease")
 			}
 		})
+	}
+}
+
+// finishHook calls on for every log record, so a test can act at an exact point
+// of the Finish flow.
+type finishHook struct {
+	slog.Handler
+	on func(message string)
+}
+
+func (h finishHook) Enabled(context.Context, slog.Level) bool { return true }
+func (h finishHook) Handle(_ context.Context, r slog.Record) error {
+	h.on(r.Message)
+	return nil
+}
+func (h finishHook) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return finishHook{h.Handler.WithAttrs(attrs), h.on}
+}
+func (h finishHook) WithGroup(name string) slog.Handler {
+	return finishHook{h.Handler.WithGroup(name), h.on}
+}
+
+// A cleanup-only report validated against a still-unfenced lease is the
+// unverified-exit report: it can only fence the lease. When the instance is
+// replaced between that validation and the settlement commit the report is
+// refused like every other one validated as the current owner's, and the fence
+// is persisted, so the next fully validated cleanup-only report releases the
+// lease instead of the first one being acknowledged as final.
+func TestGrokExecutionCleanupOnlyReportOnALateReplacementIsRefused(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+	lease, err := f.takeExecution(w, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaced := false
+	f.service.logger = slog.New(finishHook{slog.NewJSONHandler(io.Discard, nil), func(message string) {
+		if message == "grok_subscription_finish_validated" && !replaced {
+			replaced = true
+			f.replaceInstance(w)
+		}
+	}})
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err == nil {
+		t.Fatal("a cleanup-only report was acknowledged after its instance was replaced")
+	}
+	if !replaced {
+		t.Fatal("the instance was not replaced during the Finish")
+	}
+	_, a := f.record()
+	if !a.Subscription.RecoveryRequired || a.Health != domain.AccountFailed || a.Subscription.Lease == nil || a.Subscription.Generation != generation {
+		t.Fatal("the refused report left no recovery fence on the held lease")
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady || a.Subscription.Generation != generation {
+		t.Fatal("the cleanup-only report did not release the lease")
 	}
 }
 
