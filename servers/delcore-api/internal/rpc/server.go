@@ -20,6 +20,7 @@ import (
 	"github.com/delinoio/oss/servers/delcore-api/internal/postgres"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -107,6 +108,19 @@ func run[Q any, R any](s *Server, ctx context.Context, req *connect.Request[Q], 
 				return precondition("withdrawal is pending")
 			}
 			c.actor = "user:" + c.user
+			var personal, configured bool
+			if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM tenants WHERE personal AND owner_id=$1 AND deleted_at IS NULL),EXISTS(SELECT 1 FROM plans WHERE is_default AND free)", c.user).Scan(&personal, &configured); e != nil {
+				return e
+			}
+			if !personal && configured {
+				if _, e = c.createTenant("Personal", true); e != nil {
+					return e
+				}
+			}
+			if !configured && !id.Operator {
+				return precondition("default free plan is not configured")
+			}
+
 		}
 		if key != "" {
 			var old string
@@ -115,6 +129,9 @@ func run[Q any, R any](s *Server, ctx context.Context, req *connect.Request[Q], 
 			if e == nil {
 				if old != fingerprint {
 					return conflict()
+				}
+				if len(cached) == 0 {
+					return precondition("cached response was removed under retention policy")
 				}
 				return proto.Unmarshal(cached, any(out).(proto.Message))
 			}
@@ -130,12 +147,26 @@ func run[Q any, R any](s *Server, ctx context.Context, req *connect.Request[Q], 
 			if e != nil {
 				return e
 			}
-			_, e = tx.Exec(ctx, "INSERT INTO requests VALUES($1,$2,$3,$4,$5)", c.actor, key, fingerprint, b, now)
+			var tenant any
+			field := value.FieldByName("TenantId")
+			if field.IsValid() && canonical(field.String()) {
+				tenant = field.String()
+			}
+			if tenant == nil {
+				if created, ok := any(out).(*pb.CreateTenantResponse); ok && created.Tenant != nil {
+					tenant = created.Tenant.Id
+				}
+			}
+			_, e = tx.Exec(ctx, "INSERT INTO requests(actor_id,request_key,fingerprint,response,created_at,tenant_id) VALUES($1,$2,$3,$4,$5,$6)", c.actor, key, fingerprint, b, now, tenant)
 			return e
 		}
 		return nil
 	})
 	if e != nil {
+		var databaseError *pgconn.PgError
+		if errors.As(e, &databaseError) {
+			s.Log.ErrorContext(ctx, "database operation failed", "correlation_id", correlation, "sqlstate", databaseError.Code, "position", databaseError.Position)
+		}
 		s.Log.WarnContext(ctx, "rpc rejected", "correlation_id", correlation, "procedure", req.Spec().Procedure, "category", connect.CodeOf(e).String())
 		return nil, typed(e, correlation)
 	}

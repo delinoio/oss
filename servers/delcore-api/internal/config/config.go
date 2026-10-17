@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -59,13 +60,17 @@ func Load(path string) (Config, error) {
 	if e = d.Decode(&c); e != nil {
 		return c, e
 	}
+	var extra any
+	if e = d.Decode(&extra); e != io.EOF {
+		return c, errors.New("configuration must contain one JSON object")
+	}
 	return c, c.Validate()
 }
 func (c Config) Validate() error {
 	if c.Listen == "" || c.DatabaseURL == "" || c.Audience == "" || c.OperatorRole == "" || len(c.IdentityKey) < 32 || len(c.PaddleWebhookSecret) < 16 || c.PaddleCreditProductID == "" || c.PaddleToken == "" || c.EmailToken == "" || c.EmailAccount == "" || c.EmailSender == "" {
 		return errors.New("required configuration or credentials missing")
 	}
-	if len(c.Currency) != 3 || c.Currency != strings.ToUpper(c.Currency) || c.MinorUnits < 0 || c.MinorUnits > 3 {
+	if len(c.Currency) != 3 || c.Currency != strings.ToUpper(c.Currency) || strings.IndexFunc(c.Currency, func(r rune) bool { return r < 'A' || r > 'Z' }) >= 0 || c.MinorUnits < 0 || c.MinorUnits > 3 {
 		return errors.New("invalid currency configuration")
 	}
 	for _, n := range []int{c.TimeoutSeconds, c.RetryLimit, c.RetrySeconds, c.RequestsPerMinute, c.InvitationSeconds, c.UsageLatenessSeconds, c.ReportingGraceSeconds, c.DeletionGraceSeconds, c.RawUsageRetentionSeconds, c.AccountingRetentionSeconds, c.AuditRetentionSeconds, c.WebhookRetentionSeconds, c.BacklogAlert, c.SettlementAlertSeconds} {

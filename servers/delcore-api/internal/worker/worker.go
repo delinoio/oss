@@ -29,7 +29,7 @@ type job struct {
 }
 
 func (w *Worker) Recover(ctx context.Context) error {
-	_, e := w.DB.Pool.Exec(ctx, `UPDATE jobs SET state=CASE WHEN kind='email' THEN 'pending' ELSE 'reconcile' END,available_at=now(),updated_at=now() WHERE state='running'`)
+	_, e := w.DB.Pool.Exec(ctx, `UPDATE jobs SET state=CASE WHEN kind IN ('email','webhook') THEN 'pending' ELSE 'reconcile' END,available_at=now(),updated_at=now() WHERE state='running'`)
 	return e
 }
 func (w *Worker) Run(ctx context.Context) error {
@@ -53,9 +53,6 @@ func (w *Worker) Step(ctx context.Context) error {
 	if e := w.Maintain(ctx, time.Now().UTC()); e != nil {
 		return e
 	}
-	if e := w.ProcessWebhook(ctx); e != nil {
-		return e
-	}
 	j := job{}
 	e := w.DB.Transaction(ctx, func(tx pgx.Tx) error {
 		e := tx.QueryRow(ctx, `SELECT id::text,COALESCE(tenant_id::text,''),kind,state,attempts,external_id,payload FROM jobs WHERE state IN ('pending','reconcile') AND available_at<=now() ORDER BY available_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&j.ID, &j.Tenant, &j.Kind, &j.State, &j.Attempts, &j.ExternalID, &j.Payload)
@@ -73,6 +70,18 @@ func (w *Worker) Step(ctx context.Context) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, w.Config.Timeout())
 	defer cancel()
+	if j.Kind == "webhook" {
+		var p struct {
+			EventID string `json:"event_id"`
+		}
+		if json.Unmarshal(j.Payload, &p) != nil {
+			return w.finish(ctx, j, "failed", "invalid_payload", "")
+		}
+		if e = w.ProcessWebhook(ctx, p.EventID); e != nil {
+			return w.retry(ctx, j, provider.ErrTransient, false)
+		}
+		return w.finish(ctx, j, "done", "", "")
+	}
 	if j.Kind == "email" {
 		var p struct{ To, Subject, Text string }
 		if json.Unmarshal(j.Payload, &p) != nil {
@@ -85,24 +94,7 @@ func (w *Worker) Step(ctx context.Context) error {
 		return w.retry(ctx, j, e, false)
 	}
 	if j.State == "reconcile" {
-		if j.ExternalID == "" {
-			return w.finish(ctx, j, "failed", "unknown_payment_outcome", "")
-		}
-		raw, e := w.Provider.Request(ctx, http.MethodGet, "/transactions/"+url.PathEscape(j.ExternalID), nil)
-		if e != nil {
-			return w.retry(ctx, j, e, true)
-		}
-		var transaction provider.Transaction
-		if json.Unmarshal(raw, &transaction) != nil {
-			return w.retry(ctx, j, provider.ErrAmbiguous, true)
-		}
-		if transaction.Status == "completed" {
-			return w.ApplyTransaction(ctx, transaction, time.Now().UTC())
-		}
-		if transaction.Status == "canceled" || transaction.Status == "past_due" {
-			return w.finish(ctx, j, "failed", "payment_failed", j.ExternalID)
-		}
-		return w.retry(ctx, j, provider.ErrTransient, true)
+		return w.reconcile(ctx, j)
 	}
 	var p struct {
 		Amount         string   `json:"amount"`
@@ -132,6 +124,16 @@ func (w *Worker) Step(ctx context.Context) error {
 		if j.Kind != "topup" {
 			if subscription == "" {
 				return w.finish(ctx, j, "failed", "payment_method_required", "")
+			}
+			// Paddle cannot modify subscriptions within thirty minutes of renewal.
+			// Keep the reserved settlement durable until a confirmed cycle is eligible.
+			var end time.Time
+			var failed bool
+			if e = w.DB.Pool.QueryRow(ctx, "SELECT period_end,renewal_failed FROM tenants WHERE id=$1", j.Tenant).Scan(&end, &failed); e != nil {
+				return e
+			}
+			if failed || !end.After(time.Now().Add(30*time.Minute)) {
+				return w.finish(ctx, j, "pending", "provider_billing_window", "")
 			}
 			path = "/subscriptions/" + url.PathEscape(subscription) + "/charge"
 			delete(body, "customer_id")
@@ -179,7 +181,7 @@ func (w *Worker) Step(ctx context.Context) error {
 	// Subscription responses are not payment confirmation. Webhooks and provider
 	// reconciliation own activation, including zero-due changes and cancellations.
 	if j.Kind == "cancel" || j.Kind == "subscription" && subscription != "" {
-		return w.finish(ctx, j, "reconcile", "awaiting_provider_event", "")
+		return w.finish(ctx, j, "reconcile", "awaiting_provider_event", subscription)
 	}
 	if result.Checkout.URL != "" {
 		u, err := url.Parse(result.Checkout.URL)
@@ -199,6 +201,10 @@ func (w *Worker) Step(ctx context.Context) error {
 	return nil
 }
 func (w *Worker) finish(ctx context.Context, j job, state, category, external string) error {
+	// Persist an ambiguous outcome even after the provider request times out or
+	// shutdown cancels the worker. This bounded write prevents stranded running jobs.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.Config.Timeout())
+	defer cancel()
 	return w.DB.Transaction(ctx, func(tx pgx.Tx) error {
 		_, e := tx.Exec(ctx, "UPDATE jobs SET state=$2,error_category=$3,external_id=CASE WHEN $4='' THEN external_id ELSE $4 END,available_at=$5,updated_at=now() WHERE id=$1 AND state='running'", j.ID, state, category, external, time.Now().Add(time.Duration(w.Config.RetrySeconds)*time.Second))
 		if e != nil {

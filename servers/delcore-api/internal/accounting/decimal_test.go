@@ -32,3 +32,14 @@ func TestProrated(t *testing.T) {
 		t.Fatal(r, e)
 	}
 }
+func TestAllowancePrecision(t *testing.T) {
+	a, _ := Parse("100")
+	v, e := ProratedAllowance(a, 1, 3)
+	if e != nil || v.String() != "33.333333" {
+		t.Fatal(v, e)
+	}
+	rate, _ := Parse("0.0000007")
+	if v.Mul(rate).String() != "0.0000233333331" {
+		t.Fatal("monetary precision was truncated")
+	}
+}

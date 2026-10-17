@@ -50,12 +50,6 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if _, e = tx.Exec(ctx, "CREATE TABLE IF NOT EXISTS delcore_schema(version integer PRIMARY KEY, digest text NOT NULL, applied_at timestamptz NOT NULL)"); e != nil {
 		return e
 	}
-	data, e := migrations.Files.ReadFile("00001_foundation.sql")
-	if e != nil {
-		return e
-	}
-	sum := sha256.Sum256(data)
-	digest := hex.EncodeToString(sum[:])
 	var version int
 	if e = tx.QueryRow(ctx, "SELECT COALESCE(max(version),0) FROM delcore_schema").Scan(&version); e != nil {
 		return e
@@ -63,21 +57,41 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if version > migrations.Version {
 		return errors.New("database schema is newer than this binary")
 	}
-	if version == 0 {
+	names, e := migrations.Files.ReadDir(".")
+	if e != nil {
+		return e
+	}
+	number := 0
+	for _, name := range names {
+		if name.IsDir() {
+			continue
+		}
+		number++
+		data, e := migrations.Files.ReadFile(name.Name())
+		if e != nil {
+			return e
+		}
+		sum := sha256.Sum256(data)
+		digest := hex.EncodeToString(sum[:])
+		if number <= version {
+			var old string
+			if e = tx.QueryRow(ctx, "SELECT digest FROM delcore_schema WHERE version=$1", number).Scan(&old); e != nil {
+				return e
+			}
+			if old != digest {
+				return errors.New("migration checksum mismatch")
+			}
+			continue
+		}
 		if _, e = tx.Exec(ctx, string(data)); e != nil {
+			return fmt.Errorf("migration %d: %w", number, e)
+		}
+		if _, e = tx.Exec(ctx, "INSERT INTO delcore_schema VALUES($1,$2,$3)", number, digest, time.Now().UTC()); e != nil {
 			return e
 		}
-		if _, e = tx.Exec(ctx, "INSERT INTO delcore_schema VALUES(1,$1,$2)", digest, time.Now().UTC()); e != nil {
-			return e
-		}
-	} else {
-		var old string
-		if e = tx.QueryRow(ctx, "SELECT digest FROM delcore_schema WHERE version=1").Scan(&old); e != nil {
-			return e
-		}
-		if old != digest {
-			return errors.New("migration checksum mismatch")
-		}
+	}
+	if number != migrations.Version {
+		return errors.New("migration inventory mismatch")
 	}
 	return tx.Commit(ctx)
 }

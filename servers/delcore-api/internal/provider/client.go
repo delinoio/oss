@@ -161,6 +161,13 @@ type Event struct {
 	Data       json.RawMessage `json:"data"`
 }
 type Transaction struct {
+	Origin string `json:"origin"`
+	Items  []struct {
+		Price struct {
+			ID string `json:"id"`
+		} `json:"price"`
+		Quantity int `json:"quantity"`
+	} `json:"items"`
 	ID             string `json:"id"`
 	Status         string `json:"status"`
 	CustomerID     string `json:"customer_id"`

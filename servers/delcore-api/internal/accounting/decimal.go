@@ -99,3 +99,23 @@ func Prorated(amount Decimal, remaining, duration int64) (*big.Rat, error) {
 	r := new(big.Rat).SetFrac(amount.coefficientAt(amount.scale), pow(amount.scale))
 	return r.Mul(r, new(big.Rat).SetFrac(big.NewInt(remaining), big.NewInt(duration))), nil
 }
+
+// ProratedAllowance floors only the included quantity to the supported 1e-6
+// quantum. Monetary products retain their full decimal precision.
+func ProratedAllowance(amount Decimal, remaining, duration int64) (Decimal, error) {
+	r, e := Prorated(amount, remaining, duration)
+	if e != nil {
+		return Decimal{}, e
+	}
+	scaled := new(big.Rat).Mul(r, new(big.Rat).SetInt(pow(6)))
+	n := new(big.Int).Quo(scaled.Num(), scaled.Denom())
+	return Decimal{n, 6}, nil
+}
+
+func (d Decimal) IsMinorExact(places int) bool {
+	units, e := d.MinorUnits(places)
+	if e != nil {
+		return false
+	}
+	return d.Cmp(Decimal{units, places}) == 0
+}

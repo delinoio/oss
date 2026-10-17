@@ -18,7 +18,7 @@ func (s *Server) RequestTopUp(ctx context.Context, r *connect.Request[pb.Request
 			return e
 		}
 		d, e := accounting.Parse(q.Amount)
-		if e != nil || d.Cmp(accounting.Zero()) <= 0 || !c.s.Config.AllowsReturn(q.ReturnUrl) {
+		if e != nil || d.Cmp(accounting.Zero()) <= 0 || !d.IsMinorExact(c.s.Config.MinorUnits) || !c.s.Config.AllowsReturn(q.ReturnUrl) {
 			return invalid("invalid top-up amount or return URL")
 		}
 		units, _ := d.MinorUnits(c.s.Config.MinorUnits)
@@ -50,7 +50,7 @@ func (s *Server) SetAutoTopUp(ctx context.Context, r *connect.Request[pb.SetAuto
 		threshold, e1 := accounting.Parse(q.Threshold)
 		amount, e2 := accounting.Parse(q.Amount)
 		cap, e3 := accounting.Parse(q.MonthlyCap)
-		if e1 != nil || e2 != nil || e3 != nil || threshold.Cmp(accounting.Zero()) < 0 || amount.Cmp(accounting.Zero()) <= 0 || cap.Cmp(amount) < 0 {
+		if e1 != nil || e2 != nil || e3 != nil || threshold.Cmp(accounting.Zero()) < 0 || amount.Cmp(accounting.Zero()) <= 0 || cap.Cmp(amount) < 0 || !amount.IsMinorExact(c.s.Config.MinorUnits) {
 			return invalid("invalid automatic top-up settings")
 		}
 		_, e := c.tx.Exec(c.ctx, "UPDATE tenants SET auto_threshold=$2,auto_amount=$3,auto_cap=$4,auto_suspended=false WHERE id=$1 AND deleting_at IS NULL", q.TenantId, threshold.String(), amount.String(), cap.String())
@@ -85,25 +85,91 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 		if e = c.tx.QueryRow(c.ctx, "SELECT rank,free FROM plans WHERE id=$1", q.PlanId).Scan(&newRank, &free); e != nil {
 			return invalid("unknown plan")
 		}
+		var pending bool
+		if e = c.tx.QueryRow(c.ctx, "SELECT EXISTS(SELECT 1 FROM jobs WHERE tenant_id=$1 AND kind IN ('subscription','cancel') AND state IN ('pending','running','reconcile'))", q.TenantId).Scan(&pending); e != nil {
+			return e
+		}
+		if pending {
+			return precondition("a subscription change is already pending")
+		}
 		external := []string{}
 		seen := map[string]bool{}
-		for _, id := range q.PriceIds {
-			if !canonical(id) || seen[id] {
+		newAddons := map[string]bool{}
+		usageMeters := map[string]bool{}
+		baseRecurring := 0
+		for _, priceID := range q.PriceIds {
+			if !canonical(priceID) || seen[priceID] {
 				return invalid("invalid or repeated price")
 			}
-			seen[id] = true
-			var ext string
-			if e = c.tx.QueryRow(c.ctx, "SELECT external_price_id FROM prices WHERE id=$1 AND plan_id=$2", id, q.PlanId).Scan(&ext); e != nil {
-				return invalid("price does not belong to plan")
+			seen[priceID] = true
+			var ext, ownerPlan, addon, service, meter string
+			var kind int
+			if e = c.tx.QueryRow(c.ctx, "SELECT external_price_id,COALESCE(plan_id::text,''),COALESCE(addon_id::text,''),kind,service_id::text,meter FROM prices WHERE id=$1", priceID).Scan(&ext, &ownerPlan, &addon, &kind, &service, &meter); e != nil {
+				return invalid("unknown price")
 			}
-			if !free && ext == "" {
-				return precondition("Paddle price mapping is required")
+			if addon == "" && ownerPlan != q.PlanId {
+				return invalid("price belongs to another plan")
 			}
-			external = append(external, ext)
+			if addon != "" {
+				newAddons[addon] = true
+			}
+			if kind == 1 {
+				k := service + "\x00" + meter
+				if usageMeters[k] {
+					return invalid("multiple rates for the same service meter")
+				}
+				usageMeters[k] = true
+			}
+			if kind == 2 {
+				if ext == "" {
+					return precondition("Paddle recurring price mapping required")
+				}
+				external = append(external, ext)
+				if addon == "" {
+					baseRecurring++
+				}
+			}
+		}
+		if !free && baseRecurring != 1 {
+			return invalid("one recurring base price is required")
+		}
+		oldAddons := map[string]bool{}
+		rows, e := c.tx.Query(c.ctx, "SELECT DISTINCT p.addon_id::text FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND en.ends_at IS NULL AND p.addon_id IS NOT NULL", q.TenantId)
+		if e != nil {
+			return e
+		}
+		for rows.Next() {
+			var addon string
+			if e = rows.Scan(&addon); e != nil {
+				rows.Close()
+				return e
+			}
+			oldAddons[addon] = true
+		}
+		rows.Close()
+		if e = rows.Err(); e != nil {
+			return e
+		}
+		added, removed := false, false
+		for a := range newAddons {
+			if !oldAddons[a] {
+				added = true
+			}
+		}
+		for a := range oldAddons {
+			if !newAddons[a] {
+				removed = true
+			}
+		}
+		if added && removed || newRank > oldRank && removed || newRank < oldRank && added {
+			return invalid("submit immediate additions and renewal removals as separate changes")
 		}
 		timing := "prorated_immediately"
-		if newRank < oldRank {
-			timing = "next_billing_period"
+		if newRank < oldRank || removed {
+			timing = "do_not_bill"
+		}
+		if free {
+			return precondition("use cancellation to return to the default free plan")
 		}
 		o.JobId, e = c.job(q.TenantId, "subscription", "request:"+q.RequestKey, map[string]any{"plan_id": q.PlanId, "price_ids": q.PriceIds, "external_price_ids": external, "timing": timing, "return_url": q.ReturnUrl})
 		return e
@@ -130,6 +196,21 @@ func (s *Server) DeleteTenant(ctx context.Context, r *connect.Request[pb.DeleteT
 		if e != nil {
 			return e
 		}
+		var subscription string
+		if e = c.tx.QueryRow(c.ctx, "SELECT external_subscription_id FROM tenants WHERE id=$1", r.Msg.TenantId).Scan(&subscription); e != nil {
+			return e
+		}
+		if subscription != "" {
+			var pending bool
+			if e = c.tx.QueryRow(c.ctx, "SELECT EXISTS(SELECT 1 FROM jobs WHERE tenant_id=$1 AND kind='cancel' AND state IN ('pending','running','reconcile'))", r.Msg.TenantId).Scan(&pending); e != nil {
+				return e
+			}
+			if !pending {
+				if _, e = c.job(r.Msg.TenantId, "cancel", "deletion_cancel:"+r.Msg.TenantId, map[string]string{"effective_from": "next_billing_period"}); e != nil {
+					return e
+				}
+			}
+		}
 		return c.audit(r.Msg.TenantId, "tenant.delete", "")
 	})
 }
@@ -151,6 +232,28 @@ func (s *Server) Withdraw(ctx context.Context, r *connect.Request[pb.WithdrawReq
 		}
 		if _, e := c.tx.Exec(c.ctx, "UPDATE tenants SET deleting_at=COALESCE(deleting_at,$2),auto_suspended=true WHERE owner_id=$1 AND personal", c.user, c.now); e != nil {
 			return e
+		}
+		rows, e := c.tx.Query(c.ctx, "SELECT id::text FROM tenants WHERE owner_id=$1 AND personal AND external_subscription_id<>'' AND NOT EXISTS(SELECT 1 FROM jobs WHERE tenant_id=tenants.id AND kind='cancel' AND state IN ('pending','running','reconcile'))", c.user)
+		if e != nil {
+			return e
+		}
+		var tenants []string
+		for rows.Next() {
+			var tenant string
+			if e = rows.Scan(&tenant); e != nil {
+				rows.Close()
+				return e
+			}
+			tenants = append(tenants, tenant)
+		}
+		rows.Close()
+		if e = rows.Err(); e != nil {
+			return e
+		}
+		for _, tenant := range tenants {
+			if _, e = c.job(tenant, "cancel", "deletion_cancel:"+tenant, map[string]string{"effective_from": "next_billing_period"}); e != nil {
+				return e
+			}
 		}
 		if _, e := c.tx.Exec(c.ctx, "DELETE FROM members WHERE user_id=$1 AND tenant_id IN (SELECT id FROM tenants WHERE NOT personal)", c.user); e != nil {
 			return e
@@ -222,7 +325,7 @@ func (s *Server) RetryJob(ctx context.Context, r *connect.Request[pb.RetryJobReq
 		}
 		// A payment with an unknown result always returns to reconciliation, never to
 		// a blind POST retry, even when an operator explicitly reprocesses the job.
-		tag, e := c.tx.Exec(c.ctx, `UPDATE jobs SET state=CASE WHEN kind='email' THEN 'pending' ELSE 'reconcile' END,attempts=0,available_at=$2,updated_at=$2 WHERE id=$1 AND state='failed'`, q.JobId, c.now)
+		tag, e := c.tx.Exec(c.ctx, `UPDATE jobs SET state=CASE WHEN kind IN ('email','webhook') OR error_category='provider_rejected' THEN 'pending' ELSE 'reconcile' END,attempts=0,available_at=$2,updated_at=$2 WHERE id=$1 AND state='failed'`, q.JobId, c.now)
 		if e != nil {
 			return e
 		}

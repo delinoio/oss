@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/delinoio/oss/servers/delcore-api/internal/accounting"
+	"github.com/delinoio/oss/servers/delcore-api/internal/postgres"
 	"github.com/delinoio/oss/servers/delcore-api/internal/provider"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -38,7 +40,11 @@ func (w *Worker) Webhook(rw http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), w.Config.Timeout())
 	defer cancel()
 	e = w.DB.Transaction(ctx, func(tx pgx.Tx) error {
-		_, e := tx.Exec(ctx, "INSERT INTO webhooks(event_id,occurred_at,payload,received_at) VALUES($1,$2,$3,now()) ON CONFLICT DO NOTHING", event.ID, event.OccurredAt, raw)
+		tag, e := tx.Exec(ctx, "INSERT INTO webhooks(event_id,occurred_at,payload,received_at) VALUES($1,$2,$3,now()) ON CONFLICT DO NOTHING", event.ID, event.OccurredAt, raw)
+		if e != nil || tag.RowsAffected() == 0 {
+			return e
+		}
+		_, e = tx.Exec(ctx, "INSERT INTO jobs(id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES($1,'webhook',$2,$3,now(),now(),now())", id(), "webhook:"+event.ID, map[string]string{"event_id": event.ID})
 		return e
 	})
 	if e != nil {
@@ -47,11 +53,11 @@ func (w *Worker) Webhook(rw http.ResponseWriter, r *http.Request) {
 	}
 	rw.WriteHeader(http.StatusAccepted)
 }
-func (w *Worker) ProcessWebhook(ctx context.Context) error {
+func (w *Worker) ProcessWebhook(ctx context.Context, selectedID string) error {
 	return w.DB.Transaction(ctx, func(tx pgx.Tx) error {
 		var eventID string
 		var raw []byte
-		e := tx.QueryRow(ctx, "SELECT event_id,payload FROM webhooks WHERE processed_at IS NULL ORDER BY received_at,event_id LIMIT 1 FOR UPDATE").Scan(&eventID, &raw)
+		e := tx.QueryRow(ctx, "SELECT event_id,payload FROM webhooks WHERE processed_at IS NULL AND event_id=$1 FOR UPDATE", selectedID).Scan(&eventID, &raw)
 		if errors.Is(e, pgx.ErrNoRows) {
 			return nil
 		}
@@ -71,6 +77,22 @@ func (w *Worker) ProcessWebhook(ctx context.Context) error {
 			if e = w.applyTransaction(ctx, tx, t, event.OccurredAt); e != nil {
 				return e
 			}
+		case event.Type == "transaction.payment_failed":
+			var t provider.Transaction
+			if e = json.Unmarshal(event.Data, &t); e != nil {
+				return e
+			}
+			if t.Origin == "subscription_recurring" && t.BillingPeriod != nil {
+				_, e = tx.Exec(ctx, "UPDATE tenants SET renewal_failed=true WHERE external_subscription_id=$1 AND external_customer_id=$2 AND period_end<=$3 AND NOT EXISTS(SELECT 1 FROM provider_transactions WHERE external_id=$4)", t.SubscriptionID, t.CustomerID, t.BillingPeriod.StartsAt, t.ID)
+			} else if u, err := uuid.Parse(t.Custom.JobID); err == nil && u.Version() == 7 {
+				_, e = tx.Exec(ctx, "UPDATE jobs SET state='failed',error_category='payment_failed',updated_at=now() WHERE id=$1 AND tenant_id::text=$2 AND state<>'done'", t.Custom.JobID, t.Custom.TenantID)
+				if e == nil {
+					_, e = tx.Exec(ctx, "UPDATE tenants SET auto_suspended=true WHERE id::text=$1 AND EXISTS(SELECT 1 FROM jobs WHERE id=$2 AND kind='auto_topup' AND state='failed')", t.Custom.TenantID, t.Custom.JobID)
+				}
+			}
+			if e != nil {
+				return e
+			}
 		case strings.HasPrefix(event.Type, "subscription."):
 			if e = w.subscriptionEvent(ctx, tx, event); e != nil {
 				return e
@@ -81,6 +103,10 @@ func (w *Worker) ProcessWebhook(ctx context.Context) error {
 			}
 		}
 		_, e = tx.Exec(ctx, "UPDATE webhooks SET processed_at=now() WHERE event_id=$1", eventID)
+		if e != nil {
+			return e
+		}
+		_, e = tx.Exec(ctx, "UPDATE jobs SET state='done',error_category='',updated_at=now() WHERE kind='webhook' AND payload->>'event_id'=$1", eventID)
 		return e
 	})
 }
@@ -88,7 +114,13 @@ func (w *Worker) ApplyTransaction(ctx context.Context, t provider.Transaction, a
 	return w.DB.Transaction(ctx, func(tx pgx.Tx) error { return w.applyTransaction(ctx, tx, t, at) })
 }
 func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Transaction, at time.Time) error {
-	if t.Status != "completed" || t.Custom.JobID == "" {
+	if t.Status != "completed" {
+		return nil
+	}
+	if t.Origin == "subscription_recurring" {
+		return w.renew(ctx, tx, t, at)
+	}
+	if t.Custom.JobID == "" {
 		return nil
 	}
 	u, e := uuid.Parse(t.Custom.JobID)
@@ -107,15 +139,16 @@ func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Tra
 		return nil
 	}
 	var p struct {
-		Amount     string   `json:"amount"`
-		MinorUnits string   `json:"minor_units"`
-		PlanID     string   `json:"plan_id"`
-		PriceIDs   []string `json:"price_ids"`
+		Amount         string   `json:"amount"`
+		MinorUnits     string   `json:"minor_units"`
+		PlanID         string   `json:"plan_id"`
+		PriceIDs       []string `json:"price_ids"`
+		ExternalPrices []string `json:"external_price_ids"`
 	}
 	if e = json.Unmarshal(j.Payload, &p); e != nil {
 		return e
 	}
-	if t.Custom.TenantID != j.Tenant || t.Currency != w.Config.Currency || (j.ExternalID != "" && j.ExternalID != t.ID) || (p.MinorUnits != "" && t.Details.Totals.Subtotal != p.MinorUnits) {
+	if t.Custom.TenantID != j.Tenant || t.Currency != w.Config.Currency || (j.ExternalID != "" && j.ExternalID != t.ID && j.ExternalID != t.SubscriptionID) || (p.MinorUnits != "" && t.Details.Totals.Subtotal != p.MinorUnits) {
 		_, e = tx.Exec(ctx, "UPDATE jobs SET state='failed',error_category='payment_mismatch',updated_at=now() WHERE id=$1", j.ID)
 		return e
 	}
@@ -128,15 +161,34 @@ func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Tra
 	case "settlement":
 		_, e = tx.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'settlement',$3,$4,$5) ON CONFLICT(source_key) DO NOTHING", id(), j.Tenant, p.Amount, "payment:"+t.ID, at)
 	case "subscription":
+		if !matchesPrices(t, p.ExternalPrices) {
+			_, e = tx.Exec(ctx, "UPDATE jobs SET state='failed',error_category='payment_mismatch',updated_at=now() WHERE id=$1", j.ID)
+			return e
+		}
 		if t.SubscriptionID == "" || t.BillingPeriod == nil || !t.BillingPeriod.EndsAt.After(t.BillingPeriod.StartsAt) {
 			_, e = tx.Exec(ctx, "UPDATE jobs SET state='reconcile',external_id=$2,error_category='subscription_period_missing',available_at=now() WHERE id=$1", j.ID, t.ID)
 			return e
 		}
-		_, e = tx.Exec(ctx, "UPDATE tenants SET plan_id=$2,external_customer_id=$3,external_subscription_id=$4,period_start=$5,period_end=$6,renewal_failed=false WHERE id=$1", j.Tenant, p.PlanID, t.CustomerID, t.SubscriptionID, t.BillingPeriod.StartsAt, t.BillingPeriod.EndsAt)
+		var oldSubscription string
+		var periodStart, periodEnd time.Time
+		if e = tx.QueryRow(ctx, "SELECT external_subscription_id,period_start,period_end FROM tenants WHERE id=$1", j.Tenant).Scan(&oldSubscription, &periodStart, &periodEnd); e != nil {
+			return e
+		}
+		var previous postgres.Allowances
+		if oldSubscription == t.SubscriptionID && periodEnd.After(at) {
+			previous, e = postgres.CurrentAllowances(ctx, tx, j.Tenant)
+			if e != nil {
+				return e
+			}
+		} else {
+			periodStart = t.BillingPeriod.StartsAt
+			periodEnd = t.BillingPeriod.EndsAt
+		}
+		_, e = tx.Exec(ctx, "UPDATE tenants SET plan_id=$2,external_customer_id=$3,external_subscription_id=$4,period_start=$5,period_end=$6,renewal_failed=false WHERE id=$1", j.Tenant, p.PlanID, t.CustomerID, t.SubscriptionID, periodStart, periodEnd)
 		if e != nil {
 			return e
 		}
-		_, e = tx.Exec(ctx, "INSERT INTO billing_periods SELECT id,$2,$3,p.postpaid FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1 ON CONFLICT DO NOTHING", j.Tenant, t.BillingPeriod.StartsAt, t.BillingPeriod.EndsAt)
+		_, e = tx.Exec(ctx, "INSERT INTO billing_periods SELECT t.id,$2,$3,p.postpaid FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1 ON CONFLICT DO NOTHING", j.Tenant, periodStart, periodEnd)
 		if e != nil {
 			return e
 		}
@@ -149,10 +201,20 @@ func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Tra
 				return e
 			}
 		}
+		if e = postgres.GrantAllowances(ctx, tx, j.Tenant, periodStart, periodEnd, at, "payment:"+t.ID, previous); e != nil {
+			return e
+		}
 	default:
 		return nil
 	}
 	if e != nil {
+		return e
+	}
+	principal := p.Amount
+	if principal == "" {
+		principal = "0"
+	}
+	if _, e = tx.Exec(ctx, "INSERT INTO provider_transactions VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING", t.ID, j.Tenant, j.Kind, principal, t.Currency, at); e != nil {
 		return e
 	}
 	_, e = tx.Exec(ctx, "UPDATE jobs SET state='done',external_id=$2,error_category='',updated_at=now() WHERE id=$1", j.ID, t.ID)
@@ -193,11 +255,8 @@ func (w *Worker) subscriptionEvent(ctx context.Context, tx pgx.Tx, event provide
 	case "past_due":
 		_, e = tx.Exec(ctx, "UPDATE tenants SET renewal_failed=true WHERE id=$1", tenant)
 	case "canceled":
-		_, e = tx.Exec(ctx, "UPDATE tenants SET plan_id=(SELECT id FROM plans WHERE is_default AND free),external_subscription_id='' WHERE id=$1", tenant)
-		if e != nil {
-			return e
-		}
-		_, e = tx.Exec(ctx, "UPDATE entitlements SET ends_at=$2 WHERE tenant_id=$1 AND ends_at IS NULL AND starts_at<$2", tenant, event.OccurredAt)
+		e = w.activateFree(ctx, tx, tenant, event.OccurredAt)
+
 	}
 	// An active subscription event alone never clears payment failure or grants a
 	// paid entitlement. Only a confirmed corresponding payment can do that.
@@ -209,6 +268,7 @@ func (w *Worker) adjustmentEvent(ctx context.Context, tx pgx.Tx, event provider.
 		Action        string `json:"action"`
 		Status        string `json:"status"`
 		TransactionID string `json:"transaction_id"`
+		Currency      string `json:"currency_code"`
 		Totals        struct {
 			Subtotal string `json:"subtotal"`
 		} `json:"totals"`
@@ -216,26 +276,68 @@ func (w *Worker) adjustmentEvent(ctx context.Context, tx pgx.Tx, event provider.
 	if e := json.Unmarshal(event.Data, &v); e != nil {
 		return e
 	}
-	var tenant string
-	var amount string
-	e := tx.QueryRow(ctx, "SELECT tenant_id::text,amount::text FROM ledger WHERE source_key=$1 AND kind='credit'", "payment:"+v.TransactionID).Scan(&tenant, &amount)
-	if errors.Is(e, pgx.ErrNoRows) {
+	if v.ID == "" || v.Currency != w.Config.Currency {
 		return nil
+	}
+	var tenant, kind, principal string
+	e := tx.QueryRow(ctx, "SELECT tenant_id::text,kind,amount::text FROM provider_transactions WHERE external_id=$1", v.TransactionID).Scan(&tenant, &kind, &principal)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return errors.New("adjustment payment attribution is pending")
 	}
 	if e != nil {
 		return e
 	}
+	// Reversal notifications update the original adjustment's status. Their own
+	// amount is not applied again; the original approved/reversed state owns it.
+	if strings.HasSuffix(v.Action, "_reverse") {
+		return nil
+	}
+	var prior string
+	var previous time.Time
+	e = tx.QueryRow(ctx, "SELECT amount::text,occurred_at FROM adjustment_effects WHERE external_id=$1", v.ID).Scan(&prior, &previous)
+	if e == nil && !event.OccurredAt.After(previous) {
+		return nil
+	}
+	if e != nil && !errors.Is(e, pgx.ErrNoRows) {
+		return e
+	}
+	if prior == "" {
+		prior = "0"
+	}
+	effect := "0"
+	if v.Status == "approved" && (v.Action == "refund" || v.Action == "chargeback") && (kind == "topup" || kind == "auto_topup") {
+		amount, e := accounting.Parse(v.Totals.Subtotal)
+		if e != nil || amount.Cmp(accounting.Zero()) < 0 {
+			return errors.New("invalid adjustment amount")
+		}
+		if e = tx.QueryRow(ctx, "SELECT ($1::numeric/power(10::numeric,$2))::text", amount.String(), w.Config.MinorUnits).Scan(&effect); e != nil {
+			return e
+		}
+		var already string
+		if e = tx.QueryRow(ctx, "SELECT COALESCE(sum(amount),0)::text FROM adjustment_effects WHERE transaction_id=$1 AND external_id<>$2", v.TransactionID, v.ID).Scan(&already); e != nil {
+			return e
+		}
+		other, _ := accounting.Parse(already)
+		total, _ := accounting.Parse(principal)
+		reversed, _ := accounting.Parse(effect)
+		if reversed.Add(other).Cmp(total) > 0 {
+			return errors.New("adjustment exceeds purchased principal")
+		}
+	}
 	if v.Action == "chargeback" || v.Action == "chargeback_warning" {
-		_, e = tx.Exec(ctx, "INSERT INTO disputes VALUES($1,$2,true) ON CONFLICT(external_id) DO UPDATE SET active=true", v.ID, tenant)
+		_, e = tx.Exec(ctx, "INSERT INTO disputes(external_id,tenant_id,active,transaction_id) VALUES($1,$2,$3,$4) ON CONFLICT(external_id) DO UPDATE SET active=EXCLUDED.active", v.ID, tenant, v.Status != "reversed" && v.Status != "rejected", v.TransactionID)
 		if e != nil {
 			return e
 		}
 	}
-	if v.Status == "approved" && (v.Action == "refund" || v.Action == "chargeback") {
-		if v.Totals.Subtotal == "" {
-			return errors.New("adjustment amount missing")
+	old, _ := accounting.Parse(prior)
+	current, _ := accounting.Parse(effect)
+	delta := old.Sub(current)
+	if delta.Cmp(accounting.Zero()) != 0 {
+		if _, e = tx.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'refund',$3,$4,$5) ON CONFLICT(source_key) DO NOTHING", id(), tenant, delta.String(), "adjustment:"+v.ID+":"+event.OccurredAt.Format(time.RFC3339Nano), event.OccurredAt); e != nil {
+			return e
 		}
-		_, e = tx.Exec(ctx, `INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'refund',-$3::numeric/power(10::numeric,$4),$5,$6) ON CONFLICT(source_key) DO NOTHING`, id(), tenant, v.Totals.Subtotal, w.Config.MinorUnits, "adjustment:"+v.ID, event.OccurredAt)
 	}
+	_, e = tx.Exec(ctx, "INSERT INTO adjustment_effects VALUES($1,$2,$3,$4) ON CONFLICT(external_id) DO UPDATE SET amount=EXCLUDED.amount,occurred_at=EXCLUDED.occurred_at", v.ID, v.TransactionID, effect, event.OccurredAt)
 	return e
 }

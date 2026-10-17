@@ -132,6 +132,8 @@ Authenticated users, registered M2M consumer services, tenant administrators and
 
 ### Approved accounting choices
 
+Prorated included quantities are floored to six decimal places (one millionth of a unit). This quantity rule does not round intermediate monetary ledger amounts.
+
 Purchased monetary credits apply only to metered usage. Paddle collects fixed subscription and add-on fees separately. Paid usage periods follow Paddle subscription periods; free usage periods follow UTC calendar months. Automatic top-up monthly caps use UTC calendar months. Schema generation follows the repository layout: schemas in `protos/delcore/v1`, Go bindings in `protos/gen/go/delcore/v1`.
 
 ## Storage

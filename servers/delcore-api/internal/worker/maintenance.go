@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/servers/delcore-api/internal/accounting"
+	"github.com/delinoio/oss/servers/delcore-api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -16,6 +17,28 @@ func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
 		// Free plans use calendar months even when their tenant was created mid-month.
 		if _, e := tx.Exec(ctx, "UPDATE tenants t SET period_start=$1,period_end=$2 FROM plans p WHERE t.plan_id=p.id AND p.free AND t.period_end<=$3", start, start.AddDate(0, 1, 0), now); e != nil {
 			return e
+		}
+		freeRows, e := tx.Query(ctx, "SELECT t.id::text FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE p.free AND t.deleted_at IS NULL")
+		if e != nil {
+			return e
+		}
+		var freeTenants []string
+		for freeRows.Next() {
+			var tenant string
+			if e = freeRows.Scan(&tenant); e != nil {
+				freeRows.Close()
+				return e
+			}
+			freeTenants = append(freeTenants, tenant)
+		}
+		freeRows.Close()
+		if e = freeRows.Err(); e != nil {
+			return e
+		}
+		for _, tenant := range freeTenants {
+			if e = postgres.GrantAllowances(ctx, tx, tenant, start, start.AddDate(0, 1, 0), start, "free:"+tenant+":"+start.Format("2006-01"), nil); e != nil {
+				return e
+			}
 		}
 		rows, e := tx.Query(ctx, `SELECT t.id::text,t.auto_amount::text FROM tenants t WHERE t.auto_amount IS NOT NULL AND NOT t.auto_suspended AND t.deleting_at IS NULL AND t.deleted_at IS NULL AND NOT t.operator_block AND NOT t.renewal_failed
    AND NOT EXISTS(SELECT 1 FROM disputes WHERE tenant_id=t.id AND active)
@@ -50,55 +73,12 @@ func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
 			}
 			jobID := id()
 			payload := map[string]string{"amount": amount.String(), "minor_units": units.String(), "currency": w.Config.Currency}
-			if _, e = tx.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES($1,$2,'auto_topup',$1,$3,$4,$4,$4)`, jobID, a.tenant, payload, now); e != nil {
+			if _, e = tx.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES($1,$2,'auto_topup',$1::uuid::text,$3,$4,$4,$4)`, jobID, a.tenant, payload, now); e != nil {
 				return e
 			}
 		}
-		// Settlement records claim an exact source total transactionally. Late reports
-		// produce a later delta rather than reopening an already submitted charge.
-		rows, e = tx.Query(ctx, `SELECT l.tenant_id::text,l.service_id::text,l.meter,l.period_start,l.period_end,
-   (-sum(l.amount)-COALESCE((SELECT sum(s.amount) FROM settlements s WHERE s.tenant_id=l.tenant_id AND s.service_id=l.service_id AND s.meter=l.meter AND s.period_start=l.period_start),0))::text
-   FROM ledger l WHERE l.kind='postpaid' AND l.period_end<=$1 GROUP BY l.tenant_id,l.service_id,l.meter,l.period_start,l.period_end`, now)
-		if e != nil {
+		if e = w.settle(ctx, tx, now); e != nil {
 			return e
-		}
-		type settlement struct {
-			tenant, service, meter, amount string
-			start, end                     time.Time
-		}
-		var pending []settlement
-		for rows.Next() {
-			var v settlement
-			if e = rows.Scan(&v.tenant, &v.service, &v.meter, &v.start, &v.end, &v.amount); e != nil {
-				rows.Close()
-				return e
-			}
-			pending = append(pending, v)
-		}
-		rows.Close()
-		if e = rows.Err(); e != nil {
-			return e
-		}
-		for _, v := range pending {
-			amount, e := accounting.Parse(v.amount)
-			if e != nil {
-				return e
-			}
-			units, e := amount.MinorUnits(w.Config.MinorUnits)
-			if e != nil {
-				return e
-			}
-			if units.Sign() <= 0 {
-				continue
-			}
-			jobID := id()
-			payload := map[string]string{"amount": amount.String(), "minor_units": units.String(), "currency": w.Config.Currency}
-			if _, e = tx.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES($1,$2,'settlement',$1,$3,$4,$4,$4)`, jobID, v.tenant, payload, now); e != nil {
-				return e
-			}
-			if _, e = tx.Exec(ctx, "INSERT INTO settlements VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", id(), v.tenant, v.start, v.end, v.service, v.meter, amount.String(), jobID, jobID, now); e != nil {
-				return e
-			}
 		}
 		// Final deletion is held by every independent debt, dispute and refund gate.
 		rows, e = tx.Query(ctx, `SELECT t.id::text,t.owner_id::text,t.personal FROM tenants t WHERE t.deleting_at<$1 AND t.deleted_at IS NULL
@@ -128,6 +108,25 @@ func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
 			return e
 		}
 		for _, v := range deletes {
+			if _, e = tx.Exec(ctx, "DELETE FROM ownership_transfers WHERE tenant_id=$1", v.tenant); e != nil {
+				return e
+			}
+			if _, e = tx.Exec(ctx, "UPDATE jobs SET payload='{}'::jsonb,state='done',error_category='recipient_deleted' WHERE tenant_id=$1 AND kind='email'", v.tenant); e != nil {
+				return e
+			}
+			if _, e = tx.Exec(ctx, "UPDATE groups SET name=id::text WHERE tenant_id=$1", v.tenant); e != nil {
+				return e
+			}
+			if _, e = tx.Exec(ctx, "UPDATE audit SET actor_id='deleted',reason='' WHERE tenant_id=$1", v.tenant); e != nil {
+				return e
+			}
+			if _, e = tx.Exec(ctx, "UPDATE requests SET response=''::bytea WHERE tenant_id=$1", v.tenant); e != nil {
+				return e
+			}
+			if _, e = tx.Exec(ctx, "UPDATE jobs SET payload='{}'::jsonb,checkout_url='' WHERE tenant_id=$1 AND state='done'", v.tenant); e != nil {
+				return e
+			}
+
 			if _, e = tx.Exec(ctx, "DELETE FROM group_members WHERE tenant_id=$1", v.tenant); e != nil {
 				return e
 			}
@@ -137,7 +136,7 @@ func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
 			if _, e = tx.Exec(ctx, "UPDATE invitations SET email='',token_hash=id::text,revoked_at=COALESCE(revoked_at,$2) WHERE tenant_id=$1", v.tenant, now); e != nil {
 				return e
 			}
-			if _, e = tx.Exec(ctx, "UPDATE tenants SET name='Deleted tenant',deleted_at=$2,external_customer_id='' WHERE id=$1", v.tenant, now); e != nil {
+			if _, e = tx.Exec(ctx, "UPDATE tenants SET name='Deleted tenant',deleted_at=$2,external_customer_id='',owner_id=NULL WHERE id=$1", v.tenant, now); e != nil {
 				return e
 			}
 			if v.personal {
@@ -154,7 +153,10 @@ func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
 		if _, e = tx.Exec(ctx, "UPDATE jobs SET payload='{}'::jsonb WHERE kind='email' AND state='done' AND updated_at<$1", now.Add(-time.Duration(w.Config.InvitationSeconds)*time.Second)); e != nil {
 			return e
 		}
-		return nil
+		if e = w.notices(ctx, tx, now); e != nil {
+			return e
+		}
+		return w.retain(ctx, tx, now)
 	})
 }
 

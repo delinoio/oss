@@ -35,6 +35,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// DelcoreServiceDeleteGroupProcedure is the fully-qualified name of the DelcoreService's
+	// DeleteGroup RPC.
+	DelcoreServiceDeleteGroupProcedure = "/delcore.v1.DelcoreService/DeleteGroup"
 	// DelcoreServicePutMeterProcedure is the fully-qualified name of the DelcoreService's PutMeter RPC.
 	DelcoreServicePutMeterProcedure = "/delcore.v1.DelcoreService/PutMeter"
 	// DelcoreServicePutAddOnProcedure is the fully-qualified name of the DelcoreService's PutAddOn RPC.
@@ -137,6 +140,7 @@ const (
 
 // DelcoreServiceClient is a client for the delcore.v1.DelcoreService service.
 type DelcoreServiceClient interface {
+	DeleteGroup(context.Context, *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error)
 	PutMeter(context.Context, *connect.Request[v1.PutMeterRequest]) (*connect.Response[v1.PutMeterResponse], error)
 	PutAddOn(context.Context, *connect.Request[v1.PutAddOnRequest]) (*connect.Response[v1.PutAddOnResponse], error)
 	ListBillingHistory(context.Context, *connect.Request[v1.ListBillingHistoryRequest]) (*connect.Response[v1.ListBillingHistoryResponse], error)
@@ -185,6 +189,12 @@ func NewDelcoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	delcoreServiceMethods := v1.File_delcore_v1_delcore_proto.Services().ByName("DelcoreService").Methods()
 	return &delcoreServiceClient{
+		deleteGroup: connect.NewClient[v1.DeleteGroupRequest, v1.DeleteGroupResponse](
+			httpClient,
+			baseURL+DelcoreServiceDeleteGroupProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("DeleteGroup")),
+			connect.WithClientOptions(opts...),
+		),
 		putMeter: connect.NewClient[v1.PutMeterRequest, v1.PutMeterResponse](
 			httpClient,
 			baseURL+DelcoreServicePutMeterProcedure,
@@ -400,6 +410,7 @@ func NewDelcoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // delcoreServiceClient implements DelcoreServiceClient.
 type delcoreServiceClient struct {
+	deleteGroup        *connect.Client[v1.DeleteGroupRequest, v1.DeleteGroupResponse]
 	putMeter           *connect.Client[v1.PutMeterRequest, v1.PutMeterResponse]
 	putAddOn           *connect.Client[v1.PutAddOnRequest, v1.PutAddOnResponse]
 	listBillingHistory *connect.Client[v1.ListBillingHistoryRequest, v1.ListBillingHistoryResponse]
@@ -435,6 +446,11 @@ type delcoreServiceClient struct {
 	listJobs           *connect.Client[v1.ListJobsRequest, v1.ListJobsResponse]
 	retryJob           *connect.Client[v1.RetryJobRequest, v1.RetryJobResponse]
 	listAudit          *connect.Client[v1.ListAuditRequest, v1.ListAuditResponse]
+}
+
+// DeleteGroup calls delcore.v1.DelcoreService.DeleteGroup.
+func (c *delcoreServiceClient) DeleteGroup(ctx context.Context, req *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error) {
+	return c.deleteGroup.CallUnary(ctx, req)
 }
 
 // PutMeter calls delcore.v1.DelcoreService.PutMeter.
@@ -614,6 +630,7 @@ func (c *delcoreServiceClient) ListAudit(ctx context.Context, req *connect.Reque
 
 // DelcoreServiceHandler is an implementation of the delcore.v1.DelcoreService service.
 type DelcoreServiceHandler interface {
+	DeleteGroup(context.Context, *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error)
 	PutMeter(context.Context, *connect.Request[v1.PutMeterRequest]) (*connect.Response[v1.PutMeterResponse], error)
 	PutAddOn(context.Context, *connect.Request[v1.PutAddOnRequest]) (*connect.Response[v1.PutAddOnResponse], error)
 	ListBillingHistory(context.Context, *connect.Request[v1.ListBillingHistoryRequest]) (*connect.Response[v1.ListBillingHistoryResponse], error)
@@ -658,6 +675,12 @@ type DelcoreServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	delcoreServiceMethods := v1.File_delcore_v1_delcore_proto.Services().ByName("DelcoreService").Methods()
+	delcoreServiceDeleteGroupHandler := connect.NewUnaryHandler(
+		DelcoreServiceDeleteGroupProcedure,
+		svc.DeleteGroup,
+		connect.WithSchema(delcoreServiceMethods.ByName("DeleteGroup")),
+		connect.WithHandlerOptions(opts...),
+	)
 	delcoreServicePutMeterHandler := connect.NewUnaryHandler(
 		DelcoreServicePutMeterProcedure,
 		svc.PutMeter,
@@ -870,6 +893,8 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 	)
 	return "/delcore.v1.DelcoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case DelcoreServiceDeleteGroupProcedure:
+			delcoreServiceDeleteGroupHandler.ServeHTTP(w, r)
 		case DelcoreServicePutMeterProcedure:
 			delcoreServicePutMeterHandler.ServeHTTP(w, r)
 		case DelcoreServicePutAddOnProcedure:
@@ -948,6 +973,10 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 
 // UnimplementedDelcoreServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedDelcoreServiceHandler struct{}
+
+func (UnimplementedDelcoreServiceHandler) DeleteGroup(context.Context, *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.DeleteGroup is not implemented"))
+}
 
 func (UnimplementedDelcoreServiceHandler) PutMeter(context.Context, *connect.Request[v1.PutMeterRequest]) (*connect.Response[v1.PutMeterResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.PutMeter is not implemented"))

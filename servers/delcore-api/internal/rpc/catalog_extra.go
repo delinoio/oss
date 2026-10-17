@@ -21,6 +21,13 @@ func (s *Server) PutMeter(ctx context.Context, r *connect.Request[pb.PutMeterReq
 		if e := nonempty(m.Name, 100); e != nil {
 			return e
 		}
+		var count int
+		if e := c.tx.QueryRow(c.ctx, "SELECT count(*) FROM meters WHERE service_id=$1 AND name<>$2", m.ServiceId, m.Name).Scan(&count); e != nil {
+			return e
+		}
+		if count >= 100 {
+			return invalid("service meter limit reached")
+		}
 		_, e := c.tx.Exec(c.ctx, "INSERT INTO meters VALUES($1,$2) ON CONFLICT DO NOTHING", m.ServiceId, m.Name)
 		if e != nil {
 			return e
@@ -89,5 +96,34 @@ func (s *Server) ListBillingHistory(ctx context.Context, r *connect.Request[pb.L
 			o.NextAfterId = o.Jobs[n-1].Id
 		}
 		return rows.Err()
+	})
+}
+func (s *Server) DeleteGroup(ctx context.Context, r *connect.Request[pb.DeleteGroupRequest]) (*connect.Response[pb.DeleteGroupResponse], error) {
+	o := &pb.DeleteGroupResponse{}
+	return run(s, ctx, r, o, func(c *call) error {
+		q := r.Msg
+		if e := c.require(q.TenantId, pb.Role_ROLE_ADMIN); e != nil {
+			return e
+		}
+		if !canonical(q.GroupId) {
+			return invalid("invalid group ID")
+		}
+		var exists bool
+		if e := c.tx.QueryRow(c.ctx, "SELECT EXISTS(SELECT 1 FROM groups WHERE id=$1 AND tenant_id=$2)", q.GroupId, q.TenantId).Scan(&exists); e != nil {
+			return e
+		}
+		if !exists {
+			return forbidden()
+		}
+		if _, e := c.tx.Exec(c.ctx, "DELETE FROM group_members WHERE group_id=$1", q.GroupId); e != nil {
+			return e
+		}
+		if _, e := c.tx.Exec(c.ctx, "DELETE FROM group_permissions WHERE group_id=$1", q.GroupId); e != nil {
+			return e
+		}
+		if _, e := c.tx.Exec(c.ctx, "DELETE FROM groups WHERE id=$1", q.GroupId); e != nil {
+			return e
+		}
+		return c.audit(q.TenantId, "group.delete", "")
 	})
 }

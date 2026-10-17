@@ -8,4 +8,4 @@ import "embed"
 //go:embed *.sql
 var Files embed.FS
 
-const Version = 1
+const Version = 4

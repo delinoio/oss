@@ -13,6 +13,7 @@ import (
 
 	"connectrpc.com/connect"
 	pb "github.com/delinoio/oss/protos/gen/go/delcore/v1"
+	"github.com/delinoio/oss/servers/delcore-api/internal/postgres"
 )
 
 func (c *call) tenant(id string) (*pb.Tenant, error) {
@@ -42,7 +43,7 @@ func (c *call) createTenant(name string, personal bool) (*pb.Tenant, error) {
 	if _, e := c.tx.Exec(c.ctx, "INSERT INTO members VALUES($1,$2,ARRAY[1])", id, c.user); e != nil {
 		return nil, e
 	}
-	rows, e := c.tx.Query(c.ctx, `SELECT DISTINCT ON(service_id,meter) id::text FROM prices WHERE plan_id=$1 ORDER BY service_id,meter,created_at DESC,id DESC`, plan)
+	rows, e := c.tx.Query(c.ctx, `SELECT DISTINCT ON(service_id,meter,kind) id::text FROM prices WHERE plan_id=$1 ORDER BY service_id,meter,kind,created_at DESC,id DESC`, plan)
 	if e != nil {
 		return nil, e
 	}
@@ -63,6 +64,9 @@ func (c *call) createTenant(name string, personal bool) (*pb.Tenant, error) {
 		if _, e = c.tx.Exec(c.ctx, "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,$4)", ID(), id, price, c.now); e != nil {
 			return nil, e
 		}
+	}
+	if e := postgres.GrantAllowances(c.ctx, c.tx, id, start, start.AddDate(0, 1, 0), c.now, "free:"+id+":"+start.Format("2006-01"), nil); e != nil {
+		return nil, e
 	}
 	if e := c.audit(id, "tenant.create", ""); e != nil {
 		return nil, e
@@ -85,7 +89,11 @@ func (s *Server) GetCurrentUser(ctx context.Context, r *connect.Request[pb.GetCu
 				return e
 			}
 		}
-		rows, e := c.tx.Query(c.ctx, "SELECT tenant_id::text FROM members WHERE user_id=$1 ORDER BY tenant_id LIMIT 100", c.user)
+		n, after, e := page(r.Msg.Page)
+		if e != nil {
+			return e
+		}
+		rows, e := c.tx.Query(c.ctx, "SELECT tenant_id::text FROM members WHERE user_id=$1 AND tenant_id>$2 ORDER BY tenant_id LIMIT $3", c.user, after, n+1)
 		if e != nil {
 			return e
 		}
@@ -101,6 +109,10 @@ func (s *Server) GetCurrentUser(ctx context.Context, r *connect.Request[pb.GetCu
 		rows.Close()
 		if e = rows.Err(); e != nil {
 			return e
+		}
+		if len(ids) > n {
+			ids = ids[:n]
+			o.NextAfterId = ids[n-1]
 		}
 		for _, id := range ids {
 			t, e := c.tenant(id)

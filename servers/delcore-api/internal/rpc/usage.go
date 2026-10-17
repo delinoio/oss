@@ -42,12 +42,44 @@ func (s *Server) Authorize(ctx context.Context, r *connect.Request[pb.AuthorizeR
 			e = c.tx.QueryRow(c.ctx, `SELECT t.operator_block,t.renewal_failed,t.deleting_at IS NOT NULL,
    EXISTS(SELECT 1 FROM disputes WHERE tenant_id=t.id AND active),
    COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)<0,
-   (NOT p.postpaid AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)<=0
-    AND NOT EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id WHERE en.tenant_id=t.id AND pr.service_id=$2 AND en.starts_at<=$3 AND (en.ends_at IS NULL OR en.ends_at>$3) AND pr.included>COALESCE((SELECT sum(quantity) FROM usage_events WHERE tenant_id=t.id AND service_id=$2 AND meter=pr.meter AND period_start=t.period_start AND correction_of IS NULL),0))),
+   (NOT p.postpaid AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)<=0),
    EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id WHERE en.tenant_id=t.id AND pr.service_id=$2 AND en.starts_at<=$3 AND (en.ends_at IS NULL OR en.ends_at>$3))
    FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1`, q.TenantId, c.service, c.now).Scan(&operator, &renewal, &deleting, &dispute, &negative, &depleted, &entitled)
 			if e != nil {
 				return e
+			}
+			if depleted {
+				var periodStart time.Time
+				if e = c.tx.QueryRow(c.ctx, "SELECT period_start FROM tenants WHERE id=$1", q.TenantId).Scan(&periodStart); e != nil {
+					return e
+				}
+				rows, e := c.tx.Query(c.ctx, "SELECT DISTINCT p.meter FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND p.service_id=$2 AND p.kind=1 AND en.ends_at IS NULL", q.TenantId, c.service)
+				if e != nil {
+					return e
+				}
+				var meters []string
+				for rows.Next() {
+					var m string
+					if e = rows.Scan(&m); e != nil {
+						rows.Close()
+						return e
+					}
+					meters = append(meters, m)
+				}
+				rows.Close()
+				if e = rows.Err(); e != nil {
+					return e
+				}
+				for _, meter := range meters {
+					_, remaining, e := c.ratePeriod(q.TenantId, c.service, meter, periodStart)
+					if e != nil {
+						return e
+					}
+					if remaining.Cmp(accounting.Zero()) > 0 {
+						depleted = false
+						break
+					}
+				}
 			}
 			for _, v := range []struct {
 				blocked bool
@@ -102,7 +134,7 @@ func (c *call) report(u *pb.Usage, correction bool) (string, error) {
 	sum := sha256.Sum256(raw)
 	fingerprint := hex.EncodeToString(sum[:])
 	var existing, old string
-	e = c.tx.QueryRow(c.ctx, "SELECT id::text,fingerprint FROM usage_events WHERE service_id=$1 AND event_key=$2", c.service, u.EventKey).Scan(&existing, &old)
+	e = c.tx.QueryRow(c.ctx, "SELECT id::text,fingerprint FROM usage_events WHERE service_id=$1 AND event_key=$2 UNION ALL SELECT event_id::text,fingerprint FROM usage_replay WHERE service_id=$1 AND event_key=$2 LIMIT 1", c.service, u.EventKey).Scan(&existing, &old)
 	if e == nil {
 		if old != fingerprint {
 			return "", conflict()
@@ -123,17 +155,23 @@ func (c *call) report(u *pb.Usage, correction bool) (string, error) {
 	}
 	start := time.Date(occurred.Year(), occurred.Month(), 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(0, 1, 0)
-	if !free {
-		if e = c.tx.QueryRow(c.ctx, "SELECT starts_at,ends_at,postpaid FROM billing_periods WHERE tenant_id=$1 AND starts_at<=$2 AND ends_at>$2", u.TenantId, occurred).Scan(&start, &end, &postpaid); e != nil {
-			return "", precondition("billing period unavailable")
-		}
+	e = c.tx.QueryRow(c.ctx, "SELECT starts_at,ends_at,postpaid FROM billing_periods WHERE tenant_id=$1 AND starts_at<=$2 AND ends_at>$2", u.TenantId, occurred).Scan(&start, &end, &postpaid)
+	if e != nil && !errors.Is(e, pgx.ErrNoRows) {
+		return "", e
 	}
-	var price, rate, allowance string
-	e = c.tx.QueryRow(c.ctx, `SELECT p.id::text,p.unit_price::text,p.included::text FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND p.service_id=$2 AND p.meter=$3 AND en.starts_at<=$4 AND (en.ends_at IS NULL OR en.ends_at>$4) ORDER BY en.starts_at DESC LIMIT 1`, u.TenantId, c.service, u.Meter, occurred).Scan(&price, &rate, &allowance)
+	historicalPaid := e == nil
+	var price string
+	e = c.tx.QueryRow(c.ctx, `SELECT p.id::text FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND p.service_id=$2 AND p.meter=$3 AND p.kind=1 AND en.starts_at<=$4 AND (en.ends_at IS NULL OR en.ends_at>$4) ORDER BY en.starts_at DESC LIMIT 1`, u.TenantId, c.service, u.Meter, occurred).Scan(&price)
 	if e != nil {
 		return "", precondition("historical price unavailable")
 	}
-	delta := quantity.String()
+
+	if !historicalPaid {
+		var historicFree bool
+		if e = c.tx.QueryRow(c.ctx, "SELECT p.free,p.postpaid FROM prices pr JOIN plans p ON p.id=pr.plan_id WHERE pr.id=$1", price).Scan(&historicFree, &postpaid); e != nil || !historicFree {
+			return "", precondition("historical billing period unavailable")
+		}
+	}
 	var reference any
 	if correction {
 		var originalTenant, originalService, meter, originalQuantity string
@@ -142,15 +180,13 @@ func (c *call) report(u *pb.Usage, correction bool) (string, error) {
 		if e != nil || originalTenant != u.TenantId || originalService != c.service || meter != u.Meter || !originalTime.Equal(occurred) {
 			return "", forbidden()
 		}
-		q, _ := accounting.Parse(originalQuantity)
-		delta = quantity.Sub(q).String()
+		_ = originalQuantity
 		reference = u.CorrectionOf
 	}
-	// Corrections are replacement quantities. Recompute the aggregate before and
-	// after the delta so included usage cannot be credited twice.
-	var charge string
-	e = c.tx.QueryRow(c.ctx, `WITH total AS (SELECT COALESCE(sum(CASE WHEN correction_of IS NULL THEN quantity ELSE quantity-(SELECT x.quantity FROM usage_events x WHERE x.id=u.correction_of) END),0) n FROM usage_events u WHERE tenant_id=$1 AND service_id=$2 AND meter=$3 AND period_start=$4)
- SELECT ((greatest(n+$5::numeric-$6::numeric,0)-greatest(n-$6::numeric,0))*$7::numeric)::text FROM total`, u.TenantId, c.service, u.Meter, start, delta, allowance, rate).Scan(&charge)
+	// The original event's price remains authoritative across correction chains.
+	// Re-rate the period after insertion; each event retains its occurrence order.
+	var priorCharge string
+	e = c.tx.QueryRow(c.ctx, "SELECT (-COALESCE(sum(amount),0))::text FROM ledger WHERE tenant_id=$1 AND service_id=$2 AND meter=$3 AND period_start=$4 AND kind IN ('usage','postpaid','correction')", u.TenantId, c.service, u.Meter, start).Scan(&priorCharge)
 	if e != nil {
 		return "", e
 	}
@@ -159,12 +195,35 @@ func (c *call) report(u *pb.Usage, correction bool) (string, error) {
 	if e != nil {
 		return "", e
 	}
-	cost, _ := accounting.Parse(charge)
+	total, _, e := c.ratePeriod(u.TenantId, c.service, u.Meter, start)
+	if e != nil {
+		return "", e
+	}
+	prior, _ := accounting.Parse(priorCharge)
+	cost := total.Sub(prior)
 	kind := "usage"
 	if correction {
 		kind = "correction"
 	}
-	if postpaid && cost.Cmp(accounting.Zero()) > 0 {
+	if cost.Cmp(accounting.Zero()) < 0 {
+		// Reverse unpaid usage before returning prepaid money. This prevents a
+		// correction of postpaid usage from minting spendable purchased credits.
+		var unpaidText string
+		if e = c.tx.QueryRow(c.ctx, "SELECT greatest(-COALESCE(sum(amount),0),0)::text FROM ledger WHERE tenant_id=$1 AND service_id=$2 AND meter=$3 AND period_start=$4 AND kind='postpaid'", u.TenantId, c.service, u.Meter, start).Scan(&unpaidText); e != nil {
+			return "", e
+		}
+		unpaid, _ := accounting.Parse(unpaidText)
+		refund := cost.Neg()
+		if refund.Cmp(unpaid) > 0 {
+			refund = unpaid
+		}
+		if refund.Cmp(accounting.Zero()) > 0 {
+			if e = c.ledger(u.TenantId, c.service, u.Meter, id, "postpaid", refund.String(), start, end, "postpaid:"+id); e != nil {
+				return "", e
+			}
+			cost = cost.Add(refund)
+		}
+	} else if postpaid && cost.Cmp(accounting.Zero()) > 0 {
 		var balance string
 		if e = c.tx.QueryRow(c.ctx, "SELECT greatest(COALESCE(sum(amount),0),0)::text FROM ledger WHERE tenant_id=$1 AND kind IN ('credit','usage','refund','correction')", u.TenantId).Scan(&balance); e != nil {
 			return "", e
@@ -190,14 +249,21 @@ func (c *call) ledger(tenant, service, meter, usage, kind, amount string, start,
 func (s *Server) ListUsage(ctx context.Context, r *connect.Request[pb.ListUsageRequest]) (*connect.Response[pb.ListUsageResponse], error) {
 	o := &pb.ListUsageResponse{}
 	return run(s, ctx, r, o, func(c *call) error {
-		if e := c.require(r.Msg.TenantId, pb.Role_ROLE_BILLING); e != nil {
+		if c.service != "" {
+			if e := c.serviceScope("usage:read"); e != nil {
+				return e
+			}
+			if !canonical(r.Msg.TenantId) {
+				return invalid("invalid tenant ID")
+			}
+		} else if e := c.require(r.Msg.TenantId, pb.Role_ROLE_BILLING); e != nil {
 			return e
 		}
 		n, after, e := page(r.Msg.Page)
 		if e != nil {
 			return e
 		}
-		rows, e := c.tx.Query(c.ctx, "SELECT id::text,tenant_id::text,service_id::text,event_key,meter,quantity::text,occurred_at,COALESCE(correction_of::text,'') FROM usage_events WHERE tenant_id=$1 AND id>$2 ORDER BY id LIMIT $3", r.Msg.TenantId, after, n+1)
+		rows, e := c.tx.Query(c.ctx, "SELECT id::text,tenant_id::text,service_id::text,event_key,meter,quantity::text,occurred_at,COALESCE(correction_of::text,'') FROM usage_events WHERE tenant_id=$1 AND id>$2 AND ($4='' OR service_id::text=$4) ORDER BY id LIMIT $3", r.Msg.TenantId, after, n+1, c.service)
 		if e != nil {
 			return e
 		}

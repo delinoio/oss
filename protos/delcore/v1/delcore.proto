@@ -147,11 +147,14 @@ message AuditEntry {
   string reason = 4;
   google.protobuf.Timestamp created_at = 5;
 }
-message GetCurrentUserRequest {}
+message GetCurrentUserRequest {
+  Page page = 1;
+}
 message GetCurrentUserResponse {
   Metadata metadata = 1;
   string user_id = 2;
   repeated Tenant tenants = 3;
+  string next_after_id = 4;
 }
 message CreateTenantRequest {
   string request_key = 1;
@@ -453,7 +456,16 @@ message ListAuditResponse {
   repeated AuditEntry entries = 2;
   string next_after_id = 3;
 }
+message DeleteGroupRequest {
+  string request_key = 1;
+  string tenant_id = 2;
+  string group_id = 3;
+}
+message DeleteGroupResponse {
+  Metadata metadata = 1;
+}
 service DelcoreService {
+  rpc DeleteGroup(DeleteGroupRequest) returns (DeleteGroupResponse);
   rpc PutMeter(PutMeterRequest) returns (PutMeterResponse);
   rpc PutAddOn(PutAddOnRequest) returns (PutAddOnResponse);
   rpc ListBillingHistory(ListBillingHistoryRequest) returns (ListBillingHistoryResponse);

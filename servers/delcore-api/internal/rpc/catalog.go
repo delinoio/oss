@@ -78,9 +78,12 @@ func (s *Server) PutPlan(ctx context.Context, r *connect.Request[pb.PutPlanReque
 				return e
 			}
 		}
-		_, e := c.tx.Exec(c.ctx, `INSERT INTO plans VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,is_default=EXCLUDED.is_default`, v.Id, v.Name, v.Rank, v.Free, v.DefaultFree, v.Postpaid)
+		tag, e := c.tx.Exec(c.ctx, `INSERT INTO plans VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,is_default=EXCLUDED.is_default WHERE plans.rank=EXCLUDED.rank AND plans.free=EXCLUDED.free AND plans.postpaid=EXCLUDED.postpaid`, v.Id, v.Name, v.Rank, v.Free, v.DefaultFree, v.Postpaid)
 		if e != nil {
 			return e
+		}
+		if tag.RowsAffected() != 1 {
+			return precondition("plan billing policy is immutable; create a new plan")
 		}
 		o.Plan = v
 		return c.audit("", "catalog.plan", q.Reason)
@@ -195,6 +198,26 @@ func (s *Server) GetCatalog(ctx context.Context, r *connect.Request[pb.GetCatalo
 			}
 			o.Prices = append(o.Prices, v)
 		}
+		rows.Close()
+		if e = rows.Err(); e != nil {
+			return e
+		}
+		rows, e = c.tx.Query(c.ctx, "SELECT id::text,service_id::text,name FROM addons WHERE id>$1 ORDER BY id LIMIT $2", after, n+1)
+		if e != nil {
+			return e
+		}
+		for rows.Next() {
+			v := &pb.AddOn{}
+			if e = rows.Scan(&v.Id, &v.ServiceId, &v.Name); e != nil {
+				rows.Close()
+				return e
+			}
+			o.AddOns = append(o.AddOns, v)
+		}
+		rows.Close()
+		if e = rows.Err(); e != nil {
+			return e
+		}
 		// One cursor advances all catalog collections only to their minimum full boundary.
 		boundary := ""
 		if len(o.Services) > n {
@@ -206,7 +229,13 @@ func (s *Server) GetCatalog(ctx context.Context, r *connect.Request[pb.GetCatalo
 		if len(o.Prices) > n && (boundary == "" || o.Prices[n-1].Id < boundary) {
 			boundary = o.Prices[n-1].Id
 		}
+		if len(o.AddOns) > n && (boundary == "" || o.AddOns[n-1].Id < boundary) {
+			boundary = o.AddOns[n-1].Id
+		}
 		if boundary != "" {
+			for len(o.AddOns) > 0 && o.AddOns[len(o.AddOns)-1].Id > boundary {
+				o.AddOns = o.AddOns[:len(o.AddOns)-1]
+			}
 			for len(o.Services) > 0 && o.Services[len(o.Services)-1].Id > boundary {
 				o.Services = o.Services[:len(o.Services)-1]
 			}
@@ -218,7 +247,26 @@ func (s *Server) GetCatalog(ctx context.Context, r *connect.Request[pb.GetCatalo
 			}
 			o.NextAfterId = boundary
 		}
-		return rows.Err()
+		// Meters travel with their service; service registration bounds each set.
+		for _, service := range o.Services {
+			rows, e = c.tx.Query(c.ctx, "SELECT service_id::text,name FROM meters WHERE service_id=$1 ORDER BY name", service.Id)
+			if e != nil {
+				return e
+			}
+			for rows.Next() {
+				v := &pb.Meter{}
+				if e = rows.Scan(&v.ServiceId, &v.Name); e != nil {
+					rows.Close()
+					return e
+				}
+				o.Meters = append(o.Meters, v)
+			}
+			rows.Close()
+			if e = rows.Err(); e != nil {
+				return e
+			}
+		}
+		return nil
 	})
 }
 func (s *Server) SetGroup(ctx context.Context, r *connect.Request[pb.SetGroupRequest]) (*connect.Response[pb.SetGroupResponse], error) {
