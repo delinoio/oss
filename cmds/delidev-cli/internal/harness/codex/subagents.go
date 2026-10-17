@@ -478,6 +478,19 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			o.Status = domain.SubagentFailed
 		}
 	case "item/started", "item/completed":
+		// The item notification envelope is typed and case-exact like the item
+		// payloads below, so aliased or extra top-level keys never publish output.
+		var envelope struct {
+			ThreadID      domain.ID       `json:"threadId"`
+			TurnID        domain.ID       `json:"turnId"`
+			Item          json.RawMessage `json:"item"`
+			StartedAtMS   *int64          `json:"startedAtMs,omitempty"`
+			CompletedAtMS *int64          `json:"completedAtMs,omitempty"`
+			DurationMS    *int64          `json:"durationMs,omitempty"`
+		}
+		if decodeCaseExact(native.Params, &envelope) != nil {
+			return Event{}, true, incompatible()
+		}
 		var item map[string]json.RawMessage
 		if domain.Decode(fields["item"], &item) != nil {
 			return Event{}, true, incompatible()

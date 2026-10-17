@@ -324,6 +324,21 @@ func TestSubagentChildNativeEnvelopesRejectCaseAliasedKeys(t *testing.T) {
 			t.Fatal("canonical child envelope was rejected", tc.name, handled, err)
 		}
 	}
+	itemParams := func(extra string) json.RawMessage {
+		return json.RawMessage(`{"threadId":"` + id + `",` + extra + `"item":{"type":"agentMessage","id":"m2","text":"hi"}}`)
+	}
+	for name, params := range map[string]json.RawMessage{
+		"capitalized turn id": itemParams(`"TurnId":"` + string(turn) + `",`),
+		"extra top-level key": itemParams(`"turnId":"` + string(turn) + `","extra":true,`),
+	} {
+		event, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: "item/completed", Params: params})
+		if !handled || err == nil || event.Kind == SubagentEvent {
+			t.Fatal("malformed child item envelope was accepted", name, handled, err)
+		}
+	}
+	if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: "item/completed", Params: itemParams(`"turnId":"` + string(turn) + `",`)}); !handled || err != nil {
+		t.Fatal("canonical child item envelope was rejected", handled, err)
+	}
 	started := func(key string) json.RawMessage {
 		return json.RawMessage(`{"` + key + `":{"id":"` + id + `","sessionId":"` + string(c.execution.thread.SessionID) + `","cliVersion":"` + SupportedVersion + `","cwd":"/","modelProvider":"` + c.execution.settings.Provider + `","createdAt":1,"updatedAt":1,"ephemeral":false,"preview":"","projectId":null,"source":null,"status":{"type":"idle"},"turns":[],"parentThreadId":"` + string(c.thread) + `"}}`)
 	}
