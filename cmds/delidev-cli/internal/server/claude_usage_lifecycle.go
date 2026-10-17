@@ -200,7 +200,7 @@ func (s *Service) closeClaudeUsage() { s.claudeUsage.close() }
 
 // claudeUsageActive reports whether the usage feature is active: the six RPCs
 // are served, the read owner and its scheduler run and GetStatus advertises
-// System capability 108. It is the single decision behind all of them, so the
+// System capability 109. It is the single decision behind all of them, so the
 // advertisement and the served operations can never diverge.
 func (s *Service) claudeUsageActive() bool {
 	return claudeServerUsageAdvertised && !s.claudeUsageDisabledTest

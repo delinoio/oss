@@ -30,7 +30,7 @@ func TestClaudeServerUsageCapabilityIsAdvertisedWithTheCompleteFeature(t *testin
 	}
 	f := newSubscriptionFixture(t)
 	if !f.service.claudeUsageActive() || !slices.Contains(usageStatus(t, f), pb.SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1) {
-		t.Fatal("System capability 108 is not advertised")
+		t.Fatal("System capability 109 is not advertised")
 	}
 	// The capability stands next to, never instead of, the existing Claude lanes.
 	for _, existing := range []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1, pb.SystemCapability_SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2} {
@@ -41,13 +41,13 @@ func TestClaudeServerUsageCapabilityIsAdvertisedWithTheCompleteFeature(t *testin
 }
 
 // TestClaudeServerUsageAdvertisementAndOperationsShareOneDecision proves that a
-// deactivated server neither advertises capability 108 nor serves any of the six
+// deactivated server neither advertises capability 109 nor serves any of the six
 // operations, so a peer can never see half of the feature.
 func TestClaudeServerUsageAdvertisementAndOperationsShareOneDecision(t *testing.T) {
 	f := newSubscriptionFixture(t)
 	f.service.claudeUsageDisabledTest = true
 	if slices.Contains(usageStatus(t, f), pb.SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1) {
-		t.Fatal("a deactivated server advertises capability 108")
+		t.Fatal("a deactivated server advertises capability 109")
 	}
 	mutation := &pb.Mutation{Id: string(domain.NewID()), RequestId: string(domain.NewID()), ExpectedRevision: 1}
 	ctx := context.Background()

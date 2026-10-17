@@ -9,7 +9,7 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-// The six usage operations are served exactly while System capability 108 is
+// The six usage operations are served exactly while System capability 109 is
 // advertised (claudeUsageActive). A server that deactivates the feature answers
 // every operation with Unimplemented, like a server that lacks the capability,
 // so no peer can observe a partial feature and no usage state is written.
