@@ -1445,3 +1445,37 @@ func TestDeletionStopsUnsentSubscriptions(t *testing.T) {
 		}
 	}
 }
+
+func TestCancellationSuspendsAutomaticTopups(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='sub_cancel',period_end=now()+interval '10 days' WHERE id=$1", tenant); e != nil {
+		t.Fatal(e)
+	}
+	setting := func() error {
+		_, e := client.SetAutoTopUp(ctx, req(&pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: true, Threshold: "5", Amount: "10", MonthlyCap: "100"}, "owner"))
+		return e
+	}
+	if e := setting(); e != nil {
+		t.Fatal(e)
+	}
+	w := &worker.Worker{DB: db, Config: cfg}
+	if e := w.Maintain(ctx, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := client.CancelSubscription(ctx, req(&pb.CancelSubscriptionRequest{RequestKey: key(), TenantId: tenant}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	if e := setting(); connect.CodeOf(e) != connect.CodeFailedPrecondition {
+		t.Fatal("re-enabled while canceling", e)
+	}
+	if e := w.Maintain(ctx, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	var suspended bool
+	var pending, total int
+	if e := db.Pool.QueryRow(ctx, "SELECT auto_suspended,(SELECT count(*) FROM jobs WHERE tenant_id=$1 AND kind='auto_topup' AND state<>'done'),(SELECT count(*) FROM jobs WHERE tenant_id=$1 AND kind='auto_topup') FROM tenants WHERE id=$1", tenant).Scan(&suspended, &pending, &total); e != nil || !suspended || pending != 0 || total != 1 {
+		t.Fatal("automatic charge survived cancellation", suspended, pending, total, e)
+	}
+}

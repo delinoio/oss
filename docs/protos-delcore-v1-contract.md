@@ -26,7 +26,7 @@ Wire messages are not the database schema. Historical pricing and usage identiti
 
 ## Security
 
-User and M2M credentials cannot substitute for each other. Service reporting is scoped to the authenticated registered service. Operator changes require an audit reason. Consumer application URLs are operator-allowlisted. Payment callbacks do not authorize entitlements. Enabling automatic top-ups requires an active Paddle subscription; manual top-ups remain available without a subscription.
+User and M2M credentials cannot substitute for each other. Service reporting is scoped to the authenticated registered service. Operator changes require an audit reason. Consumer application URLs are operator-allowlisted. Payment callbacks do not authorize entitlements. Enabling automatic top-ups requires an active Paddle subscription; manual top-ups remain available without a subscription. Subscription cancellation suspends automatic top-ups; settings cannot re-enable them while cancellation is pending.
 
 ## Logging
 

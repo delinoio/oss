@@ -59,7 +59,7 @@ func (s *Server) SetAutoTopUp(ctx context.Context, r *connect.Request[pb.SetAuto
 		if e1 != nil || e2 != nil || e3 != nil || len(q.Threshold) > 64 || len(q.Amount) > 64 || len(q.MonthlyCap) > 64 || threshold.Cmp(accounting.Zero()) < 0 || amount.Cmp(accounting.Zero()) <= 0 || cap.Cmp(amount) < 0 || !amount.IsMinorExact(c.s.Config.MinorUnits) {
 			return invalid("invalid automatic top-up settings")
 		}
-		tag, e := c.tx.Exec(c.ctx, "UPDATE tenants SET auto_threshold=$2,auto_amount=$3,auto_cap=$4,auto_suspended=false WHERE id=$1 AND deleting_at IS NULL AND external_subscription_id<>'' AND NOT renewal_failed AND period_end>$5", q.TenantId, threshold.String(), amount.String(), cap.String(), c.now)
+		tag, e := c.tx.Exec(c.ctx, "UPDATE tenants SET auto_threshold=$2,auto_amount=$3,auto_cap=$4,auto_suspended=false WHERE id=$1 AND deleting_at IS NULL AND external_subscription_id<>'' AND NOT renewal_failed AND period_end>$5 AND NOT EXISTS(SELECT 1 FROM jobs WHERE tenant_id=tenants.id AND kind='cancel' AND state IN ('pending','running','reconcile'))", q.TenantId, threshold.String(), amount.String(), cap.String(), c.now)
 		if e != nil {
 			return e
 		}
@@ -270,6 +270,12 @@ func (s *Server) CancelSubscription(ctx context.Context, r *connect.Request[pb.C
 		}
 		if subscription == "" || pending {
 			return precondition("an active subscription without a pending change is required")
+		}
+		if _, e := c.tx.Exec(c.ctx, "UPDATE tenants SET auto_suspended=true WHERE id=$1", r.Msg.TenantId); e != nil {
+			return e
+		}
+		if _, e := c.tx.Exec(c.ctx, "UPDATE jobs SET state='done',error_category='subscription_canceled',updated_at=$2 WHERE tenant_id=$1 AND kind='auto_topup' AND state='pending' AND attempts=0 AND external_id=''", r.Msg.TenantId, c.now); e != nil {
+			return e
 		}
 		id, e := c.job(r.Msg.TenantId, "cancel", "request:"+r.Msg.RequestKey, map[string]any{"effective_from": "next_billing_period"})
 		o.JobId = id

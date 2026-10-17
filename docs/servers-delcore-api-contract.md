@@ -71,7 +71,7 @@ Authenticated users, registered M2M consumer services, tenant administrators and
 - Late usage uses the price applicable when it occurred and becomes an adjustment on the next bill, retaining its original period. Bound accepted lateness through operator configuration.
 - Purchased credits represent monetary balances and do not expire.
 - Support manual top-ups for all tenants. Automatic top-ups require an active Paddle subscription; tenants without one use manual top-ups. Automatic top-up settings require a threshold, amount, and monthly cap.
-- Permit only one in-flight automatic top-up per tenant. Suspend automatic top-ups after payment failure.
+- Permit only one in-flight automatic top-up per tenant. Suspend automatic top-ups after payment failure or an accepted subscription cancellation. Stop unattempted automatic top-up jobs when cancellation is accepted; reconcile any payment already in flight.
 - A plan determines whether depleted credits cause blocking or postpaid continuation.
 - For plans without postpaid continuation, record already-incurred excess usage as negative credit balance, block subsequent paid use, and offset debt with the next top-up.
 - Explicitly document that post-execution reporting cannot prevent all concurrent overspend.
