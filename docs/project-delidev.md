@@ -114,6 +114,8 @@ The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalo
 
 ## Domain Contract Documents
 
+- [Codex OpenRouter native tools](cmds-delidev-openrouter-tools-contract.md)
+
 - [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)

@@ -135,6 +135,8 @@ message AttachWorkerRequest {
 
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
+  // Admits the explicit OpenRouter Codex image and standalone-search adapter.
+  WORKER_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1 = 73;
   // Executes server-owned Claude setup-token accounts from a protected lease.
   WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1 = 41;
   WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1 = 58;

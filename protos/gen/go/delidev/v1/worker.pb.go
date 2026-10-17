@@ -25,6 +25,8 @@ type WorkerCapability int32
 
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED WorkerCapability = 0
+	// Admits the explicit OpenRouter Codex image and standalone-search adapter.
+	WorkerCapability_WORKER_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1 WorkerCapability = 73
 	// Executes server-owned Claude setup-token accounts from a protected lease.
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1    WorkerCapability = 41
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1         WorkerCapability = 58
@@ -110,6 +112,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		73: "WORKER_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1",
 		41: "WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1",
 		58: "WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1",
 		54: "WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1",
@@ -165,6 +168,7 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                             0,
+		"WORKER_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1":               73,
 		"WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1":             41,
 		"WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1":                  58,
 		"WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1":               54,
@@ -4783,9 +4787,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12_cache_write_inputB\t\n" +
 	"\a_outputB\x13\n" +
 	"\x11_reasoning_outputB\b\n" +
-	"\x06_total*\xd2\x14\n" +
+	"\x06_total*\x83\x15\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x121\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
+	"+WORKER_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1\x10I\x121\n" +
 	"-WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1\x10)\x12,\n" +
 	"(WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1\x10:\x12/\n" +
 	"+WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1\x106\x12,\n" +

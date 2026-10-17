@@ -266,6 +266,11 @@ func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessa
 				return Turn{}, nil, err
 			}
 		}
+		if identity.Type == "mcpToolCall" || identity.Type == "webSearch" {
+			if !settledExternalTool(rawItem, identity.Type) {
+				return Turn{}, nil, incompatible()
+			}
+		}
 		if identity.Type == "dynamicToolCall" {
 			if _, _, err := decodeDynamicTool(rawItem, true); err != nil {
 				return Turn{}, nil, incompatible()

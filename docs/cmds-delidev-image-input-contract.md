@@ -74,6 +74,15 @@ A frozen `image_input_declared` OpenCode declaration is only valid for a Runner 
 
 ## Image-view observation separation
 
+When an original native image-view call observes an absolute temporary location
+outside every validated prepared root, a Worker with the negotiated Codex
+dynamic-tool lifecycle may retain its start and completion as an inert
+`view_image` tool with a location commitment. The original preparation and
+manifest must still validate. This record grants no workspace reference,
+preview, attachment, retrieval or deletion authority and never opens the file.
+Changed locations, ownership, malformed paths and duplicate completion remain
+errors. Original scoped image-view references retain their existing contract.
+
 [Codex image-view metadata](cmds-delidev-harness-contract.md#codex-image-view-observations) uses the original tool/reference identity, not an image-input attachment. Its native location and prepared-root scope grant no source file read, transfer, image-input claim or source-file deletion. Existing authenticated attachment reads continue to require an original claimed upload and immutable byte ownership; an image-view observation alone cannot satisfy them. The metadata-only transcript explicitly reports unavailable preview. Do not reopen a displayed path or download a URL to supply missing native bytes. Existing attachment cleanup and independent workspace/native cleanup retain their original authority.
 
 ## Pre-send image rejection classification
@@ -81,6 +90,12 @@ A frozen `image_input_declared` OpenCode declaration is only valid for a Runner 
 Follow the direct startup contract's positive image rejection profile. The exact original native model modality response may reject image preparation before turn/start; model names or generic error codes do not establish support or send status. Retain the opaque original adapter proof, exact synchronized Worker claim and independent cleanup before publishing IMAGE_INPUT_REJECTED. Missing or changed proof remains uncertain. Preserve the accepted original prompt and ordered image references, authenticated image ownership and existing explicit retry guards; do not replace attachments, reconstruct native history or resend from observation. The optional startup field 11 and enum values 0/1 add no capability or migration.
 
 ## Original native generated images
+
+Codex 0.159.2 serializes `transparentBackground: null` on started and failed
+image-generation items. Treat that value as an absent background observation;
+it does not supply image bytes, a completed generation or transparent output.
+The optional `savedPath` remains non-null when present. Follow the pinned native
+[image item source](https://github.com/openai/codex/blob/rust-v0.159.2/codex-rs/ext/items/src/image_generation.rs).
 
 The feature records System capability 61 and Worker capability 35 with its complete implementation. These are independent of input-image capabilities 45/25. No database migration or generation-service bridge is introduced. The supported native route is the original managed Codex subscription configuration whose effective built-in OpenAI provider and protected authentication have been independently validated. Custom API proxy routes and read-only Sidechat do not gain image generation, provider substitution or inferred entitlement from these allocations. New assignments freeze image-generation admission only when that original managed root route and Worker capability 35 are selected. Historical assignments retain their original disabled profile. Request and verify the actual native `features.image_generation` setting before input; it grants neither account entitlement nor custom-provider support. The native provider still decides actual account availability and reports its original failure.
 
@@ -169,3 +184,14 @@ Native/account/platform observations remain separate from automated decoder, aut
 - Last-owner image removal uses original Worker identity after joined native/process cleanup. Image-only plans grant no workspace authority. Persist intent before DELETE; completion and replay require original deletion receipt and absent data/metadata. Reappearing files remain protected. Follow the image-input and storage contracts.
 
 - The feature classifies original image rejection only from the opaque pre-wire adapter proof, exclusive synchronized original assignment/input/request claim and independent confirmed cleanup. Retain claimed uncertainty on missing/changed proof or cleanup, unchanged public receipts and original assignment revisions; never resend by observation. Follow the image-input and direct startup contracts.
+
+### Selected OpenRouter image adapter
+
+The independent [OpenRouter tool contract](cmds-delidev-openrouter-tools-contract.md)
+adds System 108 and Worker 73. These select a native dynamic image backend for
+new original root OpenRouter Responses executions, while 61/35 alone retain
+their managed-subscription boundary. Native built-in image publication and its
+attachment preview remain managed-only. Selected API dynamic PNG results remain
+in protected native history with inert media commitments in the transcript.
+The original assignment retains its enlarged frame profile for continuation,
+Fork inspection and compaction without enabling generation in those readers.
