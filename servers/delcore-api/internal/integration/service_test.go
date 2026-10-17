@@ -894,3 +894,32 @@ func TestRetentionPreservesReplayTombstones(t *testing.T) {
 		t.Fatal("replay identity lost", count, e)
 	}
 }
+
+func TestSubscriptionRejectsHistoricalPrice(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	var plan string
+	if e := db.Pool.QueryRow(ctx, "SELECT plan_id::text FROM tenants WHERE id=$1", tenant).Scan(&plan); e != nil {
+		t.Fatal(e)
+	}
+	service := key()
+	if _, e := db.Pool.Exec(ctx, "INSERT INTO services(id,name,client_id,capabilities,scopes) VALUES($1,'price test','price-test','{}','{}')", service); e != nil {
+		t.Fatal(e)
+	}
+	old, current := key(), key()
+	for i, price := range []string{old, current} {
+		if _, e := db.Pool.Exec(ctx, "INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,kind,external_price_id,created_at) VALUES($1,$2,$3,'units',1,0,'USD',1,'',$4)", price, plan, service, time.Now().Add(time.Duration(i)*time.Second)); e != nil {
+			t.Fatal(e)
+		}
+	}
+	for _, price := range []string{old, current} {
+		_, e := client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: tenant, PlanId: plan, PriceIds: []string{price}, ReturnUrl: cfg.ReturnURLs[0]}, "owner"))
+		if price == old && connect.CodeOf(e) != connect.CodeInvalidArgument {
+			t.Fatalf("historical price accepted: %v", e)
+		}
+		if price == current && e != nil {
+			t.Fatal(e)
+		}
+	}
+}

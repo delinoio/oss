@@ -115,6 +115,13 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 			if e = c.tx.QueryRow(c.ctx, "SELECT external_price_id,COALESCE(plan_id::text,''),COALESCE(addon_id::text,''),kind,service_id::text,meter,unit_price::text FROM prices WHERE id=$1", priceID).Scan(&ext, &ownerPlan, &addon, &kind, &service, &meter, &rateText); e != nil {
 				return invalid("unknown price")
 			}
+			var current bool
+			if e = c.tx.QueryRow(c.ctx, `SELECT NOT EXISTS(SELECT 1 FROM prices newer JOIN prices selected ON selected.id=$1 WHERE newer.plan_id IS NOT DISTINCT FROM selected.plan_id AND newer.addon_id IS NOT DISTINCT FROM selected.addon_id AND newer.service_id=selected.service_id AND newer.meter=selected.meter AND newer.kind=selected.kind AND (newer.created_at,newer.id)>(selected.created_at,selected.id))`, priceID).Scan(&current); e != nil {
+				return e
+			}
+			if !current {
+				return invalid("explicit changes require current price versions")
+			}
 			if addon == "" && ownerPlan != q.PlanId {
 				return invalid("price belongs to another plan")
 			}
