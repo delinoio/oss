@@ -121,20 +121,37 @@ func projectOpenRouterToolResponse(raw []byte, operation Operation) ([]byte, err
 		var response struct {
 			Status string `json:"status"`
 			Output []struct {
-				Type    string `json:"type"`
-				Content []struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"content"`
+				Type       string          `json:"type"`
+				Status     string          `json:"status"`
+				Error      json.RawMessage `json:"error"`
+				HTTPStatus *int            `json:"httpStatus"`
+				Content    json.RawMessage `json:"content"`
 			} `json:"output"`
 		}
 		if json.Unmarshal(raw, &response) != nil || response.Status != "completed" {
 			return nil, openRouterToolError()
 		}
 		var text strings.Builder
+		completedTool := false
 		for _, item := range response.Output {
+			// Accept only completed native or router web operations from the
+			// authenticated response output. Assistant prose and function-call
+			// suggestions do not establish that a remote tool executed.
+			if slices.Contains([]string{"web_search_call", "openrouter:web_search", "openrouter:web_fetch"}, item.Type) {
+				if item.Status != "completed" || externalJSON(item.Error) || item.HTTPStatus != nil && *item.HTTPStatus >= 400 {
+					return nil, openRouterToolError()
+				}
+				completedTool = true
+			}
 			if item.Type == "message" {
-				for _, part := range item.Content {
+				var content []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				}
+				if json.Unmarshal(item.Content, &content) != nil {
+					return nil, openRouterToolError()
+				}
+				for _, part := range content {
 					if part.Type == "output_text" {
 						text.WriteString(part.Text)
 						text.WriteByte('\n')
@@ -142,7 +159,7 @@ func projectOpenRouterToolResponse(raw []byte, operation Operation) ([]byte, err
 				}
 			}
 		}
-		if text.Len() == 0 || domain.Text(text.String(), "native web output", maxBody, true) != nil {
+		if !completedTool || text.Len() == 0 || domain.Text(text.String(), "native web output", maxBody, true) != nil {
 			return nil, openRouterToolError()
 		}
 		return json.Marshal(map[string]any{"output": text.String(), "results": nil, "encrypted_output": nil})

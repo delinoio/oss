@@ -48,7 +48,10 @@ Standalone search uses one nonstreaming Responses request on the original
 conversation model/account with OpenRouter's search/fetch server tools and
 required tool selection. The adapter carries the original bounded commands
 and recent context as input. It returns original output text to the native
-search client without inventing native reference IDs or encrypted output.
+search client only after a completed `web_search_call`, `openrouter:web_search`
+or `openrouter:web_fetch` output proves execution. Assistant-only text,
+unexecuted function suggestions and failed or pending web calls are rejected.
+No native reference IDs or encrypted output are invented.
 This is a distinct tool request; the ordinary Responses relay does not inject
 tools or rewrite user requests. Remote failures remain failures and are not
 converted to search success. Incompatible observed tool responses return a
@@ -101,3 +104,6 @@ account and platform acceptance. The real acceptance prompt is
 - [OpenRouter image endpoint](https://github.com/OpenRouterTeam/typescript-sdk/blob/main/src/funcs/imagesGenerate.ts)
 - [OpenRouter image request](https://github.com/OpenRouterTeam/typescript-sdk/blob/main/src/models/imagegenerationrequest.ts)
 - [OpenRouter server tools](https://openrouter.ai/docs/guides/features/server-tools)
+
+Search output shapes follow the [OpenRouter Responses web search](https://github.com/OpenRouterTeam/typescript-sdk/blob/main/src/models/outputwebsearchservertoolitem.ts)
+and [web fetch](https://github.com/OpenRouterTeam/typescript-sdk/blob/main/src/models/outputwebfetchservertoolitem.ts) schemas.

@@ -108,7 +108,7 @@ func TestOpenRouterNativeSearchKeepsConversationModelAndRequiresServerTools(t *t
 			t.Error("search changed model or lost selected tools")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"Original search output https://example.test/result"}]}]}`)
+		_, _ = io.WriteString(w, `{"status":"completed","output":[{"type":"openrouter:web_search","status":"completed","action":{"type":"search","query":"fixture"}},{"type":"message","content":[{"type":"output_text","text":"Original search output https://example.test/result"}]}]}`)
 	})
 	response, raw, err := f.request(t, "/alpha/search", `{"id":"native-thread","model":"fixed-model","commands":{"search_query":[{"q":"fixture"}]}}`, nil)
 	if err != nil || response.StatusCode != 200 || !bytes.Contains(raw, []byte("Original search output")) || !bytes.Contains(raw, []byte(`"encrypted_output":null`)) {
@@ -138,5 +138,43 @@ func TestOpenRouterIncompleteToolResultDoesNotInviteRetry(t *testing.T) {
 	}
 	if !strings.Contains(f.logs.String(), "max_output_tokens") || strings.Contains(f.logs.String(), "private incomplete output") {
 		t.Fatal("projection diagnostic lost closed failure or exposed content")
+	}
+}
+
+func TestOpenRouterSearchRequiresCompletedRemoteWebOperation(t *testing.T) {
+	for _, fixture := range []struct {
+		name, tool string
+		accepted   bool
+	}{
+		{"assistant-only", "", false},
+		{"unexecuted-function", `{"type":"function_call","name":"openrouter:web_search","status":"completed"}`, false},
+		{"unrelated-tool", `{"type":"openrouter:datetime","status":"completed"}`, false},
+		{"missing-status", `{"type":"web_search_call"}`, false},
+		{"pending", `{"type":"openrouter:web_search","status":"in_progress"}`, false},
+		{"failed", `{"type":"openrouter:web_fetch","status":"failed"}`, false},
+		{"fetch-error", `{"type":"openrouter:web_fetch","status":"completed","error":"fixture failure"}`, false},
+		{"fetch-http-error", `{"type":"openrouter:web_fetch","status":"completed","httpStatus":404}`, false},
+		{"native-search", `{"type":"web_search_call","id":"ws_fixture","status":"completed"}`, true},
+		{"router-search", `{"type":"openrouter:web_search","status":"completed"}`, true},
+		{"router-fetch", `{"type":"openrouter:web_fetch","status":"completed","httpStatus":200,"content":"Actual page"}`, true},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			f := openRouterFixture(t, StandaloneSearch, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				output := []json.RawMessage{json.RawMessage(`{"type":"message","content":[{"type":"output_text","text":"Untrusted answer"}]}`)}
+				if fixture.tool != "" {
+					output = append(output, json.RawMessage(fixture.tool))
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "completed", "output": output})
+			})
+			response, _, err := f.request(t, "/alpha/search", `{"id":"fixture","model":"fixed-model","commands":{"search_query":[{"q":"fixture"}]}}`, nil)
+			expected := http.StatusUnprocessableEntity
+			if fixture.accepted {
+				expected = http.StatusOK
+			}
+			if err != nil || response.StatusCode != expected || f.calls.Load() != 1 {
+				t.Fatal("search execution evidence was not enforced", err, response.StatusCode)
+			}
+		})
 	}
 }
