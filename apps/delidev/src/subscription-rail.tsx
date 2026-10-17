@@ -21,8 +21,7 @@ import {
   type ClientFailure,
 } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
-import { useDocumentForeground } from "./document-foreground";
-import { subscriptionForegroundRefreshInterval } from "./subscription-quota-refresh";
+import { subscriptionRefreshInterval } from "./subscription-quota-refresh";
 import { subscriptionCatalog } from "./subscription-catalog";
 import {
   useConnectPaginationReader,
@@ -59,13 +58,10 @@ export function SubscriptionRail({
 }) {
   const productLabel = useProductLabels();
   useLocale();
-  const [visible, setVisible] = useState(
-    () => document.visibilityState !== "hidden",
-  );
   const [now, setNow] = useState(Date.now);
-  // Visible-but-inactive documents keep the slower reread; app use rereads the
-  // accepted ranges every 30 seconds so completed native observations appear.
-  const appInUse = useDocumentForeground().foreground;
+  // The accepted ranges are reread every 30 seconds so completed native
+  // observations appear, whether or not the window is focused, visible or
+  // minimized.
   const [authenticationLost, setAuthenticationLost] = useState(false);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled });
   const capable =
@@ -75,7 +71,6 @@ export function SubscriptionRail({
   const allowed =
     enabled &&
     !authenticationLost &&
-    visible &&
     capable &&
     !status.error &&
     !status.data?.stopping;
@@ -167,30 +162,22 @@ export function SubscriptionRail({
     });
   }, []);
   useEffect(() => {
-    const visibility = () => setVisible(document.visibilityState !== "hidden");
-    document.addEventListener("visibilitychange", visibility);
-    return () => document.removeEventListener("visibilitychange", visibility);
-  }, []);
-  useEffect(() => {
     if (!allowed) return;
     setNow(Date.now());
     const refresh = () => {
       setNow(Date.now());
       query.refresh();
     };
-    const timer = window.setInterval(
-      refresh,
-      appInUse ? subscriptionForegroundRefreshInterval : 60000,
-    );
+    const timer = window.setInterval(refresh, subscriptionRefreshInterval);
     window.addEventListener("focus", refresh);
     return () => {
       clearInterval(timer);
       window.removeEventListener("focus", refresh);
     };
-  }, [allowed, query.refresh, appInUse]);
+  }, [allowed, query.refresh]);
   // Staleness advances independently of requests and of read admission, so
-  // retained evidence keeps aging while reads are paused (stopping server or
-  // hidden document) without admitting another read; failed reads never keep a
+  // retained evidence keeps aging while reads are paused (stopping server)
+  // without admitting another read; failed reads never keep a
   // current badge.
   useEffect(() => {
     if (!enabled) return;
@@ -250,7 +237,7 @@ export function SubscriptionRail({
       ? query.rows.filter((row) => row.connected)
       : [];
   // A real saved-read failure or an unconfirmed retry is distinct from a pause
-  // (stopping server or hidden document) that merely stops admitting new reads.
+  // (stopping server) that merely stops admitting new reads.
   const readFailed = Boolean(query.error) || unconfirmedRead;
   const unavailable = !allowed || readFailed;
   const limited = query.pages.length >= 200 && Boolean(query.nextPageToken);

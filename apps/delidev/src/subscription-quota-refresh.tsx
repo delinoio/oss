@@ -10,15 +10,12 @@ import {
   type RefreshAllSubscriptionQuotasRequest,
   type RefreshAllSubscriptionQuotasResponse,
 } from "@delinoio/delidev-api-client";
-import {
-  isDocumentForeground,
-  useDocumentForeground,
-} from "./document-foreground";
 import { subscriptionQuotaAllKey, useRetainedMutation } from "./mutation";
 
-/** Foreground cadence for both the automatic batch request and the saved
- * resource rereads that deliver completed observations to existing displays. */
-export const subscriptionForegroundRefreshInterval = 30000;
+/** Cadence for both the automatic batch request and the saved resource rereads
+ * that deliver completed observations to existing displays. Window focus,
+ * visibility and minimization never change it. */
+export const subscriptionRefreshInterval = 30000;
 
 /** Stable closed set of reasons a scheduled tick sends nothing. */
 export enum SubscriptionQuotaTickOutcome {
@@ -49,7 +46,6 @@ export function acknowledgeRefreshAllSubscriptionQuotas(
  * no retry authority: an uncertain original request is only ever retried by the
  * explicit Settings action, and a busy request is never replaced. */
 export function SubscriptionQuotaAutoRefresh({ ready }: { ready: boolean }) {
-  const { foreground, activation, reconcile } = useDocumentForeground();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: ready });
   const supported =
     status.data?.capabilities.includes(
@@ -62,24 +58,22 @@ export function SubscriptionQuotaAutoRefresh({ ready }: { ready: boolean }) {
     acknowledgeRefreshAllSubscriptionQuotas,
   );
   const eligible =
-    ready && foreground && supported && !status.error && !status.data?.stopping;
+    ready && supported && !status.error && !status.data?.stopping;
   // Ticks recheck the newest gates immediately before sending, so a queued
-  // callback that outlives a blur, disconnect or stopping status sends nothing.
+  // callback that outlives a disconnect or stopping status sends nothing.
   const latest = useRef({ mutation, eligible });
   latest.current = { mutation, eligible };
   useEffect(() => {
     if (!eligible) return;
     let timer: number | undefined;
     const arm = () => {
-      timer = window.setTimeout(tick, subscriptionForegroundRefreshInterval);
+      timer = window.setTimeout(tick, subscriptionRefreshInterval);
     };
     const tick = () => {
       const { mutation: current, eligible: open } = latest.current;
-      const foregroundNow = isDocumentForeground();
-      if (!open || !foregroundNow) {
+      if (!open) {
         // A closed gate ends this wait. Regaining eligibility starts a fresh one,
         // and missed ticks are never replayed.
-        if (!foregroundNow) reconcile();
         console.info("delidev.subscription.quota_refresh_tick", {
           outcome: SubscriptionQuotaTickOutcome.GateClosed,
         });
@@ -98,6 +92,6 @@ export function SubscriptionQuotaAutoRefresh({ ready }: { ready: boolean }) {
     };
     arm();
     return () => window.clearTimeout(timer);
-  }, [eligible, activation, reconcile]);
+  }, [eligible]);
   return null;
 }

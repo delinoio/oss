@@ -58,9 +58,8 @@ import { document, items, object, text } from "./documents";
 import { subscriptionQuotaAllKey, useRetainedMutation } from "./mutation";
 import {
   acknowledgeRefreshAllSubscriptionQuotas,
-  subscriptionForegroundRefreshInterval,
+  subscriptionRefreshInterval,
 } from "./subscription-quota-refresh";
-import { useDocumentForeground } from "./document-foreground";
 import { Failure, InlineRemediation, Problem } from "./ui";
 import { SubscriptionBrand } from "./subscription-catalog";
 import {
@@ -758,17 +757,17 @@ export function SubscriptionAccounts({
   // the background inventory reader. The callback uses the current reader.
   const flow = useSubscriptionLogin(active, () => refreshInventory.current());
   // Completed native observations reach this inventory by rereading its already
-  // accepted ranges every 30 seconds while the app is in use. Unseen pages are
-  // never discovered, and an inactive document keeps the previous no-poll behavior.
-  const appInUse = useDocumentForeground().foreground;
+  // accepted ranges every 30 seconds, including while the window is blurred,
+  // hidden or minimized. Unseen pages are never discovered.
   const inventory = useResourceScrollQuery(
     EntityKind.ACCOUNT,
     active && capable && !selected && !goCreate && !flow.workflow,
     "subscriptions",
-    appInUse ? subscriptionForegroundRefreshInterval : false,
+    subscriptionRefreshInterval,
     AccountTypeFilter.SUBSCRIPTION,
     "",
     serviceAccount,
+    true,
     true,
   );
   // An inert parent beneath its original edit/delete dialog retains its three

@@ -160,7 +160,9 @@ export function useConnectPaginationReader<
 }
 
 /** Domain cadences/invalidation refresh accepted ranges without reading a new
- * tail. Prefix invalidation reaches this marker while batch caches stay empty. */
+ * tail. Prefix invalidation reaches this marker while batch caches stay empty.
+ * An interval pauses in a hidden document unless the caller opts in with
+ * `refetchInBackground`, which only the subscription inventory does. */
 export function usePaginationRefresh<
   I extends DescMessage,
   O extends DescMessage,
@@ -170,6 +172,7 @@ export function usePaginationRefresh<
   active: boolean,
   refresh: () => void,
   interval: number | false = false,
+  refetchInBackground = false,
 ) {
   const transport = useTransport();
   const options = createQueryOptions(method, input, { transport });
@@ -186,7 +189,7 @@ export function usePaginationRefresh<
     enabled: active,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
-    refetchIntervalInBackground: false,
+    refetchIntervalInBackground: refetchInBackground,
     refetchInterval: active ? interval : false,
     retry: false,
     staleTime: Infinity,
