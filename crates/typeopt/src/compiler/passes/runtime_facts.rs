@@ -1689,6 +1689,18 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                                 // An unwritten local alias that is only
                                 // called is analysed like the direct calls.
                                 for call in calls {
+                                    // A spread hides the real target, and
+                                    // `Reflect.set` with a receiver writes
+                                    // the receiver, not the target.
+                                    if call
+                                        .arguments()
+                                        .iter()
+                                        .any(|a| a.kind() == SyntaxKind::SpreadElement)
+                                        || (writer == "set" && call.arguments().len() >= 4)
+                                    {
+                                        patches.add(Owner::Any, Member::Any);
+                                        continue;
+                                    }
                                     if let Some(target) = call.arguments().first() {
                                         let key = matches!(
                                             writer.as_str(),
@@ -1842,7 +1854,9 @@ fn classify_writes(
         && (patches.record(&Owner::Global, "Symbol").is_some()
             || patches
                 .record(&Owner::Named("Symbol".to_owned()), "for")
-                .is_some())
+                .is_some()
+            || patches.unproven_record("Symbol").is_some()
+            || patches.unproven_record("for").is_some())
     {
         patches.add(Owner::Global, Member::Any);
     }

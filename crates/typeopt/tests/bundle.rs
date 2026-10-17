@@ -251,6 +251,31 @@ fn keeps_intrinsics_beside_an_aliased_object_assign_that_escapes() {
     assert!(index.contains("String("), "{index}");
 }
 
+/// An alias call with a spread argument or a `Reflect.set` receiver hides its
+/// real target.
+#[test]
+fn keeps_intrinsics_beside_aliased_writers_with_hidden_targets() {
+    for code in [
+        r#"const n=42;const custom=()=>"patched";const args=[globalThis,{String:custom}];var assign=Object.assign;assign(...args);console.log(String(n)+"!");export{};"#,
+        r#"const n=42;var set=Reflect.set;set({},"String",String,globalThis);console.log(String(n)+"!");export{};"#,
+    ] {
+        let (temp, _) = run(&[("index.js", code)]);
+        let index = out(temp.path(), "index.js");
+        assert!(index.contains("String("), "{index}");
+    }
+}
+
+/// A patched or unproven `Symbol.for` may return a string key.
+#[test]
+fn keeps_intrinsics_when_symbol_for_may_be_replaced() {
+    let (temp, _) = run(&[(
+        "index.js",
+        r#"const n=42;const box={v:Symbol};box.v.for=()=>"String";globalThis[Symbol.for("k")]=String;console.log(String(n)+"!");export{};"#,
+    )]);
+    let index = out(temp.path(), "index.js");
+    assert!(index.contains("String("), "{index}");
+}
+
 /// A computed key whose literal start is a prefix of a built-in name may
 /// replace that built-in.
 #[test]
