@@ -104,6 +104,11 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 		Operation domain.SubscriptionObservationOperation
 		Confirmed bool
 	}{domain.ID(m.Id), m.ExpectedRevision, domain.SubscriptionObservationOperation{ID: domain.ID(m.RequestId), Action: action, MachineID: domain.ID(req.Msg.MachineId), Actor: actor, ConnectionID: domain.ID(req.Msg.ConnectionId), Generation: domain.ID(req.Msg.GenerationId), Phase: domain.SubscriptionObservationQueued, CreditID: req.Msg.CreditId, NextCredit: req.Msg.NextCredit, CreditsObservationID: domain.ID(req.Msg.CreditsObservationId)}, req.Msg.Confirmed}
+	// A linked Claude usage connection is served by the single usage-read owner,
+	// which takes the account gate itself.
+	if response, handled, err := s.requestClaudeUsageRefresh(ctx, req, actor, c); handled {
+		return response, err
+	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -188,6 +193,10 @@ const subscriptionQuotaMaintenanceInterval = 4 * time.Minute
 
 type subscriptionQuotaBatchReceipt struct {
 	Accounts []domain.ID `json:"accounts"`
+	// ClaudeReads are the due Claude usage reads the request asked the usage-read
+	// owner to admit. They are part of the durable receipt so a replay reproduces
+	// the account list and resumes the same claims.
+	ClaudeReads []claudeUsageReadRef `json:"claude_reads,omitempty"`
 }
 
 func subscriptionQuotaCandidates(tx *store.Tx, now time.Time, dueOnly bool, epoch domain.ID) ([]store.Record, error) {
@@ -283,10 +292,17 @@ func (s *Service) RefreshAllSubscriptionQuotas(ctx context.Context, req *connect
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	defer unlock()
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "subscription.quota.all", actor, func(tx *store.Tx) (any, error) {
-		return queueSubscriptionQuotas(tx, actor, time.Now().UTC(), false, s.subscriptionServerEpoch())
+		receipt, err := queueSubscriptionQuotas(tx, actor, time.Now().UTC(), false, s.subscriptionServerEpoch())
+		if err != nil {
+			return receipt, err
+		}
+		// The due Claude usage reads join the same durable receipt.
+		receipt.ClaudeReads, err = s.dueClaudeUsageReadsTx(tx)
+		return receipt, err
 	})
+	// The usage-read owner takes the account gate itself.
+	unlock()
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -297,6 +313,15 @@ func (s *Service) RefreshAllSubscriptionQuotas(ctx context.Context, req *connect
 	response := &pb.RefreshAllSubscriptionQuotasResponse{RequestId: req.Msg.RequestId, Replayed: result.Replayed}
 	for _, id := range receipt.Accounts {
 		response.Accounts = append(response.Accounts, string(id))
+	}
+	// Claude usage reads join the same request through their own owner. Only a
+	// read that is due is admitted, so neither Refresh all nor the 30-second
+	// foreground cadence can force a fetch before the four-minute interval. The
+	// reads are part of the receipt: a replay lists the original accounts and
+	// resumes unfinished claims, and an existing claim never reads again.
+	s.admitClaudeUsageReceiptReads(ctx, actor, domain.ID(req.Msg.RequestId), receipt.ClaudeReads)
+	for _, read := range receipt.ClaudeReads {
+		response.Accounts = append(response.Accounts, string(read.Account))
 	}
 	return connect.NewResponse(response), nil
 }

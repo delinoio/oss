@@ -52,3 +52,82 @@ func TestCloseUsageProfileLeasePropagatesAnUnconfirmedRelease(t *testing.T) {
 		t.Fatalf("an earlier failure was dropped: %v", err)
 	}
 }
+
+// The renewal runtime shares the retry contract of the login runtime.
+func TestClaudeUsageRenewalRuntimeReleaseRetriesAFailedLeaseClose(t *testing.T) {
+	lease := &flakyUsageLease{failures: 1}
+	runtime := &claudeUsageRenewalRuntime{lease: lease}
+	if err := runtime.Release(); err == nil {
+		t.Fatal("the first failed release was reported as success")
+	}
+	if err := runtime.Release(); err != nil {
+		t.Fatalf("the retried release did not confirm: %v", err)
+	}
+	if lease.calls != 2 {
+		t.Fatalf("the lease was closed %d times", lease.calls)
+	}
+}
+
+func resetStrandedUsageLeases(t *testing.T) {
+	t.Helper()
+	clear := func() {
+		strandedUsageLeases.mu.Lock()
+		strandedUsageLeases.pending = nil
+		strandedUsageLeases.mu.Unlock()
+	}
+	clear()
+	t.Cleanup(clear)
+}
+
+// A lease whose release failed after its runtime was dropped (an opener error
+// path) stays retained and is retried until confirmed, so the profile lock is
+// never stranded until a restart.
+func TestStrandedUsageLeaseIsRetriedUntilConfirmed(t *testing.T) {
+	resetStrandedUsageLeases(t)
+	lease := &flakyUsageLease{failures: 2}
+	if err := strandedUsageLeases.close(lease); err == nil {
+		t.Fatal("a failed release was reported as confirmed")
+	}
+	// Closing the same lease again does not retain it twice.
+	if err := strandedUsageLeases.close(lease); err == nil {
+		t.Fatal("the second failed release was reported as confirmed")
+	}
+	if len(strandedUsageLeases.pending) != 1 {
+		t.Fatalf("the failed lease was retained %d times", len(strandedUsageLeases.pending))
+	}
+	if remaining := strandedUsageLeases.retry(nil); remaining != 0 {
+		t.Fatalf("the retry did not confirm the release: %d retained", remaining)
+	}
+	if lease.calls != 3 {
+		t.Fatalf("the lease was closed %d times instead of retried until confirmed", lease.calls)
+	}
+	if remaining := strandedUsageLeases.retry(nil); remaining != 0 || lease.calls != 3 {
+		t.Fatal("a confirmed lease was closed again")
+	}
+}
+
+func TestStrandedUsageLeaseStaysRetainedWhileTheReleaseKeepsFailing(t *testing.T) {
+	resetStrandedUsageLeases(t)
+	lease := &flakyUsageLease{failures: 2}
+	_ = strandedUsageLeases.close(lease)
+	if remaining := strandedUsageLeases.retry(nil); remaining != 1 {
+		t.Fatalf("an unconfirmed lease was dropped: %d retained", remaining)
+	}
+	if remaining := strandedUsageLeases.retry(nil); remaining != 0 {
+		t.Fatalf("the lease was not released once the close succeeded: %d retained", remaining)
+	}
+}
+
+// A runtime release that fails retains its lease for the next acquisition even
+// when the caller drops the runtime after logging the failure.
+func TestRuntimeReleaseFailureRetainsTheLeaseForRetry(t *testing.T) {
+	resetStrandedUsageLeases(t)
+	lease := &flakyUsageLease{failures: 1}
+	renewal := &claudeUsageRenewalRuntime{lease: lease}
+	if err := renewal.Release(); err == nil {
+		t.Fatal("a failed release was reported as confirmed")
+	}
+	if remaining := strandedUsageLeases.retry(nil); remaining != 0 || lease.calls != 2 {
+		t.Fatalf("the dropped runtime's lease was not retried to confirmation: retained=%d calls=%d", remaining, lease.calls)
+	}
+}

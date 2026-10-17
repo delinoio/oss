@@ -257,22 +257,36 @@ func (s *Service) claudeUsageCleanupCandidate(account domain.ID, a domain.Accoun
 		return usage.Operation != nil && (usage.Operation.Epoch != s.subscriptionServerEpoch() || usage.Operation.State == domain.SubscriptionRecovery || !s.claudeUsage.live(account))
 	case domain.ClaudeUsageConfirming:
 		return usage.Operation != nil && (!now.Before(usage.Operation.ExpiresAt) || actorGone) || usage.OwesCleanup()
+	case domain.ClaudeUsageLinked:
+		// A claimed read or renewal whose registered owner is gone (its settlement
+		// failed) would reject every later admission until a restart.
+		return usage.OwesCleanup() || claudeUsageReadInFlight(usage) && !s.claudeUsage.live(account)
 	}
 	return usage.OwesCleanup()
 }
 
-// fenceClaudeUsageLogins marks every login of an older server epoch as needing
-// recovery. It runs inside the startup transaction; the login is never
-// relaunched and its credentials are never trusted.
+// claudeUsageReadInFlight reports whether the durable section holds a claimed
+// provider read or supervised renewal.
+func claudeUsageReadInFlight(usage *domain.ClaudeServerUsageState) bool {
+	return usage.Connection == domain.ClaudeUsageLinked && (usage.Refresh == domain.ClaudeUsageReading || usage.Refresh == domain.ClaudeUsageRenewing)
+}
+
+// fenceClaudeUsageLogin settles every usage state whose owner died with an older
+// server epoch. It runs inside the startup transaction, before any owner starts.
+// A login is marked as needing recovery and is never relaunched, and its
+// credentials are never trusted. An interrupted read returns to idle, while an
+// interrupted renewal may have rotated the credential and therefore requires an
+// explicit reconnect: it is never repeated.
 func (s *Service) fenceClaudeUsageLogin(a *domain.Account) bool {
 	if !a.ManagedClaudeAccount() || a.Subscription.ClaudeUsage == nil {
 		return false
 	}
 	usage := a.Subscription.ClaudeUsage
-	if usage.Connection != domain.ClaudeUsageConnecting || usage.Operation == nil || usage.Operation.Epoch == s.subscriptionServerEpoch() {
-		return false
+	fenced := false
+	if usage.Connection == domain.ClaudeUsageConnecting && usage.Operation != nil && usage.Operation.Epoch != s.subscriptionServerEpoch() {
+		fenced = usage.MarkRecovery()
 	}
-	return usage.MarkRecovery()
+	return usage.FenceInterruptedRead() || fenced
 }
 
 // prepareClaudeUsageLogout cancels and joins a live usage login before an
@@ -363,7 +377,8 @@ func (s *Service) cleanupClaudeUsageExcept(ctx context.Context, account, self do
 	}
 	orphan := usage.Connection == domain.ClaudeUsageConnecting
 	expired := usage.Connection == domain.ClaudeUsageConfirming && usage.Operation != nil && (!time.Now().Before(usage.Operation.ExpiresAt) || actorGone)
-	if !usage.OwesCleanup() && !orphan && !expired {
+	interrupted := claudeUsageReadInFlight(&usage)
+	if !usage.OwesCleanup() && !orphan && !expired && !interrupted {
 		return nil
 	}
 	vault, err := s.secrets()
@@ -407,6 +422,11 @@ func (s *Service) cleanupClaudeUsageExcept(ctx context.Context, account, self do
 			return struct{}{}, nil
 		}
 		current.ConfirmCleanup(removed, profile)
+		if claudeUsageReadInFlight(current) {
+			// No registered owner remains: an interrupted read returns to idle and
+			// an interrupted renewal requires an explicit reconnect, never a repeat.
+			current.FenceInterruptedRead()
+		}
 		switch {
 		case current.Connection == domain.ClaudeUsageConnecting && profile:
 			diagnostic := claudeDiagnostic(operation, domain.NativeSubscriptionCleanup, "", domain.Fail(domain.RecoveryRequired, "Interrupted.", "Connect usage again."))

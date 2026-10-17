@@ -16,6 +16,8 @@ import {
   EntityKind,
   ResourceSchema,
   ResourceService,
+  SubscriptionObservationAction,
+  SubscriptionService,
   SystemCapability,
   SystemService,
   newRequestId,
@@ -301,3 +303,155 @@ it("labels Claude usage windows and identifies the manually linked usage account
   expect(article.textContent).toMatch(/Usage account: alex@example.com/);
   expect(article.textContent).toMatch(/Linked manually/);
 });
+
+function claudeUsageRowFixture(usage: Record<string, unknown>) {
+  const observed = new Date(Date.now() - 60_000).toISOString();
+  const connection = newRequestId();
+  const generation = newRequestId();
+  const claude = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.ACCOUNT,
+    schemaVersion: 2,
+    revision: 2n,
+    documentJson: encode({
+      alias: "Linked Claude",
+      type: "subscription",
+      subscription_service: "claude",
+      enabled: true,
+      health: "ready",
+      connection: { id: connection },
+      quota: [],
+      subscription: {
+        claude_credential: "server-token",
+        generation,
+        claude_usage: {
+          connection: "linked",
+          generation: newRequestId(),
+          identity: { email: "alex@example.com", commitment: "ab".repeat(32) },
+          published: true,
+          linked_at: observed,
+          last_success_at: observed,
+          windows: [
+            { id: "five_hour", remaining: 0.75, observed_at: observed },
+          ],
+          ...usage,
+        },
+      },
+    }),
+  });
+  return { claude, connection, generation };
+}
+
+function renderClaudeUsageRows(
+  claude: ReturnType<typeof claudeUsageRowFixture>["claude"],
+  capabilities: SystemCapability[],
+) {
+  const observe = vi.fn(
+    (_request: {
+      machineId: string;
+      action: SubscriptionObservationAction;
+      connectionId: string;
+      generationId: string;
+      mutation?: { id: string; expectedRevision: bigint };
+    }) => ({ operationId: "" }),
+  );
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities }) });
+    router.service(ResourceService, {
+      listResources: () => ({ resources: [claude] }),
+    });
+    router.service(SubscriptionService, {
+      requestSubscriptionObservation: observe,
+    });
+  });
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <SettingsLifetime>
+          {() => (
+            <MutationIntents>
+              <SubscriptionAccounts
+                active
+                editAccount={vi.fn()}
+                deleteAccount={vi.fn()}
+              />
+            </MutationIntents>
+          )}
+        </SettingsLifetime>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  return observe;
+}
+
+it("refreshes a linked Claude usage row through the confirmed account generation", async () => {
+  const { claude, connection, generation } = claudeUsageRowFixture({});
+  const observe = renderClaudeUsageRows(claude, [
+    SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+    SystemCapability.CLAUDE_SERVER_USAGE_V1,
+  ]);
+  const refresh = await screen.findByRole("button", {
+    name: copy("subscription-settings.refresh_525a40", { v0: "Linked Claude" }),
+  });
+  await waitFor(() =>
+    expect((refresh as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(refresh);
+  await waitFor(() => expect(observe).toHaveBeenCalledTimes(1));
+  const request = observe.mock.calls[0]![0];
+  expect(request.machineId).toBe("");
+  expect(request.action).toBe(SubscriptionObservationAction.QUOTA);
+  expect(request.connectionId).toBe(connection);
+  expect(request.generationId).toBe(generation);
+  expect(request.mutation?.id).toBe(claude.id);
+  expect(request.mutation?.expectedRevision).toBe(2n);
+});
+
+it.each([
+  ["without the negotiated usage capability", {}, false],
+  [
+    "while the provider pauses reads",
+    {
+      failure: "rate-limited",
+      backoff_until: new Date(Date.now() + 600_000).toISOString(),
+    },
+    true,
+  ],
+  ["while a read is running", { refresh: "reading" }, true],
+  [
+    "while an ambiguous rotation is retained",
+    { refresh: "rotation-uncertain" },
+    true,
+  ],
+  [
+    "after a required reconnect",
+    { connection: "reconnect-required", published: false },
+    true,
+  ],
+])(
+  "keeps a Claude usage row refresh unavailable %s",
+  async (_name, usage, capable) => {
+    const { claude } = claudeUsageRowFixture(usage);
+    const observe = renderClaudeUsageRows(
+      claude,
+      capable
+        ? [
+            SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+            SystemCapability.CLAUDE_SERVER_USAGE_V1,
+          ]
+        : [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1],
+    );
+    const refresh = await screen.findByRole("button", {
+      name: copy("subscription-settings.refresh_525a40", {
+        v0: "Linked Claude",
+      }),
+    });
+    expect((refresh as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(refresh);
+    expect(observe).not.toHaveBeenCalled();
+  },
+);

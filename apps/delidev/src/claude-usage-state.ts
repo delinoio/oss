@@ -436,3 +436,25 @@ export function claudeUsageRowIdentity(
     ? section.usage.identity.email
     : undefined;
 }
+
+/**
+ * Whether the account row may ask the server to read usage now: the usage
+ * connection is linked with a published credential, no read or renewal is in
+ * flight and no provider-requested pause is active. It mirrors the server's
+ * single read owner, which still decides (a row refresh can never bypass a
+ * pause or start a second read).
+ */
+export function claudeUsageRowRefreshable(
+  subscription: Record<string, unknown>,
+  now: number,
+): boolean {
+  const section = claudeUsageSection(subscription);
+  if (section.kind !== "present") return false;
+  const usage = section.usage;
+  return (
+    usage.connection === ClaudeUsageConnection.Linked &&
+    usage.published &&
+    usage.refresh === ClaudeUsageRefreshPhase.Idle &&
+    !(usage.backoffUntil !== undefined && Date.parse(usage.backoffUntil) > now)
+  );
+}

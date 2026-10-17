@@ -538,6 +538,40 @@ func (s *Service) validateClaudeUsageTarget(ctx context.Context, account domain.
 	})
 }
 
+// claudeUsageRetirementJoinAttempts bounds how often a retirement rejoins a run
+// that was admitted between its join and its account gate.
+const claudeUsageRetirementJoinAttempts = 5
+
+// joinClaudeUsageForRetirement cancels and joins the live run of account and
+// returns holding the account gate with no run registered. The join runs
+// outside the gate because a run settles under it, so a login or read may be
+// admitted between the join and the gate. The gate holder checks again: no new
+// run can register while the gate is held, which fences every admission across
+// the retirement's mutation and cleanup. A run that slipped in is joined by the
+// next attempt, and a persistently busy account answers a retryable conflict
+// instead of retiring under a running child.
+func (s *Service) joinClaudeUsageForRetirement(ctx context.Context, account domain.ID) (func(), error) {
+	for attempt := 1; attempt <= claudeUsageRetirementJoinAttempts; attempt++ {
+		if err := s.claudeUsage.cancelAndJoin(ctx, account, "", errClaudeUsageCanceled); err != nil {
+			return nil, err
+		}
+		if s.claudeUsageRetirementJoined != nil {
+			// Test seam for a run admitted between the join and the gate.
+			s.claudeUsageRetirementJoined()
+		}
+		unlock, err := s.lockAccounts(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !s.claudeUsage.live(account) {
+			return unlock, nil
+		}
+		unlock()
+		s.logger.WarnContext(ctx, "claude_usage_retirement_rejoin", "account_id", account, "attempt", attempt)
+	}
+	return nil, claudeUsageConflict("A Claude usage run keeps starting; retry the disconnect.")
+}
+
 type claudeUsageDisconnectInput struct {
 	Account, Generation domain.ID
 	Revision            uint64
@@ -570,17 +604,17 @@ func (s *Service) disconnectClaudeUsage(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	var unlock func()
 	if !replayed {
 		// Validate before canceling anything live; the revision fences stale
 		// clients and the generation fences a replaced connection.
 		if err := s.validateClaudeUsageTarget(ctx, input.Account, input.Revision, "", generation, actor, false); err != nil {
 			return nil, rpc.Error(err, c)
 		}
-		if err := s.claudeUsage.cancelAndJoin(ctx, input.Account, "", errClaudeUsageCanceled); err != nil {
-			return nil, rpc.Error(err, c)
-		}
+		unlock, err = s.joinClaudeUsageForRetirement(ctx, input.Account)
+	} else {
+		unlock, err = s.lockAccounts(ctx)
 	}
-	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}

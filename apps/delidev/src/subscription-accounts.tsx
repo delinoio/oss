@@ -51,7 +51,10 @@ import {
   claudeUsageRowIdentity,
   useClaudeUsageTracking,
 } from "./claude-usage-tracking";
-import { claudeUsageWindowLabel } from "./claude-usage-state";
+import {
+  claudeUsageRowRefreshable,
+  claudeUsageWindowLabel,
+} from "./claude-usage-state";
 import {
   SubscriptionQuotaControls,
   quotaAccountAvailable,
@@ -863,6 +866,15 @@ export function SubscriptionAccounts({
       SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2,
     ) === true;
   const quotaSupported = serverQuotaSupported;
+  // A Claude row refresh needs the negotiated usage capability, read only from
+  // a settled, error-free status.
+  const claudeUsageRefreshAvailable =
+    status.isSuccess &&
+    !status.error &&
+    !status.isFetching &&
+    status.data?.capabilities.includes(
+      SystemCapability.CLAUDE_SERVER_USAGE_V1,
+    ) === true;
   const loginCapable =
     status.data?.capabilities.includes(
       SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
@@ -989,7 +1001,33 @@ export function SubscriptionAccounts({
                       generationId: text(object(data.subscription).generation),
                     });
                 }
-              : undefined,
+              : claudeUsageRefreshAvailable &&
+                  service === SubscriptionServiceId.Claude &&
+                  claudeUsageRowRefreshable(
+                    object(data.subscription),
+                    Date.now(),
+                  ) &&
+                  !quota.busy &&
+                  !quota.uncertain
+                ? () => {
+                    // The server's usage-read owner decides: one read per
+                    // account, no bypass of a provider-requested pause.
+                    if (cleanup.canMutate())
+                      void quota.send({
+                        mutation: {
+                          requestId: newRequestId(),
+                          id: row.id,
+                          expectedRevision: row.revision,
+                        },
+                        machineId: "",
+                        action: SubscriptionObservationAction.QUOTA,
+                        connectionId: text(object(data.connection).id),
+                        generationId: text(
+                          object(data.subscription).generation,
+                        ),
+                      });
+                  }
+                : undefined,
           health: text(data.health),
           enabled: data.enabled === true,
           providerState: copy("subscription-accounts.extra.22fc4e1096f2"),

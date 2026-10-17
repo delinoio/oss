@@ -1,5 +1,16 @@
 # DeliDev explicit outbound network contract
 
+## Claude usage reads
+
+The server-owned Claude usage read is an explicit server outbound operation under
+[the subscription contract](cmds-delidev-subscription-contract.md#usage-read-owner).
+It uses the existing outbound resolver for one immutable route per request and
+sends exactly one read-only `GET https://api.anthropic.com/api/oauth/usage` with a
+five-second deadline and a 1 MiB response bound. No redirect, client URL,
+environment proxy or direct fallback is accepted: an unusable route fails the
+read with a closed `unavailable` failure and never connects directly. Logs
+exclude the destination path, credentials and response bodies.
+
 ## Known model catalog downloads
 
 The advisory subscription catalog is an explicit server outbound operation under
