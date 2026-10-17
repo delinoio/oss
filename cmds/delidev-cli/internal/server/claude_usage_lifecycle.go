@@ -296,6 +296,20 @@ func (s *Service) prepareClaudeUsageLogout(ctx context.Context, account domain.I
 	return s.claudeUsage.cancelAndJoin(ctx, account, "", errClaudeUsageRevoked)
 }
 
+// refuseLiveClaudeUsageLogout rechecks, under the account gate, that no usage
+// run is registered when an execution logout is about to be accepted. The join
+// in prepareClaudeUsageLogout runs outside the gate, so a usage login may have
+// been admitted since; accepting the logout then would retire the usage section
+// while that login's native child still runs. The refusal is retryable and the
+// retry joins the new run before the logout is accepted.
+func (s *Service) refuseLiveClaudeUsageLogout(account domain.ID) error {
+	if !s.claudeUsage.live(account) {
+		return nil
+	}
+	s.logger.Warn("claude_usage_logout_refused_live_run", "account_id", account)
+	return claudeUsageConflict("A Claude usage login started before the logout was accepted.")
+}
+
 // cleanupClaudeUsage runs one idempotent cleanup pass for account.
 func (s *Service) cleanupClaudeUsage(ctx context.Context, account domain.ID) error {
 	unlock, err := s.lockAccounts(ctx)

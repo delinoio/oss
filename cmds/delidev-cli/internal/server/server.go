@@ -156,6 +156,7 @@ type Service struct {
 	// credential cleanup is retried. Zero selects the default; tests shorten it.
 	serverCleanupRetryBase        time.Duration
 	claudeFinishAck               func() error
+	claudeUsageLogoutPrepared     func()
 	quotaOpen                     serverQuotaOpener
 	creditOpen                    serverCreditOpener
 	subscriptionCallbackTransport http.RoundTripper

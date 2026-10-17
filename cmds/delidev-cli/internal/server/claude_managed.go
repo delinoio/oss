@@ -252,6 +252,17 @@ func (s *Service) requestManagedClaude(ctx context.Context, req *connect.Request
 		return nil, rpc.Error(err, c)
 	}
 	defer unlock()
+	if action == domain.SubscriptionLogout {
+		if s.claudeUsageLogoutPrepared != nil {
+			// Test seam for a usage run that registers after the join.
+			s.claudeUsageLogoutPrepared()
+		}
+		// A usage run that registered after the join above must not outlive the
+		// logout: the logout is refused and retried, which joins it first.
+		if err := s.refuseLiveClaudeUsageLogout(input.ID); err != nil {
+			return nil, rpc.Error(err, c)
+		}
+	}
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "claude.managed.request", input, func(tx *store.Tx) (any, error) {
 		r, a, err := accountFromTx(tx, input.ID, input.Revision)
 		if err != nil {

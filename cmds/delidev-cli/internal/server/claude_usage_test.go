@@ -834,6 +834,36 @@ func TestClaudeUsageExecutionLogoutCancelsAndJoinsLiveLogin(t *testing.T) {
 	}
 }
 
+// The join before a logout runs outside the account gate, so a usage run that
+// registers afterwards must make the logout retryable instead of letting the
+// logout retire the usage section under a still-running native child.
+func TestClaudeUsageLogoutRefusesARunRegisteredAfterTheJoin(t *testing.T) {
+	f := newUsageFixture(t)
+	var run *claudeUsageRun
+	f.service.claudeUsageLogoutPrepared = func() {
+		var err error
+		run, _, err = f.service.claudeUsage.reserve(f.input.AccountID, domain.NewID(), time.Now().Add(time.Minute))
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	before, beforeAccount := f.record()
+	_, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if err == nil || connect.CodeOf(err) != connect.CodeAborted && connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("logout was not refused while a usage run was live: %v", err)
+	}
+	after, afterAccount := f.record()
+	if after.Revision != before.Revision || beforeAccount.Subscription != nil && afterAccount.Subscription.ServerOperation != nil && beforeAccount.Subscription.ServerOperation == nil {
+		t.Fatal("a refused logout mutated the account")
+	}
+	// Once the run is gone the logout is accepted.
+	f.service.claudeUsageLogoutPrepared = nil
+	f.service.claudeUsage.release(run)
+	if _, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClaudeUsageProgressIsBoundToTheStartingActor(t *testing.T) {
 	f := newUsageFixture(t)
 	op, err := f.start()
