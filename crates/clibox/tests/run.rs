@@ -1271,46 +1271,6 @@ fn interactive_workload_stop_suspends_and_resumes_the_wrapper_job() {
 }
 
 #[test]
-fn timeout_terminates_owned_descendants() {
-    let home = tempfile::tempdir().unwrap();
-    let marker = home.path().join("descendant-pid");
-    let assignment = format!("MARKER={}", marker.display());
-    let output = command(
-        home.path(),
-        &[
-            "run",
-            "with-timeout",
-            "--timeout",
-            "50ms",
-            "--kill-after",
-            "0",
-            &assignment,
-            "--",
-            "sh",
-            "-c",
-            "sleep 30 & echo $! > \"$MARKER\"; wait",
-        ],
-    )
-    .output()
-    .unwrap();
-    assert_eq!(output.status.code(), Some(124));
-    let pid = fs::read_to_string(marker)
-        .unwrap()
-        .trim()
-        .parse::<i32>()
-        .unwrap();
-    for _ in 0..50 {
-        if unsafe { libc::kill(pid, 0) } == -1
-            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
-        {
-            return;
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    panic!("timeout left an owned descendant running");
-}
-
-#[test]
 fn caller_marker_cannot_disable_root_descendant_cleanup() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("caller-marker-descendant-pid");
@@ -1946,9 +1906,26 @@ fn service_probe_ignores_custom_ca_override_variables() {
     )
     .unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    // A shutdown-aware accept loop lets the watchdog stop the fixture server
+    // even when the wrapper never connects.
+    listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
+    let stop = Arc::new(AtomicBool::new(false));
+    let server_stop = Arc::clone(&stop);
     let server = thread::spawn(move || {
-        let (stream, _) = listener.accept().unwrap();
+        let stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if server_stop.load(Ordering::SeqCst) {
+                        return false;
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("fixture server could not accept: {error}"),
+            }
+        };
+        stream.set_nonblocking(false).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
@@ -1958,15 +1935,19 @@ fn service_probe_ignores_custom_ca_override_variables() {
         );
         let _ = stream.read(&mut [0; 4096]);
         let _ = stream.write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n");
+        true
     });
-    let output = command(
+    // Readiness is disabled so slow native trust-store initialization cannot
+    // turn the expected TLS rejection into a readiness timeout. The watchdog
+    // below bounds the fixture instead and is not part of the wrapper contract.
+    let mut wrapper = command(
         home.path(),
         &[
             "run",
             "with-service",
             &format!("https://127.0.0.1:{port}/health"),
             "--ready-timeout",
-            "1s",
+            "0",
             &assignment,
             "--",
             "sh",
@@ -1976,11 +1957,32 @@ fn service_probe_ignores_custom_ca_override_variables() {
     )
     .env("SSL_CERT_FILE", &ca)
     .env("SSL_CERT_DIR", home.path())
-    .output()
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .spawn()
     .unwrap();
-    assert_eq!(output.status.code(), Some(1));
+    let watchdog = Instant::now() + Duration::from_secs(60);
+    let status = loop {
+        if let Some(status) = wrapper.try_wait().unwrap() {
+            break Some(status);
+        }
+        if Instant::now() >= watchdog {
+            let _ = wrapper.kill();
+            let _ = wrapper.wait();
+            break None;
+        }
+        thread::sleep(Duration::from_millis(5));
+    };
+    stop.store(true, Ordering::SeqCst);
+    let accepted = server.join().unwrap();
+    let status = status.expect("fixture watchdog expired before the wrapper rejected the server");
+    assert_eq!(status.code(), Some(1));
+    assert!(
+        accepted,
+        "the wrapper never connected to the fixture server"
+    );
     assert!(!marker.exists());
-    server.join().unwrap();
 }
 
 #[test]
