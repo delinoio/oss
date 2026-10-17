@@ -95,10 +95,15 @@ Keep DOM focus on the labeled input with combobox/listbox/option semantics,
 `aria-autocomplete="list"`, expansion/control relationships and active-descendant
 navigation. The list and chevron do not add Tab stops. Mark the committed option
 with a decorative check and accessible saved-value description. Search help is
-available to assistive technology. Place the list 4 pixels below the input in
-document flow, at the same width, with 40-pixel minimum rows and a 280-pixel
-scrolling cap. Use existing semantic theme colors and ordinary input boundaries;
-the shared input focus treatment remains unchanged.
+available to assistive technology. Render the list, and the localized no-match
+status, as an overlay in one top-layer popup anchored 4 pixels below the input,
+at the same width, with 40-pixel minimum rows and a 280-pixel scrolling cap. The
+popup flips above and clamps inside the Settings content area and visual
+viewport, may cover the help text, saved status and Date format section, and
+reserves no layout space: opening, filtering and dismissing it never moves
+surrounding content or changes scroll metrics. Use existing semantic theme colors
+and ordinary input boundaries; the shared input focus treatment remains
+unchanged.
 
 Search/open/highlight state belongs only to the mounted Appearance presentation.
 A newer native revision closes the local search and displays the latest committed

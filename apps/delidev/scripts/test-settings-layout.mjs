@@ -171,7 +171,8 @@ let checked = 0,
   gitChecks = 0,
   keyboardChecks = 0,
   hiddenChoicesChecked = 0,
-  languagePickerChecks = 0;
+  languagePickerChecks = 0,
+  ownerScrollChecks = 0;
 try {
   const build = await createRsbuild({
     cwd: app,
@@ -1516,6 +1517,8 @@ try {
                 ),
               };
             });
+          // Measure at the resting scroll position the user sees the field at.
+          await input.scrollIntoViewIfNeeded();
           const closedLabel = await labelGeometry();
           assert(!closedLabel.labelOverflow, JSON.stringify(closedLabel));
           if (!closedLabel.stacked) {
@@ -1536,6 +1539,155 @@ try {
             assert.equal(now.inputTop, closedLabel.inputTop, state);
             assert.equal(now.inputCenter, closedLabel.inputCenter, state);
           };
+          // The list is an anchored top-layer popup, so no element outside it
+          // may move and no scroll owner may change metrics while it opens,
+          // filters and closes. Rectangles are compared per retained node, not
+          // by selector, so a remounted or reflowed element cannot hide a shift.
+          const layoutSnapshot = (capture) =>
+            input.evaluate((node, capture) => {
+              const root = node.closest(".settings-content");
+              if (capture)
+                window.__languageLayoutNodes = [...root.querySelectorAll("*")];
+              const owners = [];
+              // The input's own text scroll is typing state, not layout.
+              for (
+                let owner = node.parentElement;
+                owner;
+                owner = owner.parentElement
+              )
+                owners.push(owner);
+              owners.push(document.scrollingElement);
+              return {
+                rects: window.__languageLayoutNodes.map((element) => {
+                  const rect = element.getBoundingClientRect();
+                  return [rect.left, rect.top, rect.width, rect.height];
+                }),
+                metrics: owners.map((owner) => [
+                  owner.scrollWidth,
+                  owner.scrollHeight,
+                  owner.scrollTop,
+                  owner.scrollLeft,
+                ]),
+              };
+            }, capture);
+          const closedLayout = await layoutSnapshot(true);
+          const assertLayoutStable = async (state) => {
+            const now = await layoutSnapshot(false);
+            assert.equal(now.rects.length, closedLayout.rects.length, state);
+            now.rects.forEach((rect, index) =>
+              rect.forEach((value, edge) =>
+                assert(
+                  Math.abs(value - closedLayout.rects[index][edge]) <= 1,
+                  `${state}: node ${index} edge ${edge} moved ${closedLayout.rects[index][edge]} -> ${value}`,
+                ),
+              ),
+            );
+            assert.deepEqual(now.metrics, closedLayout.metrics, state);
+          };
+          // Tab moves browser focus, which may legitimately scroll an owner.
+          // Scroll sizes must still match; offsets are restored to the
+          // recorded resting position before rectangles are compared again.
+          const restoreScroll = async (state) => {
+            const now = await layoutSnapshot(false);
+            now.metrics.forEach(([width, height], index) => {
+              assert.equal(width, closedLayout.metrics[index][0], state);
+              assert.equal(height, closedLayout.metrics[index][1], state);
+            });
+            await input.evaluate((node, metrics) => {
+              const owners = [];
+              for (
+                let owner = node.parentElement;
+                owner;
+                owner = owner.parentElement
+              )
+                owners.push(owner);
+              owners.push(document.scrollingElement);
+              owners.forEach((owner, index) => {
+                owner.scrollTop = metrics[index][2];
+                owner.scrollLeft = metrics[index][3];
+              });
+            }, closedLayout.metrics);
+          };
+          const popupGeometry = () =>
+            input.evaluate((node) => {
+              const popup = node
+                  .closest(".language-picker")
+                  .querySelector(".language-popup"),
+                box = popup.getBoundingClientRect(),
+                anchor = node.getBoundingClientRect(),
+                owner = node
+                  .closest(".settings-content")
+                  .getBoundingClientRect();
+              return {
+                open: popup.matches(":popover-open"),
+                popover: popup.getAttribute("popover"),
+                position: getComputedStyle(popup).position,
+                left: box.left,
+                right: box.right,
+                top: box.top,
+                bottom: box.bottom,
+                width: box.width,
+                height: box.height,
+                anchorLeft: anchor.left,
+                anchorTop: anchor.top,
+                anchorBottom: anchor.bottom,
+                anchorWidth: anchor.width,
+                boundLeft: Math.max(0, owner.left),
+                boundTop: Math.max(0, owner.top),
+                boundRight: Math.min(innerWidth, owner.right),
+                boundBottom: Math.min(innerHeight, owner.bottom),
+              };
+            });
+          const assertPopupPlacement = async (state) => {
+            const popup = await popupGeometry();
+            const detail = `${state}: ${JSON.stringify(popup)}`;
+            assert(popup.open, detail);
+            assert.equal(popup.popover, "manual", detail);
+            assert.equal(popup.position, "fixed", detail);
+            assert(popup.height <= 280.5, detail);
+            // Anchored to the input at trigger width with an 8px inset.
+            assert(Math.abs(popup.width - popup.anchorWidth) <= 0.5, detail);
+            assert(popup.left >= popup.boundLeft + 7.5, detail);
+            assert(popup.right <= popup.boundRight - 7.5, detail);
+            assert(popup.top >= popup.boundTop + 7.5, detail);
+            assert(popup.bottom <= popup.boundBottom - 7.5, detail);
+            // Exactly four pixels below the input, or four pixels above it when
+            // the popup flips; any other offset means the anchoring regressed.
+            const below = popup.top - popup.anchorBottom,
+              above = popup.anchorTop - popup.bottom;
+            assert(
+              Math.abs(below - 4) <= 0.5 || Math.abs(above - 4) <= 0.5,
+              detail,
+            );
+            return popup;
+          };
+          const assertNoPopup = async (state) =>
+            assert.equal(
+              await page.locator(".language-popup").count(),
+              0,
+              state,
+            );
+          const outsidePointer = async () => {
+            const point = await input.evaluate((node) => {
+              const root = node.closest(".settings-content"),
+                rect = root.getBoundingClientRect();
+              for (let y = rect.top + 4; y < rect.bottom; y += 12)
+                for (let x = rect.left + 4; x < rect.right; x += 12) {
+                  const hit = document.elementFromPoint(x, y);
+                  if (
+                    hit &&
+                    root.contains(hit) &&
+                    !hit.closest(
+                      ".language-picker, button, a, input, select, textarea, label, summary",
+                    )
+                  )
+                    return { x, y };
+                }
+              return undefined;
+            });
+            assert(point, "an outside pointer target exists");
+            await page.mouse.click(point.x, point.y);
+          };
           await input.click();
           assert.equal(await input.inputValue(), "");
           assert.deepEqual(
@@ -1545,11 +1697,15 @@ try {
             [system, "English - English", "Korean - 한국어"],
           );
           await assertLabelStable(`${fixtureLanguage}/${theme}/${width} open`);
+          await assertLayoutStable(`${fixtureLanguage}/${theme}/${width} open`);
+          await assertPopupPlacement(
+            `${fixtureLanguage}/${theme}/${width} open`,
+          );
           const geometry = await input.evaluate((node) => {
             const input = node.getBoundingClientRect(),
               picker = node.closest(".language-picker"),
               list = picker
-                .querySelector(".language-options")
+                .querySelector(".language-popup")
                 .getBoundingClientRect(),
               content = node.closest(".settings-content"),
               style = getComputedStyle(node);
@@ -1560,7 +1716,6 @@ try {
                 .getBoundingClientRect().width,
               height: input.height,
               listWidth: list.width,
-              gap: list.top - input.bottom,
               radius: style.borderRadius,
               outlineStyle: style.outlineStyle,
               pickerOverflow: picker.scrollWidth > picker.clientWidth,
@@ -1579,8 +1734,7 @@ try {
           );
           if (geometry.bodyWidth < 640)
             assert.equal(geometry.width, geometry.bodyWidth);
-          assert.equal(geometry.width, geometry.listWidth);
-          assert.equal(geometry.gap, 4);
+          assert(Math.abs(geometry.width - geometry.listWidth) <= 0.5);
           assert.equal(geometry.radius, "8px");
           assert.equal(geometry.outlineStyle, "none", JSON.stringify(geometry));
           assert(
@@ -1608,6 +1762,12 @@ try {
           await assertLabelStable(
             `${fixtureLanguage}/${theme}/${width} filtered`,
           );
+          await assertLayoutStable(
+            `${fixtureLanguage}/${theme}/${width} filtered`,
+          );
+          await assertPopupPlacement(
+            `${fixtureLanguage}/${theme}/${width} filtered`,
+          );
           await input.fill("한");
           assert.deepEqual(
             await page
@@ -1629,9 +1789,31 @@ try {
           await assertLabelStable(
             `${fixtureLanguage}/${theme}/${width} closed`,
           );
+          await assertNoPopup(`${fixtureLanguage}/${theme}/${width} escape`);
+          await assertLayoutStable(
+            `${fixtureLanguage}/${theme}/${width} escape`,
+          );
+          // Tab and an outside pointer also discard the search without a save.
+          await input.fill("kor");
+          await input.press("Tab");
+          assert.equal(await input.inputValue(), committed);
+          await assertNoPopup(`${fixtureLanguage}/${theme}/${width} tab`);
+          await restoreScroll(`${fixtureLanguage}/${theme}/${width} tab`);
+          await assertLayoutStable(`${fixtureLanguage}/${theme}/${width} tab`);
+          await input.click();
+          await assertPopupPlacement(
+            `${fixtureLanguage}/${theme}/${width} reopened`,
+          );
+          await outsidePointer();
+          assert.equal(await input.inputValue(), committed);
+          await assertNoPopup(`${fixtureLanguage}/${theme}/${width} outside`);
+          await assertLayoutStable(
+            `${fixtureLanguage}/${theme}/${width} outside`,
+          );
           await input.click();
           await input.fill("unsupported language");
           await page
+            .locator(".language-popup")
             .getByText(
               fixtureLanguage === "en"
                 ? "No matching languages."
@@ -1640,6 +1822,81 @@ try {
             )
             .waitFor();
           await assertLabelStable(`${fixtureLanguage}/${theme}/${width} empty`);
+          // The empty status lives inside the popup and reserves no layout.
+          await assertLayoutStable(
+            `${fixtureLanguage}/${theme}/${width} empty`,
+          );
+          await assertPopupPlacement(
+            `${fixtureLanguage}/${theme}/${width} empty`,
+          );
+          // Repositions with the owner and never scrolls the page itself. The
+          // Settings scroll owner is the nearest overflowing ancestor (the app
+          // `main`); `.settings-content` grows with its content and never scrolls.
+          // The owner moves by 48px toward keeping the input visible, because a
+          // popup whose anchor left the screen is clamped by design.
+          const scrollOwner = (target) =>
+            input.evaluate((node, target) => {
+              let owner = node.parentElement;
+              for (; owner; owner = owner.parentElement) {
+                const overflow = getComputedStyle(owner).overflowY;
+                if (
+                  (overflow === "auto" || overflow === "scroll") &&
+                  owner.scrollHeight > owner.clientHeight
+                )
+                  break;
+              }
+              if (!owner) return null;
+              const before = owner.scrollTop;
+              if (target === undefined) {
+                const frame = owner.getBoundingClientRect(),
+                  anchor = node.getBoundingClientRect(),
+                  towardCenter =
+                    anchor.top + anchor.height / 2 <
+                    frame.top + frame.height / 2
+                      ? -48
+                      : 48;
+                owner.scrollTop = before + towardCenter;
+                if (owner.scrollTop === before)
+                  owner.scrollTop = before - towardCenter;
+              } else owner.scrollTop = target;
+              return {
+                tag: owner.tagName.toLowerCase(),
+                insideSettings: !!owner.querySelector(".settings-content"),
+                before,
+                moved: owner.scrollTop !== before,
+                pageScroll: document.scrollingElement.scrollTop,
+              };
+            }, target);
+          const settle = () =>
+            page.evaluate(
+              () =>
+                new Promise((done) =>
+                  requestAnimationFrame(() => requestAnimationFrame(done)),
+                ),
+            );
+          const anchorBefore = (await popupGeometry()).anchorTop;
+          const scrolled = await scrollOwner();
+          if (scrolled) {
+            assert.equal(scrolled.tag, "main", JSON.stringify(scrolled));
+            assert(scrolled.insideSettings, JSON.stringify(scrolled));
+            assert(scrolled.moved, JSON.stringify(scrolled));
+            assert.equal(scrolled.pageScroll, 0, "the page never scrolls");
+            await settle();
+            const moved = await assertPopupPlacement(
+              `${fixtureLanguage}/${theme}/${width} owner scrolled`,
+            );
+            // The popup follows the input instead of staying behind.
+            assert(
+              Math.abs(moved.anchorTop - anchorBefore) > 1,
+              `${fixtureLanguage}/${theme}/${width} anchor moved`,
+            );
+            await scrollOwner(scrolled.before);
+            await settle();
+            await assertPopupPlacement(
+              `${fixtureLanguage}/${theme}/${width} owner restored`,
+            );
+            ownerScrollChecks++;
+          }
           await input.press("Enter");
           assert.equal(
             await page.locator("html").getAttribute("lang"),
@@ -1662,41 +1919,42 @@ try {
           // Native preference is simulated by the owning fixture bridge. These
           // checks prove renderer presentation, never platform persistence.
           const formats = page.locator(".date-format-settings");
-          assert.equal(await formats.locator("input[type=radio]").count(), 4);
+          // Date format is a native select; its popup is browser-owned.
+          const dateSelect = formats.locator("select");
+          assert.equal(await dateSelect.count(), 1);
+          assert.equal(await formats.locator("input[type=radio]").count(), 0);
+          const examples = {
+            ymd: "2026-10-08",
+            mdy: "10/08/2026",
+            dmy: "08/10/2026",
+          };
           for (const preset of ["ymd", "mdy", "dmy", "system"]) {
-            const radio = formats.locator(`input[value="${preset}"]`);
-            await radio.focus();
-            await radio.press("Space");
+            await dateSelect.selectOption(preset);
             await formats
               .getByRole("status")
               .filter({ hasText: "날짜 형식을 저장했습니다." })
               .waitFor();
-            await radio.waitFor({ state: "attached" });
-            assert.equal(await radio.isChecked(), true);
-            assert.equal(
-              await radio.evaluate((node) => node === document.activeElement),
-              true,
-            );
+            assert.equal(await dateSelect.inputValue(), preset);
+            if (examples[preset])
+              assert(
+                (
+                  await formats.locator(".date-format-example").textContent()
+                ).startsWith(examples[preset]),
+                preset,
+              );
           }
           const dateGeometry = await formats.evaluate((node) => ({
             overflow: node.scrollWidth > node.clientWidth,
-            rows: [...node.querySelectorAll("label")].map(
-              (row) => row.getBoundingClientRect().height,
-            ),
-            examples: [...node.querySelectorAll("small")].map(
-              (row) => row.textContent,
-            ),
+            height: node.querySelector("select").getBoundingClientRect().height,
           }));
           assert(
-            !dateGeometry.overflow &&
-              dateGeometry.rows.every((height) => height >= 40),
+            !dateGeometry.overflow && dateGeometry.height >= 40,
             JSON.stringify(dateGeometry),
           );
-          assert(dateGeometry.examples[1].startsWith("2026-10-08"));
-          assert(dateGeometry.examples[2].startsWith("10/08/2026"));
-          assert(dateGeometry.examples[3].startsWith("08/10/2026"));
           languagePickerChecks++;
         }
+    // The real Settings scroll owner must have been exercised at least once.
+    assert(ownerScrollChecks > 0, "no viewport scrolled the Settings owner");
   } else if (githubOnly) {
     let onboardingChecks = 0;
     // Half-size CSS viewports cover effective 200% layout, not native chrome zoom.
@@ -2728,6 +2986,7 @@ try {
         primarySurfaceChecks: languageOnly ? 0 : 16,
         keyboardChecks,
         languagePickerChecks,
+        ownerScrollChecks,
         nativeAcceptance: "not-performed",
       }),
     );
