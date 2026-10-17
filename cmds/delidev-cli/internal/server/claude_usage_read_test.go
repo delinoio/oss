@@ -867,6 +867,68 @@ func TestClaudeUsageDisconnectCancelsAndJoinsTheReadWithoutLatePublication(t *te
 	}
 }
 
+// A read or login admitted between the disconnect's join and its account gate
+// must be joined too: the retirement and cleanup may never run under a live
+// owner that would keep the credentials and report success.
+func TestClaudeUsageDisconnectRejoinsARunAdmittedAfterTheJoin(t *testing.T) {
+	f := newReadFixture(t, nil)
+	generation := f.section().Generation
+	var admitted atomic.Int32
+	f.service.claudeUsageRetirementJoined = func() {
+		if admitted.Add(1) != 1 {
+			return
+		}
+		run, runCtx, err := f.service.claudeUsage.reserve(f.account(), domain.NewID(), time.Now().Add(time.Minute))
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		// The new owner stops when it is canceled, like a real read.
+		go func() {
+			<-runCtx.Done()
+			f.service.claudeUsage.finish(run)
+		}()
+	}
+	if err := f.disconnect(string(generation)); err != nil {
+		t.Fatal(err)
+	}
+	if admitted.Load() < 2 {
+		t.Fatalf("the late run was not joined by another attempt: %d joins", admitted.Load())
+	}
+	section := f.section()
+	if f.service.claudeUsage.live(f.account()) || section.Connection == domain.ClaudeUsageLinked || section.Reading() || section.OwesCleanup() || len(f.usageRefs()) != 0 {
+		t.Fatalf("the disconnect left authority, a live run or credentials: %+v refs %d", section, len(f.usageRefs()))
+	}
+}
+
+func TestClaudeUsageDisconnectRefusesWhenRunsKeepStarting(t *testing.T) {
+	f := newReadFixture(t, nil)
+	generation := f.section().Generation
+	f.service.claudeUsageRetirementJoined = func() {
+		run, runCtx, err := f.service.claudeUsage.reserve(f.account(), domain.NewID(), time.Now().Add(time.Minute))
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		go func() {
+			<-runCtx.Done()
+			f.service.claudeUsage.finish(run)
+		}()
+	}
+	before := f.section()
+	if err := f.disconnect(string(generation)); err == nil {
+		t.Fatal("a disconnect was acknowledged while runs kept starting")
+	}
+	f.service.claudeUsageRetirementJoined = nil
+	after := f.section()
+	if after.Connection != before.Connection || !after.Published || len(f.usageRefs()) == 0 {
+		t.Fatalf("a refused disconnect changed the connection: %+v", after)
+	}
+	if err := f.disconnect(string(generation)); err != nil {
+		t.Fatalf("the retried disconnect failed: %v", err)
+	}
+}
+
 func TestClaudeUsageLogoutCancelsAndJoinsTheRead(t *testing.T) {
 	f := newReadFixture(t, nil)
 	handler, started, _ := blockedProvider(true)

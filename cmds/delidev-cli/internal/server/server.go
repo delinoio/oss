@@ -162,6 +162,7 @@ type Service struct {
 	serverCleanupRetryBase        time.Duration
 	claudeFinishAck               func() error
 	claudeUsageLogoutPrepared     func()
+	claudeUsageRetirementJoined   func()
 	quotaOpen                     serverQuotaOpener
 	creditOpen                    serverCreditOpener
 	subscriptionCallbackTransport http.RoundTripper
