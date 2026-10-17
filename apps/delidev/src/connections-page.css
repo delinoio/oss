@@ -68,11 +68,24 @@
   border-radius: 8px;
   padding: 8px;
 }
-.connections-row-menu > div {
+/* Inside the persistent Settings view the actions are an anchored top-layer
+   popup (see anchored-popup.css) that reserves no space in the row; only the
+   legacy fallback dialog keeps them listed in flow. */
+.connections-row-menu > div:not(.anchored-popup) {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-top: 8px;
+}
+.connections-row-menu-popup {
+  min-width: 0;
+  padding: 6px;
+}
+.connections-row-menu-popup:popover-open {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
 }
 .connections-advanced {
   border: 0;

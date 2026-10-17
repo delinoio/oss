@@ -517,6 +517,11 @@ it("retains original saved-profile rename and removal receipts across page movem
     vi.mocked(value.actions.rename).mock.calls[1],
   );
   fireEvent.click(screen.getByRole("button", { name: "Discard name edit" }));
+  // Choosing a row action dismisses the anchored menu; reopen it for Remove.
+  expect(
+    screen.queryByRole("button", { name: "Remove Studio server" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByLabelText("Actions for Studio server"));
   fireEvent.click(screen.getByRole("button", { name: "Remove Studio server" }));
   vi.mocked(value.actions.remove).mockRejectedValueOnce("timed-out");
   fireEvent.click(

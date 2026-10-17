@@ -22,6 +22,7 @@ import {
   type ReactNode,
 } from "react";
 import { newRequestId } from "@delinoio/delidev-api-client";
+import { DetailsActionMenu } from "./details-action-menu";
 import { object, text } from "./documents";
 import { Modal } from "./ui";
 import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
@@ -591,66 +592,48 @@ export function SavedConnections({
                               v0: profile.name,
                             })}
                       </SettingsActionButton>
-                      <details
+                      <DetailsActionMenu
                         className="connections-row-menu"
-                        open={!target ? true : undefined}
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape") {
-                            event.preventDefault();
-                            event.currentTarget.open = false;
-                            event.currentTarget
-                              .querySelector("summary")
-                              ?.focus();
-                          }
-                        }}
+                        popupClassName="connections-row-menu-popup"
+                        overlay={Boolean(target)}
+                        label={copy("settings.connections.menu", {
+                          name: profile.name,
+                        })}
                       >
-                        <summary
-                          aria-label={copy("settings.connections.menu", {
-                            name: profile.name,
-                          })}
+                        <SettingsActionButton
+                          icon={SettingsActionIcon.Edit}
+                          disabled={busy || Boolean(attempt || edit || removal)}
+                          onClick={(event) => {
+                            event.currentTarget
+                              .closest("details")
+                              ?.querySelector("summary")
+                              ?.focus();
+                            setEdit({ profile, name: profile.name });
+                            setError(undefined);
+                            setMessage("");
+                          }}
                         >
-                          ⋯
-                        </summary>
-                        <div>
-                          <SettingsActionButton
-                            icon={SettingsActionIcon.Edit}
-                            disabled={
-                              busy || Boolean(attempt || edit || removal)
-                            }
-                            onClick={(event) => {
-                              event.currentTarget
-                                .closest("details")
-                                ?.querySelector("summary")
-                                ?.focus();
-                              setEdit({ profile, name: profile.name });
-                              setError(undefined);
-                              setMessage("");
-                            }}
-                          >
-                            {copy("saved-connections.rename_089ce7", {
-                              v0: profile.name,
-                            })}
-                          </SettingsActionButton>
-                          <SettingsActionButton
-                            tone={SettingsActionTone.Danger}
-                            icon={SettingsActionIcon.Delete}
-                            disabled={
-                              busy || Boolean(attempt || edit || removal)
-                            }
-                            onClick={(event) => {
-                              event.currentTarget
-                                .closest("details")
-                                ?.querySelector("summary")
-                                ?.focus();
-                              beginRemoval(profile);
-                            }}
-                          >
-                            {copy("saved-connections.remove_86790c", {
-                              v0: profile.name,
-                            })}
-                          </SettingsActionButton>
-                        </div>
-                      </details>
+                          {copy("saved-connections.rename_089ce7", {
+                            v0: profile.name,
+                          })}
+                        </SettingsActionButton>
+                        <SettingsActionButton
+                          tone={SettingsActionTone.Danger}
+                          icon={SettingsActionIcon.Delete}
+                          disabled={busy || Boolean(attempt || edit || removal)}
+                          onClick={(event) => {
+                            event.currentTarget
+                              .closest("details")
+                              ?.querySelector("summary")
+                              ?.focus();
+                            beginRemoval(profile);
+                          }}
+                        >
+                          {copy("saved-connections.remove_86790c", {
+                            v0: profile.name,
+                          })}
+                        </SettingsActionButton>
+                      </DetailsActionMenu>
                     </>
                   ) : (
                     <SettingsActionButton

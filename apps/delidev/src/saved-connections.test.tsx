@@ -572,6 +572,8 @@ it("plays a Saved server task heading once for an explicit request inside the sl
     />,
   );
   await screen.findByRole("button", { name: "Open Saved server" });
+  // Inside the persistent Settings slot the row actions are an anchored popup.
+  fireEvent.click(screen.getByLabelText(/^Actions for/));
   fireEvent.click(screen.getByRole("button", { name: /^Rename Saved server/ }));
   await waitFor(() => expect(openDialog()).toBeTruthy());
   const open = openDialog()!;
@@ -591,11 +593,13 @@ const dismissedTasks = [
   },
   {
     open: /^Rename Saved server/,
+    menu: true,
     title: "Rename Saved server",
     field: "New connection name",
   },
   {
     open: /^Remove Saved server/,
+    menu: true,
     title: "Confirm connection removal",
     field: undefined,
   },
@@ -607,7 +611,7 @@ it.each(
   ),
 )(
   "keeps dismissed $title hidden in the fallback dialog after $dismissal until Continue",
-  async ({ open, title, field, dismissal }) => {
+  async ({ open, menu, title, field, dismissal }) => {
     const value = fixture();
     const target = document.createElement("div");
     document.body.append(target);
@@ -620,6 +624,7 @@ it.each(
       />,
     );
     await screen.findByRole("button", { name: "Open Saved server" });
+    if (menu) fireEvent.click(screen.getByLabelText(/^Actions for/));
     fireEvent.click(screen.getByRole("button", { name: open }));
     const dialog = screen.getByRole("dialog", {
       name: title,
@@ -1115,4 +1120,59 @@ it("keeps the exact uncertain rename retry through form submission", async () =>
   await screen.findByText(/Current connection name: First edit/);
   expect(value.rename).toHaveBeenCalledTimes(2);
   expect(value.rename.mock.calls[0]).toEqual(value.rename.mock.calls[1]);
+});
+
+it("presents row actions as an anchored popup inside the Settings slot and dismisses it", async () => {
+  const value = fixture();
+  const target = document.createElement("div");
+  document.body.append(target);
+  render(
+    <SavedConnections
+      visible
+      close={() => {}}
+      actions={value.actions}
+      target={target}
+    />,
+  );
+  await screen.findByRole("button", { name: "Open Saved server" });
+  const summary = screen.getByLabelText(/^Actions for/);
+  const details = summary.closest("details") as HTMLDetailsElement;
+  // Closed: no actions are rendered, so the row reserves no space for them.
+  expect(details.open).toBe(false);
+  expect(screen.queryByRole("button", { name: /^Rename Saved/ })).toBeNull();
+  fireEvent.click(summary);
+  expect(details.open).toBe(true);
+  const rename = screen.getByRole("button", { name: /^Rename Saved server/ });
+  const popup = rename.parentElement as HTMLElement;
+  expect(popup.getAttribute("popover")).toBe("manual");
+  expect(popup.classList.contains("anchored-popup")).toBe(true);
+  expect(details.contains(popup)).toBe(true);
+  // Opening is read-only.
+  expect(value.rename).not.toHaveBeenCalled();
+  expect(value.remove).not.toHaveBeenCalled();
+  // Escape closes and returns focus to the trigger.
+  fireEvent.keyDown(rename, { key: "Escape" });
+  expect(details.open).toBe(false);
+  expect(screen.queryByRole("button", { name: /^Rename Saved/ })).toBeNull();
+  expect(document.activeElement).toBe(summary);
+  // Outside pointer dismisses.
+  fireEvent.click(summary);
+  expect(details.open).toBe(true);
+  fireEvent.pointerDown(document.body);
+  expect(details.open).toBe(false);
+  // Choosing an action dismisses the popup and hands off to its own dialog.
+  fireEvent.click(summary);
+  fireEvent.click(screen.getByRole("button", { name: /^Rename Saved server/ }));
+  expect(details.open).toBe(false);
+  expect(screen.queryByRole("button", { name: /^Remove Saved/ })).toBeNull();
+  target.remove();
+});
+
+it("keeps row actions listed in flow in the fallback dialog host", async () => {
+  const value = fixture();
+  render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  await screen.findByRole("button", { name: "Open Saved server" });
+  const rename = screen.getByRole("button", { name: /^Rename Saved server/ });
+  expect(rename.parentElement?.hasAttribute("popover")).toBe(false);
+  expect((rename.closest("details") as HTMLDetailsElement).open).toBe(true);
 });
