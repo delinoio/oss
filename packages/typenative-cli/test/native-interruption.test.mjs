@@ -57,7 +57,7 @@ if [ "$TN_PHASE" = "compile" ]; then
   exec sleep 30
 fi
 cp "$TN_EXECUTABLE" "$artifact"
-printf '%s' '{"schema":"scriptc-diagnostics","schemaVersion":1,"compilerVersion":"0.3.5","success":true}'
+printf '%s' '{"schema":"scriptc-diagnostics","schemaVersion":1,"compilerVersion":"0.3.5","success":true,"diagnostics":[]}'
 `,
             { mode: 0o755 },
           );

@@ -14,6 +14,8 @@ import {
 
 import { createNativeResult, finalizeNativeResult } from "./native-result.mjs";
 
+import { hasCompilerDiagnostics } from "./native-diagnostics.mjs";
+
 const start = performance.now();
 const buildId = randomUUID();
 const target = hostTarget();
@@ -95,7 +97,12 @@ try {
   ) {
     throw new Error("TN_COMPILER_DIAGNOSTICS_INVALID");
   }
-  if (result.failed || result.status !== 0 || diagnostics.success !== true) {
+  if (
+    result.failed ||
+    result.status !== 0 ||
+    diagnostics.success !== true ||
+    hasCompilerDiagnostics(diagnostics)
+  ) {
     // Only expose compiler codes and numeric locations for this fixed fixture.
     // Raw compiler messages can include installation paths and source content.
     report("failed", {
