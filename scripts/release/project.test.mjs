@@ -55,7 +55,6 @@ const files = [
     "pnport-core",
     "pnport-preload",
   ].map((name) => `crates/${name}/Cargo.toml`),
-  "cmds/derun/internal/version/version.go",
   "cmds/runmoor/internal/runmoor/types.go",
   ...achFiles,
 ];
@@ -655,7 +654,7 @@ test("A concurrent main push fails without rewriting remote history", async (t) 
   await assert.rejects(
     prepareRelease({
       directory: state.directory,
-      project: Project.Derun,
+      project: Project.Runmoor,
       bump: Bump.Patch,
       runId: "999",
       ...bot,
@@ -675,7 +674,7 @@ test("A concurrent main push fails without rewriting remote history", async (t) 
   );
 });
 
-for (const project of [Project.Derun, Project.AsyncCommitHook])
+for (const project of [Project.Runmoor, Project.AsyncCommitHook])
   test(`${project} recovery rejects extra paths and hidden non-version changes`, async (t) => {
     const state = fixture(t);
     const options = {
@@ -689,7 +688,7 @@ for (const project of [Project.Derun, Project.AsyncCommitHook])
     const file =
       project === Project.AsyncCommitHook
         ? "apps/async-commit-hook/package.json"
-        : "cmds/derun/internal/version/version.go";
+        : "cmds/runmoor/internal/runmoor/types.go";
     writeFileSync(
       path.join(state.directory, file),
       readFileSync(path.join(state.directory, file), "utf8") +

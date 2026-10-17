@@ -47,7 +47,6 @@ enum ProjectId {
   Pnport = "pnport",
   Nodeup = "nodeup",
   WithWatch = "with-watch",
-  Derun = "derun",
   Runmoor = "runmoor",
   SerdeFeather = "serde-feather",
   Rustia = "rustia",

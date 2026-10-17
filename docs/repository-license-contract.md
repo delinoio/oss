@@ -20,7 +20,7 @@ The DeliDev API Providers inventory bundles 29 unchanged monochrome LobeHub/lobe
 
 New npm, Homebrew, GitHub archive and native Linux packages for Delino-owned products declare Apache-2.0 and carry the complete license text. Native Linux keyring metadata is Apache-2.0. Published versions and immutable existing artifacts retain their historical terms; future versions use the new metadata. Package inspection and installed-consumer tests check license declarations, terms and separate third-party notices.
 
-Future binpm, cargo-mono, nodeup, with-watch and derun GitHub release archives contain the unchanged platform executable plus the root `LICENSE` and `NOTICE` as regular top-level members. Archive assembly uses those source-checkout texts directly or verifies that staged copies match them. Standalone executable assets and historical published archives retain their existing bytes.
+Future binpm, cargo-mono, nodeup, and with-watch GitHub release archives contain the unchanged platform executable plus the root `LICENSE` and `NOTICE` as regular top-level members. Archive assembly uses those source-checkout texts directly or verifies that staged copies match them. Standalone executable assets and historical published archives retain their existing bytes.
 
 The DeliDev command menu bundles cmdk 1.1.1 and its installed Radix UI dependency family under their original MIT terms. Preserve complete licenses and the source notice in `apps/delidev/public/command-menu-notices`; frontend distributions copy these notices with bundled bytes. Inline Command integration does not add another modal owner or modify upstream source.
 

@@ -14,7 +14,6 @@ on:
             cargo-mono,
             nodeup,
             with-watch,
-            derun,
             runmoor,
             clibox,
             pnport,

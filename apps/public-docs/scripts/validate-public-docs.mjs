@@ -53,7 +53,6 @@ const rootRoutes = [
   "/devhud/admin",
   "/devhud/releases",
   "/cargo-mono",
-  "/derun",
   "/with-watch",
 ];
 const publicRoutePrefixes = new Set([...selectorDestinations, ...rootRoutes]);

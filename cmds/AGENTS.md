@@ -32,7 +32,5 @@
 
 - [async-commit-hook command contract](../docs/cmds-async-commit-hook-contract.md)
 - [DeliDev command, server, and Worker contract](../docs/cmds-delidev-contract.md)
-- [cmds-derun-foundation](../docs/cmds-derun-foundation.md)
 - [Runmoor command foundation](../docs/cmds-runmoor-foundation.md)
-- [Project: derun](../docs/project-derun.md)
 - [Linux Package Repository Contract](../docs/repository-linux-packages-contract.md)

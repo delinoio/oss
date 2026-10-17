@@ -8,7 +8,7 @@ Render and optionally push Homebrew formula/cask updates.
 
 Usage:
   ./scripts/release/update-homebrew.sh \
-    --project <binpm|nodeup|with-watch|derun|pnport|runmoor|clibox> \
+    --project <binpm|nodeup|with-watch|pnport|runmoor|clibox> \
     --version <semver> \
     [--darwin-amd64-url <url>] [--darwin-amd64-sha256 <sha>] \
     [--darwin-arm64-url <url>] [--darwin-arm64-sha256 <sha>] \
@@ -200,7 +200,7 @@ const [template, version, url, sha256] = process.argv.slice(2);
 process.stdout.write(readFileSync(template, 'utf8').replaceAll('__VERSION__', version).replaceAll('__DARWIN_ARM64_URL__', url).replaceAll('__DARWIN_ARM64_SHA256__', sha256));
 JS
     ;;
-  binpm|nodeup|with-watch|derun|pnport)
+  binpm|nodeup|with-watch|pnport)
     if [ "$project" = "pnport" ] && [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
       log "pnport requires an exact stable version"
       exit 1

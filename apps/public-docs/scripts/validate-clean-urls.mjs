@@ -281,7 +281,6 @@ const stableRouteIds = [
   "/devhud/admin",
   "/devhud/releases",
   "/cargo-mono",
-  "/derun",
   "/with-watch",
 ];
 const projectSlugs = Object.keys(projectRoutes).filter(

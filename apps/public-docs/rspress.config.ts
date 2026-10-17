@@ -11,7 +11,6 @@ const homePages = [
 const productPages = [
   { text: "DevHud", link: "/devhud", activeMatch: "^/devhud" },
   { text: "Cargo Mono", link: "/cargo-mono" },
-  { text: "Derun", link: "/derun" },
   { text: "With Watch", link: "/with-watch" },
 ];
 
@@ -237,12 +236,8 @@ export default defineConfig({
           items: [productPages[1]],
         },
         {
-          text: "Terminal Relay + MCP",
-          items: [productPages[2]],
-        },
-        {
           text: "Command Rerun Watcher",
-          items: [productPages[3]],
+          items: [productPages[2]],
         },
       ],
       "/clibox/": [{ text: "clibox", items: cliboxPages }],

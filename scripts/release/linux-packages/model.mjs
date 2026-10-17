@@ -7,7 +7,6 @@ export const Project = Object.freeze({
   CargoMono: "cargo-mono",
   Nodeup: "nodeup",
   WithWatch: "with-watch",
-  Derun: "derun",
   Runmoor: "runmoor",
   Clibox: "clibox",
 });
@@ -16,7 +15,6 @@ const legacyArchiveProjects = new Set([
   Project.CargoMono,
   Project.Nodeup,
   Project.WithWatch,
-  Project.Derun,
 ]);
 // This is the first source revision whose legacy archive workflows include both terms.
 // Compare the authenticated release revision with this boundary before accepting an

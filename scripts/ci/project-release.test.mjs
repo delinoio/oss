@@ -23,7 +23,6 @@ test("legacy CLI workflows verify or reuse public releases before signing and ta
     Project.CargoMono,
     Project.Nodeup,
     Project.WithWatch,
-    Project.Derun,
   ]) {
     const release = yaml.load(
       source(`.github/workflows/release-${project}.yml`),

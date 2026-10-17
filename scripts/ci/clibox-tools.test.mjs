@@ -51,7 +51,6 @@ test("release utilities are installed before checksumming, rendering, or secret 
     "cargo-mono",
     "nodeup",
     "with-watch",
-    "derun",
     "async-commit-hook",
   ]) {
     const steps = workflow(`release-${name}`).jobs.publish.steps;

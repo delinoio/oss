@@ -183,11 +183,6 @@ Record new implementation status, validation results and unresolved limits in pu
 - `docs/cmds-runmoor-foundation.md`
 - `docs/apps-runmoor-docs-foundation.md` (`apps/public-docs/docs/runmoor`, canonical URL `https://oss.delino.io/runmoor`, routes published below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/host`, `/operations`)
 
-### derun
-
-- `docs/project-derun.md`
-- `docs/cmds-derun-foundation.md`
-
 ### public-docs
 
 - `docs/project-public-docs.md`

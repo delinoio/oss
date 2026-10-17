@@ -9,7 +9,6 @@ export const Project = Object.freeze({
   CargoMono: "cargo-mono",
   Nodeup: "nodeup",
   WithWatch: "with-watch",
-  Derun: "derun",
   Runmoor: "runmoor",
   Clibox: "clibox",
   Pnport: "pnport",
@@ -38,7 +37,6 @@ const versions = Object.freeze({
   "cargo-mono": { kind: Kind.Rust, file: "crates/cargo-mono/Cargo.toml" },
   nodeup: { kind: Kind.Rust, file: "crates/nodeup/Cargo.toml" },
   "with-watch": { kind: Kind.Rust, file: "crates/with-watch/Cargo.toml" },
-  derun: { kind: Kind.Go, file: "cmds/derun/internal/version/version.go" },
   runmoor: { kind: Kind.Go, file: "cmds/runmoor/internal/runmoor/types.go" },
   "async-commit-hook": {
     kind: Kind.Go,
@@ -739,7 +737,6 @@ export async function legacyReleaseMetadata(
       Project.CargoMono,
       Project.Nodeup,
       Project.WithWatch,
-      Project.Derun,
     ].includes(input.project),
     "Unsupported legacy release project",
   );
