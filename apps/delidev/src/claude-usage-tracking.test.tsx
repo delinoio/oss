@@ -1102,6 +1102,21 @@ it("rejects a connecting or confirming section that omits its login operation", 
   ).toBe("present");
 });
 
+it("rejects a linked section that omits its identity, publication marker or link time", () => {
+  for (const missing of [
+    { identity: undefined },
+    { identity: { organization: "Acme", plan: "max" } },
+    { published: false },
+    { published: undefined },
+    { linked_at: undefined },
+    { linked_at: "not-a-time" },
+  ])
+    expect(claudeUsageSection({ claude_usage: linked(missing) }).kind).toBe(
+      "unreadable",
+    );
+  expect(claudeUsageSection({ claude_usage: linked() }).kind).toBe("present");
+});
+
 it("projects only closed fields and identifies a manually linked row only with observations", () => {
   expect(claudeUsageSection({}).kind).toBe("absent");
   expect(

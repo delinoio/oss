@@ -245,6 +245,7 @@ it("labels Claude usage windows and identifies the manually linked usage account
           generation: newRequestId(),
           identity: { email: "alex@example.com", commitment: "ab".repeat(32) },
           published: true,
+          linked_at: observed,
           last_success_at: observed,
           windows: [
             {

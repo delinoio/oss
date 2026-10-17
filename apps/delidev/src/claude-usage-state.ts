@@ -186,6 +186,16 @@ export function claudeUsageSection(
     !operation
   )
     return { kind: "unreadable" };
+  // A linked connection always carries its reviewed identity, the publication
+  // marker and the link time. A section that omits any of them is malformed: it
+  // would present as connected with no identity block or Disconnect action, so
+  // it is unreadable instead.
+  const identity = identityOf(raw.identity);
+  if (
+    connection === ClaudeUsageConnection.Linked &&
+    (!identity || raw.published !== true || !instant(raw.linked_at))
+  )
+    return { kind: "unreadable" };
   const lastSuccessAt = raw.last_success_at
       ? instant(raw.last_success_at)
       : undefined,
@@ -227,7 +237,7 @@ export function claudeUsageSection(
       connection,
       generation,
       operation,
-      identity: identityOf(raw.identity),
+      identity,
       published: raw.published === true,
       refresh,
       failure,
