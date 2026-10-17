@@ -20,7 +20,8 @@ import {
   copy,
   useLocale,
 } from "./localization";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useActivationCount, useEntranceActivation } from "./entrance-motion";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import {
@@ -266,6 +267,7 @@ export function ConfigurationTransfer({
     Record<string, boolean>
   >({});
   const runner = useRunnerPreference(RunnerWorkflow.ImportTarget, active);
+  const mappingFormId = useId();
   const originalLastTarget = useRef<string>(undefined);
   const [paths, setPaths] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<Preview>();
@@ -819,205 +821,221 @@ export function ConfigurationTransfer({
         </SettingsActionButton>
       ) : null}
       {loaded ? (
-        <fieldset
-          className="transfer-panel transfer-mapping"
-          disabled={blocked}
-          ref={mapEntrance.ref}
-          data-entrance={mapEntrance["data-entrance"]}
+        <form
+          id={mappingFormId}
+          noValidate
+          onKeyDown={guardEnterSubmission}
+          onSubmit={(event) => {
+            if (consumeFormSubmit(event)) void inspect();
+          }}
         >
-          <legend>
-            {copy("configuration-transfer.mapImportedConfiguration_d0218d")}
-          </legend>
-          {runner.guidance}
-          <p>
-            {copy(
-              "configuration-transfer.newEntriesKeepTheirOriginalContents_63b0dc",
-            )}
-          </p>
-          {loaded.bundle.machines.map((machine) => (
-            <section key={machine.id}>
-              <p>
-                <LocalizedText
-                  id="configuration-transfer.sourceMachine_b09a79"
-                  components={{
-                    s0: <>{machine.name}</>,
-                    s1: <>{machine.os}</>,
-                    s2: <>{machine.architecture}</>,
-                  }}
-                />
-              </p>
-              <ResourceChoice
-                label={copy("configuration-transfer.targetFor_183f6f", {
-                  v0: machine.name,
-                })}
-                kind={EntityKind.MACHINE}
-                value={machines[machine.id] ?? ""}
-                required
-                active={active}
-                disabled={blocked}
-                change={(id) => {
-                  invalidate();
-                  setConfirmedMachines((values) => ({
-                    ...values,
-                    [machine.id]: false,
-                  }));
-                  setMachines((values) => ({ ...values, [machine.id]: id }));
-                }}
-              />
-              <label>
-                <input
-                  type="checkbox"
-                  checked={confirmedMachines[machine.id] === true}
-                  disabled={
-                    !machines[machine.id] ||
-                    Object.entries(machines).some(
-                      ([source, target]) =>
-                        source !== machine.id &&
-                        target === machines[machine.id],
-                    )
-                  }
-                  onChange={(event) => {
+          <fieldset
+            className="transfer-panel transfer-mapping"
+            disabled={blocked}
+            ref={mapEntrance.ref}
+            data-entrance={mapEntrance["data-entrance"]}
+          >
+            <legend>
+              {copy("configuration-transfer.mapImportedConfiguration_d0218d")}
+            </legend>
+            {runner.guidance}
+            <p>
+              {copy(
+                "configuration-transfer.newEntriesKeepTheirOriginalContents_63b0dc",
+              )}
+            </p>
+            {loaded.bundle.machines.map((machine) => (
+              <section key={machine.id}>
+                <p>
+                  <LocalizedText
+                    id="configuration-transfer.sourceMachine_b09a79"
+                    components={{
+                      s0: <>{machine.name}</>,
+                      s1: <>{machine.os}</>,
+                      s2: <>{machine.architecture}</>,
+                    }}
+                  />
+                </p>
+                <ResourceChoice
+                  label={copy("configuration-transfer.targetFor_183f6f", {
+                    v0: machine.name,
+                  })}
+                  kind={EntityKind.MACHINE}
+                  value={machines[machine.id] ?? ""}
+                  required
+                  active={active}
+                  disabled={blocked}
+                  change={(id) => {
                     invalidate();
                     setConfirmedMachines((values) => ({
                       ...values,
-                      [machine.id]: event.target.checked,
+                      [machine.id]: false,
                     }));
+                    setMachines((values) => ({ ...values, [machine.id]: id }));
                   }}
                 />
-                {copy("runner-preferences.confirm")}
-              </label>
-            </section>
-          ))}
-          {loaded.bundle.entries.map((entry) => {
-            const binding = bindings[entry.id] ?? {
-              action: ImportAction.Create,
-              target: "",
-            };
-            return (
-              <section key={entry.id}>
-                <h4>
-                  {name(entry)} · {entry.kind}
-                </h4>
-                {entry.kind === "account" ? (
-                  <p>
-                    {copy(
-                      "configuration-transfer.aNewDisconnectedAccountWillBe_cd1542",
-                    )}
-                  </p>
-                ) : (
-                  <>
-                    <label>
-                      {copy("configuration-transfer.actionFor_428793", {
-                        v0: name(entry),
-                      })}
-                      <select
-                        value={binding.action}
-                        onChange={(event) => {
-                          invalidate();
-                          setBindings((values) => ({
-                            ...values,
-                            [entry.id]: {
-                              action: event.target.value as ImportAction,
-                              target: "",
-                            },
-                          }));
-                        }}
-                      >
-                        <option value={ImportAction.Create}>
-                          {copy("configuration-transfer.createNew_9f3df7")}
-                        </option>
-                        <option value={ImportAction.Reuse}>
-                          {copy(
-                            "configuration-transfer.reuseIdenticalExistingEntry_7bdfe4",
-                          )}
-                        </option>
-                        {entry.kind === "settings" ? (
-                          <option value={ImportAction.Replace}>
-                            {copy(
-                              "configuration-transfer.replaceExistingServerPreferences_ff7572",
-                            )}
-                          </option>
-                        ) : null}
-                      </select>
-                    </label>
-                    {binding.action !== ImportAction.Create ? (
-                      <ResourceChoice
-                        label={copy("configuration-transfer.existing_35e8bd", {
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={confirmedMachines[machine.id] === true}
+                    disabled={
+                      !machines[machine.id] ||
+                      Object.entries(machines).some(
+                        ([source, target]) =>
+                          source !== machine.id &&
+                          target === machines[machine.id],
+                      )
+                    }
+                    onChange={(event) => {
+                      invalidate();
+                      setConfirmedMachines((values) => ({
+                        ...values,
+                        [machine.id]: event.target.checked,
+                      }));
+                    }}
+                  />
+                  {copy("runner-preferences.confirm")}
+                </label>
+              </section>
+            ))}
+            {loaded.bundle.entries.map((entry) => {
+              const binding = bindings[entry.id] ?? {
+                action: ImportAction.Create,
+                target: "",
+              };
+              return (
+                <section key={entry.id}>
+                  <h4>
+                    {name(entry)} · {entry.kind}
+                  </h4>
+                  {entry.kind === "account" ? (
+                    <p>
+                      {copy(
+                        "configuration-transfer.aNewDisconnectedAccountWillBe_cd1542",
+                      )}
+                    </p>
+                  ) : (
+                    <>
+                      <label>
+                        {copy("configuration-transfer.actionFor_428793", {
                           v0: name(entry),
                         })}
-                        kind={kinds[entry.kind]!}
-                        value={binding.target}
-                        required
-                        active={active}
-                        disabled={blocked}
-                        change={(id, _data, resource) => {
-                          invalidate();
-                          setBindings((values) => ({
-                            ...values,
-                            [entry.id]: {
-                              action: binding.action,
-                              target: id,
-                              revision: resource?.revision,
-                            },
-                          }));
-                        }}
-                      />
-                    ) : null}
-                  </>
-                )}
-                {entry.kind === "repository"
-                  ? items(entry.document.checkouts)
-                      .map(object)
-                      .map((checkout) => {
-                        const source = text(checkout.machine_id),
-                          key = `${entry.id}:${source}`;
-                        const machine = loaded.bundle.machines.find(
-                          (value) => value.id === source,
-                        );
-                        return (
-                          <div key={source}>
-                            <p>
-                              <LocalizedText
-                                id="configuration-transfer.sourceCheckout_dc8c12"
-                                components={{ s0: <>{text(checkout.path)}</> }}
-                              />
-                            </p>
-                            <TextField
-                              label={copy(
-                                "configuration-transfer.targetCheckoutForOn_27ac75",
-                                {
-                                  v0: name(entry),
-                                  v1: machine?.name ?? source,
-                                },
+                        <select
+                          value={binding.action}
+                          onChange={(event) => {
+                            invalidate();
+                            setBindings((values) => ({
+                              ...values,
+                              [entry.id]: {
+                                action: event.target.value as ImportAction,
+                                target: "",
+                              },
+                            }));
+                          }}
+                        >
+                          <option value={ImportAction.Create}>
+                            {copy("configuration-transfer.createNew_9f3df7")}
+                          </option>
+                          <option value={ImportAction.Reuse}>
+                            {copy(
+                              "configuration-transfer.reuseIdenticalExistingEntry_7bdfe4",
+                            )}
+                          </option>
+                          {entry.kind === "settings" ? (
+                            <option value={ImportAction.Replace}>
+                              {copy(
+                                "configuration-transfer.replaceExistingServerPreferences_ff7572",
                               )}
-                              value={paths[key] ?? ""}
-                              max={4096}
-                              required
-                              change={(path) => {
-                                invalidate();
-                                setPaths((values) => ({
-                                  ...values,
-                                  [key]: path,
-                                }));
-                              }}
-                            />
-                          </div>
-                        );
-                      })
-                  : null}
-              </section>
-            );
-          })}
-          <SettingsActionButton
-            icon={SettingsActionIcon.Inspect}
-            disabled={
-              !active || blocked || remoteUnsupported || !mappingsConfirmed
-            }
-            onClick={() => void inspect()}
-          >
-            {copy("configuration-transfer.previewConfigurationChanges_97d7ba")}
-          </SettingsActionButton>
-        </fieldset>
+                            </option>
+                          ) : null}
+                        </select>
+                      </label>
+                      {binding.action !== ImportAction.Create ? (
+                        <ResourceChoice
+                          label={copy(
+                            "configuration-transfer.existing_35e8bd",
+                            {
+                              v0: name(entry),
+                            },
+                          )}
+                          kind={kinds[entry.kind]!}
+                          value={binding.target}
+                          required
+                          active={active}
+                          disabled={blocked}
+                          change={(id, _data, resource) => {
+                            invalidate();
+                            setBindings((values) => ({
+                              ...values,
+                              [entry.id]: {
+                                action: binding.action,
+                                target: id,
+                                revision: resource?.revision,
+                              },
+                            }));
+                          }}
+                        />
+                      ) : null}
+                    </>
+                  )}
+                  {entry.kind === "repository"
+                    ? items(entry.document.checkouts)
+                        .map(object)
+                        .map((checkout) => {
+                          const source = text(checkout.machine_id),
+                            key = `${entry.id}:${source}`;
+                          const machine = loaded.bundle.machines.find(
+                            (value) => value.id === source,
+                          );
+                          return (
+                            <div key={source}>
+                              <p>
+                                <LocalizedText
+                                  id="configuration-transfer.sourceCheckout_dc8c12"
+                                  components={{
+                                    s0: <>{text(checkout.path)}</>,
+                                  }}
+                                />
+                              </p>
+                              <TextField
+                                label={copy(
+                                  "configuration-transfer.targetCheckoutForOn_27ac75",
+                                  {
+                                    v0: name(entry),
+                                    v1: machine?.name ?? source,
+                                  },
+                                )}
+                                value={paths[key] ?? ""}
+                                max={4096}
+                                required
+                                change={(path) => {
+                                  invalidate();
+                                  setPaths((values) => ({
+                                    ...values,
+                                    [key]: path,
+                                  }));
+                                }}
+                              />
+                            </div>
+                          );
+                        })
+                    : null}
+                </section>
+              );
+            })}
+            <SettingsActionButton
+              icon={SettingsActionIcon.Inspect}
+              type="submit"
+              disabled={
+                !active || blocked || remoteUnsupported || !mappingsConfirmed
+              }
+            >
+              {copy(
+                "configuration-transfer.previewConfigurationChanges_97d7ba",
+              )}
+            </SettingsActionButton>
+          </fieldset>
+        </form>
       ) : null}
       {preview ? (
         <section
