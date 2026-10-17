@@ -679,10 +679,11 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 			}
 			if subscriptionOwner {
 				// Explicit deletion of a subscription account owns the final
-				// removal of its retained AccountLogin generations and credential
+				// removal of its retained AccountLogin generations, the ClaudeUsage
+				// references its retired usage connection still owes and credential
 				// files. Any other protected reference keeps the account.
 				for _, ref := range refs {
-					if ref.Purpose != credentials.AccountLogin {
+					if ref.Purpose != credentials.AccountLogin && ref.Purpose != credentials.ClaudeUsage {
 						return protectedAccountDeletion
 					}
 				}

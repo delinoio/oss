@@ -109,6 +109,36 @@ func TestRemoveAccountLoginReferencesValidatesOwnerAndPurposeBeforeDeleting(t *t
 	}
 }
 
+func TestRemoveAccountLoginReferencesLeavesClaudeUsageToItsOwnLifecycle(t *testing.T) {
+	vault := &accountTestSecrets{values: map[credentials.Ref][]byte{}, removed: map[credentials.Ref]bool{}}
+	owner := domain.NewID()
+	logins := putGenerations(t, vault, owner, 3)
+	usage := credentials.Ref{Owner: owner, ID: domain.NewID(), Purpose: credentials.ClaudeUsage}
+	if _, err := vault.Put(context.Background(), usage, []byte("synthetic-usage-bundle")); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := removeAccountLoginReferences(context.Background(), vault, owner)
+	if err != nil || removed != len(logins) {
+		t.Fatal("the login removal did not remove exactly the login generations", removed, err)
+	}
+	if _, err := vault.Get(context.Background(), usage); err != nil {
+		t.Fatal("the login removal deleted a usage reference", err)
+	}
+	// Any other protected purpose still denies the whole removal before deleting.
+	foreign := credentials.Ref{Owner: owner, ID: domain.NewID(), Purpose: credentials.AccountAPI}
+	if _, err := vault.Put(context.Background(), foreign, []byte("synthetic-api-key")); err != nil {
+		t.Fatal(err)
+	}
+	extra := putGenerations(t, vault, owner, 1)
+	before := vault.deletes
+	if _, err := removeAccountLoginReferences(context.Background(), vault, owner); err == nil || vault.deletes != before {
+		t.Fatal("a foreign reference was not denied before deletion", err)
+	}
+	if _, err := vault.Get(context.Background(), extra[0]); err != nil {
+		t.Fatal("a denied removal deleted a login generation", err)
+	}
+}
+
 // cancelingSecrets cancels the removal context after a fixed number of deletes,
 // proving the removal observes cancellation between items.
 type cancelingSecrets struct {
