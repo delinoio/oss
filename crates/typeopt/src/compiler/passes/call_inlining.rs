@@ -76,6 +76,73 @@ fn detail(reason: Reason, cause: impl Into<String>) -> Reason {
     reason
 }
 
+/// Innermost function-like, class or source file around `node`. Code in
+/// different containers can run in an order the site cannot see.
+fn run_container(node: Node) -> Node {
+    let mut current = node.parent();
+    while current.is_some()
+        && !is_function_like(current)
+        && !matches!(
+            current.kind(),
+            SyntaxKind::SourceFile
+                | SyntaxKind::ClassDeclaration
+                | SyntaxKind::ClassExpression
+                | SyntaxKind::ClassStaticBlockDeclaration
+        )
+    {
+        current = current.parent();
+    }
+    current
+}
+
+/// Whether nothing the inlined body does can change the value of a mutable
+/// binding read by `argument`: the binding is a parameter or a `let` or `var`
+/// of the function (or module) that contains the site, every write to it
+/// lies directly in that same function, and the inlined expression does not
+/// write it. Code run by an effect then cannot write it: other functions do
+/// not write it, and a recursive entry of the function writes its own fresh
+/// binding.
+fn private_to_site_function(ctx: &mut Ctx, target: &Target, argument: Node, call: Node) -> bool {
+    let argument = skip_outer(argument);
+    if argument.kind() != SyntaxKind::Identifier {
+        return false;
+    }
+    let raw = ctx.resolve(argument);
+    if raw.is_nil() {
+        return false;
+    }
+    let symbol = support::norm(ctx, raw);
+    if symbol != raw || target.writes.contains(&raw) {
+        // An alias (import) or a name whose declaration merges elsewhere.
+        return false;
+    }
+    let declaration = ctx.checker.sym(symbol).value_declaration;
+    if declaration.is_nil() || declaration.flags().intersects(NodeFlags::Ambient) {
+        return false;
+    }
+    let container = run_container(call);
+    let owner = match declaration.kind() {
+        SyntaxKind::Parameter => declaration.parent(),
+        SyntaxKind::VariableDeclaration => {
+            let list = declaration.parent();
+            if list.flags().intersects(NodeFlags::Using)
+                || list.parent().kind() != SyntaxKind::VariableStatement
+            {
+                return false;
+            }
+            run_container(declaration)
+        }
+        _ => return false,
+    };
+    if owner.is_nil() || owner != container {
+        return false;
+    }
+    ctx.refs(symbol)
+        .iter()
+        .filter(|r| r.kind == RefKind::Write)
+        .all(|r| run_container(r.node) == container)
+}
+
 pub(in crate::compiler) fn plan(ctx: &mut Ctx, enabled: &PassSet, out: &mut Plan) -> Result<()> {
     let mut facts = Facts::new();
     let mut targets = Vec::new();
@@ -1303,7 +1370,10 @@ fn site(
     for event in &target.events {
         match *event {
             Event::Param(index, conditional) => {
-                if read_only[index] && effect_seen {
+                if read_only[index]
+                    && effect_seen
+                    && !private_to_site_function(ctx, target, arguments[index], call)
+                {
                     return Err(detail(
                         Reason::SideEffects,
                         "site:mutable-read-after-effect",
