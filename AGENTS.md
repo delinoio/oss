@@ -205,3 +205,5 @@
 - [Repository workflow](docs/repository-workflow-contract.md) owns CI, release, allocation-validation records and validation procedures.
 - [Environment ownership](docs/repository-environment-contract.md) owns development selectors, service configuration, child environments and shutdown.
 - Read scoped instructions in every affected domain, including cross-domain consumers.
+
+- `docs/project-typenative.md`: TypeNative native application framework project index.
