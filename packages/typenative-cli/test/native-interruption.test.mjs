@@ -13,7 +13,7 @@ const hasCCompiler =
   spawnSync("cc", ["--version"], { stdio: "ignore" }).status === 0;
 
 for (const phase of ["compile", "execute"]) {
-  for (const signal of ["SIGINT", "SIGTERM"]) {
+  for (const signal of ["SIGINT", "SIGTERM", "SIGKILL"]) {
     test(
       `React probe cleans up after ${signal} during ${phase}`,
       {
@@ -97,8 +97,8 @@ printf '%s' '{"schema":"scriptc-diagnostics","schemaVersion":1,"compilerVersion"
           const artifact = await readFile(join(root, "artifact"), "utf8");
           assert.equal(child.kill(signal), true);
           const [code, killedBy] = await closed;
-          assert.equal(code, 1);
-          assert.equal(killedBy, null);
+          assert.equal(code, signal === "SIGKILL" ? null : 1);
+          assert.equal(killedBy, signal === "SIGKILL" ? signal : null);
           assert.equal(stderr, "");
           const result = JSON.parse(stdout);
           assert.equal(result.code, "TN_PROBE_INTERRUPTED");
