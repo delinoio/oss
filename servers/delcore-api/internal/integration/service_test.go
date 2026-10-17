@@ -1305,3 +1305,32 @@ func TestPaidUsagePriceRefreshWithoutCharge(t *testing.T) {
 		t.Fatal("no-charge refresh stuck", state, installed, e)
 	}
 }
+
+func TestMismatchedAutomaticPaymentSuspendsCharges(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='sub_auto',auto_amount=10,auto_threshold=5,auto_cap=100 WHERE id=$1", tenant); e != nil {
+		t.Fatal(e)
+	}
+	jobID := key()
+	if _, e := db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,available_at,created_at,updated_at) VALUES($1,$2,'auto_topup',$1::uuid::text,'{"amount":"10","minor_units":"1000"}','reconcile',now(),now(),now())`, jobID, tenant); e != nil {
+		t.Fatal(e)
+	}
+	var payment provider.Transaction
+	if e := json.Unmarshal([]byte(fmt.Sprintf(`{"id":"txn_mismatch","status":"completed","currency_code":"USD","custom_data":{"delcore_job_id":%q,"delcore_tenant_id":%q},"details":{"totals":{"subtotal":"999"}}}`, jobID, tenant)), &payment); e != nil {
+		t.Fatal(e)
+	}
+	w := &worker.Worker{DB: db, Config: cfg}
+	if e := w.ApplyTransaction(ctx, payment, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	if e := w.Maintain(ctx, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	var suspended bool
+	var count int
+	if e := db.Pool.QueryRow(ctx, "SELECT auto_suspended,(SELECT count(*) FROM jobs WHERE tenant_id=$1 AND kind='auto_topup') FROM tenants WHERE id=$1", tenant).Scan(&suspended, &count); e != nil || !suspended || count != 1 {
+		t.Fatal("mismatch triggered another charge", suspended, count, e)
+	}
+}

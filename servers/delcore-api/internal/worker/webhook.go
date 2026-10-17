@@ -167,6 +167,12 @@ func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Tra
 	}
 	if t.Custom.TenantID != j.Tenant || t.Currency != w.Config.Currency || (j.ExternalID != "" && j.ExternalID != t.ID && j.ExternalID != t.SubscriptionID) || (p.MinorUnits != "" && t.Details.Totals.Subtotal != p.MinorUnits) {
 		_, e = tx.Exec(ctx, "UPDATE jobs SET state='failed',error_category='payment_mismatch',updated_at=now() WHERE id=$1", j.ID)
+		if e == nil && j.Kind == "auto_topup" {
+			if _, e = tx.Exec(ctx, "UPDATE tenants SET auto_suspended=true WHERE id=$1", j.Tenant); e != nil {
+				return e
+			}
+			e = notify(ctx, tx, j.Tenant, "auto_failed:"+j.ID, "Automatic top-up requires review", "Automatic top-ups are suspended until the completed payment is reconciled.", at)
+		}
 		return e
 	}
 	switch j.Kind {
