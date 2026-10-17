@@ -409,6 +409,26 @@ try {
             await assertClosed("owner escape");
             await assertStable("owner escape");
 
+            // A row scrolled completely out of the clipping list dismisses its
+            // menu instead of leaving the top-layer popup beside another row.
+            await open();
+            await more.evaluate((node, last) => {
+              const list = node.closest(".queue-compact-list");
+              list.scrollTop = last ? 0 : list.scrollHeight;
+            }, rowIndex === 3);
+            await frames(page);
+            const hidden = await more.evaluate((node) => {
+              const list = node
+                  .closest(".queue-compact-list")
+                  .getBoundingClientRect(),
+                anchor = node.getBoundingClientRect();
+              return anchor.bottom <= list.top || anchor.top >= list.bottom;
+            });
+            assert(hidden, `${state}: the trigger is scrolled out of the list`);
+            await assertClosed("trigger scrolled out of the list");
+            await restoreScroll("trigger scrolled out of the list");
+            await assertStable("trigger scrolled out of the list");
+
             // Movement actions run once from the menu and close it.
             if (rowIndex === 3) {
               await open();

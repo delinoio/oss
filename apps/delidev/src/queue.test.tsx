@@ -1020,6 +1020,64 @@ it("dismisses the More popup when focus leaves it and keeps it while focus moves
   expect(value.remove).not.toHaveBeenCalled();
 });
 
+it("dismisses the More popup once its row scrolls completely out of the compact list", () => {
+  const { hide } = stubPopover();
+  const value = fixture();
+  let moreTop = 120;
+  const rect = (left: number, top: number, width: number, height: number) =>
+    ({
+      left,
+      top,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+      x: left,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (this.classList.contains("queue-compact-list"))
+        return rect(10, 100, 400, 80);
+      if (this.getAttribute("aria-label") === "More input actions")
+        return this.getAttribute("role") === "menu"
+          ? rect(0, 0, 160, 120)
+          : rect(360, moreTop, 32, 32);
+      return rect(0, 0, 0, 0);
+    },
+  );
+  try {
+    render(
+      <div className="queue-compact-list" style={{ overflow: "auto" }}>
+        {value.view(value.resource, true)}
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More input actions" }));
+    expect(screen.getByRole("menu")).toBeTruthy();
+    // Partly visible: still presented, even though the popup may extend past the list.
+    moreTop = 170;
+    fireEvent.scroll(document.querySelector(".queue-compact-list")!);
+    expect(screen.getByRole("menu")).toBeTruthy();
+    expect(hide).not.toHaveBeenCalled();
+    // Scrolled completely below the list's visible box.
+    moreTop = 180;
+    fireEvent.scroll(document.querySelector(".queue-compact-list")!);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(hide).toHaveBeenCalledOnce();
+    expect(
+      screen
+        .getByRole("button", { name: "More input actions" })
+        .getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(value.edit).not.toHaveBeenCalled();
+    expect(value.steer).not.toHaveBeenCalled();
+    expect(value.remove).not.toHaveBeenCalled();
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
+
 it("hides the More popup when the row unmounts while it is open", () => {
   const { hide } = stubPopover();
   const value = fixture();

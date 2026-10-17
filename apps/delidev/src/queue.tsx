@@ -125,7 +125,10 @@ export function QueuedInput({
   // The More menu is a top-layer popup anchored to its button, so opening or
   // dismissing it never moves the neighboring rows or the composer and is not
   // clipped by the scrolling compact list. Selection, focus and dismissal stay
-  // in this component; the hook only presents and positions the popup.
+  // in this component; the hook only presents and positions the popup. It also
+  // closes the menu when the row scrolls completely out of any clipping
+  // ancestor (the compact list or the tray that scrolls it), so a popup never
+  // stays beside another row while its actions still target the hidden one.
   useAnchoredPopup({
     open: menuOpen,
     anchor: moreButton,
