@@ -1,8 +1,16 @@
 import { spawn, spawnSync } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { basename, delimiter, isAbsolute, join, resolve } from "node:path";
 
 export const versions = Object.freeze({
@@ -352,8 +360,8 @@ export async function createProject(destination: string) {
       Code.Arguments,
       "Use a directory name that starts with a lowercase letter and contains lowercase letters, digits or hyphens.",
     );
-  // Reserve the directory exclusively. Never merge with an existing directory or
-  // symlink, and never recursively remove a directory that another actor can edit.
+  // Reserve exclusively and pass its identity to a child with an OS-pinned cwd.
+  // Reusing the pathname for writes would follow a concurrently replaced symlink.
   try {
     await mkdir(directory);
   } catch {
@@ -403,8 +411,34 @@ export async function createProject(destination: string) {
       "# TypeNative source scaffold\n\nThis is a source scaffold, not a runnable native application yet. The React renderer, Blitz host and native development pipeline are not implemented. The SDK is not published. Do not use a browser or JavaScript-engine fallback as native validation.\n\nRun `tn doctor` to inspect selected prerequisites. Run `tn doctor --probe` for a fixed console-program compiler check. Neither command validates this React component. Platform execution and React conformance remain unverified.\n",
   };
   try {
-    for (const [file, content] of Object.entries(files))
-      await writeFile(join(directory, file), content, { flag: "wx" });
+    const identity = await lstat(directory, { bigint: true });
+    if (!identity.isDirectory() || identity.isSymbolicLink())
+      throw new Error("Replaced directory");
+    await new Promise<void>((resolveWrite, rejectWrite) => {
+      const child = spawn(
+        process.execPath,
+        [
+          fileURLToPath(new URL("./scaffold-writer.js", import.meta.url)),
+          String(identity.dev),
+          String(identity.ino),
+        ],
+        {
+          cwd: directory,
+          shell: false,
+          windowsHide: true,
+          stdio: ["pipe", "pipe", "ignore"],
+        },
+      );
+      // The writer checks its pinned directory identity before announcing readiness.
+      child.stdout.once("data", () => child.stdin.end(JSON.stringify(files)));
+      child.stdin.on("error", () => {});
+      child.on("error", rejectWrite);
+      child.on("close", (code) =>
+        code === 0
+          ? resolveWrite()
+          : rejectWrite(new Error("Scaffold writer failed")),
+      );
+    });
   } catch {
     throw new DiagnosticError(
       Code.Create,

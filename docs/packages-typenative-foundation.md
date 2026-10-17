@@ -114,7 +114,7 @@ Until the native renderer pipeline exists, recognized `tn dev`, `tn build` and `
 
 ## Storage
 
-Application data belongs to an application-specific local directory and survives restart and explicit rollback. Key writes must be atomic and same-key/path writes serialized within a process. Reject escaping paths. No automatic expiry, encryption, synchronization or multi-process guarantees. Tool diagnostics must not persist automatically. Scaffolding must not overwrite or remove pre-existing content.
+Application data belongs to an application-specific local directory and survives restart and explicit rollback. Key writes must be atomic and same-key/path writes serialized within a process. Reject escaping paths. No automatic expiry, encryption, synchronization or multi-process guarantees. Tool diagnostics must not persist automatically. Scaffolding must not overwrite or remove pre-existing content. Anchor scaffold writes to the exclusively created directory, validate its identity before writing, and reject a replaced directory. Renaming that directory or replacing its original path with a symlink must not redirect file writes.
 
 ## Security
 
