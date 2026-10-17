@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -61,6 +62,63 @@ func claudeUsageStorageFor(root string) claude.UsageStorage {
 	return claude.UsageStorage{ConfigDir: filepath.Join(root, "claude"), Account: claude.UsageKeychainAccount(), Keychain: claude.SystemUsageKeychain()}
 }
 
+// usageLeaseKeeper retains exclusive usage profile leases whose release was not
+// confirmed. A failed Close leaves the lease open and holding the profile lock;
+// once its runtime is dropped nothing else could retry it, so every later login,
+// renewal and cleanup would find the profile busy until the server restarts.
+// Every release funnels through close, and every acquisition first calls retry.
+type usageLeaseKeeper struct {
+	mu      sync.Mutex
+	pending []usageProfileLease
+}
+
+var strandedUsageLeases usageLeaseKeeper
+
+// close releases lease. A failed release is reported and the lease is retained
+// for retry.
+func (k *usageLeaseKeeper) close(lease usageProfileLease) error {
+	err := lease.Close()
+	if err == nil {
+		return nil
+	}
+	k.mu.Lock()
+	if !slices.Contains(k.pending, lease) {
+		k.pending = append(k.pending, lease)
+	}
+	k.mu.Unlock()
+	return err
+}
+
+// retry closes every retained lease again, dropping the confirmed ones, and
+// returns how many are still unconfirmed.
+func (k *usageLeaseKeeper) retry(logger *slog.Logger) int {
+	k.mu.Lock()
+	pending := k.pending
+	k.pending = nil
+	k.mu.Unlock()
+	var failed []usageProfileLease
+	for _, lease := range pending {
+		if err := lease.Close(); err != nil {
+			failed = append(failed, lease)
+			if logger != nil {
+				logger.Warn("claude_usage_profile_release_retry_failed", "code", domain.SafeError(err).Code)
+			}
+		}
+	}
+	if len(pending) != 0 && logger != nil {
+		logger.Info("claude_usage_profile_release_retried", "retained", len(pending), "unconfirmed", len(failed))
+	}
+	k.mu.Lock()
+	for _, lease := range failed {
+		if !slices.Contains(k.pending, lease) {
+			k.pending = append(k.pending, lease)
+		}
+	}
+	remaining := len(k.pending)
+	k.mu.Unlock()
+	return remaining
+}
+
 type claudeUsageRuntime struct {
 	login   *claude.AuthLogin
 	lease   usageProfileLease
@@ -82,13 +140,17 @@ type usageProfileLease interface{ Close() error }
 
 func openClaudeUsageLogin(ctx context.Context, scope nativeScope, owner domain.ID, logger *slog.Logger) (returned claudeUsageNative, observed string, err error) {
 	runtimeRoot := filepath.Join(scope.Root, "subscription-runtime")
+	strandedUsageLeases.retry(logger)
 	lease, e := acquireAccountProfile(ctx, scope, domain.ClaudeCode, nativeprofile.PurposeUsage)
 	if e != nil {
 		return nil, "", e
 	}
 	defer func() {
 		if err != nil {
-			_ = lease.Close()
+			// A failed release is retained and retried before the next acquisition.
+			if closeErr := strandedUsageLeases.close(lease); closeErr != nil && logger != nil {
+				logger.Warn("claude_usage_profile_release_failed", "code", domain.SafeError(closeErr).Code)
+			}
 		}
 	}()
 	root := lease.Root
@@ -156,7 +218,7 @@ func (r *claudeUsageRuntime) Capture(ctx context.Context) (claudeUsageCapture, e
 // makes a confirmed close final, so repeated calls are safe, and a failure is
 // never masked by a later nil that the lock never confirmed.
 func (r *claudeUsageRuntime) Release() error {
-	return r.lease.Close()
+	return strandedUsageLeases.close(r.lease)
 }
 
 // removeClaudeUsageStorage removes only the native credential storage derived
@@ -167,6 +229,7 @@ func removeClaudeUsageStorage(ctx context.Context, scope nativeScope, logger *sl
 		return subscriptionDenied()
 	}
 	key := nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeUsage, Account: scope.Account}
+	strandedUsageLeases.retry(logger)
 	// Cleanup must never create a profile that did not exist.
 	if _, found, lookupErr := scope.Profiles.Lookup(ctx, key); lookupErr != nil {
 		return lookupErr
@@ -197,7 +260,7 @@ func removeClaudeUsageStorage(ctx context.Context, scope nativeScope, logger *sl
 // caller never reports success for a lock that was not confirmed released; an
 // earlier error stays the reported cause.
 func closeUsageProfileLease(lease usageProfileLease, err error, logger *slog.Logger) error {
-	closeErr := lease.Close()
+	closeErr := strandedUsageLeases.close(lease)
 	if closeErr == nil {
 		return err
 	}
@@ -243,13 +306,17 @@ type claudeUsageRenewalRuntime struct {
 
 func openClaudeUsageRenewal(ctx context.Context, scope nativeScope, owner domain.ID, bundle subscription.ClaudeUsageBundle, logger *slog.Logger) (returned claudeUsageRenewal, observed string, err error) {
 	runtimeRoot := filepath.Join(scope.Root, "subscription-runtime")
+	strandedUsageLeases.retry(logger)
 	lease, e := acquireAccountProfile(ctx, scope, domain.ClaudeCode, nativeprofile.PurposeUsage)
 	if e != nil {
 		return nil, "", e
 	}
 	defer func() {
 		if err != nil {
-			_ = lease.Close()
+			// A failed release is retained and retried before the next acquisition.
+			if closeErr := strandedUsageLeases.close(lease); closeErr != nil && logger != nil {
+				logger.Warn("claude_usage_profile_release_failed", "code", domain.SafeError(closeErr).Code)
+			}
 		}
 	}()
 	root := lease.Root
@@ -304,5 +371,5 @@ func (r *claudeUsageRenewalRuntime) Capture(ctx context.Context) (claudeUsageCap
 // by every later call until the lock release is confirmed, like the login
 // runtime: the lease itself makes a confirmed close final.
 func (r *claudeUsageRenewalRuntime) Release() error {
-	return r.lease.Close()
+	return strandedUsageLeases.close(r.lease)
 }
