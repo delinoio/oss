@@ -4,7 +4,7 @@
 // in-flow dropdown cannot land without an explicit decision. The desktop
 // contract carries the same inventory as a table.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { dropdownInventory, DropdownTreatment } from "./dropdown-inventory";
 
@@ -22,7 +22,16 @@ const markers = [
   /(?<!\[)role="(listbox|menu|combobox)"/,
   /aria-haspopup="(menu|listbox)"/,
 ];
-const marked = readdirSync(source)
+// Nested application modules (for example the QA renderer) are scanned too, so
+// a dropdown-like surface cannot bypass registration by living in a subfolder.
+const sourceFiles = (directory: string): string[] =>
+  readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? sourceFiles(join(directory, entry.name))
+      : [join(directory, entry.name)],
+  );
+const marked = sourceFiles(source)
+  .map((path) => relative(source, path).split(sep).join("/"))
   .filter((file) => file.endsWith(".tsx") && !/\.(test|fixture)\./.test(file))
   .filter((file) => {
     const text = readFileSync(join(source, file), "utf8");

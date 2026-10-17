@@ -158,6 +158,13 @@ export const dropdownInventory: readonly DropdownInventoryEntry[] = [
     evidence: "user-requested expansion of persistent content; not a dropdown",
   },
   {
+    file: "qa/main.tsx",
+    family: "Browser QA native-limits notice",
+    treatment: DropdownTreatment.PersistentDisclosure,
+    evidence:
+      "static QA-only note the reader expands on purpose; not a dropdown and never part of the desktop renderer",
+  },
+  {
     file: "session-browser.tsx",
     family: "Session Browser overflow menu",
     treatment: DropdownTreatment.Exception,
