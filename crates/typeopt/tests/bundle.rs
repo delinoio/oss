@@ -216,6 +216,93 @@ fn does_not_trust_unchecked_javascript_types() {
     assert!(index.contains("o?.v"));
 }
 
+/// A computed key that is a symbol, or a string with a literal start that no
+/// built-in name has, cannot replace a built-in global.
+#[test]
+fn keeps_intrinsics_beside_globals_written_under_symbol_or_prefixed_keys() {
+    let (temp, _) = run(&[(
+        "index.js",
+        r#"const n=42;const id="x";const tag=Symbol.for("k");Object.defineProperty(globalThis,`app${id}`,{value:1,configurable:true});globalThis[tag]=true;globalThis["app"+id+"2"]=2;console.log(String(n)+"!",globalThis[tag]);export{};"#,
+    )]);
+    let index = out(temp.path(), "index.js");
+    assert!(!index.contains("String("), "{index}");
+}
+
+/// A reflection helper bound once and only called is analysed like the
+/// direct calls, so it does not make every built-in replaceable.
+#[test]
+fn keeps_intrinsics_beside_an_aliased_object_assign_that_is_only_called() {
+    let (temp, _) = run(&[(
+        "index.js",
+        r#"const n=42;var assign=Object.assign,box={};function make(a){return assign({},a,{extra:1})}console.log(String(n)+"!",make({v:1}).extra,assign(box,{w:2}).w);export{};"#,
+    )]);
+    let index = out(temp.path(), "index.js");
+    assert!(!index.contains("String("), "{index}");
+}
+
+/// A helper that also escapes as a value may reach unknown code.
+#[test]
+fn keeps_intrinsics_beside_an_aliased_object_assign_that_escapes() {
+    let (temp, _) = run(&[(
+        "index.js",
+        r#"const n=42;var assign=Object.assign;const list=[assign];console.log(String(n)+"!",list.length,assign({},{a:1}).a);export{};"#,
+    )]);
+    let index = out(temp.path(), "index.js");
+    assert!(index.contains("String("), "{index}");
+}
+
+/// An alias call with a spread argument or a `Reflect.set` receiver hides its
+/// real target.
+#[test]
+fn keeps_intrinsics_beside_aliased_writers_with_hidden_targets() {
+    for code in [
+        r#"const n=42;const custom=()=>"patched";const args=[globalThis,{String:custom}];var assign=Object.assign;assign(...args);console.log(String(n)+"!");export{};"#,
+        r#"const n=42;var set=Reflect.set;set({},"String",String,globalThis);console.log(String(n)+"!");export{};"#,
+    ] {
+        let (temp, _) = run(&[("index.js", code)]);
+        let index = out(temp.path(), "index.js");
+        assert!(index.contains("String("), "{index}");
+    }
+}
+
+/// A direct `Reflect.set` with a receiver, an exported alias and an alias call
+/// on an unproven target all keep the conservative record.
+#[test]
+fn keeps_intrinsics_beside_reflect_set_receivers_exported_and_unproven_aliases() {
+    for code in [
+        r#"const n=42;Reflect.set({},"String",String,globalThis);console.log(String(n)+"!");export{};"#,
+        r#"const n=42;const root=globalThis;var assign=Object.assign;assign(root,{String:String});console.log(String(n)+"!");export{};"#,
+        r#"const n=42;export const assign=Object.assign;console.log(String(n)+"!");"#,
+    ] {
+        let (temp, _) = run(&[("index.js", code)]);
+        let index = out(temp.path(), "index.js");
+        assert!(index.contains("String("), "{code}\n{index}");
+    }
+}
+
+/// A patched or unproven `Symbol.for` may return a string key.
+#[test]
+fn keeps_intrinsics_when_symbol_for_may_be_replaced() {
+    let (temp, _) = run(&[(
+        "index.js",
+        r#"const n=42;const box={v:Symbol};box.v.for=()=>"String";globalThis[Symbol.for("k")]=String;console.log(String(n)+"!");export{};"#,
+    )]);
+    let index = out(temp.path(), "index.js");
+    assert!(index.contains("String("), "{index}");
+}
+
+/// A computed key whose literal start is a prefix of a built-in name may
+/// replace that built-in.
+#[test]
+fn keeps_intrinsics_beside_globals_written_under_a_key_that_may_name_them() {
+    let (temp, _) = run(&[(
+        "index.js",
+        r#"const n=42;const tail="ing";globalThis["Str"+tail]=globalThis.String;console.log(String(n)+"!");export{};"#,
+    )]);
+    let index = out(temp.path(), "index.js");
+    assert!(index.contains("String("), "{index}");
+}
+
 /// `// @ts-check` opts a chunk into semantic checking, but bundle types may
 /// be wrong: existing diagnostics do not block optimization.
 #[test]
