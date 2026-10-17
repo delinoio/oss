@@ -343,3 +343,19 @@ test("doctor rejects an explicitly empty ScriptC executable", () => {
     assert.equal(JSON.parse(result.stdout).code, Code.Arguments);
   }
 });
+
+test("create rejects present empty doctor-only options without writing", async (t) => {
+  const root = await temporary(t);
+  for (const args of [
+    ["--target="],
+    ["--target", ""],
+    ["--scriptc="],
+    ["--scriptc", ""],
+  ]) {
+    const destination = join(root, "example");
+    const result = invoke(["create", destination, ...args]);
+    assert.equal(result.status, 1);
+    assert.equal(result.records[0].code, Code.Arguments);
+    assert.equal(existsSync(destination), false);
+  }
+});

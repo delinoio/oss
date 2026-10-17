@@ -79,8 +79,8 @@ try {
     if (
       !destination ||
       positionals.length !== 2 ||
-      values.target ||
-      values.scriptc ||
+      values.target !== undefined ||
+      values.scriptc !== undefined ||
       values.probe
     ) {
       throw new DiagnosticError(
