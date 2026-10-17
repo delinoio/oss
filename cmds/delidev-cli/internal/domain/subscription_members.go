@@ -47,6 +47,9 @@ type SubscriptionMember struct {
 	Revision    uint64                  `json:"revision"`
 	State       SubscriptionMemberState `json:"state"`
 	AdmittedAt  time.Time               `json:"admitted_at"`
+	// DirectStartup records that this member's claimed assignment is a
+	// version-4 direct-startup execution, independent of its siblings.
+	DirectStartup bool `json:"direct_startup,omitempty"`
 }
 
 // MaxSubscriptionMembers bounds the execution members one shared owner retains,
@@ -123,6 +126,7 @@ func (s SubscriptionState) MemberLease(lease ID) (SubscriptionLease, *Subscripti
 			view.OperationID = s.Members[i].OperationID
 			view.Revision = s.Members[i].Revision
 			view.Shared = false
+			view.DirectStartup = s.Members[i].DirectStartup
 			return view, &s.Members[i], true
 		}
 	}

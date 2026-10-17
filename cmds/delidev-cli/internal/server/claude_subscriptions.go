@@ -46,13 +46,60 @@ func subscriptionWorkerLane(tx *store.Tx, machine domain.ID) error {
 	}
 	return nil
 }
+
+// claudeNativeCapability proves the Runner Device negotiated the native Claude
+// subscription capability. Every device-owned Claude lease depends on it,
+// including a direct-startup execution that skips inspected inventory.
+func claudeNativeCapability(m domain.Machine) error {
+	if !slices.Contains(m.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1) {
+		return domain.Fail(domain.Unsupported, "The selected Runner Device does not support Claude subscription authentication.", "Update this Runner Device before starting login or execution.")
+	}
+	return nil
+}
+
+// claudeDirectStartupAdmission is the admission requirement of a claimed
+// version-4 direct-startup Claude assignment. The assignment owns its immutable
+// executable selection, which the original Worker process validates before any
+// input, so the machine-global inspected inventory is not consulted. Only the
+// negotiated native-subscription and startup capabilities are required.
+func claudeDirectStartupAdmission(tx *store.Tx, machine domain.ID) error {
+	_, m, err := activeMachine(tx, machine)
+	if err != nil {
+		return err
+	}
+	if err := claudeNativeCapability(m); err != nil {
+		return err
+	}
+	if !slices.Contains(m.WorkerCapabilities, domain.ExecutionStartupV1) {
+		return domain.Fail(domain.Unsupported, "The selected Runner Device does not support direct execution startup.", "Update this Runner Device before starting execution.")
+	}
+	return nil
+}
+
+// claudeDirectStartupAssignment reports whether the claimed job is a version-4
+// direct-startup Claude execution. Any lookup or decode problem reports false so
+// the historical inspected-installation gate keeps its existing refusal; the
+// complete assignment fences still run afterwards on the same job.
+func claudeDirectStartupAssignment(tx *store.Tx, operation domain.ID, revision uint64) bool {
+	jr, err := tx.Get(domain.JobKind, operation)
+	if err != nil || jr.Revision != revision {
+		return false
+	}
+	job, err := store.Decode[domain.Job](jr)
+	var execution domain.ExecutionJobInput
+	if err != nil || job.Type != domain.ExecuteSessionJob || domain.Decode(job.Input, &execution) != nil || execution.Validate() != nil {
+		return false
+	}
+	return execution.Version == 4 && execution.Startup != nil && execution.Configuration.Harness == domain.ClaudeCode
+}
+
 func claudeSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Installation, error) {
 	_, m, err := activeMachine(tx, machine)
 	if err != nil {
 		return domain.Installation{}, err
 	}
-	if !slices.Contains(m.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1) {
-		return domain.Installation{}, domain.Fail(domain.Unsupported, "The selected Runner Device does not support Claude subscription authentication.", "Update this Runner Device before starting login or execution.")
+	if err := claudeNativeCapability(m); err != nil {
+		return domain.Installation{}, err
 	}
 	var found *domain.Installation
 	for i := range m.Installations {
@@ -343,6 +390,21 @@ func wireNativeSubscriptionDiagnostic(d *domain.NativeSubscriptionDiagnostic) *p
 func claudeLifecycleLeaseHeld(st *domain.SubscriptionState) bool {
 	return st.Lease != nil && st.Pending != nil && !st.Lease.Shared && st.Lease.OperationID == st.Pending.ID && st.Lease.Action == st.Pending.Action
 }
+
+// claudeLeaseDirectStartup reports whether the stored owner lease and every
+// retained member belong to v4 direct-startup assignments. One historical or
+// lifecycle holder keeps the whole set behind the inspected-installation gate.
+func claudeLeaseDirectStartup(st *domain.SubscriptionState) bool {
+	if st == nil || st.Lease == nil || !st.Lease.DirectStartup || st.Lease.Action != domain.SubscriptionExecute {
+		return false
+	}
+	for _, member := range st.Members {
+		if !member.DirectStartup {
+			return false
+		}
+	}
+	return true
+}
 func (s *Service) claudeSubscriptionLease(ctx context.Context, tx *store.Tx, id, lease, machine, instance domain.ID) (store.Record, domain.Account, error) {
 	r, a, _, _, err := s.claudeSubscriptionLeaseView(ctx, tx, id, lease, machine, instance, false)
 	if err == nil && a.Subscription.Lease.ID != lease {
@@ -385,6 +447,18 @@ func (s *Service) claudeSubscriptionLeaseView(ctx context.Context, tx *store.Tx,
 	if err := currentInstance(tx, machine, instance); err != nil {
 		return r, a, view, member, err
 	}
+	// A lease granted for a v4 direct-startup assignment never required the
+	// inspected inventory, so its readback must not reintroduce it.
+	if view.DirectStartup {
+		_, m, err := activeMachine(tx, machine)
+		if err == nil {
+			err = claudeNativeCapability(m)
+		}
+		if err != nil {
+			return r, a, view, member, err
+		}
+		return r, a, view, member, nil
+	}
 	if _, err := claudeSubscriptionInstallation(tx, machine); err != nil {
 		return r, a, view, member, err
 	}
@@ -422,9 +496,9 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 	// sharedOwner founds a device-owned Claude account owner and joinedOwner
 	// admits one more execution member. Both require the negotiated
 	// ClaudeDeviceOwnedMembersV1 capability; every other holder stays exclusive.
-	sharedOwner, joinedOwner := false, false
+	sharedOwner, joinedOwner, directStartup := false, false, false
 	result, err := s.Store.Mutate(ctx, input.Lease, "claude.subscription.take", input, func(tx *store.Tx) (any, error) {
-		sharedOwner, joinedOwner = false, false
+		sharedOwner, joinedOwner, directStartup = false, false, false
 		r, a, err := claudeSubscriptionAccount(tx, input.Account, 0)
 		if err != nil {
 			return nil, err
@@ -461,7 +535,15 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		if err := currentInstance(tx, input.Machine, input.Instance); err != nil {
 			return nil, err
 		}
-		if _, err := claudeSubscriptionInstallation(tx, input.Machine); err != nil {
+		// The claimed v4 assignment, not machine-global inventory, decides whether
+		// inspected installation evidence is required for an Execute lease. Login,
+		// Refresh, Logout and historical execution keep the inventory requirement.
+		directAssignment := action == domain.SubscriptionExecute && claudeDirectStartupAssignment(tx, input.Operation, input.Revision)
+		if directAssignment {
+			if err := claudeDirectStartupAdmission(tx, input.Machine); err != nil {
+				return nil, err
+			}
+		} else if _, err := claudeSubscriptionInstallation(tx, input.Machine); err != nil {
 			return nil, err
 		}
 		profileOwned := st.NativeProfileID != "" && st.OwnerMachineID == input.Machine
@@ -520,6 +602,10 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 			if canceled, err := tx.JobCancellationRequested(jr.ID); err != nil || canceled {
 				return nil, subscriptionDenied()
 			}
+			if directAssignment != (execution.Version == 4 && execution.Startup != nil) {
+				return nil, subscriptionDenied()
+			}
+			directStartup = directAssignment
 			if sharedCapable {
 				if st.Lease == nil {
 					sharedOwner = true
@@ -551,11 +637,11 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		}
 		now := time.Now().UTC()
 		if joinedOwner {
-			st.AdmitMember(domain.SubscriptionMember{LeaseID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, State: domain.SubscriptionMemberRunning, AdmittedAt: now})
+			st.AdmitMember(domain.SubscriptionMember{LeaseID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, State: domain.SubscriptionMemberRunning, AdmittedAt: now, DirectStartup: directStartup})
 		} else {
-			st.Lease = &domain.SubscriptionLease{ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: st.Generation, StartedAt: now, Shared: sharedOwner}
+			st.Lease = &domain.SubscriptionLease{ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: st.Generation, StartedAt: now, Shared: sharedOwner, DirectStartup: directStartup}
 			if sharedOwner {
-				st.Members = []domain.SubscriptionMember{{LeaseID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, State: domain.SubscriptionMemberRunning, AdmittedAt: now}}
+				st.Members = []domain.SubscriptionMember{{LeaseID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, State: domain.SubscriptionMemberRunning, AdmittedAt: now, DirectStartup: directStartup}}
 			}
 		}
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
@@ -575,7 +661,9 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 	var installation domain.Installation
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		_, a, view, _, err = s.claudeSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, joinedOwner)
-		if err == nil {
+		// The lease view already proved the capability for a direct-startup lease;
+		// only historical execution and lifecycle leases return inspected evidence.
+		if err == nil && !view.DirectStartup {
 			installation, err = claudeSubscriptionInstallation(tx, input.Machine)
 		}
 		return err
@@ -593,13 +681,18 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	raw, _ := json.Marshal(installation)
+	// A direct-startup lease carries no inspected installation: the Worker resolves
+	// the executable from the claimed assignment's own startup selection.
+	var raw []byte
+	if !view.DirectStartup {
+		raw, _ = json.Marshal(installation)
+	}
 	st := a.Subscription
 	owner := domain.ID("")
 	if joinedOwner {
 		owner = st.Lease.ID
 	}
-	s.logger.InfoContext(ctx, "claude_subscription_lease_granted", "operation_id", input.Operation, "lease_id", input.Lease, "action", action, "shared_owner", sharedOwner, "joined_owner", joinedOwner, "owner_lease_id", owner)
+	s.logger.InfoContext(ctx, "claude_subscription_lease_granted", "operation_id", input.Operation, "lease_id", input.Lease, "action", action, "shared_owner", sharedOwner, "joined_owner", joinedOwner, "owner_lease_id", owner, "direct_startup", view.DirectStartup)
 	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: string(input.Lease), GenerationId: string(st.Generation), LeaseRevision: view.Revision, InstallationJson: raw, NativeProfileId: string(st.NativeProfileID), OwnerLeaseId: string(owner)}), nil
 }
 func (s *Service) publishClaudeSubscriptionProgress(ctx context.Context, req *connect.Request[pb.PublishSubscriptionProgressRequest]) (*connect.Response[pb.PublishSubscriptionProgressResponse], error) {
@@ -907,7 +1000,17 @@ func (s *Service) settleClaudeOwner(ctx context.Context, tx *store.Tx, input cla
 		if l == nil || l.ID != input.Lease || l.MachineID != input.Machine || l.InstanceID != input.Instance || actor.DeviceID != l.DeviceID || st.OwnerMachineID != input.Machine || st.NativeProfileID == "" {
 			return nil, subscriptionDenied()
 		}
-		if _, err := claudeSubscriptionInstallation(tx, input.Machine); err != nil {
+		// Recovery cleanup of a lost direct-startup execution never depended on
+		// inspected inventory. Every other lease keeps the inventory requirement.
+		if claudeLeaseDirectStartup(st) {
+			_, machine, machineErr := activeMachine(tx, input.Machine)
+			if machineErr == nil {
+				machineErr = claudeNativeCapability(machine)
+			}
+			if machineErr != nil {
+				return nil, machineErr
+			}
+		} else if _, err := claudeSubscriptionInstallation(tx, input.Machine); err != nil {
 			return nil, err
 		}
 		// Only original-device cleanup can cross a restart fence. This never

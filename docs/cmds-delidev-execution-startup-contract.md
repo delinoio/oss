@@ -93,6 +93,16 @@ Claude execution opens its native profile with the direct-startup identity
 either an inspected installation at or above the baseline or that digest-pinned
 identity, and any version the original process reports is only bounded
 metadata, never a numeric gate. Login keeps requiring an inspected version.
+Server admission of the device-owned Claude Execute lease follows the claimed
+assignment: a claimed v4 assignment needs only the negotiated native Claude and
+execution-startup capabilities and never the Runner Device's inspected
+installation inventory, so empty or unverified inventory cannot block its Take.
+The granted lease durably records that direct-startup binding, and lease
+readback, Finish and recovery cleanup consult it instead of the inventory; the
+Take response then carries no installation. Historical v1/v2/v3 execution,
+Login, Refresh and Logout keep requiring a verified inspected installation, and
+every actor, instance, ownership, generation, job revision, cancellation,
+contention, shared-member and recovery fence is unchanged.
 A direct-startup execution profile runs no standalone `--version` or
 auth-status child before the original execution process: that process is the
 only validation. An inspected installation keeps both pre-execution probes.
