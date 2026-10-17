@@ -42,7 +42,8 @@ type claudeUsageNative interface {
 	// Capture reads the newly created credential and identity from the joined
 	// profile. The caller clears the returned bundle.
 	Capture(context.Context) (claudeUsageCapture, error)
-	// Release drops the exclusive profile lease. It is safe to call repeatedly.
+	// Release drops the exclusive profile lease. It is safe to call repeatedly:
+	// a failed release is retried by the next call until it is confirmed.
 	Release() error
 }
 
@@ -62,7 +63,7 @@ func claudeUsageStorageFor(root string) claude.UsageStorage {
 
 type claudeUsageRuntime struct {
 	login   *claude.AuthLogin
-	lease   *nativeprofile.Lease
+	lease   usageProfileLease
 	config  claude.AuthConfig
 	storage claude.UsageStorage
 	owner   domain.ID
@@ -70,10 +71,14 @@ type claudeUsageRuntime struct {
 
 	closeOnce sync.Once
 	closeErr  error
-	leaseOnce sync.Once
 	joined    bool
 	mu        sync.Mutex
 }
+
+// usageProfileLease is the exclusive profile lease of the usage login.
+// nativeprofile.Lease implements it: a Close that failed is not final and may be
+// retried until the lock release is confirmed.
+type usageProfileLease interface{ Close() error }
 
 func openClaudeUsageLogin(ctx context.Context, scope nativeScope, owner domain.ID, logger *slog.Logger) (returned claudeUsageNative, observed string, err error) {
 	runtimeRoot := filepath.Join(scope.Root, "subscription-runtime")
@@ -146,10 +151,12 @@ func (r *claudeUsageRuntime) Capture(ctx context.Context) (claudeUsageCapture, e
 	return claudeUsageCapture{Bundle: bundle, Identity: identity}, nil
 }
 
+// Release drops the exclusive profile lease. A failed close is reported again
+// by every later call until the lock release is confirmed: the lease itself
+// makes a confirmed close final, so repeated calls are safe, and a failure is
+// never masked by a later nil that the lock never confirmed.
 func (r *claudeUsageRuntime) Release() error {
-	var err error
-	r.leaseOnce.Do(func() { err = r.lease.Close() })
-	return err
+	return r.lease.Close()
 }
 
 // removeClaudeUsageStorage removes only the native credential storage derived
