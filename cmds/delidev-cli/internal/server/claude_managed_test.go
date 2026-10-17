@@ -1273,6 +1273,76 @@ func TestManagedClaudeRestartedLeaseKeepsQueuedLogoutRecoverableAfterWorkerClean
 	}
 }
 
+// Restart recovery settles an interrupted logout the way the original logout
+// does: the linked usage connection is retired and its credential deleted, so
+// the disconnected account passes validation and recovery can commit.
+func TestManagedClaudeLogoutRecoveryRetiresLinkedUsageAuthority(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.connect()
+	linkedAt := time.Now().UTC().Add(-time.Hour)
+	observed := time.Now().UTC().Add(-time.Minute)
+	usageCredential := domain.NewID()
+	commitment := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claude.usage.linked", nil, func(tx *store.Tx) (any, error) {
+		r, account, err := managedClaudeAccount(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		account.Subscription.ClaudeUsage = &domain.ClaudeServerUsageState{
+			Connection: domain.ClaudeUsageLinked, Generation: domain.NewID(), CredentialID: usageCredential, Published: true, LinkedAt: &linkedAt,
+			Identity:      &domain.ClaudeUsageIdentity{Email: "person@example.com", Commitment: commitment},
+			LastSuccessAt: &observed,
+			Windows:       []domain.ClaudeUsageWindowEvidence{{ID: domain.ClaudeUsageFiveHour, Remaining: 0.5, ObservedAt: observed}},
+		}
+		if err := account.Validate(); err != nil {
+			return nil, err
+		}
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", account)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageRef := credentials.Ref{Owner: f.input.AccountID, ID: usageCredential, Purpose: credentials.ClaudeUsage}
+	f.secrets.mu.Lock()
+	f.secrets.values[usageRef] = []byte("synthetic-usage-bundle")
+	f.secrets.mu.Unlock()
+	a := f.prepareExecution(domain.ManagedClaudeExecutionV1)
+	lease, err := f.take(a, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	logout, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.service.subscriptionEpoch = domain.NewID()
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.initializeServerSubscriptions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.finishLease(a, lease, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, domain.ID(logout.OperationId)); err != nil {
+		t.Fatalf("logout recovery could not commit the disconnected account: %v", err)
+	}
+	_, account := f.record()
+	f.secrets.mu.Lock()
+	_, usageKept := f.secrets.values[usageRef]
+	f.secrets.mu.Unlock()
+	usage := account.Subscription.ClaudeUsage
+	if account.Connection != nil || account.Subscription.RecoveryRequired || usage == nil || usage.Reading() || usage.Connection != domain.ClaudeUsageReconnectRequired || usage.Published || usage.CredentialID != "" || !slices.Contains(usage.RetiredCredentials, usageCredential) || len(usage.Windows) != 1 {
+		t.Fatalf("recovery left live usage authority or lost cleanup evidence: %+v", usage)
+	}
+	if usageKept {
+		t.Fatal("recovery did not delete the retired usage credential")
+	}
+	if err := account.Validate(); err != nil {
+		t.Fatalf("the recovered account is invalid: %v", err)
+	}
+}
+
 func TestManagedClaudeLogoutDeadlineStartsAfterTheOriginalLeaseClears(t *testing.T) {
 	f := newManagedClaudeFixture(t)
 	generation := f.connect()

@@ -1054,6 +1054,36 @@ func (s *Service) markManagedClaudeRecovery(id, operation domain.ID, diagnostic 
 	return err
 }
 
+// retireRecoveredClaudeUsage retires the usage section of a managed Claude
+// account whose logout or restored generation recovery is about to disconnect
+// it. The transition is the same shared domain transition the original logout
+// applies, so it is idempotent on replay. An account without a usage section is
+// left unchanged. The caller holds the account gate and has already joined the
+// original native runtime.
+func (s *Service) retireRecoveredClaudeUsage(ctx context.Context, id, operation domain.ID) error {
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "claude.managed.usage.retired", struct{ Account, Operation domain.ID }{id, operation}, func(tx *store.Tx) (any, error) {
+		r, a, err := managedClaudeAccount(tx, id, 0)
+		if err != nil {
+			return nil, err
+		}
+		if !managedClaudeNeedsRecovery(a) || a.Subscription.ServerOperation.ID != operation {
+			return nil, subscriptionDenied()
+		}
+		if a.Subscription.ClaudeUsage == nil {
+			return struct{}{}, nil
+		}
+		if err := domain.RetireClaudeUsage(&a); err != nil {
+			return nil, err
+		}
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return struct{}{}, err
+	})
+	if err == nil {
+		s.logger.InfoContext(ctx, "claude_managed_usage_retired", "account_id", id, "operation_id", operation)
+	}
+	return err
+}
+
 // recoverManagedClaude finishes an interrupted operation after a restart. A
 // login only reconciles the old private runtime and never relaunches or replays
 // anything; a logout only completes its explicit revocation and vault removal.
@@ -1127,6 +1157,12 @@ func (s *Service) recoverManagedClaude(parent context.Context, id, operation dom
 	// retained credentials. An interrupted first login never published a
 	// generation, so its retained files and references stay.
 	if restored || o.Action == domain.SubscriptionLogout {
+		// The recovered account is about to be disconnected, so its linked usage
+		// connection is retired first: its credential then belongs to the retired
+		// list and the removal below deletes it with the other references.
+		if err := s.retireRecoveredClaudeUsage(ctx, id, operation); err != nil {
+			return err
+		}
 		if err := s.removeAccountCredentials(ctx, id, operation, true); err != nil {
 			return err
 		}
@@ -1153,6 +1189,9 @@ func (s *Service) recoverManagedClaude(parent context.Context, id, operation dom
 			a.ConfirmedExhausted = false
 			st.Generation = ""
 			st.IdentityCommitment = ""
+			if err := domain.RetireClaudeUsage(&a); err != nil {
+				return nil, err
+			}
 		} else if o.Action == domain.SubscriptionLogin {
 			st.ServerOperation.State = domain.SubscriptionFailed
 			if st.ServerOperation.ClaudeDiagnostic == nil {
@@ -1168,6 +1207,11 @@ func (s *Service) recoverManagedClaude(parent context.Context, id, operation dom
 			a.ConfirmedExhausted = false
 			st.Generation = ""
 			st.IdentityCommitment = ""
+			// A disconnected account cannot keep live usage authority, exactly as
+			// when the original logout settles.
+			if err := domain.RetireClaudeUsage(&a); err != nil {
+				return nil, err
+			}
 		}
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return struct{}{}, err
