@@ -5,6 +5,7 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -147,6 +148,33 @@ test("pre-commit preserves unstaged edits in a partially staged file", (t) => {
   );
   assert.equal(f.git("diff", "--cached", "--name-only"), "");
   assert.equal(f.git("diff", "--name-only"), "partial.ts");
+});
+
+test("pre-commit rejects a conflicting unstaged edit and preserves both versions", (t) => {
+  const f = fixture(t);
+  f.write("conflict.ts", "const value = { answer: 1 };\n");
+  const head = f.commit();
+  f.installHook();
+  const staged = "const value={answer:42}\n";
+  const unstaged = "const value={answer:43}\n";
+  f.write("conflict.ts", staged);
+  f.git("add", "conflict.ts");
+  f.write("conflict.ts", unstaged);
+  const result = spawnSync(
+    "git",
+    ["commit", "--quiet", "-m", "format conflicting content"],
+    { cwd: f.cwd, env: f.env, encoding: "utf8" },
+  );
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.equal(f.git("rev-parse", "HEAD"), head);
+  assert.equal(readFileSync(join(f.cwd, "conflict.ts"), "utf8"), unstaged);
+  assert.equal(f.git("show", ":conflict.ts"), staged.trim());
+  assert.equal(f.git("stash", "list"), "");
+  const info = join(f.cwd, f.git("rev-parse", "--git-path", "info"));
+  assert.deepEqual(
+    readdirSync(info).filter((name) => name.endsWith(".patch")),
+    [],
+  );
 });
 
 test("pre-commit formats initial commits when CI is explicitly false", (t) => {
