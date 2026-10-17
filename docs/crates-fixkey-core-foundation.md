@@ -58,7 +58,7 @@ Layout reconstruction:
 
 - Reconstruct each completed word from its key sequence under every enabled language, including the word's current representation. Support English-to-Korean and Korean-to-English. Preserve the casing implied by the key sequence, including shifted keys.
 - Process directly typed words only after IME composition has completed.
-- Evaluate at spaces and punctuation boundaries. Enter and Tab never trigger evaluation. Separators that can occur inside URLs or email addresses (such as `.`, `/`, `:`, `@`, `?`, `#` and `_`) never trigger evaluation on their own: retain the pending token until the following character or token end allows URL, email and mixed-script classification, and skip the whole token when it is excluded.
+- Evaluate at spaces and punctuation boundaries. Enter and Tab never trigger evaluation. Separators that can occur inside URLs or email addresses (such as `.`, `/`, `:`, `@`, `?`, `#` and `_`) never trigger evaluation on their own: retain the pending token until the following character or token end allows URL, email and mixed-script classification, and skip the whole token when it is excluded. When a held separator is followed by Enter, Tab, a focus change or a caret change, classify the pending token at that point: if it is not an excluded token, evaluate it once as a trailing-punctuation word against the still-matching captured context (Enter and Tab themselves are never the trigger and are passed through unchanged); otherwise discard it.
 - Apostrophes and hyphens between letters are internal word characters. Delay their boundary decision until the next character shows whether they are internal or trailing punctuation.
 - Replace only the word and preserve the boundary character. Never change the OS input language.
 - Exclude pasted, existing and programmatically inserted text, numeric, emoji, URL, email and mixed-script tokens. Code editors and terminals follow the same rules; eligibility never overrides accessibility safety checks.
@@ -81,7 +81,7 @@ Correction and undo state:
 - Keep one active correction context per user session. Never share input state across users or applications.
 - Before applying a result, verify that target, caret, selection and relevant text still match the captured context. Discard stale results after edits, caret, selection or focus changes.
 - Immediately after an automatic correction, the first Backspace restores the original word and preserves the boundary character. Later Backspace presses behave normally. The restored word is not recorrected.
-- Clear transient state when target, caret or selection changes, the next word starts, correction is paused or permission is lost. Keep only the state needed for the current word and immediate restoration, in memory only.
+- Clear transient state when target, caret or selection changes, except for the caret and text transition that the engine's own replacement causes (including a change in word length), which is recorded as the expected post-replacement state; any other external edit or caret movement clears the state, the next word starts, correction is paused or permission is lost. Keep only the state needed for the current word and immediate restoration, in memory only.
 - Do not retry failed corrections automatically. On partial replacement failure, restore the original only when the current target and text still match the expected intermediate state; otherwise stop without further writes.
 
 Accessibility adapters:

@@ -71,7 +71,7 @@ Use `tracing` structured events without input content: errors, processing durati
 
 - Frontend: `pnpm test` from the frontend directory. Rust: `cargo test` from the repository root, plus applicable formatting and build checks.
 - Required automated tests: settings persistence failures, empty exclusion lists, localization, keyboard focus, accessible states, light and dark presentation; shortcut registration failure, candidate navigation, invalid-candidate labeling, Esc and target invalidation; log redaction, rotation, retention and deletion, and absence of input persistence or telemetry; mocked update checks, scheduling, offline behavior, consent, download failure, invalid signatures, installation failure and settings preservation.
-- Perform no actual OS or application interaction tests and no installation-package inspection. Record them as unperformed in pull requests, issues and CI artifacts together with source revision, commands and results.
+- Mocks, fixtures and builds do not establish actual OS or application behavior (accessibility reads and writes, global shortcuts, signing, package installation). Automated tests and package inspection are not substitutes for native acceptance. Native acceptance on each target platform is a separate activity required before claiming verified compatibility or shipping a release. Record every native check that was not performed in pull requests, issues and CI artifacts together with source revision, commands and results, and never claim compatibility for it.
 
 ## Dependencies and Integrations
 
