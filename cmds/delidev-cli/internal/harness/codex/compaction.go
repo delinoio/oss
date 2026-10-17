@@ -443,6 +443,10 @@ func (c *Client) contextTurnPagesLocked(ctx context.Context, direction string, c
 					if _, _, err := decodeFunctionOutput(rawItem); err != nil {
 						return nil, compactionUncertain()
 					}
+				case "mcpToolCall", "webSearch":
+					if !settledExternalTool(rawItem, item.Type) {
+						return nil, compactionUncertain()
+					}
 				case "dynamicToolCall":
 					if _, _, err := decodeDynamicTool(rawItem, true); err != nil {
 						return nil, compactionUncertain()

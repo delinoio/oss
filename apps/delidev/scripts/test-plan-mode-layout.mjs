@@ -212,9 +212,10 @@ try {
             "Space toggle sends no request",
           );
           if (surface !== "existing session") {
-            const first = surface === "New session" ? 1 : 0;
-            await choose(root, first);
-            await choose(root, first + 1);
+            // New session's Project selector is an expanded listbox, not a
+            // combobox, so Agent Worker and Runs on lead on both surfaces.
+            await choose(root, 0);
+            await choose(root, 1);
           }
           const submit = root.locator(
             surface === "existing session"

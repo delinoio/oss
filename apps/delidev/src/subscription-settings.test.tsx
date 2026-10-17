@@ -913,3 +913,92 @@ it("keeps the busy cleanup control Danger while pending", () => {
   expectTone(button, danger);
   expect(button.getAttribute("aria-disabled")).toBe("true");
 });
+
+const harnessByBrand: [SubscriptionBrand, string][] = [
+  [SubscriptionBrand.ChatGPT, "codex"],
+  [SubscriptionBrand.Claude, "claude-code"],
+  [SubscriptionBrand.Grok, "grok-build"],
+  [SubscriptionBrand.OpenCodeGo, "opencode"],
+];
+
+it("shows the mapped harness artwork in connected rows and service rows", () => {
+  const accounts = harnessByBrand.map(([brand, harness], index) => ({
+    ...row("chatgpt"),
+    id: `account-${index}`,
+    alias: `Account ${harness}`,
+    brand,
+  }));
+  const { container } = render(view(accounts));
+  for (const [brand, harness] of harnessByBrand) {
+    const account = screen.getByRole("article", {
+      name: `Account ${harness}`,
+    });
+    const mark = account.querySelector(".subscription-mark")!;
+    expect(mark.getAttribute("aria-hidden")).toBe("true");
+    const artwork = mark.querySelectorAll("[data-harness]");
+    expect(artwork).toHaveLength(1);
+    expect(artwork[0].getAttribute("data-harness")).toBe(harness);
+    expect(artwork[0].getAttribute("aria-hidden")).toBe("true");
+    expect(mark.classList.contains(`subscription-mark-${brand}`)).toBe(true);
+    expect(mark.querySelector("img")).toBeNull();
+  }
+  const services = container.querySelectorAll(".subscription-provider-card");
+  expect(
+    Array.from(services).map((card) =>
+      card
+        .querySelector(".subscription-mark [data-harness]")
+        ?.getAttribute("data-harness"),
+    ),
+  ).toEqual(harnessByBrand.map(([, harness]) => harness));
+  expect(
+    Array.from(services).map((card) => card.querySelector("h3")?.textContent),
+  ).toEqual(["ChatGPT", "Claude", "Grok", "OpenCode Go"]);
+});
+
+it("keeps the generic fallback for an unknown or absent brand", () => {
+  const unknown = {
+    ...row("chatgpt"),
+    id: "unknown",
+    alias: "Mystery",
+    brand: "not-a-brand" as unknown as SubscriptionBrand,
+  };
+  const absent = {
+    ...row("chatgpt"),
+    id: "absent",
+    alias: "Absent",
+    brand: undefined,
+  };
+  render(view([unknown, absent]));
+  for (const name of ["Mystery", "Absent"]) {
+    const mark = screen
+      .getByRole("article", { name })
+      .querySelector(".subscription-mark")!;
+    expect(mark.querySelector("[data-harness]")).toBeNull();
+    expect(mark.querySelector("svg")).not.toBeNull();
+  }
+});
+
+it("selects artwork from the explicit brand only, never the alias or provider name", () => {
+  const renamed = {
+    ...row("chatgpt"),
+    id: "renamed",
+    alias: "Claude Code Grok OpenCode",
+    providerName: "Grok Build",
+    brand: SubscriptionBrand.ChatGPT,
+  };
+  const { rerender } = render(view([renamed]));
+  const artwork = () =>
+    screen
+      .getByRole("article", { name: renamed.alias })
+      .querySelector(".subscription-mark [data-harness]")
+      ?.getAttribute("data-harness");
+  expect(artwork()).toBe("codex");
+  renamed.alias = "Renamed to opencode";
+  rerender(view([{ ...renamed }]));
+  expect(
+    screen
+      .getByRole("article", { name: renamed.alias })
+      .querySelector(".subscription-mark [data-harness]")
+      ?.getAttribute("data-harness"),
+  ).toBe("codex");
+});

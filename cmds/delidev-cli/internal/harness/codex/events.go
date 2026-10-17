@@ -660,6 +660,16 @@ func (c *Client) observeMessageLocked(ctx context.Context, native nativewire.Eve
 	}
 	message := &Message{}
 	switch kind {
+	case "webSearch":
+		if !c.dynamicToolsEnabled || c.sidechat != "" || c.codeReview != nil && c.codeReview.childTurn == params.TurnID {
+			return privateNative(native), nil
+		}
+		return c.observeWebToolLocked(ctx, native, params.TurnID, params.Item)
+	case "mcpToolCall":
+		if !c.dynamicToolsEnabled || c.sidechat != "" || c.codeReview != nil && c.codeReview.childTurn == params.TurnID {
+			return privateNative(native), nil
+		}
+		return c.observeMCPToolLocked(ctx, native, params.TurnID, params.Item)
 	case "dynamicToolCall":
 		if !c.dynamicToolsEnabled || c.sidechat != "" {
 			return privateNative(native), nil

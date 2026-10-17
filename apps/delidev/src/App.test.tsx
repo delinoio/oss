@@ -997,11 +997,9 @@ it(
     const original = within(
       screen.getByRole("region", { name: "What would you like to work on?" }),
     );
-    await waitScrollChoices(
-      original.getByRole("combobox", { name: "Project" }),
-    );
+    await waitScrollChoices(original.getByRole("listbox", { name: "Project" }));
     await chooseScrollOption(
-      original.getByRole("combobox", { name: "Project" }),
+      original.getByRole("listbox", { name: "Project" }),
       project.id,
     );
     fireEvent.change(original.getByLabelText("First message"), {
@@ -1105,7 +1103,7 @@ it(
     });
     fireEvent.click(screen.getByRole("button", { name: "New session" }));
     expect(
-      scrollChoiceValue(original.getByRole("combobox", { name: "Project" })),
+      scrollChoiceValue(original.getByRole("listbox", { name: "Project" })),
     ).toBe(project.id);
     expect(
       (original.getByLabelText("First message") as HTMLTextAreaElement).value,
@@ -1365,7 +1363,7 @@ it.each([false, true])(
     expect(
       scrollChoiceValue(
         within(document.querySelector(".new-session-page")!).getByRole(
-          "combobox",
+          "listbox",
           { name: "Project" },
         ),
       ),
@@ -1448,7 +1446,7 @@ it.each([false, true])(
     expect(
       scrollChoiceValue(
         within(document.querySelector(".new-session-page")!).getByRole(
-          "combobox",
+          "listbox",
           { name: "Project" },
         ),
       ),
@@ -1493,7 +1491,7 @@ it.each([false, true])(
     expect(prompt).toHaveProperty("value", "Retain this task");
     await chooseScrollOption(
       within(document.querySelector(".new-session-page")!).getByRole(
-        "combobox",
+        "listbox",
         { name: "Project" },
       ),
       first.id,
@@ -1501,7 +1499,7 @@ it.each([false, true])(
     await act(() => i18n.changeLanguage("ko"));
     expect(
       document.querySelector<HTMLElement>(
-        ".new-session-content > .resource-choice [role=combobox]",
+        ".new-session-content > .resource-choice [role=listbox]",
       )!.dataset.value,
     ).toBe(first.id);
     await act(() => i18n.changeLanguage("en"));
@@ -1517,7 +1515,7 @@ it.each([false, true])(
     expect(
       scrollChoiceValue(
         within(document.querySelector(".new-session-page")!).getByRole(
-          "combobox",
+          "listbox",
           { name: "Project" },
         ),
       ),
@@ -1528,7 +1526,7 @@ it.each([false, true])(
     expect(
       scrollChoiceValue(
         within(document.querySelector(".new-session-page")!).getByRole(
-          "combobox",
+          "listbox",
           { name: "Project" },
         ),
       ),
@@ -1588,7 +1586,7 @@ it("locks shortcuts for pending and uncertain creates and retries the unchanged 
   expect(
     scrollChoiceValue(
       within(document.querySelector(".new-session-page")!).getByRole(
-        "combobox",
+        "listbox",
         { name: "Project" },
       ),
     ),
@@ -1614,7 +1612,7 @@ it("locks shortcuts for pending and uncertain creates and retries the unchanged 
   expect(
     scrollChoiceValue(
       within(document.querySelector(".new-session-page")!).getByRole(
-        "combobox",
+        "listbox",
         { name: "Project" },
       ),
     ),
@@ -1653,7 +1651,7 @@ it("locks shortcuts during Local proof and preserves the original project on com
   expect(
     scrollChoiceValue(
       within(document.querySelector(".new-session-page")!).getByRole(
-        "combobox",
+        "listbox",
         { name: "Project" },
       ),
     ),
@@ -1803,6 +1801,89 @@ it.each(["New session", "New Chat"])(
     ).toHaveProperty(
       "value",
       `${surface === "New session" ? "New Chat" : "New session"} independent draft`,
+    );
+    expect(value.saveConfiguration).not.toHaveBeenCalled();
+    expect(value.creates).not.toHaveBeenCalled();
+  },
+  fullShellTimeoutMs,
+);
+
+it.each([
+  ["New session", false],
+  ["New session", true],
+  ["New Chat", false],
+  ["New Chat", true],
+])(
+  "opens Harness from the populated Agent Worker dropdown New action on %s (keyboard: %s) and preserves the draft",
+  async (surface, keyboard) => {
+    const value = fixture([], [], [], false, true);
+    value.status.mockResolvedValue({
+      version: "0.1.0",
+      protocolVersion: 2,
+      capabilities: [
+        SystemCapability.AUTOMATIC_TITLES_V1,
+        SystemCapability.INLINE_WORKER_MODELS_V1,
+      ],
+    });
+    render(<App transport={value.transport} />);
+    fireEvent.click(
+      (await screen.findAllByRole("button", { name: surface }))[0],
+    );
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: "First message" }),
+      { target: { value: `${surface} populated draft` } },
+    );
+    await chooseScrollOption(
+      screen.getByRole("combobox", { name: "Runs on" }),
+      value.machine.id,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
+    const picker = screen.getByRole("combobox", { name: "Agent Worker" });
+    // Select the existing Worker first so the action is also proven with a selection.
+    if (keyboard) await chooseScrollOption(picker, value.agent.id);
+    await waitFor(() => expect(picker).toHaveProperty("disabled", false));
+    fireEvent.click(picker);
+    const action = await screen.findByRole("option", {
+      name: "New agent worker",
+    });
+    expect(action.textContent).toBe("New");
+    expect(action.dataset.pickerId).toBeUndefined();
+    expect(action).toBe(
+      document.getElementById(picker.getAttribute("aria-controls") ?? "")!
+        .lastElementChild,
+    );
+    if (keyboard) {
+      fireEvent.keyDown(picker, { key: "End" });
+      expect(picker.getAttribute("aria-activedescendant")).toBe(action.id);
+      fireEvent.keyDown(picker, { key: "Enter" });
+    } else {
+      fireEvent.click(action);
+    }
+    const wizard = await screen.findByRole("dialog", {
+      name: "New Agent Worker",
+    });
+    expect(
+      await within(wizard).findByRole("heading", { name: "Harness" }),
+    ).toBeTruthy();
+    expect(value.saveConfiguration).not.toHaveBeenCalled();
+    expect(value.creates).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(wizard).getByRole("button", { name: "Close New Agent Worker" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+    fireEvent.click(screen.getAllByRole("button", { name: surface })[0]);
+    expect(
+      screen.getByRole("textbox", { name: "First message" }),
+    ).toHaveProperty("value", `${surface} populated draft`);
+    expect(
+      scrollChoiceValue(screen.getByRole("combobox", { name: "Runs on" })),
+    ).toBe(value.machine.id);
+    expect(
+      scrollChoiceValue(screen.getByRole("combobox", { name: "Agent Worker" })),
+    ).toBe(keyboard ? value.agent.id : "");
+    expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty(
+      "checked",
+      true,
     );
     expect(value.saveConfiguration).not.toHaveBeenCalled();
     expect(value.creates).not.toHaveBeenCalled();
@@ -1965,7 +2046,13 @@ it.each([false, true])(
       name: newSession ? "First message" : "Message",
     });
     fireEvent.change(composer, { target: { value: "Keep this unsent draft" } });
-    const opener = screen.getByRole("button", { name: "New project" });
+    // New session also exposes its own Project selector plus; this test owns
+    // the shared navigation opener.
+    const opener = screen
+      .getAllByRole("button", { name: "New project" })
+      .find((button) =>
+        button.classList.contains("sidebar-new-project-button"),
+      )!;
     fireEvent.click(opener);
     await fillProject(repository);
     expect(
@@ -1989,6 +2076,62 @@ it.each([false, true])(
         name: newSession ? "First message" : "Message",
       }),
     ).toBe(composer);
+    expect((composer as HTMLTextAreaElement).value).toBe(
+      "Keep this unsent draft",
+    );
+    expect(value.saveConfiguration).toHaveBeenCalledOnce();
+    expect(value.creates).not.toHaveBeenCalled();
+    expect(value.enqueues).not.toHaveBeenCalled();
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "opens project creation from the New session Project selector without losing the draft",
+  async () => {
+    const repository = projectRepository(),
+      value = fixture([], [repository], [], false, true);
+    render(
+      <StrictMode>
+        <App transport={value.transport} />
+      </StrictMode>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+    const composer = await screen.findByRole("textbox", {
+      name: "First message",
+    });
+    fireEvent.change(composer, { target: { value: "Keep this unsent draft" } });
+    const page = within(document.querySelector(".new-session-page")!);
+    // The selector is expanded without a popup, and General Chat is accepted.
+    const projects = page.getByRole("listbox", { name: "Project" });
+    expect(scrollChoiceValue(projects)).toBe("");
+    expect(
+      within(projects)
+        .getByRole("option", { name: "General Chat" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    const plus = page.getByRole("button", { name: "New project" });
+    fireEvent.click(plus);
+    await fillProject(repository);
+    expect(screen.getByRole("textbox", { name: "First message" })).toBe(
+      composer,
+    );
+    // Cancel restores the opener, retains the draft and never enters Settings.
+    fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
+    await waitFor(() => expect(document.activeElement).toBe(plus));
+    expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull();
+    expect((composer as HTMLTextAreaElement).value).toBe(
+      "Keep this unsent draft",
+    );
+    expect(scrollChoiceValue(projects)).toBe("");
+    fireEvent.click(plus);
+    await fillProject(repository);
+    fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull(),
+    );
+    // A confirmed save refreshes inventory but never selects the new project.
+    expect(scrollChoiceValue(projects)).toBe("");
     expect((composer as HTMLTextAreaElement).value).toBe(
       "Keep this unsent draft",
     );

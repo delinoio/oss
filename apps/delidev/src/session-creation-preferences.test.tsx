@@ -314,7 +314,7 @@ it("restores project-permitted fields independently and keeps configured-empty d
     [2, ""],
   ] as const) {
     await chooseScrollOption(
-      screen.getByRole("combobox", { name: "Project" }),
+      screen.getByRole("listbox", { name: "Project" }),
       f.projects[index].id,
     );
     await waitFor(() =>
@@ -610,7 +610,7 @@ it("keeps Local proof pinned above saved runner choices without additional proof
     ).toBe(f.machine.id),
   );
   await chooseScrollOption(
-    screen.getByRole("combobox", { name: "Project" }),
+    screen.getByRole("listbox", { name: "Project" }),
     f.projects[0].id,
   );
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
@@ -641,7 +641,7 @@ it("does not restore a runner missing the current project's Worktree clone capab
     ).toBe(f.machine.id),
   );
   await chooseScrollOption(
-    screen.getByRole("combobox", { name: "Project" }),
+    screen.getByRole("listbox", { name: "Project" }),
     f.projects[0].id,
   );
   await waitFor(() =>
@@ -858,7 +858,7 @@ it("clears a restored runner when a current Worktree capability is lost", async 
     ).toBe(f.machine.id),
   );
   await chooseScrollOption(
-    screen.getByRole("combobox", { name: "Project" }),
+    screen.getByRole("listbox", { name: "Project" }),
     f.projects[0].id,
   );
   await waitFor(() =>
@@ -970,7 +970,7 @@ it("clears only the restored Agent after current project permissions change", as
     ).toBe(f.machine.id),
   );
   await chooseScrollOption(
-    screen.getByRole("combobox", { name: "Project" }),
+    screen.getByRole("listbox", { name: "Project" }),
     f.projects[0].id,
   );
   await waitFor(() =>
@@ -1060,7 +1060,7 @@ it.each([EntityKind.AGENT, EntityKind.MACHINE, EntityKind.PROJECT])(
     );
     if (kind === EntityKind.PROJECT) {
       await chooseScrollOption(
-        screen.getByRole("combobox", { name: "Project" }),
+        screen.getByRole("listbox", { name: "Project" }),
         f.projects[0].id,
       );
       await waitFor(() =>
@@ -1204,7 +1204,7 @@ it("resolves global Plan defaults and retains an explicit mode across project ch
   fireEvent.click(plan);
   expect(plan.checked).toBe(false);
   await chooseScrollOption(
-    screen.getByRole("combobox", { name: "Project" }),
+    screen.getByRole("listbox", { name: "Project" }),
     f.projects[0].id,
   );
   await waitFor(() => expect(plan.checked).toBe(false));
@@ -1219,7 +1219,7 @@ it("follows project override until an explicit mode choice", async () => {
   }) as HTMLInputElement;
   await waitFor(() => expect(plan.checked).toBe(true));
   await chooseScrollOption(
-    screen.getByRole("combobox", { name: "Project" }),
+    screen.getByRole("listbox", { name: "Project" }),
     f.projects[0].id,
   );
   await waitFor(() => expect(plan.checked).toBe(false));
@@ -1317,7 +1317,7 @@ it("refreshes the exact selected project override before automatic creation", as
   const f = fixture(true, false, { global: false, project: "inherit" });
   render(f.view());
   await chooseScrollOption(
-    screen.getByRole("combobox", { name: "Project" }),
+    screen.getByRole("listbox", { name: "Project" }),
     f.projects[0].id,
   );
   const button = await readyAutomaticCreation(f);
@@ -1394,7 +1394,7 @@ it.each(["missing", "foreign", "older", "malformed"])(
     f.projects[0].revision = 3n;
     render(f.view());
     await chooseScrollOption(
-      screen.getByRole("combobox", { name: "Project" }),
+      screen.getByRole("listbox", { name: "Project" }),
       f.projects[0].id,
     );
     const button = await readyAutomaticCreation(f);
@@ -1503,7 +1503,7 @@ it("clears an automatic-default failure when the creation scope changes", async 
   await screen.findByRole("button", { name: "Retry Plan Mode defaults" });
 
   await chooseScrollOption(
-    screen.getByRole("combobox", { name: "Project" }),
+    screen.getByRole("listbox", { name: "Project" }),
     f.projects[0].id,
   );
   await waitFor(() =>

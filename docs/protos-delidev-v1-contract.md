@@ -1,5 +1,11 @@
 # DeliDev v1 Connect contract
 
+System 108 and Worker 73 allocate `CODEX_OPENROUTER_TOOLS_V1` for the explicit
+[Codex OpenRouter tool adapter](cmds-delidev-openrouter-tools-contract.md).
+The existing root assignment JSON freezes `native_openrouter_tools` alongside
+native-image and dynamic-tool support. Unknown/older peers gain no image or
+standalone-search operation. No RPC field or database migration is added.
+
 ## Shared subscription owner reservation
 
 The protocol reserves, with no behavior of their own, Worker `SHARED_SUBSCRIPTION_OWNER_V1 = 67`, Worker
