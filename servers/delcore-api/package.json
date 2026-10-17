@@ -10,6 +10,6 @@
     "ci:build": "go build ./cmd/delcore-api ./cmd/sample-client",
     "ci:unit": "go test -count=1 ./...",
     "ci:integration": "go test -count=1 -race -tags=integration ./...",
-    "ci:oci": "node ../../scripts/ci/from-root.mjs docker build -f servers/delcore-api/Dockerfile -t delcore-api:validation ."
+    "ci:oci": "node ../../scripts/ci/from-root.mjs docker build -f servers/delcore-api/Dockerfile -t delcore-api:validation . && go test -count=1 -timeout=10m -tags=oci ./internal/integration"
   }
 }

@@ -122,7 +122,9 @@ func (c *call) report(u *pb.Usage, correction bool) (string, error) {
 	if (u.CorrectionOf != "") != correction || correction && !canonical(u.CorrectionOf) {
 		return "", invalid("correction must reference a prior event")
 	}
-	occurred := u.OccurredAt.AsTime()
+	// PostgreSQL timestamps preserve microseconds; normalize fingerprints and
+	// corrections to the same precision before storage.
+	occurred := u.OccurredAt.AsTime().UTC().Truncate(time.Microsecond)
 	if occurred.After(c.now) || occurred.Before(c.now.Add(-time.Duration(c.s.Config.UsageLatenessSeconds)*time.Second)) {
 		return "", invalid("usage occurrence is outside reporting window")
 	}

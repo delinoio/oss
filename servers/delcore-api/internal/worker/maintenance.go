@@ -15,10 +15,10 @@ func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
 	return w.DB.Transaction(ctx, func(tx pgx.Tx) error {
 		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 		// Free plans use calendar months even when their tenant was created mid-month.
-		if _, e := tx.Exec(ctx, "UPDATE tenants t SET period_start=$1,period_end=$2 FROM plans p WHERE t.plan_id=p.id AND p.free AND t.period_end<=$3", start, start.AddDate(0, 1, 0), now); e != nil {
+		if _, e := tx.Exec(ctx, "UPDATE tenants t SET period_start=$1,period_end=$2 FROM plans p WHERE t.plan_id=p.id AND p.free AND t.external_subscription_id='' AND t.period_end<=$3", start, start.AddDate(0, 1, 0), now); e != nil {
 			return e
 		}
-		freeRows, e := tx.Query(ctx, "SELECT t.id::text FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE p.free AND t.deleted_at IS NULL")
+		freeRows, e := tx.Query(ctx, "SELECT t.id::text FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE p.free AND t.external_subscription_id='' AND t.deleted_at IS NULL")
 		if e != nil {
 			return e
 		}
@@ -140,7 +140,7 @@ func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
 				return e
 			}
 			if v.personal {
-				if _, e = tx.Exec(ctx, "UPDATE users SET email='' WHERE id=$1 AND withdrawing_at IS NOT NULL", v.user); e != nil {
+				if _, e = tx.Exec(ctx, "UPDATE users SET email='',subject_hash='deleted:'||id::text WHERE id=$1 AND withdrawing_at IS NOT NULL", v.user); e != nil {
 					return e
 				}
 			}

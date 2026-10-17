@@ -82,6 +82,7 @@ func (w *Worker) ProcessWebhook(ctx context.Context, selectedID string) error {
 			if e = json.Unmarshal(event.Data, &t); e != nil {
 				return e
 			}
+			t = t.AttributeCharge(w.Config.PaddleCreditProductID)
 			if t.Origin == "subscription_recurring" && t.BillingPeriod != nil {
 				_, e = tx.Exec(ctx, "UPDATE tenants SET renewal_failed=true WHERE external_subscription_id=$1 AND external_customer_id=$2 AND period_end<=$3 AND NOT EXISTS(SELECT 1 FROM provider_transactions WHERE external_id=$4)", t.SubscriptionID, t.CustomerID, t.BillingPeriod.StartsAt, t.ID)
 			} else if u, err := uuid.Parse(t.Custom.JobID); err == nil && u.Version() == 7 {
@@ -114,6 +115,7 @@ func (w *Worker) ApplyTransaction(ctx context.Context, t provider.Transaction, a
 	return w.DB.Transaction(ctx, func(tx pgx.Tx) error { return w.applyTransaction(ctx, tx, t, at) })
 }
 func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Transaction, at time.Time) error {
+	t = t.AttributeCharge(w.Config.PaddleCreditProductID)
 	if t.Status != "completed" {
 		return nil
 	}

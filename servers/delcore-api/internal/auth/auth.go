@@ -59,9 +59,11 @@ func (l *Logto) Verify(ctx context.Context, header string) (Identity, error) {
 	if e = token.Claims(&claims); e != nil || token.Subject == "" {
 		return id, errors.New("invalid claims")
 	}
-	id.ClientID = claims.ClientID
 	id.Scopes = strings.Fields(claims.Scope)
-	if id.ClientID != "" {
+	// Logto client-credentials subjects are application IDs. A delegated user
+	// token may also carry client_id; it must not acquire the service's identity.
+	if claims.ClientID != "" && token.Subject == claims.ClientID {
+		id.ClientID = claims.ClientID
 		return id, nil
 	}
 	if !claims.EmailVerified || claims.Email == "" {

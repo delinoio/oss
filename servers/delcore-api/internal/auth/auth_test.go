@@ -42,7 +42,7 @@ func TestLogtoValidation(t *testing.T) {
 		name   string
 		change func(jwt.MapClaims)
 		ok     bool
-	}{{"user", func(c jwt.MapClaims) {}, true}, {"operator", func(c jwt.MapClaims) { c["roles"] = []string{"operator"} }, true}, {"service", func(c jwt.MapClaims) { c["client_id"] = "service"; delete(c, "email_verified") }, true}, {"issuer", func(c jwt.MapClaims) { c["iss"] = "https://other.example.test" }, false}, {"audience", func(c jwt.MapClaims) { c["aud"] = "other" }, false}, {"expired", func(c jwt.MapClaims) { c["exp"] = time.Now().Add(-time.Hour).Unix() }, false}, {"unverified", func(c jwt.MapClaims) { c["email_verified"] = false }, false}} {
+	}{{"user", func(c jwt.MapClaims) {}, true}, {"operator", func(c jwt.MapClaims) { c["roles"] = []string{"operator"} }, true}, {"service", func(c jwt.MapClaims) { c["client_id"] = "service"; c["sub"] = "service"; delete(c, "email_verified") }, true}, {"delegated", func(c jwt.MapClaims) { c["client_id"] = "service" }, true}, {"delegated_unverified", func(c jwt.MapClaims) { c["client_id"] = "service"; delete(c, "email_verified") }, false}, {"issuer", func(c jwt.MapClaims) { c["iss"] = "https://other.example.test" }, false}, {"audience", func(c jwt.MapClaims) { c["aud"] = "other" }, false}, {"expired", func(c jwt.MapClaims) { c["exp"] = time.Now().Add(-time.Hour).Unix() }, false}, {"unverified", func(c jwt.MapClaims) { c["email_verified"] = false }, false}} {
 		t.Run(tc.name, func(t *testing.T) {
 			claims := jwt.MapClaims{"iss": issuer, "aud": "delcore", "sub": "user", "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(), "email": "user@example.test", "email_verified": true}
 			tc.change(claims)
@@ -58,6 +58,9 @@ func TestLogtoValidation(t *testing.T) {
 			}
 			if tc.name == "operator" && !id.Operator {
 				t.Fatal("operator role missing")
+			}
+			if tc.name == "delegated" && (id.ClientID != "" || id.SubjectHash == "") {
+				t.Fatal("delegated user became M2M")
 			}
 			if tc.name == "service" && id.SubjectHash != "" {
 				t.Fatal("M2M became a user")

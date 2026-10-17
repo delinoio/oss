@@ -116,7 +116,7 @@ func (w *Worker) Step(ctx context.Context) error {
 	method := http.MethodPost
 	switch j.Kind {
 	case "topup", "auto_topup", "settlement":
-		body["items"] = []any{map[string]any{"quantity": 1, "price": map[string]any{"description": "Delcore usage credits", "product_id": w.Config.PaddleCreditProductID, "unit_price": map[string]string{"amount": p.MinorUnits, "currency_code": w.Config.Currency}}}}
+		body["items"] = []any{map[string]any{"quantity": 1, "price": map[string]any{"description": "Delcore usage credits", "product_id": w.Config.PaddleCreditProductID, "custom_data": body["custom_data"], "unit_price": map[string]string{"amount": p.MinorUnits, "currency_code": w.Config.Currency}}}}
 		if customer != "" {
 			body["customer_id"] = customer
 		}
@@ -136,6 +136,7 @@ func (w *Worker) Step(ctx context.Context) error {
 				return w.finish(ctx, j, "pending", "provider_billing_window", "")
 			}
 			path = "/subscriptions/" + url.PathEscape(subscription) + "/charge"
+			delete(body, "custom_data")
 			delete(body, "customer_id")
 			delete(body, "collection_mode")
 			body["effective_from"] = "immediately"
@@ -206,7 +207,7 @@ func (w *Worker) finish(ctx context.Context, j job, state, category, external st
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.Config.Timeout())
 	defer cancel()
 	return w.DB.Transaction(ctx, func(tx pgx.Tx) error {
-		_, e := tx.Exec(ctx, "UPDATE jobs SET state=$2,error_category=$3,external_id=CASE WHEN $4='' THEN external_id ELSE $4 END,available_at=$5,updated_at=now() WHERE id=$1 AND state='running'", j.ID, state, category, external, time.Now().Add(time.Duration(w.Config.RetrySeconds)*time.Second))
+		_, e := tx.Exec(ctx, "UPDATE jobs SET state=$2,error_category=$3,external_id=CASE WHEN $4='' THEN external_id ELSE $4 END,available_at=$5,attempts=CASE WHEN $3='provider_billing_window' THEN greatest(attempts-1,0) ELSE attempts END,updated_at=now() WHERE id=$1 AND state='running'", j.ID, state, category, external, time.Now().Add(time.Duration(w.Config.RetrySeconds)*time.Second))
 		if e != nil {
 			return e
 		}
@@ -231,6 +232,9 @@ func (w *Worker) retry(ctx context.Context, j job, e error, reconcile bool) erro
 		category = "retry_exhausted"
 		if errors.Is(e, provider.ErrPermanent) {
 			category = "provider_rejected"
+			if reconcile {
+				category = "unknown_payment_outcome"
+			}
 		}
 	}
 	w.Log.WarnContext(ctx, "provider work deferred", "kind", j.Kind, "state", state, "category", category)

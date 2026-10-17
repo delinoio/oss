@@ -639,6 +639,8 @@ importers:
 
   scripts/ci: {}
 
+  servers/delcore-api: {}
+
   servers/devhud-api: {}
 
 packages:

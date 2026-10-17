@@ -87,7 +87,11 @@ func execute() error {
 	registry := prometheus.NewRegistry()
 	backlog := prometheus.NewGauge(prometheus.GaugeOpts{Name: "delcore_job_backlog", Help: "Pending or reconciliation jobs."})
 	failed := prometheus.NewGauge(prometheus.GaugeOpts{Name: "delcore_failed_jobs", Help: "Jobs requiring operator attention."})
-	registry.MustRegister(backlog, failed)
+	mismatch := prometheus.NewGauge(prometheus.GaugeOpts{Name: "delcore_provider_mismatches", Help: "Provider payments requiring attribution review."})
+	delivery := prometheus.NewGauge(prometheus.GaugeOpts{Name: "delcore_email_failures", Help: "Failed email delivery jobs."})
+	retries := prometheus.NewGauge(prometheus.GaugeOpts{Name: "delcore_retry_exhausted", Help: "Jobs that exhausted automatic retries."})
+	settlementAge := prometheus.NewGauge(prometheus.GaugeOpts{Name: "delcore_settlement_delay_seconds", Help: "Age of the oldest incomplete settlement."})
+	registry.MustRegister(backlog, failed, mismatch, delivery, retries, settlementAge)
 	mux := http.NewServeMux()
 	pathRPC, handler := s.Handler()
 	mux.Handle(pathRPC, otelhttp.NewHandler(handler, "delcore.connect"))
@@ -124,7 +128,8 @@ func execute() error {
 	})
 	server := &http.Server{Addr: c.Listen, Handler: bounded, ReadHeaderTimeout: c.Timeout(), ReadTimeout: c.Timeout(), WriteTimeout: c.Timeout(), IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10}
 	errorsCh := make(chan error, 2)
-	go func() { errorsCh <- w.Run(ctx) }()
+	workerDone := make(chan struct{})
+	go func() { defer close(workerDone); errorsCh <- w.Run(ctx) }()
 	go func() { errorsCh <- server.ListenAndServe() }()
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -154,6 +159,20 @@ func execute() error {
 					logger.Warn("job backlog threshold exceeded", "category", "job_backlog")
 				}
 			}
+			var mismatches, deliveries, exhaustedRetries int
+			var delay float64
+			metricsCtx, metricsDone := context.WithTimeout(ctx, c.Timeout())
+			e = db.Pool.QueryRow(metricsCtx, `SELECT count(*) FILTER(WHERE error_category IN ('payment_mismatch','unknown_payment_outcome')),count(*) FILTER(WHERE kind='email' AND state='failed'),count(*) FILTER(WHERE error_category='retry_exhausted'),COALESCE(EXTRACT(EPOCH FROM now()-min(created_at) FILTER(WHERE kind='settlement' AND state<>'done')),0) FROM jobs`).Scan(&mismatches, &deliveries, &exhaustedRetries, &delay)
+			metricsDone()
+			if e == nil {
+				mismatch.Set(float64(mismatches))
+				delivery.Set(float64(deliveries))
+				retries.Set(float64(exhaustedRetries))
+				settlementAge.Set(delay)
+				if delay >= float64(c.SettlementAlertSeconds) {
+					logger.Warn("settlement delay threshold exceeded", "category", "settlement_delay")
+				}
+			}
 		}
 	}
 	cancel()
@@ -161,6 +180,11 @@ func execute() error {
 	defer done()
 	if e = server.Shutdown(shutdown); e != nil {
 		return e
+	}
+	select {
+	case <-workerDone:
+	case <-shutdown.Done():
+		return shutdown.Err()
 	}
 	if errors.Is(failure, http.ErrServerClosed) {
 		return nil

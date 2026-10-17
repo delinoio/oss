@@ -33,6 +33,7 @@ func (w *Worker) reconcile(ctx context.Context, j job) error {
 			return w.retry(ctx, j, provider.ErrAmbiguous, true)
 		}
 		for _, t := range transactions {
+			t = t.AttributeCharge(w.Config.PaddleCreditProductID)
 			if t.Custom.JobID != j.ID || t.Custom.TenantID != j.Tenant {
 				continue
 			}
@@ -73,6 +74,7 @@ func (w *Worker) reconcile(ctx context.Context, j job) error {
 			return w.retry(ctx, j, provider.ErrAmbiguous, true)
 		}
 		for _, t := range transactions {
+			t = t.AttributeCharge(w.Config.PaddleCreditProductID)
 			if t.Custom.JobID == j.ID && t.Status == "completed" {
 				return w.ApplyTransaction(ctx, t, time.Now().UTC())
 			}

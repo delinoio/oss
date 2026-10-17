@@ -33,6 +33,7 @@ import (
 	"github.com/delinoio/oss/servers/delcore-api/internal/rpc"
 	"github.com/delinoio/oss/servers/delcore-api/internal/worker"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -337,6 +338,26 @@ func TestPaidActivationAndRenewal(t *testing.T) {
 	if e = db.Pool.QueryRow(ctx, "SELECT renewal_failed FROM tenants WHERE id=$1", tenant).Scan(&blocked); e != nil || blocked {
 		t.Fatal("renewal did not recover", e)
 	}
+	cancel, e := client.CancelSubscription(ctx, req(&pb.CancelSubscriptionRequest{RequestKey: key(), TenantId: tenant}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	event := provider.Event{ID: "evt_cancel", Type: "subscription.canceled", OccurredAt: transaction.BillingPeriod.EndsAt, Data: json.RawMessage(`{"id":"sub_fixture","status":"canceled"}`)}
+	raw, e := json.Marshal(event)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = db.Pool.Exec(ctx, "INSERT INTO webhooks(event_id,payload,received_at,occurred_at) VALUES($1,$2,now(),$3)", event.ID, raw, event.OccurredAt); e != nil {
+		t.Fatal(e)
+	}
+	if e = w.ProcessWebhook(ctx, event.ID); e != nil {
+		t.Fatal(e)
+	}
+	var free bool
+	var state string
+	if e = db.Pool.QueryRow(ctx, "SELECT p.free,j.state FROM tenants t JOIN plans p ON p.id=t.plan_id JOIN jobs j ON j.id=$2 WHERE t.id=$1", tenant, cancel.Msg.JobId).Scan(&free, &state); e != nil || !free || state != "done" {
+		t.Fatal("renewal cancellation", free, state, e)
+	}
 }
 
 func bootstrap(t *testing.T, client delcorev1connect.DelcoreServiceClient) (string, string) {
@@ -574,5 +595,194 @@ func TestInstanceLockAndSchemaCompatibility(t *testing.T) {
 	}
 	if db.CheckSchema(ctx) == nil || db.Migrate(ctx) == nil {
 		t.Fatal("newer schema accepted")
+	}
+}
+
+func TestProratedAllowanceAndCatalog(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	svc, e := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "register service", Service: &pb.Service{Name: "metered", ClientId: "service", Capabilities: []string{"execute"}, Scopes: []string{"usage:read"}}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, e = client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "register meter", Meter: &pb.Meter{ServiceId: svc.Msg.Service.Id, Name: "units"}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	addon, e := client.PutAddOn(ctx, req(&pb.PutAddOnRequest{RequestKey: key(), Reason: "register allowance addon", AddOn: &pb.AddOn{ServiceId: svc.Msg.Service.Id, Name: "extra"}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	price, e := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "register allowance", Price: &pb.Price{AddOnId: addon.Msg.AddOn.Id, ServiceId: svc.Msg.Service.Id, Meter: "units", UnitPrice: "0.0000001", Included: "102", Currency: "USD"}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	start := time.Now().UTC().Truncate(time.Second)
+	end := start.Add(3 * time.Hour)
+	at := start.Add(2 * time.Hour)
+	if _, e = db.Pool.Exec(ctx, "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,$4)", key(), tenant, price.Msg.Price.Id, at); e != nil {
+		t.Fatal(e)
+	}
+	previous, _ := accounting.Parse("2")
+	for i := 0; i < 2; i++ {
+		if e = db.Transaction(ctx, func(tx pgx.Tx) error {
+			return postgres.GrantAllowances(ctx, tx, tenant, start, end, at, "upgrade-fixture", postgres.Allowances{svc.Msg.Service.Id + "\x00units": previous})
+		}); e != nil {
+			t.Fatal(e)
+		}
+	}
+	var amount string
+	var count int
+	if e = db.Pool.QueryRow(ctx, "SELECT sum(amount)::text,count(*) FROM allowance_grants WHERE source_key LIKE 'upgrade-fixture:%'").Scan(&amount, &count); e != nil {
+		t.Fatal(e)
+	}
+	got, e := accounting.Parse(amount)
+	if e != nil || got.String() != "33.333333" || count != 1 {
+		t.Fatal("proration precision or replay", amount, count, e)
+	}
+	catalog, e := client.GetCatalog(ctx, req(&pb.GetCatalogRequest{}, "owner"))
+	if e != nil || len(catalog.Msg.AddOns) != 1 || len(catalog.Msg.Meters) != 1 {
+		t.Fatal("catalog omitted addon or meter", e)
+	}
+	if _, e = client.ListUsage(ctx, req(&pb.ListUsageRequest{TenantId: tenant}, "service")); e != nil {
+		t.Fatal("registered read scope", e)
+	}
+}
+
+func TestOneTimeChargeReconciliation(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	cfg.PaddleCreditProductID = "pro_fixture"
+	cfg.PaddleToken = "fixture"
+	if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='sub_charge',external_customer_id='ctm_charge',period_end=$2 WHERE id=$1", tenant, time.Now().Add(24*time.Hour)); e != nil {
+		t.Fatal(e)
+	}
+	jobID := key()
+	if _, e := db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES($1,$2,'auto_topup',$1::uuid::text,'{"amount":"10","minor_units":"1000","currency":"USD"}',now()-interval '1 second',now(),now())`, jobID, tenant); e != nil {
+		t.Fatal(e)
+	}
+	charges := 0
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			charges++
+			if r.URL.Path != "/subscriptions/sub_charge/charge" {
+				t.Errorf("unexpected path %s", r.URL.Path)
+			}
+			var body map[string]json.RawMessage
+			if e := json.NewDecoder(r.Body).Decode(&body); e != nil {
+				t.Error(e)
+			}
+			if _, exists := body["custom_data"]; exists {
+				t.Error("unsupported charge custom_data")
+			}
+			if !strings.Contains(string(body["items"]), jobID) {
+				t.Error("missing price-level attribution")
+			}
+			io.WriteString(w, `{"data":{"id":"sub_charge","status":"active"}}`)
+			return
+		}
+		fmt.Fprintf(w, `{"data":[{"id":"txn_charge","status":"completed","currency_code":"USD","subscription_id":"sub_charge","customer_id":"ctm_charge","custom_data":{"delcore_job_id":"old-subscription-job"},"details":{"totals":{"subtotal":"1000"}},"items":[{"quantity":1,"price":{"id":"pri_charge","product_id":"pro_fixture","custom_data":{"delcore_job_id":%q,"delcore_tenant_id":%q}}}]}]}`, jobID, tenant)
+	}))
+	defer mock.Close()
+	cfg.PaddleURL = mock.URL
+	w := &worker.Worker{DB: db, Config: cfg, Provider: provider.New(cfg), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	for i := 0; i < 2; i++ {
+		if e := w.Step(ctx); e != nil {
+			t.Fatal(e)
+		}
+		if _, e := db.Pool.Exec(ctx, "UPDATE jobs SET available_at=now()-interval '1 second' WHERE id=$1", jobID); e != nil {
+			t.Fatal(e)
+		}
+	}
+	var state, balance string
+	if e := db.Pool.QueryRow(ctx, "SELECT state,(SELECT sum(amount)::text FROM ledger WHERE tenant_id=$2 AND kind='credit') FROM jobs WHERE id=$1", jobID, tenant).Scan(&state, &balance); e != nil {
+		t.Fatal(e)
+	}
+	amount, e := accounting.Parse(balance)
+	if e != nil || amount.String() != "10" || state != "done" || charges != 1 {
+		t.Fatal("charge reconciliation", state, balance, charges, e)
+	}
+}
+
+func TestWithdrawalReleasesIdentityAfterFinalization(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	old, tenant := bootstrap(t, client)
+	if _, e := client.Withdraw(ctx, req(&pb.WithdrawRequest{RequestKey: key()}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner")); connect.CodeOf(e) != connect.CodeFailedPrecondition {
+		t.Fatal("pending withdrawal re-registered", e)
+	}
+	cfg.DeletionGraceSeconds = 1
+	w := &worker.Worker{DB: db, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if e := w.Maintain(ctx, time.Now().UTC().Add(48*time.Hour)); e != nil {
+		t.Fatal(e)
+	}
+	var email, subject string
+	var deleted bool
+	if e := db.Pool.QueryRow(ctx, "SELECT u.email,u.subject_hash,t.deleted_at IS NOT NULL FROM users u,tenants t WHERE u.id=$1 AND t.id=$2", old, tenant).Scan(&email, &subject, &deleted); e != nil {
+		t.Fatal(e)
+	}
+	if email != "" || subject == "owner" || !deleted {
+		t.Fatal("identity not deidentified")
+	}
+	me, e := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+	if e != nil || me.Msg.UserId == old {
+		t.Fatal("completed withdrawal identity not released", e)
+	}
+}
+
+func TestEmailRetriesPersistAndRecover(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	jobID := key()
+	if _, e := db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES($1,$2,'email',$1::uuid::text,'{"to":"fixture@example.test","subject":"Fixture","text":"Fixture"}',now()-interval '1 second',now(),now())`, jobID, tenant); e != nil {
+		t.Fatal(e)
+	}
+	success := false
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !success {
+			w.WriteHeader(503)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"success":true,"result":{"queued":[{"email":"fixture@example.test"}]}}`)
+	}))
+	defer mock.Close()
+	cfg.EmailURL = mock.URL
+	cfg.EmailAccount = "fixture"
+	cfg.EmailSender = "sender@example.test"
+	cfg.EmailToken = "fixture"
+	cfg.RetryLimit = 2
+	w := &worker.Worker{DB: db, Config: cfg, Provider: provider.New(cfg), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	for i := 0; i < 2; i++ {
+		if e := w.Step(ctx); e != nil {
+			t.Fatal(e)
+		}
+		if _, e := db.Pool.Exec(ctx, "UPDATE jobs SET available_at=now()-interval '1 second' WHERE id=$1", jobID); e != nil {
+			t.Fatal(e)
+		}
+	}
+	var state string
+	if e := db.Pool.QueryRow(ctx, "SELECT state FROM jobs WHERE id=$1", jobID).Scan(&state); e != nil || state != "failed" {
+		t.Fatal("retry limit", state, e)
+	}
+	if _, e := client.RetryJob(ctx, req(&pb.RetryJobRequest{RequestKey: key(), JobId: jobID, Reason: "provider recovered"}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	success = true
+	if _, e := db.Pool.Exec(ctx, "UPDATE jobs SET available_at=now()-interval '1 second' WHERE id=$1", jobID); e != nil {
+		t.Fatal(e)
+	}
+	if e := w.Step(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if e := db.Pool.QueryRow(ctx, "SELECT state FROM jobs WHERE id=$1", jobID).Scan(&state); e != nil || state != "done" {
+		t.Fatal("email recovery", state, e)
 	}
 }

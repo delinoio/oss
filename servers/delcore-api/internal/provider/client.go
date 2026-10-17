@@ -164,7 +164,12 @@ type Transaction struct {
 	Origin string `json:"origin"`
 	Items  []struct {
 		Price struct {
-			ID string `json:"id"`
+			ID        string `json:"id"`
+			ProductID string `json:"product_id"`
+			Custom    struct {
+				JobID    string `json:"delcore_job_id"`
+				TenantID string `json:"delcore_tenant_id"`
+			} `json:"custom_data"`
 		} `json:"price"`
 		Quantity int `json:"quantity"`
 	} `json:"items"`
@@ -190,4 +195,14 @@ type Transaction struct {
 		StartsAt time.Time `json:"starts_at"`
 		EndsAt   time.Time `json:"ends_at"`
 	} `json:"billing_period"`
+}
+
+// AttributeCharge uses the non-catalog price metadata because Paddle's charge
+// endpoint returns a subscription and does not accept transaction custom_data.
+func (t Transaction) AttributeCharge(product string) Transaction {
+	if len(t.Items) == 1 && t.Items[0].Quantity == 1 && t.Items[0].Price.ProductID == product && t.Items[0].Price.Custom.JobID != "" {
+		t.Custom.JobID = t.Items[0].Price.Custom.JobID
+		t.Custom.TenantID = t.Items[0].Price.Custom.TenantID
+	}
+	return t
 }

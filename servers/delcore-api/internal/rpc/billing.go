@@ -95,16 +95,17 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 		external := []string{}
 		seen := map[string]bool{}
 		newAddons := map[string]bool{}
-		usageMeters := map[string]bool{}
+		usageMeters := map[string]accounting.Decimal{}
+		addonRecurring := map[string]int{}
 		baseRecurring := 0
 		for _, priceID := range q.PriceIds {
 			if !canonical(priceID) || seen[priceID] {
 				return invalid("invalid or repeated price")
 			}
 			seen[priceID] = true
-			var ext, ownerPlan, addon, service, meter string
+			var ext, ownerPlan, addon, service, meter, rateText string
 			var kind int
-			if e = c.tx.QueryRow(c.ctx, "SELECT external_price_id,COALESCE(plan_id::text,''),COALESCE(addon_id::text,''),kind,service_id::text,meter FROM prices WHERE id=$1", priceID).Scan(&ext, &ownerPlan, &addon, &kind, &service, &meter); e != nil {
+			if e = c.tx.QueryRow(c.ctx, "SELECT external_price_id,COALESCE(plan_id::text,''),COALESCE(addon_id::text,''),kind,service_id::text,meter,unit_price::text FROM prices WHERE id=$1", priceID).Scan(&ext, &ownerPlan, &addon, &kind, &service, &meter, &rateText); e != nil {
 				return invalid("unknown price")
 			}
 			if addon == "" && ownerPlan != q.PlanId {
@@ -115,10 +116,14 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 			}
 			if kind == 1 {
 				k := service + "\x00" + meter
-				if usageMeters[k] {
-					return invalid("multiple rates for the same service meter")
+				rate, err := accounting.Parse(rateText)
+				if err != nil {
+					return err
 				}
-				usageMeters[k] = true
+				if previous, exists := usageMeters[k]; exists && previous.Cmp(rate) != 0 {
+					return invalid("conflicting rates for the same service meter")
+				}
+				usageMeters[k] = rate
 			}
 			if kind == 2 {
 				if ext == "" {
@@ -127,11 +132,18 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 				external = append(external, ext)
 				if addon == "" {
 					baseRecurring++
+				} else {
+					addonRecurring[addon]++
 				}
 			}
 		}
-		if !free && baseRecurring != 1 {
-			return invalid("one recurring base price is required")
+		if !free && baseRecurring != 1 || free && baseRecurring != 0 {
+			return invalid("paid base plans require one recurring base price; free base plans require none")
+		}
+		for addon := range newAddons {
+			if addonRecurring[addon] != 1 {
+				return invalid("one recurring price is required for each add-on")
+			}
 		}
 		oldAddons := map[string]bool{}
 		rows, e := c.tx.Query(c.ctx, "SELECT DISTINCT p.addon_id::text FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND en.ends_at IS NULL AND p.addon_id IS NOT NULL", q.TenantId)
@@ -168,7 +180,7 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 		if newRank < oldRank || removed {
 			timing = "do_not_bill"
 		}
-		if free {
+		if free && len(external) == 0 {
 			return precondition("use cancellation to return to the default free plan")
 		}
 		o.JobId, e = c.job(q.TenantId, "subscription", "request:"+q.RequestKey, map[string]any{"plan_id": q.PlanId, "price_ids": q.PriceIds, "external_price_ids": external, "timing": timing, "return_url": q.ReturnUrl})

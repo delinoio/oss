@@ -797,5 +797,20 @@
       "**/*.md",
       "**/*.mdx"
     ]
+  },
+  "delcore-api": {
+    "paths": [
+      "servers/delcore-api/**",
+      "protos/delcore/**",
+      "protos/gen/go/delcore/**",
+      "go.mod",
+      "go.sum",
+      "buf.gen.yaml",
+      "buf.yaml",
+      "docs/project-delcore.md",
+      "docs/servers-delcore-api-contract.md",
+      "docs/protos-delcore-v1-contract.md"
+    ],
+    "native": false
   }
 }

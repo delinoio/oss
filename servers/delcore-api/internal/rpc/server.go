@@ -167,6 +167,9 @@ func run[Q any, R any](s *Server, ctx context.Context, req *connect.Request[Q], 
 		if errors.As(e, &databaseError) {
 			s.Log.ErrorContext(ctx, "database operation failed", "correlation_id", correlation, "sqlstate", databaseError.Code, "position", databaseError.Position)
 		}
+		if databaseError != nil && databaseError.Code == "23505" {
+			e = conflict()
+		}
 		s.Log.WarnContext(ctx, "rpc rejected", "correlation_id", correlation, "procedure", req.Spec().Procedure, "category", connect.CodeOf(e).String())
 		return nil, typed(e, correlation)
 	}
