@@ -12,6 +12,18 @@ import (
 // WebSearch items do not carry a success field. Completion settles the native
 // lifecycle without manufacturing a successful remote search observation.
 func (c *Client) observeWebToolLocked(ctx context.Context, native nativewire.Event, turn domain.ID, raw json.RawMessage) (Event, error) {
+	id, snapshot, err := decodeWebTool(raw, native.Method == "item/completed")
+	if err != nil {
+		return Event{}, err
+	}
+	event, err := c.observeExternalToolSnapshotLocked(native, turn, id, snapshot, webToolOrigin)
+	if err == nil && c.logger != nil {
+		c.logger.InfoContext(ctx, "codex_native_tool_observed", "owner_id", c.ownerID, "turn_id", turn, "tool_family", webToolOrigin, "stage", event.DynamicTool.Stage, "status", snapshot.Status)
+	}
+	return event, err
+}
+
+func decodeWebTool(raw json.RawMessage, completed bool) (string, *domain.DynamicToolSnapshot, error) {
 	var item struct {
 		Type    string             `json:"type"`
 		ID      string             `json:"id"`
@@ -20,7 +32,7 @@ func (c *Client) observeWebToolLocked(ctx context.Context, native nativewire.Eve
 		Results *[]json.RawMessage `json:"results"`
 	}
 	if len(raw) > 512<<10 || domain.ValidateJSONUnicodeEscapes(raw) != nil || domain.DecodeBounded(raw, &item, 512<<10) != nil || item.Type != "webSearch" || domain.Text(item.ID, "native web item", 1024, true) != nil || domain.Text(item.Query, "native web query", domain.MaxMessageText, false) != nil {
-		return Event{}, incompatible()
+		return "", nil, incompatible()
 	}
 	if externalValuePresent(item.Action) {
 		var action struct {
@@ -31,27 +43,27 @@ func (c *Client) observeWebToolLocked(ctx context.Context, native nativewire.Eve
 			Pattern *string   `json:"pattern"`
 		}
 		if domain.Decode(item.Action, &action) != nil {
-			return Event{}, incompatible()
+			return "", nil, incompatible()
 		}
 		switch action.Type {
 		case "search":
 			if action.URL != nil || action.Pattern != nil {
-				return Event{}, incompatible()
+				return "", nil, incompatible()
 			}
 		case "openPage":
 			if action.Query != nil || action.Queries != nil || action.Pattern != nil {
-				return Event{}, incompatible()
+				return "", nil, incompatible()
 			}
 		case "findInPage":
 			if action.Query != nil || action.Queries != nil {
-				return Event{}, incompatible()
+				return "", nil, incompatible()
 			}
 		case "other":
 			if action.Query != nil || action.Queries != nil || action.URL != nil || action.Pattern != nil {
-				return Event{}, incompatible()
+				return "", nil, incompatible()
 			}
 		default:
-			return Event{}, incompatible()
+			return "", nil, incompatible()
 		}
 	}
 	action, _ := json.Marshal(struct {
@@ -63,16 +75,16 @@ func (c *Client) observeWebToolLocked(ctx context.Context, native nativewire.Eve
 	// retain its empty-argument identity and commit the final action separately.
 	identity, err := dynamicIdentity("web_search", nil, json.RawMessage(`{}`))
 	if err != nil {
-		return Event{}, err
+		return "", nil, err
 	}
 	snapshot := &domain.DynamicToolSnapshot{Identity: identity, Status: domain.DynamicRunning}
-	if native.Method == "item/completed" {
+	if completed {
 		snapshot.Status = domain.DynamicDone
 		text := "Web action retained in native history (sha256: " + externalToolDigest(action) + ")."
 		content := []domain.DynamicToolContent{{Kind: domain.DynamicText, Text: &text}}
 		if item.Results != nil {
 			if len(*item.Results) > 1024 {
-				return Event{}, incompatible()
+				return "", nil, incompatible()
 			}
 			results, _ := json.Marshal(*item.Results)
 			text := "Web results retained in native history (sha256: " + externalToolDigest(results) + ")."
@@ -80,11 +92,7 @@ func (c *Client) observeWebToolLocked(ctx context.Context, native nativewire.Eve
 		}
 		snapshot.Content = &content
 	} else if item.Results != nil {
-		return Event{}, incompatible()
+		return "", nil, incompatible()
 	}
-	event, err := c.observeExternalToolSnapshotLocked(native, turn, item.ID, snapshot, webToolOrigin)
-	if err == nil && c.logger != nil {
-		c.logger.InfoContext(ctx, "codex_native_tool_observed", "owner_id", c.ownerID, "turn_id", turn, "tool_family", webToolOrigin, "stage", event.DynamicTool.Stage, "status", snapshot.Status)
-	}
-	return event, err
+	return item.ID, snapshot, nil
 }

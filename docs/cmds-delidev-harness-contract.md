@@ -3767,3 +3767,13 @@ deleting history, sessions, caches or helper links. A negotiated Worker first
 synchronizes the protected recovery capture, so a failed cleanup is recovered
 automatically by the original Worker (see the
 [subscription contract](cmds-delidev-subscription-contract.md#automatic-managed-chatgpt-execution-recovery)).
+
+### Settled external-tool history
+
+Native `mcpToolCall` and `webSearch` history items use the same bounded schemas
+as live observations in continuation, compaction, legacy/managed Fork and
+paged Revert readers. Only terminal MCP statuses are admitted. Original items,
+ordering, identities and private content remain in the history proof; reading
+history never publishes live tool events, creates reply ownership or dereferences
+MCP resources. Malformed, duplicate, oversized and unsupported items still fail
+closed. Restricted Sidechat does not acquire external-tool Fork authority.
