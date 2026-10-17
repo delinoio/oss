@@ -39,6 +39,12 @@ Diagnostics include versions, an invocation identifier, target, phase, elapsed t
 
 The probe artifact digest identifies the bytes tested. It does not verify a framework distribution or prove the absence of embedded engines. Distribution integrity, rollback, React conformance, native rendering, accessibility and all platform acceptance remain outstanding.
 
+## Native React development check
+
+Maintainers can run `pnpm test:native` from a source checkout after installing development dependencies. Set `TN_SCRIPTC` to the selected ScriptC executable when it is not in PATH. This explicit check builds and runs a fixed React core fixture using `--npm-static react`; it never uses Node.js to execute the fixture. It verifies element creation, validation, cloning, child counting and ref initialization only.
+
+Compilation diagnostics or execution failures cause a nonzero result, including known upstream failures. The JSON result reports diagnostic codes and fixture locations without raw tool output. A pass is not full React conformance, renderer acceptance or proof of engine absence. The regular unit suite does not run this check and cannot establish native compatibility.
+
 ## Changes and support
 
 This initial development version introduces scaffolding and prerequisite diagnostics only. There is no migration or rollback workflow for applications yet. Use [GitHub issues](https://github.com/delinoio/oss/issues) for support and remove sensitive content from reports.
