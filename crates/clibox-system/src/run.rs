@@ -1465,7 +1465,7 @@ fn run_once(
     plan: &environment::Plan,
     kill_after: Duration,
     limits: Limits,
-    mut monitored_service: Option<&mut OwnedChild>,
+    monitored_service: Option<&mut OwnedChild>,
 ) -> Result<Outcome> {
     if limits
         .overall
@@ -1482,11 +1482,24 @@ fn run_once(
     } else {
         OutputMode::WorkloadInherited
     };
-    let mut child = match spawn(plan, output_mode, limits.overall) {
+    let child = match spawn(plan, output_mode, limits.overall) {
         Ok(child) => child,
         Err(error) if error.code == Code::TerminationTimeout => return Ok(Outcome::Code(124)),
         Err(error) => return Err(error),
     };
+    supervise_spawned(child, &limits, kill_after, monitored_service)
+}
+
+/// Supervises an already-spawned owned workload until it completes, expires,
+/// fails, or is cancelled. Callers own admission and spawning; this boundary
+/// keeps the post-spawn limit and cleanup decisions testable without racing a
+/// wall-clock deadline against process startup.
+fn supervise_spawned(
+    mut child: OwnedChild,
+    limits: &Limits,
+    kill_after: Duration,
+    mut monitored_service: Option<&mut OwnedChild>,
+) -> Result<Outcome> {
     let mut last_activity = child
         .activity
         .as_ref()
@@ -1510,7 +1523,7 @@ fn run_once(
             }
         };
         if limits_expired_before_activity_refresh(
-            &limits,
+            limits,
             last_activity,
             activity_since_last,
             completion_or_poll_observed_at(
@@ -1591,7 +1604,7 @@ fn run_once(
             // idle deadline cannot retroactively extend that expired limit.
             let activity_since_last = child.activity.as_ref().and_then(Activity::take);
             if limits_expired_before_activity_refresh(
-                &limits,
+                limits,
                 last_activity,
                 activity_since_last,
                 completion.observed_at,
@@ -1664,7 +1677,7 @@ fn run_once(
                 let observed_at = Instant::now();
                 let activity_since_last = child.activity.as_ref().and_then(Activity::take);
                 if limits_expired_before_activity_refresh(
-                    &limits,
+                    limits,
                     last_activity,
                     activity_since_last,
                     observed_at,
@@ -1672,10 +1685,10 @@ fn run_once(
                     return finish_timed_out_workload_output(&mut child);
                 }
             }
-            return finish_workload_output(&mut child, &limits, status);
+            return finish_workload_output(&mut child, limits, status);
         }
         thread::sleep(supervision_poll_interval(
-            &limits,
+            limits,
             last_activity,
             Instant::now(),
         ));
@@ -5937,6 +5950,149 @@ mod lifecycle_tests {
         let error = check_spawn_boundary(Some(deadline)).unwrap_err();
 
         assert_eq!(error.code, Code::TerminationTimeout);
+    }
+
+    /// Owns the processes of a supervision fixture so a failed assertion or a
+    /// preparation timeout never leaves a shell or its background descendant
+    /// running.
+    #[cfg(unix)]
+    struct FixtureProcesses {
+        group: libc::pid_t,
+        descendant: Option<libc::pid_t>,
+    }
+
+    #[cfg(unix)]
+    impl FixtureProcesses {
+        /// Bounds fixture preparation only. It is independent of the
+        /// execution deadline under test, so a slow host delays the test
+        /// instead of changing its outcome.
+        const PREPARATION_WATCHDOG: Duration = Duration::from_secs(60);
+        const REAP_WATCHDOG: Duration = Duration::from_secs(30);
+
+        fn new(group: u32) -> Self {
+            Self {
+                group: group as libc::pid_t,
+                descendant: None,
+            }
+        }
+
+        fn wait_for_descendant(&mut self, marker: &Path) -> libc::pid_t {
+            let watchdog = Instant::now() + Self::PREPARATION_WATCHDOG;
+            loop {
+                // The marker is complete only after the shell terminates the
+                // line; a partial write must not be parsed.
+                if let Some(pid) = fs::read_to_string(marker)
+                    .ok()
+                    .filter(|contents| contents.ends_with('\n'))
+                    .and_then(|contents| contents.trim().parse::<libc::pid_t>().ok())
+                {
+                    self.descendant = Some(pid);
+                    return pid;
+                }
+                assert!(
+                    Instant::now() < watchdog,
+                    "fixture preparation failed: the shell did not publish a descendant pid \
+                     marker at {} within {:?}",
+                    marker.display(),
+                    Self::PREPARATION_WATCHDOG,
+                );
+                thread::sleep(Duration::from_millis(5));
+            }
+        }
+
+        fn confirm_descendant_absent(&mut self, pid: libc::pid_t) {
+            let watchdog = Instant::now() + Self::REAP_WATCHDOG;
+            loop {
+                if unsafe { libc::kill(pid, 0) } == -1
+                    && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+                {
+                    // The pid is gone and may be reused; never signal it again.
+                    self.descendant = None;
+                    return;
+                }
+                assert!(
+                    Instant::now() < watchdog,
+                    "cleanup left owned descendant {pid} running",
+                );
+                thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for FixtureProcesses {
+        fn drop(&mut self) {
+            unsafe {
+                libc::kill(-self.group, libc::SIGKILL);
+                libc::kill(self.group, libc::SIGKILL);
+                if let Some(pid) = self.descendant {
+                    libc::kill(pid, libc::SIGKILL);
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn expired_overall_deadline_terminates_owned_descendants() {
+        let home = tempfile::tempdir().unwrap();
+        let marker = home.path().join("descendant-pid");
+        let plan = environment::prepare(vec![
+            OsString::from(format!("MARKER={}", marker.display())),
+            OsString::from("--"),
+            OsString::from("sh"),
+            OsString::from("-c"),
+            OsString::from("sleep 30 & echo $! > \"$MARKER\"; wait"),
+        ])
+        .unwrap();
+        // Spawn without a deadline so startup speed cannot decide the result,
+        // then wait until the descendant exists before expiring the limit.
+        let child = spawn(&plan, OutputMode::WorkloadInherited, None).unwrap();
+        let mut fixture = FixtureProcesses::new(child.pid);
+        let descendant = fixture.wait_for_descendant(&marker);
+        let expired = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .unwrap();
+
+        let outcome = supervise_spawned(
+            child,
+            &Limits {
+                overall: Some(expired),
+                idle: None,
+            },
+            Duration::ZERO,
+            None,
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, Outcome::Code(124)));
+        fixture.confirm_descendant_absent(descendant);
+    }
+
+    #[test]
+    fn zero_duration_disables_the_deadline() {
+        let start = Instant::now();
+
+        assert!(deadline(start, Some(Duration::ZERO)).unwrap().is_none());
+        assert!(deadline(start, None).unwrap().is_none());
+    }
+
+    #[test]
+    fn positive_duration_yields_a_future_deadline() {
+        let start = Instant::now();
+        let duration = Duration::from_millis(1);
+
+        let limit = deadline(start, Some(duration)).unwrap().unwrap();
+
+        assert_eq!(limit, start.checked_add(duration).unwrap());
+        assert!(limit > start);
+    }
+
+    #[test]
+    fn unrepresentable_duration_is_rejected() {
+        let error = deadline(Instant::now(), Some(Duration::MAX)).err().unwrap();
+
+        assert_eq!(error.code, Code::InvalidInput);
     }
 
     #[test]
