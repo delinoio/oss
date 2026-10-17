@@ -288,6 +288,163 @@ console.log(run(1), run(5));
 }
 
 #[test]
+fn keeps_sites_that_run_before_a_top_level_declaration() {
+    assert_not_inlined(
+        &[(
+            "main.ts",
+            r#"function early(n: number) {
+  return double(n) + 1;
+}
+try {
+  console.log(early(1));
+} catch (error) {
+  console.log("before", (error as Error).name);
+}
+const double = (value: number) => value * 2;
+console.log(early(2));
+"#,
+        )],
+        "double(",
+    );
+}
+
+#[test]
+fn keeps_sites_in_namespace_members_that_run_before_a_top_level_declaration() {
+    // Node cannot strip namespaces, so only the emitted calls are checked.
+    let temp = project(&[(
+        "main.ts",
+        r#"function attempt(f: () => number): number {
+  try {
+    return f();
+  } catch {
+    return -1;
+  }
+}
+namespace N {
+  export function run() {
+    return late(1);
+  }
+}
+console.log(attempt(N.run));
+const late = (value: number) => value * 2;
+console.log(attempt(N.run));
+"#,
+    )]);
+    optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    let main = emitted(temp.path(), "main.ts");
+    assert!(main.contains("late("), "{main}");
+}
+
+#[test]
+fn keeps_exported_functions_reachable_early_through_an_import_cycle() {
+    let temp = project(&[
+        (
+            "main.ts",
+            r#"import { start } from "./a.ts";
+start();
+"#,
+        ),
+        (
+            "a.ts",
+            r#"import { invoke } from "./b.ts";
+export const run = () => target(2);
+invoke();
+const target = (value: number) => value * 2;
+export function start() {
+  console.log(run());
+}
+"#,
+        ),
+        (
+            "b.ts",
+            r#"import * as ns from "./a.ts";
+export function invoke() {
+  try {
+    console.log((ns as any)["run"]());
+  } catch {
+    console.log("early");
+  }
+}
+"#,
+        ),
+    ]);
+    optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    let module = emitted(temp.path(), "a.ts");
+    assert!(module.contains("target("), "{module}");
+    same_behavior(temp.path());
+}
+
+#[test]
+fn keeps_exported_functions_in_an_import_cycle_that_run_before_the_declaration() {
+    let temp = project(&[
+        (
+            "main.ts",
+            r#"import * as ns from "./cycle.ts";
+export const run = () => late(1);
+try {
+  console.log(ns.call());
+} catch (error) {
+  console.log("early", (error as Error).name);
+}
+const late = (value: number) => value * 2;
+console.log(ns.call());
+"#,
+        ),
+        (
+            "cycle.ts",
+            r#"import * as main from "./main.ts";
+export const call = () => (main as any)["run"]();
+"#,
+        ),
+    ]);
+    optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    let main = emitted(temp.path(), "main.ts");
+    assert!(main.contains("late("), "{main}");
+    same_behavior(temp.path());
+}
+
+#[test]
+fn inlines_top_level_declarations_at_sites_that_run_after_them() {
+    let temp = project(&[
+        (
+            "main.ts",
+            r#"import { report } from "./report.ts";
+console.log("start");
+const double = (value: number) => value * 2;
+function run(n: number) {
+  return double(n) + 1;
+}
+console.log(run(3));
+report(5);
+"#,
+        ),
+        (
+            "report.ts",
+            r#"import { triple } from "./triple.ts";
+export function report(n: number) {
+  console.log("report", triple(n));
+}
+"#,
+        ),
+        (
+            "triple.ts",
+            r#"console.log("triple module");
+export const triple = (value: number) => value * 3;
+"#,
+        ),
+    ]);
+    let report = optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    let main = emitted(temp.path(), "main.ts");
+    assert!(
+        main.contains("* 2 + 1") && !main.contains("double"),
+        "{main}\n{report:#}"
+    );
+    let module = emitted(temp.path(), "report.ts");
+    assert!(module.contains("n * 3"), "{module}\n{report:#}");
+    same_behavior(temp.path());
+}
+
+#[test]
 fn preserves_argument_order_and_conditional_evaluation() {
     assert_not_inlined(
         &[(
