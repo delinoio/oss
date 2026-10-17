@@ -31,11 +31,14 @@ let disconnects: number;
 let observers: MockObserver[];
 class MockObserver {
   callback: () => void;
+  observed: Element[] = [];
   constructor(callback: () => void) {
     this.callback = callback;
     observers.push(this);
   }
-  observe() {}
+  observe(target: Element) {
+    this.observed.push(target);
+  }
   disconnect() {
     disconnects++;
   }
@@ -211,6 +214,39 @@ test("repositions when the popup content changes", async () => {
     await Promise.resolve();
   });
   expect(popup.style.top).toBe("244px");
+});
+
+test("repositions when a row before the anchor is inserted or removed", async () => {
+  const { container } = render(<Fixture />);
+  const popup = popupNode(container);
+  expect(popup.style.top).toBe("144px");
+  const row = document.createElement("div");
+  // A sibling inserted before the anchor's row shifts it without any resize.
+  anchorRect = { ...anchorRect, top: 160 };
+  await act(async () => {
+    container.insertBefore(row, container.firstChild);
+    await Promise.resolve();
+  });
+  expect(popup.style.top).toBe("204px");
+  anchorRect = { ...anchorRect, top: 100 };
+  await act(async () => {
+    row.remove();
+    await Promise.resolve();
+  });
+  expect(popup.style.top).toBe("144px");
+});
+
+test("observes every ancestor for size changes that shift the anchor", () => {
+  const { container } = render(<Fixture />);
+  const anchor = container.querySelector("button")!;
+  const observed = observers.flatMap((observer) => observer.observed);
+  for (
+    let owner: HTMLElement | null = anchor;
+    owner;
+    owner = owner.parentElement
+  )
+    expect(observed).toContain(owner);
+  expect(observed).toContain(popupNode(container));
 });
 
 test("closing and unmounting hide the popover and release every listener", () => {

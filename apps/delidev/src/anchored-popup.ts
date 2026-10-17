@@ -163,11 +163,15 @@ export function useAnchoredPopup(options: AnchoredPopupOptions): void {
       position();
     };
     const lifetime = new MutationObserver(outer);
+    // Ancestor child lists matter too: a row inserted, removed or reordered
+    // before the anchor moves it without resizing the anchor itself.
+    const ancestors: HTMLElement[] = [];
     for (
       let owner: HTMLElement | null = opener;
       owner;
       owner = owner.parentElement
-    )
+    ) {
+      ancestors.push(owner);
       lifetime.observe(owner, {
         attributes: true,
         attributeFilter: [
@@ -177,7 +181,9 @@ export function useAnchoredPopup(options: AnchoredPopupOptions): void {
           "disabled",
           "data-entrance",
         ],
+        childList: true,
       });
+    }
     // Content changes (filtering, async rows) move the flip decision even when
     // the capped popup box keeps its size, so watch the popup subtree too.
     const subtree = new MutationObserver(outer);
@@ -191,7 +197,9 @@ export function useAnchoredPopup(options: AnchoredPopupOptions): void {
         ? undefined
         : new ResizeObserver(outer);
     observer?.observe(element);
-    observer?.observe(opener);
+    // Every ancestor: a sibling that resizes shifts the anchor by resizing the
+    // ancestors that contain it, even when the anchor box is unchanged.
+    for (const owner of ancestors) observer?.observe(owner);
     const surface =
       latest.current.boundary?.(opener) ?? pickerSurfaceOwner(opener);
     if (surface) observer?.observe(surface);
