@@ -44,6 +44,12 @@ const (
 	usageRequiredScopeB     = "user:profile"
 )
 
+// usageCredentialTargets is the only native credential file this adapter owns,
+// relative to the profile root. Another harness' file in the same directory
+// (for example a Codex auth file) is neither admitted as usage state nor ever
+// removed by the usage cleanup.
+var usageCredentialTargets = []string{"claude/" + UsageCredentialFile}
+
 func usageLoginUnsupported() *domain.Error {
 	return domain.Fail(domain.Unsupported, "The Claude usage login must complete with a manual approval code.", "Keep the original native operation; do not substitute a client localhost callback.")
 }
@@ -223,7 +229,7 @@ func (s UsageStorage) Present(ctx context.Context) (bool, error) {
 	if err := s.validate(); err != nil {
 		return true, err
 	}
-	if _, err := subscription.InspectRetainedCredentials(s.root()); err != nil {
+	if _, err := subscription.InspectRetainedCredentialFiles(s.root(), usageCredentialTargets); err != nil {
 		return true, usageStorageProblem("The Claude usage profile holds unsafe credential storage.")
 	}
 	if _, err := os.Lstat(s.File()); err == nil {
@@ -254,7 +260,7 @@ func (s UsageStorage) Remove(ctx context.Context) error {
 			return usageStorageProblem("The Claude usage Keychain item could not be removed.")
 		}
 	}
-	if err := subscription.RetireCredentialFiles(s.root()); err != nil {
+	if err := subscription.RetireCredentialFilesNamed(s.root(), usageCredentialTargets); err != nil {
 		return usageStorageProblem("The Claude usage credential file could not be removed.")
 	}
 	return nil

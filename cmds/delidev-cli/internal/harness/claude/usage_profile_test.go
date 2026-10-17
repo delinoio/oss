@@ -311,6 +311,33 @@ func TestUsageStorageRemoveDeletesOnlyThisProfilesCredentials(t *testing.T) {
 	}
 }
 
+// The usage adapter owns only the Claude credential target: a private Codex
+// credential file in the same profile root is neither usage state nor removable.
+func TestUsageStorageNeverAdmitsOrRemovesAnotherHarnessCredential(t *testing.T) {
+	storage, _ := usageStorageFixture(t, "linux")
+	codex := filepath.Join(storage.root(), "codex", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(codex), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(codex, []byte(`{"tokens":"foreign"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	present, err := storage.Present(context.Background())
+	if err != nil || present {
+		t.Fatalf("a foreign Codex file was treated as usage storage: present=%v err=%v", present, err)
+	}
+	writeUsageFile(t, storage, usageFixtureCredentials(usageFixtureNow.Add(time.Hour)))
+	if err := storage.Remove(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(storage.File()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("the Claude credential survived")
+	}
+	if raw, err := os.ReadFile(codex); err != nil || string(raw) != `{"tokens":"foreign"}` {
+		t.Fatalf("the usage cleanup removed or changed a Codex credential: %v", err)
+	}
+}
+
 func TestUsageStorageRejectsNonCanonicalProfiles(t *testing.T) {
 	for _, dir := range []string{"", "relative/claude", "/data/not-claude"} {
 		storage := UsageStorage{GOOS: "linux", ConfigDir: dir}

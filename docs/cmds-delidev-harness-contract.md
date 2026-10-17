@@ -3556,7 +3556,7 @@ This is the one narrow exception to the prohibition on reading native authentica
 - Any other platform, a symlink, a non-regular entry, unsafe permissions, a foreign owner, an unreadable Keychain or an invalid `claudeAiOauth` bundle fails closed with a secret-free error. First admission requires that the profile holds no credential storage at all; a leftover is never adopted and is removed only by the owned cleanup.
 - The bundle must carry non-expired access (and optional refresh) tokens, an expiry and the `user:inference` and `user:profile` scopes, and is bound to the pinned OAuth client. The identity (email, organization and plan) comes from the original `claude auth status --json` of the same profile and must be a first-party claude.ai subscription.
 
-Removal deletes the credential file with its attributable temporaries and the exact derived Keychain item, and leaves every other profile file. Real installed-native, Keychain derivation and per-platform acceptance are not established by fixtures.
+Removal deletes the credential file with its attributable temporaries and the exact derived Keychain item, and leaves every other profile file: the adapter inspects and retires only the exact `claude/.credentials.json` target, so another harness' credential file in the profile root (for example a Codex `auth.json`) is neither admitted as usage state nor ever deleted. Real installed-native, Keychain derivation and per-platform acceptance are not established by fixtures.
 
 ### Completion, credentials and retained data
 
