@@ -1241,3 +1241,67 @@ func TestDeletionWaitsToCancelUntilSettlement(t *testing.T) {
 		t.Fatal("settled deletion did not cancel", calls)
 	}
 }
+
+func TestPaidUsagePriceRefreshWithoutCharge(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	svc, e := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "create service", Service: &pb.Service{Name: "paid-service", ClientId: "service", Capabilities: []string{"execute"}, Scopes: []string{"authorize", "usage:write"}}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, e = client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "default free plan", Plan: &pb.Plan{Name: "free", Free: true, DefaultFree: true}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	paid, e := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "paid plan", Plan: &pb.Plan{Name: "paid", Rank: 10, Postpaid: true}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	price, e := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "base subscription", Price: &pb.Price{PlanId: paid.Msg.Plan.Id, ServiceId: svc.Msg.Service.Id, Meter: "base", UnitPrice: "10", Included: "0", Currency: "USD", ExternalPriceId: "pri_base", Kind: pb.PriceKind_PRICE_KIND_RECURRING}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	me, e := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	tenant := me.Msg.Tenants[0].Id
+	change, e := client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: tenant, PlanId: paid.Msg.Plan.Id, PriceIds: []string{price.Msg.Price.Id}, ReturnUrl: cfg.ReturnURLs[0]}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	var before string
+	if e = db.Pool.QueryRow(ctx, "SELECT plan_id::text FROM tenants WHERE id=$1", tenant).Scan(&before); e != nil {
+		t.Fatal(e)
+	}
+	if before == paid.Msg.Plan.Id {
+		t.Fatal("checkout intent activated paid plan")
+	}
+	now := time.Now().UTC()
+	payload := fmt.Sprintf(`{"id":"txn_initial","status":"completed","currency_code":"USD","customer_id":"ctm_fixture","subscription_id":"sub_fixture","custom_data":{"delcore_job_id":%q,"delcore_tenant_id":%q},"items":[{"price":{"id":"pri_base"},"quantity":1}],"billing_period":{"starts_at":%q,"ends_at":%q}}`, change.Msg.JobId, tenant, now.Format(time.RFC3339Nano), now.AddDate(0, 1, 0).Format(time.RFC3339Nano))
+	var transaction provider.Transaction
+	if e = json.Unmarshal([]byte(payload), &transaction); e != nil {
+		t.Fatal(e)
+	}
+	w := &worker.Worker{DB: db, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if e = w.ApplyTransaction(ctx, transaction, now); e != nil {
+		t.Fatal(e)
+	}
+	var active string
+	if e = db.Pool.QueryRow(ctx, "SELECT plan_id::text FROM tenants WHERE id=$1", tenant).Scan(&active); e != nil || active != paid.Msg.Plan.Id {
+		t.Fatal("paid activation", active, e)
+	}
+	usage := key()
+	if _, e = db.Pool.Exec(ctx, "INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at) VALUES($1,$2,$3,'units',2,10,'USD','',now())", usage, paid.Msg.Plan.Id, svc.Msg.Service.Id); e != nil {
+		t.Fatal(e)
+	}
+	refresh, e := client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: tenant, PlanId: paid.Msg.Plan.Id, PriceIds: []string{price.Msg.Price.Id, usage}, ReturnUrl: cfg.ReturnURLs[0]}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	var state string
+	var installed bool
+	if e = db.Pool.QueryRow(ctx, "SELECT state,EXISTS(SELECT 1 FROM entitlements WHERE tenant_id=$2 AND price_id=$3 AND ends_at IS NULL) FROM jobs WHERE id=$1", refresh.Msg.JobId, tenant, usage).Scan(&state, &installed); e != nil || state != "done" || !installed {
+		t.Fatal("no-charge refresh stuck", state, installed, e)
+	}
+}

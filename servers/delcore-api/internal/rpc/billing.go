@@ -8,6 +8,8 @@ import (
 	"github.com/delinoio/oss/servers/delcore-api/internal/accounting"
 	"github.com/delinoio/oss/servers/delcore-api/internal/postgres"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"slices"
+	"sort"
 	"time"
 )
 
@@ -194,13 +196,24 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 		if newRank < oldRank || removed {
 			timing = "do_not_bill"
 		}
-		if free && len(external) == 0 {
+		// Existing paid entitlements prove the recurring items were purchased.
+		// Replacing only internal usage versions creates no provider charge.
+		localRefresh := false
+		if q.PlanId == t.PlanId && !added && !removed && len(external) > 0 {
+			var oldExternal []string
+			if e = c.tx.QueryRow(c.ctx, "SELECT COALESCE(array_agg(p.external_price_id ORDER BY p.external_price_id),'{}') FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND en.ends_at IS NULL AND p.kind=2", q.TenantId).Scan(&oldExternal); e != nil {
+				return e
+			}
+			sort.Strings(external)
+			localRefresh = slices.Equal(oldExternal, external)
+		}
+		if free && len(external) == 0 || localRefresh {
 			var subscription string
 			var start, end time.Time
 			if e = c.tx.QueryRow(c.ctx, "SELECT external_subscription_id,period_start,period_end FROM tenants WHERE id=$1", q.TenantId).Scan(&subscription, &start, &end); e != nil {
 				return e
 			}
-			if subscription != "" {
+			if subscription != "" && !localRefresh {
 				return precondition("use cancellation to return to the default free plan")
 			}
 			if newRank < oldRank {
