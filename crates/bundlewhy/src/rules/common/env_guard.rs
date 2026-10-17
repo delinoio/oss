@@ -13,8 +13,9 @@
 //! getters, proxies, runtime values) is resolved in the direction in which the
 //! read is not treated as guarded, so the finding is not produced.
 
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
+use super::{decode_identifier_escape, is_identifier_part};
 use crate::rules::await_context::await_operator_offsets;
 
 /// The branch construct a retained read controls.
@@ -168,6 +169,38 @@ fn is_word_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$') || byte >= 0x80
 }
 
+/// The byte width of the Unicode escape of an identifier character
+/// (`\u006f`, `\u{6f}`) that starts at `index`.
+fn identifier_escape_at(code: &str, index: usize) -> Option<usize> {
+    let rest = code.get(index..)?;
+    if !rest.starts_with('\\') {
+        return None;
+    }
+    decode_identifier_escape(rest)
+        .filter(|&(character, _)| is_identifier_part(character))
+        .map(|(_, width)| width)
+}
+
+/// The name an identifier token spells: its Unicode escapes (`\u006f`) are
+/// decoded, so a label is compared by name and not by spelling.
+fn word_name(text: &str) -> Cow<'_, str> {
+    if !text.contains('\\') {
+        return Cow::Borrowed(text);
+    }
+    let mut name = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(character) = rest.chars().next() {
+        if let Some((decoded, width)) = decode_identifier_escape(rest) {
+            name.push(decoded);
+            rest = &rest[width..];
+        } else {
+            name.push(character);
+            rest = &rest[character.len_utf8()..];
+        }
+    }
+    Cow::Owned(name)
+}
+
 /// Split `code` into tokens. Comments are dropped (a line terminator inside
 /// one is remembered on the next token); strings, regular expressions and
 /// template pieces are single tokens taken from `ignored`.
@@ -257,14 +290,21 @@ fn tokenize<'a>(code: &'a str, ignored: &[(usize, usize)]) -> Vec<Token<'a>> {
         {
             index = number_end(bytes, index);
             TokenKind::Number
-        } else if is_word_byte(byte) || byte == b'#' {
-            index += 1;
-            while index < bytes.len()
-                && is_word_byte(bytes[index])
-                && !separator_at(bytes, index)
-                && unicode_space_at(code, index).is_none()
-            {
-                index += 1;
+        } else if is_word_byte(byte) || byte == b'#' || identifier_escape_at(code, index).is_some()
+        {
+            index += identifier_escape_at(code, index).unwrap_or(1);
+            while index < bytes.len() {
+                if let Some(width) = identifier_escape_at(code, index) {
+                    // `index` is the backslash of an escape, not a word byte.
+                    index += width;
+                } else if is_word_byte(bytes[index])
+                    && !separator_at(bytes, index)
+                    && unicode_space_at(code, index).is_none()
+                {
+                    index += 1;
+                } else {
+                    break;
+                }
             }
             TokenKind::Word
         } else {
@@ -559,14 +599,15 @@ struct Parser<'a> {
 }
 
 /// A statement that a `break` or `continue` can target.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Jump<'a> {
     /// A loop: the target of an unlabelled `break` and `continue`.
     Loop,
     /// A `switch`: the target of an unlabelled `break` only.
     Switch,
-    /// A statement label: the target of `break label` and `continue label`.
-    Label(&'a str),
+    /// A statement label, by its decoded name: the target of `break label`
+    /// and `continue label`.
+    Label(Cow<'a, str>),
 }
 
 /// A completion that leaves the statement it appears in and has not been
@@ -850,11 +891,11 @@ impl<'a> Parser<'a> {
                     .tok()
                     .filter(|next| !next.newline && next.kind == TokenKind::Word)
                 {
-                    label = Some(next.text);
+                    label = Some(word_name(next.text));
                     self.bump();
                 }
                 if self.dead == 0 {
-                    self.record_jump(token.text == "continue", label);
+                    self.record_jump(token.text == "continue", label.as_deref());
                 }
                 self.abrupt = true;
                 self.eat_punct(";");
@@ -895,7 +936,7 @@ impl<'a> Parser<'a> {
             text if is_punct(self.at(1), ":") && !matches!(text, "default" | "case") => {
                 self.bump();
                 self.bump();
-                self.parse_jump_body(Jump::Label(text));
+                self.parse_jump_body(Jump::Label(word_name(text)));
             }
             _ => self.expression_statement(),
         }
@@ -907,7 +948,7 @@ impl<'a> Parser<'a> {
     /// is reported.
     fn record_jump(&mut self, is_continue: bool, label: Option<&str>) {
         let target = self.jumps.iter().rposition(|jump| match (jump, label) {
-            (Jump::Label(name), Some(label)) => *name == label,
+            (Jump::Label(name), Some(label)) => name == label,
             (Jump::Loop, None) => true,
             (Jump::Switch, None) => !is_continue,
             _ => false,
@@ -4544,6 +4585,60 @@ mod tests {
                 Some("and"),
             ),
             (
+                "finally break to a label spelled with an escape",
+                "(function(){\\u006f:for(;;){try{return process.env.FLAG}finally{for(;;){break \
+                 \\u006f}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break with an escape to a plain label",
+                "(function(){o:for(;;){try{return process.env.FLAG}finally{for(;;){break \
+                 \\u006f}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break to an escaped label spelled plainly",
+                "(function(){\\u006f:for(;;){try{return process.env.FLAG}finally{for(;;){break \
+                 o}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break to a label spelled with a braced escape",
+                "(function(){\\u{6f}:for(;;){try{return process.env.FLAG}finally{for(;;){break \
+                 o}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally continue to a label spelled with an escape",
+                "(function(){\\u006f:for(var i=0;i<2;i++){try{return \
+                 process.env.FLAG}finally{for(;;){continue \\u006f}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally escaped break to a label that is not a prefix",
+                "(function(){ab:for(;;){try{return process.env.FLAG}finally{for(;;){break \
+                 a\\u0062}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break to a local label spelled with an escape",
+                "(function(){try{return process.env.FLAG}finally{\\u006f:for(;;){break \
+                 o}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break to a local label with another escaped name",
+                "(function(){\\u006f:for(;;){try{return process.env.FLAG}finally{p:for(;;){break \
+                 \\u0070}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally escaped label shadows the outer label",
+                "(function(){o:for(;;){try{return process.env.FLAG}finally{\\u006f:for(;;){break \
+                 o}}}})()&&run()",
+                Some("and"),
+            ),
+            (
                 "finally break to an unknown label",
                 "(function(){try{return process.env.FLAG}finally{break missing}})()&&run()",
                 None,
@@ -5185,6 +5280,58 @@ mod tests {
                 row("e", false)
             ]
         );
+    }
+
+    #[test]
+    fn identifier_escapes_stay_in_one_word_token() {
+        let words = |code: &str| -> Vec<(TokenKind, String)> {
+            tokenize(code, &non_code_ranges(code))
+                .iter()
+                .map(|token| (token.kind, token.text.to_owned()))
+                .collect()
+        };
+        let word = |text: &str| (TokenKind::Word, text.to_owned());
+        let punct = |text: &str| (TokenKind::Punct, text.to_owned());
+        for (code, expected) in [
+            ("\\u006f:a", vec![word("\\u006f"), punct(":"), word("a")]),
+            ("\\u{6f}:a", vec![word("\\u{6f}"), punct(":"), word("a")]),
+            ("a\\u0062c d", vec![word("a\\u0062c"), word("d")]),
+            ("a\\u{62}c", vec![word("a\\u{62}c")]),
+            (
+                "\\u0069f(x)",
+                vec![word("\\u0069f"), punct("("), word("x"), punct(")")],
+            ),
+            // Not an escape of an identifier character: the backslash stays a
+            // punctuator.
+            ("\\x41", vec![punct("\\"), word("x41")]),
+            ("\\u00zz", vec![punct("\\"), word("u00zz")]),
+            (
+                "\\u{110000}",
+                vec![
+                    punct("\\"),
+                    word("u"),
+                    punct("{"),
+                    (TokenKind::Number, "110000".to_owned()),
+                    punct("}"),
+                ],
+            ),
+        ] {
+            assert_eq!(words(code), expected, "{code}");
+        }
+    }
+
+    #[test]
+    fn word_names_decode_identifier_escapes() {
+        for (text, name) in [
+            ("outer", "outer"),
+            ("\\u006futer", "outer"),
+            ("o\\u{75}ter", "outer"),
+            ("\\u{6f}\\u0075ter", "outer"),
+            ("caf\u{e9}", "caf\u{e9}"),
+            ("caf\\u00e9", "caf\u{e9}"),
+        ] {
+            assert_eq!(word_name(text), name, "{text}");
+        }
     }
 
     #[test]
