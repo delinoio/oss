@@ -6327,7 +6327,8 @@ count exceeds 256, paint no token overlay (no partial prefix), leave the native
 textarea text visible, and report the exact count through the localized status and
 the textarea description; editing back to 256 or fewer restores the full aligned
 overlay. Painted absent and selected ranges together stay within 256 ranges so the
-mirror holds at most 512 spans.
+mirror holds at most 512 spans; collapsed Markdown links share that same budget
+(see Composer Markdown links).
 An explicit retained binding is confirmed unavailable, with no selected decoration,
 when its exact four-field selection (Worker device, inventory, skill and content
 revision) is absent from a complete successful current-scope inventory, even if an
@@ -6664,6 +6665,16 @@ also owns prompt Markdown links. The pure model lives in
   backslash and its escaped character rounds to the character start, and an edit
   replaces the whole escape sequence. After a reveal, the session composer
   re-measures its height from the displayed text, not only from the draft.
+- **Painted budget.** Collapsed links and skill ranges share the one 256-range
+  (512-span) mirror budget. Skill ranges are already bounded by their analysis, so
+  links yield: when the parsed links exceed the remainder (256 minus the painted
+  absent and selected skill ranges), the whole draft is shown as plain canonical
+  source (the display equals the draft, no link is collapsed or decorated, and no
+  prefix is collapsed). The skill decoration and the exact unavailable count stay
+  as described for skill tokens, and links still open on modified click. Editing
+  or undoing back within the budget restores normal collapse without changing the
+  draft, history or bindings; the canonical selection is re-applied when the
+  display switches. All four composer placements share this behavior.
 - **History.** Programmatic conversion clears the native undo stack, so every
   edit is recorded in `PromptEditHistory`. Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z, Ctrl+Y
   (non-macOS) and native `historyUndo`/`historyRedo` run through it. A conversion

@@ -376,9 +376,6 @@ export function useSkillCompletion({
   // text derived from it, so selection, bindings and history map through here.
   const [revealed, setRevealed] = useState<number[]>([]);
   const [linkFailure, setLinkFailure] = useState<ExternalLinkFailure>();
-  const layout = useMemo(() => buildLayout(value, revealed), [value, revealed]);
-  const layoutRef = useRef<PromptLayout>(layout);
-  layoutRef.current = layout;
   const revealedRef = useRef(revealed);
   revealedRef.current = revealed;
   const selectionRef = useRef<PromptSelection>({
@@ -597,6 +594,25 @@ export function useSkillCompletion({
     scope,
   ]);
   const { unavailable, unavailableCount, selected: selectedRanges } = analysis;
+  // Links and skill ranges share one painted-range budget. Skill ranges are
+  // already bounded by the analysis, so links yield: when they no longer fit in
+  // the remainder, the whole draft is shown as plain source (no partial
+  // collapse) while the exact unavailable count stays reported.
+  const linkBudget =
+    MAX_PAINTED_SKILL_RANGES - unavailable.length - selectedRanges.length;
+  const layout = useMemo(
+    () => buildLayout(value, revealed, linkBudget),
+    [value, revealed, linkBudget],
+  );
+  const layoutRef = useRef<PromptLayout>(layout);
+  layoutRef.current = layout;
+  // Crossing the budget swaps the whole display text under the caret, so the
+  // canonical selection is re-applied after that render.
+  const collapseSuppressed = useRef(layout.collapseSuppressed);
+  if (collapseSuppressed.current !== layout.collapseSuppressed) {
+    collapseSuppressed.current = layout.collapseSuppressed;
+    pendingSelection.current = true;
+  }
   const confirmedCount = useRef<{
     scope: string;
     transport: typeof transport;

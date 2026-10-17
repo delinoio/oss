@@ -3,8 +3,19 @@ import { useRef, useState } from "react";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import {
+  SkillProvenance,
+  SkillService,
+  newRequestId,
+} from "@delinoio/delidev-api-client";
 import { useSkillCompletion, MAX_PROMPT_BYTES } from "./skill-completion";
 import { ExternalLinkFailure } from "./external-links";
 
@@ -28,12 +39,28 @@ interface Replacement {
   start: number;
   end: number;
 }
+const machine = newRequestId(),
+  agent = newRequestId();
+const available = {
+  name: "add-issue",
+  description: "fixture",
+  provenance: SkillProvenance.USER,
+  selection: {
+    $typeName: "delidev.v1.SkillSelection" as const,
+    inventoryId: newRequestId(),
+    workerDeviceId: newRequestId(),
+    skillId: newRequestId(),
+    contentRevision: "a".repeat(64),
+  },
+};
 function Composer({
   initial = "",
   replacement,
+  inventory = false,
 }: {
   initial?: string;
   replacement?: Replacement;
+  inventory?: boolean;
 }) {
   const [value, setValue] = useState(initial);
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -45,8 +72,8 @@ function Composer({
       setValue(next);
     },
     textarea,
-    machineId: "",
-    agentId: "",
+    machineId: inventory ? machine : "",
+    agentId: inventory ? agent : "",
   });
   return (
     <>
@@ -83,12 +110,21 @@ function Composer({
     </>
   );
 }
-function view(initial?: string, replacement?: Replacement) {
-  const transport = createRouterTransport(() => {});
+function view(initial?: string, replacement?: Replacement, inventory = false) {
+  const transport = createRouterTransport((router) => {
+    if (inventory)
+      router.service(SkillService, {
+        listSkills: async () => ({ skills: [available] }),
+      });
+  });
   render(
     <TransportProvider transport={transport}>
       <QueryClientProvider client={new QueryClient()}>
-        <Composer initial={initial} replacement={replacement} />
+        <Composer
+          initial={initial}
+          replacement={replacement}
+          inventory={inventory}
+        />
       </QueryClientProvider>
     </TransportProvider>,
   );
@@ -274,4 +310,116 @@ it("maps a canonical replacement selection to display offsets", () => {
     display,
     input.value.length,
   ]);
+});
+
+const OVERLAY_SPANS = ".skill-text-overlay span";
+const collapsedLinks = () =>
+  document.querySelectorAll(".prompt-markdown-link").length;
+const spanCount = () => document.querySelectorAll(OVERLAY_SPANS).length;
+const SMALL_LINK = "[x](https://a) ";
+
+it("shows a 240 KiB link draft as complete plain source without decoration spans", () => {
+  const draft = SMALL_LINK.repeat(16384);
+  expect(new TextEncoder().encode(draft).byteLength).toBeLessThan(
+    MAX_PROMPT_BYTES,
+  );
+  const input = view(draft);
+  expect(input.value).toBe(draft);
+  expect(canonical()).toBe(draft);
+  expect(collapsedLinks()).toBe(0);
+  expect(spanCount()).toBeLessThanOrEqual(512);
+  type(input, `${draft}z`);
+  expect(canonical()).toBe(`${draft}z`);
+  expect(spanCount()).toBeLessThanOrEqual(512);
+  fireEvent.keyDown(input, { key: "z", ctrlKey: true });
+  expect(canonical()).toBe(draft);
+  expect(input.value).toBe(draft);
+  expect(spanCount()).toBeLessThanOrEqual(512);
+});
+
+it.each([
+  [255, true],
+  [256, true],
+  [257, false],
+])(
+  "collapses %s links only while they fit the painted budget",
+  (count, fits) => {
+    const draft = SMALL_LINK.repeat(count);
+    const input = view(draft);
+    expect(canonical()).toBe(draft);
+    expect(collapsedLinks()).toBe(fits ? count : 0);
+    expect(input.value).toBe(fits ? "x ".repeat(count) : draft);
+    expect(spanCount()).toBeLessThanOrEqual(512);
+  },
+);
+
+it("restores collapse when edits return below the budget and keeps canonical copy", () => {
+  const input = view(SMALL_LINK.repeat(257));
+  expect(collapsedLinks()).toBe(0);
+  type(input, SMALL_LINK.repeat(256));
+  expect(canonical()).toBe(SMALL_LINK.repeat(256));
+  expect(collapsedLinks()).toBe(256);
+  expect(input.value).toBe("x ".repeat(256));
+  select(input, 0, input.value.length);
+  const data = { setData: vi.fn(), getData: () => "", files: [] };
+  fireEvent.copy(input, { clipboardData: data });
+  expect(data.setData).toHaveBeenCalledWith(
+    "text/plain",
+    SMALL_LINK.repeat(256),
+  );
+  fireEvent.keyDown(input, { key: "z", ctrlKey: true });
+  expect(canonical()).toBe(SMALL_LINK.repeat(257));
+  expect(collapsedLinks()).toBe(0);
+  expect(input.value).toBe(SMALL_LINK.repeat(257));
+});
+
+it("keeps ordinary link reveal and open behavior for small drafts", async () => {
+  const input = view(`a ${LINK} b`);
+  expect(collapsedLinks()).toBe(1);
+  select(input, 5);
+  expect(input.value).toBe(`a ${LINK} b`);
+  select(input, 0);
+  await act(async () => {
+    select(input, 3);
+    fireEvent.click(input, { ctrlKey: true });
+  });
+  expect(native.invoke).toHaveBeenCalledWith("open_external_url", { url: URL });
+});
+
+it("shares one painted budget between links and skill ranges", async () => {
+  const skill = (count: number) => "$gone ".repeat(count);
+  const link = (count: number) => SMALL_LINK.repeat(count);
+  const unavailable = () =>
+    document.querySelectorAll(".skill-token-unavailable").length;
+  // 128 + 128 fits the combined budget: both kinds are decorated.
+  const input = view(skill(128) + link(128), undefined, true);
+  await waitFor(() => expect(unavailable()).toBe(128));
+  expect(collapsedLinks()).toBe(128);
+  expect(spanCount()).toBeLessThanOrEqual(512);
+  // One link too many: links yield as a whole, skills keep their decoration.
+  type(input, skill(128) + link(129));
+  await waitFor(() => expect(collapsedLinks()).toBe(0));
+  expect(unavailable()).toBe(128);
+  expect(input.value).toBe(skill(128) + link(129));
+  expect(canonical()).toBe(skill(128) + link(129));
+  expect(spanCount()).toBeLessThanOrEqual(512);
+  // Back within the budget: the collapse returns with the skill decoration.
+  type(input, skill(128) + link(128));
+  await waitFor(() => expect(collapsedLinks()).toBe(128));
+  expect(unavailable()).toBe(128);
+  expect(spanCount()).toBeLessThanOrEqual(512);
+  // Skills beyond the budget paint nothing but still report their exact count;
+  // the links then own the whole budget.
+  type(input, skill(300) + link(256));
+  await waitFor(() => expect(unavailable()).toBe(0));
+  expect(collapsedLinks()).toBe(256);
+  expect(spanCount()).toBeLessThanOrEqual(512);
+  expect(
+    document.querySelector(".sidebar-sr-only[aria-hidden='true']")?.textContent,
+  ).toBe("300 skill tokens are unavailable in this scope.");
+  type(input, skill(300) + link(257));
+  await waitFor(() => expect(collapsedLinks()).toBe(0));
+  expect(unavailable()).toBe(0);
+  expect(spanCount()).toBe(0);
+  expect(input.value).toBe(skill(300) + link(257));
 });

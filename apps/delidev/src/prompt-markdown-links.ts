@@ -339,6 +339,11 @@ export interface PromptLayout {
   display: string;
   links: MarkdownLink[];
   collapsed: CollapsedLink[];
+  /**
+   * True when the parsed links exceeded the collapse budget, so the display is
+   * the complete canonical source and nothing is collapsed.
+   */
+  collapseSuppressed: boolean;
   toDisplay: (offset: number) => number;
   toCanonical: (offset: number) => number;
   /** Collapsed link whose display range strictly contains the offset. */
@@ -378,16 +383,24 @@ function labelDisplayIndex(link: CollapsedLink, relative: number): number {
   return low;
 }
 
+/**
+ * Builds the display layout. `collapseLimit` is the most links the presentation
+ * may decorate. When the draft parses more links than that, the whole draft
+ * stays plain source (display equals canonical, nothing collapsed) instead of
+ * collapsing an arbitrary prefix; `links` still reports every parsed link.
+ */
 export function buildLayout(
   canonical: string,
   revealed: readonly number[] = [],
+  collapseLimit = Number.POSITIVE_INFINITY,
 ): PromptLayout {
   const links = scanMarkdown(canonical).links;
+  const collapseSuppressed = links.length > collapseLimit;
   const open = new Set(revealed);
   const collapsed: CollapsedLink[] = [];
   let display = "",
     cursor = 0;
-  for (const link of links) {
+  for (const link of collapseSuppressed ? [] : links) {
     if (open.has(link.start)) continue;
     display += canonical.slice(cursor, link.start);
     const displayStart = display.length;
@@ -409,6 +422,7 @@ export function buildLayout(
     display,
     links,
     collapsed,
+    collapseSuppressed,
     toDisplay: (offset) => {
       let hidden = 0;
       for (const link of collapsed) {

@@ -258,3 +258,36 @@ it("converts a URL that follows a closed fenced block", () => {
   const links = "```\ncode\n```\n[a](https://example.com)";
   expect(scanMarkdown(links).links).toHaveLength(1);
 });
+
+it("keeps the complete canonical source when links exceed the collapse limit", () => {
+  const canonical = "[x](https://a) ".repeat(16384);
+  const layout = buildLayout(canonical);
+  expect(layout.links).toHaveLength(16384);
+  expect(layout.collapsed).toHaveLength(16384);
+  const limited = buildLayout(canonical, [], 256);
+  expect(limited.collapseSuppressed).toBe(true);
+  expect(limited.display).toBe(canonical);
+  expect(limited.collapsed).toEqual([]);
+  expect(limited.links).toHaveLength(16384);
+  expect(limited.toDisplay(40)).toBe(40);
+  expect(limited.toCanonical(40)).toBe(40);
+  expect(limited.collapsedContaining(40)).toBeUndefined();
+});
+
+it.each([
+  [255, 256, false],
+  [256, 256, false],
+  [257, 256, true],
+  [3, 2, true],
+  [2, 2, false],
+  [1, 0, true],
+])(
+  "suppresses collapse for %s links at limit %s: %s",
+  (count, limit, suppressed) => {
+    const canonical = "[x](https://a) ".repeat(count);
+    const layout = buildLayout(canonical, [], limit);
+    expect(layout.collapseSuppressed).toBe(suppressed);
+    expect(layout.collapsed).toHaveLength(suppressed ? 0 : count);
+    expect(layout.display).toBe(suppressed ? canonical : "x ".repeat(count));
+  },
+);
