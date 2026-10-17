@@ -224,10 +224,37 @@ export function inspectTools(
 }
 
 export function isNativeExecutable(bytes: Uint8Array, target: Target): boolean {
-  const magic = Buffer.from(bytes.subarray(0, 4)).toString("hex");
-  if (target === Target.MacOS) return magic === "cffaedfe";
-  if (target === Target.Linux) return magic === "7f454c46";
-  if (target === Target.Windows) return magic.startsWith("4d5a");
+  const header = Buffer.from(bytes);
+  // These checks identify the selected native architecture, not loader validity.
+  // Thin Mach-O: mach_header_64 with CPU_TYPE_ARM64.
+  if (target === Target.MacOS)
+    return (
+      header.length >= 32 &&
+      header.readUInt32LE(0) === 0xfeedfacf &&
+      header.readUInt32LE(4) === 0x0100000c
+    );
+  // ELF64, little-endian, current format version and EM_X86_64.
+  if (target === Target.Linux)
+    return (
+      header.length >= 64 &&
+      header.subarray(0, 4).toString("hex") === "7f454c46" &&
+      header[4] === 2 &&
+      header[5] === 1 &&
+      header[6] === 1 &&
+      header.readUInt16LE(18) === 62
+    );
+  if (target === Target.Windows) {
+    if (header.length < 64 || header.readUInt16LE(0) !== 0x5a4d) return false;
+    const offset = header.readUInt32LE(0x3c);
+    // e_lfanew points to the PE signature, COFF header and PE32+ magic.
+    return (
+      offset >= 64 &&
+      offset <= header.length - 26 &&
+      header.readUInt32LE(offset) === 0x00004550 &&
+      header.readUInt16LE(offset + 4) === 0x8664 &&
+      header.readUInt16LE(offset + 24) === 0x20b
+    );
+  }
   return false;
 }
 

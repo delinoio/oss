@@ -16,6 +16,8 @@ import {
   versions,
 } from "../dist/core.js";
 
+import { nativeHeader } from "./native-header.mjs";
+
 const cli = fileURLToPath(new URL("../dist/main.js", import.meta.url));
 async function temporary(t) {
   const root = await mkdtemp(join(tmpdir(), "typenative-test-"));
@@ -163,17 +165,12 @@ test(
   async () => {
     const { writeFileSync } = await import("node:fs");
     const target = hostTarget();
-    const header =
-      target === Target.MacOS
-        ? "cffaedfe"
-        : target === Target.Linux
-          ? "7f454c46"
-          : "4d5a0000";
+    const header = nativeHeader(target);
     let scratch;
     const runner = (_command, args, cwd) => {
       scratch = cwd;
       if (args[0] === "build") {
-        writeFileSync(args.at(-1), Buffer.from(header, "hex"));
+        writeFileSync(args.at(-1), header);
         return { status: 0, failed: false, stdout: "" };
       }
       return {
@@ -184,7 +181,7 @@ test(
     };
     const result = await probeNative("compiler", target, runner);
     assert.match(result.sha256, /^[a-f0-9]{64}$/);
-    assert.equal(result.bytes, 4);
+    assert.equal(result.bytes, header.length);
     assert.equal(existsSync(scratch), false);
   },
 );
