@@ -52,6 +52,13 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 	if f.Limit == 0 {
 		f.Limit = 50
 	}
+	// UNSPECIFIED is the historical unfiltered inventory. Any other value must be
+	// a known API protocol; an unknown value is never silently ignored.
+	f.APIProtocol = rpc.APIProtocol(req.Msg.CompatibleAccountApiProtocol)
+	if f.APIProtocol != "" && !f.APIProtocol.API() {
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Unknown provider inventory API format filter.", "Select one supported API format or omit the filter."), req.Header().Get(rpc.CorrelationHeader))
+	}
+	s.logger.DebugContext(ctx, "provider_inventory_list", "enabled_only", f.EnabledOnly, "api_protocol_filter", f.APIProtocol, "paged", req.Msg.PageToken != "")
 	raw, _ := json.Marshal(f)
 	hash := sha256.Sum256(raw)
 	scope := providerInventoryCursorScopeVersion + ":" + hex.EncodeToString(hash[:])
@@ -75,6 +82,7 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_API_PROTOCOL_V1,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_V1,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_REVISION_V1,
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1,
 	}}
 	for i, entry := range entries {

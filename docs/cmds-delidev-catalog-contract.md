@@ -204,6 +204,60 @@ native references outside SQLite before publication. Failed enumeration rejects
 the edit. Exact accepted receipt replays do not reopen the vault. Keyless proof
 skips native enumeration and cannot be relabeled as credential-owning authority.
 
+## Compatible-account provider inventory filter
+
+This contract adds ProviderInventory capability
+`COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1 = 11` and the typed
+`ListProviderInventoryRequest.compatible_account_api_protocol = 5` (the existing
+closed `ApiProtocol` enum). It reuses no existing number; the allocation is
+recorded in `protos/delidev/allocations.json` and is independent of any open
+System-capability reservation. Capability 7 keeps naming the account-list
+`api_protocol` filter; capability 11 only advertises this provider-inventory
+request field.
+
+`UNSPECIFIED` (the default) keeps the historical inventory unchanged, including its
+cursor scope. A known API protocol keeps only saved providers (managed or custom,
+never an unsaved preset) that own at least one account satisfying
+`providers.AccountSelectableForProtocol`, the server mirror of the Agent Worker
+account picker: the account is an API account, has a connection object and no
+pending removal, has health `ready` or `unverified`, and
+`providers.ResolveAccountProfile` resolves its explicit `api_protocol` (or the
+provider's legacy tuple) to the requested protocol with a matching connection
+profile. Enabled, quota, exhaustion and entitlement state of accounts are not
+tested, and the filter does not imply `enabled_only`. Any other value (unknown
+numbers included) fails with `INVALID_ARGUMENT`; a server that predates capability
+11 ignores the field, so a client must treat a response without the capability as
+unfiltered.
+
+Eligibility is computed inside the one SQLite read snapshot that serves the page,
+over every committed account and provider, before the managed-preset/custom
+ordering and the page limit: managed presets are filtered in memory and custom
+providers by an `id IN (eligible ids)` clause ahead of `LIMIT`, so a qualifying
+provider after any number of ineligible ones is reachable and a page is never
+filtered after the fact.
+
+Fail-closed reads: eligibility is decided from stored state, so every record or
+reference that decides compatibility either reads cleanly or fails the whole
+request with `recovery_required`; none is ever taken as proof that no account
+exists, and a failed request returns no partial page. Every stored account record
+is decoded and run through `Account.Validate` before any eligibility test, so an
+account with a wrong-typed field, or one that decodes but is invalid (for example
+an unknown health or type, or a malformed provider ID), fails the request instead
+of being skipped. The provider of each ready or unverified connected API account
+(the only accounts whose compatibility depends on a provider) must exist, decode
+and pass `Provider.Validate` (for example an insecure custom endpoint is
+invalid); a missing provider row, an undecodable provider or an invalid provider
+fails the request. Custom provider rows that cannot be decoded while the page is
+assembled fail the same way. Only a well-formed negative answer counts as
+absence: a disconnected, expired, revoked, failed or pending-removal account, or
+an account whose explicit or legacy API format does not resolve to the requested
+protocol. A dangling provider reference on an account that is not in a selectable
+state does not influence the filter. The filter joins the
+signed cursor scope only when set, and the cursor epoch (latest provider/account
+event) already expires continuations after any provider or account change, so a
+token cannot cross filters or survive the loss of an eligible provider's last
+selectable account. Desktop consumption of the filter is a separate change.
+
 ## Ordered Agent Worker account sources
 
 The originating change established System capability 36 and SaveAgentWorkerRequest field 5 on
