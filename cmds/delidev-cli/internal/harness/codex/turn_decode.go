@@ -2,6 +2,7 @@ package codex
 
 import (
 	"encoding/json"
+	"reflect"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -15,6 +16,23 @@ type turnWire struct {
 	CompletedAt *int64            `json:"completedAt"`
 	DurationMS  *int64            `json:"durationMs"`
 	Error       json.RawMessage   `json:"error"`
+}
+
+type turnFailureWire struct {
+	Message           *string         `json:"message"`
+	AdditionalDetails *string         `json:"additionalDetails"`
+	Code              json.RawMessage `json:"codexErrorInfo"`
+	Misalignment      json.RawMessage `json:"misalignment"`
+}
+
+// childTurnKeysCanonical reports whether a child turn object, including its
+// failure object, uses only canonical case-sensitive keys.
+func childTurnKeysCanonical(raw json.RawMessage) bool {
+	var wire turnWire
+	if json.Unmarshal(raw, &wire) != nil || !canonicalKeys(raw, reflect.TypeOf(turnWire{})) {
+		return false
+	}
+	return len(wire.Error) == 0 || canonicalKeys(wire.Error, reflect.TypeOf(turnFailureWire{}))
 }
 
 func decodeTurn(raw json.RawMessage) (Turn, error) {
@@ -41,12 +59,7 @@ func decodeTurn(raw json.RawMessage) (Turn, error) {
 	result := Turn{ID: wire.ID, Status: wire.Status, StartedAt: wire.StartedAt, CompletedAt: wire.CompletedAt, DurationMS: wire.DurationMS}
 	hasError := len(wire.Error) > 0 && string(wire.Error) != "null"
 	if hasError {
-		var failure struct {
-			Message           *string         `json:"message"`
-			AdditionalDetails *string         `json:"additionalDetails"`
-			Code              json.RawMessage `json:"codexErrorInfo"`
-			Misalignment      json.RawMessage `json:"misalignment"`
-		}
+		var failure turnFailureWire
 		if domain.Decode(wire.Error, &failure) != nil || failure.Message == nil || wire.Status != TurnFailed {
 			return Turn{}, incompatible()
 		}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 	"maps"
 	"os"
 	"path/filepath"
@@ -205,6 +206,208 @@ func TestSubagentEarlyStatusRequiresIndependentDescendantProof(t *testing.T) {
 	}
 	if _, err := c.InspectDescendants(context.Background()); err == nil || len(c.pendingChildStatuses) != 1 {
 		t.Fatal("published child missing from inventory lost its completion fence")
+	}
+}
+
+func TestSubagentEarlyStatusRequiresExactEnvelope(t *testing.T) {
+	c, turn := observationClient()
+	child := domain.NewID()
+	idle := ThreadStatus{Type: ThreadIdle}
+	rejected := []struct {
+		name   string
+		params map[string]any
+	}{
+		{"extra top-level key", map[string]any{"threadId": child, "status": idle, "extra": true}},
+		{"extra null top-level key", map[string]any{"threadId": child, "status": idle, "turnId": nil}},
+		{"unknown nested key", map[string]any{"threadId": child, "status": map[string]any{"type": "idle", "extra": 1}}},
+		{"invalid status type", map[string]any{"threadId": child, "status": "idle"}},
+		{"unknown status variant", map[string]any{"threadId": child, "status": map[string]any{"type": "unknown"}}},
+		{"missing status", map[string]any{"threadId": child}},
+	}
+	for _, tc := range rejected {
+		event, err := observeFixture(c, "thread/status/changed", tc.params)
+		if err == nil || event.Kind == MetadataEvent || len(c.pendingChildStatuses) != 0 || len(c.subagents) != 0 || c.execution.active != turn {
+			t.Fatal("malformed early child status envelope was accepted or recorded state", tc.name, err)
+		}
+	}
+	raw := nativewire.Event{Kind: nativewire.Notification, Method: "thread/status/changed", Params: json.RawMessage(`{"threadId":"` + string(child) + `","status":{"type":"idle"},"threadId":"` + string(child) + `"}`)}
+	// Duplicate keys fail the shared strict decode before the child branch and
+	// must never retain an unresolved identity.
+	if _, handled, err := c.observeChildNative(raw); handled || err != nil || len(c.pendingChildStatuses) != 0 {
+		t.Fatal("duplicate-key early child status envelope reached the child fence", handled, err)
+	}
+	// The exact envelope keeps the passive metadata and unresolved-child fence.
+	event, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": child, "status": idle})
+	if err != nil || event.Kind != MetadataEvent || len(c.pendingChildStatuses) != 1 || len(c.subagents) != 0 {
+		t.Fatal("exact early child status envelope lost its unresolved ancestry fence", err)
+	}
+	// A rejected envelope for an already retained identity leaves the fence intact.
+	if _, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": child, "status": idle, "extra": true}); err == nil || len(c.pendingChildStatuses) != 1 {
+		t.Fatal("rejected envelope changed the retained fence", err)
+	}
+	// Root-thread status never enters the early child fence.
+	before := len(c.pendingChildStatuses)
+	_, _ = observeFixture(c, "thread/status/changed", map[string]any{"threadId": c.thread, "status": idle})
+	if len(c.pendingChildStatuses) != before {
+		t.Fatal("root thread status entered the unresolved child fence")
+	}
+	// Owned child status uses the owned branch and never adds a fence entry.
+	owned := domain.NewID()
+	spawn := map[string]any{"type": "collabAgentToolCall", "id": "exact-envelope-spawn", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{owned}, "agentsStates": map[string]any{string(owned): map[string]any{"status": "running", "message": nil}}}
+	if event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn}); err != nil || event.Kind != SubagentEvent {
+		t.Fatal("canonical spawn did not establish child ownership", err)
+	}
+	_, _ = observeFixture(c, "thread/status/changed", map[string]any{"threadId": owned, "status": idle})
+	if len(c.pendingChildStatuses) != before {
+		t.Fatal("owned child status entered the unresolved child fence")
+	}
+}
+
+func TestSubagentEarlyStatusRejectsCaseAliasedKeys(t *testing.T) {
+	c, turn := observationClient()
+	child := domain.NewID()
+	rejected := []struct {
+		name string
+		raw  string
+	}{
+		{"capitalized status", `{"threadId":"` + string(child) + `","Status":{"type":"idle"}}`},
+		{"uppercase status", `{"threadId":"` + string(child) + `","STATUS":{"type":"idle"}}`},
+		{"both status spellings", `{"threadId":"` + string(child) + `","status":{"type":"idle"},"Status":{"type":"idle"}}`},
+		{"capitalized nested type", `{"threadId":"` + string(child) + `","status":{"Type":"idle"}}`},
+		{"capitalized nested active flags", `{"threadId":"` + string(child) + `","status":{"type":"active","ActiveFlags":["waitingOnApproval"]}}`},
+		{"extra capitalized thread id", `{"threadId":"` + string(child) + `","ThreadID":"` + string(child) + `","status":{"type":"idle"}}`},
+	}
+	for _, tc := range rejected {
+		raw := nativewire.Event{Kind: nativewire.Notification, Method: "thread/status/changed", Params: json.RawMessage(tc.raw)}
+		event, handled, err := c.observeChildNative(raw)
+		if err == nil || !handled || event.Kind == MetadataEvent || len(c.pendingChildStatuses) != 0 || len(c.subagents) != 0 || c.execution.active != turn {
+			t.Fatal("case-aliased early child status envelope was accepted or recorded state", tc.name, handled, err)
+		}
+	}
+	// A capitalized thread identity key never names a child identity.
+	raw := nativewire.Event{Kind: nativewire.Notification, Method: "thread/status/changed", Params: json.RawMessage(`{"ThreadId":"` + string(child) + `","status":{"type":"idle"}}`)}
+	if _, handled, err := c.observeChildNative(raw); handled || err != nil || len(c.pendingChildStatuses) != 0 {
+		t.Fatal("capitalized thread identity key reached the child fence", handled, err)
+	}
+	// The canonical key spelling, in either object order, is still accepted.
+	for _, params := range []string{
+		`{"threadId":"` + string(child) + `","status":{"type":"idle"}}`,
+		`{"status":{"type":"idle"},"threadId":"` + string(child) + `"}`,
+	} {
+		raw := nativewire.Event{Kind: nativewire.Notification, Method: "thread/status/changed", Params: json.RawMessage(params)}
+		event, handled, err := c.observeChildNative(raw)
+		if err != nil || !handled || event.Kind != MetadataEvent || len(c.pendingChildStatuses) != 1 {
+			t.Fatal("canonical early child status envelope was rejected", handled, err)
+		}
+	}
+}
+
+func TestSubagentChildNativeEnvelopesRejectCaseAliasedKeys(t *testing.T) {
+	c, turn := observationClient()
+	child := domain.NewID()
+	spawn := map[string]any{"type": "collabAgentToolCall", "id": "case-spawn", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{child}, "agentsStates": map[string]any{string(child): map[string]any{"status": "running", "message": nil}}}
+	if event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn}); err != nil || event.Kind != SubagentEvent {
+		t.Fatal("canonical spawn did not establish child ownership", err)
+	}
+	id := string(child)
+	completedTurn := `{"id":"` + string(domain.NewID()) + `","items":[],"status":"completed"}`
+	for _, tc := range []struct{ name, method, canonical, aliased string }{
+		{"turn completed envelope", "turn/completed", `{"threadId":"` + id + `","turn":` + completedTurn + `}`, `{"threadId":"` + id + `","Turn":` + completedTurn + `}`},
+		{"turn completed turn", "turn/completed", `{"threadId":"` + id + `","turn":` + completedTurn + `}`, `{"threadId":"` + id + `","turn":{"id":"` + string(domain.NewID()) + `","items":[],"Status":"completed"}}`},
+		{"agent message item", "item/completed", `{"threadId":"` + id + `","turnId":"` + string(turn) + `","item":{"type":"agentMessage","id":"m1","text":"hi"}}`, `{"threadId":"` + id + `","turnId":"` + string(turn) + `","item":{"type":"agentMessage","id":"m1","Text":"hi"}}`},
+		{"token usage", "thread/tokenUsage/updated", `{"threadId":"` + id + `","turnId":"` + string(turn) + `","tokenUsage":{"total":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1,"reasoningOutputTokens":0,"totalTokens":2},"last":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1,"reasoningOutputTokens":0,"totalTokens":2},"modelContextWindow":null}}`, `{"threadId":"` + id + `","turnId":"` + string(turn) + `","tokenUsage":{"Total":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1,"reasoningOutputTokens":0,"totalTokens":2},"last":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1,"reasoningOutputTokens":0,"totalTokens":2},"modelContextWindow":null}}`},
+	} {
+		if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: tc.method, Params: json.RawMessage(tc.aliased)}); !handled || err == nil {
+			t.Fatal("case-aliased child envelope was accepted", tc.name, handled, err)
+		}
+		if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: tc.method, Params: json.RawMessage(tc.canonical)}); !handled || err != nil {
+			t.Fatal("canonical child envelope was rejected", tc.name, handled, err)
+		}
+	}
+	itemParams := func(extra string) json.RawMessage {
+		return json.RawMessage(`{"threadId":"` + id + `",` + extra + `"item":{"type":"agentMessage","id":"m2","text":"hi"}}`)
+	}
+	for name, params := range map[string]json.RawMessage{
+		"capitalized turn id": itemParams(`"TurnId":"` + string(turn) + `",`),
+		"extra top-level key": itemParams(`"turnId":"` + string(turn) + `","extra":true,`),
+	} {
+		event, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: "item/completed", Params: params})
+		if !handled || err == nil || event.Kind == SubagentEvent {
+			t.Fatal("malformed child item envelope was accepted", name, handled, err)
+		}
+	}
+	if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: "item/completed", Params: itemParams(`"turnId":"` + string(turn) + `",`)}); !handled || err != nil {
+		t.Fatal("canonical child item envelope was rejected", handled, err)
+	}
+	started := func(key string) json.RawMessage {
+		return json.RawMessage(`{"` + key + `":{"id":"` + id + `","sessionId":"` + string(c.execution.thread.SessionID) + `","cliVersion":"` + SupportedVersion + `","cwd":"/","modelProvider":"` + c.execution.settings.Provider + `","createdAt":1,"updatedAt":1,"ephemeral":false,"preview":"","projectId":null,"source":null,"status":{"type":"idle"},"turns":[],"parentThreadId":"` + string(c.thread) + `"}}`)
+	}
+	if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: "thread/started", Params: started("Thread")}); handled && err == nil {
+		t.Fatal("capitalized thread envelope key was accepted")
+	}
+	if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: "thread/started", Params: started("thread")}); !handled || err != nil {
+		t.Fatal("canonical thread/started envelope was rejected", handled, err)
+	}
+}
+
+func TestSubagentOwnershipItemsRejectCaseAliasedKeys(t *testing.T) {
+	c, turn := observationClient()
+	child := domain.NewID()
+	spawn := func(rename func(map[string]any)) map[string]any {
+		item := map[string]any{"type": "collabAgentToolCall", "id": "case-alias-spawn", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{child}, "agentsStates": map[string]any{string(child): map[string]any{"status": "running", "message": nil}}}
+		if rename != nil {
+			rename(item)
+		}
+		return item
+	}
+	aliased := map[string]func(map[string]any){
+		"Tool instead of tool": func(m map[string]any) { m["Tool"] = m["tool"]; delete(m, "tool") },
+		"both tool spellings":  func(m map[string]any) { m["Tool"] = m["tool"] },
+		"nested agent state alias": func(m map[string]any) {
+			m["agentsStates"] = map[string]any{string(child): map[string]any{"Status": "running", "message": nil}}
+		},
+	}
+	for name, rename := range aliased {
+		event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn(rename)})
+		if err == nil || event.Kind == SubagentEvent || len(c.subagents) != 0 {
+			t.Fatal("case-aliased collaboration item established child ownership", name, err)
+		}
+	}
+	if event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn(nil)}); err != nil || event.Kind != SubagentEvent || len(c.subagents) != 1 {
+		t.Fatal("canonical collaboration item did not establish child ownership", err)
+	}
+	activity := func(kindKey string) json.RawMessage {
+		return json.RawMessage(`{"type":"subAgentActivity","id":"case-alias-activity","` + kindKey + `":"started","agentThreadId":"` + string(child) + `","agentPath":"/native-child"}`)
+	}
+	if _, err := c.observeSubagentActivity(activity("Kind"), turn); err == nil {
+		t.Fatal("case-aliased activity item was accepted")
+	}
+	if _, err := c.observeSubagentActivity(activity("kind"), turn); err != nil {
+		t.Fatal("canonical activity item was rejected", err)
+	}
+}
+
+func TestSubagentFailedTurnErrorRejectsCaseAliasedKeys(t *testing.T) {
+	c, turn := observationClient()
+	child := domain.NewID()
+	spawn := map[string]any{"type": "collabAgentToolCall", "id": "case-failed-spawn", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{child}, "agentsStates": map[string]any{string(child): map[string]any{"status": "running", "message": nil}}}
+	if event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn}); err != nil || event.Kind != SubagentEvent {
+		t.Fatal("canonical spawn did not establish child ownership", err)
+	}
+	failed := func(key string) json.RawMessage {
+		return json.RawMessage(`{"threadId":"` + string(child) + `","turn":{"id":"` + string(domain.NewID()) + `","items":[],"status":"failed","error":{"` + key + `":"boom"}}}`)
+	}
+	if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: "turn/completed", Params: failed("Message")}); !handled || err == nil {
+		t.Fatal("case-aliased failed-turn error key was accepted", handled, err)
+	}
+	if c.subagents[string(child)].Status == domain.SubagentFailed {
+		t.Fatal("case-aliased failed-turn error published the child as failed")
+	}
+	if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: "turn/completed", Params: failed("message")}); !handled || err != nil {
+		t.Fatal("canonical failed-turn error was rejected", handled, err)
+	}
+	if c.subagents[string(child)].Status != domain.SubagentFailed {
+		t.Fatal("canonical failed turn did not settle the child as failed")
 	}
 }
 

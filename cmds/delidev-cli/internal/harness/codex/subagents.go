@@ -138,7 +138,7 @@ func (c *Client) observeCollaboration(item json.RawMessage, sender domain.ID, tu
 			Message *string `json:"message"`
 		} `json:"agentsStates"`
 	}
-	if domain.Decode(item, &v) != nil || v.Type != "collabAgentToolCall" || v.Sender != sender || domain.Text(v.ID, "native collab item", 1024, true) != nil || !slices.Contains([]string{"spawnAgent", "sendInput", "resumeAgent", "wait", "closeAgent", "sendMessage", "followupTask", "interruptAgent", "listAgents"}, v.Tool) || !slices.Contains([]string{"inProgress", "completed", "failed", "interrupted"}, v.Status) || len(v.Receivers) > 128 {
+	if decodeCaseExact(item, &v) != nil || v.Type != "collabAgentToolCall" || v.Sender != sender || domain.Text(v.ID, "native collab item", 1024, true) != nil || !slices.Contains([]string{"spawnAgent", "sendInput", "resumeAgent", "wait", "closeAgent", "sendMessage", "followupTask", "interruptAgent", "listAgents"}, v.Tool) || !slices.Contains([]string{"inProgress", "completed", "failed", "interrupted"}, v.Status) || len(v.Receivers) > 128 {
 		return Event{}, incompatible()
 	}
 	if sender != c.thread {
@@ -202,7 +202,7 @@ func (c *Client) observeSubagentActivity(item json.RawMessage, turn domain.ID) (
 		Agent domain.ID `json:"agentThreadId"`
 		Path  string    `json:"agentPath"`
 	}
-	if domain.Decode(item, &v) != nil || v.Type != "subAgentActivity" || v.Agent.Validate() != nil || domain.Text(v.Path, "native agent path", 1024, true) != nil {
+	if decodeCaseExact(item, &v) != nil || v.Type != "subAgentActivity" || v.Agent.Validate() != nil || domain.Text(v.Path, "native agent path", 1024, true) != nil {
 		return Event{}, incompatible()
 	}
 	if !slices.Contains([]string{"started", "interacted", "interrupted", "completed"}, v.Kind) {
@@ -311,12 +311,12 @@ func (c *Client) inspectDescendantSnapshotLocked(ctx context.Context) (Event, er
 			Next *string           `json:"nextCursor"`
 			Back *string           `json:"backwardsCursor"`
 		}
-		if domain.Decode(response.Result, &result) != nil || result.Data == nil {
+		if decodeCaseExact(response.Result, &result) != nil || result.Data == nil {
 			return Event{}, incompatible()
 		}
 		for _, raw := range result.Data {
 			var t threadWire
-			if domain.Decode(raw, &t) != nil || t.ID.Validate() != nil || t.ParentThreadID == nil || t.ParentThreadID.Validate() != nil || t.SessionID.Validate() != nil || t.CLIVersion != c.version || t.ModelProvider != c.execution.settings.Provider || validateThreadStatus(t.Status) != nil || seen[string(t.ID)] {
+			if decodeCaseExact(raw, &t) != nil || t.ID.Validate() != nil || t.ParentThreadID == nil || t.ParentThreadID.Validate() != nil || t.SessionID.Validate() != nil || t.CLIVersion != c.version || t.ModelProvider != c.execution.settings.Provider || validateThreadStatus(t.Status) != nil || seen[string(t.ID)] {
 				if c.logger != nil {
 					c.logger.WarnContext(ctx, "Codex descendant inventory rejected", "owner_id", c.ownerID, "stage", "thread-identity")
 				}
@@ -377,7 +377,7 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 		var v struct {
 			Thread threadWire `json:"thread"`
 		}
-		if domain.Decode(native.Params, &v) == nil && v.Thread.ParentThreadID != nil {
+		if decodeCaseExact(native.Params, &v) == nil && v.Thread.ParentThreadID != nil {
 			t := v.Thread
 			if t.ID.Validate() != nil || t.ID == c.thread || t.ParentThreadID.Validate() != nil || t.SessionID.Validate() != nil || t.ModelProvider != c.execution.settings.Provider || t.CLIVersion != c.version || validateThreadStatus(t.Status) != nil {
 				return Event{}, true, incompatible()
@@ -412,10 +412,20 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 		// until independent descendant inventory proves ancestry. This grants no
 		// child ownership or settlement; unresolved identities block completion.
 		if native.Method == "thread/status/changed" && domain.ID(thread).Validate() == nil && domain.ID(thread) != c.thread {
-			var status ThreadStatus
-			if domain.Decode(fields["status"], &status) != nil || validateThreadStatus(status) != nil {
+			// The exact {threadId,status} envelope is required: unknown
+			// top-level parameters are rejected before any passive metadata
+			// or unresolved-identity state is recorded.
+			var envelope struct {
+				ThreadID domain.ID    `json:"threadId"`
+				Status   ThreadStatus `json:"status"`
+			}
+			if !requireExactKeys(native.Params, "threadId", "status") || decodeCaseExact(native.Params, &envelope) != nil || envelope.ThreadID != domain.ID(thread) || validateThreadStatus(envelope.Status) != nil {
+				if c.logger != nil {
+					c.logger.Warn("Codex child status envelope rejected", "owner_id", c.ownerID, "stage", "early-child-status")
+				}
 				return Event{}, true, incompatible()
 			}
+			status := envelope.Status
 			if c.pendingChildStatuses == nil {
 				c.pendingChildStatuses = make(map[domain.ID]struct{})
 			}
@@ -449,11 +459,11 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			ThreadID domain.ID       `json:"threadId"`
 			Turn     json.RawMessage `json:"turn"`
 		}
-		if domain.Decode(native.Params, &t) != nil {
+		if decodeCaseExact(native.Params, &t) != nil {
 			return Event{}, true, incompatible()
 		}
 		turn, err := decodeTurn(t.Turn)
-		if err != nil || !turn.Status.terminal() {
+		if err != nil || !turn.Status.terminal() || !childTurnKeysCanonical(t.Turn) {
 			return Event{}, true, incompatible()
 		}
 		o.SourceID = string(turn.ID)
@@ -468,6 +478,19 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			o.Status = domain.SubagentFailed
 		}
 	case "item/started", "item/completed":
+		// The item notification envelope is typed and case-exact like the item
+		// payloads below, so aliased or extra top-level keys never publish output.
+		var envelope struct {
+			ThreadID      domain.ID       `json:"threadId"`
+			TurnID        domain.ID       `json:"turnId"`
+			Item          json.RawMessage `json:"item"`
+			StartedAtMS   *int64          `json:"startedAtMs,omitempty"`
+			CompletedAtMS *int64          `json:"completedAtMs,omitempty"`
+			DurationMS    *int64          `json:"durationMs,omitempty"`
+		}
+		if decodeCaseExact(native.Params, &envelope) != nil {
+			return Event{}, true, incompatible()
+		}
 		var item map[string]json.RawMessage
 		if domain.Decode(fields["item"], &item) != nil {
 			return Event{}, true, incompatible()
@@ -496,7 +519,7 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			Delivery  json.RawMessage   `json:"delivery,omitempty"`
 			Questions []json.RawMessage `json:"questions,omitempty"`
 		}
-		if domain.Decode(fields["item"], &v) != nil {
+		if decodeCaseExact(fields["item"], &v) != nil {
 			return Event{}, true, incompatible()
 		}
 		// Omitted, null or empty questions carry no interaction metadata. Keep
@@ -516,7 +539,7 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 				Window *int64          `json:"modelContextWindow"`
 			} `json:"tokenUsage"`
 		}
-		if domain.Decode(native.Params, &v) != nil || (domain.NativeTokenUsage{Total: v.Usage.Total.normalized(), Last: v.Usage.Last.normalized(), ContextWindow: v.Usage.Window}).Validate() != nil {
+		if decodeCaseExact(native.Params, &v) != nil || (domain.NativeTokenUsage{Total: v.Usage.Total.normalized(), Last: v.Usage.Last.normalized(), ContextWindow: v.Usage.Window}).Validate() != nil {
 			return Event{}, true, incompatible()
 		}
 		count := func(n *int64) *string {
@@ -564,7 +587,7 @@ func (c *Client) readChildHistory(ctx context.Context, child domain.SubagentObse
 		Next *string           `json:"nextCursor"`
 		Back *string           `json:"backwardsCursor"`
 	}
-	if domain.Decode(response.Result, &page) != nil || len(page.Data) > 1 {
+	if decodeCaseExact(response.Result, &page) != nil || len(page.Data) > 1 {
 		return child, incompatible()
 	}
 	if len(page.Data) == 0 {
