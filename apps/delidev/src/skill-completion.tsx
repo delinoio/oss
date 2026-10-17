@@ -40,6 +40,8 @@ import {
   buildLayout,
   type FrozenCollapse,
   canonicalRangeForDisplay,
+  editFrozenCollapse,
+  freezeCollapse,
   convertBareUrls,
   convertTypedUrl,
   diffDisplay,
@@ -47,6 +49,7 @@ import {
   revealedStarts,
   sameStarts,
   scanMarkdown,
+  replacedRange,
   shiftStarts,
   type PromptLayout,
   type TextRange,
@@ -385,8 +388,9 @@ export function useSkillCompletion({
     direction: "none",
   });
   const pendingSelection = useRef(false);
-  // Collapse state captured when composition starts and shifted by composed
-  // edits; the layout is derived from it until composition ends.
+  // Collapse state captured when composition starts and updated by every
+  // composed edit; the layout is derived from it, never from a re-parse of the
+  // draft, until composition ends.
   const compositionCollapse = useRef<FrozenCollapse | undefined>(undefined);
   const history = useRef(new PromptEditHistory<SkillTokenBinding>());
   const linkOpening = useRef(false);
@@ -691,6 +695,7 @@ export function useSkillCompletion({
     coalesce: boolean,
     replaced?: TextRange,
     insertedLength = 0,
+    frozen?: FrozenCollapse,
   ): boolean => {
     if (!canEdit() || change(next, nextBindings) === false) return false;
     history.current.record(
@@ -702,17 +707,7 @@ export function useSkillCompletion({
     setBindings(nextBindings);
     selectionRef.current = selection;
     setCaret(selection.start);
-    if (composing.current && replaced && compositionCollapse.current) {
-      const frozen = compositionCollapse.current;
-      compositionCollapse.current = {
-        suppressed: frozen.suppressed,
-        collapsibleStarts: shiftStarts(
-          frozen.collapsibleStarts,
-          replaced,
-          insertedLength,
-        ),
-      };
-    }
+    if (frozen) compositionCollapse.current = frozen;
     setRevealed(
       composing.current && replaced
         ? shiftStarts(revealedRef.current, replaced, insertedLength)
@@ -780,15 +775,39 @@ export function useSkillCompletion({
   const onChange = (nextDisplay: string, position: number) => {
     if (!canEdit()) return;
     const edit = diffDisplay(layout.display, nextDisplay, position);
-    const range = canonicalRangeForDisplay(layout, edit.start, edit.end);
-    let next =
-      value.slice(0, range.start) + edit.inserted + value.slice(range.end);
-    // The reported caret decides where inside the inserted text it lands.
-    let caretAt =
-      range.start +
-      (position >= edit.start && position <= edit.start + edit.inserted.length
-        ? position - edit.start
-        : edit.inserted.length);
+    // While an IME owns the textarea, the composed edit is applied to the
+    // frozen collapse model, which keeps the display equal to what the IME
+    // produced whatever it typed, so the textarea is never rewritten.
+    const held =
+      composing.current && compositionCollapse.current?.canonical === value
+        ? compositionCollapse.current
+        : undefined;
+    const frozen = held && editFrozenCollapse(held, edit);
+    let range: TextRange, next: string, caretAt: number;
+    let insertedLength = edit.inserted.length;
+    if (frozen) {
+      next = frozen.canonical;
+      ({ range, insertedLength } = replacedRange(value, next));
+      caretAt = buildLayout(
+        next,
+        [],
+        Number.POSITIVE_INFINITY,
+        frozen,
+      ).toCanonical(position);
+      console.debug("prompt composition edit", {
+        collapsedLinks: frozen.links.length,
+      });
+    } else {
+      range = canonicalRangeForDisplay(layout, edit.start, edit.end);
+      next =
+        value.slice(0, range.start) + edit.inserted + value.slice(range.end);
+      // The reported caret decides where inside the inserted text it lands.
+      caretAt =
+        range.start +
+        (position >= edit.start && position <= edit.start + edit.inserted.length
+          ? position - edit.start
+          : edit.inserted.length);
+    }
     let converted = false;
     const typedDelimiter =
       !composing.current &&
@@ -830,7 +849,8 @@ export function useSkillCompletion({
         kind,
         kind !== PromptEditKind.Discrete,
         range,
-        edit.inserted.length,
+        insertedLength,
+        frozen,
       )
     )
       return;
@@ -1234,12 +1254,7 @@ export function useSkillCompletion({
     onCompositionStart: () => {
       if (!canEdit()) return;
       composing.current = true;
-      compositionCollapse.current = {
-        suppressed: layoutRef.current.collapseSuppressed,
-        collapsibleStarts: layoutRef.current.collapsed.map(
-          (link) => link.start,
-        ),
-      };
+      compositionCollapse.current = freezeCollapse(layoutRef.current);
       setComposition(true);
       setDismissed(true);
     },

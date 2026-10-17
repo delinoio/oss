@@ -6674,14 +6674,24 @@ also owns prompt Markdown links. The pure model lives in
   as described for skill tokens, and links still open on modified click. Editing
   or undoing back within the budget restores normal collapse without changing the
   draft, history or bindings; the canonical selection is re-applied when the
-  display switches. IME composition never switches the display: the collapse
-  state itself is captured when composition starts and held until it ends. A
-  draft that was plain source stays plain, and links that were collapsed stay
-  collapsed (tracked across composed edits) even when the link count crosses
-  the 256 budget in either direction or composing empties the skill analysis.
-  A link completed while composing stays plain source. The budget, the
-  collapse decision and the canonical selection are recomputed once, when
-  composition ends. All four composer placements share this behavior.
+  display switches. IME composition never switches the display and never
+  rewrites the textarea text or selection: the collapse state itself is captured
+  when composition starts and held until it ends. A draft that was plain source
+  stays plain, and links that were collapsed stay collapsed even when the link
+  count crosses the 256 budget in either direction or composing empties the
+  skill analysis. The held state is a position model, not a re-parse: each
+  composed edit is applied to it so the displayed text always equals what the
+  IME produced, whatever it typed. Text inserted before or after a collapsed
+  link, including Markdown syntax such as `!`, `[`, `]`, `(`, `)` or a
+  backslash, is plain draft text next to the link and never drops or reshapes
+  it (an exclamation mark composed before `[x](https://a)` shows `!x` and the
+  link stays collapsed). Text inserted inside a collapsed label goes into the
+  label with delimiters escaped, a deletion trims the label, and a link whose
+  whole label is deleted loses its source. A link completed while composing stays
+  plain source. Markdown is parsed again only when composition ends: the
+  budget, the collapse decision (a link whose syntax changed, such as an image,
+  then shows its source) and the canonical selection are recomputed once, then.
+  All four composer placements share this behavior.
 - **History.** Programmatic conversion clears the native undo stack, so every
   edit is recorded in `PromptEditHistory`. Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z, Ctrl+Y
   (non-macOS) and native `historyUndo`/`historyRedo` run through it. A conversion

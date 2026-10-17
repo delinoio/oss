@@ -18,6 +18,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { useSkillCompletion, MAX_PROMPT_BYTES } from "./skill-completion";
 import { ExternalLinkFailure } from "./external-links";
+import { buildLayout } from "./prompt-markdown-links";
 
 const native = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -663,5 +664,206 @@ describe("link collapse state during IME composition", () => {
     expect(canonical()).toBe(shrunk);
     atEnd(input);
     expect(spanCount()).toBeLessThanOrEqual(512);
+  });
+});
+
+describe("IME composition at link boundaries", () => {
+  const DRAFT = "a [bc](https://a) d";
+  const DISPLAY = "a bc d";
+  const CHARS = ["!", "[", "]", "(", ")", "\\", "あ", "![", "]("];
+  const escapeLabel = (text: string) => text.replace(/[\\[\]]/gu, "\\$&");
+  function compose(input: HTMLTextAreaElement, display: string, caret: number) {
+    fireEvent.change(input, {
+      target: { value: display, selectionStart: caret, selectionEnd: caret },
+    });
+  }
+  const insertAt = (display: string, at: number, text: string) =>
+    display.slice(0, at) + text + display.slice(at);
+
+  // Display offset of the composition and the draft it must produce.
+  const PLACES = [
+    {
+      name: "before the link",
+      at: 2,
+      draft: (text: string) => `a ${text}[bc](https://a) d`,
+    },
+    {
+      name: "inside the label",
+      at: 3,
+      draft: (text: string) => `a [b${escapeLabel(text)}c](https://a) d`,
+    },
+    {
+      name: "after the link",
+      at: 4,
+      draft: (text: string) => `a [bc](https://a)${text} d`,
+    },
+  ];
+
+  describe.each(PLACES)("composing $name", ({ at, draft }) => {
+    it.each(CHARS)(
+      "holds the display, selection and collapsed link for %j",
+      async (char) => {
+        const input = view(DRAFT);
+        expect(input.value).toBe(DISPLAY);
+        expect(collapsedLinks()).toBe(1);
+        // A caret inside a label would reveal the source, so the composition
+        // starts collapsed and edits the label from the outside.
+        select(input, 0);
+        fireEvent.compositionStart(input);
+        const selection = vi.spyOn(input, "setSelectionRange");
+        // The first update inserts the character; the next one grows it.
+        const first = insertAt(DISPLAY, at, char);
+        compose(input, first, at + char.length);
+        expect(input.value).toBe(first);
+        expect(selectionOf(input)).toEqual([
+          at + char.length,
+          at + char.length,
+        ]);
+        expect(canonical()).toBe(draft(char));
+        expect(collapsedLinks()).toBe(1);
+        const grown = insertAt(DISPLAY, at, `${char}あ`);
+        compose(input, grown, at + char.length + 1);
+        expect(input.value).toBe(grown);
+        expect(selectionOf(input)).toEqual([
+          at + char.length + 1,
+          at + char.length + 1,
+        ]);
+        expect(canonical()).toBe(draft(`${char}あ`));
+        expect(collapsedLinks()).toBe(1);
+        // The IME owns the selection: nothing was written back to it.
+        expect(selection).not.toHaveBeenCalled();
+        fireEvent.compositionEnd(input);
+        await waitFor(() => expect(canonical()).toBe(draft(`${char}あ`)));
+        // Only now is the display re-derived from the final draft.
+        const settled = canonical()!;
+        expect([buildLayout(settled).display, settled]).toContain(input.value);
+      },
+    );
+
+    it("keeps the link when the composition is replaced and cancelled", async () => {
+      const input = view(DRAFT);
+      select(input, 0);
+      fireEvent.compositionStart(input);
+      compose(input, insertAt(DISPLAY, at, "!"), at + 1);
+      compose(input, insertAt(DISPLAY, at, "[あ"), at + 2);
+      compose(input, DISPLAY, at);
+      expect(input.value).toBe(DISPLAY);
+      expect(canonical()).toBe(DRAFT);
+      expect(collapsedLinks()).toBe(1);
+      fireEvent.compositionEnd(input);
+      await waitFor(() => expect(canonical()).toBe(DRAFT));
+      // A caret inside the label reveals the source once composition ends.
+      expect([DISPLAY, DRAFT]).toContain(input.value);
+    });
+  });
+
+  it("keeps a link collapsed when composing an exclamation mark at offset 0", async () => {
+    const input = view("[x](https://a)");
+    expect(input.value).toBe("x");
+    select(input, 0);
+    fireEvent.compositionStart(input);
+    compose(input, "!x", 1);
+    expect(input.value).toBe("!x");
+    expect(selectionOf(input)).toEqual([1, 1]);
+    expect(canonical()).toBe("![x](https://a)");
+    expect(collapsedLinks()).toBe(1);
+    compose(input, "!あx", 2);
+    expect(input.value).toBe("!あx");
+    expect(canonical()).toBe("!あ[x](https://a)");
+    fireEvent.compositionEnd(input);
+    await waitFor(() => expect(collapsedLinks()).toBe(1));
+    expect(input.value).toBe("!あx");
+  });
+
+  it("shows the image source once composition ends when the link became an image", async () => {
+    const input = view("[x](https://a)");
+    select(input, 0);
+    fireEvent.compositionStart(input);
+    compose(input, "!x", 1);
+    fireEvent.compositionEnd(input);
+    await waitFor(() => expect(collapsedLinks()).toBe(0));
+    expect(canonical()).toBe("![x](https://a)");
+    expect(input.value).toBe("![x](https://a)");
+  });
+
+  it("keeps the other links collapsed while one is edited", async () => {
+    const draft = "[ab](https://a) and [cd](https://b)";
+    const input = view(draft);
+    expect(input.value).toBe("ab and cd");
+    select(input, 0);
+    fireEvent.compositionStart(input);
+    compose(input, "a]b and cd", 2);
+    expect(input.value).toBe("a]b and cd");
+    expect(canonical()).toBe("[a\\]b](https://a) and [cd](https://b)");
+    expect(collapsedLinks()).toBe(2);
+    compose(input, "a]b and c(d", 11);
+    expect(input.value).toBe("a]b and c(d");
+    expect(canonical()).toBe("[a\\]b](https://a) and [c(d](https://b)");
+    expect(collapsedLinks()).toBe(2);
+    fireEvent.compositionEnd(input);
+    await waitFor(() => expect(collapsedLinks()).toBe(2));
+    expect(input.value).toBe("a]b and c(d");
+  });
+
+  it("deletes label characters while composing and drops a link with no label", async () => {
+    const input = view(DRAFT);
+    select(input, 0);
+    fireEvent.compositionStart(input);
+    compose(input, "a b d", 3);
+    expect(input.value).toBe("a b d");
+    expect(canonical()).toBe("a [b](https://a) d");
+    expect(collapsedLinks()).toBe(1);
+    compose(input, "a  d", 2);
+    expect(input.value).toBe("a  d");
+    expect(canonical()).toBe("a  d");
+    expect(collapsedLinks()).toBe(0);
+    fireEvent.compositionEnd(input);
+    await waitFor(() => expect(canonical()).toBe("a  d"));
+    expect(input.value).toBe("a  d");
+  });
+
+  it("replaces a selection that crosses a link edge without rewriting the textarea", async () => {
+    const input = view(DRAFT);
+    select(input, 0);
+    fireEvent.compositionStart(input);
+    compose(input, "aあc d", 2);
+    expect(input.value).toBe("aあc d");
+    expect(canonical()).toBe("aあ[c](https://a) d");
+    expect(collapsedLinks()).toBe(1);
+    fireEvent.compositionEnd(input);
+    await waitFor(() => expect(canonical()).toBe("aあ[c](https://a) d"));
+    expect(input.value).toBe("aあc d");
+  });
+
+  describe.each(CHARS)("composing %j inside a revealed link source", (char) => {
+    const SOURCE = "[x](https://a)";
+    it.each([
+      ["after the opening bracket", 1],
+      ["in the label end", 2],
+      ["in the url", 6],
+      ["before the closing parenthesis", SOURCE.length - 1],
+    ])("%s", async (_name, at) => {
+      const input = view(SOURCE);
+      expect(input.value).toBe("x");
+      // Selecting the label reveals the full source for editing.
+      select(input, 0, 1);
+      expect(input.value).toBe(SOURCE);
+      select(input, at);
+      const shown = input.value;
+      fireEvent.compositionStart(input);
+      const selection = vi.spyOn(input, "setSelectionRange");
+      const next = insertAt(shown, at, char);
+      compose(input, next, at + char.length);
+      expect(input.value).toBe(next);
+      expect(selectionOf(input)).toEqual([at + char.length, at + char.length]);
+      expect(canonical()).toBe(next);
+      const grown = insertAt(shown, at, `${char}あ`);
+      compose(input, grown, at + char.length + 1);
+      expect(input.value).toBe(grown);
+      expect(canonical()).toBe(grown);
+      expect(selection).not.toHaveBeenCalled();
+      fireEvent.compositionEnd(input);
+      await waitFor(() => expect(canonical()).toBe(grown));
+    });
   });
 });

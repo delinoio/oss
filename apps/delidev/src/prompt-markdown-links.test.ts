@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   buildLayout,
   canonicalRangeForDisplay,
   convertBareUrls,
   convertTypedUrl,
   diffDisplay,
+  editFrozenCollapse,
+  freezeCollapse,
+  type FrozenCollapse,
   linkAtCaret,
   markdownLinkFor,
   revealedStarts,
@@ -294,23 +297,197 @@ it.each([
 
 it("holds a frozen collapse state regardless of the link count or limit", () => {
   const text = "[x](https://a) [y](https://b) [z](https://c)";
-  const starts = scanMarkdown(text).links.map((link) => link.start);
+  const all = buildLayout(text);
+  const frozen = freezeCollapse(all);
+  expect(frozen.suppressed).toBe(false);
+  expect(frozen.links.map((link) => link.start)).toEqual(
+    all.links.map((link) => link.start),
+  );
   // Over the limit, but frozen as collapsed: only the listed links collapse.
   const collapsed = buildLayout(text, [], 1, {
-    suppressed: false,
-    collapsibleStarts: starts.slice(0, 2),
+    ...frozen,
+    links: frozen.links.slice(0, 2),
   });
   expect(collapsed.collapseSuppressed).toBe(false);
   expect(collapsed.collapsed.map((link) => link.start)).toEqual(
-    starts.slice(0, 2),
+    frozen.links.slice(0, 2).map((link) => link.start),
   );
   expect(collapsed.display).toBe("x y [z](https://c)");
   // Within the limit, but frozen as suppressed: the draft stays plain.
   const plain = buildLayout(text, [], 10, {
     suppressed: true,
-    collapsibleStarts: starts,
+    canonical: text,
+    links: [],
   });
   expect(plain.collapseSuppressed).toBe(true);
   expect(plain.collapsed).toEqual([]);
   expect(plain.display).toBe(text);
+  // A frozen state for another draft is ignored.
+  const other = buildLayout(`${text}!`, [], 10, frozen);
+  expect(other.collapsed).toHaveLength(3);
+});
+
+describe("editFrozenCollapse", () => {
+  const DRAFTS = [
+    "[x](https://a)",
+    "[ab](https://a)",
+    "a [ab](https://a) b",
+    "[ab](https://a)[cd](https://b)",
+    "[ab](https://a) [cd](https://b)",
+    "[a\\]b](https://a)",
+    "x\\ [\\a\\\\b](https://a) y",
+    "[https://a.io/p(1)](https://a.io/p\\(1\\))",
+  ];
+  const INSERTS = [
+    "",
+    "!",
+    "[",
+    "]",
+    "(",
+    ")",
+    "\\",
+    "![",
+    "](",
+    "\\]",
+    "あ",
+    "a b",
+    "\n",
+  ];
+
+  function invariants(canonical: string, frozen: FrozenCollapse) {
+    let previousEnd = 0;
+    for (const link of frozen.links) {
+      expect(link.start).toBeGreaterThanOrEqual(previousEnd);
+      expect(link.labelStart).toBeGreaterThan(link.start);
+      expect(link.labelEnd).toBeGreaterThan(link.labelStart);
+      expect(link.end).toBeGreaterThan(link.labelEnd);
+      expect(canonical[link.start]).toBe("[");
+      expect(canonical.slice(link.labelEnd, link.labelEnd + 2)).toBe("](");
+      expect(canonical[link.end - 1]).toBe(")");
+      previousEnd = link.end;
+    }
+  }
+
+  it.each(DRAFTS)(
+    "keeps the display equal to the composed text for every edit of %s",
+    (draft) => {
+      const frozen = freezeCollapse(buildLayout(draft));
+      const layout = buildLayout(draft, [], Infinity, frozen);
+      expect(frozen.links.length).toBeGreaterThan(0);
+      let cases = 0;
+      for (let start = 0; start <= layout.display.length; start += 1)
+        for (let end = start; end <= layout.display.length; end += 1)
+          for (const inserted of INSERTS) {
+            const next = editFrozenCollapse(frozen, { start, end, inserted });
+            const expected =
+              layout.display.slice(0, start) +
+              inserted +
+              layout.display.slice(end);
+            const nextLayout = buildLayout(next.canonical, [], Infinity, next);
+            expect(nextLayout.display).toBe(expected);
+            invariants(next.canonical, next);
+            // Every display offset maps to a canonical offset and back.
+            for (let at = 0; at <= expected.length; at += 1)
+              expect(nextLayout.toDisplay(nextLayout.toCanonical(at))).toBe(at);
+            cases += 1;
+          }
+      expect(cases).toBeGreaterThan(30);
+    },
+  );
+
+  it("keeps every link and edits only the canonical text next to it", () => {
+    const draft = "[x](https://a)";
+    const frozen = freezeCollapse(buildLayout(draft));
+    for (const char of ["!", "[", "]", "(", ")", "\\"]) {
+      const before = editFrozenCollapse(frozen, {
+        start: 0,
+        end: 0,
+        inserted: char,
+      });
+      expect(before.canonical).toBe(`${char}${draft}`);
+      expect(before.links).toEqual([
+        { start: 1, labelStart: 2, labelEnd: 3, end: 14 + 1, url: "https://a" },
+      ]);
+      const after = editFrozenCollapse(frozen, {
+        start: 1,
+        end: 1,
+        inserted: char,
+      });
+      expect(after.canonical).toBe(`${draft}${char}`);
+      expect(after.links).toEqual([
+        { start: 0, labelStart: 1, labelEnd: 2, end: 14, url: "https://a" },
+      ]);
+    }
+  });
+
+  it("escapes label delimiters inserted inside a label", () => {
+    const frozen = freezeCollapse(buildLayout("[ab](https://a)"));
+    for (const [char, raw] of [
+      ["!", "!"],
+      ["(", "("],
+      [")", ")"],
+      ["[", "\\["],
+      ["]", "\\]"],
+      ["\\", "\\\\"],
+    ] as const) {
+      const next = editFrozenCollapse(frozen, {
+        start: 1,
+        end: 1,
+        inserted: char,
+      });
+      expect(next.canonical).toBe(`[a${raw}b](https://a)`);
+      expect(next.links).toHaveLength(1);
+      expect(next.links[0]!.url).toBe("https://a");
+    }
+  });
+
+  it("drops a link only when its whole label is removed", () => {
+    const frozen = freezeCollapse(buildLayout("a [xy](https://a) b"));
+    const trimmed = editFrozenCollapse(frozen, {
+      start: 2,
+      end: 3,
+      inserted: "",
+    });
+    expect(trimmed.canonical).toBe("a [y](https://a) b");
+    expect(trimmed.links).toHaveLength(1);
+    const dropped = editFrozenCollapse(frozen, {
+      start: 2,
+      end: 4,
+      inserted: "あ",
+    });
+    expect(dropped.canonical).toBe("a あ b");
+    expect(dropped.links).toEqual([]);
+    const crossing = editFrozenCollapse(frozen, {
+      start: 1,
+      end: 3,
+      inserted: "!",
+    });
+    expect(crossing.canonical).toBe("a![y](https://a) b");
+    expect(crossing.links).toHaveLength(1);
+  });
+
+  it("stays consistent across a long chain of edits", () => {
+    let frozen = freezeCollapse(
+      buildLayout("a [ab](https://a) b [c](https://c)"),
+    );
+    let seed = 7;
+    const random = (bound: number) => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed % bound;
+    };
+    for (let step = 0; step < 400; step += 1) {
+      const layout = buildLayout(frozen.canonical, [], Infinity, frozen);
+      const length = layout.display.length;
+      const start = random(length + 1);
+      const end = Math.min(length, start + random(3));
+      const inserted = INSERTS[random(INSERTS.length)]!;
+      const expected =
+        layout.display.slice(0, start) + inserted + layout.display.slice(end);
+      frozen = editFrozenCollapse(frozen, { start, end, inserted });
+      expect(buildLayout(frozen.canonical, [], Infinity, frozen).display).toBe(
+        expected,
+      );
+      invariants(frozen.canonical, frozen);
+    }
+  });
 });

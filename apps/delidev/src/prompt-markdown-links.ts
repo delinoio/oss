@@ -386,17 +386,40 @@ function labelDisplayIndex(link: CollapsedLink, relative: number): number {
 /**
  * Collapse state held fixed while an IME composition owns the textarea. The
  * display text must not change under the IME, so the collapse decision is
- * taken once, before composition, and not re-derived from the changing draft.
+ * taken once, before composition, and never re-derived from the draft text:
+ * whatever the IME inserts (including Markdown syntax such as `!`, `[`, `]`,
+ * `(`, `)` or a backslash) cannot add, drop or reshape a collapsed link. Every
+ * composed edit is applied to this model instead (see `editFrozenCollapse`).
  */
 export interface FrozenCollapse {
   /** True when the whole draft was plain source before composition. */
   suppressed: boolean;
+  /** Canonical draft this state describes; a different draft voids it. */
+  canonical: string;
   /**
-   * Starts of the links that were collapsed before composition, shifted across
-   * composed edits. A link that is not listed (for example one completed while
-   * composing) stays plain source.
+   * Links that are collapsed, in canonical order. They are held by position
+   * and never re-parsed, so a link stays collapsed even when a composed edit
+   * makes its source stop parsing as a link. A link that is not listed (for
+   * example one completed while composing) stays plain source.
    */
-  collapsibleStarts: readonly number[];
+  links: readonly MarkdownLink[];
+}
+
+/** Captures the collapse state of a layout so it can be held while composing. */
+export function freezeCollapse(layout: PromptLayout): FrozenCollapse {
+  return {
+    suppressed: layout.collapseSuppressed,
+    canonical: layout.canonical,
+    links: layout.collapsed.map(
+      ({ start, end, labelStart, labelEnd, url }) => ({
+        start,
+        end,
+        labelStart,
+        labelEnd,
+        url,
+      }),
+    ),
+  };
 }
 
 /**
@@ -404,8 +427,10 @@ export interface FrozenCollapse {
  * may decorate. When the draft parses more links than that, the whole draft
  * stays plain source (display equals canonical, nothing collapsed) instead of
  * collapsing an arbitrary prefix; `links` still reports every parsed link.
- * A `frozen` state replaces that decision entirely, so neither the link count
- * nor the limit can change what is collapsed until the freeze is lifted.
+ * A `frozen` state describing this exact draft replaces that decision (and the
+ * revealed set) entirely, so neither the parse, the link count nor the limit
+ * can change what is collapsed until the freeze is lifted. A frozen state for
+ * a different draft is ignored.
  */
 export function buildLayout(
   canonical: string,
@@ -414,17 +439,17 @@ export function buildLayout(
   frozen?: FrozenCollapse,
 ): PromptLayout {
   const links = scanMarkdown(canonical).links;
-  const collapseSuppressed = frozen
-    ? frozen.suppressed
+  const hold = frozen?.canonical === canonical ? frozen : undefined;
+  const collapseSuppressed = hold
+    ? hold.suppressed
     : links.length > collapseLimit;
   const open = new Set(revealed);
-  const collapsible = frozen ? new Set(frozen.collapsibleStarts) : undefined;
   const collapsed: CollapsedLink[] = [];
   let display = "",
     cursor = 0;
-  for (const link of collapseSuppressed ? [] : links) {
-    if (open.has(link.start)) continue;
-    if (collapsible && !collapsible.has(link.start)) continue;
+  const candidates = hold ? hold.links : collapseSuppressed ? [] : links;
+  for (const link of candidates) {
+    if (!hold && open.has(link.start)) continue;
     display += canonical.slice(cursor, link.start);
     const displayStart = display.length;
     const label = decodeLabel(canonical.slice(link.labelStart, link.labelEnd));
@@ -518,6 +543,109 @@ export function diffDisplay(
 }
 
 /**
+ * Applies one composed display edit to a frozen collapse state. The result
+ * describes a draft whose collapsed display equals the old display with
+ * `[start, end)` replaced by `inserted`, which is exactly what the IME left in
+ * the textarea, so the textarea never needs rewriting while it owns the text:
+ *
+ * - Text outside every collapsed link is edited in the canonical draft as is.
+ * - An insertion strictly inside a collapsed label goes into that label, with
+ *   label delimiters escaped so the link keeps its shape.
+ * - An insertion on a link edge (before, after) is plain text next to the
+ *   link. Whatever it spells (`!`, `[`, `(`, a backslash) it never changes
+ *   which links stay collapsed; Markdown is re-parsed once composition ends.
+ * - A deletion trims the labels it overlaps; a link whose whole label is
+ *   deleted loses its source (destination included).
+ */
+export function editFrozenCollapse(
+  frozen: FrozenCollapse,
+  edit: DisplayEdit,
+): FrozenCollapse {
+  const { canonical } = frozen;
+  const layout = buildLayout(canonical, [], Number.POSITIVE_INFINITY, frozen);
+  const { start, end, inserted } = edit;
+  let out = "",
+    placed = false;
+  const links: MarkdownLink[] = [];
+  const place = () => {
+    if (placed) return;
+    placed = true;
+    out += inserted;
+  };
+  const gap = (from: number, to: number, displayFrom: number) => {
+    const length = to - from;
+    if (length === 0) return;
+    const displayTo = displayFrom + length;
+    if (start <= displayFrom) place();
+    if (displayFrom < start)
+      out += canonical.slice(
+        from,
+        from + Math.min(start, displayTo) - displayFrom,
+      );
+    if (start < displayTo) place();
+    if (end < displayTo)
+      out += canonical.slice(
+        from + Math.max(end, displayFrom) - displayFrom,
+        to,
+      );
+  };
+  let canonicalCursor = 0,
+    displayCursor = 0;
+  for (const link of layout.collapsed) {
+    gap(canonicalCursor, link.start, displayCursor);
+    canonicalCursor = link.end;
+    displayCursor = link.displayEnd;
+    if (start <= link.displayStart) place();
+    const base = out.length;
+    if (link.displayEnd <= start || link.displayStart >= end) {
+      // The edit does not reach this link; it only moves.
+      out += canonical.slice(link.start, link.end);
+      links.push({
+        start: base,
+        labelStart: base + link.labelStart - link.start,
+        labelEnd: base + link.labelEnd - link.start,
+        end: base + link.end - link.start,
+        url: link.url,
+      });
+      continue;
+    }
+    const size = link.displayEnd - link.displayStart;
+    // Label characters kept left of the edit and from `right` onwards.
+    const left = Math.max(start - link.displayStart, 0);
+    const right = Math.min(end - link.displayStart, size);
+    const inside = start > link.displayStart && start < link.displayEnd;
+    const shown = layout.display.slice(link.displayStart, link.displayEnd);
+    const label =
+      shown.slice(0, left) + (inside ? inserted : "") + shown.slice(right);
+    if (inside) placed = true;
+    if (label === "") continue;
+    const rawLabel = canonical.slice(link.labelStart, link.labelEnd);
+    const rawAt = (index: number) => link.labelOffsets?.[index] ?? index;
+    let raw =
+      rawLabel.slice(0, rawAt(left)) +
+      (inside ? escapeLinkLabel(inserted) : "") +
+      rawLabel.slice(rawAt(right));
+    // Re-encode the whole label when splicing could not preserve its meaning.
+    if (decodeLabel(raw).text !== label) raw = escapeLinkLabel(label);
+    out += canonical.slice(link.start, link.labelStart);
+    const labelStart = out.length;
+    out += raw;
+    const labelEnd = out.length;
+    out += canonical.slice(link.labelEnd, link.end);
+    links.push({
+      start: base,
+      labelStart,
+      labelEnd,
+      end: out.length,
+      url: link.url,
+    });
+  }
+  gap(canonicalCursor, canonical.length, displayCursor);
+  place();
+  return { suppressed: frozen.suppressed, canonical: out, links };
+}
+
+/**
  * Maps a display range to the canonical range an edit replaces. An edit that
  * stays inside one collapsed label edits that label. An edit that crosses a
  * link boundary covers the whole link, so no half link is ever left behind.
@@ -571,6 +699,26 @@ export function sameStarts(
   b: readonly number[],
 ): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+/** The smallest single replacement that turns `before` into `after`. */
+export function replacedRange(
+  before: string,
+  after: string,
+): { range: TextRange; insertedLength: number } {
+  const limit = Math.min(before.length, after.length);
+  let prefix = 0;
+  while (prefix < limit && before[prefix] === after[prefix]) prefix += 1;
+  let suffix = 0;
+  while (
+    suffix < limit - prefix &&
+    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  )
+    suffix += 1;
+  return {
+    range: { start: prefix, end: before.length - suffix },
+    insertedLength: after.length - prefix - suffix,
+  };
 }
 
 /** Moves retained link starts across one canonical replacement. */
