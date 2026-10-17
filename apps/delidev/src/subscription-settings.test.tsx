@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { mockAnchorClipping } from "./test-anchor-clipping";
 import { danger, expectTone, neutral } from "./test-action-tone";
 import { i18n, SupportedLanguage } from "./localization";
 import { quotaColor } from "./quota-color";
@@ -335,6 +336,40 @@ it("presents the More actions as an anchored popup dismissed by an outside press
   expect(
     screen.queryByRole("group", { name: `Actions for ${first.alias}` }),
   ).toBeNull();
+});
+
+it("dismisses the More actions when the row scrolls completely out of its clipping owner", () => {
+  const first = row();
+  const label = `More actions for ${first.alias}`;
+  const clip = mockAnchorClipping(
+    (element) => element.getAttribute("aria-label") === label,
+  );
+  try {
+    const { container } = render(
+      <div data-test-clip-owner="" style={{ overflow: "auto" }}>
+        {view([first])}
+      </div>,
+    );
+    const opener = screen.getByRole("button", { name: label });
+    fireEvent.click(opener);
+    expect(
+      screen.getByRole("group", { name: `Actions for ${first.alias}` }),
+    ).toBeTruthy();
+    fireEvent.scroll(container.firstElementChild!);
+    expect(
+      screen.getByRole("group", { name: `Actions for ${first.alias}` }),
+    ).toBeTruthy();
+    clip.anchorTop = 240;
+    fireEvent.scroll(container.firstElementChild!);
+    expect(opener.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.queryByRole("group", { name: `Actions for ${first.alias}` }),
+    ).toBeNull();
+    expect(first.edit).not.toHaveBeenCalled();
+    expect(first.delete).not.toHaveBeenCalled();
+  } finally {
+    vi.restoreAllMocks();
+  }
 });
 
 it.each([

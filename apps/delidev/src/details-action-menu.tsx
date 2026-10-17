@@ -15,8 +15,11 @@ import {
  * The open state is owned here, not by the native toggle, so the popup mounts
  * in the same commit as the summary click. While closed no action is rendered.
  * Escape closes and returns focus to the summary; focus leaving the menu, an
- * outside pointer press or choosing an enabled action dismisses it; opening,
- * closing and positioning perform no business mutation. The consumer keeps
+ * outside pointer press, choosing an enabled action or the row scrolling
+ * completely out of any clipping ancestor (reported by the hook) dismisses it,
+ * so Rename and Remove never stay reachable beside another row while they still
+ * target the hidden one; opening, closing and positioning perform no business
+ * mutation. The consumer keeps
  * every action's own disabled, pending and uncertain guards.
  *
  * `overlay={false}` is for hosts without a persistent owner to overlay (the

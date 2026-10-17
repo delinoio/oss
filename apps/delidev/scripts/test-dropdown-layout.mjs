@@ -32,7 +32,8 @@ let browser,
   server,
   cases = 0,
   checks = 0,
-  ownerScrolls = 0;
+  ownerScrolls = 0,
+  scrollAways = 0;
 const scrolledFamilies = new Set();
 const errors = [];
 const viewports = [
@@ -86,6 +87,7 @@ const families = [
   },
   {
     id: "saved-connection-row-menu",
+    scrollAway: true,
     // Whether moving keyboard focus out of the popup dismisses it. The
     // desktop contract documents this only for the owners that close on blur;
     // the others stay open until Escape, an outside pointer press, the
@@ -109,6 +111,7 @@ const families = [
   },
   {
     id: "api-entry-more-panel",
+    scrollAway: true,
     // Whether moving keyboard focus out of the popup dismisses it. The
     // desktop contract documents this only for the owners that close on blur;
     // the others stay open until Escape, an outside pointer press, the
@@ -131,6 +134,7 @@ const families = [
   },
   {
     id: "subscription-more-panel",
+    scrollAway: true,
     // Whether moving keyboard focus out of the popup dismisses it. The
     // desktop contract documents this only for the owners that close on blur;
     // the others stay open until Escape, an outside pointer press, the
@@ -505,10 +509,50 @@ try {
             const reached = new Set();
             const initial = await focusInside();
             if (initial !== null) reached.add(initial);
+            // Leaving the popup moves focus to the next control, which may
+            // legitimately scroll the page so far that the trigger is no
+            // longer visible. The hook then closes the popup (the anchor left
+            // its clipping owner or the window); record when that happened.
+            const anchorHidden = () =>
+              trigger.evaluate((node) => {
+                const box = node.getBoundingClientRect();
+                const outside = (frame) =>
+                  box.bottom <= frame.top ||
+                  box.top >= frame.bottom ||
+                  box.right <= frame.left ||
+                  box.left >= frame.right;
+                if (
+                  outside({
+                    top: 0,
+                    left: 0,
+                    bottom: innerHeight,
+                    right: innerWidth,
+                  })
+                )
+                  return true;
+                for (
+                  let owner = node.parentElement;
+                  owner && owner !== document.body;
+                  owner = owner.parentElement
+                ) {
+                  const style = getComputedStyle(owner);
+                  if (
+                    style.display !== "contents" &&
+                    /(auto|scroll|hidden|clip)/.test(
+                      `${style.overflowX}${style.overflowY}`,
+                    ) &&
+                    outside(owner.getBoundingClientRect())
+                  )
+                    return true;
+                }
+                return false;
+              });
+            let hiddenDuringTab = false;
             let left = false;
             for (let step = 0; step < expected + 4 && !left; step++) {
               await page.keyboard.press("Tab");
               await frames(page);
+              if (await anchorHidden()) hiddenDuringTab = true;
               if ((await popup.count()) === 0) {
                 left = true;
                 break;
@@ -530,8 +574,10 @@ try {
             } else {
               // No focus-out dismissal is documented for this owner: the popup
               // stays open and unmoved until the documented outside press.
-              assert.equal(await popup.count(), 1, `${state} stays open`);
-              await assertStable("tab out");
+              if (!hiddenDuringTab) {
+                assert.equal(await popup.count(), 1, `${state} stays open`);
+                await assertStable("tab out");
+              }
               await page.mouse.click(1, height - 1);
               await frames(page);
               await assertClosed("tab out outside pointer");
@@ -565,18 +611,29 @@ try {
               )
                 owner = document.scrollingElement;
               if (!owner) return null;
-              const frame =
+              // Move toward keeping the trigger fully visible: the owner
+              // scrolls by up to 48px but never so far that the trigger leaves
+              // its box (that dismissal has its own check below).
+              // The visible frame is the owner's box inside the window.
+              const box =
                   owner === document.scrollingElement
-                    ? { top: 0, height: innerHeight }
+                    ? { top: 0, bottom: innerHeight }
                     : owner.getBoundingClientRect(),
+                frame = {
+                  top: Math.max(0, box.top),
+                  bottom: Math.min(innerHeight, box.bottom),
+                },
                 anchor = node.getBoundingClientRect(),
                 before = owner.scrollTop,
-                toward =
-                  anchor.top + anchor.height / 2 < frame.top + frame.height / 2
-                    ? -48
-                    : 48;
-              owner.scrollTop = before + toward;
-              if (owner.scrollTop === before) owner.scrollTop = before - toward;
+                downRoom = Math.min(
+                  owner.scrollHeight - owner.clientHeight - before,
+                  anchor.top - frame.top - 2,
+                ),
+                upRoom = Math.min(before, frame.bottom - anchor.bottom - 2),
+                delta = downRoom >= upRoom ? downRoom : -upRoom,
+                amount = Math.min(48, Math.abs(delta));
+              if (amount < 8) return null;
+              owner.scrollTop = before + Math.sign(delta) * amount;
               return {
                 moved: owner.scrollTop !== before,
                 anchorBefore: anchor.top,
@@ -606,6 +663,62 @@ try {
             await restoreScroll("outside");
             await assertClosed("outside");
             await assertStable("outside");
+            // A row scrolled completely out of its clipping owner dismisses its
+            // menu instead of leaving the top-layer popup clamped beside another
+            // row while its actions still target the hidden one. A spacer gives
+            // the owner room to scroll even when the content is short.
+            if (family.scrollAway) {
+              await open();
+              const hidden = await trigger.evaluate((node) => {
+                for (
+                  let owner = node.parentElement;
+                  owner;
+                  owner = owner.parentElement
+                ) {
+                  if (!/(auto|scroll)/.test(getComputedStyle(owner).overflowY))
+                    continue;
+                  const spacer = document.createElement("div");
+                  spacer.dataset.dropdownSpacer = "true";
+                  spacer.style.height = "4000px";
+                  owner.append(spacer);
+                  if (owner.scrollHeight - owner.clientHeight < 100) {
+                    spacer.remove();
+                    continue;
+                  }
+                  const frame = owner.getBoundingClientRect(),
+                    box = node.getBoundingClientRect();
+                  owner.scrollTop += box.bottom - frame.top + 8;
+                  const after = node.getBoundingClientRect();
+                  return after.bottom <= frame.top || after.top >= frame.bottom;
+                }
+                // Fixtures without a nested owner scroll the document: the
+                // window is the clipping box.
+                const spacer = document.createElement("div");
+                spacer.dataset.dropdownSpacer = "true";
+                spacer.style.height = "4000px";
+                document.body.append(spacer);
+                const root = document.scrollingElement,
+                  box = node.getBoundingClientRect();
+                root.scrollTop += box.bottom + 8;
+                const after = node.getBoundingClientRect();
+                return after.bottom <= 0 || after.top >= innerHeight;
+              });
+              assert.equal(
+                hidden,
+                true,
+                `${state} the trigger scrolls completely out of its owner`,
+              );
+              await frames(page);
+              await assertClosed("anchor scrolled out of its owner");
+              await trigger.evaluate(() =>
+                document.querySelector("[data-dropdown-spacer]").remove(),
+              );
+              await frames(page);
+              await restoreScroll("scrolled out");
+              await assertClosed("scrolled out restored");
+              await assertStable("scrolled out");
+              scrollAways++;
+            }
             assert.equal(
               await family.mutations(page),
               writesBefore,
@@ -630,6 +743,7 @@ try {
       cases,
       checks,
       ownerScrolls,
+      scrollAways,
     }),
   );
 } finally {

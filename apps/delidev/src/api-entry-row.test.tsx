@@ -13,6 +13,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { mockAnchorClipping } from "./test-anchor-clipping";
 import { danger, expectTone, neutral } from "./test-action-tone";
 import {
   AccountingUnitKind,
@@ -337,6 +338,41 @@ it("presents the More actions as an anchored popup dismissed by an outside press
   expect(
     screen.queryByRole("group", { name: "Actions for OpenRouter" }),
   ).toBeNull();
+});
+it("dismisses the More actions when the row scrolls completely out of its clipping owner", async () => {
+  const f = fixture();
+  const clip = mockAnchorClipping(
+    (element) =>
+      element.getAttribute("aria-label") === "More actions for OpenRouter",
+  );
+  try {
+    const { container } = render(
+      <div data-test-clip-owner="" style={{ overflow: "auto" }}>
+        {f.view()}
+      </div>,
+    );
+    await screen.findAllByText("USD 12.48");
+    const opener = screen.getByRole("button", {
+      name: "More actions for OpenRouter",
+    });
+    fireEvent.click(opener);
+    expect(
+      screen.getByRole("group", { name: "Actions for OpenRouter" }),
+    ).toBeTruthy();
+    fireEvent.scroll(container.firstElementChild!);
+    expect(
+      screen.getByRole("group", { name: "Actions for OpenRouter" }),
+    ).toBeTruthy();
+    clip.anchorTop = 240;
+    fireEvent.scroll(container.firstElementChild!);
+    expect(opener.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.queryByRole("group", { name: "Actions for OpenRouter" }),
+    ).toBeNull();
+    expect(f.callbacks.edit).not.toHaveBeenCalled();
+  } finally {
+    vi.restoreAllMocks();
+  }
 });
 it("separates native totals and estimates without summing, and keeps an absent Claude total unavailable", async () => {
   const f = fixture();

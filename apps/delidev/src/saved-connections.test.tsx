@@ -7,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { mockAnchorClipping } from "./test-anchor-clipping";
 import { pressEnter } from "./test-form-enter";
 import { danger, expectTone, neutral } from "./test-action-tone";
 import { LocalWorkerAction, LocalWorkerState } from "./local-worker-controls";
@@ -1166,6 +1167,45 @@ it("presents row actions as an anchored popup inside the Settings slot and dismi
   expect(details.open).toBe(false);
   expect(screen.queryByRole("button", { name: /^Remove Saved/ })).toBeNull();
   target.remove();
+});
+
+it("dismisses row actions when their row scrolls completely out of the Settings slot", async () => {
+  const value = fixture();
+  const target = document.createElement("div");
+  target.setAttribute("data-test-clip-owner", "");
+  target.style.overflow = "auto";
+  document.body.append(target);
+  const clip = mockAnchorClipping((element) => element.tagName === "SUMMARY");
+  try {
+    render(
+      <SavedConnections
+        visible
+        close={() => {}}
+        actions={value.actions}
+        target={target}
+      />,
+    );
+    await screen.findByRole("button", { name: "Open Saved server" });
+    const summary = screen.getByLabelText(/^Actions for/);
+    const details = summary.closest("details") as HTMLDetailsElement;
+    fireEvent.click(summary);
+    expect(details.open).toBe(true);
+    // Still inside the slot: the popup stays.
+    fireEvent.scroll(target);
+    expect(details.open).toBe(true);
+    // The row scrolled below the slot: Rename and Remove must not stay
+    // reachable beside another row while they still target this one.
+    clip.anchorTop = 240;
+    fireEvent.scroll(target);
+    expect(details.open).toBe(false);
+    expect(screen.queryByRole("button", { name: /^Rename Saved/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Remove Saved/ })).toBeNull();
+    expect(value.rename).not.toHaveBeenCalled();
+    expect(value.remove).not.toHaveBeenCalled();
+  } finally {
+    vi.restoreAllMocks();
+    target.remove();
+  }
 });
 
 it("keeps row actions listed in flow in the fallback dialog host", async () => {
