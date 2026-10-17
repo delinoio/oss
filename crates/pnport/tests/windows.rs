@@ -542,8 +542,8 @@ fn completion_port_directory_queries(root: &Path) {
 
     use windows_sys::Win32::{
         Foundation::{
-            CloseHandle, DuplicateHandle, GetLastError, DUPLICATE_SAME_ACCESS, HANDLE,
-            INVALID_HANDLE_VALUE, STATUS_PENDING, WAIT_OBJECT_0, WAIT_TIMEOUT,
+            CloseHandle, DuplicateHandle, DUPLICATE_SAME_ACCESS, HANDLE, INVALID_HANDLE_VALUE,
+            STATUS_PENDING, STATUS_SUCCESS, STATUS_TIMEOUT, WAIT_OBJECT_0,
         },
         Storage::FileSystem::{
             CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OVERLAPPED, FILE_LIST_DIRECTORY,
@@ -552,7 +552,7 @@ fn completion_port_directory_queries(root: &Path) {
         System::{
             Console::SetConsoleCtrlHandler,
             Threading::{CreateEventW, GetCurrentProcess, WaitForSingleObject},
-            IO::{CreateIoCompletionPort, GetQueuedCompletionStatus, IO_STATUS_BLOCK, OVERLAPPED},
+            IO::{CreateIoCompletionPort, IO_STATUS_BLOCK},
         },
     };
 
@@ -590,6 +590,19 @@ fn completion_port_directory_queries(root: &Path) {
             length: u32,
             class: i32,
         ) -> i32;
+        /// Removes one packet. The call's own NTSTATUS reports the dequeue
+        /// outcome (`STATUS_SUCCESS`, or `STATUS_TIMEOUT` when no packet
+        /// arrived), while the returned `IO_STATUS_BLOCK` carries the status
+        /// of the completed request, so a failed completion cannot be mistaken
+        /// for a timeout. `timeout` is a negative relative interval in 100 ns
+        /// units.
+        fn NtRemoveIoCompletion(
+            port: HANDLE,
+            key: *mut *mut c_void,
+            context: *mut *mut c_void,
+            ios: *mut IO_STATUS_BLOCK,
+            timeout: *mut i64,
+        ) -> i32;
     }
     const FILE_NAMES_INFORMATION: i32 = 12;
     const SL_RESTART_SCAN: u32 = 1;
@@ -609,11 +622,48 @@ fn completion_port_directory_queries(root: &Path) {
         Classic,
         Extended,
     }
+    /// One dequeued completion packet.
+    struct Completion {
+        key: usize,
+        context: usize,
+        /// The final status of the completed request, as stored in the
+        /// packet's status block.
+        status: i32,
+    }
+    /// Removes exactly one packet from `port`. Returns `None` only when the
+    /// wait timed out without a packet; a packet for a failed request is
+    /// returned with its negative `status`. Any other dequeue failure is a
+    /// harness error and panics instead of being read as a timeout.
+    fn remove_completion(port: HANDLE, timeout_ms: u32) -> Option<Completion> {
+        let mut key: *mut c_void = std::ptr::null_mut();
+        let mut context: *mut c_void = std::ptr::null_mut();
+        let mut ios: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
+        let mut timeout = -(i64::from(timeout_ms) * 10_000);
+        let removed =
+            unsafe { NtRemoveIoCompletion(port, &mut key, &mut context, &mut ios, &mut timeout) };
+        if removed == STATUS_TIMEOUT {
+            return None;
+        }
+        assert_eq!(
+            removed, STATUS_SUCCESS,
+            "dequeue completion packet status {removed:#x}"
+        );
+        Some(Completion {
+            key: key as usize,
+            context: context as usize,
+            status: unsafe { ios.Anonymous.Status },
+        })
+    }
     /// Returns the NTSTATUS of a restarting null-callback query. The request
     /// storage must outlive the kernel's use of it, so a pending request is
     /// awaited before the buffers drop. `port` is the completion port the
-    /// handle is associated with, if any; the packet of a pending native
-    /// request is consumed so it cannot be mistaken for a rejected query's.
+    /// handle is associated with, if any.
+    ///
+    /// For an associated handle the status block of a pending request is not
+    /// updated until its completion packet is removed from the port, so the
+    /// final status is taken from exactly one dequeued packet and the block is
+    /// never read before that. A timeout and a failed completion are reported
+    /// as different failures.
     fn query(directory: HANDLE, api: Query, port: Option<HANDLE>) -> i32 {
         // Heap storage so a request that never completes can be leaked instead
         // of freed under the kernel.
@@ -652,20 +702,36 @@ fn completion_port_directory_queries(root: &Path) {
             }
         };
         if status == STATUS_PENDING {
-            if unsafe { WaitForSingleObject(event, 10_000) } != WAIT_OBJECT_0 {
-                std::mem::forget(ios);
-                std::mem::forget(buffer);
-                panic!("{api:?} pending directory query did not complete");
-            }
-            status = unsafe { ios.Anonymous.Status };
             if let Some(port) = port {
-                let (mut bytes, mut key) = (0, 0);
-                let mut overlapped: *mut OVERLAPPED = std::ptr::null_mut();
-                while unsafe {
-                    GetQueuedCompletionStatus(port, &mut bytes, &mut key, &mut overlapped, 50)
-                } != 0
-                {}
+                // Only the packet's own status block is valid before the
+                // packet is removed, and it is the only source of the final
+                // status.
+                let Some(completion) = remove_completion(port, 10_000) else {
+                    std::mem::forget(ios);
+                    std::mem::forget(buffer);
+                    panic!("{api:?} pending directory query posted no completion packet");
+                };
+                assert_eq!(completion.key, 1, "{api:?} completion key");
+                assert_eq!(completion.context, 0, "{api:?} completion context");
+                status = completion.status;
+            } else {
+                if unsafe { WaitForSingleObject(event, 10_000) } != WAIT_OBJECT_0 {
+                    std::mem::forget(ios);
+                    std::mem::forget(buffer);
+                    panic!("{api:?} pending directory query did not complete");
+                }
+                // No completion port is involved, so the signaled event
+                // follows the status block update.
+                status = unsafe { ios.Anonymous.Status };
             }
+        } else if let (Some(port), true) = (port, status >= 0) {
+            // A native request that completed inline on an associated handle
+            // still posts its packet unless skip-on-success is set. Consume it
+            // so a later pending request on the same port cannot dequeue this
+            // one's packet instead of its own. A rejected query (negative
+            // status) never reaches the native call, so its port is left
+            // untouched for `assert_no_packet`.
+            while remove_completion(port, 0).is_some() {}
         }
         unsafe { CloseHandle(event) };
         status
@@ -714,14 +780,16 @@ fn completion_port_directory_queries(root: &Path) {
     fn associate(directory: HANDLE) -> HANDLE {
         unsafe { CreateIoCompletionPort(directory, std::ptr::null_mut(), 1, 0) }
     }
-    /// A rejected query must not post a completion packet either.
+    /// A rejected query must not post a completion packet either. A packet,
+    /// including one for a failed request, fails the assertion; only a
+    /// timeout with an empty port passes.
     fn assert_no_packet(port: HANDLE) {
-        let (mut bytes, mut key) = (0, 0);
-        let mut overlapped: *mut OVERLAPPED = std::ptr::null_mut();
-        let received =
-            unsafe { GetQueuedCompletionStatus(port, &mut bytes, &mut key, &mut overlapped, 100) };
-        assert_eq!(received, 0, "unexpected completion packet");
-        assert_eq!(unsafe { GetLastError() }, WAIT_TIMEOUT);
+        if let Some(completion) = remove_completion(port, 100) {
+            panic!(
+                "unexpected completion packet: key {} context {} status {:#x}",
+                completion.key, completion.context, completion.status
+            );
+        }
     }
     let apis = [Query::Classic, Query::Extended];
 
