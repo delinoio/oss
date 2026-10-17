@@ -12,6 +12,8 @@ import {
   versions,
 } from "../dist/core.js";
 
+import { finalizeNativeResult } from "./native-result.mjs";
+
 const start = performance.now();
 const buildId = randomUUID();
 const target = hostTarget();
@@ -21,23 +23,21 @@ if (!isAbsolute(compiler) && /[/\\]/.test(compiler))
   compiler = resolve(compiler);
 let directory;
 let phase = "prerequisites";
+let outcome;
 function report(status, details = {}) {
-  process.stdout.write(
-    JSON.stringify({
-      schemaVersion: 1,
-      buildId,
-      check: "react-core-subset",
-      versions,
-      target: target ?? null,
-      phase,
-      durationMs: Math.round(performance.now() - start),
-      status,
-      fullReactConformance: "unverified",
-      rendererAcceptance: "unverified",
-      engineAbsence: "unverified",
-      ...details,
-    }) + "\n",
-  );
+  outcome = {
+    schemaVersion: 1,
+    buildId,
+    check: "react-core-subset",
+    versions,
+    target: target ?? null,
+    phase,
+    status,
+    fullReactConformance: "unverified",
+    rendererAcceptance: "unverified",
+    engineAbsence: "unverified",
+    ...details,
+  };
 }
 try {
   if (!target) throw new Error("TN_HOST_UNSUPPORTED");
@@ -102,7 +102,6 @@ try {
         column: Number.isInteger(item?.column) ? item.column : null,
       })),
     });
-    process.exitCode = 1;
   } else {
     phase = "execute";
     const bytes = await readFile(artifact);
@@ -127,7 +126,15 @@ try {
       ? error.message
       : "TN_NATIVE_PROBE_FAILED";
   report("failed", { code });
-  process.exitCode = 1;
 } finally {
-  if (directory) await rm(directory, { recursive: true, force: true });
+  const result = await finalizeNativeResult(outcome, async () => {
+    if (directory) await rm(directory, { recursive: true, force: true });
+  });
+  process.stdout.write(
+    JSON.stringify({
+      ...result,
+      durationMs: Math.round(performance.now() - start),
+    }) + "\n",
+  );
+  process.exitCode = result.status === "passed" ? 0 : 1;
 }
