@@ -11,7 +11,7 @@ import "./anchored-popup.css";
 
 /**
  * Shared presentation primitive for dropdown popups that must never change the
- * surrounding layout (issue #4125). A consumer keeps its markup, focus model,
+ * surrounding layout. A consumer keeps its markup, focus model,
  * selection controller and mutation guards; this hook only owns where the popup
  * is drawn.
  *
