@@ -230,7 +230,7 @@ export async function runDesktop(
       error.code === "development-signing-not-configured"
     ) {
       process.stderr.write(
-        'Create a "DeliDev Local Development" self-signed Code Signing certificate with Keychain Access > Certificate Assistant, then run pnpm dev:signing --identity <certificate SHA-1 fingerprint>.\n',
+        "Create an Apple Development certificate in Xcode Settings > Accounts > Manage Certificates, then run pnpm dev:signing --identity <certificate SHA-1 fingerprint>.\n",
       );
     }
     return { code: 1, signal: null };
