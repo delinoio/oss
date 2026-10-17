@@ -162,14 +162,14 @@ func (r *claudeUsageRuntime) Release() error {
 // removeClaudeUsageStorage removes only the native credential storage derived
 // from the account's own usage profile. A busy profile (a live login) is not
 // touched and keeps the removal owed.
-func removeClaudeUsageStorage(ctx context.Context, scope nativeScope, logger *slog.Logger) error {
+func removeClaudeUsageStorage(ctx context.Context, scope nativeScope, logger *slog.Logger) (err error) {
 	if scope.Profiles == nil || scope.Account.Validate() != nil {
 		return subscriptionDenied()
 	}
 	key := nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeUsage, Account: scope.Account}
 	// Cleanup must never create a profile that did not exist.
-	if _, found, err := scope.Profiles.Lookup(ctx, key); err != nil {
-		return err
+	if _, found, lookupErr := scope.Profiles.Lookup(ctx, key); lookupErr != nil {
+		return lookupErr
 	} else if !found {
 		return nil
 	}
@@ -179,11 +179,33 @@ func removeClaudeUsageStorage(ctx context.Context, scope nativeScope, logger *sl
 	if err != nil {
 		return err
 	}
-	defer lease.Close()
-	if err := claudeUsageStorageFor(lease.Root).Remove(ctx); err != nil {
+	// The removal is reported complete only once the exclusive profile lease was
+	// released too: an unconfirmed release must keep the cleanup owed, otherwise
+	// the next login could be blocked by the unresolved lock with no durable flag
+	// left to retry it.
+	defer func() { err = closeUsageProfileLease(lease, err, logger) }()
+	if removeErr := claudeUsageStorageFor(lease.Root).Remove(ctx); removeErr != nil {
 		nativeprofile.Log(logger, "native_profile_credential_cleanup_blocked", lease.Key, lease.ID, nativeprofile.ReasonCredentialBlocked)
-		return err
+		return removeErr
 	}
 	nativeprofile.Log(logger, "native_profile_credential_cleaned", lease.Key, lease.ID, nativeprofile.ReasonCredentialCleaned)
 	return nil
+}
+
+// closeUsageProfileLease releases the exclusive usage profile lease. A failed
+// release is returned when the guarded operation had no earlier error, so the
+// caller never reports success for a lock that was not confirmed released; an
+// earlier error stays the reported cause.
+func closeUsageProfileLease(lease usageProfileLease, err error, logger *slog.Logger) error {
+	closeErr := lease.Close()
+	if closeErr == nil {
+		return err
+	}
+	if logger != nil {
+		logger.Warn("claude_usage_profile_release_failed", "code", domain.SafeError(closeErr).Code)
+	}
+	if err != nil {
+		return err
+	}
+	return closeErr
 }

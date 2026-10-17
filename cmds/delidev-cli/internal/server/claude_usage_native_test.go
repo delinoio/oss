@@ -34,3 +34,21 @@ func TestClaudeUsageRuntimeReleaseRetriesAFailedLeaseClose(t *testing.T) {
 		t.Fatalf("the lease was closed %d times instead of retried until confirmed", lease.calls)
 	}
 }
+
+// The cleanup removal reports success only after the profile lease release was
+// confirmed, and an earlier removal failure stays the reported cause.
+func TestCloseUsageProfileLeasePropagatesAnUnconfirmedRelease(t *testing.T) {
+	if err := closeUsageProfileLease(&flakyUsageLease{}, nil, nil); err != nil {
+		t.Fatalf("a confirmed release failed the removal: %v", err)
+	}
+	if err := closeUsageProfileLease(&flakyUsageLease{failures: 1}, nil, nil); err == nil {
+		t.Fatal("a failed release was reported as a completed removal")
+	}
+	cause := errors.New("storage removal failed")
+	if err := closeUsageProfileLease(&flakyUsageLease{failures: 1}, cause, nil); !errors.Is(err, cause) {
+		t.Fatalf("an earlier failure was replaced by the release failure: %v", err)
+	}
+	if err := closeUsageProfileLease(&flakyUsageLease{}, cause, nil); !errors.Is(err, cause) {
+		t.Fatalf("an earlier failure was dropped: %v", err)
+	}
+}
