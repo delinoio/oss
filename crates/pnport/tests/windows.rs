@@ -531,6 +531,12 @@ fn native_child() {
 /// directory cannot post a completion packet, so a handle associated with an
 /// I/O completion port must fail explicitly instead of returning a result that
 /// a port waiter never observes.
+///
+/// The preload publishes `PNPORT_UNSUPPORTED_OPERATION` for the first rejected
+/// query and the supervisor then stops the run with exit 125, so this child
+/// ignores the supervisor's CTRL_BREAK to finish its assertions inside the
+/// shutdown grace interval and writes `completion-done.txt` when all of them
+/// passed.
 fn completion_port_directory_queries(root: &Path) {
     use std::ffi::c_void;
 
@@ -544,6 +550,7 @@ fn completion_port_directory_queries(root: &Path) {
             FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
         },
         System::{
+            Console::SetConsoleCtrlHandler,
             Threading::GetCurrentProcess,
             IO::{CreateIoCompletionPort, GetQueuedCompletionStatus, IO_STATUS_BLOCK, OVERLAPPED},
         },
@@ -579,6 +586,15 @@ fn completion_port_directory_queries(root: &Path) {
     }
     const FILE_NAMES_INFORMATION: i32 = 12;
     const SL_RESTART_SCAN: u32 = 1;
+
+    unsafe extern "system" fn ignore_control_event(_event: u32) -> i32 {
+        1
+    }
+    assert_ne!(
+        unsafe { SetConsoleCtrlHandler(Some(ignore_control_event), 1) },
+        0,
+        "install control handler"
+    );
 
     #[derive(Clone, Copy, Debug)]
     enum Query {
@@ -646,7 +662,7 @@ fn completion_port_directory_queries(root: &Path) {
         let (mut bytes, mut key) = (0, 0);
         let mut overlapped: *mut OVERLAPPED = std::ptr::null_mut();
         let received =
-            unsafe { GetQueuedCompletionStatus(port, &mut bytes, &mut key, &mut overlapped, 200) };
+            unsafe { GetQueuedCompletionStatus(port, &mut bytes, &mut key, &mut overlapped, 100) };
         assert_eq!(received, 0, "unexpected completion packet");
         assert_eq!(unsafe { GetLastError() }, WAIT_TIMEOUT);
     }
@@ -723,6 +739,7 @@ fn completion_port_directory_queries(root: &Path) {
         CloseHandle(native);
         CloseHandle(port);
     }
+    fs::write(root.join("completion-done.txt"), b"done").unwrap();
 }
 
 #[test]
@@ -828,12 +845,24 @@ fn completion_port_handles_reject_merged_directory_queries() {
     let root = fixture.path().join("project 한글 space");
     let cache = fixture.path().join("private-cache");
     let output = run(&root, &cache, "completion").output().unwrap();
-    assert!(
-        output.status.success(),
-        "status {:?}: {} {}",
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // The rejected query publishes the unsupported-operation failure, so the
+    // supervisor ends the run with the typed diagnostic. The child writes its
+    // marker only after every in-process assertion passed.
+    assert_eq!(
         output.status.code(),
-        String::from_utf8_lossy(&output.stderr),
+        Some(125),
+        "status {:?}: {stderr} {}",
+        output.status.code(),
         String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        stderr.contains("PNPORT_UNSUPPORTED_OPERATION"),
+        "missing typed diagnostic: {stderr}"
+    );
+    assert!(
+        root.join("completion-done.txt").is_file(),
+        "the child assertions did not complete: {stderr}"
     );
 }
 
