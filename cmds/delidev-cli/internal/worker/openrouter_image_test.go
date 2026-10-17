@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -107,5 +108,56 @@ func TestSelectedDynamicBackendUsesOriginalDurableFence(t *testing.T) {
 				t.Fatal("duplicate delivery repeated backend")
 			}
 		})
+	}
+}
+
+func TestOpenRouterImageReadUsesAdmittedRootHandle(t *testing.T) {
+	parent := t.TempDir()
+	workspace := filepath.Join(parent, "workspace")
+	outside := filepath.Join(parent, "outside")
+	for _, directory := range []string{workspace, outside} {
+		if err := os.Mkdir(directory, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var original, foreign bytes.Buffer
+	_ = png.Encode(&original, image.NewRGBA(image.Rect(0, 0, 1, 1)))
+	_ = png.Encode(&foreign, image.NewRGBA(image.Rect(0, 0, 2, 2)))
+	if err := os.WriteFile(filepath.Join(workspace, "original.png"), original.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "original.png"), foreign.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	// Replace the pathname after admission. The held directory still owns
+	// the original object; reopening the absolute pathname would leak foreign bytes.
+	if err := os.Rename(workspace, workspace+"-held"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, workspace); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	data, _, err := readOpenRouterRootImage(root, "original.png")
+	if err != nil || !bytes.Equal(data, original.Bytes()) {
+		t.Fatal("read abandoned the admitted directory", err)
+	}
+	for _, relative := range []string{"swapped.png", filepath.Join("swapped-parent", "original.png")} {
+		link := relative
+		target := filepath.Join(outside, "original.png")
+		if strings.Contains(relative, string(filepath.Separator)) {
+			link = "swapped-parent"
+			target = outside
+		}
+		if err := os.Symlink(target, filepath.Join(workspace+"-held", link)); err != nil {
+			t.Fatal(err)
+		}
+		if data, _, err := readOpenRouterRootImage(root, relative); err == nil || data != nil {
+			t.Fatal("replacement symlink escaped admitted root")
+		}
 	}
 }

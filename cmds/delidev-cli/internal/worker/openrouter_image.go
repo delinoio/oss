@@ -76,38 +76,8 @@ func (b *openRouterImageBackend) run(ctx context.Context, raw json.RawMessage) (
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(b.settings.Cwd, path)
 		}
-		resolved, err := filepath.EvalSymlinks(path)
+		data, media, err := b.readReferenceImage(path)
 		if err != nil {
-			return "", imageBackendError()
-		}
-		admitted := b.settings.Options.Permission == domain.PermissionFullAccess
-		for _, root := range append([]string{b.settings.Cwd}, b.settings.WorkspaceRoots...) {
-			canonical, err := filepath.EvalSymlinks(root)
-			if err != nil {
-				continue
-			}
-			rel, err := filepath.Rel(canonical, resolved)
-			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-				admitted = true
-			}
-		}
-		if !admitted {
-			return "", imageBackendError()
-		}
-		file, err := os.Open(resolved)
-		if err != nil {
-			return "", imageBackendError()
-		}
-		info, statErr := file.Stat()
-		if statErr != nil || !info.Mode().IsRegular() {
-			file.Close()
-			return "", imageBackendError()
-		}
-		data, readErr := io.ReadAll(io.LimitReader(file, domain.MaxInputImageBytes+1))
-		file.Close()
-		media := domain.ImageMediaType(http.DetectContentType(data))
-		if readErr != nil || domain.ValidateImageContent(data, media) != nil {
-			clear(data)
 			return "", imageBackendError()
 		}
 		images = append(images, map[string]string{"image_url": "data:" + string(media) + ";base64," + base64.StdEncoding.EncodeToString(data)})
@@ -211,4 +181,62 @@ func (b *openRouterImageBackend) run(ctx context.Context, raw json.RawMessage) (
 		return "", imageBackendError()
 	}
 	return "data:image/png;base64," + output.Data[0].Base64, nil
+}
+
+// Bind restricted reads to an admitted directory handle. Root.Open resolves
+// symlinks relative to that handle and rejects escapes even if a repository
+// process replaces a path component after the lexical admission check.
+func (b *openRouterImageBackend) readReferenceImage(path string) ([]byte, domain.ImageMediaType, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, "", imageBackendError()
+	}
+	if b.settings.Options.Permission == domain.PermissionFullAccess {
+		file, err := os.Open(resolved)
+		if err != nil {
+			return nil, "", imageBackendError()
+		}
+		return readOpenRouterImageFile(file)
+	}
+	for _, rootPath := range append([]string{b.settings.Cwd}, b.settings.WorkspaceRoots...) {
+		canonical, err := filepath.EvalSymlinks(rootPath)
+		if err != nil {
+			continue
+		}
+		relative, err := filepath.Rel(canonical, resolved)
+		if err != nil || !filepath.IsLocal(relative) {
+			continue
+		}
+		root, err := os.OpenRoot(canonical)
+		if err != nil {
+			return nil, "", imageBackendError()
+		}
+		data, media, err := readOpenRouterRootImage(root, relative)
+		root.Close()
+		return data, media, err
+	}
+	return nil, "", imageBackendError()
+}
+
+func readOpenRouterRootImage(root *os.Root, relative string) ([]byte, domain.ImageMediaType, error) {
+	file, err := root.Open(relative)
+	if err != nil {
+		return nil, "", imageBackendError()
+	}
+	return readOpenRouterImageFile(file)
+}
+
+func readOpenRouterImageFile(file *os.File) ([]byte, domain.ImageMediaType, error) {
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, "", imageBackendError()
+	}
+	data, err := io.ReadAll(io.LimitReader(file, domain.MaxInputImageBytes+1))
+	media := domain.ImageMediaType(http.DetectContentType(data))
+	if err != nil || domain.ValidateImageContent(data, media) != nil {
+		clear(data)
+		return nil, "", imageBackendError()
+	}
+	return data, media, nil
 }

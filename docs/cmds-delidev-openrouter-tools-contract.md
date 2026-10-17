@@ -67,7 +67,9 @@ results remain private in native history and a thread-owned cache within the
 persistent native profile, which follows profile deletion ownership. Recent
 image edits use original generated PNGs from that thread's cache; a different
 thread or Fork cannot adopt that cache. Existing local image references use
-original still-image bytes after effective read-root checks. Native generated
+original still-image bytes through a held effective read-root handle. Restricted
+reads remain beneath that handle if a path component is replaced during the
+operation; symlinks cannot introduce authority outside the admitted root. Native generated
 image previews and references from inherited Fork images remain unimplemented
 for the API adapter. Retained history uses the explicit enlarged frame profile.
 The selected native image transport also admits its existing 16-MiB frame bound
