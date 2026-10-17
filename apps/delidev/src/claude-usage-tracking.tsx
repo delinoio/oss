@@ -177,6 +177,42 @@ export const progressTerminal = (value?: ClaudeUsageLoginState) =>
     ClaudeUsageLoginState.FAILED,
   ].includes(value);
 
+/**
+ * Orders the nonterminal phases of one login. A progress read that reports a
+ * phase ahead of the account document's operation means the document revision
+ * is stale, while an equal or earlier phase is only a delayed reply.
+ */
+const loginPhaseRank = (
+  value: ClaudeUsageOperationState | "linked" | undefined,
+) => {
+  switch (value) {
+    case ClaudeUsageOperationState.Preparing:
+      return 0;
+    case ClaudeUsageOperationState.Waiting:
+      return 1;
+    case ClaudeUsageOperationState.Succeeded:
+      return 2;
+    default:
+      return -1;
+  }
+};
+
+/**
+ * A progress reply is ahead of the account document when it is terminal and
+ * differs, or when it reports a later nonterminal phase than the document's
+ * operation. Actions capture the document revision, so they wait until the
+ * revised document arrives.
+ */
+export function progressAheadOfDocument(
+  reported: ClaudeUsageLoginState | undefined,
+  documented: ClaudeUsageOperationState,
+): boolean {
+  const mapped = claudeUsageLoginOperationState(reported);
+  if (mapped === undefined || mapped === documented) return false;
+  if (progressTerminal(reported)) return true;
+  return loginPhaseRank(mapped) > loginPhaseRank(documented);
+}
+
 interface Binding {
   opening: string;
   operation: string;
@@ -410,16 +446,17 @@ export function useClaudeUsageTracking(options: ClaudeUsageTrackingOptions): {
   );
   const mutations = [start, code, confirm, cancel, disconnect, observe];
   const pending = mutations.some((value) => value.busy || value.uncertain);
-  // A terminal progress result can arrive before the account read delivers the
-  // revised document. Every mutation captures the document revision, so actions
-  // stay disabled until the document operation agrees with that result and a
-  // fresh account read is requested meanwhile.
+  // A progress result that is ahead of the document (a final state or a later
+  // phase) can arrive before the account read delivers the revised document.
+  // Every mutation captures the document revision, so actions stay disabled
+  // until the document operation agrees with that result and a fresh account
+  // read is requested meanwhile. A delayed reply that is behind the document
+  // never blocks.
   const awaitingDocument =
     lifecycle &&
     reply !== undefined &&
-    progressTerminal(reply.state) &&
     operation !== undefined &&
-    claudeUsageLoginOperationState(reply.state) !== operation.state;
+    progressAheadOfDocument(reply.state, operation.state);
   const awaitedState = awaitingDocument ? reply?.state : undefined;
   useEffect(() => {
     if (awaitedState === undefined) return;

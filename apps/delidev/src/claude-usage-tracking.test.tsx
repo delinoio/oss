@@ -31,6 +31,7 @@ import { ManagedSubscriptionAccount } from "./subscription-accounts";
 import {
   claudeUsageAuthorizationURL,
   claudeUsageRowIdentity,
+  progressAheadOfDocument,
   progressTerminal,
 } from "./claude-usage-tracking";
 import {
@@ -1458,4 +1459,83 @@ it("classifies only the closed final login states as terminal progress", () => {
     99 as ClaudeUsageLoginState,
   ])
     expect(progressTerminal(open)).toBe(false);
+  expect(
+    progressAheadOfDocument(
+      ClaudeUsageLoginState.WAITING,
+      "preparing" as never,
+    ),
+  ).toBe(true);
+  expect(
+    progressAheadOfDocument(
+      ClaudeUsageLoginState.PREPARING,
+      "waiting" as never,
+    ),
+  ).toBe(false);
+  expect(
+    progressAheadOfDocument(ClaudeUsageLoginState.WAITING, "waiting" as never),
+  ).toBe(false);
+  expect(
+    progressAheadOfDocument(
+      ClaudeUsageLoginState.UNSPECIFIED,
+      "waiting" as never,
+    ),
+  ).toBe(false);
+});
+
+it("holds actions while a forward nonterminal progress phase is ahead of the account document", async () => {
+  const value = mount({
+    usage: {
+      connection: "connecting",
+      generation,
+      operation: operation("preparing"),
+    },
+    progress: waitingProgress(),
+  });
+  // The reported phase is shown at once, but the document still carries the
+  // old operation phase and revision: Cancel would capture that stale revision.
+  const section = await state(ClaudeUsageView.Waiting);
+  const cancel = () =>
+    within(section).getByRole("button", {
+      name: "Cancel sign-in",
+    }) as HTMLButtonElement;
+  await waitFor(() => expect(value.progress).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(cancel().disabled).toBe(true);
+  fireEvent.click(cancel());
+  expect(value.cancel).not.toHaveBeenCalled();
+  // The revised document arrives through the account read.
+  value.set({
+    connection: "connecting",
+    generation,
+    operation: operation("waiting"),
+  });
+  await waitFor(() => expect(cancel().disabled).toBe(false));
+  fireEvent.click(cancel());
+  await waitFor(() => expect(value.cancel).toHaveBeenCalledTimes(1));
+  expect(value.cancel.mock.calls[0][0]).toMatchObject({
+    mutation: { expectedRevision: revision },
+  });
+});
+
+it("does not block actions on a delayed progress reply that is behind the document", async () => {
+  const value = mount({
+    usage: {
+      connection: "connecting",
+      generation,
+      operation: operation("waiting"),
+    },
+    progress: () => ({
+      state: ClaudeUsageLoginState.PREPARING,
+      operationId,
+      usageGeneration: generation,
+    }),
+  });
+  await waitFor(() => expect(value.progress).toHaveBeenCalled());
+  const section = await usageSection();
+  const cancel = within(section).getByRole("button", {
+    name: "Cancel sign-in",
+  }) as HTMLButtonElement;
+  await waitFor(() => expect(cancel.disabled).toBe(false));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(cancel.disabled).toBe(false);
 });
