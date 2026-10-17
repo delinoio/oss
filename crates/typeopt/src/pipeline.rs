@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use anyhow::{Result, bail, ensure};
 
 use crate::{
+    minify::Compressed,
     optimizer::{Mapping, Preservation},
     passes::{PassId, PassSet},
     plan::{
@@ -537,6 +538,90 @@ impl<B: Backend> Gate<'_, B> {
     }
 }
 
+/// Chunks below this size are judged by their raw size alone: their
+/// compressed size is dominated by stream headers and Brotli's static
+/// dictionary, not by the edits.
+const COMPRESSION_GATE_MIN_BYTES: usize = 4096;
+
+/// Indices of accepted bundles that grow the gzip or Brotli size of the
+/// files they edit. A group that grows is split in halves until single
+/// bundles remain, each half judged on top of the bundles kept so far, so
+/// the kept set never compresses worse than the unedited text.
+fn compression_drops(
+    texts: &BTreeMap<String, String>,
+    accepted: &[(Candidate, usize, usize)],
+    measure: &dyn Fn(&str) -> Compressed,
+) -> Result<Vec<usize>> {
+    fn total(
+        texts: &BTreeMap<String, String>,
+        accepted: &[(Candidate, usize, usize)],
+        set: &[usize],
+        files: &BTreeSet<&str>,
+        measure: &dyn Fn(&str) -> Compressed,
+    ) -> Result<Compressed> {
+        let mut per_file = BTreeMap::<&str, Vec<Edit>>::new();
+        for &index in set {
+            for edit in &accepted[index].0.edits {
+                if files.contains(edit.file.as_str()) {
+                    per_file
+                        .entry(edit.file.as_str())
+                        .or_default()
+                        .push(edit.edit.clone());
+                }
+            }
+        }
+        let mut sum = Compressed { gzip: 0, brotli: 0 };
+        for &file in files {
+            let size = match per_file.remove(file) {
+                Some(mut edits) => {
+                    edits.sort();
+                    measure(&apply(&texts[file], &edits)?)
+                }
+                None => measure(&texts[file]),
+            };
+            sum.gzip = sum.gzip.saturating_add(size.gzip);
+            sum.brotli = sum.brotli.saturating_add(size.brotli);
+        }
+        Ok(sum)
+    }
+
+    fn select(
+        texts: &BTreeMap<String, String>,
+        accepted: &[(Candidate, usize, usize)],
+        items: &[usize],
+        kept: &mut Vec<usize>,
+        dropped: &mut Vec<usize>,
+        measure: &dyn Fn(&str) -> Compressed,
+    ) -> Result<()> {
+        crate::app::check_cancelled()?;
+        // Files that no item edits compress identically on both sides.
+        let files: BTreeSet<&str> = items
+            .iter()
+            .flat_map(|&i| accepted[i].0.edits.iter().map(|e| e.file.as_str()))
+            .filter(|file| texts[*file].len() >= COMPRESSION_GATE_MIN_BYTES)
+            .collect();
+        let before = total(texts, accepted, kept, &files, measure)?;
+        let with_items: Vec<usize> = kept.iter().chain(items).copied().collect();
+        let after = total(texts, accepted, &with_items, &files, measure)?;
+        if after.gzip <= before.gzip && after.brotli <= before.brotli {
+            kept.extend_from_slice(items);
+        } else if let [only] = items {
+            dropped.push(*only);
+        } else {
+            let (left, right) = items.split_at(items.len() / 2);
+            select(texts, accepted, left, kept, dropped, measure)?;
+            select(texts, accepted, right, kept, dropped, measure)?;
+        }
+        Ok(())
+    }
+
+    let items: Vec<usize> = (0..accepted.len()).collect();
+    let (mut kept, mut dropped) = (Vec::new(), Vec::new());
+    select(texts, accepted, &items, &mut kept, &mut dropped, measure)?;
+    dropped.sort_unstable();
+    Ok(dropped)
+}
+
 pub struct Pipeline<'a, B: Backend> {
     pub backend: &'a mut B,
     pub enabled: &'a PassSet,
@@ -566,7 +651,7 @@ impl<B: Backend> Pipeline<'_, B> {
             ..Outcome::default()
         };
         outcome.size_before = self.total_size(sources)?;
-        let mut blacklist = BTreeSet::new();
+        let mut blacklist = BTreeMap::new();
         let mut permanent = Vec::new();
         for phase in [Phase::Structural, Phase::Property] {
             if phase == Phase::Property && !self.enabled.any_property() {
@@ -672,7 +757,7 @@ impl<B: Backend> Pipeline<'_, B> {
         &mut self,
         texts: &BTreeMap<String, String>,
         phase: Phase,
-        blacklist: &BTreeSet<String>,
+        blacklist: &BTreeMap<String, Preservation>,
     ) -> Result<Round> {
         let mut plan = self.backend.plan(texts, phase, self.enabled)?;
         let mut candidates = std::mem::take(&mut plan.candidates);
@@ -711,9 +796,9 @@ impl<B: Backend> Pipeline<'_, B> {
                 rejected.extend(preserved(&candidate, Preservation::RequiresDisabledPass));
                 continue;
             }
-            if blacklist.contains(&candidate.key) {
+            if let Some(reason) = blacklist.get(&candidate.key) {
                 // The permanent record already explains this candidate.
-                rejected.extend(preserved(&candidate, Preservation::RecheckFailed));
+                rejected.extend(preserved(&candidate, reason.clone()));
                 continue;
             }
             if candidate.edits.is_empty() {
@@ -762,9 +847,44 @@ impl<B: Backend> Pipeline<'_, B> {
         mut accepted: Vec<(Candidate, usize, usize)>,
         phase: Phase,
         round: usize,
-        blacklist: &mut BTreeSet<String>,
+        blacklist: &mut BTreeMap<String, Preservation>,
         permanent: &mut Vec<Skip>,
     ) -> Result<Option<usize>> {
+        if crate::app::bundle_mode() {
+            // The raw size gate cannot see compression. Drop bundles that
+            // shrink the chunk text but grow its gzip or Brotli size, then
+            // plan again so the remaining decisions do not depend on them.
+            let dropped = compression_drops(&outcome.texts, &accepted, &|text| {
+                crate::minify::compressed(&text[..crate::bundle::chunk_code_len(text)])
+            })?;
+            if !dropped.is_empty() {
+                for &index in &dropped {
+                    let candidate = &accepted[index].0;
+                    tracing::debug!(
+                        pass = %candidate.pass,
+                        key = %candidate.key,
+                        "bundle grows compressed size; rolling back"
+                    );
+                    blacklist.insert(candidate.key.clone(), Preservation::NoCompressedBenefit);
+                    permanent.push(Skip {
+                        pass: candidate.pass,
+                        key: candidate.key.clone(),
+                        location: Location {
+                            file: candidate.location.file.clone(),
+                            offset: source_offset(
+                                candidate.location.offset,
+                                outcome
+                                    .chains
+                                    .get(&candidate.location.file)
+                                    .map_or(&[], Vec::as_slice),
+                            ),
+                        },
+                        reason: Reason::NoCompressedBenefit,
+                    });
+                }
+                return Ok(None);
+            }
+        }
         // Recheck the transformed program. On failure, find the first bundle
         // whose prefix fails and blacklist it; the caller plans again.
         let texts = Self::applied(&outcome.texts, &accepted)?;
@@ -784,7 +904,7 @@ impl<B: Backend> Pipeline<'_, B> {
                 modules = failing.len(),
                 "transformed program failed type checking; rolling back one bundle"
             );
-            blacklist.insert(candidate.key.clone());
+            blacklist.insert(candidate.key.clone(), Preservation::RecheckFailed);
             // The skip refers to this round's text, so it maps through the
             // chain as it is now, exactly once.
             permanent.push(Skip {
@@ -995,6 +1115,83 @@ mod tests {
         );
         c.edits = edits;
         c
+    }
+
+    fn weighted(text: &str) -> Compressed {
+        // Each `x` stands for incompressible text.
+        let size = text.len() + 10 * text.matches('x').count();
+        Compressed {
+            gzip: size,
+            brotli: size,
+        }
+    }
+
+    fn accepted_bundle(key: &str, edits: Vec<FileEdit>) -> (Candidate, usize, usize) {
+        (candidate(PassId::CallInlining, key, edits), 0, 0)
+    }
+
+    #[test]
+    fn compression_guard_drops_only_bundles_that_grow_compressed_size() {
+        let texts = sources(&format!(
+            "aaaa bbbb cccc{}",
+            " ".repeat(COMPRESSION_GATE_MIN_BYTES)
+        ));
+        let accepted = vec![
+            accepted_bundle("shrink", vec![FileEdit::delete("a.ts", 0, 5)]),
+            // Same raw length, but the replacement compresses poorly.
+            accepted_bundle("grow", vec![FileEdit::replace("a.ts", 5, 9, "xxxx")]),
+            accepted_bundle("shrink2", vec![FileEdit::delete("a.ts", 10, 14)]),
+        ];
+        let dropped = compression_drops(&texts, &accepted, &weighted).unwrap();
+        assert_eq!(dropped, vec![1]);
+    }
+
+    #[test]
+    fn compression_guard_keeps_bundles_that_do_not_grow_it() {
+        let texts = sources(&format!(
+            "aaaa bbbb{}",
+            " ".repeat(COMPRESSION_GATE_MIN_BYTES)
+        ));
+        let accepted = vec![
+            accepted_bundle("one", vec![FileEdit::delete("a.ts", 0, 5)]),
+            accepted_bundle("two", vec![FileEdit::replace("a.ts", 5, 9, "bb")]),
+        ];
+        assert!(
+            compression_drops(&texts, &accepted, &weighted)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn compression_guard_ignores_small_chunks() {
+        let texts = sources("aaaa bbbb");
+        let accepted = vec![accepted_bundle(
+            "grow",
+            vec![FileEdit::replace("a.ts", 5, 9, "xxxx")],
+        )];
+        assert!(
+            compression_drops(&texts, &accepted, &weighted)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn compression_guard_judges_a_group_that_grows_in_halves() {
+        // Together the two bundles grow the text; the first alone shrinks it.
+        let texts = sources(&format!(
+            "aaaa bbbb{}",
+            " ".repeat(COMPRESSION_GATE_MIN_BYTES)
+        ));
+        let accepted = vec![
+            accepted_bundle("shrink", vec![FileEdit::delete("a.ts", 0, 5)]),
+            accepted_bundle("grow", vec![FileEdit::replace("a.ts", 5, 9, "xxxxx")]),
+        ];
+        assert_eq!(
+            compression_drops(&texts, &accepted, &weighted).unwrap(),
+            vec![1]
+        );
     }
 
     fn sources(text: &str) -> BTreeMap<String, String> {

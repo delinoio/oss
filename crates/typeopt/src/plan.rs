@@ -56,6 +56,9 @@ pub struct Location {
 pub enum Reason {
     /// The complete bundle did not strictly reduce emitted ESM bytes.
     NoSizeBenefit,
+    /// Bundle mode: the bundle shrank the chunk text but grew its gzip or
+    /// Brotli size.
+    NoCompressedBenefit,
     /// The bundle needs a transformation from a disabled pass.
     RequiresDisabledPass,
     /// The transformed program no longer type-checked; the bundle was rolled
