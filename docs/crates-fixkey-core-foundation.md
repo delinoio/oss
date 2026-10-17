@@ -115,7 +115,7 @@ Use `tracing` structured events for errors, processing durations, correction out
 - Run `cargo test` from the repository root, plus `cargo fmt --all --check` and `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - Required automated tests: positive examples, reverse conversion, shifted keys, casing, dictionary inflections, proper nouns and abbreviations; unknown morphemes, invalid part-of-speech connections, incomplete analysis, missing dictionaries and validator failures; zero, one and multiple valid languages, disabled languages and unchanged winners; boundaries, apostrophes and hyphens, and excluded Enter and Tab; composition, pasted and programmatic input, numeric, emoji, URL, email and mixed-script tokens; Backspace restoration, separator preservation and recorrection suppression; mocked focus, caret, selection, permission, protected-field, unsupported-write and partial-write failures.
 - Measure processing latency, memory use and startup duration without fixed numerical release thresholds.
-- Actual OS and application execution and installation-package inspection are not part of validation. Record them as unperformed.
+- Mocks, fixtures and builds do not establish actual accessibility-adapter behavior on any platform. Native acceptance of the adapters on each target platform is a separate activity required before claiming verified compatibility or shipping, as defined in [the desktop contract](apps-fixkey-desktop-contract.md). Record every native check or package inspection that was not performed in pull requests, issues and CI artifacts.
 
 ## Dependencies and Integrations
 
