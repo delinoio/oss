@@ -58,7 +58,7 @@ Layout reconstruction:
 
 - Reconstruct each completed word from its key sequence under every enabled language, including the word's current representation. Support English-to-Korean and Korean-to-English. Preserve the casing implied by the key sequence, including shifted keys.
 - Process directly typed words only after IME composition has completed.
-- Evaluate at spaces and punctuation boundaries. Enter and Tab never trigger evaluation.
+- Evaluate at spaces and punctuation boundaries. Enter and Tab never trigger evaluation. Separators that can occur inside URLs or email addresses (such as `.`, `/`, `:`, `@`, `?`, `#` and `_`) never trigger evaluation on their own: retain the pending token until the following character or token end allows URL, email and mixed-script classification, and skip the whole token when it is excluded.
 - Apostrophes and hyphens between letters are internal word characters. Delay their boundary decision until the next character shows whether they are internal or trailing punctuation.
 - Replace only the word and preserve the boundary character. Never change the OS input language.
 - Exclude pasted, existing and programmatically inserted text, numeric, emoji, URL, email and mixed-script tokens. Code editors and terminals follow the same rules; eligibility never overrides accessibility safety checks.
