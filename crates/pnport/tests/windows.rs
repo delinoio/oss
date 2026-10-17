@@ -419,7 +419,7 @@ fn native_child() {
                 FileStandardInformation, NtQueryInformationFile, FILE_STANDARD_INFORMATION,
                 IO_STATUS_BLOCK,
             };
-            use winapi::um::errhandlingapi::{GetLastError, SetLastError};
+            use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
             let mut info: FILE_STANDARD_INFORMATION = unsafe { std::mem::zeroed() };
             let mut ios: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
             let (status, error) = unsafe {
