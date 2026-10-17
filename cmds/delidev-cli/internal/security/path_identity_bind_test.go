@@ -2,14 +2,20 @@
 package security
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
 	"testing"
 )
 
 // A lock binds the object it holds open; anything else at the name is pending.
 func TestLockBindPathIdentityBindsOnlyTheLockedObject(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "private")
+	if err := PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(root, "owner.recovery.lock")
 	lock, err := TryLock(path)
 	if err != nil {
@@ -43,7 +49,19 @@ func TestLockBindPathIdentityBindsOnlyTheLockedObject(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := os.Rename(path, path+".moved"); err != nil {
-				t.Fatal(err)
+				// Windows locks deny delete sharing, so an open lock also prevents
+				// replacing its name. A different candidate must still be refused.
+				if runtime.GOOS != "windows" || !errors.Is(err, syscall.Errno(32)) {
+					t.Fatal(err)
+				}
+				candidate := filepath.Join(root, "candidate")
+				t.Cleanup(func() { _ = os.RemoveAll(candidate) })
+				replace(candidate)
+				if replaced, err := lock.BindPathIdentity(candidate); err == nil {
+					replaced.Close()
+					t.Fatal("a different candidate was bound to the held lock")
+				}
+				return
 			}
 			t.Cleanup(func() { _ = os.RemoveAll(path); _ = os.Rename(path+".moved", path) })
 			replace(path)

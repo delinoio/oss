@@ -10,8 +10,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -212,9 +214,15 @@ func TestManagedExecutionCleanupFailsOnChangedRootIdentity(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "history"), []byte("history"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	replacementBlocked := false
 	scanIdentityCheckpoint = func() {
 		moved := filepath.Join(parent, "moved")
 		if err := os.Rename(home, moved); err != nil {
+			// The Windows os.Root handle prevents renaming the admitted home.
+			if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(32)) {
+				replacementBlocked = true
+				return
+			}
 			t.Error(err)
 			return
 		}
@@ -224,6 +232,18 @@ func TestManagedExecutionCleanupFailsOnChangedRootIdentity(t *testing.T) {
 	}
 	defer func() { scanIdentityCheckpoint = nil }()
 	err := cleanupExecutionAuthentication(context.Background(), home, bundle, bundle)
+	if replacementBlocked {
+		if err != nil {
+			t.Fatal("OS-blocked replacement prevented original cleanup", err)
+		}
+		if _, err := os.Stat(filepath.Join(home, "history")); err != nil {
+			t.Fatal("cleanup deleted original history", err)
+		}
+		if _, err := os.Stat(filepath.Join(home, "auth.json")); !os.IsNotExist(err) {
+			t.Fatal("cleanup retained original authentication", err)
+		}
+		return
+	}
 	var failure *executionAuthenticationFailure
 	if !errors.As(err, &failure) || failure.reason != executionAuthIdentity {
 		t.Fatal("root identity change was not detected", err)

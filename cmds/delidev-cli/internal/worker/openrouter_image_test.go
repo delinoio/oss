@@ -6,14 +6,17 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -137,10 +140,15 @@ func TestOpenRouterImageReadUsesAdmittedRootHandle(t *testing.T) {
 	defer root.Close()
 	// Replace the pathname after admission. The held directory still owns
 	// the original object; reopening the absolute pathname would leak foreign bytes.
-	if err := os.Rename(workspace, workspace+"-held"); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(outside, workspace); err != nil {
+	heldPath := workspace + "-held"
+	if err := os.Rename(workspace, heldPath); err != nil {
+		// os.OpenRoot holds a Windows handle without delete sharing, which
+		// prevents replacement itself. Keep testing reads and escaping links.
+		if runtime.GOOS != "windows" || !errors.Is(err, syscall.Errno(32)) {
+			t.Fatal(err)
+		}
+		heldPath = workspace
+	} else if err := os.Symlink(outside, workspace); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 	data, _, err := readOpenRouterRootImage(root, "original.png")
@@ -154,7 +162,7 @@ func TestOpenRouterImageReadUsesAdmittedRootHandle(t *testing.T) {
 			link = "swapped-parent"
 			target = outside
 		}
-		if err := os.Symlink(target, filepath.Join(workspace+"-held", link)); err != nil {
+		if err := os.Symlink(target, filepath.Join(heldPath, link)); err != nil {
 			t.Fatal(err)
 		}
 		if data, _, err := readOpenRouterRootImage(root, relative); err == nil || data != nil {

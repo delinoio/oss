@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -75,8 +76,15 @@ func TestRemoveTreeByPathRejectsAncestorReplacedAfterInventory(t *testing.T) {
 	}
 	defer identity.Close()
 	nested := filepath.Join(dir, "nested")
+	replacementBlocked := false
 	walkBeforeUnlinkHook = func() {
 		if err := os.Rename(nested, filepath.Join(root, "managed", "moved")); err != nil {
+			// Windows refuses renaming an ancestor while its descendants are held.
+			// The OS then prevents the replacement before our identity check.
+			if runtime.GOOS == "windows" && os.IsPermission(err) {
+				replacementBlocked = true
+				return
+			}
 			t.Fatal(err)
 		}
 		// Same names as the inventoried descendants, so only the ancestor check
@@ -85,7 +93,17 @@ func TestRemoveTreeByPathRejectsAncestorReplacedAfterInventory(t *testing.T) {
 		writeFixture(t, filepath.Join(nested, "mid.json"), "owned")
 	}
 	t.Cleanup(func() { walkBeforeUnlinkHook = nil })
-	requirePending(t, removeTreeByPath(context.Background(), dir, identity))
+	err = removeTreeByPath(context.Background(), dir, identity)
+	if replacementBlocked {
+		if err != nil {
+			t.Fatal("OS-blocked replacement prevented original cleanup", err)
+		}
+		if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+			t.Fatal("original tree survived cleanup", err)
+		}
+		return
+	}
+	requirePending(t, err)
 	for _, relative := range []string{filepath.Join("deep", "leaf.json"), "mid.json"} {
 		if _, err := os.Lstat(filepath.Join(nested, relative)); err != nil {
 			t.Fatal("descendant of a replaced ancestor was removed", relative, err)

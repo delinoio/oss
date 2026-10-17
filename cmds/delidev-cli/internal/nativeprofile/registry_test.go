@@ -22,6 +22,12 @@ func testRoot(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Mode bits do not install a private DACL on Windows. Create the fixture
+	// owner root through the same primitive as the Worker.
+	root = filepath.Join(root, "private")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
 	return root
 }
 

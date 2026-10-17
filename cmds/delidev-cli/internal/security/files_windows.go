@@ -17,7 +17,10 @@ func descriptor() (*windows.SECURITY_DESCRIPTOR, error) {
 	if err != nil {
 		return nil, err
 	}
-	return windows.SecurityDescriptorFromString("D:P(A;OICI;FA;;;" + u.User.Sid.String() + ")")
+	// Pin the owner as well as the DACL. Elevated tokens can otherwise assign
+	// a default group owner independently of the user-only access rule.
+	sid := u.User.Sid.String()
+	return windows.SecurityDescriptorFromString("O:" + sid + "D:P(A;OICI;FA;;;" + sid + ")")
 }
 func createPrivateDirectory(path string) error {
 	sd, err := descriptor()

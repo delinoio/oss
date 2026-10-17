@@ -63,3 +63,26 @@ func TestCheckPrivateDirHandleChecksTheOwner(t *testing.T) {
 		t.Fatalf("the owner check refused the creator: %v", err)
 	}
 }
+
+// Private directory creation must not rely on the elevated token's default
+// owner: its explicit user owner and user-only DACL are checked independently.
+func TestPrivateDirectoryPinsTheProcessUserAsOwner(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "private")
+	if err := PrivateDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkOwnerDescriptor(sd, []*windows.SID{user.User.Sid}); err != nil {
+		t.Fatal("private directory did not retain its explicit user owner", err)
+	}
+	if err := checkPrivateDescriptor(sd); err != nil {
+		t.Fatal("private directory did not retain its user-only DACL", err)
+	}
+}

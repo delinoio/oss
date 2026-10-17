@@ -252,6 +252,11 @@ func (f *managedSidechatRPC) FinishSubscription(_ context.Context, r *connect.Re
 func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
 	for _, fault := range []string{"success", "success-execute-prefix", "finish-response-loss", "native-response-loss", "cleanup", "helper-retirement", "retry-success", "retry-native-response-loss", "retry-finish-response-loss"} {
 		t.Run(fault, func(t *testing.T) {
+			// The managed helper proof covers Unix executable aliases only. Windows
+			// aliases grant no retirement authority, so this fault cannot be injected.
+			if fault == "helper-retirement" && runtime.GOOS == "windows" {
+				t.Skip("managed executable helper retirement is Unix-only")
+			}
 			retry := strings.HasPrefix(fault, "retry-")
 			fault = strings.TrimPrefix(fault, "retry-")
 			f := newCheckpointFixture(t)
@@ -397,6 +402,11 @@ func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
 func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T) {
 	for _, fault := range []string{"success", "large-function-output", "finish-response-loss", "native-response-loss", "cleanup", "helper-retirement", "changed-tool-prefix"} {
 		t.Run(fault, func(t *testing.T) {
+			// The managed helper proof covers Unix executable aliases only. Windows
+			// aliases grant no retirement authority, so this fault cannot be injected.
+			if fault == "helper-retirement" && runtime.GOOS == "windows" {
+				t.Skip("managed executable helper retirement is Unix-only")
+			}
 			f := newCheckpointFixture(t)
 			ctx := context.Background()
 			f.input.Configuration.Subscription = true
