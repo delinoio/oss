@@ -2089,6 +2089,8 @@ impl<'a> Parser<'a> {
             value: None,
             wildcard: false,
         };
+        // The key spells `__proto__`, the prototype setter in `{key: v}`.
+        let mut setter = false;
         if self.eat_punct("...") {
             self.parse_assign();
             property.wildcard = true;
@@ -2112,7 +2114,17 @@ impl<'a> Parser<'a> {
         match token.kind {
             TokenKind::Word => {
                 self.bump();
-                property.key = Some(token.text);
+                if token.text.contains('\\') {
+                    // An escaped spelling (`\u0061` for `a`) is compared by its
+                    // decoded name, and no selector is matched to it: the
+                    // property may replace any earlier one and is not
+                    // selectable.
+                    property.wildcard = true;
+                    setter = word_name(token.text) == "__proto__";
+                } else {
+                    property.key = Some(token.text);
+                    setter = token.text == "__proto__";
+                }
             }
             TokenKind::Number => {
                 property.key = self.number_key(0);
@@ -2122,7 +2134,10 @@ impl<'a> Parser<'a> {
             TokenKind::Str => {
                 self.bump();
                 match string_content(token.text) {
-                    Some(key) => property.key = Some(key),
+                    Some(key) => {
+                        property.key = Some(key);
+                        setter = key == "__proto__";
+                    }
                     None => property.wildcard = true,
                 }
             }
@@ -2143,14 +2158,17 @@ impl<'a> Parser<'a> {
             self.parse_body();
         } else if self.eat_punct(":") {
             property.value = self.parse_assign();
-            if property.key == Some("__proto__") && !property.wildcard {
-                // `{__proto__: v}` and `{"__proto__": v}` invoke the prototype
-                // setter instead of defining an own property, so no member
-                // selects `v`. The operand stays parsed for its own branches.
-                // A computed key (`["__proto__"]`) is wildcard and does define
-                // an own property, but computed keys are never inferred.
+            if setter {
+                // `{__proto__: v}`, `{"__proto__": v}` and the escaped
+                // spelling `{__pro\u0074o__: v}` invoke the prototype setter
+                // instead of defining an own property, so no member selects
+                // `v` and no earlier property is replaced. The operand stays
+                // parsed for its own branches. A computed key
+                // (`["__proto__"]`) does define an own property, but computed
+                // keys are never inferred.
                 property.key = None;
                 property.value = None;
+                property.wildcard = false;
             }
         } else if self.eat_punct("=") {
             self.parse_assign();
@@ -3676,6 +3694,41 @@ mod tests {
             (
                 "object prototype setter after an own property",
                 "({value:1,__proto__:process.env.FLAG}).value&&run()",
+                None,
+            ),
+            (
+                "object prototype setter (escaped identifier)",
+                "({__pro\\u0074o__:process.env.FLAG}).__pro\\u0074o__&&run()",
+                None,
+            ),
+            (
+                "object prototype setter (escaped identifier, plain selector)",
+                "({__pro\\u0074o__:process.env.FLAG}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object prototype setter (escaped identifier, braced escape)",
+                "({\\u{5f}_proto__:process.env.FLAG}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object prototype setter (escaped identifier) keeps nested branch evidence",
+                "({__pro\\u0074o__:process.env.FLAG&&run()}).other",
+                Some("and"),
+            ),
+            (
+                "object prototype setter (escaped identifier) after an own property",
+                "({value:process.env.FLAG,__pro\\u0074o__:1}).value&&run()",
+                Some("and"),
+            ),
+            (
+                "object escaped ordinary key is not selected",
+                "({\\u0061:process.env.FLAG}).a&&run()",
+                None,
+            ),
+            (
+                "object escaped ordinary key may replace an earlier property",
+                "({a:process.env.FLAG,\\u0061:1}).a&&run()",
                 None,
             ),
             (
