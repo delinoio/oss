@@ -67,7 +67,31 @@ function Probe() {
     </output>
   );
 }
-function fixture(kind: NewSessionKind, omitInitialInput = false) {
+/** A read held open until the test releases it, so ordering never depends on timing. */
+function gate() {
+  let release!: () => void;
+  let enter!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const entered = new Promise<void>((resolve) => (enter = resolve));
+  return {
+    entered,
+    release,
+    hold: async () => {
+      enter();
+      await released;
+    },
+  };
+}
+type Gate = ReturnType<typeof gate>;
+interface Gates {
+  machine?: Gate;
+  status?: Gate;
+}
+function fixture(
+  kind: NewSessionKind,
+  omitInitialInput = false,
+  gates: Gates = {},
+) {
   const agent = resource(EntityKind.AGENT, "Remembered agent"),
     machine = resource(EntityKind.MACHINE, "Runner", { disabled: false });
   const selection = {
@@ -112,11 +136,14 @@ function fixture(kind: NewSessionKind, omitInitialInput = false) {
   });
   const transport = createRouterTransport((router) => {
     router.service(ResourceService, {
-      getResource: (request) => ({
-        resource: [agent, machine].find(
-          (row) => row.id === request.id && row.kind === request.kind,
-        ),
-      }),
+      getResource: async (request) => {
+        if (request.kind === EntityKind.MACHINE) await gates.machine?.hold();
+        return {
+          resource: [agent, machine].find(
+            (row) => row.id === request.id && row.kind === request.kind,
+          ),
+        };
+      },
       listResources: (request) => ({
         resources:
           request.filter?.kind === EntityKind.AGENT
@@ -127,12 +154,15 @@ function fixture(kind: NewSessionKind, omitInitialInput = false) {
       }),
     });
     router.service(SystemService, {
-      getStatus: () => ({
-        capabilities: [
-          SystemCapability.AUTOMATIC_TITLES_V1,
-          SystemCapability.NATIVE_SKILLS_V1,
-        ],
-      }),
+      getStatus: async () => {
+        await gates.status?.hold();
+        return {
+          capabilities: [
+            SystemCapability.AUTOMATIC_TITLES_V1,
+            SystemCapability.NATIVE_SKILLS_V1,
+          ],
+        };
+      },
     });
     router.service(SkillService, {
       listSkills: () => ({
@@ -177,6 +207,42 @@ function fixture(kind: NewSessionKind, omitInitialInput = false) {
   return { agent, machine, selection, createSession, view };
 }
 
+/**
+ * Wait for both remembered choices. Typing marks the form as touched, which stops
+ * any restoration still pending, so input must follow restoration.
+ */
+async function awaitRestoredChoices(agentId: string, machineId: string) {
+  await waitFor(
+    () => {
+      expect(
+        scrollChoiceValue(
+          screen.getByRole("combobox", { name: "Agent Worker" }),
+        ),
+      ).toBe(agentId);
+      expect(
+        scrollChoiceValue(screen.getByRole("combobox", { name: "Runs on" })),
+      ).toBe(machineId);
+    },
+    { timeout: 4000 },
+  );
+}
+/** Wait until creation is actually allowed instead of clicking a disabled button. */
+async function awaitSubmitEnabled(label: string) {
+  return waitFor(
+    () => {
+      const button = screen.getByRole("button", {
+        name: label,
+      }) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      return button;
+    },
+    { timeout: 4000 },
+  );
+}
+function submitButton(label: string) {
+  return screen.getByRole("button", { name: label }) as HTMLButtonElement;
+}
+
 it.each([
   [NewSessionKind.Session, "Create session"],
   [NewSessionKind.GeneralChat, "Start general chat"],
@@ -185,19 +251,11 @@ it.each([
   async (kind, label) => {
     const f = fixture(kind);
     render(f.view);
-    await waitFor(
-      () =>
-        expect(
-          scrollChoiceValue(
-            screen.getByRole("combobox", { name: "Agent Worker" }),
-          ),
-        ).toBe(f.agent.id),
-      { timeout: 4000 },
-    );
+    await awaitRestoredChoices(f.agent.id, f.machine.id);
     fireEvent.change(screen.getByRole("textbox", { name: "First message" }), {
       target: { value: "Created first prompt" },
     });
-    fireEvent.click(screen.getByRole("button", { name: label }));
+    fireEvent.click(await awaitSubmitEnabled(label));
     await waitFor(
       () =>
         expect(screen.getByTestId("rows").textContent).toContain(
@@ -215,6 +273,21 @@ it.each([
 it("does not register an original input when the session omits its initial input identity", async () => {
   const f = fixture(NewSessionKind.Session, true);
   render(f.view);
+  await awaitRestoredChoices(f.agent.id, f.machine.id);
+  const box = screen.getByRole("textbox", { name: "First message" });
+  fireEvent.change(box, { target: { value: "Created first prompt" } });
+  fireEvent.click(await awaitSubmitEnabled("Create session"));
+  await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(""), {
+    timeout: 4000,
+  });
+  expect(f.createSession).toHaveBeenCalledOnce();
+  expect(JSON.parse(screen.getByTestId("rows").textContent!)).toEqual([]);
+});
+
+it("keeps creation disabled until the delayed machine restoration completes", async () => {
+  const machine = gate();
+  const f = fixture(NewSessionKind.Session, false, { machine });
+  render(f.view);
   await waitFor(
     () =>
       expect(
@@ -224,12 +297,53 @@ it("does not register an original input when the session omits its initial input
       ).toBe(f.agent.id),
     { timeout: 4000 },
   );
-  const box = screen.getByRole("textbox", { name: "First message" });
-  fireEvent.change(box, { target: { value: "Created first prompt" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create session" }));
-  await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(""), {
-    timeout: 4000,
+  await machine.entered;
+  expect(
+    scrollChoiceValue(screen.getByRole("combobox", { name: "Runs on" })),
+  ).toBe("");
+  expect(submitButton("Create session").disabled).toBe(true);
+  expect(f.createSession).not.toHaveBeenCalled();
+  machine.release();
+  await awaitRestoredChoices(f.agent.id, f.machine.id);
+  fireEvent.change(screen.getByRole("textbox", { name: "First message" }), {
+    target: { value: "Created first prompt" },
   });
+  fireEvent.click(await awaitSubmitEnabled("Create session"));
+  await waitFor(
+    () =>
+      expect(screen.getByTestId("rows").textContent).toContain(
+        "Created first prompt",
+      ),
+    { timeout: 4000 },
+  );
+  expect(JSON.parse(screen.getByTestId("rows").textContent!)).toEqual([
+    { original: true, prompt: "Created first prompt" },
+  ]);
   expect(f.createSession).toHaveBeenCalledOnce();
-  expect(JSON.parse(screen.getByTestId("rows").textContent!)).toEqual([]);
+});
+
+it("keeps creation disabled until the delayed status capabilities arrive", async () => {
+  const status = gate();
+  const f = fixture(NewSessionKind.Session, false, { status });
+  render(f.view);
+  await awaitRestoredChoices(f.agent.id, f.machine.id);
+  await status.entered;
+  fireEvent.change(screen.getByRole("textbox", { name: "First message" }), {
+    target: { value: "Created first prompt" },
+  });
+  expect(submitButton("Create session").disabled).toBe(true);
+  expect(f.createSession).not.toHaveBeenCalled();
+  status.release();
+  fireEvent.click(await awaitSubmitEnabled("Create session"));
+  await waitFor(
+    () =>
+      expect(screen.getByTestId("rows").textContent).toContain(
+        "Created first prompt",
+      ),
+    { timeout: 4000 },
+  );
+  expect(JSON.parse(screen.getByTestId("rows").textContent!)).toEqual([
+    { original: true, prompt: "Created first prompt" },
+  ]);
+  expect(f.createSession).toHaveBeenCalledOnce();
 });
