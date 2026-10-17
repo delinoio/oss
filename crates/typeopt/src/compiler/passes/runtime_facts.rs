@@ -1547,8 +1547,8 @@ impl PatchView {
 /// `access` is exactly that initializer and the alias has one declaration, no
 /// write and no use other than being called. Every other use lets the member
 /// reach unknown code, so the caller falls back to the conservative record.
-fn reflection_alias_calls(ctx: &mut Ctx, access: Node) -> Option<Vec<Node>> {
-    if access.name().text() != "defineProperty" {
+fn reflection_alias_calls(ctx: &mut Ctx, access: Node, writer: &str) -> Option<Vec<Node>> {
+    if writer != "defineProperty" {
         return None;
     }
     let declaration = walk_up_outer(access).parent();
@@ -1583,6 +1583,33 @@ fn reflection_alias_calls(ctx: &mut Ctx, access: Node) -> Option<Vec<Node>> {
         }
     }
     Some(calls)
+}
+
+/// The name of the reflection writer that `access` selects from the library
+/// global `Object` or `Reflect` (`outer` is that global with its parentheses
+/// and assertions): `Object.assign`, `Object["assign"]`, `` Object[`assign`] ``
+/// and `(Object)[("assign")]` all name `assign`. Only a static name counts: a
+/// dynamic key is not a writer here, and the intrinsic allowlist rejects the
+/// read of its member on its own.
+fn reflection_writer_name(ctx: &Ctx, access: Node, outer: Node) -> Option<String> {
+    if !matches!(
+        access.kind(),
+        SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression
+    ) || access.expression() != outer
+    {
+        return None;
+    }
+    let name = match access.kind() {
+        SyntaxKind::PropertyAccessExpression => access.name().text().to_owned(),
+        SyntaxKind::ElementAccessExpression => {
+            match literal_member(ctx, access.argument_expression()) {
+                Member::Named(name) => name,
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    REFLECTION_WRITERS.contains(&name.as_str()).then_some(name)
 }
 
 /// Scans application code for writes to built-ins.
@@ -1638,24 +1665,21 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                         {
                             patches.add(Owner::Any, Member::Any);
                         }
-                        if parent.kind() == SyntaxKind::PropertyAccessExpression
-                            && parent.expression() == outer
-                            && REFLECTION_WRITERS.contains(&parent.name().text())
-                        {
+                        if let Some(writer) = reflection_writer_name(ctx, parent, outer) {
                             let call = walk_up_outer(parent).parent();
                             let direct = call.kind() == SyntaxKind::CallExpression
                                 && skip_outer(call.expression()) == parent;
                             let aliased = if direct {
                                 None
                             } else {
-                                reflection_alias_calls(ctx, parent)
+                                reflection_alias_calls(ctx, parent, &writer)
                             };
                             if let Some(calls) = aliased {
                                 // An unwritten local alias that is only
                                 // called is analysed like the direct calls.
                                 for call in calls {
                                     if let Some(target) = call.arguments().first() {
-                                        let member = if parent.name().text() == "defineProperty" {
+                                        let member = if writer == "defineProperty" {
                                             call.arguments()
                                                 .to_vec()
                                                 .get(1)
@@ -1671,7 +1695,7 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                                 patches.add(Owner::Any, Member::Any);
                             } else if let Some(target) = call.arguments().first() {
                                 let member = if matches!(
-                                    parent.name().text(),
+                                    writer.as_str(),
                                     "defineProperty" | "set" | "deleteProperty"
                                 ) {
                                     call.arguments()
