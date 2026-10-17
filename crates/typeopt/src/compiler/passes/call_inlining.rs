@@ -304,6 +304,9 @@ struct Target {
     /// A function-local `const` whose temporal dead zone is checked per
     /// call site.
     local: bool,
+    /// The `local` declaration is a top-level statement of its module, so
+    /// call sites are judged by [`site_runs_after`] instead of by position.
+    top_level: bool,
     /// Free bindings that the expression assigns or updates.
     writes: Vec<SymbolId>,
 }
@@ -344,6 +347,7 @@ impl Target {
             return reject(detail(Reason::Mutation, "target:binding-written"));
         }
         let mut local = false;
+        let mut top_level = false;
         let statement = match shape.declaration.kind() {
             SyntaxKind::VariableDeclaration => {
                 let list = shape.declaration.parent();
@@ -380,15 +384,14 @@ impl Target {
                 if !facts.initialized_early_unwritten(ctx, symbol) {
                     // A function-local constant is safe at sites that the
                     // declaration's own function reaches after it.
-                    if statement.parent().kind() == SyntaxKind::SourceFile
-                        || matches!(
-                            statement.parent().kind(),
-                            SyntaxKind::CaseClause | SyntaxKind::DefaultClause
-                        )
-                    {
+                    if matches!(
+                        statement.parent().kind(),
+                        SyntaxKind::CaseClause | SyntaxKind::DefaultClause
+                    ) {
                         return reject(detail(Reason::ModuleInitialization, "target:tdz"));
                     }
                     local = true;
+                    top_level = statement.parent().kind() == SyntaxKind::SourceFile;
                 }
                 if list.declarations().nodes().len() == 1 {
                     list.parent()
@@ -503,6 +506,7 @@ impl Target {
             writes,
             statement,
             local,
+            top_level,
         })
     }
 }
@@ -1226,7 +1230,10 @@ fn site(
         // Type assertions on the callee change the call's type.
         return Err(detail(Reason::TypeConstraint, "site:asserted-callee"));
     }
-    if target.local && !reached_after(target.shape.declaration, call) {
+    if target.local
+        && !reached_after(target.shape.declaration, call)
+        && !(target.top_level && site_runs_after(ctx, facts, target.shape.declaration, call))
+    {
         return Err(Reason::ModuleInitialization);
     }
     // Recursion: the site lies inside the target itself.
@@ -1580,6 +1587,165 @@ fn assertion(text: &str, operand: Node, annotation: &str) -> String {
     } else {
         format!("(({text}) as {annotation})")
     }
+}
+
+/// Where code that contains a node runs from.
+enum RunContext {
+    /// Straight-line top-level code of the module.
+    Top,
+    /// The body of a function-like node.
+    Function(Node),
+    /// Class field initializers and static blocks, which run when a class
+    /// is defined or instantiated.
+    Unknown,
+}
+
+fn run_context(node: Node) -> RunContext {
+    let mut current = node.parent();
+    while current.is_some() {
+        if is_function_like(current) {
+            return RunContext::Function(current);
+        }
+        match current.kind() {
+            SyntaxKind::SourceFile => return RunContext::Top,
+            SyntaxKind::PropertyDeclaration | SyntaxKind::ClassStaticBlockDeclaration => {
+                return RunContext::Unknown;
+            }
+            _ => current = current.parent(),
+        }
+    }
+    RunContext::Unknown
+}
+
+/// Whether the call site can only run after the top-level declaration of its
+/// callee initialized the binding. The site runs late when it follows the
+/// declaration in top-level code, lies in another module outside the
+/// declaration's import cycle, or sits in a function that no code before the
+/// declaration can reach: a function created after it, or one whose every
+/// reference is itself late (a function declaration is hoisted, so its
+/// references decide). Methods and accessors count as reachable at any time.
+fn site_runs_after(ctx: &mut Ctx, facts: &mut Facts, declaration: Node, site: Node) -> bool {
+    let Some(file) = ctx.file_of_node(declaration) else {
+        return false;
+    };
+    let mut visiting = Vec::new();
+    node_runs_after(ctx, facts, declaration, file, site, &mut visiting)
+}
+
+fn node_runs_after(
+    ctx: &mut Ctx,
+    facts: &mut Facts,
+    declaration: Node,
+    file: usize,
+    node: Node,
+    visiting: &mut Vec<Node>,
+) -> bool {
+    if ctx.file_of_node(node) != Some(file) {
+        return match ctx.file_of_node(node) {
+            Some(other) => !facts.same_component(ctx, file, other),
+            None => false,
+        };
+    }
+    match run_context(node) {
+        RunContext::Top => Ctx::start(node) >= declaration.end() as usize,
+        RunContext::Function(function) => {
+            function_runs_after(ctx, facts, declaration, file, function, visiting)
+        }
+        RunContext::Unknown => false,
+    }
+}
+
+fn function_runs_after(
+    ctx: &mut Ctx,
+    facts: &mut Facts,
+    declaration: Node,
+    file: usize,
+    function: Node,
+    visiting: &mut Vec<Node>,
+) -> bool {
+    // A function that is already being judged adds no new way to run early.
+    if visiting.contains(&function) {
+        return true;
+    }
+    if matches!(
+        function.parent().kind(),
+        SyntaxKind::MethodDeclaration
+            | SyntaxKind::Constructor
+            | SyntaxKind::GetAccessor
+            | SyntaxKind::SetAccessor
+    ) || matches!(
+        function.kind(),
+        SyntaxKind::MethodDeclaration
+            | SyntaxKind::Constructor
+            | SyntaxKind::GetAccessor
+            | SyntaxKind::SetAccessor
+    ) {
+        return false;
+    }
+    visiting.push(function);
+    let late = judge_function(ctx, facts, declaration, file, function, visiting);
+    visiting.pop();
+    late
+}
+
+fn judge_function(
+    ctx: &mut Ctx,
+    facts: &mut Facts,
+    declaration: Node,
+    file: usize,
+    function: Node,
+    visiting: &mut Vec<Node>,
+) -> bool {
+    let name = match function.kind() {
+        SyntaxKind::FunctionDeclaration => function.name(),
+        _ => {
+            // Created after the declaration, so it cannot run before it.
+            if node_runs_after(ctx, facts, declaration, file, function, visiting) {
+                return true;
+            }
+            let binding = function.parent();
+            if binding.kind() == SyntaxKind::VariableDeclaration
+                && binding.initializer() == function
+            {
+                binding.name()
+            } else {
+                return false;
+            }
+        }
+    };
+    if name.is_nil() || name.kind() != SyntaxKind::Identifier {
+        return false;
+    }
+    let symbol = ctx.resolve(name);
+    if symbol.is_nil() {
+        return false;
+    }
+    // Exported bindings are reached by importers, which run after this
+    // module unless a cycle lets them run code during its initialization.
+    let exported = ctx
+        .refs(symbol)
+        .iter()
+        .any(|r| r.kind == RefKind::Alias && r.file == file)
+        || function.parent().kind() == SyntaxKind::SourceFile
+            && has_syntactic_modifier(function, ModifierFlags::Export);
+    if exported && !facts.cycle_safe(ctx, file) {
+        return false;
+    }
+    let references: Vec<_> = ctx
+        .refs(symbol)
+        .iter()
+        .filter(|r| {
+            matches!(
+                r.kind,
+                RefKind::Call | RefKind::New | RefKind::Read | RefKind::Alias
+            )
+        })
+        .copied()
+        .collect();
+    references.iter().all(|reference| {
+        reference.kind == RefKind::Alias
+            || node_runs_after(ctx, facts, declaration, file, reference.node, visiting)
+    })
 }
 
 /// Whether `site` runs only after the local declaration initialized its

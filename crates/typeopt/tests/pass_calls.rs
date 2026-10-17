@@ -288,6 +288,68 @@ console.log(run(1), run(5));
 }
 
 #[test]
+fn keeps_sites_that_run_before_a_top_level_declaration() {
+    assert_not_inlined(
+        &[(
+            "main.ts",
+            r#"function early(n: number) {
+  return double(n) + 1;
+}
+try {
+  console.log(early(1));
+} catch (error) {
+  console.log("before", (error as Error).name);
+}
+const double = (value: number) => value * 2;
+console.log(early(2));
+"#,
+        )],
+        "double(",
+    );
+}
+
+#[test]
+fn inlines_top_level_declarations_at_sites_that_run_after_them() {
+    let temp = project(&[
+        (
+            "main.ts",
+            r#"import { report } from "./report.ts";
+console.log("start");
+const double = (value: number) => value * 2;
+function run(n: number) {
+  return double(n) + 1;
+}
+console.log(run(3));
+report(5);
+"#,
+        ),
+        (
+            "report.ts",
+            r#"import { triple } from "./triple.ts";
+export function report(n: number) {
+  console.log("report", triple(n));
+}
+"#,
+        ),
+        (
+            "triple.ts",
+            r#"console.log("triple module");
+export const triple = (value: number) => value * 3;
+"#,
+        ),
+    ]);
+    let report = optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    let main = emitted(temp.path(), "main.ts");
+    assert!(
+        main.contains("* 2 + 1") && !main.contains("double"),
+        "{main}\n{report:#}"
+    );
+    let module = emitted(temp.path(), "report.ts");
+    assert!(module.contains("n * 3"), "{module}\n{report:#}");
+    same_behavior(temp.path());
+}
+
+#[test]
 fn preserves_argument_order_and_conditional_evaluation() {
     assert_not_inlined(
         &[(
