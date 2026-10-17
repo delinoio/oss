@@ -1,17 +1,12 @@
+import { readNativeArtifact } from "./native-artifact.mjs";
 import { attachProbeCancellation } from "./native-cancellation.mjs";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  hostTarget,
-  isNativeExecutable,
-  runProbeTool,
-  Target,
-  versions,
-} from "../dist/core.js";
+import { hostTarget, runProbeTool, Target, versions } from "../dist/core.js";
 
 import { createNativeResult, finalizeNativeResult } from "./native-result.mjs";
 
@@ -120,10 +115,8 @@ try {
       })),
     });
   } else {
+    const bytes = await readNativeArtifact(artifact, target);
     phase = "execute";
-    const bytes = await readFile(artifact);
-    if (!isNativeExecutable(bytes, target))
-      throw new Error("TN_NATIVE_ARTIFACT_INVALID");
     const executed = await run(artifact, [], directory);
     if (
       executed.failed ||
