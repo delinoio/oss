@@ -1,8 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
+import { accessSync, constants, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, delimiter, isAbsolute, join, resolve } from "node:path";
 
 export const versions = Object.freeze({
   framework: "0.0.0-dev.0",
@@ -124,6 +125,24 @@ export const runProbeTool: ProbeRunner = (command, args, cwd, signal) =>
       resolveResult({ status, stdout, failed: failed || killedBy !== null });
     });
   });
+
+export function resolveExecutable(command: string): string {
+  if (isAbsolute(command)) return command;
+  if (/[/\\]/.test(command)) return resolve(command);
+  const extensions = process.platform === "win32" ? ["", ".exe", ".com"] : [""];
+  for (const entry of (process.env.PATH ?? "").split(delimiter)) {
+    for (const extension of extensions) {
+      const candidate = resolve(entry || ".", command + extension);
+      try {
+        accessSync(candidate, constants.X_OK);
+        if (statSync(candidate).isFile()) return candidate;
+      } catch {
+        /* Continue to the next PATH entry. */
+      }
+    }
+  }
+  return command;
+}
 
 export function hostTarget(
   platform = process.platform,

@@ -302,3 +302,33 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     },
   );
 }
+
+test(
+  "probe finds the same compiler through a relative PATH entry",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const { mkdir, chmod } = await import("node:fs/promises");
+    const root = await temporary(t);
+    await mkdir(join(root, "tools"));
+    const compiler = join(root, "tools", "scriptc");
+    await writeFile(
+      compiler,
+      '#!/bin/sh\nif [ "$1" = "--version" ]; then printf "0.3.5\\n"; else printf "not-native" > "$5"; fi\n',
+    );
+    await chmod(compiler, 0o755);
+    const result = spawnSync(
+      process.execPath,
+      [cli, "doctor", "--probe", "--json"],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, PATH: `./tools:${process.env.PATH}` },
+      },
+    );
+    assert.equal(result.status, 1);
+    const records = result.stdout.trim().split("\n").map(JSON.parse);
+    assert.equal(records[0].code, Code.Ok);
+    // Reaching artifact inspection proves the compiler was found from scratch cwd.
+    assert.equal(records.at(-1).code, Code.Artifact);
+  },
+);

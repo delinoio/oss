@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
-import { isAbsolute, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
   Code,
@@ -9,6 +8,7 @@ import {
   hostTarget,
   inspectTools,
   probeNative,
+  resolveExecutable,
   Target,
   versions,
 } from "./core.js";
@@ -111,10 +111,7 @@ try {
         Code.Host,
         "Select one of the documented targets with --target.",
       );
-    let compiler = values.scriptc ?? "scriptc";
-    // A relative executable path must remain anchored when the probe changes cwd.
-    if (!isAbsolute(compiler) && /[/\\]/.test(compiler))
-      compiler = resolve(compiler);
+    const compiler = resolveExecutable(values.scriptc ?? "scriptc");
     const checks = inspectTools(target, compiler);
     const ok = checks.every((check) => check.ok);
     emit(
