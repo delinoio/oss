@@ -31,7 +31,9 @@ const directory = await mkdtemp(join(tmpdir(), "delidev-dropdown-layout-"));
 let browser,
   server,
   cases = 0,
-  checks = 0;
+  checks = 0,
+  ownerScrolls = 0;
+const scrolledFamilies = new Set();
 const errors = [];
 const viewports = [
   [1280, 800],
@@ -440,20 +442,62 @@ try {
             await placement("resized");
             await page.setViewportSize({ width, height });
             await frames(page);
-            await trigger.evaluate((node) => {
-              for (const owner of [
-                node.parentElement,
-                document.scrollingElement,
-              ])
-                if (owner) owner.dispatchEvent(new Event("scroll"));
+            // Scroll the real overflowing owner (when the fixture has one) by
+            // 48px toward keeping the trigger visible: the popup must follow
+            // the resulting anchor geometry, not stay behind.
+            const ownerScroll = await trigger.evaluate((node) => {
+              let owner = node.parentElement;
+              for (; owner; owner = owner.parentElement) {
+                const overflow = getComputedStyle(owner).overflowY;
+                if (
+                  (overflow === "auto" || overflow === "scroll") &&
+                  owner.scrollHeight > owner.clientHeight
+                )
+                  break;
+              }
+              // Fixtures without an overflowing ancestor scroll the page.
+              if (
+                !owner &&
+                document.scrollingElement.scrollHeight > innerHeight
+              )
+                owner = document.scrollingElement;
+              if (!owner) return null;
+              const frame =
+                  owner === document.scrollingElement
+                    ? { top: 0, height: innerHeight }
+                    : owner.getBoundingClientRect(),
+                anchor = node.getBoundingClientRect(),
+                before = owner.scrollTop,
+                toward =
+                  anchor.top + anchor.height / 2 < frame.top + frame.height / 2
+                    ? -48
+                    : 48;
+              owner.scrollTop = before + toward;
+              if (owner.scrollTop === before) owner.scrollTop = before - toward;
+              return {
+                moved: owner.scrollTop !== before,
+                anchorBefore: anchor.top,
+              };
             });
-            await frames(page);
-            await placement("scrolled");
+            if (ownerScroll) {
+              assert(ownerScroll.moved, `${state} owner scroll moved`);
+              await frames(page);
+              await placement("scrolled");
+              const after = await trigger.evaluate(
+                (node) => node.getBoundingClientRect().top,
+              );
+              assert(
+                Math.abs(after - ownerScroll.anchorBefore) > 1,
+                `${state} anchor moved with the owner`,
+              );
+              ownerScrolls++;
+              scrolledFamilies.add(family.id);
+            }
             // Outside pointer dismisses top-layer menus that own dismissal.
+            // The press alone must close them; no second dismissal path.
             if (family.anchored) {
               await page.mouse.click(1, height - 1);
               await frames(page);
-              // The press alone must close them; no second dismissal path.
               await assertClosed("outside pointer");
             } else await page.keyboard.press("Escape");
             await restoreScroll("outside");
@@ -471,12 +515,18 @@ try {
           }
         }
   assert.deepEqual(errors, []);
+  for (const family of families)
+    assert(
+      scrolledFamilies.has(family.id),
+      `${family.id}: no case scrolled a real owner`,
+    );
   console.log(
     JSON.stringify({
       operation: "dropdown_layout",
       families: families.map((family) => family.id),
       cases,
       checks,
+      ownerScrolls,
     }),
   );
 } finally {
