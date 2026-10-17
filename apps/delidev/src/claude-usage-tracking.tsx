@@ -1,15 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 import "./claude-usage-tracking.css";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createClient } from "@connectrpc/connect";
+import { useTransport } from "@connectrpc/connect-query";
 import {
   ClaudeUsageLoginState,
   FailureCode,
   SubscriptionObservationAction,
   SubscriptionQuery,
+  SubscriptionService,
   SubscriptionServiceId,
   isEntityId,
   newRequestId,
+  type GetClaudeUsageLoginProgressResponse,
   type NativeSubscriptionDiagnostic,
   type Resource,
   type SystemCapability,
@@ -81,6 +91,73 @@ function useClock(enabled: boolean) {
   }, [enabled]);
   return now;
 }
+
+/**
+ * Polls the actor-bound login progress without the shared query cache. The
+ * reply carries the authorization address (OAuth transaction data) and the
+ * reviewed identity, which are transient presentation data: they live only in
+ * this component and vanish with it instead of surviving in the connection's
+ * QueryClient for its garbage-collection lifetime. Reads never relaunch work.
+ */
+function useClaudeUsageProgress(request: {
+  enabled: boolean;
+  accountId: string;
+  operationId: string;
+  usageGeneration: string;
+}) {
+  const transport = useTransport();
+  const client = useMemo(
+    () => createClient(SubscriptionService, transport),
+    [transport],
+  );
+  const [result, setResult] = useState<{
+    data?: GetClaudeUsageLoginProgressResponse;
+    error?: unknown;
+  }>({});
+  const { enabled, accountId, operationId, usageGeneration } = request;
+  useEffect(() => {
+    if (!enabled) {
+      setResult({});
+      return;
+    }
+    let canceled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      let next = progressPollMilliseconds;
+      try {
+        const data = await client.getClaudeUsageLoginProgress({
+          accountId,
+          operationId,
+          usageGeneration,
+        });
+        if (canceled) return;
+        setResult({ data });
+        if (progressTerminal(data.state)) return;
+        if (data.state === ClaudeUsageLoginState.AWAITING_CONFIRMATION)
+          next = confirmationPollMilliseconds;
+      } catch (error) {
+        if (canceled) return;
+        // A failed read keeps the last reply and is retried like any other poll.
+        setResult((previous) => ({ data: previous.data, error }));
+      }
+      timer = setTimeout(() => void poll(), next);
+    };
+    void poll();
+    return () => {
+      canceled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [client, enabled, accountId, operationId, usageGeneration]);
+  return result;
+}
+
+export const progressTerminal = (value?: ClaudeUsageLoginState) =>
+  value !== undefined &&
+  ![
+    ClaudeUsageLoginState.PREPARING,
+    ClaudeUsageLoginState.WAITING,
+    ClaudeUsageLoginState.AWAITING_CONFIRMATION,
+  ].includes(value);
 
 interface Binding {
   opening: string;
@@ -199,37 +276,17 @@ export function useClaudeUsageTracking(options: ClaudeUsageTrackingOptions): {
   const lifecycle =
     usage?.connection === ClaudeUsageConnection.Connecting ||
     usage?.connection === ClaudeUsageConnection.Confirming;
-  const progressTerminal = (value?: ClaudeUsageLoginState) =>
-    value !== undefined &&
-    ![
-      ClaudeUsageLoginState.PREPARING,
-      ClaudeUsageLoginState.WAITING,
-      ClaudeUsageLoginState.AWAITING_CONFIRMATION,
-    ].includes(value);
-  const progress = useQuery(
-    SubscriptionQuery.getClaudeUsageLoginProgress,
-    {
-      accountId,
-      operationId: operation?.id ?? "",
-      usageGeneration: usage?.generation ?? "",
-    },
-    {
-      enabled:
-        active &&
-        enabled &&
-        capability === ClaudeUsageCapability.Available &&
-        lifecycle &&
-        Boolean(operation),
-      retry: false,
-      refetchInterval: (query) =>
-        progressTerminal(query.state.data?.state)
-          ? false
-          : query.state.data?.state ===
-              ClaudeUsageLoginState.AWAITING_CONFIRMATION
-            ? confirmationPollMilliseconds
-            : progressPollMilliseconds,
-    },
-  );
+  const progress = useClaudeUsageProgress({
+    enabled:
+      active &&
+      enabled &&
+      capability === ClaudeUsageCapability.Available &&
+      lifecycle &&
+      Boolean(operation),
+    accountId,
+    operationId: operation?.id ?? "",
+    usageGeneration: usage?.generation ?? "",
+  });
   const reply =
     operation &&
     usage &&

@@ -645,6 +645,38 @@ it("disposes the browser binding and never opens one automatically while Manage 
   expect(value.native).toHaveBeenCalledTimes(calls);
 });
 
+it("keeps the login progress, address and identity out of the shared query cache", async () => {
+  const value = mount({
+    usage: {
+      connection: "connecting",
+      generation,
+      operation: operation("waiting"),
+    },
+    progress: waitingProgress(),
+  });
+  const section = await state(ClaudeUsageView.Waiting);
+  await waitFor(() => expect(value.progress).toHaveBeenCalled());
+  await waitFor(() =>
+    expect(
+      (
+        within(section).getByRole("button", {
+          name: "Open browser again",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  const keys = value.client
+    .getQueryCache()
+    .getAll()
+    .map((query) =>
+      JSON.stringify(query.queryKey, (_key, item) =>
+        typeof item === "bigint" ? item.toString() : item,
+      ).toLowerCase(),
+    );
+  expect(keys.some((key) => key.includes("progress"))).toBe(false);
+  value.unmount();
+});
+
 it("shows the reviewed identity, goes back by discarding, and links only the reviewed commitment", async () => {
   const value = mount({
     usage: {
