@@ -6070,6 +6070,32 @@ mod lifecycle_tests {
     }
 
     #[test]
+    fn zero_duration_disables_the_deadline() {
+        let start = Instant::now();
+
+        assert!(deadline(start, Some(Duration::ZERO)).unwrap().is_none());
+        assert!(deadline(start, None).unwrap().is_none());
+    }
+
+    #[test]
+    fn positive_duration_yields_a_future_deadline() {
+        let start = Instant::now();
+        let duration = Duration::from_millis(1);
+
+        let limit = deadline(start, Some(duration)).unwrap().unwrap();
+
+        assert_eq!(limit, start.checked_add(duration).unwrap());
+        assert!(limit > start);
+    }
+
+    #[test]
+    fn unrepresentable_duration_is_rejected() {
+        let error = deadline(Instant::now(), Some(Duration::MAX)).err().unwrap();
+
+        assert_eq!(error.code, Code::InvalidInput);
+    }
+
+    #[test]
     fn activity_retains_read_history_before_supervision() {
         let start = Instant::now();
         let first = start.checked_add(Duration::from_millis(1)).unwrap();
