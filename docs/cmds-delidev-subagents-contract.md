@@ -39,7 +39,8 @@ Shared Worker/server batch validation requires a nonempty report of at most 64 K
 
 Codex can emit child thread status before its original `thread/started`
 notification and completed spawn tool. Validate these early notifications and
-retain at most 4,096 unresolved native thread identities as passive metadata.
+require the exact `{threadId, status}` envelope, so any unsupported top-level
+parameter is rejected before metadata acceptance. Retain at most 4,096 unresolved native thread identities as passive metadata.
 They cannot allocate product child ownership, settle a child, or change the root
 turn. Independent descendant inventory must prove every retained identity before
 completion; unknown ancestry or malformed statuses fail validation. Canonical

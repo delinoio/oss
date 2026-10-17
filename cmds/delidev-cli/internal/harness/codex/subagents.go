@@ -369,10 +369,20 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 		// until independent descendant inventory proves ancestry. This grants no
 		// child ownership or settlement; unresolved identities block completion.
 		if native.Method == "thread/status/changed" && domain.ID(thread).Validate() == nil && domain.ID(thread) != c.thread {
-			var status ThreadStatus
-			if domain.Decode(fields["status"], &status) != nil || validateThreadStatus(status) != nil {
+			// The exact {threadId,status} envelope is required: unknown
+			// top-level parameters are rejected before any passive metadata
+			// or unresolved-identity state is recorded.
+			var envelope struct {
+				ThreadID domain.ID    `json:"threadId"`
+				Status   ThreadStatus `json:"status"`
+			}
+			if domain.Decode(native.Params, &envelope) != nil || envelope.ThreadID != domain.ID(thread) || validateThreadStatus(envelope.Status) != nil {
+				if c.logger != nil {
+					c.logger.Warn("Codex child status envelope rejected", "owner_id", c.ownerID, "stage", "early-child-status")
+				}
 				return Event{}, true, incompatible()
 			}
+			status := envelope.Status
 			if c.pendingChildStatuses == nil {
 				c.pendingChildStatuses = make(map[domain.ID]struct{})
 			}

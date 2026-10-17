@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 	"maps"
 	"os"
 	"path/filepath"
@@ -193,6 +194,60 @@ func TestSubagentEarlyStatusRequiresIndependentDescendantProof(t *testing.T) {
 	}
 	if _, err := c.InspectDescendants(context.Background()); err == nil || len(c.pendingChildStatuses) != 1 {
 		t.Fatal("published child missing from inventory lost its completion fence")
+	}
+}
+
+func TestSubagentEarlyStatusRequiresExactEnvelope(t *testing.T) {
+	c, turn := observationClient()
+	child := domain.NewID()
+	idle := ThreadStatus{Type: ThreadIdle}
+	rejected := []struct {
+		name   string
+		params map[string]any
+	}{
+		{"extra top-level key", map[string]any{"threadId": child, "status": idle, "extra": true}},
+		{"extra null top-level key", map[string]any{"threadId": child, "status": idle, "turnId": nil}},
+		{"unknown nested key", map[string]any{"threadId": child, "status": map[string]any{"type": "idle", "extra": 1}}},
+		{"invalid status type", map[string]any{"threadId": child, "status": "idle"}},
+		{"unknown status variant", map[string]any{"threadId": child, "status": map[string]any{"type": "unknown"}}},
+		{"missing status", map[string]any{"threadId": child}},
+	}
+	for _, tc := range rejected {
+		event, err := observeFixture(c, "thread/status/changed", tc.params)
+		if err == nil || event.Kind == MetadataEvent || len(c.pendingChildStatuses) != 0 || len(c.subagents) != 0 || c.execution.active != turn {
+			t.Fatal("malformed early child status envelope was accepted or recorded state", tc.name, err)
+		}
+	}
+	raw := nativewire.Event{Kind: nativewire.Notification, Method: "thread/status/changed", Params: json.RawMessage(`{"threadId":"` + string(child) + `","status":{"type":"idle"},"threadId":"` + string(child) + `"}`)}
+	// Duplicate keys fail the shared strict decode before the child branch and
+	// must never retain an unresolved identity.
+	if _, handled, err := c.observeChildNative(raw); handled || err != nil || len(c.pendingChildStatuses) != 0 {
+		t.Fatal("duplicate-key early child status envelope reached the child fence", handled, err)
+	}
+	// The exact envelope keeps the passive metadata and unresolved-child fence.
+	event, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": child, "status": idle})
+	if err != nil || event.Kind != MetadataEvent || len(c.pendingChildStatuses) != 1 || len(c.subagents) != 0 {
+		t.Fatal("exact early child status envelope lost its unresolved ancestry fence", err)
+	}
+	// A rejected envelope for an already retained identity leaves the fence intact.
+	if _, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": child, "status": idle, "extra": true}); err == nil || len(c.pendingChildStatuses) != 1 {
+		t.Fatal("rejected envelope changed the retained fence", err)
+	}
+	// Root-thread status never enters the early child fence.
+	before := len(c.pendingChildStatuses)
+	_, _ = observeFixture(c, "thread/status/changed", map[string]any{"threadId": c.thread, "status": idle})
+	if len(c.pendingChildStatuses) != before {
+		t.Fatal("root thread status entered the unresolved child fence")
+	}
+	// Owned child status uses the owned branch and never adds a fence entry.
+	owned := domain.NewID()
+	spawn := map[string]any{"type": "collabAgentToolCall", "id": "exact-envelope-spawn", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{owned}, "agentsStates": map[string]any{string(owned): map[string]any{"status": "running", "message": nil}}}
+	if event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn}); err != nil || event.Kind != SubagentEvent {
+		t.Fatal("canonical spawn did not establish child ownership", err)
+	}
+	_, _ = observeFixture(c, "thread/status/changed", map[string]any{"threadId": owned, "status": idle})
+	if len(c.pendingChildStatuses) != before {
+		t.Fatal("owned child status entered the unresolved child fence")
 	}
 }
 
