@@ -106,7 +106,6 @@ func newUsageFixture(t *testing.T) *usageFixture {
 	generation := m.connect()
 	f := &usageFixture{managedFixture: m, usage: newFakeUsageNative(), logs: &bytes.Buffer{}, execution: generation}
 	f.service.logger = slog.New(slog.NewJSONHandler(&syncWriter{mu: &f.logMu, w: f.logs}, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	f.service.claudeUsageActiveTest = true
 	f.service.claudeUsageOpen = func(context.Context, nativeScope, domain.ID, *slog.Logger) (claudeUsageNative, string, error) {
 		f.opens.Add(1)
 		return f.usage, domain.ClaudeProtocolVersion, nil
@@ -762,7 +761,6 @@ func TestClaudeUsageCleanupScannerRecoversASameEpochLoginWithoutARun(t *testing.
 
 func TestClaudeUsageRefusesNonServerTokenAccounts(t *testing.T) {
 	f := newSubscriptionFixture(t)
-	f.service.claudeUsageActiveTest = true
 	r, _ := f.record()
 	_, err := f.client.StartClaudeUsageLogin(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.StartClaudeUsageLoginRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}}))
 	if connect.CodeOf(err) == 0 || err == nil {

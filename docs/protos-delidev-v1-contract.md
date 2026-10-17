@@ -1724,7 +1724,7 @@ Claude image delivery uses the independently negotiated System 106 / Worker 71 p
 
 Usage refresh reuses existing messages. For a server-token Claude account that holds a usage section, `RequestSubscriptionObservation` with `SUBSCRIPTION_OBSERVATION_ACTION_QUOTA`, an omitted `machine_id` and the confirmed account `connection_id` and execution `generation_id` (not the usage generation) asks the single usage-read owner for one read: the response `operation_id` equals the request ID, an overlapping request coalesces into the running read, a replay never reads again, and a provider-requested pause is refused with `unavailable`. Reset-credit actions, an explicit machine and credit fields are invalid for a usage connection. `RefreshAllSubscriptionQuotas` also admits due Claude usage reads and lists their accounts; it cannot force a read before the four-minute due interval. No message, field or RPC is added or changed.
 
-Clients negotiate System 109 before offering usage tracking and never fall back to another operation. The server declares the capability but does not advertise it, and answers the six RPCs with `Unimplemented`, until the complete feature is activated. Older servers lack the capability and the RPCs. Go and TypeScript bindings are generated.
+Clients negotiate System 109 before offering usage tracking and never fall back to another operation. The server advertises the capability exactly while it serves the six RPCs and the usage branch of the observation request (one activation decision), and a deactivated server answers the six RPCs with `Unimplemented`. Older servers lack the capability and the RPCs. Go and TypeScript bindings are generated.
 
 ## Subagent display name metadata
 

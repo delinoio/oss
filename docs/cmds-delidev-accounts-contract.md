@@ -257,7 +257,7 @@ The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) ow
 
 - Migration 28 bounds relevant configuration/device metadata, not total retained history. Check original affected account references and unsettled session/job ownership directly in SQLite without loading or charging unrelated messages/jobs against retirement bounds.
 
-- Claude native profile/owner/generation/operation and keyed identity metadata are optional Account JSON with no migration. Never persist login URLs/codes, raw native identity or authentication files. Restore quarantines profile references and removes readiness; portable configuration omits ownership. Deletion requires independently confirmed original native cleanup and no profile/owner, generation, lease, pending or recovery under the subscription contract.
+- Claude native profile/owner/generation/operation and keyed identity metadata are optional Account JSON with no migration. Never persist login URLs/codes, raw native identity or authentication files; the only native credential read is the transient capture of the newly created exclusive Claude usage profile, which is sealed into the `claude-usage` vault purpose and never stored in Account JSON. Restore quarantines profile references and removes readiness; portable configuration omits ownership. Deletion requires independently confirmed original native cleanup and no profile/owner, generation, lease, pending or recovery under the subscription contract.
 
 ## cmds/delidev-cli/internal/worker constraints
 

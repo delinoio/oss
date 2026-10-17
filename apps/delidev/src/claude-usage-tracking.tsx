@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createClient } from "@connectrpc/connect";
+import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
 import {
   ClaudeUsageLoginState,
@@ -35,6 +35,7 @@ import {
   ClaudeUsageRefreshPhase,
   ClaudeUsageView,
   claudeUsageCapability,
+  claudeUsageEndedLogin,
   claudeUsageFailureMessages,
   claudeUsageLoginMessages,
   claudeUsageLoginOperationState,
@@ -111,6 +112,8 @@ function useClaudeUsageProgress(request: {
    * longer support.
    */
   settled: boolean;
+  /** One diagnostic read only: the login already ended, so nothing polls on. */
+  once: boolean;
   accountId: string;
   operationId: string;
   usageGeneration: string;
@@ -124,7 +127,8 @@ function useClaudeUsageProgress(request: {
     data?: GetClaudeUsageLoginProgressResponse;
     error?: unknown;
   }>({});
-  const { enabled, settled, accountId, operationId, usageGeneration } = request;
+  const { enabled, settled, once, accountId, operationId, usageGeneration } =
+    request;
   useEffect(() => {
     if (!enabled) {
       setResult({});
@@ -148,9 +152,14 @@ function useClaudeUsageProgress(request: {
           next = confirmationPollMilliseconds;
       } catch (error) {
         if (canceled) return;
-        // A failed read keeps the last reply and is retried like any other poll.
+        // A failed read keeps the last reply. A transient failure is retried like
+        // any other poll; a rejection that cannot succeed later (another paired
+        // client started the login, the actor lost authority) ends the polling.
         setResult((previous) => ({ data: previous.data, error }));
+        if (permanentProgressFailure(error)) return;
       }
+      // The single diagnostic read of an ended login never repeats.
+      if (once) return;
       timer = setTimeout(() => void poll(), next);
     };
     void poll();
@@ -158,8 +167,20 @@ function useClaudeUsageProgress(request: {
       canceled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [client, enabled, settled, accountId, operationId, usageGeneration]);
+  }, [client, enabled, settled, once, accountId, operationId, usageGeneration]);
   return result;
+}
+
+/** Reports a progress rejection that a later identical read cannot cure. */
+function permanentProgressFailure(error: unknown): boolean {
+  return [
+    Code.PermissionDenied,
+    Code.Unauthenticated,
+    Code.NotFound,
+    Code.InvalidArgument,
+    Code.FailedPrecondition,
+    Code.Unimplemented,
+  ].includes(ConnectError.from(error).code);
 }
 
 /**
@@ -331,14 +352,21 @@ export function useClaudeUsageTracking(options: ClaudeUsageTrackingOptions): {
   const lifecycle =
     usage?.connection === ClaudeUsageConnection.Connecting ||
     usage?.connection === ClaudeUsageConnection.Confirming;
+  // A login that ended without linking is settled into reconnect-required; its
+  // closed diagnostic is still served by one progress read.
+  const endedState = usage ? claudeUsageEndedLogin(usage) : undefined;
+  const endedWithDiagnostic =
+    endedState !== undefined &&
+    endedState !== ClaudeUsageOperationState.Canceled;
   const progress = useClaudeUsageProgress({
     enabled:
       active &&
       enabled &&
       capability === ClaudeUsageCapability.Available &&
-      lifecycle &&
+      (lifecycle || endedWithDiagnostic) &&
       Boolean(operation),
     settled,
+    once: !lifecycle && endedWithDiagnostic,
     accountId,
     operationId: operation?.id ?? "",
     usageGeneration: usage?.generation ?? "",

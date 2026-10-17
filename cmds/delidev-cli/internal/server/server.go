@@ -147,11 +147,12 @@ type Service struct {
 	subscriptionOpen      serverSubscriptionOpener
 	claudeSetupOpen       managedClaudeOpener
 	// Server-owned Claude usage login: the run registry, the optional native
-	// seams of isolated tests and the activation override of isolated tests.
-	claudeUsage           claudeUsageRuns
-	claudeUsageOpen       claudeUsageOpener
-	claudeUsageRemove     claudeUsageStorageRemover
-	claudeUsageActiveTest bool
+	// seams of isolated tests and the deactivation override of isolated tests
+	// (production always follows claudeServerUsageAdvertised).
+	claudeUsage             claudeUsageRuns
+	claudeUsageOpen         claudeUsageOpener
+	claudeUsageRemove       claudeUsageStorageRemover
+	claudeUsageDisabledTest bool
 	// Isolated-test seams of the usage-read owner: the outbound transport of the
 	// provider GET, the native refresh-login opener and the wall clock.
 	claudeUsageTransport http.RoundTripper

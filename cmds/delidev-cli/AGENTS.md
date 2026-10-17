@@ -8,6 +8,8 @@
 
 The installed Tailscale adapter lives in `internal/tailscale`; approval and ingress business flows remain in `internal/server`. Read the [connections contract](../../docs/cmds-delidev-connections-contract.md#tailscale-connections) before changing either boundary.
 
+The server-owned Claude usage tracking lifecycle is owned by `internal/server` (`claude_usage_*.go`), its exclusive profile adapter by `internal/harness/claude` (`usage_*.go`) and the `usage` purpose of `internal/nativeprofile`. No other package reads native Claude credential storage, and its logs keep the closed vocabulary enforced by `claude_usage_logs_test.go`. Read the [subscription contract](../../docs/cmds-delidev-subscription-contract.md#server-owned-claude-usage-tracking) before changing any of these boundaries.
+
 ## Native OpenCode tests
 
 Opt-in native OpenCode tests must obtain the binary and its observed version only through `nativetest.NativeOpenCodeExecutable(t)` (`internal/nativetest`); never read `DELIDEV_NATIVE_OPENCODE_EXECUTABLE` directly and never pin real-binary probe configs to `opencode.SupportedVersion`. Follow the [native OpenCode testing runbook](../../docs/cmds-delidev-opencode-native-testing.md).

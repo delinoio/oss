@@ -299,6 +299,35 @@ const loginStateOf = (
 /** The login operation state a progress result corresponds to. */
 export const claudeUsageLoginOperationState = loginStateOf;
 
+/**
+ * The terminal state of a login (or disconnect) that left nothing behind: a
+ * reconnect-required section without identity, evidence, closed failure or
+ * refresh phase whose operation ended without linking. The real server settles
+ * every such outcome into reconnect-required, never back into connecting.
+ */
+export function claudeUsageEndedLogin(
+  usage: ClaudeUsageProjection,
+): ClaudeUsageOperationState | undefined {
+  const state = usage.operation?.state;
+  if (
+    usage.connection !== ClaudeUsageConnection.ReconnectRequired ||
+    usage.identity ||
+    usage.windows.length !== 0 ||
+    usage.failure !== ClaudeUsageFailure.None ||
+    usage.refresh !== ClaudeUsageRefreshPhase.Idle
+  )
+    return undefined;
+  switch (state) {
+    case ClaudeUsageOperationState.Canceled:
+    case ClaudeUsageOperationState.Expired:
+    case ClaudeUsageOperationState.Unsupported:
+    case ClaudeUsageOperationState.Failed:
+      return state;
+    default:
+      return undefined;
+  }
+}
+
 /** Resolves the one distinct state the section presents. */
 export function claudeUsageView(input: {
   capability: ClaudeUsageCapability;
@@ -319,8 +348,17 @@ export function claudeUsageView(input: {
   const usage = input.section.usage;
   const reported = loginStateOf(input.progress);
   switch (usage.connection) {
-    case ClaudeUsageConnection.ReconnectRequired:
-      return ClaudeUsageView.ReconnectRequired;
+    case ClaudeUsageConnection.ReconnectRequired: {
+      // The server settles a login that never linked (failed, expired,
+      // unsupported or canceled) and a disconnect into reconnect-required
+      // without evidence; only a retained or failed connection asks to
+      // reconnect.
+      const ended = claudeUsageEndedLogin(usage);
+      if (ended === undefined) return ClaudeUsageView.ReconnectRequired;
+      return ended === ClaudeUsageOperationState.Canceled
+        ? ClaudeUsageView.NotConnected
+        : ClaudeUsageView.LoginFailed;
+    }
     case ClaudeUsageConnection.Connecting:
     case ClaudeUsageConnection.Confirming: {
       // The server document is authoritative for the lifecycle; the progress

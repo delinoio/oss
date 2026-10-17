@@ -23,7 +23,7 @@ func (s *Service) GetStatus(ctx context.Context, req *connect.Request[pb.GetStat
 	if grokSubscriptionLoginAdvertised {
 		response.Msg.Capabilities = append(response.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_LOGIN_V1)
 	}
-	if claudeServerUsageAdvertised {
+	if s.claudeUsageActive() {
 		response.Msg.Capabilities = append(response.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1)
 	}
 	if grokManagedExecutionAdvertised {

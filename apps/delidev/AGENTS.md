@@ -5,6 +5,8 @@
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 - Open external HTTP(S) links only through the native `open_external_url` command or the closed Provider guidance, App information and GitHub openers so the device-local General/Local browser destinations apply; never navigate the webview, accept renderer-supplied executables, or route OAuth/subscription authorization through those destinations. See [Browser destinations for external links](../../docs/apps-delidev-desktop-contract.md#browser-destinations-for-external-links).
 
+- `claude-usage-state.ts` mirrors the closed server document `subscription.claude_usage`; change it only together with the server section and keep `claude_usage_client_contract_test.go` passing. Follow the [usage tracking presentation](../../docs/apps-delidev-subscription-settings-contract.md#claude-usage-tracking-presentation).
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../docs/apps-delidev-desktop-contract.md)
