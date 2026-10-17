@@ -39,6 +39,10 @@ func prepareOpenRouterToolRequest(raw []byte, scope Scope, operation Operation) 
 		if domain.DecodeBounded(raw, &request, maxBody) != nil || request.Model != scope.NativeModel || domain.Text(request.ID, "native search session", 256, true) != nil || !validNativeSearchCommands(request.Commands) {
 			return nil, openRouterToolError()
 		}
+		parameters, err := openRouterSearchParameters(request.Settings)
+		if err != nil {
+			return nil, err
+		}
 		// The dedicated adapter makes one same-account, same-model Responses
 		// request. Its server tools execute remotely; the ordinary Responses relay
 		// remains byte-preserving and receives no injected tool definitions.
@@ -47,7 +51,7 @@ func prepareOpenRouterToolRequest(raw []byte, scope Scope, operation Operation) 
 		if externalJSON(request.Input) {
 			input += "\nRecent context:\n" + string(request.Input)
 		}
-		projected := map[string]any{"model": scope.NativeModel, "input": input, "stream": false, "store": false, "tools": []any{map[string]string{"type": "openrouter:web_search"}, map[string]string{"type": "openrouter:web_fetch"}}, "tool_choice": "required"}
+		projected := map[string]any{"model": scope.NativeModel, "input": input, "stream": false, "store": false, "tools": []any{map[string]any{"type": "openrouter:web_search", "parameters": parameters}, map[string]string{"type": "openrouter:web_fetch"}}, "tool_choice": "required"}
 		if request.MaxOutputTokens != nil {
 			if *request.MaxOutputTokens == 0 || *request.MaxOutputTokens > 32768 {
 				return nil, openRouterToolError()

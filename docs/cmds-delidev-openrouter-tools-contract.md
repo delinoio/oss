@@ -57,7 +57,12 @@ values, references and exact unsigned integers in the projected input. It return
 search client only after a completed `web_search_call`, `openrouter:web_search`
 or `openrouter:web_fetch` output proves execution. Assistant-only text,
 unexecuted function suggestions and failed or pending web calls are rejected.
-No native reference IDs or encrypted output are invented. Serialized tool
+Native approximate location, search context size and allowed/blocked domain
+filters map to the documented web-search parameters (`blocked_domains` becomes
+`excluded_domains`). Empty/default settings, the original direct caller and live
+web access retain their meaning. Reject unsupported non-default image settings,
+caller lists and cached/indexed-only access before credential acquisition; never
+silently drop a restriction. No native reference IDs or encrypted output are invented. Serialized tool
 requests must still fit the proxy body bound after context/string escaping;
 oversized projections are rejected before credential access or upstream I/O.
 This is a distinct tool request; the ordinary Responses relay does not inject
@@ -118,3 +123,5 @@ account and platform acceptance. The real acceptance prompt is
 
 Search output shapes follow the [OpenRouter Responses web search](https://github.com/OpenRouterTeam/typescript-sdk/blob/main/src/models/outputwebsearchservertoolitem.ts)
 and [web fetch](https://github.com/OpenRouterTeam/typescript-sdk/blob/main/src/models/outputwebfetchservertoolitem.ts) schemas.
+
+Search parameter translation follows the [OpenRouter web-search configuration](https://openrouter.ai/docs/guides/features/server-tools/web-search).
