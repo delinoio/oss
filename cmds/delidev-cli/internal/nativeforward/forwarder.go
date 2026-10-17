@@ -59,6 +59,7 @@ const (
 
 // Config binds one forwarder to one original execution.
 type Config struct {
+	OpenRouterTools bool
 	// Origin is the immutable paired server origin. It is only the request
 	// target seed: Client's transport owns generation proof, endpoint rewrite
 	// and bearer wrapping, and must never fall back to this address once the
@@ -274,7 +275,7 @@ func (f *Forwarder) serve(w http.ResponseWriter, r *http.Request) {
 		f.fail(w, http.StatusUnauthorized, domain.Unauthenticated, StageRequest, correlation)
 		return
 	}
-	if r.Method != http.MethodPost || !allowedPath(r.URL.Path) || r.URL.RawQuery != "" || r.URL.ForceQuery || r.URL.RawPath != "" || r.URL.Fragment != "" || r.URL.IsAbs() {
+	if r.Method != http.MethodPost || !(allowedPath(r.URL.Path) || f.config.OpenRouterTools && (r.URL.Path == apiproxy.Prefix+"/images/generations" || r.URL.Path == apiproxy.Prefix+"/images/edits" || r.URL.Path == apiproxy.Prefix+"/alpha/search")) || r.URL.RawQuery != "" || r.URL.ForceQuery || r.URL.RawPath != "" || r.URL.Fragment != "" || r.URL.IsAbs() {
 		f.fail(w, http.StatusNotFound, domain.Unsupported, StageRequest, correlation)
 		return
 	}

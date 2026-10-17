@@ -568,7 +568,8 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	nativeConfig := codex.Config{DynamicTools: input.NativeDynamicTools, EnableImageGeneration: input.NativeImageGeneration, RevertHistory: input.ContextRevision > 0 || checkpoint.Native.PaginatedHistory || checkpoint.Native.ContextRevision > 0 || compacted != nil && compacted.Revert != nil, ManagedForkHistory: input.Configuration.Subscription && input.Fork != nil && input.Configuration.SidechatPolicy == "", OrdinaryTools: ordinaryTools, SkillsRoot: config.Root, ImageRoot: config.Root, ImageMachineID: input.MachineID, ImageInputDeclared: input.Configuration.ImageInputDeclared, Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
+	config.openRouterTools = input.NativeOpenRouterTools
+	nativeConfig := codex.Config{DynamicTools: input.NativeDynamicTools, EnableImageGeneration: input.NativeImageGeneration && input.Configuration.Subscription, RevertHistory: input.ContextRevision > 0 || checkpoint.Native.PaginatedHistory || checkpoint.Native.ContextRevision > 0 || compacted != nil && compacted.Revert != nil, ManagedForkHistory: input.Configuration.Subscription && input.Fork != nil && input.Configuration.SidechatPolicy == "", OrdinaryTools: ordinaryTools, SkillsRoot: config.Root, ImageRoot: config.Root, ImageMachineID: input.MachineID, ImageInputDeclared: input.Configuration.ImageInputDeclared, Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{OpenRouterTools: input.NativeOpenRouterTools, ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
 	if input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
@@ -748,6 +749,16 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, err
 	}
 	logger.InfoContext(ctx, "native_execution_thread_bound")
+	var imageBackend *openRouterImageBackend
+	if input.NativeOpenRouterTools {
+		var closeBackend func()
+		imageBackend, closeBackend, err = openOpenRouterImageBackend(ctx, config, input, settings, bound.Thread.ID, nativeHome, token, nativeRoute)
+		if err != nil {
+			return nil, err
+		}
+		defer closeBackend()
+	}
+
 	if err := config.startup.ready(ctx, client.Version()); err != nil {
 		return nil, err
 	}
@@ -894,7 +905,16 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			return nil, domain.Fail(domain.Unsupported, "The native execution produced an unsupported event family.", "Retain its native history for the required typed adapter; input is never replayed automatically.")
 		}
 		if event.Kind == codex.DynamicToolEvent && event.DynamicTool != nil && event.DynamicTool.Stage == domain.DynamicRequested {
-			if err := mapper.deliverDynamicUnavailable(ctx, publicationContext, event, client); err != nil {
+			var replyErr error
+			identity := event.DynamicTool.Request.Identity
+			if imageBackend != nil && identity.Tool == "imagegen" && identity.Namespace != nil && *identity.Namespace == "delidev_image" {
+				ownedBackend := *imageBackend
+				ownedBackend.config.Logger = logger.With("native_call_id", event.ItemID, "request_token", event.DynamicTool.Request.Token)
+				replyErr = mapper.deliverOpenRouterImage(ctx, publicationContext, event, client, ownedBackend.run)
+			} else {
+				replyErr = mapper.deliverDynamicUnavailable(ctx, publicationContext, event, client)
+			}
+			if err := replyErr; err != nil {
 				return nil, err
 			}
 		}

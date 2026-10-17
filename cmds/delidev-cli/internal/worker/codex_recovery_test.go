@@ -1194,9 +1194,10 @@ func TestCodexRecoveryWatchLaneIgnoresRowsWithoutNegotiation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
 	err := watchSubscriptions(ctx, Config{Root: t.TempDir()}, credential, domain.NewID())
-	// The server and client share this deadline. If the server's terminal
-	// status arrives first, Connect decodes it without the local context sentinel.
-	if err != nil && !errors.Is(err, context.DeadlineExceeded) && connect.CodeOf(err) != connect.CodeDeadlineExceeded && connect.CodeOf(err) != connect.CodeCanceled {
+	// The local deadline can surface directly or through the in-flight
+	// Connect observation. Either transport form is normal only after the
+	// original context has ended; independent lane failures remain failures.
+	if err != nil && (ctx.Err() == nil || !errors.Is(err, ctx.Err()) && connect.CodeOf(err) != connect.CodeCanceled && connect.CodeOf(err) != connect.CodeDeadlineExceeded) {
 		t.Fatal("an unnegotiated recovery row aborted the lane", err)
 	}
 	server.mu.Lock()

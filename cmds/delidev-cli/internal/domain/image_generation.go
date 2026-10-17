@@ -4,6 +4,7 @@ package domain
 import "slices"
 
 const NativeImageGenerationV1 WorkerCapability = "native-image-generation-v1"
+const CodexOpenRouterToolsV1 WorkerCapability = "codex-openrouter-tools-v1"
 
 type ImageGenerationStatus string
 

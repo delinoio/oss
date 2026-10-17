@@ -54,7 +54,7 @@ func openCodexNativeForwarder(ctx context.Context, config Config, execution doma
 	if titleProfile {
 		limit = nativeforward.MaxTitleBody
 	}
-	forwarder, err := nativeforward.Open(ctx, nativeforward.Config{Origin: credential.Endpoint, Token: token, Client: client, CloseIdle: closeIdle, BodyLimit: limit, Logger: config.Logger, ExecutionID: execution})
+	forwarder, err := nativeforward.Open(ctx, nativeforward.Config{OpenRouterTools: config.openRouterTools, Origin: credential.Endpoint, Token: token, Client: client, CloseIdle: closeIdle, BodyLimit: limit, Logger: config.Logger, ExecutionID: execution})
 	if err != nil {
 		closeIdle()
 		logNativeForwardRefused(ctx, config, execution, err)

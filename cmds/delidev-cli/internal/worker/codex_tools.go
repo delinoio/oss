@@ -2,7 +2,12 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
@@ -40,6 +45,9 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 			}
 			var observed domain.ImageViewObservation
 			observed, err = workspace.ObserveImageViewLocation(c.publisher.input, runtime.GOOS, event.Tool.ImagePath, reference)
+			if err != nil && c.publisher.input.NativeDynamicTools {
+				return c.publishExternalImageView(ctx, event)
+			}
 			snapshot = domain.ToolSnapshot{Kind: domain.ImageViewTool, Status: domain.ToolRunning, ImageView: &observed}
 			if event.Kind == codex.ToolCompletedEvent {
 				snapshot.Status = domain.ToolCompleted
@@ -116,6 +124,49 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 	}
 	c.tools[event.ItemID] = retained
 	return nil
+}
+
+// Native view_image may read a temporary image outside the prepared workspace.
+// Such a call has no workspace reference or preview authority. Retain its
+// lifecycle and a location commitment through the negotiated inert tool path
+// instead of failing the original turn or adopting the file into the workspace.
+func (c *CodexEventPublisher) publishExternalImageView(ctx context.Context, event codex.Event) error {
+	input := c.publisher.input
+	var preparation workspace.PrepareRequest
+	var manifest workspace.Manifest
+	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil || preparation.SessionID != input.SessionID || preparation.MachineID != input.MachineID || workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {
+		return publicationUncertain()
+	}
+	tool := event.Tool
+	if tool == nil || tool.ID != event.ItemID || tool.Kind != codex.ImageViewTool || tool.SleepDurationMS != nil || tool.Command != nil || tool.Changes != nil || !filepath.IsAbs(tool.ImagePath) || filepath.Clean(tool.ImagePath) != tool.ImagePath || strings.Contains(tool.ImagePath, "://") || domain.Text(tool.ImagePath, "native image location", 4096, true) != nil {
+		return publicationUncertain()
+	}
+	if event.Kind != codex.ToolStartedEvent && event.Kind != codex.ToolCompletedEvent || event.Kind == codex.ToolStartedEvent && tool.Status != codex.ToolRunning || event.Kind == codex.ToolCompletedEvent && tool.Status != codex.ToolCompleted {
+		return publicationUncertain()
+	}
+	// A malformed scoped observation must not gain the external fallback. Only
+	// a positively validated location outside every original root can enter it.
+	roots := []string{manifest.PrimaryPath}
+	for _, repository := range manifest.Repositories {
+		roots = append(roots, repository.Path)
+	}
+	for _, root := range roots {
+		relative, err := filepath.Rel(root, tool.ImagePath)
+		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return publicationUncertain()
+		}
+	}
+	args, _ := json.Marshal(struct {
+		Path string `json:"path"`
+	}{tool.ImagePath})
+	digest := sha256.Sum256(args)
+	namespace := "codex"
+	snapshot := &domain.DynamicToolSnapshot{Identity: domain.DynamicToolIdentity{Tool: "view_image", Namespace: &namespace, ArgumentsDigest: hex.EncodeToString(digest[:])}, Status: domain.DynamicRunning}
+	stage := domain.DynamicStarted
+	if event.Kind == codex.ToolCompletedEvent {
+		stage, snapshot.Status = domain.DynamicCompleted, domain.DynamicDone
+	}
+	return c.publishDynamicTool(ctx, codex.Event{Kind: codex.DynamicToolEvent, ThreadID: c.thread, TurnID: c.turn, ItemID: event.ItemID, Correlated: true, DynamicTool: &domain.DynamicToolUpdate{NativeID: event.ItemID, Stage: stage, Snapshot: snapshot}})
 }
 
 func codexToolSnapshot(native codex.Tool) (domain.ToolSnapshot, error) {

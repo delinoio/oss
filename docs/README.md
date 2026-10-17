@@ -98,6 +98,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
+- [Codex OpenRouter native tools](cmds-delidev-openrouter-tools-contract.md)
 - [Native OpenCode testing runbook](cmds-delidev-opencode-native-testing.md)
 - [Direct execution startup](cmds-delidev-execution-startup-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
