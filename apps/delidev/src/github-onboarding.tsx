@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
@@ -402,8 +403,9 @@ export function GitHubOnboarding({
       {stage === Stage.Token ? (
         <>
           <form
+            onKeyDown={guardEnterSubmission}
             onSubmit={(event) => {
-              event.preventDefault();
+              if (!consumeFormSubmit(event)) return;
               void verify();
             }}
           >
@@ -452,8 +454,9 @@ export function GitHubOnboarding({
         </>
       ) : (
         <form
+          onKeyDown={guardEnterSubmission}
           onSubmit={(event) => {
-            event.preventDefault();
+            if (!consumeFormSubmit(event)) return;
             void save();
           }}
         >

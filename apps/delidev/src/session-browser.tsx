@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { listen } from "@tauri-apps/api/event";
 import {
   useSessionTabsStore,
@@ -364,8 +365,9 @@ function NewPageDialog({
       trapFocus
     >
       <form
+        onKeyDown={guardEnterSubmission}
         onSubmit={(event) => {
-          event.preventDefault();
+          if (!consumeFormSubmit(event)) return;
           if (!disabled) submit();
         }}
       >
@@ -1633,8 +1635,9 @@ function NativeSessionBrowser({
                 </p>
               ) : null}
               <form
+                onKeyDown={guardEnterSubmission}
                 onSubmit={(event) => {
-                  event.preventDefault();
+                  if (!consumeFormSubmit(event)) return;
                   void control(BrowserAction.Navigate);
                 }}
                 className="browser-address"

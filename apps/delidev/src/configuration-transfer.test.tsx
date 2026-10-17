@@ -28,6 +28,7 @@ import {
 import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
+import { pressEnter } from "./test-form-enter";
 
 function fixture() {
   const source = newRequestId(),
@@ -1264,4 +1265,42 @@ it("styles controls under disabled transfer fieldsets without matching outer-onl
   // The muted treatment must never key off :disabled, which outer fieldset disablement also matches.
   expect(css).not.toMatch(/\.configuration-transfer[^{]*:disabled/);
   expect(css).not.toContain(".settings-task-background");
+});
+
+it("previews with Enter from a mapped checkout path exactly like the Preview button and keeps pasted JSON multiline", async () => {
+  const value = fixture();
+  const repositoryBundle = {
+    version: 4,
+    entries: [
+      {
+        id: newRequestId(),
+        kind: "repository",
+        document: {
+          name: "Legacy",
+          remote_url: "",
+          checkouts: [{ machine_id: newRequestId(), path: "/owned/legacy" }],
+          base: {},
+          starting: {},
+          auto_fetch: true,
+        },
+      },
+    ],
+    machines: [],
+  };
+  render(value.view());
+  // Enter in the multiline paste field is a newline, never a form submission.
+  const json = screen.getByRole("textbox", { name: "Configuration JSON" });
+  expect(pressEnter(json)).toBe(0);
+  load(repositoryBundle);
+  const target = (await screen.findByRole("textbox", {
+    name: /Target checkout/,
+  })) as HTMLInputElement;
+  expect(pressEnter(target, { repeat: true })).toBe(0);
+  expect(pressEnter(target, { composing: true })).toBe(0);
+  expect(pressEnter(target, { keyCode: 229 })).toBe(0);
+  expect(pressEnter(target, { shiftKey: true })).toBe(0);
+  expect(value.preview).not.toHaveBeenCalled();
+  expect(pressEnter(target)).toBe(1);
+  await screen.findByRole("button", { name: "Apply reviewed configuration" });
+  expect(value.preview).toHaveBeenCalledTimes(1);
 });

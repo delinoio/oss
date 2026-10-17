@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { useEntranceActivation } from "./entrance-motion";
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { ScrollPicker } from "./scroll-picker";
 
 const query = () => ({
@@ -331,4 +332,36 @@ it("reserves scroll clearance for the pinned action only when one is present", (
   expect(screen.getByRole("listbox").hasAttribute("data-has-action")).toBe(
     false,
   );
+});
+
+it("cancels the native Enter default so an enclosing form owner never submits from the picker", () => {
+  const change = vi.fn(),
+    submitted = vi.fn();
+  render(
+    <form
+      noValidate
+      onKeyDown={guardEnterSubmission}
+      onSubmit={(event) => {
+        if (consumeFormSubmit(event)) submitted();
+      }}
+    >
+      <ScrollPicker
+        options={options}
+        label="Runner"
+        value="a"
+        change={change}
+        query={query()}
+        active
+      />
+      <button type="submit">Save</button>
+    </form>,
+  );
+  const trigger = screen.getByRole("combobox", { name: "Runner" });
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  fireEvent.keyDown(trigger, { key: "End" });
+  // A canceled keydown (false) never reaches the browser's button activation.
+  expect(fireEvent.keyDown(trigger, { key: "Enter" })).toBe(false);
+  expect(change).toHaveBeenCalledExactlyOnceWith("b");
+  expect(submitted).not.toHaveBeenCalled();
 });

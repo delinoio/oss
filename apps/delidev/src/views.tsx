@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useSidebarPaneVisible } from "./sidebar-context";
 import { copy, useLocale } from "./localization";
@@ -280,8 +281,8 @@ export function Search({
     key: K,
     value: SearchFilters[K],
   ) => setDraft((current) => ({ ...current, [key]: value }));
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    if (!consumeFormSubmit(event)) return;
     if (!draft.query.trim()) return;
     submitted?.();
     const next = { ...draft, query: draft.query.trim() };
@@ -292,7 +293,11 @@ export function Search({
   return (
     <>
       <SidebarSurface active={active} title={copy("views.search_49c266")}>
-        <form className="sidebar-form" onSubmit={submit}>
+        <form
+          onKeyDown={guardEnterSubmission}
+          className="sidebar-form"
+          onSubmit={submit}
+        >
           <label>
             {copy("views.searchConversations_8abdf3")}
             <input

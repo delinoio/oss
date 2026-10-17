@@ -37,6 +37,7 @@ import {
 import { SettingsLifetime } from "./settings-lifetime";
 import type { AccountProviderSummary } from "./account-settings";
 import { encode } from "./documents";
+import { pressEnter } from "./test-form-enter";
 
 function connectSelected() {
   fireEvent.click(
@@ -1349,4 +1350,42 @@ it("finishes once when duplicate connected observations arrive after original cl
   ).toHaveLength(1);
   expect(f.cancel).not.toHaveBeenCalled();
   expect(f.complete).not.toHaveBeenCalled();
+});
+
+it("continues a Google Gemini sign-in with Enter in the project field only when the Primary action would", async () => {
+  const f = fixture({ gemini: true });
+  await waitFor(() =>
+    expect(
+      f.native.mock.calls.some(
+        (call) => call[1] === OAuthNativeAction.Profiles,
+      ),
+    ).toBe(true),
+  );
+  connectSelected();
+  await screen.findByRole("heading", { name: "Connect Google Gemini" });
+  const project = screen.getByRole("textbox", {
+    name: "Google Cloud project ID",
+  });
+  fireEvent.change(project, { target: { value: "BadProject" } });
+  // An invalid project keeps the disabled Primary action, so Enter starts nothing.
+  expect(pressEnter(project)).toBe(0);
+  fireEvent.change(project, { target: { value: "my-ai-project" } });
+  expect(pressEnter(project, { repeat: true })).toBe(0);
+  expect(pressEnter(project, { composing: true })).toBe(0);
+  expect(pressEnter(project, { keyCode: 229 })).toBe(0);
+  expect(f.start).not.toHaveBeenCalled();
+  expect(pressEnter(project)).toBe(1);
+  await screen.findByText("Waiting for authorization…");
+  expect(f.start).toHaveBeenCalledTimes(1);
+  expect(f.start).toHaveBeenCalledWith(
+    expect.objectContaining({
+      google: expect.objectContaining({ quotaProjectId: "my-ai-project" }),
+    }),
+    expect.anything(),
+  );
+  expect(
+    f.native.mock.calls.filter(
+      (call) => call[1] === OAuthNativeAction.BeginGoogleGemini,
+    ),
+  ).toHaveLength(1);
 });

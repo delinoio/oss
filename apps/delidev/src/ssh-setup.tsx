@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -248,9 +249,10 @@ function SSHSetupTask({
       ) : (
         <>
           <form
+            onKeyDown={guardEnterSubmission}
             id={`${formId}-inspect`}
             onSubmit={(event) => {
-              event.preventDefault();
+              if (!consumeFormSubmit(event)) return;
               if (!blocked && !submittedStartId)
                 void inspection.send({
                   requestId: newRequestId(),
@@ -311,8 +313,9 @@ function SSHSetupTask({
             )}
           </form>
           <form
+            onKeyDown={guardEnterSubmission}
             onSubmit={(event) => {
-              event.preventDefault();
+              if (!consumeFormSubmit(event)) return;
               setAccepted(undefined);
               setConfirmed(false);
               setUncertain(false);
@@ -356,9 +359,10 @@ function SSHSetupTask({
               </p>
               {text(data.state) === "OBSERVED" ? (
                 <form
+                  onKeyDown={guardEnterSubmission}
                   id={`${formId}-start`}
                   onSubmit={(event) => {
-                    event.preventDefault();
+                    if (!consumeFormSubmit(event)) return;
                     void start();
                   }}
                 >

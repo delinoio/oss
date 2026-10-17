@@ -61,6 +61,11 @@ it("lets an unmodified first Enter in a single-line text input submit natively",
     "email",
     "password",
     "number",
+    "date",
+    "datetime-local",
+    "month",
+    "time",
+    "week",
   ]) {
     const { form, field } = fixture(
       `<input id="field" ${type ? `type="${type}"` : ""}>`,
@@ -100,7 +105,7 @@ it("blocks Enter in an input that controls an open popup", () => {
 });
 
 it("blocks Enter on checkboxes, radios and other non-text inputs owned by the form", () => {
-  for (const type of ["checkbox", "radio", "range", "color", "date", "time"]) {
+  for (const type of ["checkbox", "radio", "range", "color"]) {
     const { form, field } = fixture(`<input id="field" type="${type}">`);
     const { event, prevent } = key(field, form);
     expect(classifyEnterSubmission(event), type).toBe(

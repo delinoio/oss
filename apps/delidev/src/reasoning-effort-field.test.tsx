@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
+import { pressEnter } from "./test-form-enter";
 import { expect, it, vi } from "vitest";
 import {
   ReasoningEffortField,
@@ -258,4 +260,39 @@ it("uses independent accessible identities for primary and subagent inputs", () 
   expect(
     screen.getByRole("listbox", { name: "Subagent effort suggestions" }).id,
   ).toBe(child.getAttribute("aria-controls"));
+});
+
+it("lets the open suggestion list consume Enter before an enclosing form owner and submits afterwards", () => {
+  const submitted = vi.fn();
+  function Owner() {
+    const [value, setValue] = useState<string | undefined>("");
+    return (
+      <form
+        noValidate
+        onKeyDown={guardEnterSubmission}
+        onSubmit={(event) => {
+          if (consumeFormSubmit(event)) submitted();
+        }}
+      >
+        <ReasoningEffortField
+          label="Reasoning effort"
+          value={value}
+          suggestions={codexEffortSuggestions}
+          change={setValue}
+        />
+        <button type="submit">Save</button>
+      </form>
+    );
+  }
+  render(<Owner />);
+  const input = screen.getByRole("combobox", { name: "Reasoning effort" });
+  fireEvent.focus(input);
+  expect(input.getAttribute("aria-expanded")).toBe("true");
+  // The open list consumes this Enter, so the form owner never sees a submit.
+  expect(pressEnter(input)).toBe(0);
+  expect(input.getAttribute("aria-expanded")).toBe("false");
+  expect(submitted).not.toHaveBeenCalled();
+  // With the list closed, the next plain Enter is an ordinary submission.
+  expect(pressEnter(input)).toBe(1);
+  expect(submitted).toHaveBeenCalledTimes(1);
 });
