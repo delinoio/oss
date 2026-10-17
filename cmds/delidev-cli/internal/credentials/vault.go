@@ -36,11 +36,15 @@ const (
 	WorkerSSH           Purpose = "worker-ssh"
 	WorkerNetworkKey    Purpose = "worker-network-key"
 	WorkerNetworkConfig Purpose = "worker-network-config"
+	// ClaudeUsage protects the usage-only OAuth bundle of one server-token Claude
+	// account. It is bound to a usage generation, is never delivered to a Worker
+	// and never shares a reference with AccountLogin.
+	ClaudeUsage Purpose = "claude-usage"
 )
 
 func (p Purpose) valid() bool {
 	switch p {
-	case AccountAPI, AccountLogin, NetworkProxy, WorkerSSH, WorkerNetworkKey, WorkerNetworkConfig:
+	case AccountAPI, AccountLogin, ClaudeUsage, NetworkProxy, WorkerSSH, WorkerNetworkKey, WorkerNetworkConfig:
 		return true
 	default:
 		return false
@@ -297,9 +301,10 @@ func aead(material []byte) (cipher.AEAD, error) {
 }
 func (v *Vault) log(operation string, r Ref, err error) {
 	attributes := []any{"operation", operation, "owner_id", r.Owner, "purpose", r.Purpose}
-	// AccountLogin IDs are private subscription generations. In particular,
-	// Doctor may read them without exposing its request-local selector in logs.
-	if operation != "get" || r.Purpose != AccountLogin {
+	// AccountLogin and ClaudeUsage IDs are private subscription generations. In
+	// particular, Doctor may read them without exposing its request-local
+	// selector in logs.
+	if operation != "get" || r.Purpose != AccountLogin && r.Purpose != ClaudeUsage {
 		attributes = append(attributes, "credential_id", r.ID)
 	}
 	if err != nil {

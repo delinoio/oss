@@ -566,6 +566,10 @@ The generated Go and TypeScript bindings expose `SystemCapability.CLAUDE_SERVER_
 
 The generated Go and TypeScript bindings expose `DeviceService.RemoveWorker` (including `DeviceQuery.removeWorker` for Connect Query) and `SystemCapability.WORKER_REMOVAL_V1`. Callers must check the capability from `GetStatus` before sending, bind the request to the machine ID, its exact revision and `schemaVersion = 1`, and retain the request UUID so an uncertain result is recovered only by replaying the exact original request. The package adds no wrapper and no generic-deletion fallback.
 
+## Claude usage tracking client
+
+The generated Go and TypeScript bindings expose the six `SubscriptionService` Claude usage operations (including their Connect Query descriptors), `ClaudeUsageLoginState`, `ClaudeUsageIdentityReview` and `SystemCapability.CLAUDE_SERVER_USAGE_V1`. Callers must check the capability from `GetStatus` before sending any of them, retain each mutation's request UUID so an uncertain result is recovered only by replaying the exact original request, bind it to the original account revision and the server-allocated usage generation, and treat `code` as write-only. The package adds no wrapper, no polling loop and no fallback to the setup-token operations. Servers that do not advertise the capability answer `Unimplemented` or lack the RPCs, and clients show update guidance and submit nothing.
+
 ## Subagent display names
 
 Generated `Resource.subagentDisplay` (`SubagentDisplayName` with `childId` and `name`) and `PublishExecutionRequest.subagentNames` expose the additive [display-name metadata](protos-delidev-v1-contract.md#subagent-display-name-metadata). Consumers join the name to the Resource by the original child ID, accept at most 256 Unicode characters of non-blank, control-free text and otherwise fall back to the stable localized ordinal. Only Codex children use a name. Child `document_json` and its closed validators are unchanged.

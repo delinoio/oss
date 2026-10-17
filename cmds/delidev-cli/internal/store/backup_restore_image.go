@@ -269,13 +269,24 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			v.Quota, v.ConfirmedExhausted = nil, false
 			if v.Subscription != nil {
 				state := v.Subscription
+				// The usage credential is outside this image and the restored account
+				// is disconnected, so no historical usage connection keeps read
+				// authority. Credential references that still owe vault deletion stay
+				// as cleanup evidence; a section that owes nothing is not restored.
+				if err := domain.RetireClaudeUsage(&v); err != nil {
+					rows.Close()
+					return err
+				}
+				if usage := state.ClaudeUsage; usage != nil && len(usage.RetiredCredentials) == 0 {
+					state.ClaudeUsage = nil
+				}
 				// Historical references retain cleanup ownership, never standing spending consent.
 				state.AutomaticCreditConsent = nil
 				if state.ServerObservationActive() || state.NativeProfileID != "" || state.OwnerMachineID != "" || state.Generation != "" || state.IdentityCommitment != "" || state.Pending != nil || state.Lease != nil || state.RecoveryRequired {
 					// The vault is outside this image. Retain historical references
 					// without authorizing an older bundle or native claim.
 					state.RecoveryRequired = true
-				} else {
+				} else if state.ClaudeUsage == nil {
 					// Settled logout and failed login can leave an empty object.
 					// It owns no external reference requiring recovery.
 					v.Subscription = nil

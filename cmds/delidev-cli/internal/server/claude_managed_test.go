@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -102,7 +103,12 @@ type managedFixture struct {
 // no Runner Device capability, registered Runner or installation at all.
 func newManagedClaudeFixture(t *testing.T) *managedFixture {
 	t.Helper()
-	f := newSubscriptionFixture(t)
+	return managedClaudeFrom(t, newSubscriptionFixture(t))
+}
+
+// managedClaudeFrom converts an existing subscription fixture account.
+func managedClaudeFrom(t *testing.T, f *subscriptionFixture) *managedFixture {
+	t.Helper()
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.managed-claude", nil, func(tx *store.Tx) (any, error) {
 		r, a, err := accountFromTx(tx, f.input.AccountID, 0)
 		if err != nil {
@@ -982,6 +988,160 @@ func TestManagedClaudeLogoutCheckpointSurvivesFailedVaultDeletion(t *testing.T) 
 	}
 }
 
+// Explicit logout disconnects the execution account, so the linked usage
+// connection must stop authorizing reads and keep its credential as cleanup
+// evidence instead of leaving a state the account validator rejects.
+func TestManagedClaudeLogoutRetiresLinkedUsageAuthority(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.connect()
+	linkedAt := time.Now().UTC().Add(-time.Hour)
+	observed := time.Now().UTC().Add(-time.Minute)
+	usageCredential := domain.NewID()
+	commitment := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claude.usage.linked", nil, func(tx *store.Tx) (any, error) {
+		r, account, err := managedClaudeAccount(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		account.Subscription.ClaudeUsage = &domain.ClaudeServerUsageState{
+			Connection: domain.ClaudeUsageLinked, Generation: domain.NewID(), CredentialID: usageCredential, Published: true, LinkedAt: &linkedAt,
+			Identity:      &domain.ClaudeUsageIdentity{Email: "person@example.com", Commitment: commitment},
+			LastSuccessAt: &observed,
+			Windows:       []domain.ClaudeUsageWindowEvidence{{ID: domain.ClaudeUsageFiveHour, Remaining: 0.5, ObservedAt: observed}},
+		}
+		if err := account.Validate(); err != nil {
+			return nil, err
+		}
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", account)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageRef := credentials.Ref{Owner: f.input.AccountID, ID: usageCredential, Purpose: credentials.ClaudeUsage}
+	f.secrets.mu.Lock()
+	f.secrets.values[usageRef] = []byte("synthetic-usage-bundle")
+	f.secrets.mu.Unlock()
+	if _, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT); err != nil {
+		t.Fatal(err)
+	}
+	awaitServerFixture(t, f.run())
+	_, account := f.record()
+	f.secrets.mu.Lock()
+	_, usageKept := f.secrets.values[usageRef]
+	f.secrets.mu.Unlock()
+	if usageKept || account.Subscription.ServerOperation.CleanupPhase != "" {
+		t.Fatalf("the logout cleanup did not delete the retired usage reference and clear its checkpoint: kept=%v phase=%q", usageKept, account.Subscription.ServerOperation.CleanupPhase)
+	}
+	usage := account.Subscription.ClaudeUsage
+	if account.Connection != nil || usage == nil || usage.Reading() || usage.Connection != domain.ClaudeUsageReconnectRequired || usage.Published || usage.CredentialID != "" || !slices.Contains(usage.RetiredCredentials, usageCredential) || len(usage.Windows) != 1 {
+		t.Fatalf("logout left live usage authority or lost cleanup evidence: %+v", usage)
+	}
+	if err := account.Validate(); err != nil {
+		t.Fatalf("the logged-out account is invalid: %v", err)
+	}
+}
+
+// Account deletion removes the claude-usage references its retired usage
+// connection owes with the account instead of refusing it as an unrecognized
+// protected reference.
+func TestManagedClaudeAccountDeletionRemovesRetiredClaudeUsageReferences(t *testing.T) {
+	f := managedClaudeFrom(t, unreferencedInitialSubscription(t))
+	f.connect()
+	linkedAt := time.Now().UTC().Add(-time.Hour)
+	credential := domain.NewID()
+	commitment := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claude.usage.linked", nil, func(tx *store.Tx) (any, error) {
+		r, account, err := managedClaudeAccount(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		account.Subscription.ClaudeUsage = &domain.ClaudeServerUsageState{
+			Connection: domain.ClaudeUsageLinked, Generation: domain.NewID(), CredentialID: credential, Published: true, LinkedAt: &linkedAt,
+			Identity: &domain.ClaudeUsageIdentity{Email: "person@example.com", Commitment: commitment},
+		}
+		if err := account.Validate(); err != nil {
+			return nil, err
+		}
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", account)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: credential, Purpose: credentials.ClaudeUsage}
+	f.secrets.mu.Lock()
+	f.secrets.values[ref] = []byte("synthetic-usage-bundle")
+	f.secrets.mu.Unlock()
+	// The logout retires the usage connection; its reference stays owed.
+	if _, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT); err != nil {
+		t.Fatal(err)
+	}
+	awaitServerFixture(t, f.run())
+	// A failed vault leaves the reference behind so deletion meets it.
+	f.secrets.mu.Lock()
+	f.secrets.values[ref] = []byte("synthetic-usage-bundle")
+	delete(f.secrets.removed, ref)
+	f.secrets.mu.Unlock()
+	if err := f.deleteFailedLogin(f.failedLoginDeletion()); err != nil {
+		t.Fatalf("the account deletion was refused: %v", err)
+	}
+	f.secrets.mu.Lock()
+	defer f.secrets.mu.Unlock()
+	if _, kept := f.secrets.values[ref]; kept {
+		t.Fatal("a retired claude-usage reference survived the account deletion")
+	}
+	if _, err := f.service.Store.Get(failedLoginContext(), domain.AccountKind, f.input.AccountID); domain.SafeError(err).Code != domain.NotFound {
+		t.Fatal("the account remains after its deletion", err)
+	}
+}
+
+// The explicit removal deletes only the references the usage section retired:
+// the current published credential is never touched.
+func TestRemoveRetiredClaudeUsageKeepsTheLiveCredential(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.connect()
+	linkedAt := time.Now().UTC().Add(-time.Hour)
+	live, retired := domain.NewID(), domain.NewID()
+	commitment := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claude.usage.retired", nil, func(tx *store.Tx) (any, error) {
+		r, account, err := managedClaudeAccount(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		account.Subscription.ClaudeUsage = &domain.ClaudeServerUsageState{
+			Connection: domain.ClaudeUsageLinked, Generation: domain.NewID(), CredentialID: live, Published: true, LinkedAt: &linkedAt,
+			Identity:           &domain.ClaudeUsageIdentity{Email: "person@example.com", Commitment: commitment},
+			RetiredCredentials: []domain.ID{retired},
+		}
+		if err := account.Validate(); err != nil {
+			return nil, err
+		}
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", account)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveRef := credentials.Ref{Owner: f.input.AccountID, ID: live, Purpose: credentials.ClaudeUsage}
+	retiredRef := credentials.Ref{Owner: f.input.AccountID, ID: retired, Purpose: credentials.ClaudeUsage}
+	f.secrets.mu.Lock()
+	f.secrets.values[liveRef] = []byte("synthetic-live-usage-bundle")
+	f.secrets.values[retiredRef] = []byte("synthetic-retired-usage-bundle")
+	f.secrets.mu.Unlock()
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.removeRetiredClaudeUsage(ctx, f.input.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	f.secrets.mu.Lock()
+	_, liveKept := f.secrets.values[liveRef]
+	_, retiredKept := f.secrets.values[retiredRef]
+	f.secrets.mu.Unlock()
+	if !liveKept || retiredKept {
+		t.Fatalf("removal must delete only the retired reference: live=%v retired=%v", liveKept, retiredKept)
+	}
+}
+
 func TestManagedClaudeCheckpointCleanupRetriesAfterFailedScanAttempts(t *testing.T) {
 	f := newManagedClaudeFixture(t)
 	f.service.serverCleanupRetryBase = 20 * time.Millisecond
@@ -1110,6 +1270,76 @@ func TestManagedClaudeRestartedLeaseKeepsQueuedLogoutRecoverableAfterWorkerClean
 	}
 	if got := f.progressFor(logout.OperationId); got.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED {
 		t.Fatalf("logout state %v", got.State)
+	}
+}
+
+// Restart recovery settles an interrupted logout the way the original logout
+// does: the linked usage connection is retired and its credential deleted, so
+// the disconnected account passes validation and recovery can commit.
+func TestManagedClaudeLogoutRecoveryRetiresLinkedUsageAuthority(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.connect()
+	linkedAt := time.Now().UTC().Add(-time.Hour)
+	observed := time.Now().UTC().Add(-time.Minute)
+	usageCredential := domain.NewID()
+	commitment := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claude.usage.linked", nil, func(tx *store.Tx) (any, error) {
+		r, account, err := managedClaudeAccount(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		account.Subscription.ClaudeUsage = &domain.ClaudeServerUsageState{
+			Connection: domain.ClaudeUsageLinked, Generation: domain.NewID(), CredentialID: usageCredential, Published: true, LinkedAt: &linkedAt,
+			Identity:      &domain.ClaudeUsageIdentity{Email: "person@example.com", Commitment: commitment},
+			LastSuccessAt: &observed,
+			Windows:       []domain.ClaudeUsageWindowEvidence{{ID: domain.ClaudeUsageFiveHour, Remaining: 0.5, ObservedAt: observed}},
+		}
+		if err := account.Validate(); err != nil {
+			return nil, err
+		}
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", account)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageRef := credentials.Ref{Owner: f.input.AccountID, ID: usageCredential, Purpose: credentials.ClaudeUsage}
+	f.secrets.mu.Lock()
+	f.secrets.values[usageRef] = []byte("synthetic-usage-bundle")
+	f.secrets.mu.Unlock()
+	a := f.prepareExecution(domain.ManagedClaudeExecutionV1)
+	lease, err := f.take(a, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	logout, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.service.subscriptionEpoch = domain.NewID()
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.initializeServerSubscriptions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.finishLease(a, lease, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, domain.ID(logout.OperationId)); err != nil {
+		t.Fatalf("logout recovery could not commit the disconnected account: %v", err)
+	}
+	_, account := f.record()
+	f.secrets.mu.Lock()
+	_, usageKept := f.secrets.values[usageRef]
+	f.secrets.mu.Unlock()
+	usage := account.Subscription.ClaudeUsage
+	if account.Connection != nil || account.Subscription.RecoveryRequired || usage == nil || usage.Reading() || usage.Connection != domain.ClaudeUsageReconnectRequired || usage.Published || usage.CredentialID != "" || !slices.Contains(usage.RetiredCredentials, usageCredential) || len(usage.Windows) != 1 {
+		t.Fatalf("recovery left live usage authority or lost cleanup evidence: %+v", usage)
+	}
+	if usageKept {
+		t.Fatal("recovery did not delete the retired usage credential")
+	}
+	if err := account.Validate(); err != nil {
+		t.Fatalf("the recovered account is invalid: %v", err)
 	}
 }
 

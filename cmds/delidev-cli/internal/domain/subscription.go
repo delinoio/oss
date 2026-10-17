@@ -28,11 +28,14 @@ type SubscriptionState struct {
 	AutomaticCreditEpisode *AutomaticResetCreditEpisode   `json:"automatic_credit_episode,omitempty"`
 	PaidCredits            []SubscriptionPaidCreditBucket `json:"paid_credits,omitempty"`
 
-	ServerCredit           *ServerCreditOperation            `json:"server_credit,omitempty"`
-	ServerQuota            *ServerQuotaOperation             `json:"server_quota,omitempty"`
-	ServerQuotaGeneration  ID                                `json:"server_quota_generation,omitempty"`
-	NativeProfileID        ID                                `json:"native_profile_id,omitempty"`
-	ClaudeCredential       ClaudeCredentialMode              `json:"claude_credential,omitempty"`
+	ServerCredit          *ServerCreditOperation `json:"server_credit,omitempty"`
+	ServerQuota           *ServerQuotaOperation  `json:"server_quota,omitempty"`
+	ServerQuotaGeneration ID                     `json:"server_quota_generation,omitempty"`
+	NativeProfileID       ID                     `json:"native_profile_id,omitempty"`
+	ClaudeCredential      ClaudeCredentialMode   `json:"claude_credential,omitempty"`
+	// ClaudeUsage is the optional server-owned usage connection of a
+	// server-token Claude account. Historical account JSON omits it.
+	ClaudeUsage            *ClaudeServerUsageState           `json:"claude_usage,omitempty"`
 	NativeOperation        *NativeSubscriptionOperation      `json:"native_operation,omitempty"`
 	OwnerMachineID         ID                                `json:"owner_machine_id,omitempty"`
 	Observation            *SubscriptionObservationOperation `json:"observation,omitempty"`

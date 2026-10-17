@@ -642,6 +642,8 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 		 json_extract(body,'$.subscription.members') IS NOT NULL OR
          json_extract(body,'$.subscription.server_quota.phase') IN ('queued','sending','uncertain') OR
          json_extract(body,'$.subscription.server_credit.phase') IN ('queued','sending','uncertain') OR
+         json_extract(body,'$.subscription.claude_usage.operation.state') IN ('preparing','waiting','recovery-required') OR
+         json_extract(body,'$.subscription.claude_usage.refresh') IN ('reading','renewing','rotation-uncertain') OR
 		 COALESCE(json_extract(body,'$.subscription.recovery_required'),0)<>0)) OR
 		 (kind='integration' AND json_extract(body,'$.pending') IS NOT NULL) OR
 		 (kind='forward' AND (COALESCE(json_extract(body,'$.state'),'')<>'stopped' OR

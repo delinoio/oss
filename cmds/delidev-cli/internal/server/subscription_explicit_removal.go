@@ -4,9 +4,11 @@ package server
 import (
 	"context"
 	"path/filepath"
+	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
 // Explicit credential removal.
@@ -18,6 +20,10 @@ import (
 //
 //   - explicit server logout (ChatGPT, Claude and Grok),
 //   - explicit account deletion.
+//
+// A server-token Claude account may also own claude-usage references. Explicit
+// logout and account deletion delete the ones its usage section retired (a live
+// credential is never deleted); a disconnected account has none left.
 //
 // The removal is complete: it enumerates every unremoved reference of the owner
 // without a count limit, validates owner and purpose before the first deletion,
@@ -51,6 +57,9 @@ func removeAccountLoginReferences(ctx context.Context, vault accountSecrets, own
 	if err != nil {
 		return 0, err
 	}
+	// A claude-usage reference belongs to the separate usage lifecycle and is
+	// neither an execution login nor a reason to refuse this removal.
+	refs = accountLoginOnly(refs)
 	for _, ref := range refs {
 		if ref.Owner != owner || ref.Purpose != credentials.AccountLogin || ref.ID.Validate() != nil {
 			return 0, subscriptionDenied()
@@ -70,10 +79,65 @@ func removeAccountLoginReferences(ctx context.Context, vault accountSecrets, own
 	if err != nil {
 		return removed, err
 	}
-	if len(remaining) != 0 {
+	if len(accountLoginOnly(remaining)) != 0 {
 		return removed, subscriptionDenied()
 	}
 	return removed, nil
+}
+
+// accountLoginOnly drops the claude-usage references from refs. Every other
+// purpose is kept so an unknown reference still denies the removal.
+func accountLoginOnly(refs []credentials.Ref) []credentials.Ref {
+	kept := make([]credentials.Ref, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Purpose != credentials.ClaudeUsage {
+			kept = append(kept, ref)
+		}
+	}
+	return kept
+}
+
+// claudeUsageRef addresses one claude-usage vault generation of an account.
+func claudeUsageRef(account, credential domain.ID) credentials.Ref {
+	return credentials.Ref{Owner: account, ID: credential, Purpose: credentials.ClaudeUsage}
+}
+
+// removeRetiredClaudeUsage deletes the claude-usage references that the usage
+// section of a server-token Claude account retired, so an explicit execution
+// logout is complete only once they are gone. A live (current) credential is
+// never deleted here: only the section's retirement list is. The section is not
+// rewritten; the cleanup pass later releases the confirmed entries, and deleting
+// an already deleted reference is idempotent. An account without a usage section
+// owes nothing, and an account of another kind is ignored. The caller holds the
+// account gate.
+func (s *Service) removeRetiredClaudeUsage(ctx context.Context, account domain.ID) error {
+	var retired []domain.ID
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := accountFromTx(tx, account, 0)
+		if err != nil {
+			return err
+		}
+		if a.ManagedClaudeAccount() && a.Subscription.ClaudeUsage != nil {
+			retired = slices.Clone(a.Subscription.ClaudeUsage.RetiredCredentials)
+		}
+		return nil
+	})
+	if err != nil || len(retired) == 0 {
+		return err
+	}
+	vault, err := s.secrets()
+	if err != nil {
+		return err
+	}
+	for _, id := range retired {
+		if err := ctx.Err(); err != nil {
+			return domain.SafeError(err)
+		}
+		if err := vault.Delete(ctx, claudeUsageRef(account, id)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // removeAccountCredentials is the explicit removal of one server-owned
@@ -104,7 +168,13 @@ func (s *Service) removeAccountCredentials(ctx context.Context, id, legacyOperat
 		return err
 	}
 	removed, err = removeAccountLoginReferences(ctx, vault, id)
-	return err
+	if err != nil {
+		return err
+	}
+	// Logout and deletion also owe the retired claude-usage references of a
+	// server-token Claude account. Live usage credentials are never deleted here:
+	// only references the usage section already retired are.
+	return s.removeRetiredClaudeUsage(ctx, id)
 }
 
 // legacyRuntimeHome is the historical per-operation auth home of one server
