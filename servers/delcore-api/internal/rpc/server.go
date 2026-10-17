@@ -131,12 +131,13 @@ func run[Q any, R any](s *Server, ctx context.Context, req *connect.Request[Q], 
 		if key != "" {
 			var old string
 			var cached []byte
-			e := tx.QueryRow(ctx, "SELECT fingerprint,response FROM requests WHERE actor_id=$1 AND request_key=$2", c.actor, key).Scan(&old, &cached)
+			var removed bool
+			e := tx.QueryRow(ctx, "SELECT fingerprint,response,EXISTS(SELECT 1 FROM tenants t WHERE t.id=requests.tenant_id AND t.deleted_at IS NOT NULL) FROM requests WHERE actor_id=$1 AND request_key=$2", c.actor, key).Scan(&old, &cached, &removed)
 			if e == nil {
 				if old != fingerprint {
 					return conflict()
 				}
-				if len(cached) == 0 {
+				if removed {
 					return precondition("cached response was removed under retention policy")
 				}
 				if e := c.authorizeReplay(any(req.Msg)); e != nil {

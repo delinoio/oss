@@ -1086,3 +1086,25 @@ func TestLateSettlementUsesNextRenewal(t *testing.T) {
 		t.Fatal("charge reconciliation", state, balance, charges, e)
 	}
 }
+
+func TestEmptyMutationResponsesReplay(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	q := &pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: true, Threshold: "5", Amount: "10", MonthlyCap: "20"}
+	for i := 0; i < 2; i++ {
+		if _, e := client.SetAutoTopUp(ctx, req(q, "owner")); e != nil {
+			t.Fatal("empty response retry", e)
+		}
+	}
+	var size int
+	if e := db.Pool.QueryRow(ctx, "SELECT octet_length(response) FROM requests WHERE request_key=$1", q.RequestKey).Scan(&size); e != nil || size != 0 {
+		t.Fatal("fixture must store empty protobuf", size, e)
+	}
+	deletion := &pb.DeleteTenantRequest{RequestKey: key(), TenantId: tenant}
+	for i := 0; i < 2; i++ {
+		if _, e := client.DeleteTenant(ctx, req(deletion, "owner")); e != nil {
+			t.Fatal("deletion retry", e)
+		}
+	}
+}
