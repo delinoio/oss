@@ -1089,6 +1089,9 @@ type watchRecoveryServer struct {
 	ticks    int
 	reads    map[string]int
 	reported map[string]int
+	// tickDone, when set, receives a non-blocking signal after the server has
+	// sent every offered row and the tick marker of one stream iteration.
+	tickDone chan struct{}
 }
 
 func (s *watchRecoveryServer) WatchSubscription(ctx context.Context, _ *connect.Request[pb.WatchSubscriptionRequest], stream *connect.ServerStream[pb.WatchSubscriptionResponse]) error {
@@ -1106,6 +1109,12 @@ func (s *watchRecoveryServer) WatchSubscription(ctx context.Context, _ *connect.
 		}
 		if err := stream.Send(&pb.WatchSubscriptionResponse{}); err != nil {
 			return err
+		}
+		if s.tickDone != nil {
+			select {
+			case s.tickDone <- struct{}{}:
+			default:
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -1181,27 +1190,68 @@ func TestCodexRecoveryWatchLaneBoundsAttemptsAndJoinsOnShutdown(t *testing.T) {
 	}
 }
 
+// Without the negotiated capability the lane keeps consuming fenced rows and
+// never attempts recovery. The test ends the stream by explicit cancellation
+// after the fixture observed several offers, so it does not depend on the
+// ordering of any deadline timers.
 func TestCodexRecoveryWatchLaneIgnoresRowsWithoutNegotiation(t *testing.T) {
+	const wantOffers = 5
 	credential := Credential{MachineID: domain.NewID(), ServerID: domain.NewID(), DeviceID: domain.NewID(), Token: "synthetic-token"}
-	server := &watchRecoveryServer{reads: map[string]int{}, reported: map[string]int{}}
+	server := &watchRecoveryServer{reads: map[string]int{}, reported: map[string]int{}, tickDone: make(chan struct{}, wantOffers)}
 	lease := domain.SubscriptionLease{ID: domain.NewID(), OperationID: domain.NewID(), Revision: 3, Action: domain.SubscriptionExecute, MachineID: credential.MachineID, InstanceID: domain.NewID(), DeviceID: credential.DeviceID, Epoch: domain.NewID(), Generation: domain.NewID(), StartedAt: time.Now().UTC()}
 	raw, _ := json.Marshal(domain.Account{Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionChatGPT, Subscription: &domain.SubscriptionState{RecoveryRequired: true, Lease: &lease, Generation: lease.Generation}})
 	server.accounts = []*pb.Resource{{Id: string(domain.NewID()), Revision: 4, DocumentJson: raw}}
 	_, handler := delidevv1connect.NewSubscriptionServiceHandler(server)
 	httpServer := httptest.NewServer(handler)
-	defer httpServer.Close()
 	credential.Endpoint = httpServer.URL
-	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
-	defer cancel()
-	err := watchSubscriptions(ctx, Config{Root: t.TempDir()}, credential, domain.NewID())
-	// The local deadline can surface directly or through the in-flight
-	// Connect observation. Either transport form is normal only after the
-	// original context has ended; independent lane failures remain failures.
-	if err != nil && (ctx.Err() == nil || !errors.Is(err, ctx.Err()) && connect.CodeOf(err) != connect.CodeCanceled && connect.CodeOf(err) != connect.CodeDeadlineExceeded) {
-		t.Fatal("an unnegotiated recovery row aborted the lane", err)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- watchSubscriptions(ctx, Config{Root: t.TempDir()}, credential, domain.NewID()) }()
+	joined, joinErr := false, error(nil)
+	// Registered before any assertion so every failure path stops and joins
+	// the watch goroutine before the fixture server closes.
+	t.Cleanup(func() {
+		cancel()
+		if !joined {
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Error("the watch lane did not join during cleanup")
+			}
+		}
+		httpServer.Close()
+	})
+	// The watchdog only bounds the wait; it never decides the outcome.
+	watchdog := time.NewTimer(30 * time.Second)
+	defer watchdog.Stop()
+	for offers := 0; offers < wantOffers; {
+		select {
+		case <-server.tickDone:
+			offers++
+		case err := <-done:
+			joined = true
+			t.Fatal("the lane ended before cancellation", err)
+		case <-watchdog.C:
+			t.Fatal("the fixture did not offer the fenced row repeatedly", offers)
+		}
+	}
+	cancel()
+	select {
+	case joinErr = <-done:
+		joined = true
+	case <-watchdog.C:
+		t.Fatal("the watch lane did not join after cancellation")
+	}
+	// Only the cancellation requested above may end the lane; independent lane
+	// failures, including any deadline error, remain failures.
+	if joinErr != nil && !errors.Is(joinErr, context.Canceled) && connect.CodeOf(joinErr) != connect.CodeCanceled {
+		t.Fatal("an unnegotiated recovery row aborted the lane", joinErr)
 	}
 	server.mu.Lock()
 	defer server.mu.Unlock()
+	if server.ticks < wantOffers {
+		t.Fatal("the fixture did not complete the expected offers", server.ticks)
+	}
 	if len(server.reported) != 0 || len(server.reads) != 0 {
 		t.Fatal("a Worker without the negotiated capability attempted recovery")
 	}
