@@ -292,6 +292,31 @@ fn coverage(
                         ),
                     )
                 }
+                // The Vite chunk-graph rule proves a claim only from chunks
+                // that carry import data. The adapter drops that data for
+                // every chunk when the finished build no longer matches its
+                // module snapshot, so the rule can then decline every
+                // candidate without reporting anything.
+                OptimizationCategory::ChunkSplitting
+                    if collection.bundler == "vite"
+                        && rules::vite::chunks_without_import_data(collection) > 0 =>
+                {
+                    let missing = rules::vite::chunks_without_import_data(collection);
+                    tracing::debug!(
+                        chunks_without_import_data = missing,
+                        chunks = collection.chunks.len(),
+                        "vite chunk splitting coverage is partial: chunk import data is missing"
+                    );
+                    (
+                        CoverageState::Partial,
+                        format!(
+                            "{missing} emitted chunk(s) have no chunk import data (an older \
+                             adapter, or the finished build's module placement differed from the \
+                             collected snapshot), so dynamic imports that the chunk graph would \
+                             prove ineffective are not reported."
+                        ),
+                    )
+                }
                 // Detectors and evidence interpretation are verified only for
                 // the frozen matrix; an explicitly selected other version can
                 // change APIs or stats silently.
@@ -359,6 +384,12 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     let mut problems: Vec<Problem> = Vec::new();
     let mut chunks = Vec::new();
     let mut failed_chunks = 0usize;
+    // Chunks made only of bundler-owned virtual helpers have no source-backed
+    // candidate a map could attribute; they are neither a problem nor a
+    // coverage penalty. Their generated-location findings stay available.
+    // The check runs while the loop still holds each chunk's own collected
+    // metadata, so it never searches the collection by file name.
+    let mut missing_maps: Vec<String> = Vec::new();
     for chunk in &collection.chunks {
         match Chunk::load(
             &input.build_dir,
@@ -367,7 +398,19 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             chunk.is_entry,
             &context_dir,
         ) {
-            Ok(loaded) => chunks.push(loaded),
+            Ok(loaded) => {
+                if loaded.map.is_none() {
+                    if collection.is_virtual_only_collected_chunk(chunk) {
+                        tracing::debug!(
+                            chunk = loaded.file.as_str(),
+                            "virtual-only helper chunk has no source map; not counted as missing"
+                        );
+                    } else {
+                        missing_maps.push(loaded.file.clone());
+                    }
+                }
+                chunks.push(loaded);
+            }
             Err(error) => {
                 failed_chunks += 1;
                 problems.push(problem(
@@ -377,20 +420,6 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
                     "Start a new run; do not modify the run directory while it is being analyzed.",
                 ));
             }
-        }
-    }
-    // Chunks made only of bundler-owned virtual helpers have no source-backed
-    // candidate a map could attribute; they are neither a problem nor a
-    // coverage penalty. Their generated-location findings stay available.
-    let mut missing_maps: Vec<String> = Vec::new();
-    for chunk in chunks.iter().filter(|chunk| chunk.map.is_none()) {
-        if collection.is_virtual_only_chunk(&chunk.file) {
-            tracing::debug!(
-                chunk = chunk.file.as_str(),
-                "virtual-only helper chunk has no source map; not counted as missing"
-            );
-        } else {
-            missing_maps.push(chunk.file.clone());
         }
     }
     if !missing_maps.is_empty() {
@@ -723,6 +752,71 @@ mod tests {
             .iter()
             .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
             .unwrap()
+    }
+
+    fn chunk_splitting_coverage(analysis: &Analysis) -> &CategoryCoverage {
+        analysis
+            .coverage
+            .iter()
+            .find(|entry| entry.category == OptimizationCategory::ChunkSplitting)
+            .unwrap()
+    }
+
+    #[test]
+    fn vite_chunk_splitting_coverage_is_partial_when_chunk_import_data_is_missing() {
+        let covered = run_fixture(BundlerChoice::Vite, |_| {});
+        let entry = chunk_splitting_coverage(&covered.output.analysis);
+        assert_eq!(entry.state, CoverageState::Covered);
+        // The adapter drops the three lists of every chunk when the finished
+        // build does not match its module snapshot; any single chunk without
+        // them is enough to keep the category from claiming full coverage.
+        for (name, keys) in [
+            (
+                "all lists of every chunk",
+                vec!["imports", "externalImports", "dynamicImports"],
+            ),
+            ("only imports", vec!["imports"]),
+            ("only externalImports", vec!["externalImports"]),
+            ("only dynamicImports", vec!["dynamicImports"]),
+        ] {
+            let dropped = run_fixture(BundlerChoice::Vite, |value| {
+                let chunks = value["chunks"].as_array_mut().unwrap();
+                let last = chunks.len() - 1;
+                for chunk in &mut chunks[last..] {
+                    for key in &keys {
+                        chunk.as_object_mut().unwrap().remove(*key);
+                    }
+                }
+            });
+            let entry = chunk_splitting_coverage(&dropped.output.analysis);
+            assert_eq!(entry.state, CoverageState::Partial, "{name}");
+            assert!(
+                entry.note.contains("1 emitted chunk(s)"),
+                "{name}: {}",
+                entry.note
+            );
+            assert!(!entry.rules.is_empty(), "{name}");
+            // Other categories are unaffected.
+            assert_eq!(
+                dead_code_coverage(&dropped.output.analysis).state,
+                CoverageState::Covered,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn rspack_chunk_splitting_coverage_ignores_vite_chunk_import_data() {
+        let fixture = run_fixture(BundlerChoice::Rspack, |_| {});
+        assert!(
+            fixture
+                .collection
+                .chunks
+                .iter()
+                .all(|chunk| chunk.imports.is_none())
+        );
+        let entry = chunk_splitting_coverage(&fixture.output.analysis);
+        assert_ne!(entry.state, CoverageState::Partial);
     }
 
     #[test]
@@ -3751,6 +3845,16 @@ mod tests {
              use(); } } }",
             "class C { async #load() { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } \
              } }",
+            // A comment right after `case` or `default` does not turn the clause block
+            // into a member container, so the async context reaches the guard.
+            "async function \
+             outer(x){switch(x){case/*c*/1:{if(x){if(await(process.env.\
+             BUNDLEWHY_FIXTURE_FLAG))run()}}}}",
+            "async function outer(x){switch(x){case/*c*/ \
+             1:{if(x){if(await(process.env.BUNDLEWHY_FIXTURE_FLAG))run()}}}}",
+            "async function \
+             outer(x){switch(x){default/*c*/:{if(x){if(await(process.env.\
+             BUNDLEWHY_FIXTURE_FLAG))run()}}}}",
         ] {
             let fixture = run_fixture_patched(
                 BundlerChoice::Rspack,
@@ -4597,6 +4701,7 @@ mod tests {
     }
 
     const PRELOAD_HELPER: &str = "\u{0}vite/preload-helper.js";
+    const MODULEPRELOAD_POLYFILL: &str = "\u{0}vite/modulepreload-polyfill.js";
     const ROLLDOWN_RUNTIME: &str = "\u{0}rolldown/runtime.js";
     const HELPER_CODE: &str = "var e=Object.create;export{e as t};\n";
     const APP_MODULE: &str = "/__bundlewhy_project__/src/lazy/common.js";
@@ -4616,6 +4721,15 @@ mod tests {
                 map: ExtraMap::Absent,
             },
         ]
+    }
+
+    fn polyfill_chunk() -> ExtraChunk {
+        ExtraChunk {
+            file: "assets/modulepreload-polyfill-AbCd1234.js",
+            code: HELPER_CODE,
+            modules: vec![MODULEPRELOAD_POLYFILL],
+            map: ExtraMap::Absent,
+        }
     }
 
     fn vite_with_extra_chunks(
@@ -4662,6 +4776,11 @@ mod tests {
                         "isDynamicEntry": false,
                         "facadeModuleId": null,
                         "modules": chunk.modules,
+                        // A complete chunk-graph record, so these helper
+                        // chunks keep Vite chunk splitting coverage unchanged.
+                        "imports": [],
+                        "externalImports": [],
+                        "dynamicImports": [],
                     }));
                 }
                 edit(value);
@@ -4720,6 +4839,121 @@ mod tests {
     }
 
     #[test]
+    fn modulepreload_polyfill_only_chunk_without_map_is_not_a_missing_map() {
+        let baseline = run_fixture(BundlerChoice::Vite, |_| {});
+        let fixture = vite_with_extra_chunks(&[polyfill_chunk()], |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(missing_map_problems(analysis).is_empty());
+        assert_eq!(analysis.status, baseline.output.analysis.status);
+        for (left, right) in analysis
+            .coverage
+            .iter()
+            .zip(baseline.output.analysis.coverage.iter())
+        {
+            assert_eq!(left.state, right.state, "{:?}", left.category);
+            assert_eq!(left.note, right.note, "{:?}", left.category);
+        }
+        // The exempt chunk is still scanned and sized, with attribution
+        // honestly marked unavailable.
+        let chunk = analysis
+            .chunks
+            .iter()
+            .find(|chunk| chunk.file == "assets/modulepreload-polyfill-AbCd1234.js")
+            .unwrap();
+        assert!(chunk.raw_bytes > 0);
+        assert_eq!(
+            chunk.attribution,
+            crate::model::AttributionState::Unavailable
+        );
+    }
+
+    #[test]
+    fn modulepreload_polyfill_chunk_with_unusable_map_is_not_a_missing_map() {
+        let mut chunk = polyfill_chunk();
+        chunk.map = ExtraMap::EmptyMappings;
+        let fixture = vite_with_extra_chunks(&[chunk], |_| {});
+        assert!(missing_map_problems(&fixture.output.analysis).is_empty());
+    }
+
+    #[test]
+    fn all_three_verified_helpers_in_one_chunk_are_exempt() {
+        let combined = vec![ExtraChunk {
+            file: "assets/all-helpers-AAAA.js",
+            code: HELPER_CODE,
+            modules: vec![PRELOAD_HELPER, MODULEPRELOAD_POLYFILL, ROLLDOWN_RUNTIME],
+            map: ExtraMap::Absent,
+        }];
+        let fixture = vite_with_extra_chunks(&combined, |_| {});
+        assert!(missing_map_problems(&fixture.output.analysis).is_empty());
+    }
+
+    #[test]
+    fn modulepreload_polyfill_with_source_or_look_alike_keeps_the_map_requirement() {
+        for (file, extra) in [
+            ("assets/polyfill-app-AAAA.js", APP_MODULE),
+            (
+                "assets/polyfill-lookalike-AAAA.js",
+                "\u{0}vite/modulepreload-polyfill-2.js",
+            ),
+            ("assets/polyfill-virtual-AAAA.js", "\u{0}virtual:routes"),
+        ] {
+            let mixed = vec![ExtraChunk {
+                file,
+                code: HELPER_CODE,
+                modules: vec![MODULEPRELOAD_POLYFILL, extra],
+                map: ExtraMap::Absent,
+            }];
+            let fixture = vite_with_extra_chunks(&mixed, |_| {});
+            let analysis = &fixture.output.analysis;
+            assert_eq!(analysis.status, RunStatus::Partial, "{file}");
+            let problems = missing_map_problems(analysis);
+            assert_eq!(problems.len(), 1, "{file}");
+            assert!(problems[0].message.contains(file), "{file}");
+        }
+    }
+
+    #[test]
+    fn modulepreload_polyfill_record_with_a_path_keeps_the_map_requirement() {
+        let fixture = vite_with_extra_chunks(&[polyfill_chunk()], |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["id"] == MODULEPRELOAD_POLYFILL {
+                    module["path"] = "/x/modulepreload-polyfill.js".into();
+                }
+            }
+        });
+        let problems = missing_map_problems(&fixture.output.analysis);
+        assert_eq!(problems.len(), 1);
+        assert!(
+            problems[0]
+                .message
+                .contains("assets/modulepreload-polyfill-AbCd1234.js")
+        );
+    }
+
+    #[test]
+    fn modulepreload_polyfill_non_virtual_record_keeps_the_map_requirement() {
+        let fixture = vite_with_extra_chunks(&[polyfill_chunk()], |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["id"] == MODULEPRELOAD_POLYFILL {
+                    module["virtual"] = false.into();
+                }
+            }
+        });
+        assert_eq!(missing_map_problems(&fixture.output.analysis).len(), 1);
+    }
+
+    #[test]
+    fn modulepreload_polyfill_without_a_module_record_keeps_the_map_requirement() {
+        let fixture = vite_with_extra_chunks(&[polyfill_chunk()], |value| {
+            value["modules"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|module| module["id"] != MODULEPRELOAD_POLYFILL);
+        });
+        assert_eq!(missing_map_problems(&fixture.output.analysis).len(), 1);
+    }
+
+    #[test]
     fn source_backed_chunk_without_map_is_still_missing() {
         let fixture = vite_with_extra_chunks(&helper_chunks(), |value| {
             for chunk in value["chunks"].as_array_mut().unwrap() {
@@ -4738,6 +4972,49 @@ mod tests {
         let dce = dead_code_coverage(analysis);
         assert_eq!(dce.state, CoverageState::Partial);
         assert!(dce.note.contains("1 chunk(s) have no usable source map"));
+    }
+
+    #[test]
+    fn many_mapless_chunks_are_classified_by_their_own_metadata() {
+        // Interleave exempt helper chunks and source-backed chunks without
+        // maps. Each chunk is classified from the metadata the load loop
+        // already holds, so the outcome depends only on that chunk and the
+        // warning keeps collection order.
+        const COUNT: usize = 150;
+        let leak = |text: String| -> &'static str { Box::leak(text.into_boxed_str()) };
+        let mut extra = Vec::new();
+        let mut expected = Vec::new();
+        for index in 0..COUNT {
+            extra.push(ExtraChunk {
+                file: leak(format!("assets/helper-{index:03}.js")),
+                code: HELPER_CODE,
+                modules: vec![PRELOAD_HELPER],
+                map: ExtraMap::Absent,
+            });
+            let backed = leak(format!("assets/backed-{index:03}.js"));
+            extra.push(ExtraChunk {
+                file: backed,
+                code: HELPER_CODE,
+                modules: vec![PRELOAD_HELPER, APP_MODULE],
+                map: ExtraMap::Absent,
+            });
+            expected.push(backed);
+        }
+        let fixture = vite_with_extra_chunks(&extra, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert_eq!(
+            problems[0].message,
+            format!("No usable source map for: {}", expected.join(", "))
+        );
+        assert!(!problems[0].message.contains("assets/helper-"));
+        let dce = dead_code_coverage(analysis);
+        assert!(
+            dce.note
+                .contains(&format!("{COUNT} chunk(s) have no usable source map"))
+        );
     }
 
     #[test]
@@ -4853,6 +5130,20 @@ mod tests {
     }
 
     #[test]
+    fn rspack_modulepreload_polyfill_chunk_keeps_the_map_requirement() {
+        let fixture = fixture_with_extra_chunks(BundlerChoice::Rspack, &[polyfill_chunk()], |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert!(
+            problems[0]
+                .message
+                .contains("assets/modulepreload-polyfill-AbCd1234.js")
+        );
+    }
+
+    #[test]
     fn rspack_virtual_only_chunks_keep_the_map_requirement() {
         let baseline = run_fixture(BundlerChoice::Rspack, |_| {});
         let fixture = fixture_with_extra_chunks(BundlerChoice::Rspack, &helper_chunks(), |_| {});
@@ -4881,17 +5172,25 @@ mod tests {
     #[test]
     fn unsupported_bundler_collections_keep_the_map_requirement() {
         for bundler in ["", "webpack", "Vite", "rollup"] {
-            let fixture = vite_with_extra_chunks(&helper_chunks(), |value| {
+            let mut chunks = helper_chunks();
+            chunks.push(polyfill_chunk());
+            let fixture = vite_with_extra_chunks(&chunks, |value| {
                 value["bundler"] = serde_json::Value::String(bundler.to_owned());
             });
             let problems = missing_map_problems(&fixture.output.analysis);
-            let reported = problems
-                .iter()
-                .any(|problem| problem.message.contains("preload-helper"));
-            assert!(
-                reported,
-                "bundler {bundler:?} must keep the map requirement"
-            );
+            for needle in [
+                "preload-helper",
+                "rolldown-runtime",
+                "modulepreload-polyfill",
+            ] {
+                let reported = problems
+                    .iter()
+                    .any(|problem| problem.message.contains(needle));
+                assert!(
+                    reported,
+                    "bundler {bundler:?} must keep the map requirement for {needle}"
+                );
+            }
         }
     }
 
@@ -4920,9 +5219,12 @@ mod tests {
             };
         let helper = (PRELOAD_HELPER, true, None);
         let runtime = (ROLLDOWN_RUNTIME, true, None);
+        let polyfill = (MODULEPRELOAD_POLYFILL, true, None);
         let plugin = ("\u{0}virtual:routes", true, None);
         let pathed = (PRELOAD_HELPER, true, Some("/x/helper.js"));
         let real = (PRELOAD_HELPER, false, None);
+        let polyfill_pathed = (MODULEPRELOAD_POLYFILL, true, Some("/x/polyfill.js"));
+        let polyfill_real = (MODULEPRELOAD_POLYFILL, false, None);
         let app = (APP_MODULE, false, Some("/x/common.js"));
 
         // Chunk shape x bundler: only a Vite collection may suppress.
@@ -4951,6 +5253,76 @@ mod tests {
                     vec![helper, runtime],
                 ),
                 true,
+            ),
+            (
+                (
+                    "modulepreload polyfill only",
+                    vec![MODULEPRELOAD_POLYFILL],
+                    vec![polyfill],
+                ),
+                true,
+            ),
+            (
+                (
+                    "all three verified ids",
+                    vec![PRELOAD_HELPER, MODULEPRELOAD_POLYFILL, ROLLDOWN_RUNTIME],
+                    vec![helper, polyfill, runtime],
+                ),
+                true,
+            ),
+            (
+                (
+                    "polyfill plus look-alike",
+                    vec![
+                        MODULEPRELOAD_POLYFILL,
+                        "\u{0}vite/modulepreload-polyfill-2.js",
+                    ],
+                    vec![
+                        polyfill,
+                        ("\u{0}vite/modulepreload-polyfill-2.js", true, None),
+                    ],
+                ),
+                false,
+            ),
+            (
+                (
+                    "polyfill look-alike without extension",
+                    vec!["\u{0}vite/modulepreload-polyfill"],
+                    vec![("\u{0}vite/modulepreload-polyfill", true, None)],
+                ),
+                false,
+            ),
+            (
+                (
+                    "polyfill with file path",
+                    vec![MODULEPRELOAD_POLYFILL],
+                    vec![polyfill_pathed],
+                ),
+                false,
+            ),
+            (
+                (
+                    "polyfill non-virtual module",
+                    vec![MODULEPRELOAD_POLYFILL],
+                    vec![polyfill_real],
+                ),
+                false,
+            ),
+            (
+                (
+                    "polyfill id not collected",
+                    vec![MODULEPRELOAD_POLYFILL],
+                    vec![],
+                ),
+                false,
+            ),
+            (
+                (
+                    "polyfill plus source",
+                    vec![MODULEPRELOAD_POLYFILL, APP_MODULE],
+                    vec![polyfill, app],
+                ),
+                false,
             ),
             (
                 (
@@ -5010,11 +5382,24 @@ mod tests {
                 assert_eq!(built.bundler_choice(), choice, "{bundler:?}");
                 let expected = vite_expected && choice == Some(BundlerChoice::Vite);
                 assert_eq!(
-                    built.is_virtual_only_chunk("a.js"),
+                    built.is_virtual_only_collected_chunk(&built.chunks[0]),
                     expected,
                     "{name} with bundler {bundler:?}"
                 );
-                assert!(!built.is_virtual_only_chunk("b.js"), "{name}: unknown file");
+                // The predicate decides from the passed chunk's own metadata
+                // and never searches `Collection::chunks` by file name, so a
+                // chunk that is absent from the collection is classified by
+                // its modules alone.
+                let detached = crate::collect::CollectedChunk {
+                    file: "b.js".to_owned(),
+                    modules: built.chunks[0].modules.clone(),
+                    ..Default::default()
+                };
+                assert_eq!(
+                    built.is_virtual_only_collected_chunk(&detached),
+                    expected,
+                    "{name} with bundler {bundler:?}: detached chunk"
+                );
             }
         }
     }

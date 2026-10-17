@@ -3,6 +3,8 @@ package subscription_test
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -255,6 +257,7 @@ func TestGrokRefreshTransportFailuresAreUncertain(t *testing.T) {
 
 func TestGrokRefreshIdentityMismatchNeverBuildsABundle(t *testing.T) {
 	cases := map[string]func(*grokidptest.IdP){
+		"team id":          func(i *grokidptest.IdP) { i.TeamID = "another-team" },
 		"principal id":     func(i *grokidptest.IdP) { i.PrincipalID = "another-principal" },
 		"principal type":   func(i *grokidptest.IdP) { i.PrincipalType = "service" },
 		"id token subject": func(i *grokidptest.IdP) { i.Subject = "another-user"; i.UserinfoSubject = "fake-user-1" },
@@ -323,5 +326,64 @@ func TestGrokRefreshErrorsAndFormattersNeverEchoSecrets(t *testing.T) {
 	tokens.Clear()
 	if tokens.AccessToken != "" || tokens.RefreshToken != "" || tokens.IDToken != "" {
 		t.Fatal("Clear left credential references")
+	}
+}
+
+func TestGrokRefreshPinsTheNativePrincipal(t *testing.T) {
+	f := newRefreshFixture(t)
+	tokens, err := subscription.RefreshGrokTokens(context.Background(), f.idp.Client(), f.profile, f.endpoints, f.bound.RefreshToken(), f.bound.Identity())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tokens.Clear()
+	form := f.idp.RefreshForms[0]
+	if form.Get("principal_type") != f.bound.Identity().PrincipalType || form.Get("principal_id") != f.bound.Identity().PrincipalID {
+		t.Fatal("refresh did not pin the original native principal")
+	}
+}
+
+func TestGrokRefreshReadsPrincipalFromTheTrustedTokenResponse(t *testing.T) {
+	for _, camel := range []bool{false, true} {
+		for _, mismatch := range []bool{false, true} {
+			t.Run(fmt.Sprintf("camel=%v/mismatch=%v", camel, mismatch), func(t *testing.T) {
+				f := newRefreshFixture(t)
+				identity := f.bound.Identity()
+				// Real OIDC userinfo and ID tokens can omit native principal metadata.
+				f.idp.PrincipalType = ""
+				f.idp.PrincipalID = ""
+				f.idp.RefreshOmitID = true
+				tokens, err := f.refresh(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tokens.Clear()
+				principal := identity.PrincipalID
+				if mismatch {
+					principal = "another-native-principal"
+				}
+				claims := map[string]string{"principal_type": identity.PrincipalType, "principal_id": principal}
+				if camel {
+					claims = map[string]string{"principalType": identity.PrincipalType, "principalId": principal}
+				}
+				payload, _ := json.Marshal(claims)
+				tokens.AccessToken = "fixture." + base64.RawURLEncoding.EncodeToString(payload) + ".signature"
+				f.idp.AccessToken = tokens.AccessToken
+				next, err := f.complete(t, tokens)
+				if mismatch {
+					if err == nil {
+						next.Clear()
+						t.Fatal("another native principal was accepted")
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer next.Clear()
+				if next.IdentityKey() != f.bound.IdentityKey() {
+					t.Fatal("native identity changed")
+				}
+			})
+		}
 	}
 }

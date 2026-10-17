@@ -3,6 +3,7 @@
 // Runs one client production build with the project's own Vite installation
 // and records Rolldown module/chunk facts through a collector plugin.
 
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -24,7 +25,7 @@ import {
 } from "./common.mjs";
 
 export const ADAPTER_ID = "bundlewhy-collector-vite";
-export const ADAPTER_VERSION = "3";
+export const ADAPTER_VERSION = "5";
 
 /** Plugins that the adapter adds; they are not part of the project's config. */
 const BUNDLEWHY_PLUGIN_NAMES = new Set([
@@ -253,45 +254,125 @@ export function configFileIdentityPlugin(configFile, dependencies = []) {
 }
 
 /**
- * Names under which an emitted chunk can list an external module in its
- * `imports`: the module id and, when `output.paths` is configured, the string
- * that replaces the id in the generated code. `paths` is a record or a
- * function in Rolldown. Both names are returned so that a rewritten external
- * is recognised whichever form the chunk list carries; a name shared with an
- * emitted chunk is then treated as ambiguous by the Rust side.
+ * How an external module can be named in the `imports` of an emitted chunk.
+ *
+ * `names` holds the module id and, for a record-valued `output.paths`, the
+ * string that replaces the id in the generated code. A record is plain data, so
+ * reading it is stable. A function-valued `output.paths` is never called here:
+ * the bundler called it while it rendered the chunks, a stateful function can
+ * answer differently when it is called again, and a replayed answer would
+ * name an external that the output does not contain (and miss the one it does).
+ * The rendered names of such a build are therefore unknown, which
+ * `renderedNamesUnknown` records. Any other non-record value (a string, an
+ * array, a number) is not a documented `output.paths` shape and is read the
+ * same way.
+ *
+ * The caller must treat every `imports` entry as possibly external when
+ * `renderedNamesUnknown` is true; see `chunkGraphFields`.
  */
-export function externalImportNames(externalIds, paths) {
+export function externalImportIdentity(externalIds, paths) {
   const names = new Set(externalIds);
+  if (paths === undefined || paths === null) {
+    return { names, renderedNamesUnknown: false };
+  }
+  if (typeof paths !== "object" || Array.isArray(paths)) {
+    return { names, renderedNamesUnknown: true };
+  }
   for (const id of externalIds) {
-    let rendered;
-    try {
-      rendered =
-        typeof paths === "function"
-          ? paths(id)
-          : paths !== null && typeof paths === "object"
-            ? paths[id]
-            : undefined;
-    } catch {
-      // A throwing user function cannot be evaluated again here; the id alone
-      // is still recorded.
-      rendered = undefined;
-    }
+    // Own properties only: `paths.constructor` and similar inherited members
+    // are not a replacement.
+    if (!Object.hasOwn(paths, id)) continue;
+    const rendered = paths[id];
     if (typeof rendered === "string") names.add(rendered);
   }
-  return names;
+  return { names, renderedNamesUnknown: false };
 }
 
 /**
  * The chunk-graph fields of one emitted chunk: static imports, the imports
  * that refer to an external module, and dynamic imports.
+ *
+ * `imports` mixes emitted chunk files with external specifiers, and an
+ * external can be rendered under a string that equals an emitted chunk file.
+ * When the rendered names are known, `externalImports` lists the entries that
+ * match an external name. When they are unknown (`renderedNamesUnknown`), an
+ * entry that names an emitted chunk cannot be told from an external rendered
+ * under the same string, so every entry is listed: the analysis then follows no
+ * static edge of this chunk and reads the search as incomplete (Unknown). The
+ * other entries name no emitted chunk and are external leaves either way.
  */
-export function chunkGraphFields(chunk, externalNames) {
+export function chunkGraphFields(chunk, externalIdentity) {
   const imports = [...(chunk.imports ?? [])];
   return {
     imports,
-    externalImports: imports.filter((name) => externalNames.has(name)),
+    externalImports: externalIdentity.renderedNamesUnknown
+      ? [...imports]
+      : imports.filter((name) => externalIdentity.names.has(name)),
     dynamicImports: [...(chunk.dynamicImports ?? [])],
   };
+}
+
+/**
+ * Module ids that one chunk of the finished build holds, or `null` when the
+ * chunk's `modules` record cannot be read as an id-keyed object. A chunk
+ * without a readable record cannot be compared with the snapshot, so it never
+ * counts as unchanged.
+ */
+function finalModuleIds(chunk) {
+  const modules = chunk?.modules;
+  if (modules === null || typeof modules !== "object" || Array.isArray(modules))
+    return null;
+  return new Set(Object.keys(modules));
+}
+
+/**
+ * Digest of the generated code of one emitted chunk, or `null` when the chunk
+ * has no readable code string. `OutputChunk.modules` is metadata computed
+ * before `generateBundle`; the code is the only part a later hook can change
+ * without that metadata following, so the digest stands in for it.
+ */
+export function chunkCodeDigest(chunk) {
+  if (typeof chunk?.code !== "string") return null;
+  return createHash("sha256").update(chunk.code).digest("hex");
+}
+
+/**
+ * True when every snapshot chunk still has the generated code it had when the
+ * collector took its snapshot. A `generateBundle` hook that runs after the
+ * collector (an output-only plugin) can move or remove module code by editing
+ * `OutputChunk.code` while `OutputChunk.modules` keeps its old content, so the
+ * membership comparison alone cannot see that edit. A chunk without a digest,
+ * a final chunk without readable code and a changed digest all count as
+ * changed, so any post-snapshot code edit makes the placement untrusted.
+ */
+export function finalCodeMatches(snapshotCode, snapshotChunks, finalChunks) {
+  if (!(snapshotCode instanceof Map)) return false;
+  for (const chunk of snapshotChunks) {
+    const expected = snapshotCode.get(chunk.file);
+    if (typeof expected !== "string") return false;
+    if (chunkCodeDigest(finalChunks.get(chunk.file)) !== expected) return false;
+  }
+  return true;
+}
+
+/**
+ * True when every snapshot chunk holds exactly the modules that the same-named
+ * chunk of the finished build holds. Set equality per chunk file: the order of
+ * the modules inside a chunk is not placement. A module that moved to another
+ * chunk, a module that was removed from the output, a module that was added
+ * and a chunk whose module record cannot be read all differ. Both directions
+ * are compared, so a target and a requester are covered alike.
+ */
+export function finalPlacementMatches(snapshotChunks, finalChunks) {
+  for (const chunk of snapshotChunks) {
+    const finalIds = finalModuleIds(finalChunks.get(chunk.file));
+    const snapshotIds = new Set(chunk.modules ?? []);
+    if (finalIds === null || finalIds.size !== snapshotIds.size) return false;
+    for (const id of snapshotIds) {
+      if (!finalIds.has(id)) return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -301,12 +382,35 @@ export function chunkGraphFields(chunk, externalNames) {
  * after the collector whatever its own ordering is, so the snapshot taken in
  * the hook may predate a rewrite of chunk imports. The value `build()` returns
  * is the bundle after every hook. Chunk modules and sizes stay as snapshotted;
- * only the import lists come from the final bundle. When the final output
- * cannot be read or its chunk files differ from the snapshot, the import lists
- * are dropped, which the analysis reads as "no chunk import data" and never as
- * proof.
+ * only the import lists come from the final bundle.
+ *
+ * The final import lists are only valid together with the snapshot's module
+ * placement (`chunk.modules` and `module.chunks`), because the rule reads which
+ * chunk holds the dynamic importer and the target from the placement and the
+ * route between them from the lists. The lists are therefore accepted only
+ * when the finished build has the same chunk files, every chunk holds exactly
+ * the modules of the snapshot and no chunk's generated code changed after the
+ * snapshot (`snapshotCode`, the digests taken in the collector's hook). An
+ * output-only plugin can move or remove modules while it keeps every file name,
+ * and one that edits `OutputChunk.code` leaves `OutputChunk.modules` as it was,
+ * so the membership comparison alone would still accept the stale placement;
+ * mixing the final edges with the stale placement would describe two different
+ * output graphs. Otherwise, and
+ * when the final output cannot be read, the import lists of every chunk are
+ * dropped (all or nothing, no partial module facts are rebuilt from mixed
+ * snapshots). The analysis reads a chunk without import data as "no chunk
+ * import data" and never as proof; it does not trust the placement of such a
+ * chunk either, so not even a same-chunk finding is proven from it. Other
+ * snapshot facts (sizes, source maps) are unaffected.
+ *
+ * Returns whether the final import lists were applied.
  */
-export function applyFinalChunkGraph(collection, buildResult, externalNames) {
+export function applyFinalChunkGraph(
+  collection,
+  buildResult,
+  externalIdentity,
+  snapshotCode,
+) {
   const results = Array.isArray(buildResult) ? buildResult : [buildResult];
   const output = results.length === 1 ? results[0]?.output : null;
   const finalChunks = new Map();
@@ -315,9 +419,13 @@ export function applyFinalChunkGraph(collection, buildResult, externalNames) {
       if (item?.type === "chunk") finalChunks.set(item.fileName, item);
     }
   }
-  const matches =
+  const sameFiles =
     finalChunks.size === collection.chunks.length &&
     collection.chunks.every((chunk) => finalChunks.has(chunk.file));
+  const matches =
+    sameFiles &&
+    finalPlacementMatches(collection.chunks, finalChunks) &&
+    finalCodeMatches(snapshotCode, collection.chunks, finalChunks);
   for (const chunk of collection.chunks) {
     delete chunk.imports;
     delete chunk.externalImports;
@@ -325,7 +433,7 @@ export function applyFinalChunkGraph(collection, buildResult, externalNames) {
     if (matches) {
       Object.assign(
         chunk,
-        chunkGraphFields(finalChunks.get(chunk.file), externalNames),
+        chunkGraphFields(finalChunks.get(chunk.file), externalIdentity),
       );
     }
   }
@@ -471,9 +579,13 @@ function collectorPlugin(state) {
           if (this.getModuleInfo(id)?.code === null) externalIds.add(id);
         }
 
-        state.externalNames = externalImportNames(externalIds, options?.paths);
+        state.externalIdentity = externalImportIdentity(
+          externalIds,
+          options?.paths,
+        );
         const chunks = [];
         const assets = [];
+        const codeDigests = new Map();
         for (const output of Object.values(bundle)) {
           if (output.type === "asset") {
             assets.push(output.fileName);
@@ -493,6 +605,7 @@ function collectorPlugin(state) {
             record.chunks.push(output.fileName);
             chunkModules.push(id);
           }
+          codeDigests.set(output.fileName, chunkCodeDigest(output));
           chunks.push({
             file: output.fileName,
             isEntry: output.isEntry,
@@ -504,12 +617,15 @@ function collectorPlugin(state) {
             // chunk, dynamic imports are requested later. `imports` mixes
             // emitted chunk files with external specifiers, so
             // `externalImports` names the entries that refer to an external
-            // module (by id or by its `output.paths` replacement). The lists
-            // are replaced by the finished build's bundle after `build()`.
-            ...chunkGraphFields(output, state.externalNames),
+            // module (by id or by its record `output.paths` replacement; every
+            // entry when `output.paths` is a function, whose rendered names
+            // are not recoverable). The lists are replaced by the finished
+            // build's bundle after `build()`.
+            ...chunkGraphFields(output, state.externalIdentity),
           });
         }
         state.collection = { modules: [...modules.values()], chunks, assets };
+        state.snapshotCode = codeDigests;
       },
     },
   };
@@ -544,7 +660,8 @@ await runAdapter(async (request) => {
     collection: null,
     outputs: 0,
     renderStarts: 0,
-    externalNames: new Set(),
+    externalIdentity: { names: new Set(), renderedNamesUnknown: false },
+    snapshotCode: new Map(),
     warnings: [],
     logs: [],
   };
@@ -696,15 +813,23 @@ await runAdapter(async (request) => {
   const finalGraph = applyFinalChunkGraph(
     state.collection,
     buildResult,
-    state.externalNames,
+    state.externalIdentity,
+    state.snapshotCode,
   );
   if (!finalGraph) {
     emit({
       event: "progress",
       stage: "collecting",
       message:
-        "The finished build's chunks differ from the snapshot; chunk import data is omitted",
+        "The finished build's chunks, their module membership or their generated code differ from the snapshot; chunk import data is omitted",
     });
+  }
+
+  if (finalGraph && state.externalIdentity.renderedNamesUnknown) {
+    progress(
+      "collecting",
+      "output.paths is not a record, so rendered external names are unknown; static chunk imports are not used as proof",
+    );
   }
 
   const resolved = state.resolved ?? {};

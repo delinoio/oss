@@ -265,6 +265,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	}
 	var proxy *nativeproxy.Proxy
 	var forwarder *nativeforward.Forwarder
+	nativeConfig.FrameProfile = retainedHistoryFrameProfile(i.Assignment)
 	if managed != nil {
 		nativeConfig.API = nil
 		nativeConfig.ManagedAuthentication = true

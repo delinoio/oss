@@ -182,6 +182,53 @@ test("vite adapter rejects configurations with several outputs", () => {
   );
 });
 
+function viteChunkGraphLists(generateBundleBody) {
+  const projectRoot = path.join(root, "fixtures/vite-app");
+  const { dir, file } = writeConfig(
+    "vite.config.mjs",
+    `export default { build: { rolldownOptions: { output: { plugins: [{ name: "test:late-output", generateBundle: { order: "post", handler(options, bundle) { ${generateBundleBody} } } }] } } } };\n`,
+  );
+  const { status, collection } = runAdapter(
+    "vite",
+    "vite-app",
+    path.relative(projectRoot, file),
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0);
+  assert.ok(collection.chunks.length > 0);
+  return collection.chunks.map((chunk) => ({
+    file: chunk.file,
+    hasLists:
+      Array.isArray(chunk.imports) &&
+      Array.isArray(chunk.externalImports) &&
+      Array.isArray(chunk.dynamicImports),
+    anyList:
+      chunk.imports !== undefined ||
+      chunk.externalImports !== undefined ||
+      chunk.dynamicImports !== undefined,
+  }));
+}
+
+test("vite adapter keeps the chunk lists when an output plugin leaves chunk code alone", () => {
+  const chunks = viteChunkGraphLists("void bundle;");
+  assert.ok(
+    chunks.every((chunk) => chunk.hasLists),
+    JSON.stringify(chunks),
+  );
+});
+
+test("vite adapter drops every chunk list when an output plugin edits chunk code after the snapshot", () => {
+  // `OutputChunk.modules` keeps its old content while the code changes, so only
+  // the code digest reveals that the collected placement is stale.
+  const chunks = viteChunkGraphLists(
+    "for (const item of Object.values(bundle)) { if (item.type === 'chunk') item.code += '\\n// edited after the collector\\n'; }",
+  );
+  assert.ok(
+    chunks.every((chunk) => !chunk.anyList),
+    JSON.stringify(chunks),
+  );
+});
+
 const mangleShapes = [
   { name: "no build options", build: undefined, expected: "enabled" },
   { name: "default minify", build: {}, expected: "enabled" },

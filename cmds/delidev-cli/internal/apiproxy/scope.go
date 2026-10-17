@@ -23,6 +23,9 @@ const (
 	ResponseCompact    Operation = "response-compact"
 	MessageCreate      Operation = "message-create"
 	MessageCountTokens Operation = "message-count-tokens"
+	ImageCreate        Operation = "codex-image-create"
+	ImageEdit          Operation = "codex-image-edit"
+	StandaloneSearch   Operation = "codex-standalone-search"
 )
 
 type ReferenceKind = domain.NativeReferenceKind
@@ -35,6 +38,7 @@ const (
 // Scope is an immutable server-resolved dispatch binding, never client input.
 // Credential generation and revocation belong to the execution/account owner.
 type Scope struct {
+	OpenRouterTools      bool
 	ContextRevision      uint64
 	CompactionSourceTurn domain.NativeIdentity
 	OpenCodeSession      string
@@ -59,6 +63,9 @@ type Scope struct {
 }
 
 func (s Scope) Validate() error {
+	if s.OpenRouterTools && (s.Harness != domain.Codex || !OpenRouterToolProvider(s.Provider) || s.Purpose == domain.SessionTitleUsage || s.Attribution != "" || s.CompactionSourceTurn != "") {
+		return domain.Fail(domain.PermissionDenied, "Invalid OpenRouter tool relay scope.", "Retain the original negotiated Codex API execution.")
+	}
 	if s.ReviewerNativeModel != "" && (s.ReviewerNativeModel != domain.CodexReviewerNativeModel || s.Harness != domain.Codex || s.Provider.Protocol != domain.OpenAIResponses || s.Purpose == domain.SessionTitleUsage || s.CompactionSourceTurn != "") {
 		return domain.Fail(domain.PermissionDenied, "Invalid native reviewer relay scope.", "Retain the original same-account reviewer model authorization.")
 	}
@@ -90,7 +97,7 @@ func (s Scope) Validate() error {
 	if err := s.Provider.Validate(); err != nil {
 		return err
 	}
-	if s.Provider.Protocol == domain.NativeSubscription || len(s.Operations) == 0 || len(s.Operations) > 5 {
+	if s.Provider.Protocol == domain.NativeSubscription || len(s.Operations) == 0 || len(s.Operations) > 8 {
 		return domain.Fail(domain.Unsupported, "The execution has no compatible API proxy operations.", "Use the installed harness's directly compatible API protocol.")
 	}
 	if s.Purpose == domain.SessionTitleUsage {
@@ -105,6 +112,9 @@ func (s Scope) Validate() error {
 	}
 	seen := map[Operation]bool{}
 	for _, operation := range s.Operations {
+		if operation.openRouterTool() && !s.OpenRouterTools {
+			return domain.Fail(domain.PermissionDenied, "This execution did not select OpenRouter native tools.", "Preserve its original operation scope.")
+		}
 		if seen[operation] || operation.protocol() != s.Provider.Protocol {
 			return domain.Fail(domain.Unsupported, "The execution's API operations do not match its provider protocol.", "Use a compatible immutable execution binding.")
 		}
@@ -116,7 +126,7 @@ func (o Operation) protocol() domain.APIProtocol {
 	switch o {
 	case ChatCompletion:
 		return domain.OpenAIChat
-	case ResponseCreate, ResponseCompact:
+	case ResponseCreate, ResponseCompact, ImageCreate, ImageEdit, StandaloneSearch:
 		return domain.OpenAIResponses
 	case MessageCreate, MessageCountTokens:
 		return domain.AnthropicMessages
@@ -132,6 +142,12 @@ func operationForPath(path string) Operation {
 		return ResponseCreate
 	case Prefix + "/responses/compact":
 		return ResponseCompact
+	case Prefix + "/images/generations":
+		return ImageCreate
+	case Prefix + "/images/edits":
+		return ImageEdit
+	case Prefix + "/alpha/search":
+		return StandaloneSearch
 	case Prefix + "/messages":
 		return MessageCreate
 	case Prefix + "/messages/count_tokens":
@@ -139,6 +155,16 @@ func operationForPath(path string) Operation {
 	default:
 		return ""
 	}
+}
+
+func (o Operation) openRouterTool() bool {
+	return o == ImageCreate || o == ImageEdit || o == StandaloneSearch
+}
+
+// Exact original account-selected authority, including equivalent custom copies.
+// Similar hosts, paths, protocols and authentication do not inherit this bridge.
+func OpenRouterToolProvider(provider domain.Provider) bool {
+	return provider.Endpoint == "https://openrouter.ai/api/v1" && provider.Protocol == domain.OpenAIResponses && provider.Authentication == domain.BearerAuth
 }
 func (s Scope) allows(operation Operation) bool {
 	return operation.protocol() == s.Provider.Protocol && slices.Contains(s.Operations, operation)

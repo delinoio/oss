@@ -5293,6 +5293,34 @@ fn keeps_names_beside_calls_of_global_object_members() {
     assert!(kept.is_empty(), "names kept beside: {kept:?}");
 }
 
+/// A bracketed writer on a named intrinsic handle is an explicit escape that
+/// the intrinsic allowlist rejects (only the dot form is a verified writer), so
+/// the names survive without help from the receiver route. The external
+/// receiver route is covered by `keeps_names_for_writes_through_unproven_
+/// receivers`, whose fixtures never name an intrinsic.
+#[test]
+fn keeps_names_for_bracketed_writers_on_named_intrinsics() {
+    let cases: Vec<(&str, String)> = vec![
+        (
+            "bracketed defineProperty on Array.prototype",
+            format!(
+                "Object[\"defineProperty\"](Array.prototype,\"pop\",{{value:{HOSTILE_POP}}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        (
+            "bracketed Reflect.set on Array.prototype",
+            format!("Reflect[\"set\"](Array.prototype,\"pop\",{HOSTILE_POP});{POP_TAIL}"),
+        ),
+    ];
+    let renamed: Vec<&str> = cases
+        .iter()
+        .filter(|(_, body)| !item_names_kept(body))
+        .map(|(label, _)| *label)
+        .collect();
+    assert!(renamed.is_empty(), "names renamed for: {renamed:?}");
+}
+
 /// A property write, deletion or define-like call through a receiver that is
 /// not provably a local object may patch an intrinsic that a caller supplied
 /// (`install(Array.prototype, hostile)` from an importer), whatever the
@@ -5457,6 +5485,114 @@ fn keeps_names_for_writes_through_unproven_receivers() {
                 "function install(p){{Reflect.deleteProperty(p,\"pop\")}}install({{}});{POP_TAIL}"
             ),
         ),
+        // Bracketed, template and parenthesized spellings of a writer name
+        // record the same evidence as the dot form.
+        (
+            "bracketed defineProperty",
+            format!(
+                "function install(p){{Object[\"defineProperty\"](p,\"pop\",{{value:\
+                 {hostile}}})}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "bracketed Object.assign",
+            format!(
+                "function install(p){{Object[\"assign\"](p,{{pop:{hostile}}})}}install({{}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        (
+            "bracketed Reflect.set",
+            format!(
+                "function install(p){{Reflect[\"set\"](p,\"pop\",{hostile})}}install({{}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        (
+            "bracketed Reflect.defineProperty",
+            format!(
+                "function install(p){{Reflect[\"defineProperty\"](p,\"pop\",{{value:\
+                 {hostile}}})}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "bracketed Reflect.deleteProperty",
+            format!(
+                "function install(p){{Reflect[\"deleteProperty\"](p,\"pop\")}}install({{}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        (
+            "template writer name",
+            format!(
+                "function install(p){{Object[`defineProperty`](p,\"pop\",{{value:\
+                 {hostile}}})}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "parenthesized receiver and writer name",
+            format!(
+                "function install(p){{(Object)[(\"defineProperty\")](p,\"pop\",{{value:\
+                 {hostile}}})}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "template key of a bracketed defineProperty",
+            format!(
+                "function install(p){{Object[\"defineProperty\"](p,`pop`,{{value:\
+                 {hostile}}})}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "bracketed defineProperties",
+            format!(
+                "function install(p){{Object[\"defineProperties\"](p,{{pop:{{value:\
+                 {hostile}}}}})}}install({{}});{POP_TAIL}"
+            ),
+        ),
+        (
+            "bracketed alias that is only called",
+            format!(
+                "function install(p){{const \
+                 d=Object[\"defineProperty\"];d(p,\"pop\",{{value:{hostile}}})}}install({{}});\
+                 {POP_TAIL}"
+            ),
+        ),
+        (
+            "bracketed alias with an unknown key",
+            format!(
+                "function install(p,k){{const \
+                 d=Object[\"defineProperty\"];d(p,k,{{value:1}})}}install({{}},\"x\");{LIST_TAIL}"
+            ),
+        ),
+        (
+            "bracketed defineProperty with an unknown key",
+            format!(
+                "function install(p,k){{Object[\"defineProperty\"](p,k,{{value:1}})}}install({{}},\
+                 \"x\");{LIST_TAIL}"
+            ),
+        ),
+        (
+            "bracketed defineProperty with a numeric key",
+            format!(
+                "function install(p){{Object[\"defineProperty\"](p,0,{{value:1}})}}install({{}});\
+                 {LIST_TAIL}"
+            ),
+        ),
+        (
+            "bracketed setPrototypeOf",
+            format!(
+                "function install(p){{Object[\"setPrototypeOf\"](p,null)}}install({{}});\
+                 {LIST_TAIL}"
+            ),
+        ),
+        (
+            "bracketed Reflect.setPrototypeOf",
+            format!(
+                "function install(p){{Reflect[\"setPrototypeOf\"](p,null)}}install({{}});\
+                 {LIST_TAIL}"
+            ),
+        ),
         // Keys that change the meaning of element reads and writes turn the
         // whole model off, not one method.
         (
@@ -5580,6 +5716,37 @@ fn renames_beside_writes_through_provably_local_receivers() {
         (
             "defineProperty onto a local",
             format!("const o={{}};Object.defineProperty(o,\"pop\",{{value:{hostile}}});"),
+        ),
+        (
+            "bracketed defineProperty onto a local",
+            format!("const o={{}};Object[\"defineProperty\"](o,\"pop\",{{value:{hostile}}});"),
+        ),
+        (
+            "bracketed Reflect.set onto a local",
+            format!("const o={{}};Reflect[`set`](o,\"pop\",{hostile});"),
+        ),
+        (
+            "bracketed setPrototypeOf onto a local",
+            "const o={};Object[\"setPrototypeOf\"](o,null);".to_owned(),
+        ),
+        (
+            "shadowed Object with a bracketed writer",
+            format!(
+                "function install(p){{const \
+                 Object={{defineProperty(a,b,c){{}}}};Object[\"defineProperty\"](p,\"pop\",\
+                 {{value:{hostile}}})}}install({{}});"
+            ),
+        ),
+        (
+            "shadowed Reflect with a bracketed writer",
+            format!(
+                "function install(p,Reflect){{Reflect[\"set\"](p,\"pop\",{hostile})}}install({{}},\
+                 {{set(){{}}}});"
+            ),
+        ),
+        (
+            "benign key through a bracketed defineProperty on a parameter",
+            "function tag(o){Object[\"defineProperty\"](o,\"tag\",{value:1})}tag({});".to_owned(),
         ),
         // A parameter write with a key that no array operation relies on is a
         // possible patch of that key only.

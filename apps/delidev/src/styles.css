@@ -930,6 +930,9 @@ summary {
   margin: 0;
   font-size: 13px;
 }
+.new-session-content > .resource-choice > .inline-choice {
+  margin-bottom: 9px;
+}
 .new-session-project-note {
   margin: 5px 0 13px;
   color: var(--muted);
@@ -4365,10 +4368,14 @@ dialog nav {
 .subscription-mark-claude {
   background: var(--warning-background);
 }
-.subscription-mark img {
-  display: block;
+/* Settings rows reuse the canonical harness mark inside the 40px slot. The
+   two-class selector outranks the 48px picker mark and removes its basis and
+   margin; artwork stays contained, centered and unrecolored. */
+.subscription-mark .worker-harness-mark {
+  flex: 0 0 24px;
   width: 24px;
   height: 24px;
+  margin: 0;
 }
 .subscription-connection,
 .subscription-health {
@@ -5755,21 +5762,6 @@ dialog nav {
   }
 }
 
-.subscription-opencode-mark {
-  display: block;
-  width: 24px;
-  height: 24px;
-  background: url("../public/harness-marks/opencode-light.svg") center / contain
-    no-repeat;
-}
-:root[data-theme="dark"] .subscription-opencode-mark {
-  background-image: url("../public/harness-marks/opencode-dark.svg");
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .subscription-opencode-mark {
-    background-image: url("../public/harness-marks/opencode-dark.svg");
-  }
-}
 /* Keep the rail and mounted pane independent of the wide preference. */
 @media (min-width: 760px) {
   .app > .sidebar {

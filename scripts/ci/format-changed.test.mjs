@@ -5,6 +5,7 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -19,6 +20,7 @@ import test from "node:test";
 import {
   allFormatFiles,
   changedFormatFiles,
+  ciEnabled,
   runFormatter,
   stagedFormatFiles,
 } from "./format-changed.mjs";
@@ -145,6 +147,78 @@ test("pre-commit preserves unstaged edits in a partially staged file", (t) => {
     formatted.replace("const tail = 1;", "const tail = 2;"),
   );
   assert.equal(f.git("diff", "--cached", "--name-only"), "");
+  assert.equal(f.git("diff", "--name-only"), "partial.ts");
+});
+
+test("pre-commit rejects a conflicting unstaged edit and preserves both versions", (t) => {
+  const f = fixture(t);
+  f.write("conflict.ts", "const value = { answer: 1 };\n");
+  const head = f.commit();
+  f.installHook();
+  const staged = "const value={answer:42}\n";
+  const unstaged = "const value={answer:43}\n";
+  f.write("conflict.ts", staged);
+  f.git("add", "conflict.ts");
+  f.write("conflict.ts", unstaged);
+  const result = spawnSync(
+    "git",
+    ["commit", "--quiet", "-m", "format conflicting content"],
+    { cwd: f.cwd, env: f.env, encoding: "utf8" },
+  );
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.equal(f.git("rev-parse", "HEAD"), head);
+  assert.equal(readFileSync(join(f.cwd, "conflict.ts"), "utf8"), unstaged);
+  assert.equal(f.git("show", ":conflict.ts"), staged.trim());
+  assert.equal(f.git("stash", "list"), "");
+  const info = join(f.cwd, f.git("rev-parse", "--git-path", "info"));
+  assert.deepEqual(
+    readdirSync(info).filter((name) => name.endsWith(".patch")),
+    [],
+  );
+});
+
+test("pre-commit formats initial commits when CI is explicitly false", (t) => {
+  const f = fixture(t, false);
+  f.env.CI = "false";
+  f.installHook();
+  f.write("initial.ts", "const value={answer:42}\n");
+  f.git("add", "initial.ts");
+  f.git("commit", "--quiet", "-m", "initial formatted source");
+  assert.equal(
+    f.git("show", "HEAD:initial.ts"),
+    "const value = { answer: 42 };",
+  );
+  assert.equal(
+    readFileSync(join(f.cwd, "initial.ts"), "utf8"),
+    "const value = { answer: 42 };\n",
+  );
+  assert.equal(f.git("diff", "--name-only"), "");
+});
+
+test("pre-commit preserves unstaged edits when CI is explicitly false", (t) => {
+  const f = fixture(t);
+  f.env.CI = "False";
+  const padding = Array.from(
+    { length: 15 },
+    (_, index) => `// Separator ${index}\n`,
+  ).join("");
+  f.write(
+    "partial.ts",
+    `const value = { answer: 1 };\n${padding}const tail = 1;\n`,
+  );
+  f.commit();
+  f.installHook();
+  const staged = `const value={answer:42}\n${padding}const tail = 1;\n`;
+  f.write("partial.ts", staged);
+  f.git("add", "partial.ts");
+  f.write("partial.ts", staged.replace("const tail = 1;", "const tail = 2;"));
+  f.git("commit", "--quiet", "-m", "format only staged content");
+  const formatted = `const value = { answer: 42 };\n${padding}const tail = 1;\n`;
+  assert.equal(f.git("show", "HEAD:partial.ts"), formatted.trim());
+  assert.equal(
+    readFileSync(join(f.cwd, "partial.ts"), "utf8"),
+    formatted.replace("const tail = 1;", "const tail = 2;"),
+  );
   assert.equal(f.git("diff", "--name-only"), "partial.ts");
 });
 
@@ -365,4 +439,120 @@ test("CLI rejects staged selection with other selection modes", (t) => {
     encoding: "utf8",
   });
   assert.equal(result.status, 2);
+});
+
+test("CI is enabled unless unset, empty or an explicit false", () => {
+  for (const value of [
+    undefined,
+    "",
+    "  ",
+    "false",
+    "FALSE",
+    "False",
+    " false ",
+  ])
+    assert.equal(ciEnabled({ CI: value }), false, JSON.stringify(value));
+  for (const value of ["true", "TRUE", "1", "0", "no", "falsey"])
+    assert.equal(ciEnabled({ CI: value }), true, value);
+  assert.equal(ciEnabled({}), false);
+});
+
+test("CLI treats an explicit false CI value as local staged execution", (t) => {
+  const f = fixture(t);
+  const script = join(root, "scripts/ci/format-changed.mjs");
+  for (const ci of ["false", "FALSE", ""]) {
+    const empty = spawnSync(process.execPath, [script, "--staged"], {
+      cwd: f.cwd,
+      env: { ...f.env, CI: ci },
+      encoding: "utf8",
+    });
+    assert.equal(empty.status, 0, `${JSON.stringify(ci)}: ${empty.stderr}`);
+    assert.match(empty.stdout, /"event":"ci_format_result"/);
+    assert.doesNotMatch(empty.stderr, /ci_format_error/);
+  }
+  f.write("staged.ts", "const value={answer:42}\n");
+  f.git("add", "staged.ts");
+  const result = spawnSync(process.execPath, [script, "--staged", "--write"], {
+    cwd: f.cwd,
+    env: { ...f.env, CI: "false" },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /"candidates":1/);
+  assert.equal(
+    readFileSync(join(f.cwd, "staged.ts"), "utf8"),
+    "const value = { answer: 42 };\n",
+  );
+});
+
+test("CLI keeps staged rejections when CI is explicitly false", (t) => {
+  const f = fixture(t);
+  const script = join(root, "scripts/ci/format-changed.mjs");
+  const env = { ...f.env, CI: "false" };
+  for (const args of [["--all"], ["--base", f.base, "--head", f.base]]) {
+    const result = spawnSync(process.execPath, [script, "--staged", ...args], {
+      cwd: f.cwd,
+      env,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /Staged formatting requires local execution/);
+  }
+  const result = spawnSync(process.execPath, [script, "--staged"], {
+    cwd: f.cwd,
+    env: { ...env, TURBO_SCM_BASE: f.base, TURBO_SCM_HEAD: f.base },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Staged formatting requires local execution/);
+});
+
+test("CLI keeps CI restrictions for non-false CI values", (t) => {
+  const f = fixture(t);
+  const script = join(root, "scripts/ci/format-changed.mjs");
+  for (const ci of ["true", "TRUE", "1", "0"]) {
+    const env = { ...f.env, CI: ci };
+    for (const [args, message] of [
+      [["--staged"], /Staged formatting requires local execution/],
+      [[], /CI formatting requires the planner comparison/],
+      [["--all"], /CI formatting requires the planner comparison/],
+      [
+        ["--all", "--base", f.base, "--head", f.base],
+        /CI formatting must use changed files/,
+      ],
+    ]) {
+      const result = spawnSync(process.execPath, [script, ...args], {
+        cwd: f.cwd,
+        env,
+        encoding: "utf8",
+      });
+      assert.equal(result.status, 2, `${ci} ${args.join(" ")}`);
+      assert.match(result.stderr, message);
+    }
+  }
+});
+
+test("explicit false CI behaves exactly like unset CI for non-staged runs", (t) => {
+  const f = fixture(t);
+  const script = join(root, "scripts/ci/format-changed.mjs");
+  for (const args of [["--all"], ["--base", f.base, "--head", f.base], []]) {
+    const run = (env) =>
+      spawnSync(process.execPath, [script, ...args], {
+        cwd: f.cwd,
+        env,
+        encoding: "utf8",
+      });
+    const unset = run(f.env);
+    const disabled = run({ ...f.env, CI: "false" });
+    assert.equal(disabled.status, unset.status, args.join(" "));
+    assert.equal(disabled.stdout, unset.stdout, args.join(" "));
+    assert.equal(disabled.stderr, unset.stderr, args.join(" "));
+    assert.doesNotMatch(disabled.stderr, /CI formatting/);
+  }
+  const comparison = spawnSync(
+    process.execPath,
+    [script, "--base", f.base, "--head", f.base],
+    { cwd: f.cwd, env: { ...f.env, CI: "false" }, encoding: "utf8" },
+  );
+  assert.equal(comparison.status, 0, comparison.stderr);
 });

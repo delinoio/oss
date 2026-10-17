@@ -31,6 +31,7 @@ import {
   type CodexDiagnostic,
   type GrokDiagnostic,
 } from "@delinoio/delidev-api-client";
+import { useSubscriptionInventoryInvalidation } from "./subscription-inventory";
 import { OAuthNativeAction, useOAuthNativeControl } from "./account-oauth";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document, encode, object, text } from "./documents";
@@ -114,10 +115,18 @@ const stages: Partial<Record<SubscriptionLoginState, Stage>> = {
 
 export function useSubscriptionLogin(
   active: boolean,
-  changed: () => void,
+  inventoryChanged: () => void,
   closed?: () => void,
 ) {
   useLocale();
+  // Every shared account-change notification also reaches independently owned
+  // saved inventories (the rail) through one authenticated-connection-scoped
+  // invalidation, in addition to the caller's own refresh.
+  const publishInventory = useSubscriptionInventoryInvalidation();
+  const changed = () => {
+    inventoryChanged();
+    publishInventory();
+  };
   const claude = useClaudeSubscriptionLogin(active, changed);
   const grok = useGrokSubscriptionLogin(active, changed);
   const transport = useTransport(),
@@ -227,7 +236,7 @@ export function useSubscriptionLogin(
   const begin = (
     service: SubscriptionServiceId,
     initial?: Resource,
-    grokDeviceCode = false,
+    _grokDeviceCode = false,
   ) => {
     // Claude sign-in is always the server-owned setup-token flow; callers gate
     // it on System capability 67 and no Runner Device ever participates.
@@ -237,11 +246,9 @@ export function useSubscriptionLogin(
     }
     if (service === SubscriptionServiceId.Grok) {
       // Grok keeps its own controller; it never reuses the ChatGPT view.
-      // The method is the user's explicit choice and never switches later.
+      // Grok authentication runs in the server-owned CLI's device-code flow.
       if (!pending.current && !claude.workflow)
-        grok.begin(
-          grokDeviceCode ? GrokLoginMethod.DeviceCode : GrokLoginMethod.Browser,
-        );
+        grok.begin(GrokLoginMethod.DeviceCode);
       return;
     }
     if (claude.workflow || grok.workflow) return;

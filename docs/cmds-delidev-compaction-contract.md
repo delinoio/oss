@@ -695,7 +695,7 @@ authorize media retrieval.
 
 ## Original Codex dynamic-tool history
 
-Complete continuation and context history validate dynamic items through the
+Complete continuation, context and Revert history validate settled dynamic items through the
 same closed lifecycle decoder as live observation. Preserve original arguments,
 ordered camelCase output variants, nullable success/duration and media locators
 inside protected native history and its digest. Public commitments and inert

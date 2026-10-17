@@ -1,5 +1,11 @@
 # DeliDev v1 Connect contract
 
+System 108 and Worker 73 allocate `CODEX_OPENROUTER_TOOLS_V1` for the explicit
+[Codex OpenRouter tool adapter](cmds-delidev-openrouter-tools-contract.md).
+The existing root assignment JSON freezes `native_openrouter_tools` alongside
+native-image and dynamic-tool support. Unknown/older peers gain no image or
+standalone-search operation. No RPC field or database migration is added.
+
 ## Shared subscription owner reservation
 
 The protocol reserves, with no behavior of their own, Worker `SHARED_SUBSCRIPTION_OWNER_V1 = 67`, Worker
@@ -233,16 +239,18 @@ These declarations now exist in `system.proto` (`SYSTEM_CAPABILITY_GROK_SUBSCRIP
 (`WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1 = 21`) and `subscription.proto`
 (`GetSubscriptionProgressResponse.grok_diagnostic = 10`, `GrokDiagnostic`,
 `GrokDiagnosticPhase`) with regenerated Go and TypeScript bindings. They are
-declared but unadvertised: GetStatus and AttachWorker never list 39, 40 or 21,
+independently activated: GetStatus advertises 39 for server-owned native CLI
+device-code login; GetStatus and AttachWorker never list 40 or 21,
 the Worker does not report 21 (the server keeps rejecting it as an unknown
 capability). GetSubscriptionProgress populates `grok_diagnostic` only for a Grok
 account's original operation with safe, locally reconstructed metadata, and reports
 `generation` (field 6) for a succeeded Grok login or refresh; the owning
-feature change advertises and activates the capabilities. The server-owned Grok
-browser login adds no proto member: its authorization URL is the existing
+feature change activates execution separately. The historical server-owned Grok
+browser login added no proto member: its authorization URL is the existing
 transient `GetSubscriptionProgressResponse.url` (WAITING only, in memory), and
 `ForwardSubscriptionCallback` is service-aware without a field change; System 39
-stays unadvertised. Codex field 7, native
+now advertises CLI device-code login, without activating that browser flow.
+Codex field 7, native
 field 9 and existing System 30/35/36/37 and Worker 19 ownership remain
 unchanged. Reservations activate nothing and add no migration.
 
@@ -1712,9 +1720,9 @@ Claude image delivery uses the independently negotiated System 106 / Worker 71 p
 
 ## Claude usage tracking allocation
 
-`SystemCapability.CLAUDE_SERVER_USAGE_V1 = 108`, the closed `ClaudeUsageLoginState` enum, `ClaudeUsageIdentityReview` and six `SubscriptionService` operations are recorded in `allocations.json` as new declarations and RPC reservations: `StartClaudeUsageLogin`, `GetClaudeUsageLoginProgress`, `SubmitClaudeUsageApprovalCode`, `ConfirmClaudeUsageLink`, `CancelClaudeUsageLogin` and `DisconnectClaudeUsage`. Every mutation carries the existing `Mutation` (`request_id` UUID v7, `id` = the Claude subscription account, `expected_revision` = its original revision) and, after the start, the server-allocated `operation_id` and `usage_generation`. `GetClaudeUsageLoginProgress` is a read that never relaunches, advances or confirms work. `SubmitClaudeUsageApprovalCodeRequest.code` is transient write-only `bytes`, excluded from receipts, resources and logs. `ConfirmClaudeUsageLinkRequest.identity_commitment` must echo the reviewed `ClaudeUsageIdentityReview.identity_commitment`. `GetClaudeUsageLoginProgressResponse.url` and the identity review are short-lived presentation data for the requesting client only. No response carries authentication bytes, and no existing message, field or RPC changes. The usage state itself lives in protected subscription metadata, so no message exposes it beyond these closed projections and needs no migration.
+`SystemCapability.CLAUDE_SERVER_USAGE_V1 = 109`, the closed `ClaudeUsageLoginState` enum, `ClaudeUsageIdentityReview` and six `SubscriptionService` operations are recorded in `allocations.json` as new declarations and RPC reservations: `StartClaudeUsageLogin`, `GetClaudeUsageLoginProgress`, `SubmitClaudeUsageApprovalCode`, `ConfirmClaudeUsageLink`, `CancelClaudeUsageLogin` and `DisconnectClaudeUsage`. Every mutation carries the existing `Mutation` (`request_id` UUID v7, `id` = the Claude subscription account, `expected_revision` = its original revision) and, after the start, the server-allocated `operation_id` and `usage_generation`. `GetClaudeUsageLoginProgress` is a read that never relaunches, advances or confirms work. `SubmitClaudeUsageApprovalCodeRequest.code` is transient write-only `bytes`, excluded from receipts, resources and logs. `ConfirmClaudeUsageLinkRequest.identity_commitment` must echo the reviewed `ClaudeUsageIdentityReview.identity_commitment`. `GetClaudeUsageLoginProgressResponse.url` and the identity review are short-lived presentation data for the requesting client only. No response carries authentication bytes, and no existing message, field or RPC changes. The usage state itself lives in protected subscription metadata, so no message exposes it beyond these closed projections and needs no migration.
 
-Clients negotiate System 108 before offering usage tracking and never fall back to another operation. The server declares the capability but does not advertise it, and answers the six RPCs with `Unimplemented`, until the complete feature is activated. Older servers lack the capability and the RPCs. Go and TypeScript bindings are generated.
+Clients negotiate System 109 before offering usage tracking and never fall back to another operation. The server declares the capability but does not advertise it, and answers the six RPCs with `Unimplemented`, until the complete feature is activated. Older servers lack the capability and the RPCs. Go and TypeScript bindings are generated.
 
 ## Subagent display name metadata
 

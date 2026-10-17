@@ -1,5 +1,12 @@
 # DeliDev native subscriptions
 
+Grok production sign-in uses the server-owned native CLI device-code flow,
+without a Runner. Its original protected generation, permanent auth profile,
+process reconciliation and activation boundary follow the
+[current Grok CLI login contract](cmds-delidev-grok-subscription-contract.md#current-server-owned-cli-login).
+Historical direct browser/device OAuth descriptions below do not select the
+production login implementation.
+
 ## Shared account owner and execution members
 
 A managed subscription account runs independent sessions concurrently through a
@@ -997,9 +1004,9 @@ An expired or rejected token ends the execution explicitly with no API fallback,
 
 ## Server-owned Claude usage tracking
 
-System `CLAUDE_SERVER_USAGE_V1 = 108` negotiates an optional, server-owned usage connection of a `server-token` Claude account. The connection is a separate ordinary OAuth login whose credentials can only fetch usage: it is independent of the execution setup token, adds no Runner dependency, implies no identity equality with the setup token and never changes execution readiness. A device-owned Claude account, a ChatGPT account and a Grok account can never hold it.
+System `CLAUDE_SERVER_USAGE_V1 = 109` negotiates an optional, server-owned usage connection of a `server-token` Claude account. The connection is a separate ordinary OAuth login whose credentials can only fetch usage: it is independent of the execution setup token, adds no Runner dependency, implies no identity equality with the setup token and never changes execution readiness. A device-owned Claude account, a ChatGPT account and a Grok account can never hold it.
 
-**Activation status.** The protocol, domain model, parser and protected-storage primitives below are implemented, but the server does not advertise capability 108 (a single `claudeServerUsageAdvertised` switch stays false) and the six usage RPCs return `Unimplemented`. The capability is activated only together with the complete login, confirmation, refresh, cleanup and client lifecycle, so no peer can observe a partial feature and an unsupported peer keeps the existing behavior.
+**Activation status.** The protocol, domain model, parser and protected-storage primitives below are implemented, but the server does not advertise capability 109 (a single `claudeServerUsageAdvertised` switch stays false) and the six usage RPCs return `Unimplemented`. The capability is activated only together with the complete login, confirmation, refresh, cleanup and client lifecycle, so no peer can observe a partial feature and an unsupported peer keeps the existing behavior.
 
 The six typed `SubscriptionService` operations use UUID-v7 request IDs, the original Claude account revision and a server-allocated usage generation: `StartClaudeUsageLogin`, `GetClaudeUsageLoginProgress` (read-only, never relaunches or advances work), `SubmitClaudeUsageApprovalCode` (write-only code), `ConfirmClaudeUsageLink` (echoes the reviewed identity commitment), `CancelClaudeUsageLogin` and `DisconnectClaudeUsage`. Closed `ClaudeUsageLoginState` values are preparing, waiting, awaiting confirmation, linked, canceled, expired, unsupported, recovery required and failed. No response carries authentication bytes.
 

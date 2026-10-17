@@ -24,7 +24,8 @@ const (
 type SystemCapability int32
 
 const (
-	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED SystemCapability = 0
+	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED               SystemCapability = 0
+	SystemCapability_SYSTEM_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1 SystemCapability = 108
 	// Server-owned Claude setup-token login for new accounts, without a Runner Device.
 	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1 SystemCapability = 67
 	// Server-owned Claude token execution on Workers that advertise the adapter.
@@ -47,7 +48,7 @@ const (
 	// Server-owned Claude usage tracking through a separate ordinary OAuth login
 	// that only fetches usage. Declared but not advertised until the complete
 	// feature activates; unrelated to the execution setup token (capability 67/68).
-	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1            SystemCapability = 108
+	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1            SystemCapability = 109
 	SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1         SystemCapability = 90
 	SystemCapability_SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1          SystemCapability = 93
 	SystemCapability_SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1             SystemCapability = 89
@@ -139,6 +140,7 @@ const (
 var (
 	SystemCapability_name = map[int32]string{
 		0:   "SYSTEM_CAPABILITY_UNSPECIFIED",
+		108: "SYSTEM_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1",
 		67:  "SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1",
 		68:  "SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1",
 		92:  "SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1",
@@ -148,7 +150,7 @@ var (
 		105: "SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1",
 		106: "SYSTEM_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1",
 		107: "SYSTEM_CAPABILITY_WORKER_REMOVAL_V1",
-		108: "SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1",
+		109: "SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1",
 		90:  "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
 		93:  "SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1",
 		89:  "SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1",
@@ -224,6 +226,7 @@ var (
 	}
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                             0,
+		"SYSTEM_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1":               108,
 		"SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1":                  67,
 		"SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1":             68,
 		"SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1":               92,
@@ -233,7 +236,7 @@ var (
 		"SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1":                105,
 		"SYSTEM_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1":                  106,
 		"SYSTEM_CAPABILITY_WORKER_REMOVAL_V1":                       107,
-		"SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1":                  108,
+		"SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1":                  109,
 		"SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1":               90,
 		"SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1":                93,
 		"SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1":                   89,
@@ -3082,9 +3085,10 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xe2\x1f\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\x93 \n" +
 	"\x10SystemCapability\x12!\n" +
-	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12,\n" +
+	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
+	"+SYSTEM_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1\x10l\x12,\n" +
 	"(SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1\x10C\x121\n" +
 	"-SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1\x10D\x12/\n" +
 	"+SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1\x10\\\x12,\n" +
@@ -3094,7 +3098,7 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"*SYSTEM_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1\x10i\x12,\n" +
 	"(SYSTEM_CAPABILITY_CLAUDE_IMAGE_INPUTS_V1\x10j\x12'\n" +
 	"#SYSTEM_CAPABILITY_WORKER_REMOVAL_V1\x10k\x12,\n" +
-	"(SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1\x10l\x12/\n" +
+	"(SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1\x10m\x12/\n" +
 	"+SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1\x10Z\x12.\n" +
 	"*SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1\x10]\x12+\n" +
 	"'SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1\x10Y\x12,\n" +

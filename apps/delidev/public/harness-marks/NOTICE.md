@@ -2,8 +2,9 @@
 
 Source assets checked on 2026-10-07. These files are unchanged vendor bytes;
 display scaling preserves their colors, proportions and transparency. They
-identify the corresponding harness and do not imply endorsement or native
-integration support. Trademark rights remain with their respective owners.
+identify the corresponding harness in Agent Worker cards, sidebar session rows
+and the Settings AI Subscription account and service rows, and do not imply
+endorsement or native integration support. Trademark rights remain with their respective owners.
 The repository's Apache-2.0 license does not relicense these assets.
 
 ## Sources and versions

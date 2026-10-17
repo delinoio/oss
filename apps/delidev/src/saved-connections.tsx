@@ -15,6 +15,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -23,6 +24,7 @@ import {
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { object, text } from "./documents";
 import { Modal } from "./ui";
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { PersistentConnectionView } from "./connections-page";
 import {
   LocalWorkerControls,
@@ -464,6 +466,27 @@ export function SavedConnections({
         profile.revision !== edit.profile.revision,
     ),
   );
+  // Rename and Add server are semantic forms. Pointer, Enter and form submission
+  // reach one guarded callback per form that rechecks the exact disabled
+  // conditions of its primary control before allocating a request identity.
+  const renameFormId = useId();
+  const pairFormId = useId();
+  const renameBlocked = Boolean(
+    busy ||
+    !edit ||
+    (!edit.requestId && staleEdit) ||
+    !edit.name.trim() ||
+    new TextEncoder().encode(edit.name).byteLength > 256,
+  );
+  const pairBlocked = Boolean(busy || edit || removal || (!attempt && !valid));
+  const submitRename = () => {
+    if (renameBlocked) return;
+    void rename();
+  };
+  const submitPair = () => {
+    if (pairBlocked) return;
+    void pair();
+  };
   const content = (
     <section
       className={target ? "connections-saved" : undefined}
@@ -678,51 +701,58 @@ export function SavedConnections({
                 components={{ s0: <>{edit.profile.name}</> }}
               />
             </h3>
-            <label>
-              {copy("saved-connections.newConnectionName_7e3c81")}
-              <input
-                autoFocus
-                value={edit.name}
-                maxLength={256}
-                disabled={busy || Boolean(edit.requestId)}
-                onChange={(event) =>
-                  setEdit({ ...edit, name: event.target.value })
-                }
-              />
-            </label>
-            {staleEdit ? (
-              <p role="alert">
-                {copy(
-                  "saved-connections.thisConnectionChangedWhileYouWere_67bff4",
-                )}
-              </p>
-            ) : null}
-            <SettingsActionButton
-              icon={SettingsActionIcon.Retry}
-              disabled={
-                busy ||
-                (!edit.requestId && staleEdit) ||
-                !edit.name.trim() ||
-                new TextEncoder().encode(edit.name).byteLength > 256
-              }
-              onClick={() => void rename()}
+            <form
+              id={renameFormId}
+              noValidate
+              onKeyDown={guardEnterSubmission}
+              onSubmit={(event) => {
+                if (consumeFormSubmit(event)) submitRename();
+              }}
             >
-              {edit.requestId
-                ? copy("saved-connections.retryOriginalNameEdit_0efce4")
-                : copy("saved-connections.saveConnectionName_63f298")}
-            </SettingsActionButton>
-            <SettingsActionButton
-              icon={SettingsActionIcon.Cancel}
-              disabled={busy}
-              onClick={() => setEdit(undefined)}
-            >
-              {copy("saved-connections.discardNameEdit_ac773a")}
-            </SettingsActionButton>
-            {edit.requestId ? (
-              <p>
-                {copy("saved-connections.theOriginalNameEditMayAlready_1ba462")}
-              </p>
-            ) : null}
+              <label>
+                {copy("saved-connections.newConnectionName_7e3c81")}
+                <input
+                  autoFocus
+                  value={edit.name}
+                  maxLength={256}
+                  disabled={busy || Boolean(edit.requestId)}
+                  onChange={(event) =>
+                    setEdit({ ...edit, name: event.target.value })
+                  }
+                />
+              </label>
+              {staleEdit ? (
+                <p role="alert">
+                  {copy(
+                    "saved-connections.thisConnectionChangedWhileYouWere_67bff4",
+                  )}
+                </p>
+              ) : null}
+              <SettingsActionButton
+                icon={SettingsActionIcon.Retry}
+                type="submit"
+                disabled={renameBlocked}
+              >
+                {edit.requestId
+                  ? copy("saved-connections.retryOriginalNameEdit_0efce4")
+                  : copy("saved-connections.saveConnectionName_63f298")}
+              </SettingsActionButton>
+              <SettingsActionButton
+                icon={SettingsActionIcon.Cancel}
+                type="button"
+                disabled={busy}
+                onClick={() => setEdit(undefined)}
+              >
+                {copy("saved-connections.discardNameEdit_ac773a")}
+              </SettingsActionButton>
+              {edit.requestId ? (
+                <p>
+                  {copy(
+                    "saved-connections.theOriginalNameEditMayAlready_1ba462",
+                  )}
+                </p>
+              ) : null}
+            </form>
           </section>
         </SavedConnectionTask>
       ) : null}
@@ -800,68 +830,77 @@ export function SavedConnections({
           <p>
             {copy("saved-connections.obtainAShortLivedClientPairing_e08e27")}
           </p>
-          <label>
-            {copy("saved-connections.connectionName_686d4d")}
-            <input
-              value={name}
-              maxLength={256}
-              disabled={busy || Boolean(attempt)}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-          <label>
-            {copy("saved-connections.privateClientPairingDocument_9a8297")}
-            <input
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              value={grant}
-              maxLength={32768}
-              disabled={busy || Boolean(attempt)}
-              onChange={(event) => setGrant(event.target.value)}
-            />
-          </label>
-          {text(preview.endpoint) ? (
-            <p>
-              <LocalizedText
-                id="saved-connections.pairingEndpoint_5b2ef5"
-                components={{ s0: <>{text(preview.endpoint)}</> }}
-              />
-            </p>
-          ) : null}
-          {text(preview.server_id) ? (
-            <p>
-              <LocalizedText
-                id="saved-connections.expectedServer_4ed0bf"
-                components={{
-                  s0: (
-                    <>
-                      {productLabel(
-                        PresentationKind.Server,
-                        text(preview.server_id),
-                      )}
-                    </>
-                  ),
-                }}
-              />
-            </p>
-          ) : null}
-          <SettingsActionButton
-            icon={SettingsActionIcon.Retry}
-            disabled={busy || Boolean(edit || removal) || (!attempt && !valid)}
-            onClick={() => void pair()}
+          <form
+            id={pairFormId}
+            noValidate
+            onKeyDown={guardEnterSubmission}
+            onSubmit={(event) => {
+              if (consumeFormSubmit(event)) submitPair();
+            }}
           >
-            {attempt
-              ? copy("saved-connections.retryOriginalServerPairing_f5aad2")
-              : copy("saved-connections.pairThisServer_bbbfaf")}
-          </SettingsActionButton>
-          {attempt ? (
-            <p>
-              {copy(
-                "saved-connections.theOriginalRequestIsRetainedWhile_5fac3d",
-              )}
-            </p>
-          ) : null}
+            <label>
+              {copy("saved-connections.connectionName_686d4d")}
+              <input
+                value={name}
+                maxLength={256}
+                disabled={busy || Boolean(attempt)}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </label>
+            <label>
+              {copy("saved-connections.privateClientPairingDocument_9a8297")}
+              <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={grant}
+                maxLength={32768}
+                disabled={busy || Boolean(attempt)}
+                onChange={(event) => setGrant(event.target.value)}
+              />
+            </label>
+            {text(preview.endpoint) ? (
+              <p>
+                <LocalizedText
+                  id="saved-connections.pairingEndpoint_5b2ef5"
+                  components={{ s0: <>{text(preview.endpoint)}</> }}
+                />
+              </p>
+            ) : null}
+            {text(preview.server_id) ? (
+              <p>
+                <LocalizedText
+                  id="saved-connections.expectedServer_4ed0bf"
+                  components={{
+                    s0: (
+                      <>
+                        {productLabel(
+                          PresentationKind.Server,
+                          text(preview.server_id),
+                        )}
+                      </>
+                    ),
+                  }}
+                />
+              </p>
+            ) : null}
+            <SettingsActionButton
+              icon={SettingsActionIcon.Retry}
+              type="submit"
+              disabled={pairBlocked}
+            >
+              {attempt
+                ? copy("saved-connections.retryOriginalServerPairing_f5aad2")
+                : copy("saved-connections.pairThisServer_bbbfaf")}
+            </SettingsActionButton>
+            {attempt ? (
+              <p>
+                {copy(
+                  "saved-connections.theOriginalRequestIsRetainedWhile_5fac3d",
+                )}
+              </p>
+            ) : null}
+          </form>
         </section>
       </SavedConnectionTask>
       <div ref={setHistoryTarget} />

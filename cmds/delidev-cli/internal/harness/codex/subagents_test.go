@@ -22,6 +22,9 @@ func openSubagentFixture(t *testing.T, mode string) (*Client, string) {
 	if nicknames := os.Getenv("DELIDEV_CODEX_NICKNAME_FILE"); nicknames != "" {
 		config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_NICKNAME_FILE="+nicknames)
 	}
+	if visibility := os.Getenv("DELIDEV_CODEX_SUBAGENT_VISIBILITY_FILE"); visibility != "" {
+		config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_SUBAGENT_VISIBILITY_FILE="+visibility)
+	}
 	// This fixture performs several independent history round trips under the
 	// race detector. Its lifetime must include all reads and explicit cleanup.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -79,6 +82,15 @@ func (f *threadFixture) handleSubagentRead(id json.RawMessage, method string, ra
 				} else {
 					delete(child, "agentNickname")
 				}
+			}
+		}
+		if path := os.Getenv("DELIDEV_CODEX_SUBAGENT_VISIBILITY_FILE"); path != "" {
+			if data, err := os.ReadFile(path); err == nil && string(data) == "hide-once" {
+				if os.WriteFile(path, []byte("visible"), 0600) != nil {
+					os.Exit(76)
+				}
+				write(id, map[string]any{"data": []any{}, "nextCursor": nil, "backwardsCursor": nil})
+				return true
 			}
 		}
 		write(id, map[string]any{"data": f.subagents, "nextCursor": nil, "backwardsCursor": nil})
@@ -364,5 +376,49 @@ func TestCompletedChildQuestionsRetainPrivateAndStrictBoundaries(t *testing.T) {
 	event, err := observeFixture(c, "item/completed", map[string]any{"threadId": domain.NewID(), "turnId": turn, "item": map[string]any{"type": "agentMessage", "id": "foreign-message", "text": "Foreign output", "phase": "final_answer", "delivery": nil, "questions": nil}})
 	if event.Kind == SubagentEvent || c.subagents[string(child)].Output != nil || c.execution.active != turn {
 		t.Fatal("foreign message acquired child or root authority", err)
+	}
+}
+
+func TestSubagentObservedStatusWaitsForSuccessfulInventoryVisibility(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "visibility")
+	if err := os.WriteFile(path, []byte("visible"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DELIDEV_CODEX_SUBAGENT_VISIBILITY_FILE", path)
+	c, capture := openSubagentFixture(t, "thread-subagent-read")
+	if _, err := c.StartThread(context.Background(), domain.NewID(), threadSettings(t)); err != nil {
+		t.Fatal(err)
+	}
+	turn := domain.NewID()
+	c.execution.active = turn
+	c.execution.turns[turn] = trackedTurn{Turn: Turn{ID: turn, Status: TurnRunning}}
+	first, err := c.InspectDescendants(context.Background())
+	if err != nil || len(first.Subagents) != 2 {
+		t.Fatal("initial ancestry unavailable", err)
+	}
+	child := domain.ID(first.Subagents[0].NativeID)
+	c.subagents = nil
+	if _, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": child, "status": ThreadStatus{Type: ThreadIdle}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("hide-once"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := c.InspectDescendants(context.Background())
+	if err != nil || len(result.Subagents) != 2 || len(c.pendingChildStatuses) != 0 {
+		t.Fatal("successful delayed inventory lost original child fence", err)
+	}
+	lists := 0
+	for _, call := range capturedThreads(t, capture) {
+		switch call["method"] {
+		case "thread/list":
+			lists++
+		case "thread/start", "thread/turns/list":
+		default:
+			t.Fatal("visibility inspection gained child control")
+		}
+	}
+	if lists != 3 {
+		t.Fatal("successful missing snapshot did not perform exactly one new inventory read", lists)
 	}
 }

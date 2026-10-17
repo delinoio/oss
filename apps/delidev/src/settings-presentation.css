@@ -192,6 +192,15 @@
   margin-inline: 0;
   container-type: inline-size;
 }
+/* The encrypted Worker-network import form only adds submit semantics around
+   controls that already spanned the section, so it keeps the section width
+   instead of the 720px task-form cap above (and in settings-task.css). */
+.settings-content[aria-label]
+  .settings-content-column
+  form.worker-network-import,
+.settings-task-body form.worker-network-import {
+  max-width: none;
+}
 .settings-content[aria-label]
   .settings-content-column
   :is(

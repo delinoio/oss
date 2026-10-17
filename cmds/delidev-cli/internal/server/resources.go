@@ -635,7 +635,6 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 	}
 	if !replayed {
 		var keyless, subscriptionOwner bool
-		var subscriptionService domain.SubscriptionService
 		var legacyOperation domain.ID
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := tx.Authorize(); err != nil {
@@ -652,7 +651,6 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 			}
 			keyless, err = accountWithoutCredentials(tx, account)
 			subscriptionOwner = account.Type == domain.SubscriptionAccount
-			subscriptionService = account.SubscriptionService
 			if account.Subscription != nil && account.Subscription.ServerOperation != nil {
 				legacyOperation = account.Subscription.ServerOperation.ID
 			}
@@ -687,7 +685,7 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 						return protectedAccountDeletion
 					}
 				}
-				if err := s.removeAccountCredentials(ctx, domain.ID(id), legacyOperation, subscriptionService != domain.SubscriptionGrok); err != nil {
+				if err := s.removeAccountCredentials(ctx, domain.ID(id), legacyOperation, true); err != nil {
 					return credentialRemovalFailure{err}
 				}
 			} else if len(refs) != 0 {

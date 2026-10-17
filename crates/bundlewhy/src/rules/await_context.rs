@@ -14,8 +14,8 @@
 //! ordinary call.
 
 use super::common::{
-    AwaitWord, arrow_body_ends, brace_holds_members, class_heading_precedes, is_identifier_part,
-    is_line_terminator,
+    AwaitWord, HeritageCache, arrow_body_ends, brace_holds_members, class_heading_precedes,
+    is_identifier_part, is_line_terminator,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -58,6 +58,12 @@ enum FrameKind {
     Group,
     /// A concise arrow function body, which ends without a closing token.
     ArrowBody { ternaries: usize },
+    /// The initializer of a class field (`field = value`), which is evaluated
+    /// as the body of a separate non-async function and so does not inherit
+    /// the `async` state of the function around the class. It ends at `;`, at
+    /// a line break that ends the statement, or at the closing brace of the
+    /// class body, without a closing token of its own.
+    FieldInit,
 }
 
 #[derive(Clone, Copy)]
@@ -66,6 +72,9 @@ struct Frame {
     is_async: bool,
     /// Index of the opening token, when the frame has one.
     opener: Option<usize>,
+    /// True for the brace pair of a class body, where a top-level `=` starts a
+    /// field initializer.
+    class_body: bool,
 }
 
 struct Scan<'a> {
@@ -74,6 +83,8 @@ struct Scan<'a> {
     tokens: Vec<Token>,
     /// For every closing token, the index of its opening token.
     matching_open: Vec<Option<usize>>,
+    /// Heritage-expression decisions shared by every class-heading query.
+    heritage: HeritageCache,
 }
 
 /// Byte offsets of every `await` that is the unary operator and is followed by
@@ -82,7 +93,8 @@ struct Scan<'a> {
 /// `await(` is an operator in a module (the chunk has an `import` or `export`
 /// declaration or `import.meta`) and inside the body of an `async` function,
 /// `async` arrow or `async` method. A plain function nested in an async
-/// function, a classic script and text that only resembles those constructs
+/// function, the initializer of a class field (a separate non-async function),
+/// a classic script and text that only resembles those constructs
 /// leave `await(` as an ordinary call.
 pub(super) fn await_operator_offsets(code: &str, ignored: &[(usize, usize)]) -> Vec<usize> {
     if !code.contains("await") {
@@ -93,6 +105,7 @@ pub(super) fn await_operator_offsets(code: &str, ignored: &[(usize, usize)]) -> 
         ignored,
         tokens: tokenize(code, ignored),
         matching_open: Vec::new(),
+        heritage: HeritageCache::default(),
     };
     scan.matching_open = vec![None; scan.tokens.len()];
     scan.classify()
@@ -266,7 +279,12 @@ impl Scan<'_> {
     fn encloses_members(&self, enclosing: Option<usize>) -> bool {
         enclosing.is_some_and(|open| {
             self.tokens[open].kind == Kind::Punct(b'{')
-                && brace_holds_members(self.code, self.tokens[open].start, self.ignored)
+                && brace_holds_members(
+                    self.code,
+                    self.tokens[open].start,
+                    self.ignored,
+                    &self.heritage,
+                )
         })
     }
 
@@ -316,7 +334,12 @@ impl Scan<'_> {
                     return None;
                 }
                 // `class A extends mix(B) {` heads a class body.
-                if class_heading_precedes(self.code, self.tokens[previous].end, self.ignored) {
+                if class_heading_precedes(
+                    self.code,
+                    self.tokens[previous].end,
+                    self.ignored,
+                    &self.heritage,
+                ) {
                     return None;
                 }
                 // `function name() {}` and `function* name() {}`.
@@ -336,6 +359,23 @@ impl Scan<'_> {
             }
             _ => None,
         }
+    }
+
+    /// The `function` keyword whose parameter list opens at `open`, for
+    /// `function (`, `function name (`, `function* (` and `function* name (`.
+    /// A property named `function` (`obj.function(`) is not a keyword.
+    fn function_keyword_before_params(&self, open: usize) -> Option<usize> {
+        let mut head = open.checked_sub(1)?;
+        if self.is_word(head, "function") {
+            return Some(head);
+        }
+        if self.tokens[head].kind == Kind::Word && !self.is_member(head) {
+            head = head.checked_sub(1)?;
+        }
+        if self.is_punct(head, b'*') {
+            head = head.checked_sub(1)?;
+        }
+        self.is_word(head, "function").then_some(head)
     }
 
     /// True when the line break before the token at `index` ends the
@@ -364,8 +404,12 @@ impl Scan<'_> {
             kind: FrameKind::Group,
             is_async: false,
             opener: None,
+            class_body: false,
         }];
         let is_module = (0..self.tokens.len()).any(|index| self.declares_module(index));
+        // A class body needs the `class` keyword, so a chunk without it skips
+        // the backward heading scan.
+        let has_class_word = self.code.contains("class");
         let mut sites: Vec<(usize, bool)> = Vec::new();
         for index in 0..self.tokens.len() {
             let token = self.tokens[index];
@@ -378,11 +422,24 @@ impl Scan<'_> {
                 AwaitWord::Identifier
             };
             if self.line_break_ends_statement(index, await_word) {
-                pop_arrow_bodies(&mut frames);
+                pop_implicit_frames(&mut frames);
             }
             let enclosing_async = frames.last().is_some_and(|frame| frame.is_async);
             match token.kind {
-                Kind::Punct(b';' | b',') => pop_arrow_bodies(&mut frames),
+                Kind::Punct(b';') => pop_implicit_frames(&mut frames),
+                Kind::Punct(b',') => pop_arrow_bodies(&mut frames),
+                // The `=` directly inside a class body separates a field name
+                // from its initializer; every other `=` sits in a nested
+                // frame (a computed key, a parameter list, a field
+                // initializer).
+                Kind::Punct(b'=') if frames.last().is_some_and(|frame| frame.class_body) => {
+                    frames.push(Frame {
+                        kind: FrameKind::FieldInit,
+                        is_async: false,
+                        opener: frames.last().and_then(|frame| frame.opener),
+                        class_body: false,
+                    });
+                }
                 Kind::Punct(b'?') => {
                     if let Some(Frame {
                         kind: FrameKind::ArrowBody { ternaries },
@@ -407,20 +464,42 @@ impl Scan<'_> {
                         frames.pop();
                     }
                 }
-                Kind::Punct(b'(' | b'[') => frames.push(Frame {
-                    kind: FrameKind::Group,
-                    is_async: enclosing_async,
-                    opener: Some(index),
-                }),
-                Kind::Punct(b'{') => {
-                    let enclosing = frames.last().and_then(|frame| frame.opener);
-                    let is_async = self
-                        .function_body(index, enclosing)
-                        .unwrap_or(enclosing_async);
+                Kind::Punct(b'(' | b'[') => {
+                    // The parameter list of a plain `function` is not an
+                    // async context, even inside an async function, so
+                    // `await(` in a default initializer is a call.
+                    let is_async = if token.kind == Kind::Punct(b'(') {
+                        self.function_keyword_before_params(index)
+                            .map_or(enclosing_async, |function| self.async_before(function))
+                    } else {
+                        enclosing_async
+                    };
                     frames.push(Frame {
                         kind: FrameKind::Group,
                         is_async,
                         opener: Some(index),
+                        class_body: false,
+                    });
+                }
+                Kind::Punct(b'{') => {
+                    let enclosing = frames.last().and_then(|frame| frame.opener);
+                    let function = self.function_body(index, enclosing);
+                    let is_async = function.unwrap_or(enclosing_async);
+                    // A brace that follows a class heading is a class body, but
+                    // `static {` is a static block and its `{` is not.
+                    let class_body = function.is_none()
+                        && has_class_word
+                        && class_heading_precedes(
+                            self.code,
+                            token.start,
+                            self.ignored,
+                            &self.heritage,
+                        );
+                    frames.push(Frame {
+                        kind: FrameKind::Group,
+                        is_async,
+                        opener: Some(index),
+                        class_body,
                     });
                 }
                 Kind::Punct(b')' | b']' | b'}') => self.close_group(&mut frames, index),
@@ -428,6 +507,7 @@ impl Scan<'_> {
                     kind: FrameKind::ArrowBody { ternaries: 0 },
                     is_async: self.arrow_is_async(index),
                     opener: None,
+                    class_body: false,
                 }),
                 // Template text pieces: `}...` closes a substitution and
                 // `...${` opens one.
@@ -442,6 +522,7 @@ impl Scan<'_> {
                             kind: FrameKind::Group,
                             is_async: enclosing_async,
                             opener: None,
+                            class_body: false,
                         });
                     }
                 }
@@ -459,7 +540,7 @@ impl Scan<'_> {
     }
 
     fn close_group(&mut self, frames: &mut Vec<Frame>, index: usize) {
-        pop_arrow_bodies(frames);
+        pop_implicit_frames(frames);
         if frames.len() > 1
             && let Some(frame) = frames.pop()
         {
@@ -496,6 +577,19 @@ fn pop_arrow_bodies(frames: &mut Vec<Frame>) {
         .last()
         .is_some_and(|frame| matches!(frame.kind, FrameKind::ArrowBody { .. }))
     {
+        frames.pop();
+    }
+}
+
+/// Pops the frames that end without a closing token of their own: concise
+/// arrow bodies and class field initializers.
+fn pop_implicit_frames(frames: &mut Vec<Frame>) {
+    while frames.last().is_some_and(|frame| {
+        matches!(
+            frame.kind,
+            FrameKind::ArrowBody { .. } | FrameKind::FieldInit
+        )
+    }) {
         frames.pop();
     }
 }

@@ -15,7 +15,7 @@ use std::{
     os::windows::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
     ptr,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock, PoisonError, RwLock, RwLockReadGuard},
 };
 
 use ntapi::ntioapi::*;
@@ -89,6 +89,23 @@ impl Drop for Guard {
 struct OpenFile {
     translation: Translation,
     listing: Mutex<Option<directory::Listing>>,
+    /// Whether the native file object is associated with an I/O completion
+    /// port, as set by `FileCompletionInformation` or changed/removed by
+    /// `FileReplaceCompletionInformation`. Duplicated handles share this state
+    /// because they share the `Arc<OpenFile>`, as they share the native file
+    /// object. An association request holds the write lock across the native
+    /// call and the state update, and a merged directory query holds the read
+    /// lock for its whole emulation, so a query never observes a half-applied
+    /// association.
+    completion_port: RwLock<bool>,
+}
+impl OpenFile {
+    fn completion_port(&self) -> RwLockReadGuard<'_, bool> {
+        // The guarded value is a plain flag, so a poisoned lock is still valid.
+        self.completion_port
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
 }
 struct Runtime {
     view: View,
@@ -155,6 +172,7 @@ fn track(handle: HANDLE, translation: Translation) {
                 Arc::new(OpenFile {
                     translation,
                     listing: Mutex::new(None),
+                    completion_port: RwLock::new(false),
                 }),
             );
         }
@@ -411,9 +429,51 @@ hook!(WRITE, ntapi::ntioapi::NtWriteFile, c"NtWriteFile", (file: HANDLE, event: 
     if !writable(file) { return DENIED; }
     (WRITE.real())(file,event,apc,context,ios,buffer,length,offset,key)
 });
+/// Returns whether a successful completion-port request leaves the file object
+/// associated. `FileCompletionInformation` always associates a port.
+/// `FileReplaceCompletionInformation` (Windows 8.1+) changes the port, or
+/// removes the association when `FILE_COMPLETION_INFORMATION::Port` is null.
+/// Returns `None` when the replacement payload cannot be read.
+///
+/// The caller's buffer is not validated yet: the native call has not run, so
+/// an unreadable non-null pointer must produce the native failure instead of
+/// a fault in this process. The payload is therefore copied with
+/// `ReadProcessMemory` on the current process, which reports an unreadable
+/// range as an error instead of raising an access violation.
+unsafe fn completion_port_request(
+    class: FILE_INFORMATION_CLASS,
+    buffer: PVOID,
+    length: ULONG,
+) -> Option<bool> {
+    if class == FileCompletionInformation {
+        return Some(true);
+    }
+    if buffer.is_null() || (length as usize) < std::mem::size_of::<FILE_COMPLETION_INFORMATION>() {
+        return None;
+    }
+    let size = std::mem::size_of::<FILE_COMPLETION_INFORMATION>();
+    let mut request = std::mem::MaybeUninit::<FILE_COMPLETION_INFORMATION>::uninit();
+    let mut copied = 0;
+    let read = winapi::um::memoryapi::ReadProcessMemory(
+        winapi::um::processthreadsapi::GetCurrentProcess(),
+        buffer,
+        request.as_mut_ptr().cast(),
+        size,
+        &mut copied,
+    );
+    if read == 0 || copied != size {
+        tracing::debug!(
+            action = "windows_completion_port_payload_unreadable",
+            class,
+            "Could not read the completion port replacement payload before the native call"
+        );
+        return None;
+    }
+    Some(!request.assume_init().Port.is_null())
+}
 hook!(SET_INFO, ntapi::ntioapi::NtSetInformationFile, c"NtSetInformationFile", (file: HANDLE, ios: PIO_STATUS_BLOCK, buffer: PVOID, length: ULONG, class: FILE_INFORMATION_CLASS) -> NTSTATUS, {
     let Some(_guard) = Guard::enter() else { return (SET_INFO.real())(file,ios,buffer,length,class); };
-    if !writable(file) && !matches!(class, FilePositionInformation | FileCompletionInformation | FileIoPriorityHintInformation | FileIoCompletionNotificationInformation) { return DENIED; }
+    if !writable(file) && !matches!(class, FilePositionInformation | FileCompletionInformation | FileReplaceCompletionInformation | FileIoPriorityHintInformation | FileIoCompletionNotificationInformation) { return DENIED; }
     // Rename and link destinations can target a virtual dependency even when
     // their source is native. Deny unsupported layouts before the syscall.
     if matches!(class, FileRenameInformation | FileRenameInformationEx | FileRenameInformationBypassAccessCheck | FileRenameInformationExBypassAccessCheck | FileLinkInformation | FileLinkInformationEx | FileLinkInformationBypassAccessCheck | FileLinkInformationExBypassAccessCheck) {
@@ -434,6 +494,30 @@ hook!(SET_INFO, ntapi::ntioapi::NtSetInformationFile, c"NtSetInformationFile", (
             if !target.is_absolute() { return INVALID; }
             if let Err(status) = translate(&target, true) { return status; }
         } else { match object_path(&mut attrs) { Ok(Some(path)) => if let Err(status) = translate(&path, true) { return status; }, _ => return UNSUPPORTED } }
+    }
+    if matches!(class, FileCompletionInformation | FileReplaceCompletionInformation) {
+        if let Some(owned) = handle(file) {
+            // Serialize the native association request and the recorded state
+            // against merged directory queries on this file object. The
+            // requested state is read before the call; it is recorded only if
+            // the native request succeeds so a rejected request never changes
+            // directory query behavior.
+            let requested = completion_port_request(class, buffer, length);
+            let mut associated = owned.completion_port.write().unwrap_or_else(PoisonError::into_inner);
+            let status = (SET_INFO.real())(file,ios,buffer,length,class);
+            if status >= 0 {
+                // An unreadable replacement request cannot succeed natively;
+                // fail closed by treating the object as associated.
+                *associated = requested.unwrap_or(true);
+                tracing::debug!(
+                    action = "windows_completion_port_recorded",
+                    class,
+                    associated = *associated,
+                    "Recorded an I/O completion port association change on a managed handle"
+                );
+            }
+            return status;
+        }
     }
     (SET_INFO.real())(file,ios,buffer,length,class)
 });

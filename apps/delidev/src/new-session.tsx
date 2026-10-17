@@ -66,7 +66,10 @@ import {
   text,
   Workspace,
 } from "./documents";
-import { ResourceChoice } from "./configuration-fields";
+import {
+  ResourceChoice,
+  ResourceChoicePresentation,
+} from "./configuration-fields";
 import { SettingsEntryDestination } from "./settings";
 import { StartingBranches } from "./starting-branches";
 import { StartingReferences } from "./schedules";
@@ -135,6 +138,7 @@ export function NewSession({
   preferenceScope,
   back,
   openSettings,
+  newProject,
   open,
   created,
 }: {
@@ -149,6 +153,8 @@ export function NewSession({
   preferenceScope?: CreationPreferenceScope;
   back: () => void;
   openSettings: (destination?: SettingsEntryDestination) => void;
+  /** Opens the shell-owned project creation dialog without leaving this page. */
+  newProject?: () => void;
   open: (id: string) => void;
   created: (session: Resource) => void;
 }) {
@@ -1104,6 +1110,16 @@ export function NewSession({
             showStatus
             disabled={blocked}
             change={projectChanged}
+            presentation={ResourceChoicePresentation.Inline}
+            emptyLabel={copy("new-session.projectGeneralChat")}
+            inlineAction={
+              newProject
+                ? {
+                    label: copy("new-session.newProject"),
+                    invoke: newProject,
+                  }
+                : undefined
+            }
           />
         ) : null}
         {!generalChat && !project ? (
@@ -1264,6 +1280,14 @@ export function NewSession({
                         resolvedChoice={agentChoice}
                         change={editAgent}
                         emptyInventoryActionPending={agentRestorationPending}
+                        createAction={{
+                          label: copy("new-session.newAgentWorkerAction"),
+                          name: copy("new-session.newAgentWorkerActionName"),
+                          invoke: () =>
+                            openSettings(
+                              SettingsEntryDestination.NewAgentWorker,
+                            ),
+                        }}
                         emptyInventoryAction={{
                           label: copy("new-session.createAgentWorker"),
                           invoke: () =>

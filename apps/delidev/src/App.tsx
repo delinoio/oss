@@ -1350,6 +1350,7 @@ function Shell({
                               void sessions.refetch();
                             }}
                             openSettings={openSettings}
+                            newProject={openNewProject}
                             open={open}
                             created={sessionCreated}
                           />

@@ -1,0 +1,111 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.inline-choice {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+.inline-choice-heading {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.inline-choice-heading > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.inline-choice-action {
+  display: grid;
+  flex: 0 0 34px;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-radius: 9px;
+  color: var(--text);
+}
+.inline-choice-action svg {
+  width: 16px;
+  height: 16px;
+}
+.inline-choice-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+/* Five 44px rows; the owner replaces this with the measured height of the
+   first five rendered rows so wrapped names are never clipped. */
+.inline-choice-viewport {
+  position: relative;
+  max-height: calc(5 * 44px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* Five rows or fewer never scroll, even when a wrapped row exceeds 44px. */
+.inline-choice-viewport[data-short] {
+  max-height: none;
+}
+.inline-choice [role="option"] {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.inline-choice [role="option"]:hover {
+  background: var(--border-subtle);
+}
+.inline-choice [role="option"][aria-selected="true"] {
+  background: var(--selected-background);
+  color: var(--selected-text);
+}
+.inline-choice [role="option"][aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.6;
+}
+.inline-choice [role="option"]:focus-visible {
+  /* Inset ring keeps the keyboard cue inside the clipped panel. */
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.inline-choice-icon {
+  display: block;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+}
+.inline-choice-icon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+.inline-choice-label {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.4;
+}
+/* Reserved even when empty so selecting a row never reflows its label. */
+.inline-choice-check {
+  display: block;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+}
+.inline-choice-check svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.inline-choice-viewport .sidebar-continuation {
+  padding: 8px 12px;
+}

@@ -54,6 +54,7 @@ message GetStatusResponse {
 
 enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
+  SYSTEM_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1 = 108;
   // Server-owned Claude setup-token login for new accounts, without a Runner Device.
   SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1 = 67;
   // Server-owned Claude token execution on Workers that advertise the adapter.
@@ -76,7 +77,7 @@ enum SystemCapability {
   // Server-owned Claude usage tracking through a separate ordinary OAuth login
   // that only fetches usage. Declared but not advertised until the complete
   // feature activates; unrelated to the execution setup token (capability 67/68).
-  SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1 = 108;
+  SYSTEM_CAPABILITY_CLAUDE_SERVER_USAGE_V1 = 109;
   SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1 = 90;
   SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1 = 93;
   SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1 = 89;

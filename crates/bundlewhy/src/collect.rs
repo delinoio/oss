@@ -54,12 +54,17 @@ pub struct Collection {
 }
 
 /// Exact module ids of the helpers that the Vite build itself injects (Vite's
-/// `\0vite/preload-helper.js`, Rolldown's `\0rolldown/runtime.js`). Plugin
-/// virtual module ids are user-controlled, so a namespace prefix such as
-/// `\0vite/` or `\0rolldown/` proves nothing: only these verified ids are
-/// bundler-owned. Every other virtual module, including `\0virtual:*` and
-/// look-alike ids in these namespaces, keeps its source-map requirement.
-const VITE_OWNED_VIRTUAL_IDS: [&str; 2] = ["\0vite/preload-helper.js", "\0rolldown/runtime.js"];
+/// `\0vite/preload-helper.js` and `\0vite/modulepreload-polyfill.js`,
+/// Rolldown's `\0rolldown/runtime.js`). Plugin virtual module ids are
+/// user-controlled, so a namespace prefix such as `\0vite/` or `\0rolldown/`
+/// proves nothing: only these verified ids are bundler-owned. Every other
+/// virtual module, including `\0virtual:*` and look-alike ids in these
+/// namespaces, keeps its source-map requirement.
+const VITE_OWNED_VIRTUAL_IDS: [&str; 3] = [
+    "\0vite/preload-helper.js",
+    "\0vite/modulepreload-polyfill.js",
+    "\0rolldown/runtime.js",
+];
 
 impl Collection {
     /// Decodes the `bundler` field into the supported bundler. An unknown or
@@ -68,23 +73,23 @@ impl Collection {
         BundlerChoice::from_str(&self.bundler, false).ok()
     }
 
-    /// True when this is a Vite collection and the emitted chunk `file` lists
-    /// at least one module and every listed module is a Vite-owned virtual
+    /// True when this is a Vite collection and the collected `chunk` lists at
+    /// least one module and every listed module is a Vite-owned virtual
     /// helper with no source file. Such a chunk has no original source a map
     /// could attribute, so a missing map cannot hide a source-backed
     /// candidate. Only Vite collections qualify: Rspack and unsupported
-    /// bundlers never treat a `\0vite/preload-helper.js` or
-    /// `\0rolldown/runtime.js` id as bundler-owned and keep the map
-    /// requirement for every chunk. Unknown ids, ids outside the
-    /// verified helper table, modules with a file path and chunks with no
-    /// listed modules are all treated as source-backed.
-    pub fn is_virtual_only_chunk(&self, file: &str) -> bool {
+    /// bundlers never treat a `\0vite/preload-helper.js`,
+    /// `\0vite/modulepreload-polyfill.js` or `\0rolldown/runtime.js` id as
+    /// bundler-owned and keep the map requirement for every chunk. Unknown ids,
+    /// ids outside the verified helper table, modules with a file path and
+    /// chunks with no listed modules are all treated as source-backed.
+    ///
+    /// The caller passes the chunk's own metadata, so classifying many chunks
+    /// never searches `self.chunks` by file name.
+    pub fn is_virtual_only_collected_chunk(&self, chunk: &CollectedChunk) -> bool {
         if self.bundler_choice() != Some(BundlerChoice::Vite) {
             return false;
         }
-        let Some(chunk) = self.chunks.iter().find(|chunk| chunk.file == file) else {
-            return false;
-        };
         !chunk.modules.is_empty()
             && chunk.modules.iter().all(|id| {
                 VITE_OWNED_VIRTUAL_IDS.contains(&id.as_str())
@@ -259,10 +264,13 @@ pub struct CollectedChunk {
     /// is different from a chunk that imports nothing (`Some` of an empty
     /// list).
     pub imports: Option<Vec<String>>,
-    /// The entries of `imports` that name an external module. `imports` mixes
-    /// emitted chunk files with external specifiers, and an external can share
-    /// its name with an emitted chunk, so an entry listed here is not a trusted
-    /// chunk edge. `None` when the adapter did not collect it.
+    /// The entries of `imports` that name an external module, or may name one.
+    /// `imports` mixes emitted chunk files with external specifiers, and an
+    /// external can share its name with an emitted chunk, so an entry listed
+    /// here is not a trusted chunk edge. When the build renders externals with
+    /// a function-valued `output.paths`, the adapter cannot recover the
+    /// rendered names and lists every `imports` entry. `None` when the adapter
+    /// did not collect it.
     pub external_imports: Option<Vec<String>>,
     /// Chunk files this chunk requests with a dynamic `import()`
     /// (`OutputChunk.dynamicImports`). `None` when the adapter did not collect

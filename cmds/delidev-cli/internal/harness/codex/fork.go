@@ -198,7 +198,11 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 					return nil, unsupportedFork()
 				}
 				seen["item:"+identity.ID] = true
-				if identity.Type == "dynamicToolCall" {
+				if identity.Type == "mcpToolCall" || identity.Type == "webSearch" {
+					if c.sidechat != "" || !settledExternalTool(item, identity.Type) {
+						return nil, unsupportedFork()
+					}
+				} else if identity.Type == "dynamicToolCall" {
 					if c.sidechat != "" {
 						return nil, unsupportedFork()
 					}
@@ -496,6 +500,9 @@ func settledForkTool(raw json.RawMessage, kind string) bool {
 }
 
 func managedForkItem(raw json.RawMessage, kind string) bool {
+	if kind == "mcpToolCall" || kind == "webSearch" {
+		return settledExternalTool(raw, kind)
+	}
 	if kind == "dynamicToolCall" {
 		_, _, err := decodeDynamicTool(raw, true)
 		return err == nil

@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-import { createRef, useState } from "react";
+import {
+  createRef,
+  StrictMode,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -224,4 +230,44 @@ it("renders Info technical groups as flat headings without hiding mounted conten
   expect(screen.getByRole("heading", { name: "Original source" })).toBeTruthy();
   expect(screen.getByText("Retained evidence")).toBeTruthy();
   expect(view.container.querySelector("details,summary")).toBeNull();
+});
+
+it("keeps focus applied inside newly mounted content across StrictMode's simulated unmount", () => {
+  function Focused() {
+    const field = useRef<HTMLInputElement>(null);
+    useLayoutEffect(() => field.current?.focus(), []);
+    return <input ref={field} aria-label="Mounted field" />;
+  }
+  render(
+    <StrictMode>
+      <DisclosureButton aria-expanded aria-controls="body">
+        Source
+      </DisclosureButton>
+      <DisclosureContent id="body">
+        <Focused />
+      </DisclosureContent>
+    </StrictMode>,
+  );
+  expect(document.activeElement).toBe(screen.getByLabelText("Mounted field"));
+});
+
+it("still moves focus to the trigger when focused content really unmounts", () => {
+  const view = (open: boolean) => (
+    <>
+      <DisclosureButton aria-expanded={open} aria-controls="body">
+        Source
+      </DisclosureButton>
+      {open ? (
+        <DisclosureContent id="body">
+          <input aria-label="Mounted field" />
+        </DisclosureContent>
+      ) : null}
+    </>
+  );
+  const rendered = render(view(true));
+  screen.getByLabelText("Mounted field").focus();
+  rendered.rerender(view(false));
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Source" }),
+  );
 });

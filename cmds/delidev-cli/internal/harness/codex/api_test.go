@@ -268,6 +268,25 @@ func apiOptionalAuthorityConfig(t *testing.T, provider string, proxied bool) map
 	return config
 }
 
+func TestOpenRouterEffectiveConfigRequiresDisabledBuiltInImageTool(t *testing.T) {
+	provider := `{"name":"DeliDev","base_url":"http://127.0.0.1:12345/api-proxy/v1","env_key":"DELIDEV_EXECUTION_TOKEN","wire_api":"responses","requires_openai_auth":false,"supports_websockets":false,"supports_standalone_web_search":true}`
+	binding := apiBinding{endpoint: "http://127.0.0.1:12345/api-proxy/v1", openRouterTools: true}
+	for _, value := range []string{"false", "true", "null", `"false"`, "missing"} {
+		t.Run(value, func(t *testing.T) {
+			config := apiOptionalAuthorityConfig(t, provider, false)
+			features := map[string]json.RawMessage{"standalone_web_search": json.RawMessage("true")}
+			if value != "missing" {
+				features["image_generation"] = json.RawMessage(value)
+			}
+			config["features"], _ = json.Marshal(features)
+			config["web_search"] = json.RawMessage(`"live"`)
+			if err := binding.validateConfig(config); (err == nil) != (value == "false") {
+				t.Fatal("effective image feature was misclassified", err)
+			}
+		})
+	}
+}
+
 func TestExecutionAPINullOptionalFieldsPreserveTitleRetryRestrictions(t *testing.T) {
 	for _, proxied := range []bool{false, true} {
 		for _, retries := range []string{
