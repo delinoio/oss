@@ -1401,3 +1401,47 @@ func TestDefaultFreePlanCannotBeRemoved(t *testing.T) {
 		t.Fatal("new user bootstrap", e)
 	}
 }
+
+func TestDeletionStopsUnsentSubscriptions(t *testing.T) {
+	for _, withdraw := range []bool{false, true} {
+		for _, state := range []string{"pending", "running", "reconcile", "failed"} {
+			t.Run(fmt.Sprintf("withdraw=%t/%s", withdraw, state), func(t *testing.T) {
+				db, client, _ := setup(t)
+				ctx := context.Background()
+				_, tenant := bootstrap(t, client)
+				job := key()
+				attempts := 1
+				if state == "pending" {
+					attempts = 0
+				}
+				if _, e := db.Pool.Exec(ctx, "INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,available_at,created_at,updated_at) VALUES($1,$2,'subscription',$1::uuid::text,'{}',$3,$4,now(),now(),now())", job, tenant, state, attempts); e != nil {
+					t.Fatal(e)
+				}
+				var e error
+				if withdraw {
+					_, e = client.Withdraw(ctx, req(&pb.WithdrawRequest{RequestKey: key()}, "owner"))
+				} else {
+					_, e = client.DeleteTenant(ctx, req(&pb.DeleteTenantRequest{RequestKey: key(), TenantId: tenant}, "owner"))
+				}
+				if state == "pending" && e != nil {
+					t.Fatal(e)
+				}
+				if state != "pending" && connect.CodeOf(e) != connect.CodeFailedPrecondition {
+					t.Fatal("uncertain intent did not block deletion", e)
+				}
+				var deleting, withdrawing bool
+				var actual string
+				if e = db.Pool.QueryRow(ctx, "SELECT t.deleting_at IS NOT NULL,u.withdrawing_at IS NOT NULL,j.state FROM tenants t JOIN users u ON u.id=t.owner_id JOIN jobs j ON j.tenant_id=t.id WHERE j.id=$1", job).Scan(&deleting, &withdrawing, &actual); e != nil {
+					t.Fatal(e)
+				}
+				if state == "pending" {
+					if !deleting || actual != "done" || withdrawing != withdraw {
+						t.Fatal("unsent subscription not stopped", deleting, withdrawing, actual)
+					}
+				} else if deleting || withdrawing || actual != state {
+					t.Fatal("deletion changed uncertain intent", deleting, withdrawing, actual)
+				}
+			})
+		}
+	}
+}

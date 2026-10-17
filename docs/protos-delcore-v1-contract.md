@@ -18,6 +18,8 @@ Expose typed Connect interfaces for user discovery, tenants, memberships, invita
 
 Occurrence timestamps use PostgreSQL microsecond precision. The service normalizes timestamps before hashing, storing and matching corrections. Prorated included quantities use a 0.000001 quantum; monetary products retain exact decimal precision until currency rounding.
 
+Deletion and withdrawal return a failed precondition while a previously attempted subscription intent remains incomplete. Unattempted subscription intents are stopped atomically when deletion starts.
+
 ## Storage
 
 Wire messages are not the database schema. Historical pricing and usage identities survive replay and corrections. See the server contract for retention boundaries.

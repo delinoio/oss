@@ -282,6 +282,9 @@ func (s *Server) DeleteTenant(ctx context.Context, r *connect.Request[pb.DeleteT
 		if e := c.require(r.Msg.TenantId); e != nil {
 			return e
 		}
+		if e := c.stopPendingSubscriptions(r.Msg.TenantId, ""); e != nil {
+			return e
+		}
 		_, e := c.tx.Exec(c.ctx, "UPDATE tenants SET deleting_at=COALESCE(deleting_at,$2),auto_suspended=true WHERE id=$1", r.Msg.TenantId, c.now)
 		if e != nil {
 			return e
@@ -316,6 +319,9 @@ func (s *Server) Withdraw(ctx context.Context, r *connect.Request[pb.WithdrawReq
 		}
 		if owns {
 			return precondition("transfer or delete owned organizations first")
+		}
+		if e := c.stopPendingSubscriptions("", c.user); e != nil {
+			return e
 		}
 		if _, e := c.tx.Exec(c.ctx, "UPDATE users SET withdrawing_at=$2 WHERE id=$1", c.user, c.now); e != nil {
 			return e
@@ -455,4 +461,19 @@ func (s *Server) ListAudit(ctx context.Context, r *connect.Request[pb.ListAuditR
 		}
 		return rows.Err()
 	})
+}
+
+// A pending job with no attempts has never reached the provider. All other
+// incomplete subscription intents must be reconciled before deletion can start.
+// This runs under the same transaction lock as worker claims and payment events.
+func (c *call) stopPendingSubscriptions(tenant, owner string) error {
+	var uncertain bool
+	if e := c.tx.QueryRow(c.ctx, `SELECT EXISTS(SELECT 1 FROM jobs j JOIN tenants t ON t.id=j.tenant_id WHERE (t.id::text=$1 OR (t.owner_id::text=$2 AND t.personal AND t.deleted_at IS NULL)) AND j.kind='subscription' AND j.state<>'done' AND NOT (j.state='pending' AND j.attempts=0 AND j.external_id=''))`, tenant, owner).Scan(&uncertain); e != nil {
+		return e
+	}
+	if uncertain {
+		return precondition("reconcile the pending subscription before requesting deletion")
+	}
+	_, e := c.tx.Exec(c.ctx, `UPDATE jobs j SET state='done',error_category='deletion_requested',updated_at=$3 FROM tenants t WHERE t.id=j.tenant_id AND (t.id::text=$1 OR (t.owner_id::text=$2 AND t.personal AND t.deleted_at IS NULL)) AND j.kind='subscription' AND j.state='pending' AND j.attempts=0 AND j.external_id=''`, tenant, owner, c.now)
+	return e
 }
