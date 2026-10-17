@@ -1913,6 +1913,53 @@ func TestRetainedSubscriptionStateOrdering(t *testing.T) {
 	})
 }
 
+// TestRetainedStateOrdersAgainstProviderPaymentTime proves that a payment found
+// late (reconciliation or the immediate provider response) is ordered by the
+// provider's billing time and not by the time delcore processed it.
+func TestRetainedStateOrdersAgainstProviderPaymentTime(t *testing.T) {
+	prepare := func(t *testing.T) (*subscriptionOrderFixture, time.Time) {
+		f := newSubscriptionOrderFixture(t)
+		billed := f.at.Add(-3 * time.Hour)
+		f.transaction.BilledAt = &billed
+		return f, billed
+	}
+	t.Run("cancellation after the payment applies when processed later", func(t *testing.T) {
+		f, billed := prepare(t)
+		f.deliver(t, "evt_late_cancel", "canceled", billed.Add(time.Hour))
+		f.pay(t)
+		if s := f.state(t); !s.free || s.subscription != "" || s.activePaid != 0 {
+			t.Fatal("retained cancellation after the payment was ignored", s)
+		}
+	})
+	t.Run("past-due after the payment applies when processed later", func(t *testing.T) {
+		f, billed := prepare(t)
+		f.deliver(t, "evt_late_past_due", "past_due", billed.Add(time.Hour))
+		f.pay(t)
+		if s := f.state(t); s.free || !s.renewalFailed || s.activePaid != 1 {
+			t.Fatal("retained past-due after the payment was ignored", s)
+		}
+	})
+	t.Run("events before the payment stay ignored", func(t *testing.T) {
+		f, billed := prepare(t)
+		f.deliver(t, "evt_before_cancel", "canceled", billed.Add(-time.Hour))
+		f.deliver(t, "evt_before_past_due", "past_due", billed.Add(-time.Minute))
+		f.pay(t)
+		if s := f.state(t); s.free || s.renewalFailed || s.activePaid != 1 {
+			t.Fatal("event before the payment overrode it", s)
+		}
+	})
+	t.Run("a billing time in the future never outranks processing time", func(t *testing.T) {
+		f := newSubscriptionOrderFixture(t)
+		future := f.at.Add(24 * time.Hour)
+		f.transaction.BilledAt = &future
+		f.deliver(t, "evt_clamped_cancel", "canceled", f.at.Add(time.Hour))
+		f.pay(t)
+		if s := f.state(t); !s.free || s.activePaid != 0 {
+			t.Fatal("future billing time hid a newer cancellation", s)
+		}
+	})
+}
+
 func TestSubscriptionStatusAloneGrantsAndClearsNothing(t *testing.T) {
 	f := newSubscriptionOrderFixture(t)
 	f.deliver(t, "evt_active_early", "active", f.at.Add(time.Hour))

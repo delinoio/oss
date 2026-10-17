@@ -196,6 +196,10 @@ func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Tra
 		}
 		_, e = tx.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'settlement',$3,$4,$5) ON CONFLICT(source_key) DO NOTHING", id(), j.Tenant, p.Amount, "payment:"+t.ID, at)
 	case "subscription":
+		// The subscription starts at the provider's payment time, even when
+		// reconciliation discovers the payment later, so retained notifications
+		// are ordered against the payment that actually happened.
+		at = t.ConfirmedAt(at)
 		if !matchesPrices(t, p.ExternalPrices) {
 			_, e = tx.Exec(ctx, "UPDATE jobs SET state='failed',error_category='payment_mismatch',updated_at=now() WHERE id=$1", j.ID)
 			return e

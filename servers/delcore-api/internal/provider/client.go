@@ -202,6 +202,19 @@ type Transaction struct {
 		StartsAt time.Time `json:"starts_at"`
 		EndsAt   time.Time `json:"ends_at"`
 	} `json:"billing_period"`
+	// BilledAt is the provider time at which a completed transaction was billed.
+	BilledAt *time.Time `json:"billed_at"`
+}
+
+// ConfirmedAt returns the provider time of a confirmed payment. It orders the
+// payment against subscription notifications even when delcore learns about it
+// late, for example through reconciliation. The processing time is the fallback
+// and an upper bound, so a missing or future provider time never outranks it.
+func (t Transaction) ConfirmedAt(processed time.Time) time.Time {
+	if t.BilledAt == nil || t.BilledAt.IsZero() || t.BilledAt.After(processed) {
+		return processed
+	}
+	return *t.BilledAt
 }
 
 // AttributeCharge uses the non-catalog price metadata because Paddle's charge
