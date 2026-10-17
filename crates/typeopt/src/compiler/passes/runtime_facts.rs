@@ -283,6 +283,10 @@ struct Patches {
     /// patch of that member on any owner. Only the array model consults these
     /// (see [`local_receiver`]); other passes keep their own evidence.
     unproven: HashSet<Member>,
+    /// Global-object members written under a computed key with a known
+    /// literal prefix (`window[`app${name}`] = ...`). Such a write can only
+    /// replace a global whose name starts with the prefix.
+    global_prefixes: HashSet<String>,
 }
 
 impl Patches {
@@ -293,12 +297,22 @@ impl Patches {
     /// The record that lets application code replace `member` of `owner`, in
     /// a stable textual form (`Array.push`, `*.push`, `Array.*`, `*.*`).
     fn record(&self, owner: &Owner, member: &str) -> Option<String> {
-        let member = Member::Named(member.to_owned());
+        let name = Member::Named(member.to_owned());
+        let prefixed = (*owner == Owner::Global)
+            .then(|| {
+                self.global_prefixes
+                    .iter()
+                    .filter(|prefix| member.starts_with(prefix.as_str()))
+                    .map(|prefix| format!("globalThis.{prefix}*"))
+                    .min()
+            })
+            .flatten();
         [owner.clone(), Owner::Any]
             .iter()
-            .flat_map(|o| [(o.clone(), member.clone()), (o.clone(), Member::Any)])
+            .flat_map(|o| [(o.clone(), name.clone()), (o.clone(), Member::Any)])
             .filter(|record| self.records.contains(record))
             .map(|(owner, member)| describe_record(&owner, &member))
+            .chain(prefixed)
             .min()
     }
 
@@ -1547,10 +1561,7 @@ impl PatchView {
 /// `access` is exactly that initializer and the alias has one declaration, no
 /// write and no use other than being called. Every other use lets the member
 /// reach unknown code, so the caller falls back to the conservative record.
-fn reflection_alias_calls(ctx: &mut Ctx, access: Node, writer: &str) -> Option<Vec<Node>> {
-    if writer != "defineProperty" {
-        return None;
-    }
+fn reflection_alias_calls(ctx: &mut Ctx, access: Node) -> Option<Vec<Node>> {
     let declaration = walk_up_outer(access).parent();
     if declaration.kind() != SyntaxKind::VariableDeclaration
         || declaration.name().kind() != SyntaxKind::Identifier
@@ -1618,7 +1629,7 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
     // Built-in constructors that application code lets escape as values; an
     // unknown receiver of a prototype write may be one of them.
     let mut escaping: HashSet<String> = HashSet::new();
-    let mut writes: Vec<(Node, Node, Member)> = Vec::new();
+    let mut writes: Vec<(Node, Node, Member, Option<Node>)> = Vec::new();
     // Executable code outside the application cannot be inspected, so any
     // runtime import of it may replace any built-in member at initialization.
     // Bundle mode rejects imports outside the bundle before planning.
@@ -1672,41 +1683,37 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                             let aliased = if direct {
                                 None
                             } else {
-                                reflection_alias_calls(ctx, parent, &writer)
+                                reflection_alias_calls(ctx, parent)
                             };
                             if let Some(calls) = aliased {
                                 // An unwritten local alias that is only
                                 // called is analysed like the direct calls.
                                 for call in calls {
                                     if let Some(target) = call.arguments().first() {
-                                        let member = if writer == "defineProperty" {
-                                            call.arguments()
-                                                .to_vec()
-                                                .get(1)
-                                                .map(|&k| literal_member(ctx, k))
-                                                .unwrap_or(Member::Any)
-                                        } else {
-                                            Member::Any
-                                        };
-                                        writes.push((node, target, member));
+                                        let key = matches!(
+                                            writer.as_str(),
+                                            "defineProperty" | "set" | "deleteProperty"
+                                        )
+                                        .then(|| call.arguments().to_vec().get(1).copied())
+                                        .flatten();
+                                        let member = key
+                                            .map(|k| literal_member(ctx, k))
+                                            .unwrap_or(Member::Any);
+                                        writes.push((node, target, member, key));
                                     }
                                 }
                             } else if !direct {
                                 patches.add(Owner::Any, Member::Any);
                             } else if let Some(target) = call.arguments().first() {
-                                let member = if matches!(
+                                let key = matches!(
                                     writer.as_str(),
                                     "defineProperty" | "set" | "deleteProperty"
-                                ) {
-                                    call.arguments()
-                                        .to_vec()
-                                        .get(1)
-                                        .map(|&k| literal_member(ctx, k))
-                                        .unwrap_or(Member::Any)
-                                } else {
-                                    Member::Any
-                                };
-                                writes.push((node, target, member));
+                                )
+                                .then(|| call.arguments().to_vec().get(1).copied())
+                                .flatten();
+                                let member =
+                                    key.map(|k| literal_member(ctx, k)).unwrap_or(Member::Any);
+                                writes.push((node, target, member, key));
                             }
                         }
                     }
@@ -1718,12 +1725,13 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                 SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression
                     if is_write_access(node) =>
                 {
-                    let member = if node.kind() == SyntaxKind::PropertyAccessExpression {
-                        Member::Named(node.name().text().to_owned())
+                    let (member, key) = if node.kind() == SyntaxKind::PropertyAccessExpression {
+                        (Member::Named(node.name().text().to_owned()), None)
                     } else {
-                        literal_member(ctx, node.argument_expression())
+                        let key = node.argument_expression();
+                        (literal_member(ctx, key), Some(key))
                     };
-                    writes.push((node, node.expression(), member));
+                    writes.push((node, node.expression(), member, key));
                 }
                 SyntaxKind::DeleteExpression => {
                     let target = skip_outer(node.expression());
@@ -1731,12 +1739,14 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                         target.kind(),
                         SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression
                     ) {
-                        let member = if target.kind() == SyntaxKind::PropertyAccessExpression {
-                            Member::Named(target.name().text().to_owned())
+                        let (member, key) = if target.kind() == SyntaxKind::PropertyAccessExpression
+                        {
+                            (Member::Named(target.name().text().to_owned()), None)
                         } else {
-                            literal_member(ctx, target.argument_expression())
+                            let key = target.argument_expression();
+                            (literal_member(ctx, key), Some(key))
                         };
-                        writes.push((node, target.expression(), member));
+                        writes.push((node, target.expression(), member, key));
                     }
                 }
                 SyntaxKind::ModuleDeclaration
@@ -1792,15 +1802,28 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
 /// Adds the record of every deferred write to `patches`.
 fn classify_writes(
     ctx: &mut Ctx,
-    writes: &[(Node, Node, Member)],
+    writes: &[(Node, Node, Member, Option<Node>)],
     escaping: &HashSet<String>,
     mut patches: Patches,
     replaced: &local_receiver::Replaced,
 ) -> Patches {
-    for (_, target, member) in writes {
+    let mut symbol_keyed = false;
+    for (_, target, member, key) in writes {
         let member = member.clone();
         match write_owner(ctx, *target, replaced) {
             WriteOwner::App => {}
+            WriteOwner::Owner(Owner::Global) if member == Member::Any => {
+                // The key is computed. It cannot replace a named global when
+                // it is a symbol, and it can only replace a global whose name
+                // starts with a known literal prefix.
+                match key.map_or(KeyShape::Unknown, |key| key_shape(ctx, key, 0)) {
+                    KeyShape::Symbol => symbol_keyed = true,
+                    KeyShape::Prefix(prefix) => {
+                        patches.global_prefixes.insert(prefix);
+                    }
+                    KeyShape::Unknown => patches.add(Owner::Global, member),
+                }
+            }
             WriteOwner::Owner(owner) => patches.add(owner, member),
             WriteOwner::Unknown => {
                 for name in escaping {
@@ -1812,6 +1835,16 @@ fn classify_writes(
                 patches.unproven.insert(member);
             }
         }
+    }
+    // `Symbol(...)` and `Symbol.for(...)` return symbols only while nothing
+    // replaces them.
+    if symbol_keyed
+        && (patches.record(&Owner::Global, "Symbol").is_some()
+            || patches
+                .record(&Owner::Named("Symbol".to_owned()), "for")
+                .is_some())
+    {
+        patches.add(Owner::Global, Member::Any);
     }
     patches
 }
@@ -2522,6 +2555,91 @@ fn literal_member(ctx: &Ctx, key: Node) -> Member {
         }
         SyntaxKind::NumericLiteral => Member::Named(key.text().to_owned()),
         _ => Member::Any,
+    }
+}
+
+/// What a computed property key is known to be.
+enum KeyShape {
+    /// Always a symbol, so it never names a string-keyed global.
+    Symbol,
+    /// A string that starts with this non-empty literal text.
+    Prefix(String),
+    Unknown,
+}
+
+/// Classifies a computed key: `Symbol(...)`, `Symbol.for(...)`, a template
+/// literal or `"literal" + x` concatenation with a literal start, or a `const`
+/// bound to one of those.
+fn key_shape(ctx: &mut Ctx, key: Node, depth: usize) -> KeyShape {
+    let key = skip_outer(key);
+    if depth > 3 {
+        return KeyShape::Unknown;
+    }
+    match key.kind() {
+        SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral => {
+            match string_value(ctx, key) {
+                Some(text) if !text.is_empty() => KeyShape::Prefix(text),
+                _ => KeyShape::Unknown,
+            }
+        }
+        SyntaxKind::TemplateExpression => {
+            let head = key.head().text();
+            if head.is_empty() || head.contains('\\') {
+                KeyShape::Unknown
+            } else {
+                KeyShape::Prefix(head.to_owned())
+            }
+        }
+        SyntaxKind::BinaryExpression if key.operator_token().kind() == SyntaxKind::PlusToken => {
+            match key_shape(ctx, key.left(), depth + 1) {
+                // A string on the left makes the sum a string with that start.
+                KeyShape::Prefix(prefix)
+                    if skip_outer(key.left()).kind() != SyntaxKind::Identifier =>
+                {
+                    KeyShape::Prefix(prefix)
+                }
+                _ => KeyShape::Unknown,
+            }
+        }
+        SyntaxKind::CallExpression => {
+            let callee = skip_outer(key.expression());
+            let symbol_global = |ctx: &mut Ctx, node: Node| {
+                node.kind() == SyntaxKind::Identifier
+                    && node.text() == "Symbol"
+                    && lib_global_name(ctx, node) == Some("Symbol")
+            };
+            let is_symbol = symbol_global(ctx, callee)
+                || (callee.kind() == SyntaxKind::PropertyAccessExpression
+                    && callee.name().text() == "for"
+                    && symbol_global(ctx, skip_outer(callee.expression())));
+            if is_symbol {
+                KeyShape::Symbol
+            } else {
+                KeyShape::Unknown
+            }
+        }
+        SyntaxKind::Identifier => {
+            let symbol = ctx.resolve(key);
+            if symbol.is_nil() {
+                return KeyShape::Unknown;
+            }
+            let declaration = ctx.checker.sym(symbol).value_declaration;
+            // A `let` or `var` that nothing writes holds its initializer
+            // from then on, like a `const`; before that it is `undefined`,
+            // which names only a read-only global.
+            if declaration.is_nil()
+                || declaration.kind() != SyntaxKind::VariableDeclaration
+                || declaration.parent().flags().intersects(NodeFlags::Using)
+                || declaration.initializer().is_nil()
+                || ctx.checker.sym(symbol).declarations.len() != 1
+                || ctx.refs(symbol).iter().any(|r| r.kind == RefKind::Write)
+            {
+                return KeyShape::Unknown;
+            }
+            let initializer = declaration.initializer();
+            key_shape(ctx, initializer, depth + 1)
+        }
+        _ => KeyShape::Unknown,
     }
 }
 
