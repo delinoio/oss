@@ -468,10 +468,107 @@ try {
             );
           }
         }
+  // The real `.session-input-tray` scrolls the whole list independently of the
+  // list's own scrolling. A tray scroll that carries the list completely out of
+  // the tray leaves the trigger inside the list's own box, so the list alone is
+  // not enough: the menu must close for every clipping ancestor, and must stay
+  // open (and placed) while the trigger remains visible through the tray.
+  let trayChecks = 0;
+  for (const [width, height] of [
+    [1280, 800],
+    [640, 480],
+  ])
+    for (const rowIndex of [0, 3]) {
+      const state = `tray/${width}x${height}/row${rowIndex}`;
+      await page.setViewportSize({ width, height });
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.goto(`${origin}/?language=en&theme=light&place=top&tray=1`);
+      await page.locator(".queue-drop-row").nth(3).waitFor();
+      const row = page.locator(".queue-drop-row").nth(rowIndex);
+      const more = row.locator("button[aria-haspopup=menu]");
+      const popup = row.locator(".queue-more-popup");
+      await more.scrollIntoViewIfNeeded();
+      await frames(page);
+      const tray = page.locator("[data-tray]");
+      const geometry = () =>
+        more.evaluate((node) => {
+          const list = node
+              .closest(".queue-compact-list")
+              .getBoundingClientRect(),
+            tray = node.closest("[data-tray]"),
+            clip = tray.getBoundingClientRect(),
+            anchor = node.getBoundingClientRect();
+          return {
+            traySpace: tray.scrollHeight - tray.clientHeight,
+            inList:
+              anchor.bottom > list.top &&
+              anchor.top < list.bottom &&
+              anchor.right > list.left &&
+              anchor.left < list.right,
+            inTray: anchor.bottom > clip.top && anchor.top < clip.bottom,
+            listInTray: list.bottom > clip.top && list.top < clip.bottom,
+          };
+        });
+      const before = await geometry();
+      assert(
+        before.traySpace > 200,
+        `${state}: the tray scrolls ${before.traySpace}`,
+      );
+      assert(
+        before.inList && before.inTray,
+        `${state}: ${JSON.stringify(before)}`,
+      );
+      await more.click();
+      await popup.waitFor();
+      // A small tray scroll keeps the trigger visible, so the menu stays.
+      await tray.evaluate((node) => {
+        node.scrollTop += 4;
+      });
+      await frames(page);
+      assert.equal(
+        await popup.count(),
+        1,
+        `${state}: still open while visible`,
+      );
+      // Carry the whole list out of the tray without touching the list's own
+      // scroll position.
+      await tray.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+      });
+      await frames(page);
+      const away = await geometry();
+      assert(
+        away.inList && !away.inTray && !away.listInTray,
+        `${state}: the trigger stays inside the list box while the tray hides the list ${JSON.stringify(away)}`,
+      );
+      assert.equal(
+        await popup.count(),
+        0,
+        `${state}: closed with the tray scrolled away`,
+      );
+      assert.equal(await more.getAttribute("aria-expanded"), "false", state);
+      assert.deepEqual(
+        await page.evaluate(() => window.__queueMutations),
+        [],
+        `${state}: no queue mutation from the dismissal`,
+      );
+      // Scrolling back restores a usable trigger that opens again.
+      await tray.evaluate((node) => {
+        node.scrollTop = 0;
+      });
+      await frames(page);
+      await more.scrollIntoViewIfNeeded();
+      await more.click();
+      await popup.waitFor();
+      assert.equal(await more.getAttribute("aria-expanded"), "true", state);
+      trayChecks++;
+      checks++;
+    }
   assert.deepEqual(errors, []);
   process.stdout.write(
     JSON.stringify({
       event: "queue_more_layout_passed",
+      trayChecks,
       cases,
       checks,
       nativeAcceptance: "not-performed",

@@ -1078,6 +1078,65 @@ it("dismisses the More popup once its row scrolls completely out of the compact 
   }
 });
 
+it("dismisses the More popup when the tray scrolls the whole list away while the row stays inside the list box", () => {
+  const { hide } = stubPopover();
+  const value = fixture();
+  let trayTop = 100;
+  const rect = (left: number, top: number, width: number, height: number) =>
+    ({
+      left,
+      top,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+      x: left,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      // The tray is a 100px high window onto the page; the list is a 120px high
+      // box that keeps the row's More button inside it while the tray scrolls
+      // the list itself above the tray's top edge.
+      if (this.classList.contains("session-input-tray"))
+        return rect(10, 100, 400, 100);
+      if (this.classList.contains("queue-compact-list"))
+        return rect(10, trayTop - 20, 400, 120);
+      if (this.getAttribute("aria-label") === "More input actions")
+        return this.getAttribute("role") === "menu"
+          ? rect(0, 0, 160, 120)
+          : rect(360, trayTop, 32, 32);
+      return rect(0, 0, 0, 0);
+    },
+  );
+  try {
+    render(
+      <div className="session-input-tray" style={{ overflow: "auto" }}>
+        <div className="queue-compact-list" style={{ overflow: "auto" }}>
+          {value.view(value.resource, true)}
+        </div>
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More input actions" }));
+    expect(screen.getByRole("menu")).toBeTruthy();
+    // The row is inside both clipping boxes.
+    fireEvent.scroll(document.querySelector(".session-input-tray")!);
+    expect(screen.getByRole("menu")).toBeTruthy();
+    // The tray scrolls so the button is above the tray, yet it is still inside
+    // the list's own rectangle: the nearest clipping owner alone cannot see it.
+    trayTop = 60;
+    fireEvent.scroll(document.querySelector(".session-input-tray")!);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(hide).toHaveBeenCalledOnce();
+    expect(value.edit).not.toHaveBeenCalled();
+    expect(value.steer).not.toHaveBeenCalled();
+    expect(value.remove).not.toHaveBeenCalled();
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
+
 it("hides the More popup when the row unmounts while it is open", () => {
   const { hide } = stubPopover();
   const value = fixture();

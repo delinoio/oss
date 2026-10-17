@@ -29,6 +29,10 @@ document.documentElement.dataset.theme =
 // "top" leaves room below the tray; "bottom" pins the tray and composer to the
 // bottom edge so the menu of the last row must flip above its anchor.
 const place = args.get("place") === "bottom" ? "bottom" : "top";
+// "tray" nests the list in the real `.session-input-tray` (max-height 30vh,
+// overflow auto) followed by tall content, so the tray can scroll the whole
+// list away independently of the list's own scrolling.
+const tray = args.get("tray") === "1";
 const win = window as unknown as {
   __queueMutations: unknown[];
   __queueMoves: string[];
@@ -88,6 +92,32 @@ const client = new QueryClient({
   defaultOptions: { queries: { retry: false } },
 });
 function Fixture() {
+  const list = (
+    <div className="queue-compact-list" style={{ maxHeight: 112 }}>
+      {rows.map((row, index) => (
+        <div className="queue-drop-row" key={row.id}>
+          <QueuedInput
+            compact
+            resource={row}
+            session={session}
+            refresh={() => {}}
+            movement={{
+              disabled: false,
+              up: index
+                ? () => win.__queueMoves.push(`up:${index}`)
+                : undefined,
+              down:
+                index < rows.length - 1
+                  ? () => win.__queueMoves.push(`down:${index}`)
+                  : undefined,
+              start: () => {},
+              end: () => {},
+            }}
+          />
+        </div>
+      ))}
+    </div>
+  );
   return (
     <div
       data-scroll-owner
@@ -106,30 +136,14 @@ function Fixture() {
         Outside paragraph that owns no behavior.
       </p>
       {/* The list height is capped so it scrolls like the real tray does. */}
-      <div className="queue-compact-list" style={{ maxHeight: 112 }}>
-        {rows.map((row, index) => (
-          <div className="queue-drop-row" key={row.id}>
-            <QueuedInput
-              compact
-              resource={row}
-              session={session}
-              refresh={() => {}}
-              movement={{
-                disabled: false,
-                up: index
-                  ? () => win.__queueMoves.push(`up:${index}`)
-                  : undefined,
-                down:
-                  index < rows.length - 1
-                    ? () => win.__queueMoves.push(`down:${index}`)
-                    : undefined,
-                start: () => {},
-                end: () => {},
-              }}
-            />
-          </div>
-        ))}
-      </div>
+      {tray ? (
+        <div className="session-input-tray" data-tray>
+          {list}
+          <div data-tray-spacer style={{ height: 1200 }} />
+        </div>
+      ) : (
+        list
+      )}
       <form
         data-composer
         style={{ margin: 12, display: "flex", gap: 8 }}
