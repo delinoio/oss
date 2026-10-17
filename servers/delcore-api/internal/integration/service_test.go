@@ -2914,6 +2914,53 @@ func TestFreeBasePlanSubscriptionAuthorizationEndsAtPeriodEnd(t *testing.T) {
 	}
 }
 
+func TestTenantBlockedReflectsExpiredPeriod(t *testing.T) {
+	f := newSubscriptionOrderFixture(t)
+	ctx := context.Background()
+	f.pay(t)
+	end := time.Now().UTC().Truncate(time.Microsecond).Add(24 * time.Hour)
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE tenants SET period_start=$2,period_end=$3 WHERE id=$1", f.tenant, end.AddDate(0, -1, 0), end); e != nil {
+		t.Fatal(e)
+	}
+	blocked := func(now time.Time) (bool, bool) {
+		t.Helper()
+		client := clockClient(t, f, now)
+		tenant, e := client.GetTenant(ctx, req(&pb.GetTenantRequest{TenantId: f.tenant}, "owner"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		me, e := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		current := false
+		for _, v := range me.Msg.Tenants {
+			if v.Id == f.tenant {
+				current = v.Blocked
+			}
+		}
+		return tenant.Msg.Tenant.Blocked, current
+	}
+	if a, b := blocked(end.Add(-time.Microsecond)); a || b {
+		t.Fatal("tenant blocked before its period end", a, b)
+	}
+	if a, b := blocked(end); !a || !b {
+		t.Fatal("expired period not reported as blocked", a, b)
+	}
+	// A confirmed renewal advances the period and clears the blocked state.
+	renewal := f.transaction
+	renewal.ID = "txn_renewal"
+	renewal.Origin = "subscription_recurring"
+	renewal.BillingPeriod.StartsAt = end
+	renewal.BillingPeriod.EndsAt = end.AddDate(0, 1, 0)
+	if e := f.w.ApplyTransaction(ctx, renewal, end); e != nil {
+		t.Fatal(e)
+	}
+	if a, b := blocked(end.Add(time.Hour)); a || b {
+		t.Fatal("renewed tenant still blocked", a, b)
+	}
+}
+
 func TestFreePlanAuthorizationIgnoresPeriodEnd(t *testing.T) {
 	f := newSubscriptionOrderFixture(t)
 	ctx := context.Background()
