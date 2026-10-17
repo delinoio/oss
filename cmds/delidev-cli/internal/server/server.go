@@ -174,6 +174,9 @@ type Service struct {
 	// before the settlement transaction; tests use it to model a deadline or
 	// shutdown that lands in that window.
 	grokLoginBeforeSettle func()
+	// grokLoginWatchFault runs inside each cancellation-watcher read; tests use it
+	// to inject an operational storage failure. A non-nil result fails that read.
+	grokLoginWatchFault func() error
 	// grokRefreshCrash simulates a process death at a refresh stage in tests: a
 	// true result makes the runner return at once without settling anything.
 	grokRefreshCrash func(grokRefreshStage) bool

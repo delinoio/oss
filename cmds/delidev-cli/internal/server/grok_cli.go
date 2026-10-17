@@ -110,7 +110,14 @@ func (s *Service) claimGrokCLI(ctx context.Context, id domain.ID, o domain.Serve
 		if st == nil || st.ServerOperation == nil || st.ServerOperation.ID != o.ID || st.ServerOperation.Epoch != o.Epoch ||
 			st.ServerOperation.State != domain.SubscriptionPreparing || !st.ServerOperation.NativeStarted || st.ServerOperation.ExchangeClaimed ||
 			st.Pending == nil || st.Pending.ID != o.ID || st.Pending.Canceled || st.RecoveryRequired ||
-			subscriptionActorValid(tx, o.Actor) != nil || !time.Now().Before(o.ExpiresAt) {
+			!time.Now().Before(o.ExpiresAt) {
+			return nil, subscriptionDenied()
+		}
+		// A failed initiator read is returned as is so the login fails with its
+		// sanitized code; only a real denial is subscriptionDenied.
+		if valid, actorErr := subscriptionActorCheck(tx, o.Actor); actorErr != nil {
+			return nil, actorErr
+		} else if !valid {
 			return nil, subscriptionDenied()
 		}
 		st.ServerOperation.ExchangeClaimed = true

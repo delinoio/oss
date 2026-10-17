@@ -311,7 +311,9 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	if err != nil {
 		return
 	}
+	var claimReadFailure domain.Code
 	_, err = s.Store.Mutate(parent, domain.NewID(), "grok.login.claim", struct{ Account, Operation domain.ID }{id, original.ID}, func(tx *store.Tx) (any, error) {
+		claimReadFailure = ""
 		r, a, err := grokSubscriptionAccount(tx, id, 0)
 		if err != nil {
 			return nil, err
@@ -321,13 +323,26 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 			return nil, subscriptionDenied()
 		}
 		o := st.ServerOperation
-		if subscriptionActorValid(tx, o.Actor) != nil || st.Pending.Canceled || !time.Now().Before(o.ExpiresAt) {
+		valid, actorErr := subscriptionActorCheck(tx, o.Actor)
+		expired := !time.Now().Before(o.ExpiresAt)
+		switch {
+		case actorErr == nil && !valid || st.Pending.Canceled || expired:
+			// Only a real denial, a cancellation or the elapsed deadline settles
+			// the queued login without starting it.
 			o.State = domain.SubscriptionCanceled
-			if !time.Now().Before(o.ExpiresAt) {
+			if expired {
 				o.State = domain.SubscriptionExpired
 			}
 			st.Pending = nil
-		} else {
+		case actorErr != nil:
+			// The initiator could not be read. That proves no revocation, so the
+			// login fails with the sanitized storage code instead of canceling.
+			claimReadFailure = domain.SafeError(actorErr).Code
+			o.State = domain.SubscriptionFailed
+			o.GrokDiagnostic = grokLocalDiagnostic("", domain.GrokLogin, claimReadFailure)
+			o.GrokDiagnostic.CorrelationID = string(o.ID)
+			st.Pending = nil
+		default:
 			o.NativeStarted = true
 			o.Generation = st.Generation
 			st.Pending.Phase = domain.SubscriptionClaimed
@@ -337,6 +352,9 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 		return struct{}{}, err
 	})
 	unlock()
+	if err == nil && claimReadFailure != "" {
+		s.logger.WarnContext(parent, "grok_login_actor_read_failed", "phase", grokLoginPhase, "stage", "claim", "operation_id", original.ID, "correlation_id", original.ID, "code", claimReadFailure)
+	}
 	if err != nil || !original.NativeStarted {
 		return
 	}
@@ -346,26 +364,54 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	s.registerGrokLogin(original.ID, cancel)
 	defer s.unregisterGrokLogin(original.ID)
 	var cancelSeen atomic.Bool
+	// watchFailure holds the safe code of an operational watcher read failure. It
+	// is distinct from cancelSeen: only an explicit denial proves a cancellation.
+	var watchFailure atomic.Pointer[domain.Code]
 	watched := make(chan struct{})
 	go func() {
 		defer close(watched)
 		ticker := time.NewTicker(grokLoginPollInterval)
 		defer ticker.Stop()
 		for {
+			denied := false
 			err := s.Store.Read(ctx, func(tx *store.Tx) error {
+				if s.grokLoginWatchFault != nil {
+					if e := s.grokLoginWatchFault(); e != nil {
+						return e
+					}
+				}
 				_, a, err := grokSubscriptionAccount(tx, id, 0)
 				if err != nil {
 					return err
 				}
 				st := a.Subscription
-				if st == nil || st.RecoveryRequired || st.Pending == nil || st.Pending.ID != original.ID || st.Pending.Canceled || subscriptionActorValid(tx, original.Actor) != nil {
+				if st == nil || st.RecoveryRequired || st.Pending == nil || st.Pending.ID != original.ID || st.Pending.Canceled {
+					denied = true
+					return subscriptionDenied()
+				}
+				valid, actorErr := subscriptionActorCheck(tx, original.Actor)
+				if actorErr != nil {
+					// An unreadable initiator record is an operational failure, not
+					// a revocation: it is returned as is and never marks a denial.
+					return actorErr
+				}
+				if !valid {
+					denied = true
 					return subscriptionDenied()
 				}
 				return nil
 			})
 			if err != nil {
 				if ctx.Err() == nil {
-					cancelSeen.Store(true)
+					if denied {
+						cancelSeen.Store(true)
+					} else {
+						// A storage or decode failure says nothing about the operator's
+						// intent: keep it distinct from a cancellation.
+						code := domain.SafeError(err).Code
+						watchFailure.Store(&code)
+						s.logger.WarnContext(ctx, "grok_login_watcher_read_failed", "phase", grokLoginPhase, "operation_id", original.ID, "correlation_id", original.ID, "code", code)
+					}
 				}
 				cancel()
 				return
@@ -385,6 +431,14 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	}
 	cancel()
 	<-watched
+	// A watcher read failure before the exchange claim is a failure, not a
+	// cancellation. The interrupted flow reports CANCELED only because the
+	// watcher stopped it; a claimed flow is already RECOVERY and an elapsed
+	// deadline stays EXPIRED. The settlement still maps a durable cancellation or
+	// revoked initiator to CANCELED.
+	if code := watchFailure.Load(); code != nil && !cancelSeen.Load() && out.state == domain.SubscriptionCanceled {
+		out = grokLoginOutcome{state: domain.SubscriptionFailed, reason: subscription.GrokReasonCallback, code: *code}
+	}
 	// Deadline and cancellation are classified after the exchange stopped.
 	if out.state == domain.SubscriptionFailed && out.code == "" {
 		out.code = grokReasonCode(out.reason)
@@ -493,7 +547,7 @@ func (s *Service) performGrokLogin(ctx context.Context, id domain.ID, original d
 		if ctx.Err() != nil {
 			return interrupted()
 		}
-		return grokLoginOutcome{state: domain.SubscriptionFailed, reason: subscription.GrokReasonCallback, code: domain.Conflict}
+		return grokLoginOutcome{state: domain.SubscriptionFailed, reason: subscription.GrokReasonCallback, code: grokClaimRefusalCode(err)}
 	}
 	flow.claimed.Store(true)
 	s.logger.InfoContext(ctx, "grok_login_exchange_claimed", "phase", grokLoginPhase, "operation_id", original.ID, "correlation_id", original.ID)
@@ -510,6 +564,18 @@ func (s *Service) performGrokLogin(ctx context.Context, id domain.ID, original d
 		return failed(err)
 	}
 	return grokLoginOutcome{state: domain.SubscriptionSucceeded, bundle: bundle}
+}
+
+// grokClaimRefusalCode is the code of a refused exchange claim. A denial by the
+// durable state (a cancellation, a revoked initiator or another operation) is a
+// Conflict, which the settlement maps to CANCELED when the state says so. Any
+// other failure, such as an unreadable account or initiator record, keeps its
+// sanitized code.
+func grokClaimRefusalCode(err error) domain.Code {
+	if subscriptionIsDenied(err) {
+		return domain.Conflict
+	}
+	return domain.SafeError(err).Code
 }
 
 // publishGrokLoginProgress moves the operation to WAITING and exposes the
@@ -536,7 +602,14 @@ func (s *Service) publishGrokPresentation(ctx context.Context, id domain.ID, o d
 			return nil, err
 		}
 		st := a.Subscription
-		if st == nil || st.ServerOperation == nil || st.ServerOperation.ID != o.ID || st.Pending == nil || st.Pending.Canceled || st.RecoveryRequired || subscriptionActorValid(tx, o.Actor) != nil {
+		if st == nil || st.ServerOperation == nil || st.ServerOperation.ID != o.ID || st.Pending == nil || st.Pending.Canceled || st.RecoveryRequired {
+			return nil, subscriptionDenied()
+		}
+		// A failed initiator read propagates as is so the flow fails with its
+		// sanitized code; only a real denial is subscriptionDenied.
+		if valid, actorErr := subscriptionActorCheck(tx, o.Actor); actorErr != nil {
+			return nil, actorErr
+		} else if !valid {
 			return nil, subscriptionDenied()
 		}
 		st.ServerOperation.State = domain.SubscriptionWaiting
@@ -573,7 +646,14 @@ func (s *Service) claimGrokExchange(ctx context.Context, id domain.ID, o domain.
 			cur = st.ServerOperation
 		}
 		if cur == nil || cur.ID != o.ID || cur.Epoch != o.Epoch || cur.State != domain.SubscriptionWaiting || !cur.NativeStarted || cur.ExchangeClaimed || !time.Now().Before(cur.ExpiresAt) ||
-			st.RecoveryRequired || st.Pending == nil || st.Pending.ID != o.ID || st.Pending.Canceled || subscriptionActorValid(tx, cur.Actor) != nil {
+			st.RecoveryRequired || st.Pending == nil || st.Pending.ID != o.ID || st.Pending.Canceled {
+			return nil, subscriptionDenied()
+		}
+		// Nothing is claimed unless the initiator is confirmed live. A failed read
+		// is returned as is so the caller fails with its code, not a refusal.
+		if valid, actorErr := subscriptionActorCheck(tx, cur.Actor); actorErr != nil {
+			return nil, actorErr
+		} else if !valid {
 			return nil, subscriptionDenied()
 		}
 		cur.ExchangeClaimed = true
@@ -672,12 +752,20 @@ func (s *Service) finishGrokLogin(ctx context.Context, id domain.ID, o domain.Se
 		}
 		op := st.ServerOperation
 		claimed := op.ExchangeClaimed
-		stopped := st.Pending.Canceled || subscriptionActorValid(tx, op.Actor) != nil
+		valid, actorErr := subscriptionActorCheck(tx, op.Actor)
+		// Only a cancellation or a real denial stops the operation. An unreadable
+		// initiator record is neither: the initiator stays unconfirmed, so nothing
+		// is published and the state is never rewritten to CANCELED.
+		stopped := st.Pending.Canceled || actorErr == nil && !valid
+		unconfirmed := !stopped && actorErr != nil
+		if unconfirmed {
+			s.logger.WarnContext(ctx, "grok_login_actor_read_failed", "phase", grokLoginPhase, "stage", "settle", "operation_id", o.ID, "correlation_id", o.ID, "code", domain.SafeError(actorErr).Code)
+		}
 		state := out.state
 		// Credentials are published only while the operation is still live at
 		// commit time: an elapsed deadline or a server shutdown that landed after
 		// the flow decided SUCCEEDED keeps the recovery fence instead.
-		publish := success && !stopped && !shuttingDown && time.Now().Before(op.ExpiresAt)
+		publish := success && !stopped && !unconfirmed && !shuttingDown && time.Now().Before(op.ExpiresAt)
 		switch {
 		case claimed && (state == domain.SubscriptionCanceled || state == domain.SubscriptionExpired || stopped && state != domain.SubscriptionRecovery):
 			// After the claim the provider may hold a credential this server never

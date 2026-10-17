@@ -78,6 +78,11 @@ func (s *Service) performGrokDeviceLogin(ctx context.Context, id domain.ID, orig
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
+				if !subscriptionIsDenied(err) {
+					// An operational read failure keeps its sanitized code instead of
+					// looking like a refused claim.
+					return domain.SafeError(err)
+				}
 				return domain.Fail(domain.Conflict, "The Grok login is no longer active.", "Start a new Grok login.")
 			}
 			flow.claimed.Store(true)

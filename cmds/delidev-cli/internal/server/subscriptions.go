@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"regexp"
 	"slices"
@@ -75,19 +76,49 @@ func subscriptionTitleNotDelivered(code domain.Code) *domain.Error {
 // released, undelivered managed title lease.
 const subscriptionTitleNotDeliveredCause = "subscription_title_not_delivered"
 
+// subscriptionActorValid reports a nil error only for a live actor. It folds an
+// unreadable actor record into the same denial as a revoked one, so a caller
+// that must tell a real denial from a read failure uses subscriptionActorCheck.
 func subscriptionActorValid(tx *store.Tx, actor domain.Principal) error {
-	if actor.Type == domain.OwnerDevice {
-		return nil
-	}
-	r, err := tx.Get(domain.DeviceKind, actor.DeviceID)
-	if err != nil {
-		return subscriptionDenied()
-	}
-	d, err := store.Decode[domain.Device](r)
-	if err != nil || d.Revoked || d.Type != actor.Type || d.MachineID != actor.MachineID {
+	if valid, err := subscriptionActorCheck(tx, actor); err != nil || !valid {
 		return subscriptionDenied()
 	}
 	return nil
+}
+
+// subscriptionActorCheck classifies the initiating actor of a subscription
+// operation. valid reports a live actor. A nil error with valid false is a real
+// denial: the device record is missing, of another kind, revoked or no longer
+// matches the actor. A non-nil error is an operational read or decode failure
+// that proves nothing about the actor; callers must not report it as a
+// revocation or cancellation.
+func subscriptionActorCheck(tx *store.Tx, actor domain.Principal) (valid bool, err error) {
+	if actor.Type == domain.OwnerDevice {
+		return true, nil
+	}
+	r, err := tx.Get(domain.DeviceKind, actor.DeviceID)
+	if err != nil {
+		// An invalid identifier, an unknown device or a record of another kind
+		// cannot name a live device. Every other failure is operational.
+		switch domain.SafeError(err).Code {
+		case domain.NotFound, domain.InvalidArgument:
+			return false, nil
+		}
+		return false, err
+	}
+	d, err := store.Decode[domain.Device](r)
+	if err != nil {
+		return false, err
+	}
+	return !d.Revoked && d.Type == actor.Type && d.MachineID == actor.MachineID, nil
+}
+
+// subscriptionIsDenied reports whether err is the fixed denial returned by
+// subscriptionDenied, as opposed to an operational failure.
+func subscriptionIsDenied(err error) bool {
+	var known *domain.Error
+	want := subscriptionDenied()
+	return errors.As(err, &known) && known.Code == want.Code && known.Message == want.Message
 }
 
 // cancelServerOperation settles a queued operation's server record as canceled
