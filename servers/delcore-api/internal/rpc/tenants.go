@@ -16,12 +16,15 @@ import (
 	"github.com/delinoio/oss/servers/delcore-api/internal/postgres"
 )
 
+// tenant reads a tenant. Blocked reports every condition that rejects new paid
+// use for a billing reason, including a confirmed period that ended without a
+// renewal, using the request clock like Authorize.
 func (c *call) tenant(id string) (*pb.Tenant, error) {
 	t := &pb.Tenant{}
 	e := c.tx.QueryRow(c.ctx, `SELECT t.id::text,t.name,t.personal,t.owner_id::text,t.plan_id::text,
- (t.operator_block OR t.renewal_failed OR EXISTS(SELECT 1 FROM disputes d WHERE d.tenant_id=t.id AND active)),
+ (t.operator_block OR t.renewal_failed OR `+postgres.PeriodExpiredSQL("t", "p", "$2")+` OR EXISTS(SELECT 1 FROM disputes d WHERE d.tenant_id=t.id AND active)),
  t.deleting_at IS NOT NULL,COALESCE((SELECT sum(amount)::text FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),'0')
- FROM tenants t WHERE t.id=$1 AND deleted_at IS NULL`, id).Scan(&t.Id, &t.Name, &t.Personal, &t.OwnerId, &t.PlanId, &t.Blocked, &t.Deleting, &t.CreditBalance)
+ FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1 AND t.deleted_at IS NULL`, id, c.now).Scan(&t.Id, &t.Name, &t.Personal, &t.OwnerId, &t.PlanId, &t.Blocked, &t.Deleting, &t.CreditBalance)
 	return t, e
 }
 func (c *call) createTenant(name string, personal bool) (*pb.Tenant, error) {
