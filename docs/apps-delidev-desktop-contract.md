@@ -975,6 +975,8 @@ rule applies unchanged.
   digest as a pointer click. Enter in the bundle textarea inserts a newline, and
   Enter on the checkbox is not a submission. A confirmed but malformed digest shows
   the same problem as a click and mutates nothing.
+  The form only adds submit semantics, so the stylesheet (`form.worker-network-import`)
+  keeps the full section width instead of the 720px cap that generic Settings forms get.
 
 #### Owner inventory
 

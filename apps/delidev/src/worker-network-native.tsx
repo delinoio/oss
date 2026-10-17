@@ -193,6 +193,7 @@ export function WorkerNetworkNative({
           </SettingsActionButton>
           <form
             id={importFormId}
+            className="worker-network-import"
             noValidate
             onKeyDown={guardEnterSubmission}
             onSubmit={(event) => {
