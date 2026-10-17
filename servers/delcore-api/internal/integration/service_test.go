@@ -2648,3 +2648,117 @@ func TestRejectedSubscriptionDoesNotUnblockUncertainIntent(t *testing.T) {
 		})
 	}
 }
+
+func TestFreePostpaidPlanIsRejected(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	bootstrap(t, client)
+	snapshot := func() (string, int, int) {
+		var def string
+		var plans, audits int
+		if e := db.Pool.QueryRow(ctx, "SELECT (SELECT id::text FROM plans WHERE is_default),(SELECT count(*) FROM plans),(SELECT count(*) FROM audit WHERE action='catalog.plan')").Scan(&def, &plans, &audits); e != nil {
+			t.Fatal(e)
+		}
+		return def, plans, audits
+	}
+	def, plans, audits := snapshot()
+	for _, tc := range []struct {
+		name string
+		plan *pb.Plan
+	}{
+		{"free postpaid", &pb.Plan{Name: "free postpaid", Rank: 1, Free: true, Postpaid: true}},
+		{"default free postpaid", &pb.Plan{Name: "default free postpaid", Rank: 1, Free: true, DefaultFree: true, Postpaid: true}},
+	} {
+		if _, e := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "reject " + tc.name, Plan: tc.plan}, "owner")); connect.CodeOf(e) != connect.CodeInvalidArgument || !strings.Contains(e.Error(), "postpaid") {
+			t.Fatal(tc.name, "accepted or wrong error", e)
+		}
+		if gotDef, gotPlans, gotAudits := snapshot(); gotDef != def || gotPlans != plans || gotAudits != audits {
+			t.Fatal(tc.name, "rejected request changed the catalog", gotDef, gotPlans, gotAudits)
+		}
+	}
+	for _, plan := range []*pb.Plan{{Name: "free prepaid", Rank: 1, Free: true}, {Name: "paid postpaid", Rank: 2, Postpaid: true}, {Name: "paid prepaid", Rank: 3}} {
+		if _, e := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "accept " + plan.Name, Plan: plan}, "owner")); e != nil {
+			t.Fatal(plan.Name, "rejected", e)
+		}
+	}
+	var postpaidPaid int
+	if e := db.Pool.QueryRow(ctx, "SELECT count(*) FROM plans WHERE postpaid AND NOT free").Scan(&postpaidPaid); e != nil || postpaidPaid != 1 {
+		t.Fatal("paid postpaid plan not stored", postpaidPaid, e)
+	}
+}
+
+func TestAddOnPriceMustBelongToPriceService(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	bootstrap(t, client)
+	service := func(name string) string {
+		svc, e := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "register service", Service: &pb.Service{Name: name, ClientId: name, Capabilities: []string{"execute"}, Scopes: []string{"usage:read"}}}, "owner"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		return svc.Msg.Service.Id
+	}
+	first, second := service("first"), service("second")
+	for _, id := range []string{first, second} {
+		if _, e := client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "register meter", Meter: &pb.Meter{ServiceId: id, Name: "units"}}, "owner")); e != nil {
+			t.Fatal(e)
+		}
+	}
+	addon := func(serviceID, name string) string {
+		a, e := client.PutAddOn(ctx, req(&pb.PutAddOnRequest{RequestKey: key(), Reason: "register add-on", AddOn: &pb.AddOn{ServiceId: serviceID, Name: name}}, "owner"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		return a.Msg.AddOn.Id
+	}
+	firstAddOn, secondAddOn := addon(first, "first extra"), addon(second, "second extra")
+	counts := func() (int, int) {
+		var prices, audits int
+		if e := db.Pool.QueryRow(ctx, "SELECT (SELECT count(*) FROM prices),(SELECT count(*) FROM audit WHERE action='catalog.price')").Scan(&prices, &audits); e != nil {
+			t.Fatal(e)
+		}
+		return prices, audits
+	}
+	price := func(p *pb.Price) error {
+		p.Currency, p.UnitPrice, p.Included = "USD", "1", "1"
+		_, e := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "add-on ownership", Price: p}, "owner"))
+		return e
+	}
+	prices, audits := counts()
+	for _, tc := range []struct {
+		name, message string
+		price         *pb.Price
+	}{
+		{"usage price for another service", "another service", &pb.Price{AddOnId: secondAddOn, ServiceId: first, Meter: "units"}},
+		{"recurring price for another service", "another service", &pb.Price{AddOnId: secondAddOn, ServiceId: first, Meter: "base", Kind: pb.PriceKind_PRICE_KIND_RECURRING, ExternalPriceId: "pri_addon"}},
+		{"unknown add-on", "unknown add-on", &pb.Price{AddOnId: key(), ServiceId: first, Meter: "units"}},
+		{"unknown add-on recurring", "unknown add-on", &pb.Price{AddOnId: key(), ServiceId: first, Meter: "base", Kind: pb.PriceKind_PRICE_KIND_RECURRING, ExternalPriceId: "pri_addon"}},
+		// Failures that precede the ownership check keep their own errors.
+		{"unregistered meter", "unregistered meter", &pb.Price{AddOnId: secondAddOn, ServiceId: first, Meter: "missing"}},
+		{"missing recurring mapping", "Paddle mapping", &pb.Price{AddOnId: secondAddOn, ServiceId: first, Meter: "base", Kind: pb.PriceKind_PRICE_KIND_RECURRING}},
+	} {
+		e := price(tc.price)
+		if connect.CodeOf(e) != connect.CodeInvalidArgument || !strings.Contains(e.Error(), tc.message) {
+			t.Fatal(tc.name, "wrong result", e)
+		}
+		if gotPrices, gotAudits := counts(); gotPrices != prices || gotAudits != audits {
+			t.Fatal(tc.name, "rejected request persisted data", gotPrices, gotAudits)
+		}
+	}
+	if e := price(&pb.Price{AddOnId: firstAddOn, ServiceId: first, Meter: "units"}); e != nil {
+		t.Fatal("matching usage add-on price rejected", e)
+	}
+	if e := price(&pb.Price{AddOnId: secondAddOn, ServiceId: second, Meter: "base", Kind: pb.PriceKind_PRICE_KIND_RECURRING, ExternalPriceId: "pri_addon"}); e != nil {
+		t.Fatal("matching recurring add-on price rejected", e)
+	}
+	plan, e := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "plan for price", Plan: &pb.Plan{Name: "priced", Rank: 1, Free: true}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = price(&pb.Price{PlanId: plan.Msg.Plan.Id, ServiceId: second, Meter: "units"}); e != nil {
+		t.Fatal("plan price rejected", e)
+	}
+	if gotPrices, gotAudits := counts(); gotPrices != prices+3 || gotAudits != audits+3 {
+		t.Fatal("accepted prices not recorded", gotPrices, gotAudits)
+	}
+}
