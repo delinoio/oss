@@ -485,6 +485,38 @@ it("applies the path explicitly and closes overflow before the pane with focus r
   expect(screen.getByRole("complementary")).toBeTruthy();
 });
 
+it("presents the diff options as an anchored popup that reserves no space and reads nothing", async () => {
+  const f = fixture();
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  const reads = f.read.mock.calls.length;
+  const trigger = screen.getByRole("button", { name: "Diff options" });
+  expect(screen.queryByRole("dialog", { name: "Diff options" })).toBeNull();
+  fireEvent.click(trigger);
+  const dialog = screen.getByRole("dialog", { name: "Diff options" });
+  expect(dialog.getAttribute("popover")).toBe("manual");
+  expect(dialog.classList.contains("anchored-popup")).toBe(true);
+  expect(document.activeElement).toBe(
+    screen.getByLabelText("Relative diff path"),
+  );
+  expect(f.read).toHaveBeenCalledTimes(reads);
+  fireEvent.click(trigger);
+  expect(screen.queryByRole("dialog", { name: "Diff options" })).toBeNull();
+  expect(f.read).toHaveBeenCalledTimes(reads);
+  // An outside pointer press dismisses it while the typed draft is retained.
+  fireEvent.click(trigger);
+  fireEvent.change(screen.getByLabelText("Relative diff path"), {
+    target: { value: "src" },
+  });
+  fireEvent.pointerDown(document.body);
+  expect(screen.queryByRole("dialog", { name: "Diff options" })).toBeNull();
+  fireEvent.click(trigger);
+  expect(
+    (screen.getByLabelText("Relative diff path") as HTMLInputElement).value,
+  ).toBe("src");
+  expect(f.read).toHaveBeenCalledTimes(reads);
+});
+
 it("renders validated ordinary coordinates and keeps unsupported patches inert", async () => {
   const f = fixture(),
     original = f.read.getMockImplementation()!;

@@ -1357,6 +1357,36 @@ if (args.get("commandPalette") === "true") {
   };
   Object.assign(window, { __commandMenuFixture: counts });
 }
+// The Subscription row menu check observes every non-read RPC, so opening,
+// tabbing through, scrolling or dismissing the popup cannot invoke a business
+// action unnoticed. `probe` sends one real write RPC for the script's own
+// self-check that this counter can fail.
+if (subscriptionDetails) {
+  const writes: string[] = [];
+  const unary = transport.unary;
+  transport.unary = (...parameters) => {
+    if (
+      !/^(get|list|watch|check|preview|inspect|read|search)/i.test(
+        parameters[0].name,
+      )
+    )
+      writes.push(parameters[0].name);
+    return unary(...parameters);
+  };
+  Object.assign(window, {
+    __subscriptionFixture: {
+      writes,
+      probe: () =>
+        transport.unary(
+          SubscriptionService.method.cleanupFailedSubscriptions,
+          undefined,
+          undefined,
+          undefined,
+          { requestId: newRequestId() },
+        ),
+    },
+  });
+}
 // Complete synthetic preference snapshots exercise the original autosave API.
 let appearanceSnapshot = {
   revision: 1,

@@ -9,6 +9,12 @@ import {
   SettingsActionIcon,
   SettingsActionTone,
 } from "./settings-action";
+import {
+  AnchoredPopupAlign,
+  AnchoredPopupWidth,
+  useAnchoredPopup,
+  useOutsidePointerDismiss,
+} from "./anchored-popup";
 import { quotaColorStyle } from "./quota-color";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import {
@@ -346,7 +352,19 @@ export function ApiEntryRow({
     [details, setDetails] = useState(false);
   const menuId = useId(),
     nameId = useId();
-  const menuButton = useRef<HTMLButtonElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null),
+    menuPanel = useRef<HTMLDivElement>(null);
+  // The More actions are an anchored top-layer popup, so opening them never
+  // grows the entry row or its scroll owner.
+  useAnchoredPopup({
+    open: menu,
+    anchor: menuButton,
+    popup: menuPanel,
+    onInvalid: () => setMenu(false),
+    width: AnchoredPopupWidth.Content,
+    align: AnchoredPopupAlign.End,
+  });
+  useOutsidePointerDismiss(menu, [menuButton, menuPanel], () => setMenu(false));
   const [, setClock] = useState(0);
   const now = Date.now();
   const windows: SubscriptionQuotaWindow[] = Array.isArray(value.quota)
@@ -509,7 +527,9 @@ export function ApiEntryRow({
             {menu ? (
               <div
                 id={menuId}
-                className="api-entry-more-panel"
+                ref={menuPanel}
+                popover="manual"
+                className="anchored-popup api-entry-more-panel"
                 role="group"
                 aria-label={copy("api-entry-row.actionsFor_b59837", {
                   v0: name,

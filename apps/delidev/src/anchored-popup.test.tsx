@@ -6,6 +6,7 @@ import {
   AnchoredPopupAlign,
   AnchoredPopupWidth,
   useAnchoredPopup,
+  useOutsidePointerDismiss,
   type AnchoredPopupOptions,
 } from "./anchored-popup";
 
@@ -477,4 +478,34 @@ test("an anchor without a measurable box is not judged by the window", () => {
   const { container } = render(<Fixture />);
   expect(invalid).not.toHaveBeenCalled();
   expect(popupNode(container)).toBeTruthy();
+});
+
+test("an outside pointer press dismisses, inside presses and closed state do not", () => {
+  const dismissed = vi.fn();
+  function Probe({ open }: { open: boolean }) {
+    const anchor = useRef<HTMLButtonElement>(null),
+      popup = useRef<HTMLDivElement>(null);
+    useOutsidePointerDismiss(open, [anchor, popup], dismissed);
+    return (
+      <>
+        <button ref={anchor}>anchor</button>
+        <div ref={popup}>
+          <span data-inside>inside</span>
+        </div>
+        <p data-outside>outside</p>
+      </>
+    );
+  }
+  const view = render(<Probe open={false} />);
+  fireEvent.pointerDown(view.container.querySelector("[data-outside]")!);
+  expect(dismissed).not.toHaveBeenCalled();
+  view.rerender(<Probe open />);
+  fireEvent.pointerDown(view.container.querySelector("[data-inside]")!);
+  fireEvent.pointerDown(view.container.querySelector("button")!);
+  expect(dismissed).not.toHaveBeenCalled();
+  fireEvent.pointerDown(view.container.querySelector("[data-outside]")!);
+  expect(dismissed).toHaveBeenCalledOnce();
+  view.rerender(<Probe open={false} />);
+  fireEvent.pointerDown(view.container.querySelector("[data-outside]")!);
+  expect(dismissed).toHaveBeenCalledOnce();
 });

@@ -149,7 +149,10 @@ try {
           true,
         );
         await menu.press("Enter");
-        await page.locator(".connections-row-menu button").first().click();
+        await page
+          .locator(".connections-row-menu-popup button")
+          .first()
+          .click();
         await page.locator("dialog[open]").waitFor();
         await page.keyboard.press("Escape");
         assert.equal(await page.locator("dialog[open]").count(), 0);
@@ -161,7 +164,10 @@ try {
             name: language === "ko" ? "이름 편집 버리기" : "Discard name edit",
           })
           .click();
-        await page.locator(".connections-row-menu button").nth(1).click();
+        // Choosing a row action dismissed the anchored menu; reopen it.
+        await menu.focus();
+        await menu.press("Enter");
+        await page.locator(".connections-row-menu-popup button").nth(1).click();
         await page.locator("dialog[open]").waitFor();
         await page.keyboard.press("Escape");
         assert.equal(await page.locator("dialog[open]").count(), 0);

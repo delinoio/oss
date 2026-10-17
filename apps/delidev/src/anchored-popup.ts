@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useLayoutEffect, useRef, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { settleEnclosingEntrances } from "./entrance-motion";
 import {
   pickerOverlayGeometry,
@@ -308,4 +308,32 @@ export function useAnchoredPopup(options: AnchoredPopupOptions): void {
       window.visualViewport?.removeEventListener("scroll", outer);
     };
   }, [open, anchor, popup]);
+}
+
+/**
+ * Dismisses an open popup when a pointer press lands outside every listed
+ * element (normally the anchor and the popup). A popup that can cover content
+ * must not trap the user behind it. The press is observed in the capture phase
+ * and never prevented, so the pressed control still receives it. The consumer
+ * owns what dismissal means; this hook only reports it.
+ */
+export function useOutsidePointerDismiss(
+  open: boolean,
+  inside: ReadonlyArray<RefObject<Element | null>>,
+  onDismiss: () => void,
+): void {
+  const latest = useRef({ inside, onDismiss });
+  latest.current = { inside, onDismiss };
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (latest.current.inside.some((ref) => ref.current?.contains(target)))
+        return;
+      latest.current.onDismiss();
+    };
+    document.addEventListener("pointerdown", dismiss, true);
+    return () => document.removeEventListener("pointerdown", dismiss, true);
+  }, [open]);
 }

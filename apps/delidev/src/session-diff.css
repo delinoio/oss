@@ -46,13 +46,22 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+/* The options panel is an anchored top-layer popup (see anchored-popup.css).
+   The hook writes left, top, width and max-height; the declared width is the
+   natural content width it clamps to the owning surface. */
 .diff-options {
-  border: 1px solid var(--border);
-  background: var(--background);
+  width: 360px;
+  max-width: calc(100vw - 16px);
   padding: 12px;
-  border-radius: 8px;
+}
+.diff-options:popover-open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
 }
 .diff-options form {
+  flex: 1 1 100%;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

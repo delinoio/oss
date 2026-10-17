@@ -12,6 +12,8 @@ Changes to shared renderer shortcuts must update dispatch, Help, the Settings ca
 
 Tab strips for Project editing, Usage, Backups history, session tabs and the terminal selector share `tab-strip.css` (classes `tab-strip`, `tab-item`, `tab-label`, `is-selected`, `tab-close`). Do not add per-surface tab geometry, and exclude new broad button rules from `tab-item`, `tab-label` and `tab-close` with the existing `:where(:not(...))` guard. The change is presentation only: preserve roles, activation mode, retained state and resource lifetimes, following the [shared tab strip presentation](../../../docs/apps-delidev-desktop-contract.md#shared-tab-strip-presentation).
 
+Dropdowns, menus and suggestion lists must never change the surrounding layout: present them with `useAnchoredPopup` (`anchored-popup.ts`, top layer, `popover="manual"`) or another top-layer popover with its own geometry, and register every module that renders a listbox, menu, combobox, popover or details in `dropdown-inventory.ts` and in the Dropdown inventory table of the desktop contract. `dropdown-inventory.test.ts` fails otherwise. Verify geometry with the real-Chromium `scripts/test-dropdown-layout.mjs` family checks or a family-specific script.
+
 The shared pure `product-identity.ts` module is owned here and consumed by the mobile renderer. Changes must read both renderer contracts; desktop React/query-cache observation stays in `product-identity-labels.tsx`.
 
 ## Owning contracts

@@ -11,6 +11,7 @@
     "test:qa:browser": "node scripts/qa/test-browser.mjs",
     "test:sidebar-selection": "node scripts/test-sidebar-selection.mjs",
     "test:worker-model-layout": "node scripts/test-worker-model-layout.mjs",
+    "test:dropdown-layout": "node scripts/test-dropdown-layout.mjs",
     "test:worker-steps-layout": "node scripts/test-worker-steps-layout.mjs",
     "build": "pnpm prepare:localization && rsbuild build",
     "build:frontend": "pnpm prepare:localization && rsbuild build",
