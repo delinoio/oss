@@ -1171,6 +1171,95 @@ func TestClaudeUsageRestartReleasesAnInterruptedReadWithoutRepeatingIt(t *testin
 	}
 }
 
+// A read whose registered owner is gone without settling (its settlement
+// failed) is fenced by the cleanup scanner in the same server epoch instead of
+// rejecting every later admission until a restart.
+func TestClaudeUsageScannerReleasesAnOrphanedReadClaimWithoutRepeatingIt(t *testing.T) {
+	f := newReadFixture(t, nil)
+	handler, started, _ := blockedProvider(true)
+	f.provider.handler = handler
+	if _, err := f.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	_, account := f.record()
+	if f.service.claudeUsageCleanupCandidate(f.account(), account, f.clock.Now(), false) {
+		t.Fatal("a read owned by its live run was selected for cleanup")
+	}
+	f.service.closeClaudeUsage()
+	f.service.claudeUsage = claudeUsageRuns{}
+	_, account = f.record()
+	if !f.service.claudeUsageCleanupCandidate(f.account(), account, f.clock.Now(), false) {
+		t.Fatal("an orphaned read claim was not selected for cleanup")
+	}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.cleanupClaudeUsage(ctx, f.account()); err != nil {
+		t.Fatal(err)
+	}
+	section := f.section()
+	if section.Refresh != domain.ClaudeUsageIdle || section.Connection != domain.ClaudeUsageLinked || section.LastAttemptAt == nil {
+		t.Fatalf("the orphaned read claim was not released: %+v", section)
+	}
+	_, account = f.record()
+	if f.service.claudeUsageCleanupCandidate(f.account(), account, f.clock.Now(), false) {
+		t.Fatal("a released claim is still selected for cleanup")
+	}
+}
+
+// An orphaned renewal may have rotated the credential: the scanner requires an
+// explicit reconnect and never repeats the exchange.
+func TestClaudeUsageScannerFencesAnOrphanedRenewalAsRotationUncertain(t *testing.T) {
+	f := newReadFixture(t, func(n *fakeUsageNative) { n.expiresIn = time.Minute })
+	f.renewal.block = make(chan struct{})
+	if _, err := f.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for f.renewal.runs.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	f.service.closeClaudeUsage()
+	f.service.claudeUsage = claudeUsageRuns{}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	_, account := f.record()
+	if !f.service.claudeUsageCleanupCandidate(f.account(), account, f.clock.Now(), false) {
+		t.Fatal("an orphaned renewal claim was not selected for cleanup")
+	}
+	if err := f.service.cleanupClaudeUsage(ctx, f.account()); err != nil {
+		t.Fatal(err)
+	}
+	section := f.section()
+	if section.Connection != domain.ClaudeUsageReconnectRequired || section.Refresh != domain.ClaudeUsageRotationUncertain || section.Published {
+		t.Fatalf("the orphaned renewal was not fenced: %+v", section)
+	}
+	f.schedule()
+	if f.renewal.runs.Load() != 1 || f.provider.count() != 0 {
+		t.Fatalf("the scanner repeated the renewal: runs %d requests %d", f.renewal.runs.Load(), f.provider.count())
+	}
+}
+
+func TestRetryClaudeUsageSettlementRepeatsTransientFailuresOnly(t *testing.T) {
+	calls := 0
+	transient := errors.New("database is busy")
+	if err := retryClaudeUsageSettlement(3, time.Millisecond, func() error {
+		calls++
+		if calls < 3 {
+			return transient
+		}
+		return nil
+	}); err != nil || calls != 3 {
+		t.Fatalf("a transient failure was not retried to success: calls=%d err=%v", calls, err)
+	}
+	calls = 0
+	if err := retryClaudeUsageSettlement(3, time.Millisecond, func() error { calls++; return transient }); !errors.Is(err, transient) || calls != 3 {
+		t.Fatalf("a persistent failure was not reported after the bounded attempts: calls=%d err=%v", calls, err)
+	}
+	calls = 0
+	if err := retryClaudeUsageSettlement(3, time.Millisecond, func() error { calls++; return nil }); err != nil || calls != 1 {
+		t.Fatalf("a settled read was repeated: calls=%d err=%v", calls, err)
+	}
+}
+
 func TestClaudeUsageReadsAreRoutedAndOpenedOnlyThroughTheOwner(t *testing.T) {
 	f := newReadFixture(t, nil)
 	f.provider.handler = func(_ int, req *http.Request) (*http.Response, error) {

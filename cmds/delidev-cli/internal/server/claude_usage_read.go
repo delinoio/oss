@@ -240,8 +240,10 @@ func (s *Service) runClaudeUsageRead(read *claudeUsageRead) {
 		return
 	}
 	// Every other outcome settles through the rechecking transaction, which
-	// publishes nothing when the binding was revoked or replaced.
-	if err := s.finishClaudeUsageRead(read, outcome); err != nil {
+	// publishes nothing when the binding was revoked or replaced. A transient
+	// failure is retried; if it persists the durable claim stays and the cleanup
+	// scanner fences it, because the run is about to unregister.
+	if err := retryClaudeUsageSettlement(claudeUsageSettleAttempts, claudeUsageSettleDelay, func() error { return s.finishClaudeUsageRead(read, outcome) }); err != nil {
 		logger.Warn("claude_usage_read_settle_failed", "code", domain.SafeError(err).Code)
 		return
 	}
@@ -253,6 +255,27 @@ func (s *Service) runClaudeUsageRead(read *claudeUsageRead) {
 		attrs = append(attrs, "backoff_seconds", int64(outcome.backoff.Sub(s.claudeUsageNow()).Round(time.Second)/time.Second))
 	}
 	logger.Info("claude_usage_read_finished", attrs...)
+}
+
+const (
+	claudeUsageSettleAttempts = 3
+	claudeUsageSettleDelay    = 200 * time.Millisecond
+)
+
+// retryClaudeUsageSettlement runs one idempotent settlement up to attempts times
+// with a growing pause and returns the last error. The settlement transaction
+// rechecks the binding, so repeating it after a transient failure is safe.
+func retryClaudeUsageSettlement(attempts int, delay time.Duration, settle func() error) error {
+	var err error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if err = settle(); err == nil {
+			return nil
+		}
+		if attempt < attempts {
+			time.Sleep(time.Duration(attempt) * delay)
+		}
+	}
+	return err
 }
 
 // endedOutcome classifies why the run context ended.
