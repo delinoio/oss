@@ -218,7 +218,7 @@ func (s *Service) requestClaudeUsageRefresh(ctx context.Context, req *connect.Re
 }
 
 // claimCoalescedClaudeUsageRefresh records the receipt of an explicit refresh
-// that coalesced into a running read. It applies the admission's validation (a
+// that coalesced into a registered running read. It applies the admission's validation (a
 // linked connection, the confirmed execution connection and generation, a valid
 // actor) and writes only the durable claim under the admission's receipt name, so
 // the exact retained request replays after the running read finishes instead of
@@ -229,6 +229,15 @@ func (s *Service) claimCoalescedClaudeUsageRefresh(ctx context.Context, account,
 		return err
 	}
 	defer unlock()
+	// Coalescing needs a registered owner that will finish and answer the
+	// request. A durable non-idle phase without one is an orphaned claim that
+	// only the cleanup scanner fences; recording a receipt for it would leave the
+	// accepted request replaying forever without its read. The request stays
+	// retryable and is admitted once the claim is fenced.
+	if !s.claudeUsage.live(account) {
+		s.logger.WarnContext(ctx, "claude_usage_refresh_coalesce_refused_no_owner", "account_id", account, "operation_id", operation)
+		return errClaudeUsageBusy
+	}
 	_, err = s.Store.Mutate(ctx, operation, "claude.usage.read.claim", input, func(tx *store.Tx) (any, error) {
 		_, a, err := claudeUsageAccountTx(tx, account, 0)
 		if err != nil {

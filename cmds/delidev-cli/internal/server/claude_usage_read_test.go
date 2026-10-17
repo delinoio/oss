@@ -629,6 +629,52 @@ func TestClaudeUsageCoalescedRefreshIsClaimedAndReplaysAfterTheReadFinishes(t *t
 	}
 }
 
+// A durable non-idle phase without a registered owner is an orphaned claim, not
+// a running read: an explicit refresh must not record a coalesced receipt for it
+// (the request would replay forever without a read) and is admitted normally
+// once the cleanup scanner fenced the claim.
+func TestClaudeUsageRefreshIsNotCoalescedIntoAnOrphanedClaim(t *testing.T) {
+	f := newReadFixture(t, nil)
+	if _, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.usage.orphan", nil, func(tx *store.Tx) (any, error) {
+		r, a, err := claudeUsageAccountTx(tx, f.account(), 0)
+		if err != nil {
+			return nil, err
+		}
+		if err := a.Subscription.ClaudeUsage.BeginRead(f.clock.Now()); err != nil {
+			return nil, err
+		}
+		return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if f.service.claudeUsage.live(f.account()) || f.section().Refresh != domain.ClaudeUsageReading {
+		t.Fatalf("the orphaned claim was not prepared: %+v", f.section())
+	}
+	request := f.refreshRequest(domain.NewID())
+	if _, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, request)); err == nil {
+		t.Fatal("a refresh was acknowledged although no read owns the orphaned claim")
+	}
+	if f.provider.count() != 0 {
+		t.Fatalf("the refused refresh sent %d provider requests", f.provider.count())
+	}
+	// The scanner fences the orphan; the same retained request then reads.
+	if err := f.service.cleanupClaudeUsage(context.Background(), f.account()); err != nil {
+		t.Fatal(err)
+	}
+	if f.section().Refresh != domain.ClaudeUsageIdle {
+		t.Fatalf("the orphaned claim was not fenced: %+v", f.section())
+	}
+	retried := f.refreshRequest(domain.ID(request.Mutation.RequestId))
+	response, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, retried))
+	if err != nil || response.Msg.Replayed {
+		t.Fatalf("the retried request was not admitted as a new read: %v %+v", err, response)
+	}
+	f.await()
+	if f.provider.count() != 1 {
+		t.Fatalf("the retried request did not perform its read: %d", f.provider.count())
+	}
+}
+
 // The Refresh all receipt carries the Claude usage reads of the request: a retry
 // after a lost response lists the original accounts and never reads again, and a
 // request whose admissions did not happen before the response was lost resumes
