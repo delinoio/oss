@@ -16,7 +16,7 @@ func TestOpenRouterSearchAdmitsCompletePinnedCommands(t *testing.T) {
 	if json.Unmarshal([]byte(allNativeSearchCommands), &commands) != nil {
 		t.Fatal("invalid fixture")
 	}
-	cases := []map[string]json.RawMessage{commands}
+	cases := []map[string]json.RawMessage{commands, {}}
 	for name, value := range commands {
 		cases = append(cases, map[string]json.RawMessage{name: value})
 	}
@@ -60,6 +60,38 @@ func TestOpenRouterSearchRejectsInvalidCommandsBeforeCredentials(t *testing.T) {
 		response, _, err := f.request(t, "/alpha/search", `{"id":"fixture","model":"fixed-model","commands":`+commands+`}`, nil)
 		if err != nil || response.StatusCode < 400 || f.authority.keys.Load() != 0 || f.calls.Load() != 0 {
 			t.Fatal("invalid command acquired credentials", commands, err)
+		}
+	}
+}
+
+func TestOpenRouterSearchEmptyCommandsAreDistinctFromMissing(t *testing.T) {
+	f := openRouterFixture(t, StandaloneSearch, func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var projected struct {
+			Input string `json:"input"`
+		}
+		if json.Unmarshal(raw, &projected) != nil || !bytes.Contains([]byte(projected.Input), []byte("Commands:\n{}")) {
+			t.Error("empty command object was not projected")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"status":"completed","output":[{"type":"openrouter:web_search","status":"completed"},{"type":"message","content":[{"type":"output_text","text":"original result"}]}]}`)
+	})
+	response, _, err := f.request(t, "/alpha/search", `{"id":"fixture","model":"fixed-model","commands":{}}`, nil)
+	if err != nil || response.StatusCode != 200 || f.authority.keys.Load() != 1 || f.calls.Load() != 1 {
+		t.Fatal("empty command object rejected", err)
+	}
+	for _, body := range []string{
+		`{"id":"fixture","model":"fixed-model"}`,
+		`{"id":"fixture","model":"fixed-model","commands":null}`,
+		`{"id":"fixture","model":"fixed-model","commands":[]}`,
+		`{"id":"fixture","model":"fixed-model","commands":"{}"}`,
+		`{"id":"fixture","model":"fixed-model","commands":0}`,
+		`{"id":"fixture","model":"fixed-model","commands":{},"unknown":true}`,
+	} {
+		g := openRouterFixture(t, StandaloneSearch, func(http.ResponseWriter, *http.Request) { t.Error("invalid commands reached upstream") })
+		response, _, err := g.request(t, "/alpha/search", body, nil)
+		if err != nil || response.StatusCode < 400 || g.authority.keys.Load() != 0 || g.calls.Load() != 0 {
+			t.Fatal("non-object commands acquired credentials", body, err)
 		}
 	}
 }

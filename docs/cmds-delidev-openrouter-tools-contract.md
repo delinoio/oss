@@ -53,7 +53,9 @@ required tool selection. The adapter carries the original bounded commands
 and recent context as input. Validate all eleven fields in the pinned native
 `SearchCommands` schema, including screenshot, finance, weather and sports,
 with their closed operation shapes and enum values. Preserve original command
-values, references and exact unsigned integers in the projected input. It returns original output text to the native
+values, references and exact unsigned integers in the projected input. An empty
+`commands` object is the native default and is valid; a missing, null or
+non-object `commands` value is rejected before key access. It returns original output text to the native
 search client only after a completed `web_search_call`, `openrouter:web_search`
 or `openrouter:web_fetch` output proves execution. Assistant-only text,
 unexecuted function suggestions and failed or pending web calls are rejected.
