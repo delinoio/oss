@@ -75,8 +75,21 @@ describe("dropdown inventory", () => {
   });
 
   it("lists every registered module and its geometry evidence in the desktop contract", () => {
+    // The table, not the surrounding narrative, is the contract: parse its rows
+    // and compare each exact file/family/treatment/evidence tuple.
+    const rows = inventoryTable();
+    expect(rows.map((row) => row.file)).toEqual(
+      dropdownInventory.map((entry) => entry.file),
+    );
     for (const entry of dropdownInventory) {
-      expect(contract, entry.file).toContain(`\`${entry.file}\``);
+      const row = rows.find((candidate) => candidate.file === entry.file);
+      expect(row, entry.file).toBeDefined();
+      expect(row, entry.file).toEqual({
+        file: entry.file,
+        family: entry.family,
+        treatment: treatmentLabels[entry.treatment],
+        evidence: plain(entry.evidence),
+      });
     }
     for (const script of new Set(
       dropdownInventory.flatMap(
@@ -87,4 +100,62 @@ describe("dropdown inventory", () => {
       expect(contract, script).toContain(script);
     }
   });
+
+  it("detects a missing, renamed or altered inventory row", () => {
+    const table = inventoryTableText();
+    const [first] = dropdownInventory;
+    const mutations = [
+      table.replace(new RegExp(`^\\| \`${first.file}\`.*\\n`, "m"), ""),
+      table.replace(first.family, `${first.family} (changed)`),
+      table.replace("Anchored popup", "Top-layer popover"),
+      table.replace(
+        "scripts/test-reasoning-effort-layout.mjs",
+        "scripts/x.mjs",
+      ),
+    ];
+    for (const mutated of mutations) {
+      expect(mutated).not.toBe(table);
+      expect(parseInventoryRows(mutated)).not.toEqual(inventoryTable());
+    }
+  });
 });
+
+const treatmentLabels: Record<DropdownTreatment, string> = {
+  [DropdownTreatment.AnchoredPopup]: "Anchored popup",
+  [DropdownTreatment.ScrollPicker]: "ScrollPicker",
+  [DropdownTreatment.TopLayerPopover]: "Top-layer popover",
+  [DropdownTreatment.ModalDialog]: "Modal dialog body",
+  [DropdownTreatment.ReservedRegion]: "Reserved region",
+  [DropdownTreatment.PersistentDisclosure]: "Persistent disclosure",
+  [DropdownTreatment.Exception]: "Exception",
+};
+// Markdown backticks only format table cells; compare the plain text.
+const plain = (value: string) => value.replaceAll("`", "").trim();
+function inventoryTableText(): string {
+  const start = contract.indexOf("\n### Dropdown inventory\n");
+  expect(
+    start,
+    "the contract has a Dropdown inventory section",
+  ).toBeGreaterThan(-1);
+  const rest = contract.slice(start + 1);
+  const end = rest.search(/\n### /);
+  return end < 0 ? rest : rest.slice(0, end);
+}
+function parseInventoryRows(text: string) {
+  return text
+    .split("\n")
+    .filter((line) => /^\| `/.test(line))
+    .map((line) => {
+      const cells = line
+        .replace(/^\||\|$/g, "")
+        .split(/(?<!\\)\|/)
+        .map((cell) => plain(cell));
+      return {
+        file: cells[0],
+        family: cells[1],
+        treatment: cells[2],
+        evidence: cells[3],
+      };
+    });
+}
+const inventoryTable = () => parseInventoryRows(inventoryTableText());
