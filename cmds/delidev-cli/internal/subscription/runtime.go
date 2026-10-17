@@ -308,8 +308,16 @@ func CredentialFilePresent(root string) (bool, error) {
 // authority: a retained file never authorizes use; only the published vault
 // generation does.
 func InspectRetainedCredentials(root string) (bool, error) {
+	return InspectRetainedCredentialFiles(root, CredentialFiles)
+}
+
+// InspectRetainedCredentialFiles is InspectRetainedCredentials for an explicit
+// set of credential files below root. An adapter that owns one native target
+// passes exactly that target, so another harness' credential file in the same
+// profile is neither admitted nor an integrity failure of this adapter.
+func InspectRetainedCredentialFiles(root string, names []string) (bool, error) {
 	present := false
-	for _, name := range CredentialFiles {
+	for _, name := range names {
 		real, err := credentialParentReal(root, name)
 		if err != nil {
 			return false, err
@@ -355,8 +363,20 @@ func RetireCredentialFiles(root string) error {
 	return retireCredentialFilesWithSync(root, security.SyncParent)
 }
 
+// RetireCredentialFilesNamed removes only the named credential files (and their
+// target-attributed temporaries) below root. An adapter that owns one native
+// target retires exactly that target and never another harness' credential
+// file that happens to share the profile.
+func RetireCredentialFilesNamed(root string, names []string) error {
+	return retireNamedCredentialFilesWithSync(root, names, security.SyncParent)
+}
+
 func retireCredentialFilesWithSync(root string, syncParent func(string) error) error {
-	for _, name := range CredentialFiles {
+	return retireNamedCredentialFilesWithSync(root, CredentialFiles, syncParent)
+}
+
+func retireNamedCredentialFilesWithSync(root string, names []string, syncParent func(string) error) error {
+	for _, name := range names {
 		if err := retireCredentialFile(root, name, syncParent); err != nil {
 			return err
 		}

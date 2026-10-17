@@ -3305,7 +3305,7 @@ not change a key or path. The closed purposes are:
 | Scope                | Purposes                                                                      | Required key fields            |
 | -------------------- | ----------------------------------------------------------------------------- | ------------------------------ |
 | system (accountless) | `discovery`, `model_observation`, `title_probe`                               | harness                        |
-| account              | `auth`, `quota`, `credit`, `subscription_probe`, `shared_owner`               | harness, account               |
+| account              | `auth`, `quota`, `credit`, `subscription_probe`, `shared_owner`, `usage`      | harness, account               |
 | conversation         | `conversation`, `fork`, `compaction`, `revert`, `sidechat`, `title`, `review` | harness, account, conversation |
 
 Layout below `<root>/native-profiles/`: `registry.json` (versioned registry,
@@ -3548,6 +3548,19 @@ holds native state for migrated launch paths. Process ownership journals under
 `processes/<owner>` are likewise per operation. Completing, failing or
 cancelling an operation never deletes a profile and never requires helper
 removal.
+
+### Claude usage profile
+
+`usage` is defined for Claude Code alone and is the exclusive, server-owned profile of one server-token Claude account's usage login. It is created by `Acquire` as a managed profile of a server registry only: a Worker-owned key is invalid, `RegisterLegacy` refuses the purpose and every registry load rejects a usage entry that is not managed, so a Worker or pre-existing legacy directory is never adopted as its credential profile. It never serves execution, setup-token login, quota or any other operation, and is never shared with a personal, legacy execution or external profile. The official `claude auth login --claudeai` runs in it with `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` both set to the profile's private `claude` directory, a verified no-op `BROWSER` opener (a host without one fails closed instead of opening a server browser), and the isolated environment of the other server-owned Claude logins (no inherited provider credential or `ANTHROPIC_BASE_URL`). Only the original manual approval-code address is accepted: the shared original-CLI URL grammar applies, and a localhost callback variant is `unsupported` because a remote server can never complete it and the client's localhost is never substituted.
+
+This is the one narrow exception to the prohibition on reading native authentication files: the usage adapter (`internal/harness/claude/usage_profile.go`) reads and removes only the native credential storage derived from this profile, after the login child was joined. It never enumerates or adopts any other profile or Keychain item.
+
+- **Linux and Windows:** the profile-owned `claude/.credentials.json` (regular file, no symlink, private owner and permissions, at most 64 KiB).
+- **macOS:** the exact Keychain item whose service is `Claude Code-credentials-` plus the first eight hex digits of the SHA-256 of the exact `claude` directory path and whose account is the operating system user the process runs as (resolved from the effective user ID, never from the `USER` variable, which the child environment does not carry either; an unresolved user fails closed), and the documented file fallback. An item and a file present together are ambiguous and fail closed; an item that cannot be found under the derived name means the login produced no usable credential.
+- Any other platform, a symlink, a non-regular entry, unsafe permissions, a foreign owner, an unreadable Keychain or an invalid `claudeAiOauth` bundle fails closed with a secret-free error. First admission requires that the profile holds no credential storage at all; a leftover is never adopted and is removed only by the owned cleanup.
+- The bundle must carry non-expired access (and optional refresh) tokens, an expiry and the `user:inference` and `user:profile` scopes, and is bound to the pinned OAuth client. The identity (email, organization and plan) comes from the original `claude auth status --json` of the same profile and must be a first-party claude.ai subscription.
+
+Removal deletes the credential file with its attributable temporaries and the exact derived Keychain item, and leaves every other profile file: the adapter inspects and retires only the exact `claude/.credentials.json` target, so another harness' credential file in the profile root (for example a Codex `auth.json`) is neither admitted as usage state nor ever deleted. Real installed-native, Keychain derivation and per-platform acceptance are not established by fixtures.
 
 ### Completion, credentials and retained data
 

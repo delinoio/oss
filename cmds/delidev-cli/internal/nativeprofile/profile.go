@@ -32,6 +32,11 @@ const (
 	PurposeQuota             Purpose = "quota"
 	PurposeCredit            Purpose = "credit"
 	PurposeSubscriptionProbe Purpose = "subscription_probe"
+	// PurposeUsage is the exclusive server-owned Claude Code usage-tracking
+	// profile of one server-token Claude account. It is valid only for the Claude
+	// harness, is created by Acquire, and never serves execution or any other
+	// operation. Its native credential storage is read only by the usage adapter.
+	PurposeUsage Purpose = "usage"
 	// PurposeSharedOwner is the account-wide Codex history home shared by the
 	// members of one managed Codex account owner. It is valid only for the Codex
 	// harness, is registered in place at its fixed per-account path through
@@ -59,7 +64,7 @@ const (
 
 var purposeScopes = map[Purpose]Scope{
 	PurposeDiscovery: ScopeSystem, PurposeModelObservation: ScopeSystem, PurposeTitleProbe: ScopeSystem,
-	PurposeAuth: ScopeAccount, PurposeQuota: ScopeAccount, PurposeCredit: ScopeAccount, PurposeSubscriptionProbe: ScopeAccount, PurposeSharedOwner: ScopeAccount,
+	PurposeAuth: ScopeAccount, PurposeQuota: ScopeAccount, PurposeCredit: ScopeAccount, PurposeSubscriptionProbe: ScopeAccount, PurposeSharedOwner: ScopeAccount, PurposeUsage: ScopeAccount,
 	PurposeConversation: ScopeConversation, PurposeFork: ScopeConversation, PurposeCompaction: ScopeConversation,
 	PurposeRevert: ScopeConversation, PurposeSidechat: ScopeConversation, PurposeTitle: ScopeConversation, PurposeReview: ScopeConversation,
 }
@@ -73,10 +78,14 @@ func (p Purpose) Scope() (Scope, bool) { s, ok := purposeScopes[p]; return s, ok
 func (p Purpose) RegisteredOnly() bool { return p == PurposeSharedOwner }
 
 // harnessAllowed reports whether the purpose is defined for the harness. Every
-// purpose except the registered-only shared owner is defined for all harnesses.
+// purpose except the registered-only shared owner and the Claude usage profile
+// is defined for all harnesses.
 func (p Purpose) harnessAllowed(h domain.Harness) bool {
-	if p == PurposeSharedOwner {
+	switch p {
+	case PurposeSharedOwner:
 		return h == domain.Codex
+	case PurposeUsage:
+		return h == domain.ClaudeCode
 	}
 	return true
 }
@@ -114,6 +123,10 @@ func (k Key) Validate() error {
 	}
 	scope, ok := k.Purpose.Scope()
 	if !ok || !k.Purpose.harnessAllowed(k.Harness) {
+		return invalidKey()
+	}
+	// The usage profile is DeliDev-server-owned: a Worker registry never holds it.
+	if k.Purpose == PurposeUsage && k.Owner != OwnerServer {
 		return invalidKey()
 	}
 	switch k.Owner {

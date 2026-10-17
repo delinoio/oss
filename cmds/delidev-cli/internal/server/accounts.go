@@ -83,6 +83,9 @@ func (s *Service) secrets() (accountSecrets, error) {
 	return vault, nil
 }
 func (s *Service) closeAccountSecrets() error {
+	// Usage logins own native children and vault writes: join them first, outside
+	// the account gate their own settlement needs.
+	s.closeClaudeUsage()
 	// No native operation may outlive the server's scope lock or final stopped log.
 	unlock, err := s.lockAccounts(context.Background())
 	if err != nil {

@@ -76,6 +76,15 @@ func (e entry) violatesRegisteredOnly() bool {
 	return e.Key.Purpose.RegisteredOnly() && (e.Origin != OriginLegacy || len(e.Histories) > 0)
 }
 
+// violatesUsageOrigin reports whether the entry breaks the invariant of the
+// usage purpose: its profile is always created by Acquire under the managed
+// profile root, never adopted from an existing directory. Registration refuses
+// it and every registry load enforces it again, so a restored registry cannot
+// bind the usage purpose to a pre-existing (legacy) directory.
+func (e entry) violatesUsageOrigin() bool {
+	return e.Key.Purpose == PurposeUsage && e.Origin != OriginManaged
+}
+
 type registryFile struct {
 	Version  int     `json:"version"`
 	Profiles []entry `json:"profiles"`
@@ -229,7 +238,7 @@ func (r *Registry) load() (registryFile, error) {
 	for _, e := range file.Profiles {
 		// Every stored key must belong to this owner root: a restored or reused
 		// root under another server or Worker identity is invalid as a whole.
-		if e.ID.Validate() != nil || e.Key.Validate() != nil || e.Key.Owner != r.config.Owner || e.Key.Server != r.config.Server || e.Key.Machine != r.config.Machine || (e.Origin == OriginLegacy && !validLegacyPath(e.Path)) || seenID[e.ID] || seenKey[e.Key.String()] || len(e.Histories) > maxHistories || (e.Origin != OriginManaged && e.Origin != OriginLegacy) || (e.Origin == OriginLegacy) == (e.Path == "") || e.violatesRegisteredOnly() {
+		if e.ID.Validate() != nil || e.Key.Validate() != nil || e.Key.Owner != r.config.Owner || e.Key.Server != r.config.Server || e.Key.Machine != r.config.Machine || (e.Origin == OriginLegacy && !validLegacyPath(e.Path)) || seenID[e.ID] || seenKey[e.Key.String()] || len(e.Histories) > maxHistories || (e.Origin != OriginManaged && e.Origin != OriginLegacy) || (e.Origin == OriginLegacy) == (e.Path == "") || e.violatesRegisteredOnly() || e.violatesUsageOrigin() {
 			return registryFile{}, Failure(domain.RecoveryRequired, ReasonRegistryInvalid, "The native profile registry is invalid.", "Restore the registry from a trusted backup without deleting profile directories.")
 		}
 		seenID[e.ID], seenKey[e.Key.String()] = true, true
@@ -611,6 +620,11 @@ func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string,
 	}
 	if key.Purpose.RegisteredOnly() && len(histories) > 0 {
 		return Info{}, invalidKey()
+	}
+	// The usage profile is created by Acquire; an existing directory is never
+	// adopted as its credential profile.
+	if key.Purpose == PurposeUsage {
+		return Info{}, Failure(domain.InvalidArgument, ReasonLegacyUnverified, "The usage profile cannot be registered from an existing directory.", "Let the server create the exclusive usage profile.")
 	}
 	var result Info
 	err = r.withRegistry(ctx, func(file *registryFile) (bool, error) {

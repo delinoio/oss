@@ -932,6 +932,7 @@ func retireAccountLoginReferencesExcept(ctx context.Context, vault accountSecret
 	if err != nil {
 		return 0, err
 	}
+	refs = accountLoginOnly(refs)
 	for _, ref := range refs {
 		if ref.Owner != owner || ref.Purpose != credentials.AccountLogin || ref.ID.Validate() != nil {
 			return 0, subscriptionDenied()
@@ -954,7 +955,7 @@ func retireAccountLoginReferencesExcept(ctx context.Context, vault accountSecret
 	if err != nil {
 		return removed, err
 	}
-	for _, ref := range remaining {
+	for _, ref := range accountLoginOnly(remaining) {
 		if ref.ID != keep {
 			return removed, subscriptionDenied()
 		}

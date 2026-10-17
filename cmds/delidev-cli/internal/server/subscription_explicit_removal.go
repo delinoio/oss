@@ -4,11 +4,9 @@ package server
 import (
 	"context"
 	"path/filepath"
-	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
 // Explicit credential removal.
@@ -22,8 +20,8 @@ import (
 //   - explicit account deletion.
 //
 // A server-token Claude account may also own claude-usage references. Explicit
-// logout and account deletion delete the ones its usage section retired (a live
-// credential is never deleted); a disconnected account has none left.
+// logout deletes the ones its usage section retired (a live credential is never
+// deleted) and account deletion deletes every remaining one.
 //
 // The removal is complete: it enumerates every unremoved reference of the owner
 // without a count limit, validates owner and purpose before the first deletion,
@@ -95,49 +93,6 @@ func accountLoginOnly(refs []credentials.Ref) []credentials.Ref {
 		}
 	}
 	return kept
-}
-
-// claudeUsageRef addresses one claude-usage vault generation of an account.
-func claudeUsageRef(account, credential domain.ID) credentials.Ref {
-	return credentials.Ref{Owner: account, ID: credential, Purpose: credentials.ClaudeUsage}
-}
-
-// removeRetiredClaudeUsage deletes the claude-usage references that the usage
-// section of a server-token Claude account retired, so an explicit execution
-// logout is complete only once they are gone. A live (current) credential is
-// never deleted here: only the section's retirement list is. The section is not
-// rewritten; the cleanup pass later releases the confirmed entries, and deleting
-// an already deleted reference is idempotent. An account without a usage section
-// owes nothing, and an account of another kind is ignored. The caller holds the
-// account gate.
-func (s *Service) removeRetiredClaudeUsage(ctx context.Context, account domain.ID) error {
-	var retired []domain.ID
-	err := s.Store.Read(ctx, func(tx *store.Tx) error {
-		_, a, err := accountFromTx(tx, account, 0)
-		if err != nil {
-			return err
-		}
-		if a.ManagedClaudeAccount() && a.Subscription.ClaudeUsage != nil {
-			retired = slices.Clone(a.Subscription.ClaudeUsage.RetiredCredentials)
-		}
-		return nil
-	})
-	if err != nil || len(retired) == 0 {
-		return err
-	}
-	vault, err := s.secrets()
-	if err != nil {
-		return err
-	}
-	for _, id := range retired {
-		if err := ctx.Err(); err != nil {
-			return domain.SafeError(err)
-		}
-		if err := vault.Delete(ctx, claudeUsageRef(account, id)); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // removeAccountCredentials is the explicit removal of one server-owned
