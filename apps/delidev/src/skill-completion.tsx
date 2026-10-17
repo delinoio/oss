@@ -38,16 +38,22 @@ import {
 } from "./prompt-edit-history";
 import {
   buildLayout,
+  type FrozenCollapse,
   canonicalRangeForDisplay,
+  editFrozenCollapse,
+  freezeCollapse,
   convertBareUrls,
   convertTypedUrl,
   diffDisplay,
   linkAtCaret,
   revealedStarts,
   sameStarts,
+  scanDraft,
   scanMarkdown,
+  replacedRange,
   shiftStarts,
   type PromptLayout,
+  type ScannedDraft,
   type TextRange,
 } from "./prompt-markdown-links";
 import { ShortcutPlatform, shortcutPlatform } from "./shortcuts";
@@ -376,9 +382,6 @@ export function useSkillCompletion({
   // text derived from it, so selection, bindings and history map through here.
   const [revealed, setRevealed] = useState<number[]>([]);
   const [linkFailure, setLinkFailure] = useState<ExternalLinkFailure>();
-  const layout = useMemo(() => buildLayout(value, revealed), [value, revealed]);
-  const layoutRef = useRef<PromptLayout>(layout);
-  layoutRef.current = layout;
   const revealedRef = useRef(revealed);
   revealedRef.current = revealed;
   const selectionRef = useRef<PromptSelection>({
@@ -387,6 +390,13 @@ export function useSkillCompletion({
     direction: "none",
   });
   const pendingSelection = useRef(false);
+  // Collapse state captured when composition starts and updated by every
+  // composed edit; the layout is derived from it, never from a re-parse of the
+  // draft, until composition ends.
+  const compositionCollapse = useRef<FrozenCollapse | undefined>(undefined);
+  // The one scan taken when composition ends. The revealed set and the layout
+  // are both derived from it, so the final draft is parsed exactly once.
+  const settledScan = useRef<ScannedDraft | undefined>(undefined);
   const history = useRef(new PromptEditHistory<SkillTokenBinding>());
   const linkOpening = useRef(false);
   const mounted = useRef(true);
@@ -597,6 +607,40 @@ export function useSkillCompletion({
     scope,
   ]);
   const { unavailable, unavailableCount, selected: selectedRanges } = analysis;
+  // Links and skill ranges share one painted-range budget. Skill ranges are
+  // already bounded by the analysis, so links yield: when they no longer fit in
+  // the remainder, the whole draft is shown as plain source (no partial
+  // collapse) while the exact unavailable count stays reported. An IME owns the
+  // textarea text and selection while composing, so no display state may be
+  // re-derived then: composition empties the skill analysis (growing the
+  // remainder) and the link count changes with every keystroke. The collapse
+  // state captured at composition start is therefore held as a whole, and the
+  // budget is recomputed only once composition ends.
+  const linkBudget =
+    MAX_PAINTED_SKILL_RANGES - unavailable.length - selectedRanges.length;
+  const frozenCollapse = scanSuppressed
+    ? compositionCollapse.current
+    : undefined;
+  const layout = useMemo(
+    () =>
+      buildLayout(
+        value,
+        revealed,
+        linkBudget,
+        frozenCollapse,
+        settledScan.current,
+      ),
+    [value, revealed, linkBudget, frozenCollapse],
+  );
+  const layoutRef = useRef<PromptLayout>(layout);
+  layoutRef.current = layout;
+  // Crossing the budget swaps the whole display text under the caret, so the
+  // canonical selection is re-applied after that render.
+  const collapseSuppressed = useRef(layout.collapseSuppressed);
+  if (collapseSuppressed.current !== layout.collapseSuppressed) {
+    collapseSuppressed.current = layout.collapseSuppressed;
+    pendingSelection.current = true;
+  }
   const confirmedCount = useRef<{
     scope: string;
     transport: typeof transport;
@@ -663,6 +707,7 @@ export function useSkillCompletion({
     coalesce: boolean,
     replaced?: TextRange,
     insertedLength = 0,
+    frozen?: FrozenCollapse,
   ): boolean => {
     if (!canEdit() || change(next, nextBindings) === false) return false;
     history.current.record(
@@ -674,6 +719,7 @@ export function useSkillCompletion({
     setBindings(nextBindings);
     selectionRef.current = selection;
     setCaret(selection.start);
+    if (frozen) compositionCollapse.current = frozen;
     setRevealed(
       composing.current && replaced
         ? shiftStarts(revealedRef.current, replaced, insertedLength)
@@ -741,15 +787,39 @@ export function useSkillCompletion({
   const onChange = (nextDisplay: string, position: number) => {
     if (!canEdit()) return;
     const edit = diffDisplay(layout.display, nextDisplay, position);
-    const range = canonicalRangeForDisplay(layout, edit.start, edit.end);
-    let next =
-      value.slice(0, range.start) + edit.inserted + value.slice(range.end);
-    // The reported caret decides where inside the inserted text it lands.
-    let caretAt =
-      range.start +
-      (position >= edit.start && position <= edit.start + edit.inserted.length
-        ? position - edit.start
-        : edit.inserted.length);
+    // While an IME owns the textarea, the composed edit is applied to the
+    // frozen collapse model, which keeps the display equal to what the IME
+    // produced whatever it typed, so the textarea is never rewritten.
+    const held =
+      composing.current && compositionCollapse.current?.canonical === value
+        ? compositionCollapse.current
+        : undefined;
+    const frozen = held && editFrozenCollapse(held, edit);
+    let range: TextRange, next: string, caretAt: number;
+    let insertedLength = edit.inserted.length;
+    if (frozen) {
+      next = frozen.canonical;
+      ({ range, insertedLength } = replacedRange(value, next));
+      caretAt = buildLayout(
+        next,
+        [],
+        Number.POSITIVE_INFINITY,
+        frozen,
+      ).toCanonical(position);
+      console.debug("prompt composition edit", {
+        collapsedLinks: frozen.links.length,
+      });
+    } else {
+      range = canonicalRangeForDisplay(layout, edit.start, edit.end);
+      next =
+        value.slice(0, range.start) + edit.inserted + value.slice(range.end);
+      // The reported caret decides where inside the inserted text it lands.
+      caretAt =
+        range.start +
+        (position >= edit.start && position <= edit.start + edit.inserted.length
+          ? position - edit.start
+          : edit.inserted.length);
+    }
     let converted = false;
     const typedDelimiter =
       !composing.current &&
@@ -791,7 +861,8 @@ export function useSkillCompletion({
         kind,
         kind !== PromptEditKind.Discrete,
         range,
-        edit.inserted.length,
+        insertedLength,
+        frozen,
       )
     )
       return;
@@ -1195,14 +1266,44 @@ export function useSkillCompletion({
     onCompositionStart: () => {
       if (!canEdit()) return;
       composing.current = true;
+      compositionCollapse.current = freezeCollapse(layoutRef.current);
       setComposition(true);
       setDismissed(true);
     },
     onCompositionEnd: () => {
+      // The textarea still shows the frozen display, so the selection maps
+      // through the layout that produced it, not through a re-parsed one.
+      const held = layoutRef.current;
       composing.current = false;
+      compositionCollapse.current = undefined;
       setComposition(false);
       if (!canEdit()) return;
-      syncSelection();
+      const input = textarea.current;
+      if (!input) return;
+      const start = held.toCanonical(input.selectionStart),
+        end = held.toCanonical(input.selectionEnd);
+      selectionRef.current = {
+        start,
+        end,
+        direction: selectionDirection(input),
+      };
+      setCaret(start);
+      // The freeze is lifted: the final draft is parsed once, and the revealed
+      // set is a function of that parse and the canonical selection alone. A
+      // link that was revealed (or is new) is judged like every other link, so
+      // one that still holds the caret stays revealed instead of collapsing
+      // under it, and nothing from before the composition is carried over.
+      const settled = scanDraft(held.canonical);
+      settledScan.current = settled;
+      const wanted = revealedStarts(settled.scan.links, start, end);
+      if (!sameStarts(wanted, revealedRef.current)) setRevealed(wanted);
+      console.debug("prompt composition end", {
+        links: settled.scan.links.length,
+        revealed: wanted.length,
+      });
+      // The display is recomputed from the final draft now that the freeze is
+      // lifted, so the canonical selection is re-applied after that render.
+      pendingSelection.current = true;
       setDismissed(false);
     },
     attributes: {

@@ -6525,7 +6525,8 @@ count exceeds 256, paint no token overlay (no partial prefix), leave the native
 textarea text visible, and report the exact count through the localized status and
 the textarea description; editing back to 256 or fewer restores the full aligned
 overlay. Painted absent and selected ranges together stay within 256 ranges so the
-mirror holds at most 512 spans.
+mirror holds at most 512 spans; collapsed Markdown links share that same budget
+(see Composer Markdown links).
 An explicit retained binding is confirmed unavailable, with no selected decoration,
 when its exact four-field selection (Worker device, inventory, skill and content
 revision) is absent from a complete successful current-scope inventory, even if an
@@ -6862,6 +6863,41 @@ also owns prompt Markdown links. The pure model lives in
   backslash and its escaped character rounds to the character start, and an edit
   replaces the whole escape sequence. After a reveal, the session composer
   re-measures its height from the displayed text, not only from the draft.
+- **Painted budget.** Collapsed links and skill ranges share the one 256-range
+  (512-span) mirror budget. Skill ranges are already bounded by their analysis, so
+  links yield: when the parsed links exceed the remainder (256 minus the painted
+  absent and selected skill ranges), the whole draft is shown as plain canonical
+  source (the display equals the draft, no link is collapsed or decorated, and no
+  prefix is collapsed). The skill decoration and the exact unavailable count stay
+  as described for skill tokens, and links still open on modified click. Editing
+  or undoing back within the budget restores normal collapse without changing the
+  draft, history or bindings; the canonical selection is re-applied when the
+  display switches. IME composition never switches the display and never
+  rewrites the textarea text or selection: the collapse state itself is captured
+  when composition starts and held until it ends. A draft that was plain source
+  stays plain, and links that were collapsed stay collapsed even when the link
+  count crosses the 256 budget in either direction or composing empties the
+  skill analysis. The held state is a position model, not a re-parse: each
+  composed edit is applied to it so the displayed text always equals what the
+  IME produced, whatever it typed. Text inserted before or after a collapsed
+  link, including Markdown syntax such as `!`, `[`, `]`, `(`, `)` or a
+  backslash, is plain draft text next to the link and never drops or reshapes
+  it (an exclamation mark composed before `[x](https://a)` shows `!x` and the
+  link stays collapsed). Text inserted inside a collapsed label goes into the
+  label with delimiters escaped, a deletion trims the label, and a link whose
+  whole label is deleted loses its source. A link completed while composing stays
+  plain source. A link that was revealed (its source shown) when composition
+  started is plain source to the held state, like any link the IME completes.
+  Markdown is parsed again only when composition ends, exactly once: the budget,
+  the collapse decision (a link whose syntax changed, such as an image, then
+  shows its source) and the canonical selection are recomputed then. The
+  revealed set is derived from that single parse and the canonical selection
+  alone, never from the held state or from what was revealed before: a link that
+  is still valid and holds the caret stays revealed (no rewrite and no
+  collapse/reveal bounce), a link the caret has left collapses, and a link whose
+  syntax no longer parses as a link shows its source. At most one textarea
+  rewrite follows the last composed update, and the caret is restored from its
+  canonical offset. All four composer placements share this behavior.
 - **History.** Programmatic conversion clears the native undo stack, so every
   edit is recorded in `PromptEditHistory`. Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z, Ctrl+Y
   (non-macOS) and native `historyUndo`/`historyRedo` run through it. A conversion
