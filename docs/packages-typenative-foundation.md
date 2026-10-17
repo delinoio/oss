@@ -66,6 +66,14 @@ The application pipeline uses `tn dev [--target <target>]`, `tn build [--target 
 - Derive minimum OS requirements from pinned dependencies and SDK requirements. Publish only the combinations actually validated.
 - Require development installation and execution. Physical-device acceptance, distribution signing automation, and store submission are outside this MVP.
 
+**Application identity**
+
+An installation-ready `typenative.json` must contain `schemaVersion: 1` and `applicationId`, a lowercase canonical UUID v7 string matching `^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`. Generate the ID once when preparing an application for installation and commit it with the source. An initial source-only scaffold is not installation-ready; require its author to persist an ID before enabling application builds. Do not derive identity from a package name, display name, directory, source hash, version or build ID, and never regenerate it during a build or update.
+
+Carry the same ID into every platform package and the host launch metadata. The host must validate that manifest, installed package and launch metadata agree before opening application storage. Reject missing, invalid or inconsistent IDs without launching or creating a data directory. Derive a platform-safe package identifier as `io.typenative.app.a` followed by the UUID with hyphens removed; use the same derivation across versions. The UUID remains the storage ownership key under the OS-provided per-user application-data root or application sandbox.
+
+Different IDs have separate storage. Development builds, updates and rollbacks for one ID preserve its storage. Renaming the project or changing its version does not change the ID. Copying an ID intentionally declares the same application, not a new isolated application; a fork that needs separate installation and data must select a new ID. This local identity is not authentication or isolation from another process running as the same OS user. Changing an ID starts a separate storage namespace and must not delete or automatically migrate the old data.
+
 **Application APIs and state**
 
 - Provide HTTP(S) through `fetch` and `AbortSignal`. Preserve certificate validation. Applications own authentication and retry policy.

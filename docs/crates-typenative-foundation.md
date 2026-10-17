@@ -22,6 +22,8 @@ Provide fetch/AbortSignal with TLS verification, asynchronous JSON key/value and
 
 ## Storage
 
+Validate the manifest, package and launch `applicationId` according to the [SDK application identity contract](packages-typenative-foundation.md#interfaces-and-contracts) before opening storage. Key the storage namespace by that immutable UUID v7, not a display name, source path, version or build ID. Preserve the namespace across updates and rollbacks; reject identity mismatches without touching application data.
+
 Use application-specific local storage, an explicit exception to R2 defaults. Provide get/set/remove/clear and explicit file reads/writes/deletion. Reject path escapes, serialize same-key/path writes within the application process and use atomic key writes. Preserve the last successful write and persistence across restarts. No automatic expiry, encryption, cloud synchronization or multi-process mutation guarantees.
 
 ## Security

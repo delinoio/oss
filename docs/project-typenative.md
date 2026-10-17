@@ -25,6 +25,8 @@ The TypeScript SDK/renderer/CLI and Rust host are explicit exceptions to the def
 
 The target identifiers are `macos-arm64`, `windows-x64`, `linux-x64`, `ios-arm64-simulator` and `android-arm64-emulator`. Supported combinations require recorded execution acceptance. Dependency metadata, compilation and package creation alone do not establish support. Preserve process identity and compatible React state during native component updates. Upstream gaps require implementation, never a JavaScript-engine fallback or a silent reduction in React support.
 
+Installation-ready packages and host launches share the immutable UUID v7 `applicationId` defined by the SDK contract. Package identity and application storage must preserve it across updates and rollbacks.
+
 Use compatible, exact framework/compiler/renderer/plugin versions. Rollback requires explicit selection and preserves application data. Repository-owned code is Apache-2.0; upstream patches retain licenses and document cause, scope and removal conditions. No public documentation website is required.
 
 ## Change Policy
