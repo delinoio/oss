@@ -62,7 +62,7 @@ func prepareOpenRouterToolRequest(raw []byte, scope Scope, operation Operation) 
 		if externalJSON(request.Reasoning) {
 			projected["reasoning"] = request.Reasoning
 		}
-		return json.Marshal(projected)
+		return marshalOpenRouterToolRequest(projected)
 	}
 	var request struct {
 		Model      string  `json:"model"`
@@ -111,7 +111,19 @@ func prepareOpenRouterToolRequest(raw []byte, scope Scope, operation Operation) 
 		}
 		projected["input_references"] = images
 	}
-	return json.Marshal(projected)
+	return marshalOpenRouterToolRequest(projected)
+}
+
+// Projection embeds native JSON context in a JSON string, which can expand
+// escaped characters. Apply the outbound bound after serialization and before
+// provider credential access, rather than relying on the inbound frame size.
+func marshalOpenRouterToolRequest(value any) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil || len(raw) > maxBody {
+		clear(raw)
+		return nil, openRouterToolError()
+	}
+	return raw, nil
 }
 
 func externalJSON(raw json.RawMessage) bool { return len(raw) != 0 && string(raw) != "null" }

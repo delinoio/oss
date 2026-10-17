@@ -178,3 +178,30 @@ func TestOpenRouterSearchRequiresCompletedRemoteWebOperation(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenRouterSearchProjectionBoundPrecedesCredentialAccess(t *testing.T) {
+	f := openRouterFixture(t, StandaloneSearch, func(http.ResponseWriter, *http.Request) { t.Error("oversized projection reached upstream") })
+	// Raw '<' fits in the native JSON input. Embedding it in an output JSON
+	// string expands each character to six bytes under encoding/json.
+	body := `{"id":"fixture","model":"fixed-model","commands":{"search_query":[{"q":"fixture"}]},"input":"` + strings.Repeat("<", maxBody/5) + `"}`
+	if len(body) >= maxBody {
+		t.Fatal("fixture does not fit original input limit")
+	}
+	response, _, err := f.request(t, "/alpha/search", body, nil)
+	if err != nil || response.StatusCode < 400 || f.authority.keys.Load() != 0 || f.calls.Load() != 0 {
+		t.Fatal("oversized projection acquired provider authority", err)
+	}
+}
+
+func TestOpenRouterProjectedRequestExactByteBound(t *testing.T) {
+	for _, excess := range []int{0, 1} {
+		// A serialized JSON string adds two quote bytes.
+		raw, err := marshalOpenRouterToolRequest(strings.Repeat("a", maxBody-2+excess))
+		if excess == 0 && (err != nil || len(raw) != maxBody) {
+			t.Fatal("exact bound rejected", err)
+		}
+		if excess != 0 && (err == nil || raw != nil) {
+			t.Fatal("oversized serialized request accepted")
+		}
+	}
+}

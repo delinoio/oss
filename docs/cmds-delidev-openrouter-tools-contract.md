@@ -51,7 +51,9 @@ and recent context as input. It returns original output text to the native
 search client only after a completed `web_search_call`, `openrouter:web_search`
 or `openrouter:web_fetch` output proves execution. Assistant-only text,
 unexecuted function suggestions and failed or pending web calls are rejected.
-No native reference IDs or encrypted output are invented.
+No native reference IDs or encrypted output are invented. Serialized tool
+requests must still fit the proxy body bound after context/string escaping;
+oversized projections are rejected before credential access or upstream I/O.
 This is a distinct tool request; the ordinary Responses relay does not inject
 tools or rewrite user requests. Remote failures remain failures and are not
 converted to search success. Incompatible observed tool responses return a
