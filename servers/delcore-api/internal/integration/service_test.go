@@ -1979,6 +1979,56 @@ func TestInitialPaymentAdvancesOrderingWatermark(t *testing.T) {
 	}
 }
 
+// TestRetainedPaymentFailureSurvivesActiveStatus proves that an unresolved
+// payment failure is retained independently of the latest informational status.
+func TestRetainedPaymentFailureSurvivesActiveStatus(t *testing.T) {
+	assertBlocked := func(t *testing.T, f *subscriptionOrderFixture) {
+		t.Helper()
+		if s := f.state(t); s.free || !s.renewalFailed || s.activePaid != 1 || s.subscription != "sub_order" {
+			t.Fatal("retained payment failure not applied", s)
+		}
+		decision, e := f.client.Authorize(context.Background(), req(&pb.AuthorizeRequest{TenantId: f.tenant, UserId: f.userID, Capability: "execute", Paid: true}, "service"))
+		if e != nil || decision.Msg.Allowed {
+			t.Fatal("unresolved payment failure allowed paid use", decision, e)
+		}
+	}
+	t.Run("active after past-due", func(t *testing.T) {
+		f := newSubscriptionOrderFixture(t)
+		f.deliver(t, "evt_failure", "past_due", f.at.Add(time.Hour))
+		f.deliver(t, "evt_status_active", "active", f.at.Add(2*time.Hour))
+		if state, at := f.retained(t); state != "active" || !at.Equal(f.at.Add(2*time.Hour)) {
+			t.Fatal("active status not retained as the latest status", state, at)
+		}
+		f.pay(t)
+		assertBlocked(t, f)
+	})
+	t.Run("past-due delivered after a newer active", func(t *testing.T) {
+		f := newSubscriptionOrderFixture(t)
+		f.deliver(t, "evt_status_active", "active", f.at.Add(2*time.Hour))
+		f.deliver(t, "evt_failure_late", "past_due", f.at.Add(time.Hour))
+		f.pay(t)
+		assertBlocked(t, f)
+	})
+	t.Run("failure older than the payment stays resolved", func(t *testing.T) {
+		f := newSubscriptionOrderFixture(t)
+		f.deliver(t, "evt_failure_old", "past_due", f.at.Add(-time.Hour))
+		f.deliver(t, "evt_status_active", "active", f.at.Add(time.Hour))
+		f.pay(t)
+		if s := f.state(t); s.free || s.renewalFailed || s.activePaid != 1 {
+			t.Fatal("failure older than the payment blocked paid use", s)
+		}
+	})
+	t.Run("cancellation outranks an earlier failure", func(t *testing.T) {
+		f := newSubscriptionOrderFixture(t)
+		f.deliver(t, "evt_failure", "past_due", f.at.Add(time.Hour))
+		f.deliver(t, "evt_canceled_later", "canceled", f.at.Add(2*time.Hour))
+		f.pay(t)
+		if s := f.state(t); !s.free || s.activePaid != 0 {
+			t.Fatal("cancellation not applied after a failure", s)
+		}
+	})
+}
+
 func TestSubscriptionStatusAloneGrantsAndClearsNothing(t *testing.T) {
 	f := newSubscriptionOrderFixture(t)
 	f.deliver(t, "evt_active_early", "active", f.at.Add(time.Hour))
