@@ -341,7 +341,10 @@ try {
                           box.left >= 0 &&
                           box.bottom <= innerHeight &&
                           box.right <= innerWidth,
-                        onTop: item.contains(hit) || node.contains(hit),
+                        // The tested item itself (or one of its descendants such as a
+                        // label or icon) must own the hit-test result; a sibling,
+                        // the panel or a pointer-events:none item must fail.
+                        onTop: item.contains(hit),
                       };
                     },
                   );
