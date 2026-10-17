@@ -807,6 +807,42 @@ fn completion_port_directory_queries(root: &Path) {
         CloseHandle(port);
     }
 
+    // A read-only managed directory (a dependency container with merged
+    // entries) still accepts completion association changes: the request only
+    // changes the completion association and never mutates package content.
+    fs::create_dir_all(root.join("node_modules/.cache")).unwrap();
+    let container = open(&root.join("node_modules"), true);
+    let container_port =
+        unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, std::ptr::null_mut(), 1, 0) };
+    assert!(!container_port.is_null(), "create container port");
+    for api in apis {
+        let status = query(container, api, None);
+        assert!(status >= 0, "{api:?} read-only unassociated {status:#x}");
+    }
+    let installed = replace_completion_port(container, container_port);
+    assert!(
+        installed >= 0,
+        "read-only replacement install status {installed:#x}"
+    );
+    for api in apis {
+        let status = query(container, api, Some(container_port));
+        assert!(status < 0, "{api:?} read-only replaced {status:#x}");
+    }
+    assert_no_packet(container_port);
+    let removed = replace_completion_port(container, std::ptr::null_mut());
+    assert!(
+        removed >= 0,
+        "read-only replacement removal status {removed:#x}"
+    );
+    for api in apis {
+        let status = query(container, api, None);
+        assert!(status >= 0, "{api:?} read-only removed {status:#x}");
+    }
+    unsafe {
+        CloseHandle(container);
+        CloseHandle(container_port);
+    }
+
     // A native-backed directory (no merged entries) keeps the native syscall.
     let plain = root.join("plain");
     fs::create_dir_all(&plain).unwrap();

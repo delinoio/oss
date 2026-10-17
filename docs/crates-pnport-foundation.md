@@ -91,12 +91,14 @@ callback and context. The association is recorded only after the native
 `FileCompletionInformation` or `FileReplaceCompletionInformation` request
 succeeds; a replacement request with a null port removes the recorded
 association, and a non-null port sets it. The state is shared by duplicated
-handles and ends with the handle. An association request holds the per-object
-state exclusively across the native call and the state update, and a merged
-query holds it shared for its whole emulation, so a concurrent query on a
-duplicated handle either completes before the association or observes it, and
-never returns a packet-less result for an installed port. A rejected query
-leaves the enumeration cursor unchanged and writes no status. Native-backed
+handles and ends with the handle. Read-only managed handles, such as merged
+dependency directories, accept both association requests because they change
+only the completion association and never package content. An association
+request holds the per-object state exclusively across the native call and the
+state update, and a merged query holds it shared for its whole emulation, so a
+concurrent query on a duplicated handle either completes before the association
+or observes it, and never returns a packet-less result for an installed port.
+A rejected query leaves the enumeration cursor unchanged and writes no status. Native-backed
 directories and unassociated synchronous queries keep their behavior.
 Unclassified disk-device namespaces and lossily encoded Detours DLL paths also
 fail explicitly. These limits remain part of complete Windows acceptance.

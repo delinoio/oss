@@ -450,7 +450,7 @@ unsafe fn completion_port_request(
 }
 hook!(SET_INFO, ntapi::ntioapi::NtSetInformationFile, c"NtSetInformationFile", (file: HANDLE, ios: PIO_STATUS_BLOCK, buffer: PVOID, length: ULONG, class: FILE_INFORMATION_CLASS) -> NTSTATUS, {
     let Some(_guard) = Guard::enter() else { return (SET_INFO.real())(file,ios,buffer,length,class); };
-    if !writable(file) && !matches!(class, FilePositionInformation | FileCompletionInformation | FileIoPriorityHintInformation | FileIoCompletionNotificationInformation) { return DENIED; }
+    if !writable(file) && !matches!(class, FilePositionInformation | FileCompletionInformation | FileReplaceCompletionInformation | FileIoPriorityHintInformation | FileIoCompletionNotificationInformation) { return DENIED; }
     // Rename and link destinations can target a virtual dependency even when
     // their source is native. Deny unsupported layouts before the syscall.
     if matches!(class, FileRenameInformation | FileRenameInformationEx | FileRenameInformationBypassAccessCheck | FileRenameInformationExBypassAccessCheck | FileLinkInformation | FileLinkInformationEx | FileLinkInformationBypassAccessCheck | FileLinkInformationExBypassAccessCheck) {
