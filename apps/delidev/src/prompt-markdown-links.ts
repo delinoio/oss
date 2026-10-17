@@ -384,24 +384,47 @@ function labelDisplayIndex(link: CollapsedLink, relative: number): number {
 }
 
 /**
+ * Collapse state held fixed while an IME composition owns the textarea. The
+ * display text must not change under the IME, so the collapse decision is
+ * taken once, before composition, and not re-derived from the changing draft.
+ */
+export interface FrozenCollapse {
+  /** True when the whole draft was plain source before composition. */
+  suppressed: boolean;
+  /**
+   * Starts of the links that were collapsed before composition, shifted across
+   * composed edits. A link that is not listed (for example one completed while
+   * composing) stays plain source.
+   */
+  collapsibleStarts: readonly number[];
+}
+
+/**
  * Builds the display layout. `collapseLimit` is the most links the presentation
  * may decorate. When the draft parses more links than that, the whole draft
  * stays plain source (display equals canonical, nothing collapsed) instead of
  * collapsing an arbitrary prefix; `links` still reports every parsed link.
+ * A `frozen` state replaces that decision entirely, so neither the link count
+ * nor the limit can change what is collapsed until the freeze is lifted.
  */
 export function buildLayout(
   canonical: string,
   revealed: readonly number[] = [],
   collapseLimit = Number.POSITIVE_INFINITY,
+  frozen?: FrozenCollapse,
 ): PromptLayout {
   const links = scanMarkdown(canonical).links;
-  const collapseSuppressed = links.length > collapseLimit;
+  const collapseSuppressed = frozen
+    ? frozen.suppressed
+    : links.length > collapseLimit;
   const open = new Set(revealed);
+  const collapsible = frozen ? new Set(frozen.collapsibleStarts) : undefined;
   const collapsed: CollapsedLink[] = [];
   let display = "",
     cursor = 0;
   for (const link of collapseSuppressed ? [] : links) {
     if (open.has(link.start)) continue;
+    if (collapsible && !collapsible.has(link.start)) continue;
     display += canonical.slice(cursor, link.start);
     const displayStart = display.length;
     const label = decodeLabel(canonical.slice(link.labelStart, link.labelEnd));

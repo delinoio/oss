@@ -10,7 +10,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   SkillProvenance,
   SkillService,
@@ -523,4 +523,145 @@ it("suppresses links only after composition ends when new skill ranges exhaust t
   expect(input.value).toBe(`${draft}$gone `);
   expect(canonical()).toBe(`${draft}$gone `);
   expect(selectionOf(input)).toEqual([input.value.length, input.value.length]);
+});
+
+describe("link collapse state during IME composition", () => {
+  const collapsedDisplay = (count: number) => "x ".repeat(count);
+  const atEnd = (input: HTMLTextAreaElement) =>
+    expect(selectionOf(input)).toEqual([
+      input.value.length,
+      input.value.length,
+    ]);
+
+  it("keeps 256 collapsed links collapsed when a composed link makes 257, and settles after composition", async () => {
+    const draft = links(256);
+    const input = view(draft);
+    expect(collapsedLinks()).toBe(256);
+    select(input, input.value.length);
+    fireEvent.compositionStart(input);
+    type(input, collapsedDisplay(256) + SMALL_LINK);
+    expect(canonical()).toBe(links(257));
+    // The new link stays plain source and the 256 do not switch to canonical.
+    expect(collapsedLinks()).toBe(256);
+    expect(input.value).toBe(collapsedDisplay(256) + SMALL_LINK);
+    type(input, collapsedDisplay(256) + SMALL_LINK + "あ");
+    expect(collapsedLinks()).toBe(256);
+    expect(input.value).toBe(collapsedDisplay(256) + SMALL_LINK + "あ");
+    fireEvent.compositionEnd(input);
+    // 257 links exceed the budget, so the whole draft becomes plain source.
+    await waitFor(() => expect(collapsedLinks()).toBe(0));
+    expect(canonical()).toBe(links(257) + "あ");
+    expect(input.value).toBe(links(257) + "あ");
+    atEnd(input);
+    expect(spanCount()).toBeLessThanOrEqual(512);
+  });
+
+  it("keeps 257 plain links plain when composing removes one, and collapses after composition", async () => {
+    const draft = links(257);
+    const input = view(draft);
+    expect(collapsedLinks()).toBe(0);
+    expect(input.value).toBe(draft);
+    select(input, input.value.length);
+    fireEvent.compositionStart(input);
+    type(input, links(256));
+    expect(canonical()).toBe(links(256));
+    // 256 links would fit, but the display must not change while composing.
+    expect(collapsedLinks()).toBe(0);
+    expect(input.value).toBe(links(256));
+    type(input, links(256) + "あ");
+    expect(collapsedLinks()).toBe(0);
+    expect(input.value).toBe(links(256) + "あ");
+    fireEvent.compositionEnd(input);
+    await waitFor(() => expect(collapsedLinks()).toBe(256));
+    expect(canonical()).toBe(links(256) + "あ");
+    expect(input.value).toBe(collapsedDisplay(256) + "あ");
+    atEnd(input);
+  });
+
+  it("does not toggle while a composed draft crosses the boundary and back", async () => {
+    const input = view(links(256));
+    expect(collapsedLinks()).toBe(256);
+    select(input, input.value.length);
+    fireEvent.compositionStart(input);
+    const steps = [
+      collapsedDisplay(256) + SMALL_LINK,
+      collapsedDisplay(256) + SMALL_LINK + SMALL_LINK,
+      collapsedDisplay(256) + SMALL_LINK,
+      collapsedDisplay(256),
+    ];
+    for (const display of steps) {
+      type(input, display);
+      expect(collapsedLinks()).toBe(256);
+      expect(input.value).toBe(display);
+    }
+    expect(canonical()).toBe(links(256));
+    fireEvent.compositionEnd(input);
+    await waitFor(() => expect(canonical()).toBe(links(256)));
+    expect(collapsedLinks()).toBe(256);
+    expect(input.value).toBe(collapsedDisplay(256));
+    atEnd(input);
+  });
+
+  it("holds the suppressed state when composing shrinks and regrows the link count", async () => {
+    const input = view(links(257));
+    expect(collapsedLinks()).toBe(0);
+    select(input, input.value.length);
+    fireEvent.compositionStart(input);
+    for (const text of [links(256), links(255), links(257), links(258)]) {
+      type(input, text);
+      expect(collapsedLinks()).toBe(0);
+      expect(input.value).toBe(text);
+    }
+    fireEvent.compositionEnd(input);
+    await waitFor(() => expect(canonical()).toBe(links(258)));
+    // 258 links still exceed the budget after composition.
+    expect(collapsedLinks()).toBe(0);
+    expect(input.value).toBe(links(258));
+    atEnd(input);
+  });
+
+  it("holds the collapsed state across the mixed skill and link boundary", async () => {
+    const draft = skills(128) + links(128);
+    const display = skills(128) + collapsedDisplay(128);
+    const input = view(draft, undefined, true);
+    await waitFor(() => expect(unavailableTokens()).toBe(128));
+    expect(collapsedLinks()).toBe(128);
+    select(input, input.value.length);
+    fireEvent.compositionStart(input);
+    // Skill decoration is paused, and one more link makes 129 beside 128 skills.
+    type(input, display + SMALL_LINK);
+    expect(canonical()).toBe(draft + SMALL_LINK);
+    expect(unavailableTokens()).toBe(0);
+    expect(collapsedLinks()).toBe(128);
+    expect(input.value).toBe(display + SMALL_LINK);
+    fireEvent.compositionEnd(input);
+    await waitFor(() => expect(unavailableTokens()).toBe(128));
+    // 129 links no longer fit beside 128 painted skill ranges.
+    expect(collapsedLinks()).toBe(0);
+    expect(input.value).toBe(draft + SMALL_LINK);
+    atEnd(input);
+    expect(spanCount()).toBeLessThanOrEqual(512);
+  });
+
+  it("holds the plain state across the mixed boundary and collapses after composition", async () => {
+    const draft = skills(128) + links(129);
+    const input = view(draft, undefined, true);
+    await waitFor(() => expect(unavailableTokens()).toBe(128));
+    expect(collapsedLinks()).toBe(0);
+    select(input, input.value.length);
+    fireEvent.compositionStart(input);
+    const shrunk = skills(128) + links(128);
+    type(input, shrunk);
+    expect(canonical()).toBe(shrunk);
+    expect(unavailableTokens()).toBe(0);
+    expect(collapsedLinks()).toBe(0);
+    expect(input.value).toBe(shrunk);
+    fireEvent.compositionEnd(input);
+    await waitFor(() => expect(collapsedLinks()).toBe(128));
+    expect(unavailableTokens()).toBe(128);
+    expect(input.value).toBe(skills(128) + collapsedDisplay(128));
+    expect(canonical()).toBe(shrunk);
+    atEnd(input);
+    expect(spanCount()).toBeLessThanOrEqual(512);
+  });
 });

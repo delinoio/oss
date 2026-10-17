@@ -6674,10 +6674,14 @@ also owns prompt Markdown links. The pure model lives in
   as described for skill tokens, and links still open on modified click. Editing
   or undoing back within the budget restores normal collapse without changing the
   draft, history or bindings; the canonical selection is re-applied when the
-  display switches. IME composition never switches the display: composing
-  empties the skill analysis, so the pre-composition remainder is held (links
-  that were plain stay plain, collapsed links stay collapsed) and is recomputed
-  once composition ends. All four composer placements share this behavior.
+  display switches. IME composition never switches the display: the collapse
+  state itself is captured when composition starts and held until it ends. A
+  draft that was plain source stays plain, and links that were collapsed stay
+  collapsed (tracked across composed edits) even when the link count crosses
+  the 256 budget in either direction or composing empties the skill analysis.
+  A link completed while composing stays plain source. The budget, the
+  collapse decision and the canonical selection are recomputed once, when
+  composition ends. All four composer placements share this behavior.
 - **History.** Programmatic conversion clears the native undo stack, so every
   edit is recorded in `PromptEditHistory`. Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z, Ctrl+Y
   (non-macOS) and native `historyUndo`/`historyRedo` run through it. A conversion

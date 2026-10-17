@@ -291,3 +291,26 @@ it.each([
     expect(layout.display).toBe(suppressed ? canonical : "x ".repeat(count));
   },
 );
+
+it("holds a frozen collapse state regardless of the link count or limit", () => {
+  const text = "[x](https://a) [y](https://b) [z](https://c)";
+  const starts = scanMarkdown(text).links.map((link) => link.start);
+  // Over the limit, but frozen as collapsed: only the listed links collapse.
+  const collapsed = buildLayout(text, [], 1, {
+    suppressed: false,
+    collapsibleStarts: starts.slice(0, 2),
+  });
+  expect(collapsed.collapseSuppressed).toBe(false);
+  expect(collapsed.collapsed.map((link) => link.start)).toEqual(
+    starts.slice(0, 2),
+  );
+  expect(collapsed.display).toBe("x y [z](https://c)");
+  // Within the limit, but frozen as suppressed: the draft stays plain.
+  const plain = buildLayout(text, [], 10, {
+    suppressed: true,
+    collapsibleStarts: starts,
+  });
+  expect(plain.collapseSuppressed).toBe(true);
+  expect(plain.collapsed).toEqual([]);
+  expect(plain.display).toBe(text);
+});

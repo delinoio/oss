@@ -38,6 +38,7 @@ import {
 } from "./prompt-edit-history";
 import {
   buildLayout,
+  type FrozenCollapse,
   canonicalRangeForDisplay,
   convertBareUrls,
   convertTypedUrl,
@@ -384,6 +385,9 @@ export function useSkillCompletion({
     direction: "none",
   });
   const pendingSelection = useRef(false);
+  // Collapse state captured when composition starts and shifted by composed
+  // edits; the layout is derived from it until composition ends.
+  const compositionCollapse = useRef<FrozenCollapse | undefined>(undefined);
   const history = useRef(new PromptEditHistory<SkillTokenBinding>());
   const linkOpening = useRef(false);
   const mounted = useRef(true);
@@ -597,20 +601,20 @@ export function useSkillCompletion({
   // Links and skill ranges share one painted-range budget. Skill ranges are
   // already bounded by the analysis, so links yield: when they no longer fit in
   // the remainder, the whole draft is shown as plain source (no partial
-  // collapse) while the exact unavailable count stays reported. Composition
-  // empties the skill analysis, which would grow this remainder and collapse
-  // links under an IME that owns the selection, so the pre-composition budget
-  // is held until composition ends and the budget is then recomputed.
-  const currentLinkBudget =
+  // collapse) while the exact unavailable count stays reported. An IME owns the
+  // textarea text and selection while composing, so no display state may be
+  // re-derived then: composition empties the skill analysis (growing the
+  // remainder) and the link count changes with every keystroke. The collapse
+  // state captured at composition start is therefore held as a whole, and the
+  // budget is recomputed only once composition ends.
+  const linkBudget =
     MAX_PAINTED_SKILL_RANGES - unavailable.length - selectedRanges.length;
-  const settledLinkBudget = useRef(currentLinkBudget);
-  if (!scanSuppressed) settledLinkBudget.current = currentLinkBudget;
-  const linkBudget = scanSuppressed
-    ? settledLinkBudget.current
-    : currentLinkBudget;
+  const frozenCollapse = scanSuppressed
+    ? compositionCollapse.current
+    : undefined;
   const layout = useMemo(
-    () => buildLayout(value, revealed, linkBudget),
-    [value, revealed, linkBudget],
+    () => buildLayout(value, revealed, linkBudget, frozenCollapse),
+    [value, revealed, linkBudget, frozenCollapse],
   );
   const layoutRef = useRef<PromptLayout>(layout);
   layoutRef.current = layout;
@@ -698,6 +702,17 @@ export function useSkillCompletion({
     setBindings(nextBindings);
     selectionRef.current = selection;
     setCaret(selection.start);
+    if (composing.current && replaced && compositionCollapse.current) {
+      const frozen = compositionCollapse.current;
+      compositionCollapse.current = {
+        suppressed: frozen.suppressed,
+        collapsibleStarts: shiftStarts(
+          frozen.collapsibleStarts,
+          replaced,
+          insertedLength,
+        ),
+      };
+    }
     setRevealed(
       composing.current && replaced
         ? shiftStarts(revealedRef.current, replaced, insertedLength)
@@ -1219,14 +1234,24 @@ export function useSkillCompletion({
     onCompositionStart: () => {
       if (!canEdit()) return;
       composing.current = true;
+      compositionCollapse.current = {
+        suppressed: layoutRef.current.collapseSuppressed,
+        collapsibleStarts: layoutRef.current.collapsed.map(
+          (link) => link.start,
+        ),
+      };
       setComposition(true);
       setDismissed(true);
     },
     onCompositionEnd: () => {
       composing.current = false;
+      compositionCollapse.current = undefined;
       setComposition(false);
       if (!canEdit()) return;
       syncSelection();
+      // The display is recomputed from the final draft now that the freeze is
+      // lifted, so the canonical selection is re-applied after that render.
+      pendingSelection.current = true;
       setDismissed(false);
     },
     attributes: {
