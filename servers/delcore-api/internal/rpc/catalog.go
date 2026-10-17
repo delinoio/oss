@@ -102,7 +102,7 @@ func (s *Server) CreatePrice(ctx context.Context, r *connect.Request[pb.CreatePr
 		}
 		for _, n := range []string{v.UnitPrice, v.Included} {
 			d, e := accounting.Parse(n)
-			if e != nil || d.Cmp(accounting.Zero()) < 0 {
+			if e != nil || len(n) > 64 || d.Cmp(accounting.Zero()) < 0 {
 				return invalid("price and allowance must be nonnegative decimals")
 			}
 		}

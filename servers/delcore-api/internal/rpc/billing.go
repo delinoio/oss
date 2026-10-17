@@ -19,7 +19,7 @@ func (s *Server) RequestTopUp(ctx context.Context, r *connect.Request[pb.Request
 			return e
 		}
 		d, e := accounting.Parse(q.Amount)
-		if e != nil || d.Cmp(accounting.Zero()) <= 0 || !d.IsMinorExact(c.s.Config.MinorUnits) || !c.s.Config.AllowsReturn(q.ReturnUrl) {
+		if e != nil || len(q.Amount) > 64 || d.Cmp(accounting.Zero()) <= 0 || !d.IsMinorExact(c.s.Config.MinorUnits) || !c.s.Config.AllowsReturn(q.ReturnUrl) {
 			return invalid("invalid top-up amount or return URL")
 		}
 		units, _ := d.MinorUnits(c.s.Config.MinorUnits)
@@ -54,7 +54,7 @@ func (s *Server) SetAutoTopUp(ctx context.Context, r *connect.Request[pb.SetAuto
 		threshold, e1 := accounting.Parse(q.Threshold)
 		amount, e2 := accounting.Parse(q.Amount)
 		cap, e3 := accounting.Parse(q.MonthlyCap)
-		if e1 != nil || e2 != nil || e3 != nil || threshold.Cmp(accounting.Zero()) < 0 || amount.Cmp(accounting.Zero()) <= 0 || cap.Cmp(amount) < 0 || !amount.IsMinorExact(c.s.Config.MinorUnits) {
+		if e1 != nil || e2 != nil || e3 != nil || len(q.Threshold) > 64 || len(q.Amount) > 64 || len(q.MonthlyCap) > 64 || threshold.Cmp(accounting.Zero()) < 0 || amount.Cmp(accounting.Zero()) <= 0 || cap.Cmp(amount) < 0 || !amount.IsMinorExact(c.s.Config.MinorUnits) {
 			return invalid("invalid automatic top-up settings")
 		}
 		tag, e := c.tx.Exec(c.ctx, "UPDATE tenants SET auto_threshold=$2,auto_amount=$3,auto_cap=$4,auto_suspended=false WHERE id=$1 AND deleting_at IS NULL", q.TenantId, threshold.String(), amount.String(), cap.String())

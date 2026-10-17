@@ -116,7 +116,7 @@ func (c *call) report(u *pb.Usage, correction bool) (string, error) {
 		return "", e
 	}
 	quantity, e := accounting.Parse(u.Quantity)
-	if e != nil || quantity.Cmp(accounting.Zero()) < 0 {
+	if e != nil || len(u.Quantity) > 64 || quantity.Cmp(accounting.Zero()) < 0 {
 		return "", invalid("quantity must be nonnegative decimal")
 	}
 	if (u.CorrectionOf != "") != correction || correction && !canonical(u.CorrectionOf) {
