@@ -4461,19 +4461,18 @@ dialog nav {
   width: 40px;
   font-size: 1.4rem;
 }
+/* The More actions are an anchored top-layer popup (see anchored-popup.css):
+   the hook writes left, top, width and max-height, so the panel never takes
+   part in the account row or its scroll owner. */
 .subscription-more-panel {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  z-index: 2;
-  display: grid;
   min-width: 180px;
-  max-width: 240px;
+  max-width: min(240px, calc(100vw - 16px));
   padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
+  border-color: var(--border);
   box-shadow: 0 4px 12px var(--shadow-soft);
+}
+.subscription-more-panel:popover-open {
+  display: grid;
 }
 .subscription-more-panel button {
   text-align: left;

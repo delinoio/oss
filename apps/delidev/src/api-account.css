@@ -495,20 +495,19 @@
 .api-entry-more > button {
   min-width: 40px;
 }
+/* The More actions are an anchored top-layer popup (see anchored-popup.css):
+   the hook writes left, top, width and max-height, so the panel never takes
+   part in the entry row or its scroll owner. */
 .api-entry-more-panel {
-  position: absolute;
-  z-index: 2;
-  right: 0;
-  top: 46px;
-  display: grid;
   gap: 4px;
   width: 200px;
-  max-width: 70cqw;
+  max-width: calc(100vw - 16px);
   padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
+  border-color: var(--border);
   box-shadow: 0 4px 16px var(--shadow-soft);
+}
+.api-entry-more-panel:popover-open {
+  display: grid;
 }
 .api-entry-more-panel button {
   text-align: left;
@@ -565,10 +564,6 @@
   .api-entry-controls {
     grid-row: 3;
     flex-wrap: wrap;
-  }
-  .api-entry-more-panel {
-    right: auto;
-    left: 0;
   }
 }
 

@@ -11,6 +11,12 @@ import {
   SettingsActionPresentation,
   SettingsActionTone,
 } from "./settings-action";
+import {
+  AnchoredPopupAlign,
+  AnchoredPopupWidth,
+  useAnchoredPopup,
+  useOutsidePointerDismiss,
+} from "./anchored-popup";
 import { quotaColorStyle } from "./quota-color";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -434,7 +440,19 @@ export function SubscriptionRow({
   const [menu, setMenu] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const menuId = useId();
-  const menuButton = useRef<HTMLButtonElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null),
+    menuPanel = useRef<HTMLDivElement>(null);
+  // The More actions are an anchored top-layer popup, so opening them never
+  // grows the account row or its scroll owner.
+  useAnchoredPopup({
+    open: menu,
+    anchor: menuButton,
+    popup: menuPanel,
+    onInvalid: () => setMenu(false),
+    width: AnchoredPopupWidth.Content,
+    align: AnchoredPopupAlign.End,
+  });
+  useOutsidePointerDismiss(menu, [menuButton, menuPanel], () => setMenu(false));
   const disconnectButton = useRef<HTMLButtonElement>(null);
   const blocked =
     actionsBlocked ||
@@ -607,7 +625,9 @@ export function SubscriptionRow({
             {menu ? (
               <div
                 id={menuId}
-                className="subscription-more-panel"
+                ref={menuPanel}
+                popover="manual"
+                className="anchored-popup subscription-more-panel"
                 role="group"
                 aria-label={copy("subscription-settings.actionsFor_b59837", {
                   v0: account.alias,

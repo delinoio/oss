@@ -319,6 +319,25 @@ it("keeps metadata actions in a keyboard-owned disclosure and restores focus on 
   expect(document.activeElement).toBe(opener);
   expect(f.read).toHaveBeenCalledTimes(1);
 });
+it("presents the More actions as an anchored popup dismissed by an outside press", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findAllByText("USD 12.48");
+  const opener = screen.getByRole("button", {
+    name: "More actions for OpenRouter",
+  });
+  fireEvent.click(opener);
+  const actions = screen.getByRole("group", { name: "Actions for OpenRouter" });
+  expect(actions.getAttribute("popover")).toBe("manual");
+  expect(actions.classList.contains("anchored-popup")).toBe(true);
+  // Opening is read-only.
+  expect(f.callbacks.edit).not.toHaveBeenCalled();
+  fireEvent.pointerDown(document.body);
+  expect(opener.getAttribute("aria-expanded")).toBe("false");
+  expect(
+    screen.queryByRole("group", { name: "Actions for OpenRouter" }),
+  ).toBeNull();
+});
 it("separates native totals and estimates without summing, and keeps an absent Claude total unavailable", async () => {
   const f = fixture();
   f.data.nativeAccounting = create(GetUsageSummaryResponseSchema, {

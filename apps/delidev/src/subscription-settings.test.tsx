@@ -316,6 +316,27 @@ it("keeps the ellipsis keyboard accessible and contains Escape before the Settin
   expect(first.delete).toHaveBeenCalledTimes(1);
 });
 
+it("presents the More actions as an anchored popup dismissed by an outside press", () => {
+  const first = row();
+  render(view([first]));
+  const opener = screen.getByRole("button", {
+    name: `More actions for ${first.alias}`,
+  });
+  fireEvent.click(opener);
+  const actions = screen.getByRole("group", {
+    name: `Actions for ${first.alias}`,
+  });
+  expect(actions.getAttribute("popover")).toBe("manual");
+  expect(actions.classList.contains("anchored-popup")).toBe(true);
+  expect(first.edit).not.toHaveBeenCalled();
+  expect(first.delete).not.toHaveBeenCalled();
+  fireEvent.pointerDown(document.body);
+  expect(opener.getAttribute("aria-expanded")).toBe("false");
+  expect(
+    screen.queryByRole("group", { name: `Actions for ${first.alias}` }),
+  ).toBeNull();
+});
+
 it.each([
   Read.Loading,
   Read.Failed,
