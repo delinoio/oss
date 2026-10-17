@@ -4,8 +4,10 @@ package rpc
 import (
 	"connectrpc.com/connect"
 	"context"
+	"errors"
 	pb "github.com/delinoio/oss/protos/gen/go/delcore/v1"
 	"github.com/delinoio/oss/servers/delcore-api/internal/accounting"
+	"github.com/jackc/pgx/v5"
 )
 
 func (s *Server) PutService(ctx context.Context, r *connect.Request[pb.PutServiceRequest]) (*connect.Response[pb.PutServiceResponse], error) {
@@ -67,6 +69,10 @@ func (s *Server) PutPlan(ctx context.Context, r *connect.Request[pb.PutPlanReque
 		}
 		if v.Rank < 0 || v.DefaultFree && !v.Free {
 			return invalid("invalid plan")
+		}
+		if v.Free && v.Postpaid {
+			c.s.Log.WarnContext(c.ctx, "rejected free postpaid plan", "correlation_id", c.correlation, "plan_id", v.Id, "default_free", v.DefaultFree)
+			return invalid("free plans cannot enable postpaid continuation")
 		}
 		if v.Id == "" {
 			v.Id = ID()
@@ -142,6 +148,19 @@ func (s *Server) CreatePrice(ctx context.Context, r *connect.Request[pb.CreatePr
 			}
 			if !exists {
 				return invalid("unregistered meter")
+			}
+		}
+		if v.AddOnId != "" {
+			var addonService string
+			if e := c.tx.QueryRow(c.ctx, "SELECT service_id::text FROM addons WHERE id=$1", v.AddOnId).Scan(&addonService); e != nil {
+				if errors.Is(e, pgx.ErrNoRows) {
+					return invalid("unknown add-on")
+				}
+				return e
+			}
+			if addonService != v.ServiceId {
+				c.s.Log.WarnContext(c.ctx, "rejected add-on price for another service", "correlation_id", c.correlation, "add_on_id", v.AddOnId, "service_id", v.ServiceId, "add_on_service_id", addonService)
+				return invalid("add-on belongs to another service")
 			}
 		}
 		_, e := c.tx.Exec(c.ctx, `INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,addon_id,kind) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, v.Id, planID, v.ServiceId, v.Meter, v.UnitPrice, v.Included, v.Currency, v.ExternalPriceId, c.now, addonID, int32(v.Kind))
