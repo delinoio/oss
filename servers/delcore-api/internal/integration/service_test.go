@@ -2874,6 +2874,46 @@ func TestPaidAuthorizationEndsAtConfirmedPeriodEnd(t *testing.T) {
 	}
 }
 
+// TestFreeBasePlanSubscriptionAuthorizationEndsAtPeriodEnd covers a tenant that
+// keeps the free base plan but pays a recurring add-on subscription.
+func TestFreeBasePlanSubscriptionAuthorizationEndsAtPeriodEnd(t *testing.T) {
+	f := newSubscriptionOrderFixture(t)
+	ctx := context.Background()
+	end := time.Now().UTC().Truncate(time.Microsecond).Add(24 * time.Hour)
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='sub_addon',external_customer_id='ctm_fixture',period_start=$2,period_end=$3 WHERE id=$1", f.tenant, end.AddDate(0, -1, 0), end); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.db.Pool.Exec(ctx, "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,now()-interval '1 day')", key(), f.tenant, f.priceID); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.db.Pool.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'credit','100','test:credit',now())", key(), f.tenant); e != nil {
+		t.Fatal(e)
+	}
+	var free bool
+	if e := f.db.Pool.QueryRow(ctx, "SELECT p.free FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1", f.tenant).Scan(&free); e != nil || !free {
+		t.Fatal("tenant should keep the free base plan", free, e)
+	}
+	authorize := func(now time.Time) *pb.AuthorizeResponse {
+		t.Helper()
+		d, e := clockClient(t, f, now).Authorize(ctx, req(&pb.AuthorizeRequest{TenantId: f.tenant, UserId: f.userID, Capability: "execute", Paid: true}, "service"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		return d.Msg
+	}
+	if d := authorize(end.Add(-time.Microsecond)); !d.Allowed {
+		t.Fatal("subscription blocked before its period end", d)
+	}
+	d := authorize(end.Add(time.Hour))
+	renewal := false
+	for _, r := range d.Reasons {
+		renewal = renewal || r == pb.BlockReason_BLOCK_REASON_RENEWAL
+	}
+	if d.Allowed || !renewal {
+		t.Fatal("expired add-on subscription kept paid use open", d)
+	}
+}
+
 func TestFreePlanAuthorizationIgnoresPeriodEnd(t *testing.T) {
 	f := newSubscriptionOrderFixture(t)
 	ctx := context.Background()
