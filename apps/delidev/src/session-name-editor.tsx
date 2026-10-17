@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   createContext,
   useContext,
@@ -231,8 +232,9 @@ function SessionNameController({
         </button>
       </header>
       <form
+        onKeyDown={guardEnterSubmission}
         onSubmit={(event) => {
-          event.preventDefault();
+          if (!consumeFormSubmit(event)) return;
           if (blocked || !draft) return;
           void rename.send({
             mutation: {

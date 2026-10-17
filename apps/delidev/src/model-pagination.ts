@@ -2,6 +2,8 @@
 import { useCallback } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
+  ApiProtocol,
+  ProviderInventoryCapability,
   ProviderQuery,
   NativeModelQuery,
   EntityKind,
@@ -43,10 +45,21 @@ export function useProviderPages(
   active: boolean,
   enabledOnly = false,
   retainPayloadOnSuspend = false,
+  compatibleAccountApiProtocol = ApiProtocol.UNSPECIFIED,
 ) {
+  // The opt-in compatible-account filter is sent only when requested, so every
+  // other consumer keeps the historical unfiltered request and chain identity.
   const request = useCallback(
-    (token: string) => ({ query, enabledOnly, pageSize: 50, pageToken: token }),
-    [query, enabledOnly],
+    (token: string) => ({
+      query,
+      enabledOnly,
+      pageSize: 50,
+      pageToken: token,
+      ...(compatibleAccountApiProtocol === ApiProtocol.UNSPECIFIED
+        ? {}
+        : { compatibleAccountApiProtocol }),
+    }),
+    [query, enabledOnly, compatibleAccountApiProtocol],
   );
   const project = useCallback((response: ListProviderInventoryResponse) => {
     if (
@@ -82,6 +95,11 @@ export function useProviderPages(
         providerId: entry.providerId,
         enabled: entry.enabled,
         presetId: entry.presetId,
+        // Stamped per response so rows from a page served without the filter
+        // stay identifiable after later pages replace the retained payload.
+        compatibleFilterAdvertised: response.capabilities.includes(
+          ProviderInventoryCapability.COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1,
+        ),
       })),
     );
     return { rows, payload: [response], nextPageToken: response.nextPageToken };
@@ -92,7 +110,9 @@ export function useProviderPages(
     project,
   );
   const chain = usePaginationChain(
-    `providers:${enabledOnly}:${query}`,
+    compatibleAccountApiProtocol === ApiProtocol.UNSPECIFIED
+      ? `providers:${enabledOnly}:${query}`
+      : `providers:${enabledOnly}:${query}:compatible-${compatibleAccountApiProtocol}`,
     active,
     reader,
     true,
@@ -104,9 +124,21 @@ export function useProviderPages(
     active,
     chain.refresh,
   );
+  const data = chain.payloadPages.at(-1)?.payload[0];
+  // Older servers ignore the request field and return every enabled provider.
+  // Only a chain whose every page advertises the capability is proven filtered:
+  // `data` is the latest payload alone, so a mixed-version rollout could serve
+  // an earlier page unfiltered. Any such page invalidates the whole chain.
+  const compatibleFilter =
+    data === undefined
+      ? undefined
+      : data.capabilities.includes(
+          ProviderInventoryCapability.COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1,
+        ) && chain.rows.every((row) => row.compatibleFilterAdvertised);
   return {
     ...chain,
-    data: chain.payloadPages.at(-1)?.payload[0],
+    data,
+    compatibleFilter,
     isLoading: !chain.loaded && !chain.error,
     isFetching: Boolean(chain.loading),
     refetch: chain.refresh,

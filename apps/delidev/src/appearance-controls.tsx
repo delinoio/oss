@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   useEffect,
   useId,
@@ -115,8 +116,9 @@ function ThemeEditor({
   return (
     <Modal title={label("editTheme")} close={close} entrance={entrance}>
       <form
+        onKeyDown={guardEnterSubmission}
         onSubmit={(event) => {
-          event.preventDefault();
+          if (!consumeFormSubmit(event)) return;
           if (!validTheme(draft, true)) {
             setError(true);
             return;
@@ -516,8 +518,9 @@ export function AppearanceControls({
       {importing ? (
         <Modal title={label("import")} close={() => setImporting(false)}>
           <form
+            onKeyDown={guardEnterSubmission}
             onSubmit={(e) => {
-              e.preventDefault();
+              if (!consumeFormSubmit(e)) return;
               try {
                 if (snapshot.revision !== importRevision) return;
                 const file = parseThemeFile(importText);

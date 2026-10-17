@@ -1,5 +1,11 @@
 # DeliDev v1 Connect contract
 
+System 108 and Worker 73 allocate `CODEX_OPENROUTER_TOOLS_V1` for the explicit
+[Codex OpenRouter tool adapter](cmds-delidev-openrouter-tools-contract.md).
+The existing root assignment JSON freezes `native_openrouter_tools` alongside
+native-image and dynamic-tool support. Unknown/older peers gain no image or
+standalone-search operation. No RPC field or database migration is added.
+
 ## Shared subscription owner reservation
 
 The protocol reserves, with no behavior of their own, Worker `SHARED_SUBSCRIPTION_OWNER_V1 = 67`, Worker
@@ -1733,3 +1739,14 @@ it only after observing that echo and reject no peer that omits it, so older pee
 keep the existing recovery fence. No System capability, UI, CLI retry or database
 migration is added. See the
 [subscription contract](cmds-delidev-subscription-contract.md#automatic-managed-chatgpt-execution-recovery).
+
+## Compatible-account provider inventory filter allocation
+
+`ProviderInventoryCapability.COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1 = 11` and
+`ListProviderInventoryRequest.compatible_account_api_protocol = 5` (existing
+`ApiProtocol`) are recorded in `protos/delidev/allocations.json` and
+activated in the same change, as in the capability 7 precedent. They are additive:
+`UNSPECIFIED` is the unchanged default, an unknown value fails with
+`INVALID_ARGUMENT`, and older servers ignore the field, so clients require the
+capability in a response before trusting a filtered result. Semantics and server
+behavior are in [the catalog contract](cmds-delidev-catalog-contract.md#compatible-account-provider-inventory-filter). Go and TypeScript bindings are regenerated with `pnpm proto:generate`.

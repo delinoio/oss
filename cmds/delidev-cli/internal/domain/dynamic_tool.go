@@ -150,7 +150,7 @@ func (u DynamicToolUpdate) Validate() error {
 			return invalidTool()
 		}
 	case DynamicReplied:
-		if u.Reply == nil || u.Reply.Token.Validate() != nil || u.Reply.ClaimID.Validate() != nil || !u.Reply.Unavailable || u.Reply.Delivery != DynamicNotSent && u.Reply.Delivery != DynamicTransmitted && u.Reply.Delivery != DynamicUncertain || u.Snapshot != nil || u.Request != nil || u.Token != "" {
+		if u.Reply == nil || u.Reply.Token.Validate() != nil || u.Reply.ClaimID.Validate() != nil || u.Reply.Delivery != DynamicNotSent && u.Reply.Delivery != DynamicTransmitted && u.Reply.Delivery != DynamicUncertain || u.Snapshot != nil || u.Request != nil || u.Token != "" {
 			return invalidTool()
 		}
 	case DynamicResolved:

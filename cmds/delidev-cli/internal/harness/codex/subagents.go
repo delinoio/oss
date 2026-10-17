@@ -4,6 +4,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"slices"
 	"strconv"
@@ -213,6 +214,15 @@ func (c *Client) observeSubagentActivity(item json.RawMessage, turn domain.ID) (
 	if domain.Text(v.ID, "native activity identity", 1024, true) != nil {
 		return Event{}, incompatible()
 	}
+	if _, known := c.subagents[string(v.Agent)]; !known {
+		if c.pendingChildStatuses == nil {
+			c.pendingChildStatuses = make(map[domain.ID]struct{})
+		}
+		if _, exists := c.pendingChildStatuses[v.Agent]; !exists && len(c.pendingChildStatuses) >= 4096 {
+			return Event{}, incompatible()
+		}
+		c.pendingChildStatuses[v.Agent] = struct{}{}
+	}
 	return Event{Kind: SubagentActivityEvent, ThreadID: c.thread, TurnID: turn, AgentThreadID: v.Agent, Correlated: true, ItemID: v.ID}, nil
 }
 
@@ -246,6 +256,39 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 	if c.execution == nil || c.thread.Validate() != nil {
 		return Event{}, incompatible()
 	}
+	for attempt := 0; attempt < 16; attempt++ {
+		event, err := c.inspectDescendantSnapshotLocked(ctx)
+		var pending *descendantVisibilityPending
+		if !errors.As(err, &pending) {
+			return event, err
+		}
+		if c.logger != nil && (attempt == 0 || attempt == 15) {
+			c.logger.InfoContext(ctx, "Codex descendant inventory pending", "owner_id", c.ownerID, "stage", "state-db-visibility", "attempt", attempt+1, "pending_count", len(c.pendingChildStatuses))
+		}
+		if attempt == 15 {
+			return Event{}, incompatible()
+		}
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return Event{}, domain.SafeError(ctx.Err())
+		case <-timer.C:
+		}
+	}
+	return Event{}, incompatible()
+}
+
+type descendantVisibilityPending struct{}
+
+func (*descendantVisibilityPending) Error() string { return "native descendant visibility is pending" }
+
+// A valid state-DB snapshot can precede the asynchronous persistence of a
+// separately observed child status. Re-read only successful missing snapshots;
+// transport, schema, cancellation and identity failures are never retried. The
+// original pending identities remain completion fences until independent
+// inventory proves every one. No native input or child control is repeated.
+func (c *Client) inspectDescendantSnapshotLocked(ctx context.Context) (Event, error) {
 	batch := []domain.SubagentObservation{}
 	cursor := ""
 	seen := map[string]bool{}
@@ -313,13 +356,13 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 	}
 	if len(batch) == 0 {
 		if len(c.pendingChildStatuses) != 0 {
-			return Event{}, incompatible()
+			return Event{}, &descendantVisibilityPending{}
 		}
 		return Event{Kind: MetadataEvent, ThreadID: c.thread, Correlated: true, Metadata: RawSupplementDiscarded}, nil
 	}
 	for id := range c.pendingChildStatuses {
 		if !seen[string(id)] {
-			return Event{}, incompatible()
+			return Event{}, &descendantVisibilityPending{}
 		}
 	}
 	event, err := c.childEvent(batch, staged)

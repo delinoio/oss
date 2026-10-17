@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { actionTone, SettingsActionTone } from "./settings-action";
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { Disclosure, DisclosureSummary } from "./disclosure";
@@ -213,9 +214,10 @@ function NewComment({
   const preview = selectedContext(file, pick);
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       aria-label={copy("local-reviews.newLocalReviewComment_ccfb31")}
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (blocked || preview === undefined || context.error || !body.trim())
           return;
         void mutation.send({
@@ -519,8 +521,9 @@ function CommentRow({
       ) : null}
       {editing ? (
         <form
+          onKeyDown={guardEnterSubmission}
           onSubmit={(e) => {
-            e.preventDefault();
+            if (!consumeFormSubmit(e)) return;
             if (blocked || staleEdit || !body.trim()) return;
             void edit.send({
               mutation: {
@@ -816,9 +819,10 @@ export function LocalReviews({
         label={copy("local-reviews.reviewPages_87ffd1")}
       />
       <form
+        onKeyDown={guardEnterSubmission}
         aria-label={copy("local-reviews.requestChanges_cb5d9f")}
         onSubmit={(e) => {
-          e.preventDefault();
+          if (!consumeFormSubmit(e)) return;
           if (blocked || !selected.size || list.error) return;
           void submit.send({
             requestId: newRequestId(),

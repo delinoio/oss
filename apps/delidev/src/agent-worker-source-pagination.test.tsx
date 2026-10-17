@@ -101,6 +101,7 @@ function fixture() {
           ProviderInventoryCapability.PROVIDER_ACTIVATION,
           ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER,
           ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER,
+          ProviderInventoryCapability.COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1,
         ],
       }),
       listEndpointModels: search,

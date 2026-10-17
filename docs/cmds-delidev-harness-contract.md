@@ -364,7 +364,7 @@ Protected ChatGPT titles run the original startup-proven executable with `Manage
 
 ### Codex JSON-RPC stdio transport
 
-The internal `nativewire` connection consumes newline-delimited JSON-RPC on distinct native stdout and stdin streams and discards raw stderr. It validates UTF-8, unique JSON keys, required envelope discrimination, request identity type and protocol version, and preserves byte-fragmented Unicode. Codex's optional bounded `emittedAtMs` notification field is retained as provenance, not an ordering or deduplication identity. Unknown envelope shapes fail instead of being silently interpreted.
+The internal `nativewire` connection consumes newline-delimited JSON-RPC on distinct native stdout and stdin streams and discards raw stderr. It validates UTF-8, unique JSON keys, required envelope discrimination, request identity type and protocol version, and preserves byte-fragmented Unicode. Codex's optional bounded `emittedAtMs` notification field is retained as provenance, not an ordering or deduplication identity. Unknown envelope shapes fail instead of being silently interpreted. Protocol rejection logs retain only the selected transport profile and a closed validation reason (envelope, identity, discrimination or arrival/response ownership); method names, IDs and raw payloads remain private.
 
 Each frame/request/response is capped at 1 MiB, except for the image-observation profile. Pending outgoing requests and incoming interactions are each capped at 128; buffered events are capped per profile by count and by queued bytes, as defined in [Native event queue limits](#native-event-queue-limits). A connection remembers at most 4,096 sent request identities, then requires explicit draining/reconciliation and a new connection. Slow consumers, oversized frames or invalid protocol input stop the owned connection with a typed diagnostic. Cleanup must still prove descendant termination before private runtimes are removed.
 
@@ -3186,6 +3186,36 @@ prove real native, account or platform acceptance.
 
 ## Original Codex dynamic tools
 
+### Native MCP and web tool lifecycle
+
+Root Codex execution also projects native `mcpToolCall` and `webSearch` items
+through the already negotiated inert dynamic-tool lifecycle. Native built-in
+`list_mcp_resources` and `list_mcp_resource_templates` can emit MCP items even
+with an empty configured MCP server inventory. These observations must not
+terminate an otherwise valid turn as an unsupported extension. The original
+native process executes these calls; observation grants no dynamic responder,
+MCP configuration, plugin loading or additional backend authority.
+
+MCP identity retains the original server as namespace, tool name and argument
+commitment. Preserve native status, exact duration and ordered text results.
+Media, resources and structured results retain commitments without exposing
+locators, embedded bytes or private metadata. Native error text stays private.
+Standalone web search starts with an empty query and no action. Its lifecycle
+retains an empty-argument commitment; completion separately commits the observed
+query and action. Completion does not establish remote success because the
+native web item carries no success field. Search results
+remain in native history with an inert commitment in the transcript.
+
+Both families share the original item bound, identity checks, durable Worker
+outbox, server transcript and completion barrier. The adapter additionally
+retains the native family so an MCP, web or dynamic lifecycle cannot adopt an
+item from another family, and a native dynamic request cannot acquire an MCP
+or web call. Restricted Sidechat, native review children, foreign threads and
+unnegotiated peers retain the private extension boundary. No public field,
+protocol allocation or database migration is added.
+
+### Native dynamic requests
+
 The original root Codex execution admits the closed `dynamicToolCall` lifecycle
 and `item/tool/call` request union. Preserve the original item/call, thread,
 turn, tool, nullable namespace, argument commitment, native status, ordered
@@ -3204,7 +3234,9 @@ before claiming the reply; persist send intent after the native connection's
 atomic arrival claim and before its pipe write. With no selected backend, the
 only response is `success: false` and one `inputText` item containing
 `This dynamic tool is unavailable in DeliDev.` No handler, registry, arbitrary
-tool backend, automatic input replay or automatic resend is introduced.
+tool backend, automatic input replay or automatic resend is introduced by that baseline.
+The independently negotiated [OpenRouter tool adapter](cmds-delidev-openrouter-tools-contract.md)
+adds one selected native dynamic image backend under the same durable fence.
 
 A dynamic tool shares the Worker's native item identity space and the 10,000
 retained-item bound with messages, tools, artifacts, image generations and
@@ -3231,7 +3263,7 @@ System capability 102 and Worker capability 63 negotiate this additive JSON
 publication. The Worker advertises it only after explicit server support.
 Read-only Sidechat, title and model-observation profiles gain no responder.
 Existing human question and approval controllers retain their separate types
-and ownership. No storage migration or selected backend is added.
+and ownership. No storage migration or selected backend is added by these two allocations.
 
 The immutable original assignment records optional `native_dynamic_tools` only
 for a negotiated root Codex Worker. Legacy and restricted assignments grant no
@@ -3735,3 +3767,15 @@ deleting history, sessions, caches or helper links. A negotiated Worker first
 synchronizes the protected recovery capture, so a failed cleanup is recovered
 automatically by the original Worker (see the
 [subscription contract](cmds-delidev-subscription-contract.md#automatic-managed-chatgpt-execution-recovery)).
+
+### Settled external-tool history
+
+Native `mcpToolCall` and `webSearch` history items use the same bounded schemas
+as live observations in continuation, compaction, legacy/managed Fork and
+paged Revert readers. Only terminal MCP statuses and completed web-search items
+with a non-null validated action are admitted. A start-shaped web item cannot
+complete its live lifecycle or enter continuation, compaction, Fork or Revert
+as a settled tool. Original items, ordering, identities and private content remain in the history proof; reading
+history never publishes live tool events, creates reply ownership or dereferences
+MCP resources. Malformed, duplicate, oversized and unsupported items still fail
+closed. Restricted Sidechat does not acquire external-tool Fork authority.

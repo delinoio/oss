@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
+  ApiProtocol,
   EntityKind,
   NativeModelService,
   ProviderService,
@@ -270,4 +271,53 @@ it("validates a complete additional provider page before publishing display meta
     "original",
     "original",
   ]);
+});
+
+it("sends the compatible-account filter only when requested and keeps separate chains", async () => {
+  const id = newRequestId();
+  const read = vi.fn(
+    async (request: { compatibleAccountApiProtocol: ApiProtocol }) => ({
+      entries: [
+        {
+          providerId: id,
+          displayName:
+            request.compatibleAccountApiProtocol === ApiProtocol.UNSPECIFIED
+              ? "Unfiltered provider"
+              : "Filtered provider",
+          provider: create(ResourceSchema, {
+            id,
+            revision: 1n,
+            kind: EntityKind.PROVIDER,
+          }),
+        },
+      ],
+      nextPageToken: "",
+    }),
+  );
+  const transport = createRouterTransport((router) =>
+    router.service(ProviderService, { listProviderInventory: read }),
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  function View({ protocol }: { protocol?: ApiProtocol }) {
+    const query = useProviderPages("", true, true, false, protocol);
+    return (
+      <output>{query.rows.map((row) => row.displayName).join(",")}</output>
+    );
+  }
+  const view = (protocol?: ApiProtocol) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <View protocol={protocol} />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const rendered = render(view());
+  await screen.findByText("Unfiltered provider");
+  rendered.rerender(view(ApiProtocol.ANTHROPIC_MESSAGES));
+  await screen.findByText("Filtered provider");
+  expect(
+    read.mock.calls.map(([request]) => request.compatibleAccountApiProtocol),
+  ).toEqual([ApiProtocol.UNSPECIFIED, ApiProtocol.ANTHROPIC_MESSAGES]);
 });

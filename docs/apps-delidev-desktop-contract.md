@@ -892,6 +892,164 @@ Validate the complete 50-record child page before rendering content, including e
 
 Every `input`, `textarea` and `select`, including checkboxes, radios and file pickers, retains its ordinary appearance when focused by a pointer, Tab or programmatic autofocus. Do not add a focus ring, glow, shadow or focus-induced border-color change. Suppress browser focus outlines in shared CSS and exclude these elements from category-specific focus rules. Preserve ordinary borders and static checkbox outlines, selected states, insertion carets, labels, validation states, keyboard operation, focus order and existing focus handoffs. Buttons, navigation, disclosures and other focusable content retain their existing visible focus indicators. Apply this treatment in Light, Dark and System appearance throughout the desktop frontend; category-specific focus requirements apply only to other focusable elements.
 
+### Desktop form submission and Enter
+
+Plain Enter in an eligible single-line input activates the current primary action
+of the form that owns that input, once. This is a desktop-only contract; mobile
+form behavior, visible text, layout and localization are unchanged. No RPC, schema,
+capability, persistence or feature flag is involved, and no input value is logged.
+
+#### Owner contract
+
+- A form owner renders one semantic `<form>` with a stable id (`useId()`), sets
+  `noValidate` so its own callback remains the validation authority, and renders
+  exactly one `type="submit"` primary control. Every other control the form owns
+  (Cancel, Retry, disclosures, pickers, Browse, remediation) is `type="button"`.
+- Task footers are portaled outside the scrolling body, so
+  `SettingsTaskActions form={id}` associates the footer controls with the form through
+  the `form` attribute. Inline footers keep working because the attribute is also
+  valid inside the form. Do not nest forms and do not add a document-wide
+  Enter-to-click handler.
+- Pointer activation, Enter and script-initiated submission all reach one owner
+  callback (`onSubmit`). The primary control has no separate `onClick`. The callback
+  rechecks the exact disabled conditions of the primary control (busy, pending,
+  uncertain, invalid, inactive) before allocating a request identity, so a blocked
+  submission never starts an operation, never creates a fresh request id and never
+  replaces a retained request. Uncertain operations stay retry-only through their
+  existing exact-retry control.
+- A secondary or destructive control is never promoted to the Enter action because it
+  is visually emphasized. A form that has an explicit confirmation keeps it.
+
+#### Enter guard helper (`apps/delidev/src/form-enter.ts`)
+
+The browser performs implicit submission: for an unprevented Enter in a text-like
+input it clicks the form's default button (the first submit control associated with
+the form, including `form=` controls outside the element) unless that button is
+disabled. The helper only removes presses that must not reach it:
+
+- `guardEnterSubmission` is the form's `onKeyDown`. It cancels the keydown default
+  for an Enter on an input owned by that form when the press is IME composition
+  (`isComposing` or keyCode 229), a held-key repeat, modified (Shift, Control, Alt
+  or Meta), already handled (`defaultPrevented`), aimed at an input that controls an
+  open popup (`aria-expanded="true"`), or aimed at a form-owned input that is not a
+  single-line text input (checkbox, radio, range, date and similar).
+- Eligible input types are text, search, url, tel, email, password, number, the date and
+  time family (date, datetime-local, month, time, week) and the default type; the
+  browser's native picker popup consumes its own Enter. Buttons, submit/reset/image/file inputs, selects, textareas,
+  summaries, links and every control owned by another form (including a portaled
+  nested dialog whose events bubble through React) are not judged by the guard, so
+  their native Enter behavior, multiline newlines and the owning dialog's own Enter
+  handling are preserved.
+- `classifyEnterSubmission` exposes the decision (`EnterSubmitBlock` enum) for owners
+  that need it and for tests; it never submits or clicks anything.
+- `consumeFormSubmit` is the first line of every owner `onSubmit`. It claims only the
+  form's own submit event (cancelling navigation and stopping propagation to
+  enclosing forms) and returns `false` for a submit that originated in another form.
+- Completion lists and comboboxes consume Enter for their own selection by calling
+  `preventDefault` on that keydown, or by exposing `aria-expanded="true"` while their
+  popup is open; the guard honors both, so a focused combobox with an open list
+  selects or closes before any form owner progresses. After the list closes, the next
+  plain Enter is an ordinary submission. Buttons, native selects and the Scroll
+  picker trigger keep their own Enter semantics.
+- `apps/delidev/src/test-form-enter.ts` provides `pressEnter` for jsdom tests: it
+  dispatches the real keydown and, only when nothing cancelled it, clicks the form's
+  default submit control unless disabled, mirroring browser implicit submission.
+
+#### Wizard navigation
+
+A wizard is one form owner whose single primary control changes with the step.
+
+- Enter in an eligible input runs the current primary control once: Next on every step
+  before the last (advancing exactly one step) and the final action (Save, Create
+  schedule, Save Agent Worker) on the last step, which submits once. Next and the final
+  action are separate keyed `type="submit"` controls so a browser never runs a click
+  default on a control React has swapped. Back, Cancel, Retry and disclosures stay
+  `type="button"`.
+- Next keeps its existing validation. When Enter targets a step whose primary control is
+  disabled only because the step is invalid (for example Project creation with no
+  repository or an invalid Name), the wizard stays on that step, shows the original
+  problem and focuses the original validation target without mutating anything. A
+  blocked, pending, uncertain, hidden or inactive wizard ignores Enter entirely: the keydown
+  is cancelled so the browser never clicks Next or Save, and a stray submit event is refused
+  by the same state guard.
+- Held, composing (`isComposing` or keyCode 229), modified and already-handled Enter
+  never advance. An open completion list, combobox or picker consumes Enter first.
+  Checkboxes, radios, selects and the Restrictions step controls keep their native
+  behavior, so Enter on them never advances or saves.
+- Project creation (Repositories, Configure, Restrictions), the schedule wizard
+  (four steps with Create schedule), the Agent Worker wizard (Harness picker, Accounts,
+  Model, Configure) and the portable configuration mapping step (Preview configuration
+  changes) follow this contract. The Gemini sign-in project field continues in the
+  browser only when the Continue in browser control would be enabled. Enter in the
+  multiline configuration JSON field inserts a newline.
+  The mapping form (`form.transfer-mapping-form`) only wraps the mapping panel: it adds no
+  width cap, the panel keeps its own cap, and the panel separators also apply across the form
+  boundary.
+- A nested dialog opened from an owner (Add repository over Project creation, the GitHub
+  repository chooser, confirmations) owns its own form and Enter. React delivers events
+  from portaled descendants through the component tree, so every owner claims only a
+  submit event whose target is its own form (`consumeFormSubmit`) and the guard judges
+  only inputs owned by its form; the underlying form never runs while a dialog above it
+  is active.
+
+#### Inline form owners
+
+Saved-connection and Worker-network forms are inline owners: their primary control
+sits inside the form, so no `form=` association is needed, but every other contract
+rule applies unchanged.
+
+- Rename connection and Add server are two independent forms inside their retained
+  task presenters. Each has one `type="submit"` primary (Save connection name or
+  Retry original name edit; Pair this server or Retry original server pairing) and
+  every other control, including Discard name edit, is `type="button"`. Enter in
+  Connection name, New connection name or the masked pairing document submits
+  through `rename` or `pair`, whose guard repeats the primary control's disabled
+  conditions (busy, concurrent rename or removal, blank or over-256-byte name,
+  incomplete pairing document, stale revision without a retained request). The
+  retained original request, name, private grant and revision are re-sent verbatim
+  by the retry label; a blocked Enter never allocates a request identity.
+- The encrypted Worker-network import is one form around the bundle textarea, the
+  authenticated digest input, the verified-digest checkbox and Import. Enter in the
+  digest input submits only after the checkbox is checked (or while an original
+  import is retained), never starts Prepare or Inspect, and sends the same bytes and
+  digest as a pointer click. Enter in the bundle textarea inserts a newline, and
+  Enter on the checkbox is not a submission. A confirmed but malformed digest shows
+  the same problem as a click and mutates nothing.
+  The form only adds submit semantics, so the stylesheet (`form.worker-network-import`)
+  keeps the full section width instead of the 720px cap that generic Settings forms get.
+
+#### Owner inventory
+
+`apps/delidev/src/form-owner-inventory.test.ts` parses this table and fails when a
+renderer module that owns a form or an editable text control is missing from it, when a
+listed module no longer exists, or when a form owner does not wire `guardEnterSubmission`
+and `consumeFormSubmit`. Status values are closed: `converted` (form owner added or
+reworked to the contract above, with behavior tests), `native-form` (already owned a form;
+now wired to the shared guard and own-submit claim), `composer` (message composer whose
+Enter semantics belong to its send contract and are unchanged) and `not-applicable` (no
+single-line text input of its own, or the containing owner supplies the form). Behavior
+tests drive plain, held, composing and blocked Enter through the real owner for the
+converted rows and for the wizard, onboarding and combobox owners.
+
+| Owner (`apps/delidev/src`)                                                                                                                                                                                                                                                                                                                                                | Surface                                                                                                              | Status                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `repository-registration.tsx`                                                                                                                                                                                                                                                                                                                                             | Add repository (URL/name, optional folder, Clone)                                                                    | `converted`                                                                                                   |
+| `saved-connections.tsx`                                                                                                                                                                                                                                                                                                                                                   | Rename connection, Add server                                                                                        | `converted`                                                                                                   |
+| `worker-network-native.tsx`                                                                                                                                                                                                                                                                                                                                               | Encrypted network import                                                                                             | `converted`                                                                                                   |
+| `project-creation.tsx`                                                                                                                                                                                                                                                                                                                                                    | Project creation wizard                                                                                              | `converted`                                                                                                   |
+| `schedule-creation.tsx`                                                                                                                                                                                                                                                                                                                                                   | Schedule wizard                                                                                                      | `converted`                                                                                                   |
+| `account-oauth.tsx`                                                                                                                                                                                                                                                                                                                                                       | Gemini project id and Continue in browser                                                                            | `converted`                                                                                                   |
+| `configuration-transfer.tsx`                                                                                                                                                                                                                                                                                                                                              | Portable configuration mapping step                                                                                  | `converted`                                                                                                   |
+| `agent-worker-source-wizard.tsx`                                                                                                                                                                                                                                                                                                                                          | Agent Worker wizard                                                                                                  | `native-form`                                                                                                 |
+| `settings.tsx`, `network-settings.tsx`, `machine-settings.tsx`, `pricing.tsx`, `notification-settings.tsx`, `integrations.tsx`, `pairing-grant.tsx`, `ssh-setup.tsx`, `account-connection.tsx`, `account-settings.tsx`, `claude-subscription-login.tsx`, `grok-subscription-login.tsx`, `opencode-go-account.tsx`, `subscription-onboarding.tsx`, `github-onboarding.tsx` | Settings and onboarding task forms                                                                                   | `native-form`                                                                                                 |
+| `appearance-controls.tsx`, `updates.tsx`, `usage.tsx`, `views.tsx`, `schedules.tsx`, `local-reviews.tsx`, `pull-requests.tsx`, `pr-fix.tsx`, `repository-association.tsx`, `request-diagnostics.tsx`, `session-budget.tsx`, `session-diff.tsx`, `session-name-editor.tsx`, `session-browser.tsx`                                                                          | Inline filters, renames and small editors                                                                            | `native-form`                                                                                                 |
+| `interactions.tsx`, `native-claude-response.tsx`, `native-grok-interactions.tsx`, `native-interaction-response.tsx`, `queue.tsx`                                                                                                                                                                                                                                          | Interaction answers and queued prompt editing                                                                        | `native-form`                                                                                                 |
+| `new-session.tsx`, `session.tsx`, `session-fork.tsx`                                                                                                                                                                                                                                                                                                                      | Message composers (Enter, Shift+Enter, completion precedence and custom send bindings keep their existing contracts) | `composer`                                                                                                    |
+| `appearance.tsx`, `backups.tsx`, `image-attachments.tsx`, `sidebar.tsx`, `sidechat.tsx`, `subscription-quota.tsx`                                                                                                                                                                                                                                                         | Radios, checkboxes and file inputs only                                                                              | `not-applicable`                                                                                              |
+| `settings-search.tsx`                                                                                                                                                                                                                                                                                                                                                     | Settings search field with its own keyboard model                                                                    | `not-applicable`                                                                                              |
+| `configuration-fields.tsx` (`TextField`), `repository-clone-fields.tsx`, `provider-model-settings.tsx`, `native-model-settings.tsx`, `api-format-fields.tsx`, `codex-subagent-configuration.tsx`, `remediation-policy.tsx`, `starting-branches.tsx`, `scroll-picker.tsx`, `reasoning-effort-field.tsx`, `language.tsx`                                                    | Reusable fields (the containing owner supplies the form; comboboxes consume Enter first)                             | `not-applicable`                                                                                              |
+| `repository-github-picker.tsx`                                                                                                                                                                                                                                                                                                                                            | GitHub repository chooser                                                                                            | `not-applicable`: portaled read-only dialog that stops its own keydown, so Enter never reaches Add repository |
+
 ### Shared tab strip presentation
 
 One static stylesheet, `apps/delidev/src/tab-strip.css`, owns the flat underline tab treatment for Project editing (`project-edit-tabs.tsx`), Usage, Backups operation history, every session workspace tab (`session-tab-bar.tsx`) and both terminal selector modes (`session-terminals.tsx`). The shared classes are `tab-strip` (strip), `tab-item` (selectable unit), `tab-label` (label button), `is-selected` (selected state; `aria-selected="true"` is equivalent) and `tab-close` (close button). `tab-item-dynamic` marks items with user-dependent labels. This is presentation only: each surface keeps its own component, controller, roles, keys and callbacks, and the stylesheet creates no resource, mutation or query.
@@ -2393,7 +2551,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Claude subscription onboarding follows the shared 720px wizard task dialog under System 67 with no Runner selection: once-only Add account, conditional masked code, original browser URL, success-bound name and Later retention. Preserve hidden task lifetime, explicit cancellation, focus/scroll/responsive rules, both themes and 200% zoom. Record fixtures/builds separately from actual account and packaged macOS/Windows/Linux acceptance; do not commit the generated design preview.
 
-- New Project creation follows the desktop contract's three-step repository selection, project settings and usage restrictions wizard. Existing edits retain their form structure while repository labels use names and saved values use original UUIDs. Preserve first-repository automatic naming until manual edits. Creation defaults the primary only on empty-to-nonempty repository selection; preserve valid choices through additions/reordering and require manual reselection after removal while repositories remain. Existing edits retain explicit primary selection. Preserve sequential metadata-only 50-record catalog reads, exact read/save retry, validation and Settings disposal. First creation focus is repository search; explicit later stages focus Name and the final heading, without focus changes on catalog or language updates.
+- New Project creation follows the desktop contract's three-step repository selection, project settings and usage restrictions wizard. Existing edits retain their form structure while repository labels use names and saved values use original UUIDs. Plain Enter in the repository search or Name field activates Next (one step, same validation, original problem and focus on an invalid step) and the final step saves once, under the wizard navigation clause of the desktop form submission contract. Preserve first-repository automatic naming until manual edits. Creation defaults the primary only on empty-to-nonempty repository selection; preserve valid choices through additions/reordering and require manual reselection after removal while repositories remain. Existing edits retain explicit primary selection. Preserve sequential metadata-only 50-record catalog reads, exact read/save retry, validation and Settings disposal. First creation focus is repository search; explicit later stages focus Name and the final heading, without focus changes on catalog or language updates.
 
 - Session detail presentation follows the desktop session-workspace contract. `session.tsx`, `session-presentation.tsx` and `session.css` own the compact header/tool strip, bounded transcript/request tray and pinned composer. Keep the five Diff/Files/Terminals/Browser (address dialog)/Diagnostics tools, persistent Info and one visible temporary panel, a 400px pane at 900px available conversation width and a compact drawer over notices and transcript, above the request tray and composer. Information controllers stay mounted; preserve budget gating, drafts, original requests, native browser presentation cleanup and independent terminal lifetime. Stop/Resume retain their existing guards; Fork and Archive/Restore use the keyboard-operable action popup. No RPC, migration or native authority changes.
 
@@ -2428,6 +2586,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 - Shared timestamp presentation follows the feature and the desktop/localization contracts. Use `Timestamp` for human-facing RFC3339/Nano labels and `TimestampText` for inert localized interpolation; preserve UTC backup, exact PR-card and pinned range modes. One per-window clock changes presentation only. Device `DateFormatProvider` stays above connection/Settings state, with native version-1 closed presets, authorized atomic persistence, original revisions and explicit uncertain-save reinspection. Preserve drafts/focus/query/receipt identities; keep invalid storage and timestamp text intact.
 
 - Shared ScrollPicker popovers remain in the original DOM/modal owner and use native top-layer presentation. Keep only the label/trigger in layout; constrain and reposition within the viewport and rendered task/sidebar body without resetting query/selection state. Preserve exact IDs, continuation scroll-root ownership, IME/focus behavior and inert/disposal admission checks. Follow the desktop shared scroll continuation contract.
+- Dropdown layout invariance. Opening, filtering or dismissing a DeliDev dropdown must leave the surrounding layout unchanged: every unrelated element rectangle stays within 1 CSS pixel of its closed geometry and the owner and document `scrollWidth`, `scrollHeight`, `scrollTop` and `scrollLeft` do not change. Dropdown content is therefore rendered in the top layer instead of normal flow and may cover underlying content, but never reserves space. `anchored-popup.ts` (`useAnchoredPopup`) and `anchored-popup.css` own this shared presentation for searchable selectors and action menus other than ScrollPicker, which keeps its own equivalent lifecycle in `scroll-picker.tsx` and the geometry-only `picker-overlay.ts`. Consumer contract: render the popup in its original DOM position (so dialog, inert and `contains()` ownership are unchanged) as a `popover="manual"` element with the `anchored-popup` class, mounted in the same commit in which `open` becomes true; keep empty, loading and error content of the dropdown inside that element; keep selection, keyboard, IME, focus, disabled/pending guards and dismissal (Escape, Tab, outside pointer, blur) in the consumer. The hook shows the popover without moving focus and keeps inline `left`, `top`, `width` and `maxHeight` current: 4px gap below the anchor, matching the anchor width by default (`AnchoredPopupWidth.Content` and `AnchoredPopupAlign.End` serve menus), 8px inset from the owning surface or visual viewport (an optional `boundary` supplies the owning surface; otherwise the shared picker owner lookup applies), 280px maximum height with internal scrolling, flip above when the space below is smaller and clamp inside the boundary. It remeasures on anchor, popup, ancestor and boundary resize, ancestor child-list changes (a row inserted, removed or reordered before the anchor), capture-phase scroll outside the popup, window and visual-viewport resize, popup content mutation and entrance settling, measures the effective CSS zoom scale from the rendered popup, calls `onInvalid` (the consumer closes) when the anchor is detached, disabled, inert, hidden or inside a closed dialog, and disconnects every observer, removes every listener and hides the popover when `open` becomes false or the consumer unmounts. It never scrolls the page, mutates business state, or logs queries, values or user content. Converted dropdowns: Appearance Language. Reasoning effort suggestions and the queue More menu are converted by the follow-up units of the same issue; remaining families are listed in the dropdown inventory when that audit lands. Geometry coverage is the real-Chromium `scripts/test-settings-layout.mjs` Language block (`DELIDEV_LAYOUT_LANGUAGE_ONLY=1`), which records per-node rectangles and scroll metrics closed, open, filtered, empty, and after Escape, Tab and outside pointer in English/Korean, light/dark/system, four viewport widths (including half-size CSS viewports for effective 200% layout) and owner scroll; it is explicit browser validation, not packaged CEF or native acceptance.
 
 - Existing-session follow-up projections follow the feature and the desktop session-workspace contract. The connection owns bounded per-session presentation across navigation/reconnect; freeze prompt/mode/skills/ordered images before preparation. Publish verified original request-to-queue mappings before mutation intent clearing, retaining unmounted draft settlement and exact uncertain retry. Reconcile native MESSAGE input_id without prompt matching; newer queue revisions override receipts. Reinspect only retained original queue IDs serially on view/transport replacement to recover removed tombstones; failed reads grant no removal or execution authority. Keep native transcript ordering, one explicit-send reveal, submission locks, attachment cleanup and Stop/Resume guards. Localized projected delivery status grants no native acceptance. No RPC, migration, feature flag or native change.
 
@@ -2500,7 +2659,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Native builds and packaging must run the shared `prepare:assets` preflight before compilation. Hydrate only the exact DeliDev source-icon LFS path, first from the local cache and then by a path-scoped current-ref fetch. Validate the original pointer size/SHA-256 and PNG container, preserve local image/pointer edits, stop on failure or cancellation, and retain credential-free signing environments. A valid PNG needs neither Git nor network access. Follow `apps-delidev-desktop-contract.md`.
 
-- `dev:desktop` prepares the embedded frontend and sidecar. macOS uses the pinned Tauri CLI’s debug CEF app bundle, then signs/verifies and publishes a unique private copy before execution. Only its Go server uses the exact registered local self-signed Code Signing certificate and fixed `io.delino.delidev.development.server` identifier; the containing app remains ad-hoc signed with its original rights. `dev:signing --identity` stores only the public certificate fingerprint outside the checkout. Preserve `desktop-host`’s explicit `tauri-runtime-cef` dependency, `custom-protocol`, embedded assets, Chromium notices and bounded release-credential-free build environment. Share the package build lock through publication. Publish outside the checkout and Cargo target cache; retain those files across rebuild/cache cleanup/exit/crash while any original server or Worker can survive. Signal only the running desktop, never its sidecar process group. Keep application argv out of build options and logs. Follow `apps-delidev-desktop-contract.md#local-development-signing-and-recovery`.
+- `dev:desktop` prepares the embedded frontend and sidecar. macOS uses the pinned Tauri CLI’s debug CEF app bundle, then signs/verifies and publishes a unique private copy before execution. Only its Go server uses the exact registered Apple Development or legacy local self-signed Code Signing certificate and fixed `io.delino.delidev.development.server` identifier; the containing app remains ad-hoc signed with its original rights. `dev:signing --identity` stores only the public certificate fingerprint outside the checkout. Preserve `desktop-host`’s explicit `tauri-runtime-cef` dependency, `custom-protocol`, embedded assets, Chromium notices and bounded release-credential-free build environment. Share the package build lock through publication. Publish outside the checkout and Cargo target cache; retain those files across rebuild/cache cleanup/exit/crash while any original server or Worker can survive. Signal only the running desktop, never its sidecar process group. Keep application argv out of build options and logs. Follow `apps-delidev-desktop-contract.md#local-development-signing-and-recovery`.
 
 - Keep the background-extracted version of the supplied PNG as the canonical DeliDev app icon: both the outer dark rounded-square tile and the central dark play triangle are transparent. Preserve the colored ribbon's original shape, gradient, proportions, and transparent cutouts. The canonical artwork uses the approved 1.2× enlargement around the center of the unchanged 1254×1254 canvas, reducing outer transparent margins without clipping; preserve this enlarged scale rather than applying another enlargement during export. Generate the 256px native window/tray PNG and multiresolution Windows ICO from it, and include the full-resolution `icon-source@2x.png` in Tauri's bundle icons for macOS ICNS generation. Preserve the 1254px canvas and `@2x` density marker: the pinned bundler downsizes it to 1024px, which ICNS supports only at retina density. Track the source through exact-path Git LFS as documented in `apps-delidev-desktop-contract.md` and `repository-workflow-contract.md`.
 
@@ -2720,7 +2879,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Home New project/Create a project opens the existing Project editor directly over Sessions or New Session without selecting or mounting Settings. `project-creation.tsx` owns the independent scoped lifetime and mutation registry, original pending/uncertain task reopening, exact retries and active-query invalidation; App owns admission and disposal on another surface/conversation or connection identity. Preserve drafts, Home pages/filter/scroll, shared dialog geometry and visible opener/compact Home fallback focus. Keep Settings-internal creation unchanged and follow `apps-delidev-desktop-contract.md#project-creation-outside-settings`.
 
-- `language.tsx` and `language.css` own the Appearance language search combobox. Keep System pinned first and sort actual languages by stable English names; display English/native self-names independently of UI language. Search and keyboard navigation are local and never save; click/Enter confirms an existing enum, while cancellation, IME input and reselection cannot write. Preserve the device controller, revision/uncertainty locks, Settings disposal, mounted input focus and native interfaces. Use bundled catalog guidance, static semantic CSS and the shared input focus treatment under the localization contract.
+- `language.tsx` and `language.css` own the Appearance language search combobox. Keep System pinned first and sort actual languages by stable English names; display English/native self-names independently of UI language. Search and keyboard navigation are local and never save; click/Enter confirms an existing enum, while cancellation, IME input and reselection cannot write. Preserve the device controller, revision/uncertainty locks, Settings disposal, mounted input focus and native interfaces. Use bundled catalog guidance, static semantic CSS and the shared input focus treatment under the localization contract. The option list and its no-match status render inside one `popover="manual"` `anchored-popup language-popup` element positioned by the shared anchored-popup contract (see Dropdown layout invariance); the combobox input stays the anchor and focus owner, the owning surface for clamping is `.settings-content`, and opening, filtering or dismissing the list reserves no layout space and writes nothing.
 
 - `sidebar.tsx` owns the session hover card content; `session-hover-card.tsx` owns its sidebar-local timers, single-card subscription and measured placement. Preserve the full name, separate workspace/execution/archive observations, safe title state/reason and complete accessible description from existing navigation metadata only. Use the approved 320px theme surface, 16px padding, 8px corners, neutral badges and no arrow/actions. Hover opens after 300ms, focus immediately, and source/card departure has a 150ms grace period. Escape suppresses reopening until a new entry; activation, external scrolling, resize, hidden/inactive navigation and source removal dispose presentation and pending timers. Card scrolling remains independent. Compact cards stay descendants of the open drawer and use the manual popover top layer to escape clipping without moving focus or changing modal authority. Keep listener ownership singular and row subscriptions boolean; add no RPC, durable state, logging of content or native execution authority. Follow the desktop and localization contracts.
 
@@ -3359,7 +3518,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Row quota refresh requires current connection/generation, no removal/recovery/pending lifecycle owner and no queued/sending/uncertain observation. Acceptance finishing a client mutation cannot reveal a second refresh while native ownership remains active.
 
-- `network-settings.tsx` owns collapsed Server preferences/Runner Device routing, revisioned profile editing and separately authenticated recipient-encrypted export. Keep write-only credentials and ciphertext out of read/query state, preserve exact uncertain requests, bounded pages and distinct desired/effective/native generations. `worker-network-native.tsx` uses only the current Settings opening and the trusted original same-computer Worker bridge; preparation/import never starts or stops a Worker. Closing discards presentation without canceling accepted effects or replaying late native calls. Follow the network and desktop contracts.
+- `network-settings.tsx` owns collapsed Server preferences/Runner Device routing, revisioned profile editing and separately authenticated recipient-encrypted export. Keep write-only credentials and ciphertext out of read/query state, preserve exact uncertain requests, bounded pages and distinct desired/effective/native generations. `worker-network-native.tsx` owns the encrypted import form (Enter in the digest input imports once only after verified-digest confirmation; the bundle textarea keeps Enter as a newline) and uses only the current Settings opening and the trusted original same-computer Worker bridge; preparation/import never starts or stops a Worker. Closing discards presentation without canceling accepted effects or replaying late native calls. Follow the network and desktop contracts.
 
 - After a failed/canceled storage recovery, retain the attempt display and exact retry receipt, but use the refreshed session storage predecessor for the next explicit reconciliation. Modal close/reopen is not a recovery prerequisite.
 
@@ -4040,6 +4199,41 @@ and disclosure changes retain values. Legacy accountless Workers remain readable
 through existing APIs, but need an account before wizard resaving. Retired models
 remain inert; affected Workers require explicit current account and model
 reconfiguration without rewriting historical executions.
+
+#### Compatible API source choices
+
+New and Edit Agent Worker account sources (every source group) list only enabled saved API providers that own at least
+one account the existing account picker could offer for the harness. The wizard
+asks `ListProviderInventory` for them with `enabled_only = true` and the typed
+`compatible_account_api_protocol` derived from the harness (Codex
+`OPENAI_RESPONSES`, Claude Code `ANTHROPIC_MESSAGES`, OpenCode and Grok Build
+`OPENAI_CHAT`); the server evaluates eligibility over complete state before
+ordering and pagination (see the
+[catalog contract](cmds-delidev-catalog-contract.md#compatible-account-provider-inventory-filter)).
+Only `useProviderPages` callers that pass the protocol send it; every other
+consumer (API Providers settings, Provider/Model settings, Usage prices) keeps the
+historical unfiltered request, so zero-account providers stay visible there.
+The filtered provider chain has its own pagination identity per protocol, so a
+harness change never reuses another harness's list.
+
+- Negotiation uses the response capability list, never the request, and covers
+  every accepted page of the chain, not only the latest response (a refresh during
+  a mixed-version rollout can mix filtered and unfiltered pages). A response
+  without `COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1` came from a server that
+  ignored the field, so its list is unfiltered: when any page of the chain lacks the
+  capability the wizard shows no API choices from the whole chain, stops paging it,
+  and shows **Update the server to list API providers
+  that have a compatible account for this harness.** (English and Korean) instead
+  of a list or the empty message. Subscription choices, drafts and Next/Back are
+  unaffected, and the wizard never falls back to an unfiltered API list.
+- A final empty first page of a filtered response shows **No enabled API provider
+  has a connected account that works with this harness.** with a pointer to AI API
+  Keys. A pending or failed read is never shown as emptiness.
+- A selected or saved API source that is no longer returned stays selected through
+  the existing retained-source fallback (the choice is labelled **retained source**
+  and is not offered as a new source). The wizard never switches the source or
+  deletes accounts, routes or drafts because of the filter; account selection,
+  validation, save and execution authority are unchanged.
 
 #### Worker wizard step indicator
 
@@ -4905,7 +5099,7 @@ When the outer GitHub profile inventory moves to another page, clear the
 selected profile and repository page before exposing the new page. The picker
 must never retain repository rows from a profile that is no longer selected.
 
-Add repository is a native child dialog over the mounted Repositories list, with a 640px maximum width, 24px padding, theme colors and 40px controls with 8px corners. Its content scrolls vertically within the viewport and footer actions wrap at narrow widths and 200% zoom. The header X is the only dismissal action; the footer retains business actions only. Initial focus goes to the primary Git URL field; native modal behavior contains keyboard focus. X and Escape restore the still-connected Add repository opener. The dialog owns a nested visit/read/mutation scope: closing it discards temporary inputs, reads and exact uncertain presentation requests, while accepted server jobs remain authoritative. Late callbacks cannot reopen it or initiate follow-up work. Leaving Settings also disposes this child scope.
+Add repository is a native child dialog over the mounted Repositories list, with a 640px maximum width, 24px padding, theme colors and 40px controls with 8px corners. Its content scrolls vertically within the viewport and footer actions wrap at narrow widths and 200% zoom. The header X is the only dismissal action; the footer retains business actions only. Add repository is one semantic form (see [Desktop form submission and Enter](#desktop-form-submission-and-enter)): plain Enter in the Git URL, Repository name or Clone destination inputs activates the current primary action once, either Clone & add repository or Add repository, with the same payload and guards as pointer activation. Disabled, busy, uncertain and incomplete drafts, IME composition, held Enter and modified Enter submit nothing and create no request identity. The nested GitHub chooser owns its own Enter. Enter in the optional manual checkout path input also activates the primary action rather than Inspect folder, which remains an explicit pointer or keyboard button activation. Initial focus goes to the primary Git URL field; native modal behavior contains keyboard focus. X and Escape restore the still-connected Add repository opener. The dialog owns a nested visit/read/mutation scope: closing it discards temporary inputs, reads and exact uncertain presentation requests, while accepted server jobs remain authoritative. Late callbacks cannot reopen it or initiate follow-up work. Leaving Settings also disposes this child scope.
 
 Project forms retain ordered repositories and an explicitly selected primary repository. Removing the primary clears that choice without selecting a replacement. Agent/account restrictions preserve the difference between unrestricted selection and an explicitly configured empty list, which permits none.
 
@@ -5442,7 +5636,11 @@ process termination nor cleanup of independent server/Worker processes.
 
 ### Local development signing and recovery
 
-Create a dedicated certificate in Keychain Access > Certificate Assistant > Create a Certificate, named **DeliDev Local Development**, with **Self Signed Root** identity type and **Code Signing** certificate type, following [Apple’s self-signed development certificate procedure](https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/Procedures/Procedures.html). Keep its private key in the user’s keychain. Use its 40-character SHA-1 fingerprint with `pnpm --dir apps/delidev dev:signing --identity <fingerprint>`. Registration checks the exact named certificate, self-signature, Code Signing extended usage and validity interval, then signs/verifies a temporary probe. Only the schema version and public fingerprint are atomically stored in owner-private `Library/Application Support/delidev-development/signing.json`, outside the checkout. No system-wide trust or release identity is selected. Missing/expired certificates and signing failures prevent launch. Replacing an identity requires explicit registration and original-item authorization.
+For persistent Keychain approval across local rebuilds, create an **Apple Development** certificate in Xcode Settings > Apple Accounts > the selected team > Manage Certificates. Explicitly register its 40-character SHA-1 fingerprint with `pnpm --dir apps/delidev dev:signing --identity <fingerprint>`. Never automatically select an identity or use Apple Distribution or Developer ID certificates. Certificate discovery searches only Apple Development and the dedicated legacy local certificate name. Validate the exact fingerprint, development name, Code Signing usage and validity interval, then sign a temporary probe and verify its exact identifier/fingerprint, Apple anchor, WWDR intermediate and Mac development certificate extension before saving registration. Apply the same signed-code requirement to every published server.
+
+The legacy **DeliDev Local Development** self-signed Code Signing certificate remains supported with its exact name, self-signature, usage and validity checks. It does not guarantee persistent approval after rebuilds: macOS can assign self-signed code a per-build `cdhash` Keychain partition even when its designated requirement remains stable. Apple development signing uses a team partition. See [Apple's Keychain client partition implementation](https://github.com/apple-oss-distributions/Security/blob/main/securityd/src/clientid.cpp). Changing global certificate trust does not change this partition classification.
+
+Keep the private key in the user's keychain. Only the schema version and public fingerprint are atomically stored in owner-private `Library/Application Support/delidev-development/signing.json`, outside the checkout. No system-wide trust or release identity is selected. Missing/expired certificates and signing failures prevent launch. Replacing an identity requires explicit registration and original-item authorization; existing entries can require one new approval. A locked Keychain can still require its password. Preserve existing credentials and ACL entries; never disable access control or clear a partition list to suppress prompts.
 
 An older ad-hoc server’s keychain items may require one explicit authorization for the signed development server. In Keychain Access, inspect only the relevant `io.delino.delidev.credentials.v1` wrapping or `io.delino.delidev.github.pat.v1` PAT service entries and add the published bundle’s `Contents/MacOS/delidev` to their Access Control application list. Preserve account UUIDs, connection references, ciphertext and native material. After reviewing active work, use existing explicit Stop/Start controls to replace an invalid surviving server, then explicitly validate and refresh models. Never repeat OAuth exchange to repair code identity or promise that unlocking repairs replaced code. Automatic startup/reuse preserves borrowed servers and independent Workers.
 
@@ -6756,7 +6954,7 @@ Local server controls placement in the main Local window (`LocalServerState` is 
 
 The connection-screen Start local server and Retry controls and the diagnostics modal are unchanged.
 
-Saved servers reads the bounded local inventory and exposes Refresh, Add server, Open or the original pending pairing retry, and a keyboard-operable row disclosure for Rename/Remove. Saved denotes persisted pairing, never remote readiness. Failed reads retain confirmed rows with stale guidance. The existing private pairing form stays masked and opens in a contained dialog. Rename, removal and pairing keep their original request bytes and confirmations across page movement. Menu Escape restores its summary. Task-dialog Close/Escape hides only presentation and leaves an explicit Continue action; original drafts, confirmations and uncertain requests remain retained. Dismissal survives page-slot release and reacquisition and also survives movement to the main-window Saved servers fallback dialog: the fallback keeps the dismissed task body hidden and shows the same explicit Continue action, while a fresh fallback dialog with no dismissed task still exposes the initial Add form without an Add click. Only Continue or a genuinely new task presents the dialog again, in either host, without replaying or creating a request. A completed Add clears its dismissal so the next fallback Add form starts presented. The retained Add presenter receives a presentation-only generation from the explicit Add server action, independently of drafts, profile IDs and exact requests. Deliberate Discard/Keep controls retain their original semantics. Dialog focus and restoration use the shared Modal owner.
+Saved servers reads the bounded local inventory and exposes Refresh, Add server, Open or the original pending pairing retry, and a keyboard-operable row disclosure for Rename/Remove. Saved denotes persisted pairing, never remote readiness. Failed reads retain confirmed rows with stale guidance. The existing private pairing form stays masked and opens in a contained dialog. Rename, removal and pairing keep their original request bytes and confirmations across page movement. Menu Escape restores its summary. Rename and Add server are semantic forms (see [Desktop form submission and Enter](#desktop-form-submission-and-enter)): plain Enter in a name or the masked pairing document submits the form's single primary control once with the same payload as pointer activation, and a blocked, incomplete, stale, composing, held or modified Enter submits nothing and creates no request identity. Task-dialog Close/Escape hides only presentation and leaves an explicit Continue action; original drafts, confirmations and uncertain requests remain retained. Dismissal survives page-slot release and reacquisition and also survives movement to the main-window Saved servers fallback dialog: the fallback keeps the dismissed task body hidden and shows the same explicit Continue action, while a fresh fallback dialog with no dismissed task still exposes the initial Add form without an Add click. Only Continue or a genuinely new task presents the dialog again, in either host, without replaying or creating a request. A completed Add clears its dismissal so the next fallback Add form starts presented. The retained Add presenter receives a presentation-only generation from the explicit Add server action, independently of drafts, profile IDs and exact requests. Deliberate Discard/Keep controls retain their original semantics. Dialog focus and restoration use the shared Modal owner.
 
 Advanced contains registration inspection/recovery, app updates and retained installation inspection, removed-profile history and independent retained Worker cleanup. An external text indicator exposes pending, failed or uncertain controller conditions while Advanced is collapsed. Expanding Advanced itself neither retries work nor admits native operations. Existing child disclosures retain their original read and operation gates. No RPC, protocol allocation, migration, dependency or native authority changes. Component and browser evidence remain separate from installed-native and real-account acceptance.
 

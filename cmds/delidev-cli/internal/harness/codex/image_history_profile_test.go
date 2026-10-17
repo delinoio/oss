@@ -23,7 +23,7 @@ func TestImageHistoryFrameProfileIsExplicitAndNeverGenerates(t *testing.T) {
 		{"credential-free-recovery", func(c *Config) { *c = recovery }, true},
 		{"default-profile", func(c *Config) { c.FrameProfile = DefaultFrameProfile }, false},
 		{"generation", func(c *Config) { c.EnableImageGeneration = true }, false},
-		{"api", func(c *Config) { c.API = &APIConfig{} }, false},
+		{"api-image-history", func(c *Config) { c.API = &APIConfig{} }, true},
 		{"sidechat", func(c *Config) { c.Sidechat = ReadOnlySidechatV1 }, false},
 		{"fork-history", func(c *Config) { c.ManagedForkHistory = true }, false},
 		{"no-root", func(c *Config) { c.ImageRoot = "" }, false},

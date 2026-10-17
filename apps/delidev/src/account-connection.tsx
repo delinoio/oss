@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   productDiagnostic,
   useProductLabels,
@@ -294,9 +295,10 @@ function ApiAccountConnection({
       ) : disconnected ? (
         <>
           <form
+            onKeyDown={guardEnterSubmission}
             id={formId}
             onSubmit={(event) => {
-              event.preventDefault();
+              if (!consumeFormSubmit(event)) return;
               if (
                 freshBlocked ||
                 !providerEnabled ||

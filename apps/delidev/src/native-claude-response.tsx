@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { LocalizedText, copy, resolveMessage, useLocale } from "./localization";
 import {
   InteractionQuery,
@@ -164,11 +165,12 @@ export function NativeClaudeResponse({
     closed || mutation.busy || mutation.uncertain || !submissionAllowed;
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       aria-label={copy(
         "native-claude-response.respondToOriginalClaudeRequest_566f4d",
       )}
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (blocked || missing || invalid || oversized) return;
         void mutation.send({
           mutation: {

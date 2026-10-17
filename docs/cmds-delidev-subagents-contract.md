@@ -163,3 +163,15 @@ Codex children may carry an observed display name. The owned descendant read and
 Names travel outside the closed schema-1 `event_json` and child `document_json` as additive `PublishExecutionRequest.subagent_names` entries (original product child ID plus name). The batch of names is bounded by its child batch; the server rejects duplicate, foreign, blank, oversized or non-child-event names before atomic retention, so no child or name is partially retained. The Worker's durable outbox retains the exact names with the pending event and replays the same bytes with the same request ID; the mutation receipt identity includes the exact name bytes, so replay with changed or dropped names conflicts. The server retains the name privately in `SubagentRecord.display_name` and projects it as `Resource.subagent_display`, removing the key from `document_json`. An omitted name keeps the retained one.
 
 Compatibility: an older server ignores the unknown protobuf field while processing original observations; an older Worker sends no names and children keep ordinals; historical nameless records have no backfill; an older desktop receives unchanged JSON and ignores the additive Resource field. Logs never contain names, output or prompts.
+
+## Native descendant visibility
+
+A native started/status activity can precede its asynchronous state-DB entry.
+Keep that original observed identity as an unresolved completion fence. For a
+successful, fully validated state-DB inventory that omits an observed pending
+identity, read a fresh inventory at most 16 times with 100-ms waits inside the
+original 30-second inspection budget. Publish no partial batch while waiting.
+Transport errors, cancellation, malformed payloads and identity failures are
+not retried. A path or activity never proves ancestry, and missing identities
+still fail closed at the bound. These reads cannot load a child, send input,
+repeat a tool operation or grant cleanup authority.

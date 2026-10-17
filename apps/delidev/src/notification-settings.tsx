@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -454,11 +455,12 @@ function NotificationPreferencesEditor({
   const value = draft ?? current.data?.preferences;
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       id={`${ids}-form`}
       ref={form}
       className="notification-preferences"
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (!draft || blocked || stale || current.error || current.isFetching)
           return;
         void mutation.send({ requestId: newRequestId(), preferences: draft });

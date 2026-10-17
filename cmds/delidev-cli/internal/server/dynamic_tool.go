@@ -38,6 +38,11 @@ func publishDynamicTool(tx *store.Tx, input domain.ExecutionJobInput, session st
 			return executionEventConflict()
 		}
 	}
+	if update.Reply != nil && !update.Reply.Unavailable {
+		if !input.NativeOpenRouterTools || original == nil || original.Request == nil || original.Request.Identity.Tool != "imagegen" || original.Request.Identity.Namespace == nil || *original.Request.Identity.Namespace != "delidev_image" {
+			return executionEventConflict()
+		}
+	}
 	next, err := domain.ApplyDynamicTool(original, *update)
 	if err != nil {
 		return executionEventConflict()

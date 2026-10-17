@@ -26,6 +26,7 @@ import { dryRunEnvironment } from "./bundle-macos-dry-run.mjs";
 export const developmentServerIdentifier =
   "io.delino.delidev.development.server";
 export const developmentCertificateName = "DeliDev Local Development";
+export const appleDevelopmentCertificateName = "Apple Development:";
 const identityPattern = /^[A-Fa-f0-9]{40}$/;
 const outputLimit = 128 * 1024;
 
@@ -162,12 +163,18 @@ export function validateDevelopmentCertificate(
       selected = certificate;
   }
   if (!selected) fail("development-certificate-missing");
+  const names = selected.subject.split("\n");
+  const local = names.includes(`CN=${developmentCertificateName}`);
+  const appleDevelopment = names.some((name) =>
+    name.startsWith(`CN=${appleDevelopmentCertificateName} `),
+  );
+  // The name only selects a candidate. Registration and publication must also
+  // verify Apple's anchor and Mac development extension on the signed code.
   if (
-    !selected.subject
-      .split("\n")
-      .includes(`CN=${developmentCertificateName}`) ||
-    selected.issuer !== selected.subject ||
-    !selected.verify(selected.publicKey) ||
+    (!local && !appleDevelopment) ||
+    (local &&
+      (selected.issuer !== selected.subject ||
+        !selected.verify(selected.publicKey))) ||
     !selected.keyUsage?.includes("1.3.6.1.5.5.7.3.3")
   )
     fail("development-certificate-invalid");
@@ -184,14 +191,28 @@ export async function inspectDevelopmentIdentity(
   options,
   command = signingCommand,
 ) {
-  // Query only the dedicated certificate name, never account credentials or
-  // ambient release identities. An exact user-registered fingerprint is required.
-  const pem = await command(
-    "/usr/bin/security",
-    ["find-certificate", "-a", "-c", developmentCertificateName, "-p"],
-    options,
-  );
-  return validateDevelopmentCertificate(pem, identity);
+  // Search only local/development identities and select the exact registered
+  // fingerprint. Never discover or select a distribution/release identity.
+  for (const name of [
+    developmentCertificateName,
+    appleDevelopmentCertificateName,
+  ]) {
+    const pem = await command(
+      "/usr/bin/security",
+      ["find-certificate", "-a", "-c", name, "-p"],
+      options,
+    );
+    try {
+      return validateDevelopmentCertificate(pem, identity);
+    } catch (error) {
+      if (
+        !(error instanceof DevelopmentSigningError) ||
+        error.code !== "development-certificate-missing"
+      )
+        throw error;
+    }
+  }
+  fail("development-certificate-missing");
 }
 
 export function serverSigningArguments(identity, executable) {
@@ -211,7 +232,11 @@ export function serverSigningArguments(identity, executable) {
 
 export function serverRequirement(identity) {
   if (!identityPattern.test(identity)) fail("signing-identity-invalid");
-  return `=identifier "${developmentServerIdentifier}" and certificate leaf = H"${identity}"`;
+  // A stable designated requirement alone does not stabilize macOS Keychain
+  // partitions for self-signed code: those still use a per-build cdhash. Apple's
+  // Mac development certificate produces a team partition. Require its actual
+  // Apple chain and development extension, never just a certificate name.
+  return `=identifier "${developmentServerIdentifier}" and certificate leaf = H"${identity}" and (certificate leaf[subject.CN] = "${developmentCertificateName}" or (anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.1] exists and certificate leaf[field.1.2.840.113635.100.6.1.12] exists))`;
 }
 
 export async function registerDevelopmentIdentity(
@@ -346,7 +371,7 @@ async function main() {
     !identityPattern.test(args[1])
   ) {
     process.stderr.write(
-      `Create a self-signed Code Signing certificate named "${developmentCertificateName}" with Keychain Access > Certificate Assistant. Then run dev:signing --identity <40-character certificate SHA-1 fingerprint>.\n`,
+      `Create an Apple Development certificate in Xcode Settings > Accounts > Manage Certificates, then run dev:signing --identity <40-character certificate SHA-1 fingerprint>. The legacy "${developmentCertificateName}" self-signed identity remains supported but may prompt after each rebuild.\n`,
     );
     process.exitCode = 1;
     return;

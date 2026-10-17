@@ -29,6 +29,7 @@ import (
 )
 
 type Config struct {
+	openRouterTools           bool
 	startupProgress           bool
 	progress                  *sessionStartupReporter
 	paidCredits               bool
@@ -411,6 +412,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1) {
 				profile += "\x00codex-dynamic-tools-v1"
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1) {
+				profile += "\x00codex-openrouter-tools-v1"
+			}
 			if config.quotaBlockSupported {
 				profile += "\x00codex-quota-block-v1"
 			}
@@ -548,6 +552,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1)
+			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1)
 			}
 			// Older peers reject unknown enums before returning their support list.
 			// Advertise generation only after the original server opts into it.

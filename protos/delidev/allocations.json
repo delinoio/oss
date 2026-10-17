@@ -15387,6 +15387,34 @@
       "member": "blocked_reason",
       "number": 4,
       "newDeclaration": true
+    },
+    {
+      "issue": 4134,
+      "kind": "enum",
+      "declaration": "ProviderInventoryCapability",
+      "member": "PROVIDER_INVENTORY_CAPABILITY_COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1",
+      "number": 11
+    },
+    {
+      "issue": 4134,
+      "kind": "message",
+      "declaration": "ListProviderInventoryRequest",
+      "member": "compatible_account_api_protocol",
+      "number": 5
+    },
+    {
+      "pr": 4154,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1",
+      "number": 108
+    },
+    {
+      "pr": 4154,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1",
+      "number": 73
     }
   ],
   "rpcReservations": [

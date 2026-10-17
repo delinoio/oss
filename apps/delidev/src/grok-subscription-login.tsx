@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
@@ -1142,9 +1143,10 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
       ) : null}
       {naming ? (
         <form
+          onKeyDown={guardEnterSubmission}
           id={formId}
           onSubmit={(event) => {
-            event.preventDefault();
+            if (!consumeFormSubmit(event)) return;
             if (!locked && subscriptionNameValid(v.name)) props.saveName();
           }}
         >

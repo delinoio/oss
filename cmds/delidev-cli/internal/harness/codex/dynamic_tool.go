@@ -5,16 +5,19 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 )
 
 type dynamicItem struct {
+	Origin    externalToolOrigin
 	Turn      domain.ID
 	Identity  domain.DynamicToolIdentity
 	Completed bool
@@ -56,6 +59,25 @@ func dynamicIdentity(tool string, namespace *string, args json.RawMessage) (doma
 	return identity, nil
 }
 func decodeDynamicTool(raw json.RawMessage, completed bool) (string, *domain.DynamicToolSnapshot, error) {
+	limit := 512 << 10
+	if isOpenRouterImageItem(raw) {
+		limit = enlargedNativeFrameBytes
+	}
+	return decodeDynamicToolBounded(raw, completed, limit)
+}
+
+func isOpenRouterImageItem(raw json.RawMessage) bool {
+	if len(raw) > enlargedNativeFrameBytes {
+		return false
+	}
+	var item struct {
+		Tool      string  `json:"tool"`
+		Namespace *string `json:"namespace"`
+	}
+	return json.Unmarshal(raw, &item) == nil && item.Tool == "imagegen" && item.Namespace != nil && *item.Namespace == "delidev_image"
+}
+
+func decodeDynamicToolBounded(raw json.RawMessage, completed bool, limit int) (string, *domain.DynamicToolSnapshot, error) {
 	var fields map[string]json.RawMessage
 	var item struct {
 		Type       string                   `json:"type"`
@@ -68,7 +90,7 @@ func decodeDynamicTool(raw json.RawMessage, completed bool) (string, *domain.Dyn
 		Success    *bool                    `json:"success"`
 		DurationMS *int64                   `json:"durationMs"`
 	}
-	if len(raw) > 512<<10 || domain.ValidateJSONUnicodeEscapes(raw) != nil || domain.DecodeBounded(raw, &fields, 512<<10) != nil || len(fields) < 5 || len(fields) > 9 || domain.DecodeBounded(raw, &item, 512<<10) != nil || item.Type != "dynamicToolCall" || domain.Text(item.ID, "native dynamic call", 1024, true) != nil {
+	if len(raw) > limit || domain.ValidateJSONUnicodeEscapes(raw) != nil || domain.DecodeBounded(raw, &fields, limit) != nil || len(fields) < 5 || len(fields) > 9 || domain.DecodeBounded(raw, &item, limit) != nil || item.Type != "dynamicToolCall" || domain.Text(item.ID, "native dynamic call", 1024, true) != nil {
 		return "", nil, incompatible()
 	}
 	for key := range fields {
@@ -99,7 +121,7 @@ func decodeDynamicTool(raw json.RawMessage, completed bool) (string, *domain.Dyn
 				Audio *string                   `json:"audioUrl"`
 			}
 			var shape map[string]json.RawMessage
-			if domain.Decode(rawPart, &shape) != nil || len(shape) != 2 || domain.Decode(rawPart, &part) != nil {
+			if domain.DecodeBounded(rawPart, &shape, limit) != nil || len(shape) != 2 || domain.DecodeBounded(rawPart, &part, limit) != nil {
 				return "", nil, incompatible()
 			}
 			safe := domain.DynamicToolContent{Kind: part.Type}
@@ -116,7 +138,7 @@ func decodeDynamicTool(raw json.RawMessage, completed bool) (string, *domain.Dyn
 					ref = part.Audio
 					key = "audioUrl"
 				}
-				if ref == nil || shape[key] == nil || domain.Text(*ref, "protected native media reference", 256<<10, false) != nil {
+				if ref == nil || shape[key] == nil || domain.Text(*ref, "protected native media reference", max(256<<10, limit), false) != nil {
 					return "", nil, incompatible()
 				}
 				safe.ReferenceDigest, err = dynamicCommitment(shape[key])
@@ -136,10 +158,18 @@ func decodeDynamicTool(raw json.RawMessage, completed bool) (string, *domain.Dyn
 	return item.ID, result, nil
 }
 func (c *Client) observeDynamicItemLocked(native nativewire.Event, turn domain.ID, raw json.RawMessage) (Event, error) {
-	id, snapshot, err := decodeDynamicTool(raw, native.Method == "item/completed")
+	limit := 512 << 10
+	if c.imageObservations && isOpenRouterImageItem(raw) {
+		limit = c.nativeFrameLimit()
+	}
+	id, snapshot, err := decodeDynamicToolBounded(raw, native.Method == "item/completed", limit)
 	if err != nil {
 		return Event{}, err
 	}
+	return c.observeExternalToolSnapshotLocked(native, turn, id, snapshot, dynamicToolOrigin)
+}
+
+func (c *Client) observeExternalToolSnapshotLocked(native nativewire.Event, turn domain.ID, id string, snapshot *domain.DynamicToolSnapshot, origin externalToolOrigin) (Event, error) {
 	owner, known := c.execution.turns[turn]
 	if !known {
 		return Event{}, incompatible()
@@ -149,10 +179,10 @@ func (c *Client) observeDynamicItemLocked(native nativewire.Event, turn domain.I
 	}
 	prior, exists := c.dynamicItems[id]
 	completed := native.Method == "item/completed"
-	if exists && (prior.Turn != turn || prior.Completed || prior.Started && !completed || !reflect.DeepEqual(prior.Identity, snapshot.Identity)) || !exists && len(c.dynamicItems) >= 10000 {
+	if snapshot.Validate() != nil || exists && (prior.Origin != origin || prior.Turn != turn || prior.Completed || prior.Started && !completed || !reflect.DeepEqual(prior.Identity, snapshot.Identity)) || !exists && len(c.dynamicItems) >= 10000 {
 		return Event{}, incompatible()
 	}
-	c.dynamicItems[id] = dynamicItem{Turn: turn, Identity: cloneDynamicIdentity(snapshot.Identity), Completed: completed, Started: true}
+	c.dynamicItems[id] = dynamicItem{Origin: origin, Turn: turn, Identity: cloneDynamicIdentity(snapshot.Identity), Completed: completed, Started: true}
 	stage := domain.DynamicStarted
 	if completed {
 		stage = domain.DynamicCompleted
@@ -197,7 +227,7 @@ func (c *Client) observeDynamicRequestLocked(native nativewire.Event) (Event, er
 		return Event{}, incompatible()
 	}
 	prior, exists := c.dynamicItems[p.CallID]
-	if exists && (prior.Completed || prior.Turn != p.TurnID || !reflect.DeepEqual(prior.Identity, identity)) || c.problem != nil || c.execution.paused || c.execution.interrupt != "" || c.execution.active != p.TurnID {
+	if exists && (prior.Origin != dynamicToolOrigin || prior.Completed || prior.Turn != p.TurnID || !reflect.DeepEqual(prior.Identity, identity)) || c.problem != nil || c.execution.paused || c.execution.interrupt != "" || c.execution.active != p.TurnID {
 		return Event{}, incompatible()
 	}
 	if !exists && len(c.dynamicItems) >= 10000 {
@@ -221,7 +251,7 @@ func (c *Client) observeDynamicRequestLocked(native nativewire.Event) (Event, er
 		request.IDKind = domain.InteractionNumberID
 		request.IDValue = strconv.FormatInt(*wireID.Number, 10)
 	}
-	c.dynamicArrivals[native.Token] = &dynamicArrival{Native: nativewire.Event{Kind: nativewire.ServerRequest, ID: bytes.Clone(native.ID), Token: native.Token}, Turn: p.TurnID, CallID: p.CallID, Request: cloneDynamicRequest(request)}
+	c.dynamicArrivals[native.Token] = &dynamicArrival{Native: nativewire.Event{Kind: nativewire.ServerRequest, ID: bytes.Clone(native.ID), Token: native.Token, Method: native.Method, Params: bytes.Clone(native.Params)}, Turn: p.TurnID, CallID: p.CallID, Request: cloneDynamicRequest(request)}
 	if !exists {
 		if c.dynamicItems == nil {
 			c.dynamicItems = map[string]dynamicItem{}
@@ -274,7 +304,21 @@ type dynamicUnavailableText struct {
 // The caller owns a durable original assignment journal. The commit callback
 // runs after nativewire's atomic arrival claim and before any pipe write.
 func (c *Client) ReplyDynamicUnavailable(ctx context.Context, token, turn, claim domain.ID, commit func() error) (domain.DynamicToolReply, error) {
-	reply := domain.DynamicToolReply{Token: token, ClaimID: claim, Delivery: domain.DynamicNotSent, Unavailable: true}
+	return c.replyDynamic(ctx, token, turn, claim, commit, nil)
+}
+
+// ReplyDynamicImage executes only the selected original API image backend. The
+// durable commit runs after the native arrival claim and before backend I/O.
+// A canceled or uncertain attempt cannot re-enter the callback or resend.
+func (c *Client) ReplyDynamicImage(ctx context.Context, token, turn, claim domain.ID, commit func() error, backend func(context.Context, json.RawMessage) (string, error)) (domain.DynamicToolReply, error) {
+	if backend == nil {
+		return domain.DynamicToolReply{}, incompatible()
+	}
+	return c.replyDynamic(ctx, token, turn, claim, commit, backend)
+}
+
+func (c *Client) replyDynamic(ctx context.Context, token, turn, claim domain.ID, commit func() error, backend func(context.Context, json.RawMessage) (string, error)) (domain.DynamicToolReply, error) {
+	reply := domain.DynamicToolReply{Token: token, ClaimID: claim, Delivery: domain.DynamicNotSent, Unavailable: backend == nil}
 	if token.Validate() != nil || turn.Validate() != nil || claim.Validate() != nil || commit == nil {
 		return reply, incompatible()
 	}
@@ -286,13 +330,42 @@ func (c *Client) ReplyDynamicUnavailable(ctx context.Context, token, turn, claim
 	if c.execution == nil || owned == nil || owned.Turn != turn || owned.Claimed || owned.Resolved || c.sidechat != "" || c.modelObservation != "" || c.api != nil && c.api.title || c.problem != nil || c.execution.paused || c.execution.interrupt != "" || c.execution.active != turn {
 		return reply, turnConflict()
 	}
+	if backend != nil && (c.api == nil || !c.api.openRouterTools || owned.Request.Identity.Tool != "imagegen" || owned.Request.Identity.Namespace == nil || *owned.Request.Identity.Namespace != "delidev_image") {
+		return reply, turnConflict()
+	}
 	owned.Claimed = true
 	owned.Reply = &reply
 	produced := false
-	err := c.wire.ReplyGenerated(ctx, owned.Native, func() (any, error) {
+	send := c.wire.ReplyGenerated
+	if backend != nil {
+		send = c.wire.ReplyGeneratedImage
+	}
+	err := send(ctx, owned.Native, func() (any, error) {
 		produced = true
 		if err := commit(); err != nil {
 			return nil, err
+		}
+		if backend != nil {
+			var request struct {
+				Arguments json.RawMessage `json:"arguments"`
+			}
+			if json.Unmarshal(owned.Native.Params, &request) != nil {
+				return nil, incompatible()
+			}
+			imageURL, backendErr := backend(ctx, request.Arguments)
+			if backendErr == nil {
+				encoded, ok := strings.CutPrefix(imageURL, "data:image/png;base64,")
+				decoded, decodeErr := base64.StdEncoding.Strict().DecodeString(encoded)
+				valid := ok && decodeErr == nil && domain.ValidateImageContent(decoded, domain.ImagePNG) == nil
+				clear(decoded)
+				if valid {
+					return struct {
+						Success bool                `json:"success"`
+						Content []map[string]string `json:"contentItems"`
+					}{true, []map[string]string{{"type": "inputImage", "imageUrl": imageURL}}}, nil
+				}
+			}
+			return dynamicUnavailableResponse{Content: []dynamicUnavailableText{{Type: domain.DynamicText, Text: "OpenRouter image generation failed."}}}, nil
 		}
 		return dynamicUnavailableResponse{Content: []dynamicUnavailableText{{Type: domain.DynamicText, Text: domain.DynamicToolUnavailableText}}}, nil
 	})
@@ -304,7 +377,7 @@ func (c *Client) ReplyDynamicUnavailable(ctx context.Context, token, turn, claim
 	}
 	owned.Reply = &reply
 	if c.logger != nil {
-		c.logger.InfoContext(ctx, "native_dynamic_unavailable_reply", "owner_id", c.ownerID, "turn_id", turn, "request_token", token, "claim_id", claim, "delivery", reply.Delivery)
+		c.logger.InfoContext(ctx, "native_dynamic_reply", "owner_id", c.ownerID, "turn_id", turn, "request_token", token, "claim_id", claim, "delivery", reply.Delivery, "unavailable", reply.Unavailable)
 	}
 	return reply, err
 }

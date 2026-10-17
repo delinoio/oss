@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   useProductLabels,
   PresentationKind,
@@ -270,11 +271,15 @@ function SourceGroup({
     ids = value.accounts.map((account) => text(account.id));
   const sourceID = sourceKey(source);
   const query = useDeferredValue(value.input);
+  const harnessProtocol = harnessAPIProtocol(harness);
   const providers = useProviderPages(
     "",
     active && step === Step.Accounts,
     true,
+    false,
+    harnessProtocol,
   );
+  const compatibleFilter = providers.compatibleFilter;
   const provider = useQuery(
     ResourceQuery.getResource,
     {
@@ -289,7 +294,7 @@ function SourceGroup({
       providers.data?.capabilities.includes(
         ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1,
       )
-      ? harnessAPIProtocol(harness)
+      ? harnessProtocol
       : ApiProtocol.UNSPECIFIED,
     active && Boolean(source) && step === Step.Accounts,
   );
@@ -541,9 +546,15 @@ function SourceGroup({
     setPopup(false);
     setHighlight(-1);
   };
-  const entries = providers.rows.filter(
-    (entry) => entry.enabled && entry.providerId,
-  );
+  const entries = compatibleFilter
+    ? providers.rows.filter((entry) => entry.enabled && entry.providerId)
+    : [];
+  // Without the capability the continuation must not page through an
+  // unfiltered list that is never shown.
+  const sourceQuery =
+    compatibleFilter === false
+      ? { ...providers, nextPageToken: "" }
+      : providers;
   const changeRouting = (routing: string) =>
     update(value.key, { routing: routing || undefined });
   return (
@@ -622,7 +633,7 @@ function SourceGroup({
                   placeholder={copy("agent-worker-wizard.selectSource")}
                   active={active && step === Step.Accounts && displayed}
                   disabled={locked}
-                  query={providers}
+                  query={sourceQuery}
                   change={chooseSource}
                   options={[
                     ...Object.values(SubscriptionServiceId)
@@ -663,7 +674,14 @@ function SourceGroup({
                 <p role="status">
                   {copy("agent-worker-wizard.loadingApiSources")}
                 </p>
-              ) : providers.loaded && entries.length === 0 ? (
+              ) : compatibleFilter === false ? (
+                <p role="status">
+                  {copy("agent-worker-wizard.updateServerCompatibleApiSources")}
+                </p>
+              ) : providers.loaded &&
+                !providers.isFetching &&
+                !providers.error &&
+                entries.length === 0 ? (
                 <p>{copy("agent-worker-wizard.noApiSources")}</p>
               ) : null}
             </div>
@@ -1521,6 +1539,7 @@ export function AgentWorkerSourceWizard({
 
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       id={formID}
       ref={form}
       className="agent-configuration worker-wizard worker-source-wizard desktop-wizard"
@@ -1528,7 +1547,7 @@ export function AgentWorkerSourceWizard({
       noValidate
       onInvalidCapture={revealAgentInvalidControl}
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (!active || blocked || step === Step.Harness) return;
         if (step !== Step.Configure) {
           advance();

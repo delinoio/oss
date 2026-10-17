@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   useProductLabels,
   productResourceName,
@@ -271,9 +272,10 @@ export function RepositoryProfileAssociation({
   return (
     <ResourceSelectionPending.Provider value={reportPending}>
       <form
+        onKeyDown={guardEnterSubmission}
         className="repository-profile-association"
         onSubmit={(event) => {
-          event.preventDefault();
+          if (!consumeFormSubmit(event)) return;
           if (blocked || !profile || pendingOwners.current.size) return;
           void mutation.send({
             mutation: {
