@@ -13,8 +13,9 @@
 //! getters, proxies, runtime values) is resolved in the direction in which the
 //! read is not treated as guarded, so the finding is not produced.
 
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
+use super::{decode_identifier_escape, is_identifier_part};
 use crate::rules::await_context::await_operator_offsets;
 
 /// The branch construct a retained read controls.
@@ -168,6 +169,38 @@ fn is_word_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$') || byte >= 0x80
 }
 
+/// The byte width of the Unicode escape of an identifier character
+/// (`\u006f`, `\u{6f}`) that starts at `index`.
+fn identifier_escape_at(code: &str, index: usize) -> Option<usize> {
+    let rest = code.get(index..)?;
+    if !rest.starts_with('\\') {
+        return None;
+    }
+    decode_identifier_escape(rest)
+        .filter(|&(character, _)| is_identifier_part(character))
+        .map(|(_, width)| width)
+}
+
+/// The name an identifier token spells: its Unicode escapes (`\u006f`) are
+/// decoded, so a label is compared by name and not by spelling.
+fn word_name(text: &str) -> Cow<'_, str> {
+    if !text.contains('\\') {
+        return Cow::Borrowed(text);
+    }
+    let mut name = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(character) = rest.chars().next() {
+        if let Some((decoded, width)) = decode_identifier_escape(rest) {
+            name.push(decoded);
+            rest = &rest[width..];
+        } else {
+            name.push(character);
+            rest = &rest[character.len_utf8()..];
+        }
+    }
+    Cow::Owned(name)
+}
+
 /// Split `code` into tokens. Comments are dropped (a line terminator inside
 /// one is remembered on the next token); strings, regular expressions and
 /// template pieces are single tokens taken from `ignored`.
@@ -257,14 +290,21 @@ fn tokenize<'a>(code: &'a str, ignored: &[(usize, usize)]) -> Vec<Token<'a>> {
         {
             index = number_end(bytes, index);
             TokenKind::Number
-        } else if is_word_byte(byte) || byte == b'#' {
-            index += 1;
-            while index < bytes.len()
-                && is_word_byte(bytes[index])
-                && !separator_at(bytes, index)
-                && unicode_space_at(code, index).is_none()
-            {
-                index += 1;
+        } else if is_word_byte(byte) || byte == b'#' || identifier_escape_at(code, index).is_some()
+        {
+            index += identifier_escape_at(code, index).unwrap_or(1);
+            while index < bytes.len() {
+                if let Some(width) = identifier_escape_at(code, index) {
+                    // `index` is the backslash of an escape, not a word byte.
+                    index += width;
+                } else if is_word_byte(bytes[index])
+                    && !separator_at(bytes, index)
+                    && unicode_space_at(code, index).is_none()
+                {
+                    index += 1;
+                } else {
+                    break;
+                }
             }
             TokenKind::Word
         } else {
@@ -545,26 +585,126 @@ struct Parser<'a> {
     nodes: Vec<Node<'a>>,
     /// Branch sites in source order of their operator.
     sites: Vec<(EnvGuard, Id)>,
-    /// The function bodies being parsed, innermost last.
-    returns: Vec<Returns>,
-    /// The statement just parsed always completes abruptly (`return`, `throw`,
-    /// `break`, `continue`, or a block or `if`/`else` made of those).
-    abrupt: bool,
-    /// Nesting count of blocks being parsed after an abrupt statement: a
-    /// `return` there is unreachable and yields nothing.
-    dead: usize,
+    /// The statement being parsed, outside any statement nested in it, does
+    /// something that may throw. Evaluation may throw unless it is one of the
+    /// few forms that provably cannot: parsing an expression sets this flag
+    /// by default, and only the `*_pure` entry points below clear it again,
+    /// for a lone literal in a position that merely holds the value.
+    evaluates: bool,
+    /// The `break`/`continue` targets enclosing the cursor inside the current
+    /// function body, innermost last.
+    jumps: Vec<Jump<'a>>,
 }
 
-/// What the `return` statements of one function body produced.
-#[derive(Default)]
-struct Returns {
-    /// Returned expressions that can carry a read.
+/// A statement that a `break` or `continue` can target.
+#[derive(Clone)]
+enum Jump<'a> {
+    /// A loop: the target of an unlabelled `break` and `continue`.
+    Loop,
+    /// A `switch`: the target of an unlabelled `break` only.
+    Switch,
+    /// A statement label, by its decoded name: the target of `break label`
+    /// and `continue label`.
+    Label(Cow<'a, str>),
+}
+
+/// The completion records a statement can end with, as the ECMAScript
+/// semantics define them: normal, `return`, `throw`, and `break` or `continue`
+/// with a target. A statement list yields the union over its reachable
+/// statements; a statement yields the union over its parts.
+///
+/// Only the completions that leave the statement are kept: a `break` or
+/// `continue` is removed by its target, a `throw` by the `catch` clause that
+/// handles it, and every completion that a `finally` block overrides by that
+/// block. What remains at the end of a function body is the set of `return`
+/// completions the function can finish with.
+#[derive(Clone, Debug, Default)]
+struct Completion {
+    /// The statement may complete normally, so the next one is reachable.
+    normal: bool,
+    /// The statement may complete with a `throw`: a `throw` statement or the
+    /// evaluation of any expression.
+    throws: bool,
+    /// The statement may complete with a `return`, or with a `break` or
+    /// `continue` whose target is unknown: it leaves every `finally` block.
+    returns: bool,
+    /// Returned expressions that can carry a read, one per reachable `return`
+    /// that has not been overridden.
     values: Vec<Id>,
-    /// Number of `return` and `throw` statements, with or without a value.
-    statements: usize,
-    /// Nesting count of `try` blocks with a `catch` clause being parsed: a
-    /// `throw` there is caught and does not leave its `finally` block.
-    caught: usize,
+    /// `break` and `continue` completions as (index of the target in
+    /// [`Parser::jumps`], whether it is a `continue`).
+    jumps: Vec<(usize, bool)>,
+}
+
+impl Completion {
+    fn normal() -> Self {
+        Self {
+            normal: true,
+            ..Self::default()
+        }
+    }
+
+    /// A statement that cannot be scanned: it may complete normally or throw.
+    fn opaque() -> Self {
+        Self {
+            normal: true,
+            throws: true,
+            ..Self::default()
+        }
+    }
+
+    /// Whether the statement can end at all. One that cannot (an endless loop
+    /// with no `break`) runs no `finally` block around it.
+    fn terminates(&self) -> bool {
+        self.normal || self.throws || self.returns || !self.jumps.is_empty()
+    }
+
+    /// Add the abrupt completions of `other`, a path that is also possible.
+    fn absorb(&mut self, other: Self) {
+        self.throws |= other.throws;
+        self.returns |= other.returns;
+        self.values.extend(other.values);
+        for jump in other.jumps {
+            if !self.jumps.contains(&jump) {
+                self.jumps.push(jump);
+            }
+        }
+    }
+
+    /// `other` is an alternative to this completion (the other branch of an
+    /// `if`, a `catch` clause).
+    fn merge(&mut self, other: Self) {
+        self.normal |= other.normal;
+        self.absorb(other);
+    }
+
+    /// `next` runs after this statement. It is reachable only when this one
+    /// may complete normally; otherwise it adds nothing.
+    fn then(&mut self, next: Self) {
+        if self.normal {
+            self.normal = next.normal;
+            self.absorb(next);
+        }
+    }
+
+    /// Remove the completions that target `target` or one of `aliases` and
+    /// report whether a `break` and whether a `continue` was among them.
+    fn take_jumps(&mut self, target: usize, aliases: &[usize]) -> (bool, bool) {
+        let (mut broke, mut continued) = (false, false);
+        self.jumps.retain(|&(to, is_continue)| {
+            let own = to == target;
+            let alias = is_continue && aliases.contains(&to);
+            if own || alias {
+                if is_continue {
+                    continued = true;
+                } else {
+                    broke = true;
+                }
+            }
+            !(own || alias)
+        });
+        (broke, continued)
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -600,9 +740,8 @@ impl<'a> Parser<'a> {
             await_operators,
             nodes: Vec::new(),
             sites: Vec::new(),
-            returns: vec![Returns::default()],
-            abrupt: false,
-            dead: 0,
+            evaluates: false,
+            jumps: Vec::new(),
         }
     }
 
@@ -695,73 +834,85 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_statement(&mut self) {
-        self.abrupt = false;
+    /// Parse one statement and return the completions it can end with.
+    fn parse_statement(&mut self) -> Completion {
         if self.depth >= MAX_DEPTH {
             self.skip_nested();
-            return;
+            return Completion::opaque();
         }
         self.depth += 1;
-        self.parse_statement_inner();
+        // The flag belongs to this statement alone: the statements nested in
+        // it report their own evaluations through their completions.
+        let outer = std::mem::replace(&mut self.evaluates, false);
+        let mut completion = self.parse_statement_inner();
+        completion.throws |= std::mem::replace(&mut self.evaluates, outer);
         self.depth -= 1;
+        completion
     }
 
-    fn parse_statement_inner(&mut self) {
+    fn parse_statement_inner(&mut self) -> Completion {
         let Some(token) = self.tok() else {
-            return;
-        };
-        // Only these statements can complete abruptly; they set `abrupt`
-        // themselves. Any other statement (a loop, a `switch`, a `try`, a
-        // label) may complete normally as far as this scan can tell.
-        let abrupt_capable = match token.kind {
-            TokenKind::Punct => token.text == "{",
-            TokenKind::Word => {
-                matches!(token.text, "if" | "return" | "throw" | "break" | "continue")
-            }
-            _ => false,
+            return Completion::normal();
         };
         match token.kind {
-            TokenKind::Punct if token.text == ";" => self.bump(),
+            TokenKind::Punct if token.text == ";" => {
+                self.bump();
+                Completion::normal()
+            }
             TokenKind::Punct if token.text == "{" => self.within(Self::parse_block),
             TokenKind::Word => self.parse_keyword_statement(token),
             _ => self.expression_statement(),
         }
-        if !abrupt_capable {
-            self.abrupt = false;
-        }
     }
 
-    fn parse_keyword_statement(&mut self, token: Token<'a>) {
+    fn parse_keyword_statement(&mut self, token: Token<'a>) -> Completion {
         match token.text {
             "if" => {
                 self.bump();
                 self.parse_condition(Some(EnvGuard::If));
-                self.parse_statement();
-                let then_abrupt = self.abrupt;
+                let mut completion = self.parse_statement();
                 if self.eat_word("else") {
-                    self.parse_statement();
-                    self.abrupt &= then_abrupt;
+                    let other = self.parse_statement();
+                    completion.merge(other);
                 } else {
-                    self.abrupt = false;
+                    // The condition may be false.
+                    completion.merge(Completion::normal());
                 }
+                completion
             }
             "while" => {
                 self.bump();
+                let endless = self.condition_is_true();
                 self.parse_condition(Some(EnvGuard::While));
-                self.parse_statement();
+                let (mut completion, broke, _) = self.parse_loop_body();
+                completion.normal = !endless || broke;
+                completion
             }
             "with" => {
                 self.bump();
+                // The object is converted: `with (null)` throws.
+                self.evaluates = true;
                 self.parse_condition(None);
-                self.parse_statement();
+                self.parse_statement()
             }
             "do" => {
                 self.bump();
-                self.parse_statement();
+                let (mut completion, broke, continued) = self.parse_loop_body();
+                let mut endless = false;
+                let mut test_throws = false;
                 if self.eat_word("while") {
+                    endless = self.condition_is_true();
+                    let outer = std::mem::replace(&mut self.evaluates, false);
                     self.parse_condition(Some(EnvGuard::While));
+                    test_throws = std::mem::replace(&mut self.evaluates, outer);
                 }
                 self.eat_punct(";");
+                // The condition is tested after the body completes normally
+                // or continues.
+                let tested = completion.normal || continued;
+                completion.throws |= test_throws && tested;
+                completion.normal = broke || (!endless && tested);
+                completion
             }
             "for" => self.parse_for(),
             "switch" => self.parse_switch(),
@@ -774,61 +925,61 @@ impl<'a> Parser<'a> {
                             && !(next.kind == TokenKind::Punct
                                 && matches!(next.text, ";" | "}")) =>
                     {
-                        self.parse_expr()
+                        self.parse_expr_pure()
                     }
                     _ => None,
                 };
-                if self.dead == 0
-                    && let Some(frame) = self.returns.last_mut()
-                {
-                    frame.statements += 1;
-                    frame.values.extend(value);
-                }
-                self.abrupt = true;
                 self.eat_punct(";");
+                Completion {
+                    returns: true,
+                    values: value.into_iter().collect(),
+                    ..Completion::default()
+                }
             }
             "throw" => {
                 self.bump();
                 if self.tok().is_some_and(|next| !next.newline) {
                     self.parse_expr();
                 }
-                // Like a `return`, a `throw` completes the function abruptly.
-                if self.dead == 0
-                    && let Some(frame) = self.returns.last_mut()
-                    && frame.caught == 0
-                {
-                    frame.statements += 1;
-                }
-                self.abrupt = true;
                 self.eat_punct(";");
+                Completion {
+                    throws: true,
+                    ..Completion::default()
+                }
             }
             "break" | "continue" => {
                 self.bump();
-                if self
+                let mut label = None;
+                if let Some(next) = self
                     .tok()
-                    .is_some_and(|next| !next.newline && next.kind == TokenKind::Word)
+                    .filter(|next| !next.newline && next.kind == TokenKind::Word)
                 {
+                    label = Some(word_name(next.text));
                     self.bump();
                 }
-                self.abrupt = true;
                 self.eat_punct(";");
+                self.jump_completion(token.text == "continue", label.as_deref())
             }
             "debugger" => {
                 self.bump();
                 self.eat_punct(";");
+                Completion::normal()
             }
             "var" | "const" => {
                 self.parse_declarations();
                 self.eat_punct(";");
+                Completion::normal()
             }
             "let" if self.declaration_follows() => {
                 self.parse_declarations();
                 self.eat_punct(";");
+                Completion::normal()
             }
             "function" => {
                 self.bump();
                 self.eat_punct("*");
-                self.parse_function_rest(false);
+                self.parse_function_declaration();
+                Completion::normal()
             }
             "async"
                 if is_word(self.at(1), "function") && !self.at(1).is_some_and(|t| t.newline) =>
@@ -836,37 +987,88 @@ impl<'a> Parser<'a> {
                 self.bump();
                 self.bump();
                 self.eat_punct("*");
-                self.parse_function_rest(false);
+                self.parse_function_declaration();
+                Completion::normal()
             }
             "class" => {
                 self.bump();
                 self.parse_class_rest();
+                Completion::normal()
             }
             "import" if !is_punct(self.at(1), "(") && !is_punct(self.at(1), ".") => {
                 self.skip_import();
+                Completion::normal()
             }
-            "export" => self.parse_export(),
-            text if is_punct(self.at(1), ":") && !matches!(text, "default" | "case") => {
+            "export" => {
+                self.parse_export();
+                Completion::normal()
+            }
+            text if is_label(self.at(1), text) => {
                 self.bump();
                 self.bump();
-                self.parse_statement();
+                let target = self.jumps.len();
+                let mut completion = self.parse_jump_body(Jump::Label(word_name(text)));
+                // A `break` to the label completes the statement normally. A
+                // `continue` to it continues the loop it labels, which
+                // handled it already.
+                let (broke, _) = completion.take_jumps(target, &[]);
+                completion.normal |= broke;
+                completion
             }
             _ => self.expression_statement(),
         }
     }
 
-    fn expression_statement(&mut self) {
-        self.parse_expr();
-        self.eat_punct(";");
+    /// A function declaration is not evaluated: its parameter defaults run
+    /// only when it is called.
+    fn parse_function_declaration(&mut self) {
+        let outer = self.evaluates;
+        self.parse_function_rest(false);
+        self.evaluates = outer;
     }
 
-    fn parse_block(&mut self) {
-        if !self.eat_punct("{") {
-            return;
+    /// Whether `( true )` is next: a loop with this condition ends only
+    /// through a `break`, a `return` or a `throw`.
+    fn condition_is_true(&self) -> bool {
+        is_punct(self.tok(), "(") && is_word(self.at(1), "true") && is_punct(self.at(2), ")")
+    }
+
+    /// The completion of a reachable `break` or `continue`. It leaves every
+    /// enclosing `finally` block that sits inside its target. A target that
+    /// cannot be resolved is taken to leave all of them, the direction in
+    /// which no read is reported.
+    fn jump_completion(&mut self, is_continue: bool, label: Option<&str>) -> Completion {
+        let target = self.jumps.iter().rposition(|jump| match (jump, label) {
+            (Jump::Label(name), Some(label)) => name == label,
+            (Jump::Loop, None) => true,
+            (Jump::Switch, None) => !is_continue,
+            _ => false,
+        });
+        match target {
+            Some(target) => Completion {
+                jumps: vec![(target, is_continue)],
+                ..Completion::default()
+            },
+            None => Completion {
+                returns: true,
+                ..Completion::default()
+            },
         }
-        // Statements after an abrupt one are unreachable: a `return` there
-        // contributes no value.
-        let mut unreachable = false;
+    }
+
+    fn expression_statement(&mut self) -> Completion {
+        self.parse_expr_pure();
+        self.eat_punct(";");
+        Completion::normal()
+    }
+
+    /// A block: its statements run in order, and the ones after a statement
+    /// that cannot complete normally are unreachable.
+    fn parse_block(&mut self) -> Completion {
+        let mut completion = Completion::normal();
+        if !self.eat_punct("{") {
+            return completion;
+        }
         loop {
             match self.tok() {
                 None => break,
@@ -876,33 +1078,29 @@ impl<'a> Parser<'a> {
                 }
                 Some(_) => {
                     let before = self.pos;
-                    self.parse_statement();
-                    if self.abrupt && !unreachable {
-                        unreachable = true;
-                        self.dead += 1;
-                    }
+                    let statement = self.parse_statement();
+                    completion.then(statement);
                     if self.pos == before {
                         self.bump();
                     }
                 }
             }
         }
-        if unreachable {
-            self.dead -= 1;
-        }
-        self.abrupt = unreachable;
+        completion
     }
 
-    /// Parse the body of a function: its `return` values are collected apart
-    /// from those of the enclosing function.
+    /// Parse the body of a function: the values of the `return` completions
+    /// that survive to its end are the values the function returns.
     fn parse_body(&mut self) -> Vec<Id> {
-        self.returns.push(Returns::default());
-        let outer = (std::mem::take(&mut self.dead), self.abrupt);
-        if self.is_punct("{") {
-            self.within(Self::parse_block);
-        }
-        (self.dead, self.abrupt) = outer;
-        self.returns.pop().unwrap_or_default().values
+        // A `break` or `continue` cannot cross a function boundary.
+        let jumps = std::mem::take(&mut self.jumps);
+        let completion = if self.is_punct("{") {
+            self.within(Self::parse_block)
+        } else {
+            Completion::normal()
+        };
+        self.jumps = jumps;
+        completion.values
     }
 
     /// `( condition )` of `if`, `while`, `switch` and `with`.
@@ -910,7 +1108,7 @@ impl<'a> Parser<'a> {
         if !self.eat_punct("(") {
             return;
         }
-        let condition = self.within(Self::parse_expr);
+        let condition = self.within(Self::parse_expr_pure);
         if let Some(guard) = guard {
             self.site(guard, condition);
         }
@@ -926,19 +1124,32 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `var`, `let` or `const` and its declarators.
+    /// `var`, `let`, `const` or `using` and its declarators.
+    ///
+    /// A declarator cannot throw only when it binds a plain name to a lone
+    /// literal (or has no initializer). A binding pattern destructures its
+    /// value (`let {x} = null` throws), and a `using` declaration checks that
+    /// its value is disposable (`using x = 1` throws).
     fn parse_declarations(&mut self) {
+        let using = self.is_word("using");
         self.bump();
         loop {
+            let mut plain = !using;
             match self.tok() {
                 Some(token) if token.kind == TokenKind::Word => self.bump(),
                 Some(token) if is_punct(Some(token), "[") || is_punct(Some(token), "{") => {
+                    plain = false;
+                    self.evaluates = true;
                     self.parse_primary();
                 }
                 _ => break,
             }
             if self.eat_punct("=") {
-                self.parse_assign();
+                if plain {
+                    self.parse_assign_pure();
+                } else {
+                    self.parse_assign();
+                }
             }
             if !self.eat_punct(",") {
                 break;
@@ -946,51 +1157,133 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_for(&mut self) {
+    /// Whether the word at `offset` tokens ahead is `using` and starts a
+    /// resource declaration (`using x`) and not the identifier `using`
+    /// (`using = 1`, `using of x`, `using in x`).
+    fn using_declaration_follows(&self, offset: usize) -> bool {
+        is_word(self.at(offset), "using")
+            && self.at(offset + 1).is_some_and(|next| {
+                !next.newline
+                    && next.kind == TokenKind::Word
+                    && !matches!(next.text, "in" | "of" | "instanceof")
+            })
+    }
+
+    fn parse_for(&mut self) -> Completion {
         self.bump();
         self.eat_word("await");
+        // The matching `)` ends the head, wherever the head parse stops.
+        let head_close = self.close.get(self.pos).copied().filter(|&close| {
+            close != usize::MAX
+                && close > self.pos
+                && is_punct(self.tokens.get(close).copied(), ")")
+        });
         if !self.eat_punct("(") {
-            return;
+            return Completion::normal();
         }
+        // Only a `for(;;)` or `for(;true;)` loop has no exit through its test.
+        let mut endless = false;
+        // The update runs after an iteration that completes normally or
+        // continues.
+        let mut update_throws = false;
         let saved = std::mem::replace(&mut self.no_in, true);
         if self.is_punct(";") {
         } else if self.is_word("var")
             || self.is_word("const")
             || (self.is_word("let") && self.declaration_follows())
+            || self.using_declaration_follows(0)
         {
             self.parse_declarations();
+        } else if is_word(self.tok(), "await") && self.using_declaration_follows(1) {
+            // `await using x`
+            self.bump();
+            self.parse_declarations();
         } else {
+            // The target of an assignment (`for (x of y)`) is evaluated too.
             self.parse_expr();
         }
         self.no_in = false;
         if self.is_word("of") || self.is_word("in") {
             self.bump();
+            // Acquiring the iterator, and every step of it, may throw,
+            // whatever the iterable is: `for (x of null)` throws.
+            self.evaluates = true;
             self.parse_expr();
             self.eat_punct(")");
         } else {
             self.eat_punct(";");
+            endless = self.is_punct(";") || (self.is_word("true") && is_punct(self.at(1), ";"));
             let test = if self.is_punct(";") || self.is_punct(")") {
                 None
             } else {
-                self.parse_expr()
+                self.parse_expr_pure()
             };
             self.site(EnvGuard::For, test);
             self.eat_punct(";");
             if !self.is_punct(")") {
-                self.parse_expr();
+                let outer = std::mem::replace(&mut self.evaluates, false);
+                self.parse_expr_pure();
+                update_throws = std::mem::replace(&mut self.evaluates, outer);
             }
             self.eat_punct(")");
         }
         self.no_in = saved;
-        self.parse_statement();
+        // A head that was not parsed to its end must not leave tokens in front
+        // of the body, where they would be read as the body statement.
+        if let Some(close) = head_close
+            && self.pos <= close
+        {
+            self.pos = close + 1;
+        }
+        let (mut completion, broke, continued) = self.parse_loop_body();
+        completion.throws |= update_throws && (completion.normal || continued);
+        completion.normal = !endless || broke;
+        completion
     }
 
-    fn parse_switch(&mut self) {
+    /// Parse the statement under a `break`/`continue` target.
+    fn parse_jump_body(&mut self, jump: Jump<'a>) -> Completion {
+        self.jumps.push(jump);
+        let completion = self.parse_statement();
+        self.jumps.pop();
+        completion
+    }
+
+    /// Parse the body of a loop. Its completion is the one of the body, less
+    /// the `break` and `continue` completions that target the loop, which
+    /// are reported as two flags. A `continue` to a label that directly
+    /// labels the loop continues it too.
+    fn parse_loop_body(&mut self) -> (Completion, bool, bool) {
+        self.jumps.push(Jump::Loop);
+        let target = self.jumps.len() - 1;
+        let mut completion = self.parse_statement();
+        let mut aliases = Vec::new();
+        let mut index = target;
+        while index > 0 && matches!(self.jumps[index - 1], Jump::Label(_)) {
+            index -= 1;
+            aliases.push(index);
+        }
+        self.jumps.truncate(target);
+        let (broke, continued) = completion.take_jumps(target, &aliases);
+        (completion, broke, continued)
+    }
+
+    /// A `switch`: the dispatch reaches every `case` and `default` label, so
+    /// the statements after one that cannot complete normally are unreachable
+    /// only up to the next label. The statement completes normally when a
+    /// `break` leaves it, when the last clause falls off its end, or when no
+    /// clause need match (there is no `default`).
+    fn parse_switch(&mut self) -> Completion {
         self.bump();
         self.parse_condition(Some(EnvGuard::Switch));
         if !self.eat_punct("{") {
-            return;
+            return Completion::normal();
         }
+        self.jumps.push(Jump::Switch);
+        let target = self.jumps.len() - 1;
+        let mut completion = Completion::default();
+        let mut reachable = true;
+        let mut has_default = false;
         loop {
             match self.tok() {
                 None => break,
@@ -999,71 +1292,82 @@ impl<'a> Parser<'a> {
                     break;
                 }
                 Some(token) if token.kind == TokenKind::Word && token.text == "case" => {
+                    reachable = true;
                     self.bump();
-                    self.parse_expr();
+                    self.parse_expr_pure();
                     self.eat_punct(":");
                 }
                 Some(token) if token.kind == TokenKind::Word && token.text == "default" => {
+                    reachable = true;
+                    has_default = true;
                     self.bump();
                     self.eat_punct(":");
                 }
                 Some(_) => {
                     let before = self.pos;
-                    self.parse_statement();
+                    let statement = self.parse_statement();
+                    if reachable {
+                        reachable = statement.normal;
+                        completion.absorb(statement);
+                    }
                     if self.pos == before {
                         self.bump();
                     }
                 }
             }
         }
+        self.jumps.truncate(target);
+        let (broke, _) = completion.take_jumps(target, &[]);
+        completion.normal = !has_default || broke || reachable;
+        completion
     }
 
-    /// A `return` or `throw` in a `finally` block replaces the value returned
-    /// by the `try` and `catch` blocks, so those values are dropped.
+    /// `try`, `catch` and `finally` follow the completion rules of the
+    /// language:
     ///
-    /// Only a completion that leaves the `finally` block replaces them: a
-    /// `throw` inside a `try` block that has a `catch` clause is caught there
-    /// and does not count.
-    fn parse_try(&mut self) {
+    /// - A `catch` clause runs when the `try` block throws, a `throw` statement
+    ///   or the evaluation of any expression. It replaces the `throw`
+    ///   completion of the block with its own completions. A `try` block that
+    ///   cannot throw (it holds only transfers such as `break`) never runs it,
+    ///   and its transfers stay unreachable.
+    /// - A `finally` block that cannot complete normally replaces every
+    ///   completion of the `try` block and the `catch` clause with its own, so
+    ///   their pending returns are dropped.
+    /// - A `finally` block that may complete normally (a conditional transfer)
+    ///   lets those completions resume, so they stay possible next to the ones
+    ///   of the block.
+    fn parse_try(&mut self) -> Completion {
         self.bump();
-        let start = self.returns.last().map_or(0, |frame| frame.values.len());
-        let caught = self.try_block_is_caught();
-        self.set_caught(caught, 1);
-        self.within(Self::parse_block);
-        self.set_caught(caught, -1);
+        let mut completion = self.within(Self::parse_block);
         if self.eat_word("catch") {
+            // A parameter that is not a plain name evaluates its defaults.
+            let mut parameter_throws = false;
             if self.is_punct("(") {
+                let outer = std::mem::replace(&mut self.evaluates, false);
+                let plain = self.at(1).is_some_and(|name| name.kind == TokenKind::Word)
+                    && is_punct(self.at(2), ")");
                 self.parse_call_arguments();
+                parameter_throws = std::mem::replace(&mut self.evaluates, outer) && !plain;
             }
-            self.within(Self::parse_block);
+            let mut handler = self.within(Self::parse_block);
+            handler.throws |= parameter_throws;
+            if std::mem::take(&mut completion.throws) {
+                completion.merge(handler);
+            }
         }
-        let (middle, statements) = self
-            .returns
-            .last()
-            .map_or((0, 0), |frame| (frame.values.len(), frame.statements));
         if self.eat_word("finally") {
-            self.within(Self::parse_block);
-            if let Some(frame) = self.returns.last_mut()
-                && frame.statements > statements
-            {
-                frame.values.drain(start..middle);
+            let cleanup = self.within(Self::parse_block);
+            // The block runs only when the `try` block and the `catch` clause
+            // end; code that never ends (an endless loop) skips it.
+            if completion.terminates() {
+                if cleanup.normal {
+                    completion.absorb(cleanup);
+                } else {
+                    completion = cleanup;
+                }
             }
         }
-    }
-
-    /// Whether the `try` block at the cursor is followed by a `catch` clause.
-    fn try_block_is_caught(&self) -> bool {
-        let close = self.close.get(self.pos).copied().unwrap_or(usize::MAX);
-        self.is_punct("{")
-            && close != usize::MAX
-            && is_word(self.tokens.get(close + 1).copied(), "catch")
-    }
-
-    /// Enter (`+1`) or leave (`-1`) a `try` block whose `throw` is caught.
-    fn set_caught(&mut self, caught: bool, delta: isize) {
-        if caught && let Some(frame) = self.returns.last_mut() {
-            frame.caught = frame.caught.saturating_add_signed(delta);
-        }
+        completion
     }
 
     fn skip_import(&mut self) {
@@ -1151,6 +1455,8 @@ impl<'a> Parser<'a> {
 
     /// After the `class` keyword.
     fn parse_class_rest(&mut self) {
+        // A class heritage and its computed keys are evaluated.
+        self.evaluates = true;
         if self
             .tok()
             .is_some_and(|token| token.kind == TokenKind::Word && token.text != "extends")
@@ -1223,7 +1529,10 @@ impl<'a> Parser<'a> {
         last
     }
 
+    /// Evaluating an expression may throw. This is the default: only
+    /// [`Self::parse_assign_pure`] and [`Self::parse_expr_pure`] clear it.
     fn parse_assign(&mut self) -> Expr {
+        self.evaluates = true;
         if self.depth >= MAX_DEPTH {
             return self.skip_nested();
         }
@@ -1231,6 +1540,51 @@ impl<'a> Parser<'a> {
         let expr = self.parse_assign_inner();
         self.depth -= 1;
         expr
+    }
+
+    /// Parse an expression whose value is only stored or tested: a comma
+    /// expression where every operand is an allowlisted pure form.
+    fn parse_expr_pure(&mut self) -> Expr {
+        let mut last = self.parse_assign_pure();
+        while self.eat_punct(",") {
+            last = self.parse_assign_pure();
+        }
+        last
+    }
+
+    /// Parse an assignment expression whose value is only stored or tested.
+    /// The allowlist of expressions that provably cannot throw is a lone
+    /// literal. Where the value is consumed (destructured, iterated, spread,
+    /// converted by `with`) the caller must use [`Self::parse_assign`], which
+    /// treats even a literal as throwing.
+    fn parse_assign_pure(&mut self) -> Expr {
+        let pure = self.literal_operand();
+        let outer = self.evaluates;
+        let expr = self.parse_assign();
+        if pure {
+            self.evaluates = outer;
+        }
+        expr
+    }
+
+    /// Whether the expression at the cursor is a single literal (`1`, `"x"`,
+    /// `true`, `null`) that ends where the next token closes it. Evaluating it
+    /// cannot throw.
+    fn literal_operand(&self) -> bool {
+        let Some(token) = self.tok() else {
+            return false;
+        };
+        let literal = match token.kind {
+            TokenKind::Number => true,
+            TokenKind::Str => token.text.starts_with(['\'', '"']),
+            TokenKind::Word => matches!(token.text, "true" | "false" | "null"),
+            _ => false,
+        };
+        literal
+            && self.at(1).is_none_or(|next| {
+                next.kind == TokenKind::Punct
+                    && matches!(next.text, ";" | "}" | ")" | "]" | "," | ":")
+            })
     }
 
     fn parse_assign_inner(&mut self) -> Expr {
@@ -1889,6 +2243,8 @@ impl<'a> Parser<'a> {
             value: None,
             wildcard: false,
         };
+        // The key spells `__proto__`, the prototype setter in `{key: v}`.
+        let mut setter = false;
         if self.eat_punct("...") {
             self.parse_assign();
             property.wildcard = true;
@@ -1912,7 +2268,17 @@ impl<'a> Parser<'a> {
         match token.kind {
             TokenKind::Word => {
                 self.bump();
-                property.key = Some(token.text);
+                if token.text.contains('\\') {
+                    // An escaped spelling (`\u0061` for `a`) is compared by its
+                    // decoded name, and no selector is matched to it: the
+                    // property may replace any earlier one and is not
+                    // selectable.
+                    property.wildcard = true;
+                    setter = word_name(token.text) == "__proto__";
+                } else {
+                    property.key = Some(token.text);
+                    setter = token.text == "__proto__";
+                }
             }
             TokenKind::Number => {
                 property.key = self.number_key(0);
@@ -1922,7 +2288,10 @@ impl<'a> Parser<'a> {
             TokenKind::Str => {
                 self.bump();
                 match string_content(token.text) {
-                    Some(key) => property.key = Some(key),
+                    Some(key) => {
+                        property.key = Some(key);
+                        setter = key == "__proto__";
+                    }
                     None => property.wildcard = true,
                 }
             }
@@ -1943,14 +2312,17 @@ impl<'a> Parser<'a> {
             self.parse_body();
         } else if self.eat_punct(":") {
             property.value = self.parse_assign();
-            if property.key == Some("__proto__") && !property.wildcard {
-                // `{__proto__: v}` and `{"__proto__": v}` invoke the prototype
-                // setter instead of defining an own property, so no member
-                // selects `v`. The operand stays parsed for its own branches.
-                // A computed key (`["__proto__"]`) is wildcard and does define
-                // an own property, but computed keys are never inferred.
+            if setter {
+                // `{__proto__: v}`, `{"__proto__": v}` and the escaped
+                // spelling `{__pro\u0074o__: v}` invoke the prototype setter
+                // instead of defining an own property, so no member selects
+                // `v` and no earlier property is replaced. The operand stays
+                // parsed for its own branches. A computed key
+                // (`["__proto__"]`) does define an own property, but computed
+                // keys are never inferred.
                 property.key = None;
                 property.value = None;
+                property.wildcard = false;
             }
         } else if self.eat_punct("=") {
             self.parse_assign();
@@ -2120,6 +2492,11 @@ fn is_punct(token: Option<Token<'_>>, text: &str) -> bool {
     token.is_some_and(|token| token.kind == TokenKind::Punct && token.text == text)
 }
 
+/// Whether the word `text`, followed by `next`, is a statement label.
+fn is_label(next: Option<Token<'_>>, text: &str) -> bool {
+    is_punct(next, ":") && !matches!(text, "default" | "case")
+}
+
 fn is_word(token: Option<Token<'_>>, text: &str) -> bool {
     token.is_some_and(|token| token.kind == TokenKind::Word && token.text == text)
 }
@@ -2222,6 +2599,9 @@ fn object_property(
         }
     }
 }
+
+#[cfg(test)]
+mod completion_model;
 
 #[cfg(test)]
 mod tests {
@@ -3474,6 +3854,41 @@ mod tests {
                 None,
             ),
             (
+                "object prototype setter (escaped identifier)",
+                "({__pro\\u0074o__:process.env.FLAG}).__pro\\u0074o__&&run()",
+                None,
+            ),
+            (
+                "object prototype setter (escaped identifier, plain selector)",
+                "({__pro\\u0074o__:process.env.FLAG}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object prototype setter (escaped identifier, braced escape)",
+                "({\\u{5f}_proto__:process.env.FLAG}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object prototype setter (escaped identifier) keeps nested branch evidence",
+                "({__pro\\u0074o__:process.env.FLAG&&run()}).other",
+                Some("and"),
+            ),
+            (
+                "object prototype setter (escaped identifier) after an own property",
+                "({value:process.env.FLAG,__pro\\u0074o__:1}).value&&run()",
+                Some("and"),
+            ),
+            (
+                "object escaped ordinary key is not selected",
+                "({\\u0061:process.env.FLAG}).a&&run()",
+                None,
+            ),
+            (
+                "object escaped ordinary key may replace an earlier property",
+                "({a:process.env.FLAG,\\u0061:1}).a&&run()",
+                None,
+            ),
+            (
                 "object computed __proto__ key is not inferred",
                 "({['__proto__']:+process.env.FLAG}).__proto__&&run()",
                 None,
@@ -4207,6 +4622,159 @@ mod tests {
                 "(function(){try{f()}catch(e){return process.env.FLAG}})()&&run()",
                 Some("and"),
             ),
+            // A `catch` clause is reachable only when the `try` block may
+            // throw. Anything outside a short allowlist of forms that
+            // provably cannot throw may: destructuring, iteration, spread,
+            // `with`, templates, `new`, member access and identifiers.
+            (
+                "catch of a destructured nullish literal",
+                "(function(){try{let {x}=null}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of an array pattern over a literal",
+                "(function(){try{let [x]=1}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a const object pattern",
+                "(function(){try{const {x}=null}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a pattern with a default",
+                "(function(){try{var {x=1}=null}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a for-of over a nullish literal",
+                "(function(){try{for(const x of null){}}catch(e){return \
+                 process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a for-of over a number literal",
+                "(function(){try{for(const x of 1){}}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a for-in over a literal",
+                "(function(){try{for(const x in null){}}catch(e){return \
+                 process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a for-of with a pattern head",
+                "(function(){try{for(const {x} of 0){}}catch(e){return \
+                 process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a for-of with an assignment head",
+                "(function(){try{for(x of null){}}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a spread of a literal",
+                "(function(){try{[...null]}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a spread argument",
+                "(function(){try{f(...null)}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a template with an expression",
+                "(function(){try{`${a}`}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a tagged template",
+                "(function(){try{t`x`}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a with over a literal",
+                "(function(){try{with(null){}}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a using declaration over a literal",
+                "(function(){try{using x=1}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a class with a computed key",
+                "(function(){try{class C{[k](){}}}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a new expression",
+                "(function(){try{new C}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a member access",
+                "(function(){try{a.b}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of an identifier initializer",
+                "(function(){try{let x=y}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of an identifier statement",
+                "(function(){try{y}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a try block with a plain literal declaration",
+                "(function(){try{let x=1}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with a plain null declaration",
+                "(function(){try{const x=null}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with an uninitialized declaration",
+                "(function(){try{var x}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with a string declaration",
+                "(function(){try{let x='a',y=\"b\"}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with a literal statement",
+                "(function(){try{1}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with an empty statement",
+                "(function(){try{;}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with a function declaration",
+                "(function(){try{function g(a=f()){f()}}catch(e){return \
+                 process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with a literal condition",
+                "(function(){try{if(1){}}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with a literal loop test",
+                "(function(){try{do{}while(0)}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
             (
                 "finally return of the read",
                 "(function(){try{f()}finally{return process.env.FLAG}})()&&run()",
@@ -4245,14 +4813,400 @@ mod tests {
             ),
             (
                 "finally throw in a catch block",
+                "(function(){try{return process.env.FLAG}finally{try{throw 0}catch(e){throw \
+                 1}}})()&&run()",
+                None,
+            ),
+            // A `try` block that may complete normally lets the `finally`
+            // block complete normally, so the pending return resumes.
+            (
+                "finally throw in a catch block that a normal try block skips",
                 "(function(){try{return process.env.FLAG}finally{try{f()}catch(e){throw \
                  1}}})()&&run()",
+                Some("and"),
+            ),
+            // A `finally` block that completes abruptly only on some paths
+            // lets the pending completions resume on the others.
+            (
+                "finally conditional return",
+                "(function(){try{return process.env.FLAG}finally{if(x)return 1}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally conditional throw",
+                "(function(){try{return process.env.FLAG}finally{if(x)throw 1}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally conditional return before an unconditional one",
+                "(function(){try{return process.env.FLAG}finally{if(x)return 1;return \
+                 2}})()&&run()",
                 None,
             ),
             (
                 "finally uncaught throw after a caught one",
                 "(function(){try{return process.env.FLAG}finally{try{throw 1}catch(e){}throw \
                  2}})()&&run()",
+                None,
+            ),
+            // A `break` or `continue` that leaves the `finally` block replaces
+            // the `try` value; one that stays inside it does not.
+            (
+                "finally labelled break leaves the loop",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{break \
+                 outer}}})()&&run()",
+                None,
+            ),
+            (
+                "finally labelled continue leaves the loop",
+                "(function(){outer:for(var i=0;i<2;i++){try{return \
+                 process.env.FLAG}finally{continue outer}}})()&&run()",
+                None,
+            ),
+            (
+                "finally unlabelled break leaves the loop",
+                "(function(){for(;;){try{return process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally unlabelled continue leaves the loop",
+                "(function(){for(var i=0;i<2;i++){try{return \
+                 process.env.FLAG}finally{continue}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves a while loop",
+                "(function(){while(a){try{return process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally continue leaves a do loop",
+                "(function(){do{try{return process.env.FLAG}finally{continue}}while(a)})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves a switch",
+                "(function(){switch(a){case 1:try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally continue crosses a switch to the loop",
+                "(function(){for(;;){switch(a){case 1:try{return \
+                 process.env.FLAG}finally{continue}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally labelled break leaves a labelled block",
+                "(function(){out:{try{return process.env.FLAG}finally{break out}}})()&&run()",
+                None,
+            ),
+            (
+                "finally conditional break leaves the loop",
+                "(function(){for(;;){try{return process.env.FLAG}finally{if(x)break}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break after a conditional break leaves the loop",
+                "(function(){for(;;){try{return \
+                 process.env.FLAG}finally{if(x)break;break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break inside a nested try leaves the loop",
+                "(function(){for(;;){try{return \
+                 process.env.FLAG}finally{try{break}catch(e){}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break escaping an inner and an outer finally",
+                "(function(){for(;;){try{return \
+                 process.env.FLAG}finally{try{f()}finally{break}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break stays in a local loop",
+                "(function(){try{return process.env.FLAG}finally{for(;;){break}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally continue stays in a local loop",
+                "(function(){try{return process.env.FLAG}finally{for(var \
+                 i=0;i<2;i++){continue}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break stays in a local switch",
+                "(function(){try{return process.env.FLAG}finally{switch(a){case \
+                 1:break}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break stays in a local labelled block",
+                "(function(){try{return process.env.FLAG}finally{out:{break out}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally labelled break stays in a local labelled loop",
+                "(function(){try{return process.env.FLAG}finally{out:for(;;){break \
+                 out}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally labelled continue stays in a local labelled loop",
+                "(function(){try{return process.env.FLAG}finally{out:for(;x;){continue \
+                 out}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally endless loop never completes",
+                "(function(){try{return process.env.FLAG}finally{out:for(;;){continue \
+                 out}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break stays in a loop of a nested function",
+                "(function(){for(;;){try{return \
+                 process.env.FLAG}finally{(function(){for(;;){break}})()}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break local to the outer finally only",
+                "(function(){for(;;){try{return \
+                 process.env.FLAG}finally{for(;;){try{f()}finally{break}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break after the finally block",
+                "(function(){for(;;){try{return \
+                 process.env.FLAG}finally{cleanup()}break}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides a break with a local break",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{local:for(;;){try{break outer}finally{break \
+                 local}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides a continue with a local break",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{local:for(;;){try{continue outer}finally{break \
+                 local}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides a break in a catch block",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{local:{try{f()}catch(e){break outer}finally{break \
+                 local}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides a return",
+                "(function(){try{return process.env.FLAG}finally{local:{try{return \
+                 1}finally{break local}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides a throw",
+                "(function(){try{return process.env.FLAG}finally{local:{try{throw e}finally{break \
+                 local}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides an escape through a middle try",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{a:{try{try{break \
+                 outer}finally{cleanup()}}finally{break a}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides one escape of several",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{a:{try{if(x)break \
+                 outer;else break a}finally{break a}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally does not override a break",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{try{break \
+                 outer}finally{cleanup()}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally nested finally does not override a break in a catch block",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{try{throw \
+                 0}catch(e){break outer}finally{cleanup()}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break in a catch block of a try block that may complete",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{try{f()}catch(e){break \
+                 outer}finally{cleanup()}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally escapes after its own override",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{local:for(;;){try{break local}finally{break \
+                 outer}}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally nested finally overrides with a return",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{try{break \
+                 outer}finally{return 1}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally escape follows an overridden one",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{a:{try{break \
+                 outer}finally{break a}}break outer}}})()&&run()",
+                None,
+            ),
+            (
+                "finally nested overriding stays inside a deeper finally",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{try{f()}finally{a:{try{break outer}finally{break \
+                 a}}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break to a label spelled with an escape",
+                "(function(){\\u006f:for(;;){try{return process.env.FLAG}finally{for(;;){break \
+                 \\u006f}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break with an escape to a plain label",
+                "(function(){o:for(;;){try{return process.env.FLAG}finally{for(;;){break \
+                 \\u006f}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break to an escaped label spelled plainly",
+                "(function(){\\u006f:for(;;){try{return process.env.FLAG}finally{for(;;){break \
+                 o}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break to a label spelled with a braced escape",
+                "(function(){\\u{6f}:for(;;){try{return process.env.FLAG}finally{for(;;){break \
+                 o}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally continue to a label spelled with an escape",
+                "(function(){\\u006f:for(var i=0;i<2;i++){try{return \
+                 process.env.FLAG}finally{for(;;){continue \\u006f}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally escaped break to a label that is not a prefix",
+                "(function(){ab:for(;;){try{return process.env.FLAG}finally{for(;;){break \
+                 a\\u0062}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break to a local label spelled with an escape",
+                "(function(){try{return process.env.FLAG}finally{\\u006f:for(;;){break \
+                 o}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break to a local label with another escaped name",
+                "(function(){\\u006f:for(;;){try{return process.env.FLAG}finally{p:for(;;){break \
+                 \\u0070}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally escaped label shadows the outer label",
+                "(function(){o:for(;;){try{return process.env.FLAG}finally{\\u006f:for(;;){break \
+                 o}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break to an unknown label",
+                "(function(){try{return process.env.FLAG}finally{break missing}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves a using loop",
+                "(function(){for(using x of values){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves an await using loop",
+                "(function(){for(await using x of values){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves a for await using loop",
+                "(function(){for await(using x of values){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves a for await await using loop",
+                "(function(){for await(await using x of values){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves a using loop with an initializer",
+                "(function(){for(using x=open();;){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally continue leaves a using loop",
+                "(function(){for(using x of values){try{return \
+                 process.env.FLAG}finally{continue}}})()&&run()",
+                None,
+            ),
+            (
+                "finally labelled break leaves a using loop",
+                "(function(){outer:for(using x of values){try{return \
+                 process.env.FLAG}finally{break outer}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break stays in a using loop",
+                "(function(){try{return process.env.FLAG}finally{for(using x of \
+                 values){break}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break stays in an await using loop",
+                "(function(){try{return process.env.FLAG}finally{for(await using x of \
+                 values){break}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break leaves a loop over the identifier using",
+                "(function(){for(using in values){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break leaves a loop that assigns the identifier using",
+                "(function(){for(using=0;using<2;using++){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
+                None,
+            ),
+            (
+                "finally break stays in a loop that assigns the identifier using",
+                "(function(){try{return \
+                 process.env.FLAG}finally{for(using=0;using<2;using++){break}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break leaves a loop over await applied to using",
+                "(function(){for(await using in values){try{return \
+                 process.env.FLAG}finally{break}}})()&&run()",
                 None,
             ),
             // A constructor call ignores a primitive result.
@@ -4319,8 +5273,452 @@ mod tests {
                 None,
             ),
         ];
+        let mut mismatches = Vec::new();
         for &(shape, code, expected) in rows {
-            assert_eq!(flag_guard(code), expected, "{shape}: {code}");
+            let actual = flag_guard(code);
+            if actual != expected {
+                mismatches.push(format!("{shape}: {code}: {actual:?}, want {expected:?}"));
+            }
+        }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    /// Completion tracking of `try`, `catch`, `finally`, `switch` clauses and
+    /// labelled statements. Each row is the body of a `finally` block that
+    /// runs while `return process.env.FLAG` is pending inside the loop
+    /// `outer`; the read is guarded (`Some("and")`) when that block does not
+    /// replace the pending return.
+    #[test]
+    fn finally_completion_rows() {
+        let rows: &[(&str, &str, Option<&str>)] = &[
+            // A `throw` that leaves a nested `finally` block overrides its
+            // pending completion even when a surrounding `catch` handles it.
+            (
+                "caught throw overrides a nested break",
+                "try{try{break outer}finally{throw 1}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw overrides a nested continue",
+                "try{try{continue outer}finally{throw 1}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw overrides a nested return",
+                "try{try{return 1}finally{throw 1}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw overrides a nested throw",
+                "try{try{throw 0}finally{throw 1}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw overrides a break in a catch block",
+                "try{try{f()}catch(e){break outer}finally{throw 1}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw crosses a middle finally block",
+                "try{try{try{break outer}finally{throw 1}}finally{cleanup()}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw crosses a middle try block",
+                "try{try{try{break outer}finally{throw 1}}catch(e){}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw in a labelled block",
+                "a:{try{try{break outer}finally{throw 1}}catch(_){}}",
+                Some("and"),
+            ),
+            (
+                "caught throw in a nested loop",
+                "for(;;){try{try{break outer}finally{throw 1}}catch(_){}break}",
+                Some("and"),
+            ),
+            (
+                "caught throw with no pending completion",
+                "try{try{throw 1}finally{cleanup()}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw in a catch block of the handling try",
+                "try{try{break outer}finally{throw 1}}catch(_){throw 2}",
+                None,
+            ),
+            (
+                "pending break that no catch clause can handle",
+                "try{try{break outer}finally{}}catch(_){}",
+                None,
+            ),
+            (
+                "pending break replaced by a throw that the outer catch handles",
+                "try{try{break outer}finally{cleanup()}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw followed by a break",
+                "try{try{break outer}finally{throw 1}}catch(_){}break outer",
+                None,
+            ),
+            (
+                "throw in the finally block of the handling try",
+                "try{try{f()}finally{throw 1}}catch(_){}finally{throw 2}",
+                None,
+            ),
+            (
+                "throw in a try block without a catch beside a caught one",
+                "try{try{throw 1}catch(_){}}finally{cleanup()}try{throw 2}finally{cleanup()}",
+                None,
+            ),
+            // The statements of a `switch` clause after an abrupt one are
+            // unreachable up to the next `case` or `default` label.
+            (
+                "switch clause break after a break",
+                "switch(x){case 0:break;break outer}",
+                Some("and"),
+            ),
+            (
+                "switch clause continue after a break",
+                "switch(x){case 0:break;continue outer}",
+                Some("and"),
+            ),
+            (
+                "switch clause break after a throw",
+                "try{switch(x){case 0:throw 1;break outer}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "switch clause break after a block that breaks",
+                "switch(x){case 0:{break}break outer}",
+                Some("and"),
+            ),
+            (
+                "switch clause break after an if and else that break",
+                "switch(x){case 0:if(a)break;else break;break outer}",
+                Some("and"),
+            ),
+            (
+                "switch clause throw after a break",
+                "switch(x){case 0:break;throw 1}",
+                Some("and"),
+            ),
+            (
+                "switch default clause break after a break",
+                "switch(x){default:break;break outer}",
+                Some("and"),
+            ),
+            (
+                "switch clause with several unreachable statements",
+                "switch(x){case 0:break;f();break outer;continue outer}",
+                Some("and"),
+            ),
+            // A `switch` completes normally when no clause matches (there is
+            // no `default`), when a `break` leaves it and when its last
+            // clause falls off the end; only otherwise does a `break` to an
+            // outer label leave the `finally` block on every path.
+            (
+                "switch next case is reachable",
+                "switch(x){case 0:break;case 1:break outer;default:break outer}",
+                Some("and"),
+            ),
+            (
+                "switch whose every clause leaves the block",
+                "switch(x){case 0:break outer;case 1:break outer;default:break outer}",
+                None,
+            ),
+            (
+                "switch default is reachable",
+                "switch(x){case 0:break outer;f();default:break outer}",
+                None,
+            ),
+            (
+                "switch next case after several unreachable statements",
+                "switch(x){case 0:break outer;f();break;case 1:break outer;default:break outer}",
+                None,
+            ),
+            (
+                "switch without a default may match no clause",
+                "switch(x){case 0:break outer}",
+                Some("and"),
+            ),
+            (
+                "switch clause break after a conditional break",
+                "switch(x){case 0:if(a)break;break outer;default:break outer}",
+                Some("and"),
+            ),
+            (
+                "switch clause break after a call",
+                "switch(x){case 0:f();break outer;default:break outer}",
+                None,
+            ),
+            (
+                "switch whose last clause falls off its end",
+                "switch(x){default:break outer;case 0:f()}",
+                Some("and"),
+            ),
+            (
+                "break after a switch with an unreachable tail",
+                "switch(x){case 0:break;break outer}break outer",
+                None,
+            ),
+            (
+                "break after a switch without a default that ends in a throw",
+                "try{switch(x){case 0:throw 1}break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a switch with a default that ends in a throw",
+                "try{switch(x){case 0:throw 1;default:throw 2}break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a switch that ends in a throw, uncaught",
+                "switch(x){case 0:throw 1;default:throw 2}break outer",
+                None,
+            ),
+            // A `try` statement completes abruptly when its `finally` block
+            // does, or when its `try` block and `catch` clause both do.
+            (
+                "break after a try block that throws",
+                "try{try{throw 1}finally{cleanup()}break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a try block and a catch clause that throw",
+                "try{try{throw 1}catch(e){throw 2}break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a finally block that breaks to a label",
+                "a:{try{f()}finally{break a}break outer}",
+                Some("and"),
+            ),
+            (
+                "break after a try block that throws and a catch that completes",
+                "try{try{throw 1}catch(e){}break outer}catch(_){}",
+                None,
+            ),
+            (
+                "break after a try block that completes and a catch that throws",
+                "try{try{f()}catch(e){throw 1}break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a try block that completes and a catch that throws, uncaught",
+                "try{f()}catch(e){throw 1}break outer",
+                None,
+            ),
+            (
+                "break after a try block that completes",
+                "try{f()}finally{cleanup()}break outer",
+                None,
+            ),
+            (
+                "break after a finally block that breaks conditionally",
+                "a:{try{f()}finally{if(x)break a}break outer}",
+                Some("and"),
+            ),
+            // A labelled statement completes abruptly when its body does and
+            // no `break` reaches its label.
+            (
+                "break after a labelled block that throws",
+                "try{a:{throw 1}break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a labelled if and else that throw",
+                "try{a:if(x)throw 1;else throw 2;break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a labelled block that is left by a break",
+                "a:{break a}break outer",
+                None,
+            ),
+            (
+                "break after a labelled block with a conditional break",
+                "try{a:{if(x)break a;throw 1}break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a labelled block with a conditional break, uncaught",
+                "a:{if(x)break a;throw 1}break outer",
+                None,
+            ),
+            (
+                "break after an endless labelled loop that throws",
+                "try{a:for(;;){throw 1}break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a labelled loop with a test",
+                "a:for(;x;){throw 1}break outer",
+                None,
+            ),
+            (
+                "break after an endless loop left by a break",
+                "a:for(;;){break}break outer",
+                None,
+            ),
+            (
+                "break after a labelled block that breaks to an outer label",
+                "b:{a:{break b}break outer}",
+                Some("and"),
+            ),
+        ];
+        let mut mismatches = Vec::new();
+        for &(shape, finally_body, expected) in rows {
+            let code = format!(
+                "(function(){{outer:for(;;){{try{{return \
+                 process.env.FLAG}}finally{{{finally_body}}}}}}})()&&run()"
+            );
+            let actual = flag_guard(&code);
+            if actual != expected {
+                mismatches.push(format!("{shape}: {code}: {actual:?}, want {expected:?}"));
+            }
+        }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    /// Completions that an earlier review found the scan to get wrong. The
+    /// generated programs in `completion_model` cover the same ground; these
+    /// rows keep the reported shapes readable.
+    #[test]
+    fn completion_regression_rows() {
+        let rows: &[(&str, &str, Option<&str>)] = &[
+            (
+                "a conditional finally lets a pending break resume",
+                "(function(){a:{try{break a}finally{if(y)throw 1}}return \
+                 process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "an unconditional finally replaces a pending break",
+                "(function(){a:{try{break a}finally{throw 1}}return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "a catch clause of a try block that cannot throw is skipped",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{local:{try{break \
+                 local}catch(e){break outer}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "a catch clause of a try block that may throw leaves the loop only on that path",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{local:{try{f();break local}catch(e){break \
+                 outer}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "a catch clause of a try block that throws leaves the loop",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{local:{try{throw \
+                 0}catch(e){break outer}}}}})()&&run()",
+                None,
+            ),
+            (
+                "a return after a try block that always returns is unreachable",
+                "(function(){try{return}catch(e){}return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "the loop test of a do loop is not reached after a return",
+                "(function(){try{do return;while(y)}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "the code after an endless loop is unreachable",
+                "(function(){for(;;){}return process.env.FLAG})()&&run()",
+                None,
+            ),
+            (
+                "a break leaves an endless loop",
+                "(function(){for(;;){break}return process.env.FLAG})()&&run()",
+                Some("and"),
+            ),
+            (
+                "a finally block never runs after an endless loop",
+                "(function(){for(;;){try{for(;;){}}finally{return 1}}return \
+                 process.env.FLAG})()&&run()",
+                None,
+            ),
+        ];
+        let mut mismatches = Vec::new();
+        for &(shape, code, expected) in rows {
+            let actual = flag_guard(code);
+            if actual != expected {
+                mismatches.push(format!("{shape}: {code}: {actual:?}, want {expected:?}"));
+            }
+        }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    /// Reachability of `return` statements around abrupt statements.
+    #[test]
+    fn unreachable_return_rows() {
+        let rows: &[(&str, &str, Option<&str>)] = &[
+            (
+                "return in a switch clause after a return",
+                "switch(x){case 0:return 1;return process.env.FLAG}",
+                None,
+            ),
+            (
+                "return in a switch clause after a break",
+                "switch(x){case 0:break;return process.env.FLAG}",
+                None,
+            ),
+            (
+                "return in the next switch clause",
+                "switch(x){case 0:return 1;case 1:return process.env.FLAG}",
+                Some("and"),
+            ),
+            (
+                "return in the default switch clause",
+                "switch(x){case 0:break;default:return process.env.FLAG}",
+                Some("and"),
+            ),
+            (
+                "return after a switch that ends in a return",
+                "switch(x){case 0:return 1}return process.env.FLAG",
+                Some("and"),
+            ),
+            (
+                "return after a try block that returns",
+                "try{return 1}finally{cleanup()}return process.env.FLAG",
+                None,
+            ),
+            (
+                "return after a try block and a catch clause that return",
+                "try{return 1}catch(e){return 2}return process.env.FLAG",
+                None,
+            ),
+            (
+                "return after a try block that may throw and a catch that completes",
+                "try{return f()}catch(e){}return process.env.FLAG",
+                Some("and"),
+            ),
+            (
+                "return after a try block that cannot throw",
+                "try{return 1}catch(e){}return process.env.FLAG",
+                None,
+            ),
+            (
+                "return after a labelled block that returns",
+                "a:{return 1}return process.env.FLAG",
+                None,
+            ),
+            (
+                "return after a labelled block left by a break",
+                "a:{break a}return process.env.FLAG",
+                Some("and"),
+            ),
+        ];
+        for &(shape, body, expected) in rows {
+            let code = format!("(function(){{{body}}})()&&run()");
+            assert_eq!(flag_guard(&code), expected, "{shape}: {code}");
         }
     }
 
@@ -4741,14 +6139,6 @@ mod tests {
                 "{a:process.env.FLAG}[\"a\"]&&run()",
             ),
             (
-                "conditional return in a finally block",
-                "(function(){try{return process.env.FLAG}finally{if(x)return 1}})()&&run()",
-            ),
-            (
-                "conditional throw in a finally block",
-                "(function(){try{return process.env.FLAG}finally{if(x)throw 1}})()&&run()",
-            ),
-            (
                 "object property read through a variable",
                 "var o={a:process.env.FLAG};o.a&&run()",
             ),
@@ -4892,6 +6282,58 @@ mod tests {
                 row("e", false)
             ]
         );
+    }
+
+    #[test]
+    fn identifier_escapes_stay_in_one_word_token() {
+        let words = |code: &str| -> Vec<(TokenKind, String)> {
+            tokenize(code, &non_code_ranges(code))
+                .iter()
+                .map(|token| (token.kind, token.text.to_owned()))
+                .collect()
+        };
+        let word = |text: &str| (TokenKind::Word, text.to_owned());
+        let punct = |text: &str| (TokenKind::Punct, text.to_owned());
+        for (code, expected) in [
+            ("\\u006f:a", vec![word("\\u006f"), punct(":"), word("a")]),
+            ("\\u{6f}:a", vec![word("\\u{6f}"), punct(":"), word("a")]),
+            ("a\\u0062c d", vec![word("a\\u0062c"), word("d")]),
+            ("a\\u{62}c", vec![word("a\\u{62}c")]),
+            (
+                "\\u0069f(x)",
+                vec![word("\\u0069f"), punct("("), word("x"), punct(")")],
+            ),
+            // Not an escape of an identifier character: the backslash stays a
+            // punctuator.
+            ("\\x41", vec![punct("\\"), word("x41")]),
+            ("\\u00zz", vec![punct("\\"), word("u00zz")]),
+            (
+                "\\u{110000}",
+                vec![
+                    punct("\\"),
+                    word("u"),
+                    punct("{"),
+                    (TokenKind::Number, "110000".to_owned()),
+                    punct("}"),
+                ],
+            ),
+        ] {
+            assert_eq!(words(code), expected, "{code}");
+        }
+    }
+
+    #[test]
+    fn word_names_decode_identifier_escapes() {
+        for (text, name) in [
+            ("outer", "outer"),
+            ("\\u006futer", "outer"),
+            ("o\\u{75}ter", "outer"),
+            ("\\u{6f}\\u0075ter", "outer"),
+            ("caf\u{e9}", "caf\u{e9}"),
+            ("caf\\u00e9", "caf\u{e9}"),
+        ] {
+            assert_eq!(word_name(text), name, "{text}");
+        }
     }
 
     #[test]
@@ -5374,8 +6816,12 @@ mod tests {
                 Some("and"),
             ),
             (
-                "(function(){try{return 1}catch(e){}return process.env.FLAG})()&&run()",
+                "(function(){try{return f()}catch(e){}return process.env.FLAG})()&&run()",
                 Some("and"),
+            ),
+            (
+                "(function(){try{return 1}catch(e){}return process.env.FLAG})()&&run()",
+                None,
             ),
             (
                 "(function(){a:{break a}return process.env.FLAG})()&&run()",
