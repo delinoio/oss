@@ -107,13 +107,17 @@ Merged `FileIdBothDirectoryInformation` and `FileIdFullDirectoryInformation`
 records carry the native file reference number (the 64-bit volume file index)
 of the backing object each entry represents, including `.`, `..` and virtual
 additions. Hard links share one number, and reparse points are followed like the
-entry's other metadata. Enumeration never requires per-entry open access for any
-record class: an entry the caller can list but not open (for example because of
-its ACL) keeps its record with a zero file ID (no identifier) instead of failing
-the listing. Failed metadata still returns the adapter's typed status. Other
-record classes, chaining, alignment and cursor behavior are unchanged.
-Byte-layout checks run in the native Windows fixture; ReFS 128-bit identifiers
-are not represented.
+entry's other metadata. Each entry is opened once with no access beyond the
+implicit attribute read, and its timestamps, size, attributes and file reference
+number all come from that one handle, so a concurrent replacement cannot pair
+one object's attributes with another object's identity. Enumeration never
+requires per-entry open access for any record class: an entry the caller can
+list but not open (for example because of its ACL) keeps the attributes read
+from its parent directory like `fs::metadata` and reports a zero file ID (no
+identifier) instead of failing the listing. Only an entry whose attributes
+cannot be read at all returns the adapter's typed status. Other record classes,
+chaining, alignment and cursor behavior are unchanged. Byte-layout checks run in
+the native Windows fixture; ReFS 128-bit identifiers are not represented.
 Unclassified disk-device namespaces and lossily encoded Detours DLL paths also
 fail explicitly. These limits remain part of complete Windows acceptance.
 

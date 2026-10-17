@@ -14,7 +14,6 @@ use std::os::windows::{
 use winapi::um::{
     fileapi::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION},
     winbase::FILE_FLAG_BACKUP_SEMANTICS,
-    winnt::{FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE},
 };
 
 use super::*;
@@ -29,11 +28,31 @@ const FULL_FILE_ID_OFFSET: usize = 72;
 /// identity. Zero means no identifier.
 const UNAVAILABLE_FILE_ID: u64 = 0;
 
+/// The directory-record fields read for one entry.
+struct Attributes {
+    creation_time: u64,
+    last_access_time: u64,
+    last_write_time: u64,
+    size: u64,
+    file_attributes: u32,
+}
+impl Attributes {
+    fn from_metadata(metadata: &fs::Metadata) -> Self {
+        Self {
+            creation_time: metadata.creation_time(),
+            last_access_time: metadata.last_access_time(),
+            last_write_time: metadata.last_write_time(),
+            size: metadata.len(),
+            file_attributes: metadata.file_attributes(),
+        }
+    }
+}
+
 struct Item {
     name: Vec<u16>,
-    metadata: fs::Metadata,
-    /// Native file reference number of the backing object that `metadata`
-    /// describes. Hard links to one file share it.
+    attributes: Attributes,
+    /// Native file reference number of the backing object that `attributes`
+    /// describes, or `UNAVAILABLE_FILE_ID`. Hard links to one file share it.
     file_id: u64,
 }
 pub(super) struct Listing {
@@ -72,13 +91,19 @@ fn matching(pattern: &[u16], name: &[u16]) -> bool {
     unsafe { RtlIsNameInExpression(&mut expression, &mut value, 1, ptr::null_mut()) != 0 }
 }
 
-/// Returns the native 64-bit file reference number of the object at `path`,
-/// following reparse points like the metadata read for the same entry. The
-/// attribute-only handle needs no data access and never blocks other users.
-fn file_id(path: &Path) -> std::io::Result<u64> {
+fn filetime(time: &winapi::shared::minwindef::FILETIME) -> u64 {
+    (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime)
+}
+
+/// Opens the object at `path` once, following reparse points like a metadata
+/// read, and returns its attributes together with its native 64-bit file
+/// reference number. Both come from the same handle, so a concurrent
+/// replacement of the entry cannot pair one object's attributes with another
+/// object's identity. Like `fs::metadata`, the open requests no access beyond
+/// the implicit attribute read and does not conflict with other users.
+fn opened(path: &Path) -> std::io::Result<(Attributes, u64)> {
     let file = fs::OpenOptions::new()
-        .access_mode(FILE_READ_ATTRIBUTES)
-        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .access_mode(0)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
         .open(path)?;
     let mut information = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::zeroed();
@@ -88,35 +113,51 @@ fn file_id(path: &Path) -> std::io::Result<u64> {
         return Err(std::io::Error::last_os_error());
     }
     let information = unsafe { information.assume_init() };
-    Ok((u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow))
+    let attributes = Attributes {
+        creation_time: filetime(&information.ftCreationTime),
+        last_access_time: filetime(&information.ftLastAccessTime),
+        last_write_time: filetime(&information.ftLastWriteTime),
+        size: (u64::from(information.nFileSizeHigh) << 32) | u64::from(information.nFileSizeLow),
+        file_attributes: information.dwFileAttributes,
+    };
+    let file_id =
+        (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow);
+    Ok((attributes, file_id))
 }
 
-/// Reads the metadata and file reference number of one listed entry. Failed
-/// metadata returns `failure`; an unopenable entry reports no identifier.
+/// Reads the attributes and file reference number of one listed entry.
+///
+/// Enumeration never requires per-entry open access: an entry the caller can
+/// list but not open (for example because of its ACL) keeps the attributes
+/// `fs::metadata` reads from the parent directory and reports
+/// `UNAVAILABLE_FILE_ID` instead of failing the whole listing or pairing those
+/// attributes with an identity from a second lookup. Only an entry whose
+/// attributes cannot be read at all returns `failure`.
 fn item(name: Vec<u16>, path: &Path, failure: NTSTATUS) -> std::result::Result<Item, NTSTATUS> {
-    let metadata = fs::metadata(path).map_err(|error| {
-        tracing::debug!(
-            action = "windows_directory_metadata_failed",
-            path = %path.display(),
-            %error,
-            "Could not read metadata for a merged directory entry"
-        );
-        failure
-    })?;
-    // An entry the caller can list but not open keeps its record and reports
-    // no identifier instead of failing the whole enumeration.
-    let file_id = file_id(path).unwrap_or_else(|error| {
-        tracing::debug!(
-            action = "windows_directory_file_id_unavailable",
-            path = %path.display(),
-            %error,
-            "Could not read the file reference number for a merged directory entry"
-        );
-        UNAVAILABLE_FILE_ID
-    });
+    let (attributes, file_id) = match opened(path) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::debug!(
+                action = "windows_directory_file_id_unavailable",
+                path = %path.display(),
+                %error,
+                "Could not open a merged directory entry for its file reference number"
+            );
+            let metadata = fs::metadata(path).map_err(|error| {
+                tracing::debug!(
+                    action = "windows_directory_metadata_failed",
+                    path = %path.display(),
+                    %error,
+                    "Could not read metadata for a merged directory entry"
+                );
+                failure
+            })?;
+            (Attributes::from_metadata(&metadata), UNAVAILABLE_FILE_ID)
+        }
+    };
     Ok(Item {
         name,
-        metadata,
+        attributes,
         file_id,
     })
 }
@@ -268,13 +309,14 @@ unsafe fn query(
         let record = &mut bytes[used..used + needed];
         record.fill(0);
         if class != FileNamesInformation {
-            put64(record, 8, item.metadata.creation_time());
-            put64(record, 16, item.metadata.last_access_time());
-            put64(record, 24, item.metadata.last_write_time());
-            put64(record, 32, item.metadata.last_write_time());
-            put64(record, 40, item.metadata.len());
-            put64(record, 48, item.metadata.len().saturating_add(4095) & !4095);
-            put32(record, 56, item.metadata.file_attributes());
+            let attributes = &item.attributes;
+            put64(record, 8, attributes.creation_time);
+            put64(record, 16, attributes.last_access_time);
+            put64(record, 24, attributes.last_write_time);
+            put64(record, 32, attributes.last_write_time);
+            put64(record, 40, attributes.size);
+            put64(record, 48, attributes.size.saturating_add(4095) & !4095);
+            put32(record, 56, attributes.file_attributes);
             put32(record, 60, (item.name.len() * 2) as u32);
             match class {
                 FileIdBothDirectoryInformation => put64(record, BOTH_FILE_ID_OFFSET, item.file_id),
