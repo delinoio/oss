@@ -18,6 +18,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestOpenRouterImageOriginalResultSurvivesBackendRecreation(t *testing.T) {
@@ -159,5 +160,53 @@ func TestOpenRouterImageReadUsesAdmittedRootHandle(t *testing.T) {
 		if data, _, err := readOpenRouterRootImage(root, relative); err == nil || data != nil {
 			t.Fatal("replacement symlink escaped admitted root")
 		}
+	}
+}
+
+func TestOpenRouterRecentImagesIgnoreInterruptedAtomicPublication(t *testing.T) {
+	var pixels bytes.Buffer
+	_ = png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 1, 1)))
+	encoded := base64.StdEncoding.EncodeToString(pixels.Bytes())
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := calls.Add(1)
+		if call == 2 {
+			var body struct {
+				Images []struct {
+					URL string `json:"image_url"`
+				} `json:"images"`
+			}
+			if json.NewDecoder(r.Body).Decode(&body) != nil || len(body.Images) != 1 || body.Images[0].URL != "data:image/png;base64,"+encoded {
+				t.Error("interrupted cache publication replaced the previous valid image")
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"created": 123, "data": []any{map[string]string{"b64_json": encoded}}})
+	}))
+	defer server.Close()
+	backend := openRouterImageBackend{client: server.Client(), origin: server.URL, token: "fixture", directory: t.TempDir()}
+	if _, err := backend.run(context.Background(), []byte(`{"prompt":"first"}`)); err != nil {
+		t.Fatal(err)
+	}
+	pending := filepath.Join(backend.directory, security.OwnedTemporaryPrefix(string(domain.NewID())+".png")+"interrupted")
+	if err := os.WriteFile(pending, []byte("partial PNG"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	resumed := backend
+	if _, err := resumed.run(context.Background(), []byte(`{"prompt":"edit","num_last_images_to_include":1}`)); err != nil {
+		t.Fatal("pending cache file blocked the earlier image", err)
+	}
+	files, err := filepath.Glob(filepath.Join(backend.directory, "*.png"))
+	if err != nil || len(files) != 2 {
+		t.Fatal("atomic publication lost valid cache entries", err)
+	}
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(data, pixels.Bytes()) {
+			t.Fatal("published a partial PNG", err)
+		}
+	}
+	data, err := os.ReadFile(pending)
+	if err != nil || string(data) != "partial PNG" {
+		t.Fatal("resume adopted or removed another interrupted publication", err)
 	}
 }

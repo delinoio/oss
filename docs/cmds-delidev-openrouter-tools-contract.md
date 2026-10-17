@@ -69,7 +69,10 @@ server transcript and original completion/cleanup barriers; public media are
 inert commitments under that existing contract. It does not fabricate a native
 built-in image event or an authenticated attachment preview. Original PNG
 results remain private in native history and a thread-owned cache within the
-persistent native profile, which follows profile deletion ownership. Recent
+persistent native profile, which follows profile deletion ownership. New cache
+entries use owner-private temporary files and become UUID-named PNGs only after
+successful write, sync, close and atomic rename. Interrupted temporary entries
+are excluded from recent-image selection and retain profile cleanup ownership. Recent
 image edits use original generated PNGs from that thread's cache; a different
 thread or Fork cannot adopt that cache. Existing local image references use
 original still-image bytes through a held effective read-root handle. Restricted

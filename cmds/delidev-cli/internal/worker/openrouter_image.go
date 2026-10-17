@@ -170,14 +170,10 @@ func (b *openRouterImageBackend) run(ctx context.Context, raw json.RawMessage) (
 		return "", imageBackendError()
 	}
 	defer clear(png)
-	file, err := os.OpenFile(filepath.Join(b.directory, string(domain.NewID())+".png"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if err != nil {
-		return "", imageBackendError()
-	}
-	_, writeErr := file.Write(png)
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if writeErr != nil || syncErr != nil || closeErr != nil {
+	// Publish only a fully synced and closed original PNG. A crash during
+	// the private temporary write leaves a non-.png remnant, never a recent
+	// image candidate that can hide older valid results after Resume.
+	if err := security.WriteAtomicOwned(filepath.Join(b.directory, string(domain.NewID())+".png"), png); err != nil {
 		return "", imageBackendError()
 	}
 	return "data:image/png;base64," + output.Data[0].Base64, nil
