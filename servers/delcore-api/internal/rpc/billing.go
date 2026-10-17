@@ -56,6 +56,10 @@ func (s *Server) SetAutoTopUp(ctx context.Context, r *connect.Request[pb.SetAuto
 			// Queued charges carry their amount in the job payload, so disabling the
 			// setting must also end work that has never reached the provider. Running,
 			// reconciling, attempted and externally identified jobs stay untouched.
+			// Store.Transaction serializes this transaction with the maintenance pass
+			// that selects tenants and queues their charges, so no charge can be queued
+			// after this statement for a selection made before the settings cleared.
+			// auto_topup_serialization_test.go holds that pass mid-insert to prove it.
 			tag, e := c.tx.Exec(c.ctx, "UPDATE jobs SET state='done',error_category='auto_topup_disabled',updated_at=$2 WHERE tenant_id=$1 AND "+unattemptedAutoTopUp, q.TenantId, c.now)
 			if e != nil {
 				return e

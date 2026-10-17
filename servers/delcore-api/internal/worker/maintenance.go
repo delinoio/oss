@@ -43,6 +43,11 @@ func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
 				return e
 			}
 		}
+		// Selecting tenants and queueing their charges share this transaction, and
+		// Store.Transaction holds the single-instance lock for all of it. Settings
+		// changes, cancellation and worker claims cannot interleave between the two
+		// steps, so a charge is never queued from a selection that a disable,
+		// cancellation or deletion has already invalidated.
 		rows, e := tx.Query(ctx, `SELECT t.id::text,t.auto_amount::text FROM tenants t WHERE t.auto_amount IS NOT NULL AND t.external_subscription_id<>'' AND t.period_end>now() AND NOT t.auto_suspended AND t.deleting_at IS NULL AND t.deleted_at IS NULL AND NOT t.operator_block AND NOT t.renewal_failed
    AND NOT EXISTS(SELECT 1 FROM disputes WHERE tenant_id=t.id AND active)
    AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)<t.auto_threshold
