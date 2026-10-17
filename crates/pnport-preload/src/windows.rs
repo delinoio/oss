@@ -573,47 +573,6 @@ const FILE_DETOURS: &[DetourAny] = &[
     DELETE.as_any(),
 ];
 
-// Debug-only code-location diagnostics for native faults. Keep exception
-// delivery unchanged and exclude faulting data addresses and memory dumps.
-// Remove this probe when the Windows arm64 fault is isolated.
-unsafe extern "system" fn exception_locations(
-    info: *mut winapi::um::winnt::EXCEPTION_POINTERS,
-) -> i32 {
-    use winapi::um::{
-        libloaderapi::{GetModuleFileNameW, GetModuleHandleExW},
-        winnt::RtlCaptureStackBackTrace,
-    };
-    if info.is_null() || (*info).ExceptionRecord.is_null() {
-        return 0;
-    }
-    let record = &*(*info).ExceptionRecord;
-    if record.ExceptionCode != 0xc0000005 {
-        return 0;
-    }
-    let _guard = Guard::enter();
-    let mut frames = [ptr::null_mut(); 17];
-    frames[0] = record.ExceptionAddress;
-    let count =
-        RtlCaptureStackBackTrace(0, 16, frames.as_mut_ptr().add(1), ptr::null_mut()) as usize + 1;
-    for (index, address) in frames[..count].iter().enumerate() {
-        let mut module = ptr::null_mut();
-        if GetModuleHandleExW(6, (*address).cast(), &mut module) == 0 {
-            continue;
-        }
-        let mut name = [0u16; 512];
-        let length = GetModuleFileNameW(module, name.as_mut_ptr(), name.len() as u32) as usize;
-        let name = &name[..length.min(name.len())];
-        let start = name
-            .iter()
-            .rposition(|unit| *unit == 92)
-            .map_or(0, |index| index + 1);
-        let module_name = String::from_utf16_lossy(&name[start..]);
-        let offset = (*address as usize).saturating_sub(module as usize);
-        tracing::error!(action = "windows_exception_frame", index, module = %module_name, offset = %format_args!("{offset:#x}"), "Native access violation code location");
-    }
-    0
-}
-
 unsafe fn initialize() -> std::io::Result<()> {
     let context = crate::windows_launch::context()?;
     let _guard = Guard::enter().ok_or(std::io::ErrorKind::Other)?;
@@ -628,9 +587,6 @@ unsafe fn initialize() -> std::io::Result<()> {
             tracing::Level::ERROR
         })
         .try_init();
-    if context.debug {
-        winapi::um::errhandlingapi::AddVectoredExceptionHandler(1, Some(exception_locations));
-    }
     let result = (|| {
         pnport_core::cache::private_dir(&context.session)
             .map_err(|_| std::io::ErrorKind::PermissionDenied)?;

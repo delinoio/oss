@@ -40,7 +40,7 @@ libc = "0.2.182"
 fspy_detours_sys = { workspace = true }
 ntapi = { workspace = true }
 winapi = { workspace = true, features = ["fileapi", "stringapiset", "winnls", "processthreadsapi", "winbase"] }
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Console", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Memory", "Win32_System_LibraryLoader", "Win32_System_IO"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Console", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Memory", "Win32_System_LibraryLoader", "Win32_System_IO", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel"] }
 
 [target.'cfg(windows)'.dev-dependencies]
 cc = { workspace = true }

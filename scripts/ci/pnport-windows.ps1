@@ -12,32 +12,17 @@ $expected = if ($Suffix -eq "win32-x64-msvc") { "X64" } else { "Arm64" }
 if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -cne $expected) {
   throw "[pnport.windows] native host architecture required"
 }
-$validationStarted = Get-Date
-trap {
-  $originalFailure = $_
-  # Keep only closed crash metadata from this ephemeral host. Never upload
-  # memory dumps or raw application event records.
-  try {
-    $events = Get-WinEvent -FilterHashtable @{ LogName = "Application"; Id = 1000; StartTime = $validationStarted } -ErrorAction SilentlyContinue
-    foreach ($event in $events) {
-      $data = @{}
-      foreach ($item in ([xml]$event.ToXml()).Event.EventData.Data) { $data[$item.Name] = $item.'#text' }
-      if ($data["AppName"] -notin @("node.exe", "pnport.exe")) { continue }
-      Write-Output (@{ event = "pnport_windows_native_crash"; target = $Target; application = $data["AppName"]; module = $data["ModuleName"]; code = $data["ExceptionCode"]; offset = $data["FaultingOffset"] } | ConvertTo-Json -Compress)
-      if ($data["ModuleName"] -eq "pnport_preload.dll") {
-        $symbolizer = Get-Command llvm-symbolizer.exe -ErrorAction SilentlyContinue
-        if ($null -ne $symbolizer) {
-          $image = Join-Path $PWD "target/$Target/debug/pnport_preload.dll"
-          & $symbolizer.Source "--obj=$image" "0x$($data['FaultingOffset'])"
-        }
-      }
-    }
-  } catch { Write-Output "[pnport.windows] native crash metadata unavailable" }
-  throw $originalFailure
-}
 function Invoke-Checked([string]$Program, [string[]]$Arguments) {
   & $Program @Arguments
-  if ($LASTEXITCODE -ne 0) { throw "[pnport.windows] validation command failed: $Program" }
+  if ($LASTEXITCODE -ne 0) {
+    if ($Program -eq "cargo" -and $Arguments -contains "windows") {
+      Write-Output "[pnport.windows] diagnostic Node replay; the original validation remains failed"
+      $env:PNPORT_WINDOWS_DEBUGGER = "1"
+      try { & $Program @Arguments "node_filesystem_crypto_loopback_and_replacement_environment" "--" "--exact" "--nocapture" }
+      finally { Remove-Item Env:PNPORT_WINDOWS_DEBUGGER -ErrorAction SilentlyContinue }
+    }
+    throw "[pnport.windows] validation command failed: $Program"
+  }
 }
 Write-Output (@{ event = "pnport_windows_development_validation"; target = $Target; revision = (& git rev-parse HEAD).Trim(); acceptance = "development-only" } | ConvertTo-Json -Compress)
 Invoke-Checked "cargo" @("build", "--locked", "-p", "pnport", "-p", "pnport-preload", "--target", $Target)

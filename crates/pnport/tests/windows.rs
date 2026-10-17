@@ -173,6 +173,156 @@ fn symbolize_failure(output: &std::process::Output) {
     }
 }
 
+/// Diagnostic replay uses an external debugger, so a corrupted target stack
+/// or loader lock cannot prevent reporting its faulting code location. Normal
+/// validation never sets this opt-in; replay cannot turn its first failure
+/// green.
+fn node_output(command: &mut Command) -> std::process::Output {
+    if std::env::var_os("PNPORT_WINDOWS_DEBUGGER").is_none() {
+        return command.output().unwrap();
+    }
+    use std::{collections::BTreeMap, os::windows::process::CommandExt};
+
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, DBG_CONTINUE, DBG_EXCEPTION_NOT_HANDLED, EXCEPTION_BREAKPOINT},
+        Storage::FileSystem::GetFinalPathNameByHandleW,
+        System::{Diagnostics::Debug::*, Threading::DEBUG_PROCESS},
+    };
+    let mut child = command
+        .creation_flags(DEBUG_PROCESS)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let mut stderr = child.stderr.take().unwrap();
+    let out = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).unwrap();
+        bytes
+    });
+    let err = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stderr.read_to_end(&mut bytes).unwrap();
+        bytes
+    });
+    let mut modules = std::collections::HashMap::<u32, BTreeMap<usize, String>>::new();
+    let mut threads = std::collections::HashMap::new();
+    let mut active = 0usize;
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            panic!("diagnostic debugger timed out");
+        }
+        let mut event = DEBUG_EVENT::default();
+        if unsafe { WaitForDebugEvent(&mut event, 1000) } == 0 {
+            continue;
+        }
+        let mut disposition = DBG_CONTINUE;
+        unsafe {
+            let image = match event.dwDebugEventCode {
+                CREATE_PROCESS_DEBUG_EVENT => {
+                    active += 1;
+                    threads.insert(event.dwThreadId, event.u.CreateProcessInfo.hThread);
+                    Some((
+                        event.u.CreateProcessInfo.hFile,
+                        event.u.CreateProcessInfo.lpBaseOfImage as usize,
+                    ))
+                }
+                LOAD_DLL_DEBUG_EVENT => {
+                    Some((event.u.LoadDll.hFile, event.u.LoadDll.lpBaseOfDll as usize))
+                }
+                _ => None,
+            };
+            if let Some((file, base)) = image {
+                if !file.is_null() {
+                    let mut name = vec![0u16; 32768];
+                    let length =
+                        GetFinalPathNameByHandleW(file, name.as_mut_ptr(), name.len() as u32, 0)
+                            as usize;
+                    if length < name.len() {
+                        let path = String::from_utf16_lossy(&name[..length]);
+                        let name = path.rsplit('\\').next().unwrap_or("unknown").to_owned();
+                        modules
+                            .entry(event.dwProcessId)
+                            .or_default()
+                            .insert(base, name);
+                    }
+                    CloseHandle(file);
+                }
+            }
+            if event.dwDebugEventCode == CREATE_THREAD_DEBUG_EVENT {
+                threads.insert(event.dwThreadId, event.u.CreateThread.hThread);
+            }
+            if event.dwDebugEventCode == EXIT_THREAD_DEBUG_EVENT {
+                threads.remove(&event.dwThreadId);
+            }
+            if event.dwDebugEventCode == EXCEPTION_DEBUG_EVENT {
+                let exception = event.u.Exception;
+                let code = exception.ExceptionRecord.ExceptionCode;
+                if code != EXCEPTION_BREAKPOINT {
+                    disposition = DBG_EXCEPTION_NOT_HANDLED;
+                }
+                if code == 0xc0000005u32 as i32 {
+                    let mut addresses = vec![exception.ExceptionRecord.ExceptionAddress as usize];
+                    #[cfg(target_arch = "aarch64")]
+                    if let Some(thread) = threads.get(&event.dwThreadId) {
+                        let mut context = CONTEXT {
+                            ContextFlags: CONTEXT_CONTROL_ARM64,
+                            ..CONTEXT::default()
+                        };
+                        if GetThreadContext(*thread, &mut context) != 0 {
+                            addresses.push(context.Anonymous.Anonymous.Lr as usize);
+                        }
+                    }
+                    for address in addresses {
+                        if let Some((base, name)) = modules
+                            .get(&event.dwProcessId)
+                            .and_then(|images| images.range(..=address).next_back())
+                        {
+                            let offset = address - base;
+                            eprintln!(
+                                "action=windows_exception_frame module={name} offset=0x{offset:x} \
+                                 first_chance={}",
+                                exception.dwFirstChance
+                            );
+                            if name.eq_ignore_ascii_case("pnport_preload.dll") {
+                                let image = PathBuf::from(env!("CARGO_BIN_EXE_pnport"))
+                                    .with_file_name(name);
+                                if let Ok(symbols) = Command::new("llvm-symbolizer.exe")
+                                    .arg("--relative-address")
+                                    .arg(format!("--obj={}", image.display()))
+                                    .arg(format!("0x{offset:x}"))
+                                    .output()
+                                {
+                                    eprintln!("{}", String::from_utf8_lossy(&symbols.stdout));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if event.dwDebugEventCode == EXIT_PROCESS_DEBUG_EVENT {
+                modules.remove(&event.dwProcessId);
+                active -= 1;
+            }
+            assert_ne!(
+                ContinueDebugEvent(event.dwProcessId, event.dwThreadId, disposition),
+                0
+            );
+        }
+        if active == 0 {
+            break;
+        }
+    }
+    std::process::Output {
+        status: child.wait().unwrap(),
+        stdout: out.join().unwrap(),
+        stderr: err.join().unwrap(),
+    }
+}
+
 fn binary() -> PathBuf {
     std::env::var_os("PNPORT_TEST_BINARY")
         .map(PathBuf::from)
@@ -1238,19 +1388,19 @@ server.listen(0, '127.0.0.1', () => {
   client.on('end', () => { assert.equal(received, 'loopback'); server.close(); });
 });
 "#;
-    let output = Command::new(binary())
-        .arg("--project")
-        .arg(&root)
-        .arg("--cache-dir")
-        .arg(fixture.path().join("cache"))
-        .args(["--log-level=debug", "--color=never", "run", "--"])
-        .arg(node)
-        .arg("-e")
-        .arg(script)
-        .arg(&root)
-        .current_dir(&root)
-        .output()
-        .unwrap();
+    let output = node_output(
+        Command::new(binary())
+            .arg("--project")
+            .arg(&root)
+            .arg("--cache-dir")
+            .arg(fixture.path().join("cache"))
+            .args(["--log-level=debug", "--color=never", "run", "--"])
+            .arg(node)
+            .arg("-e")
+            .arg(script)
+            .arg(&root)
+            .current_dir(&root),
+    );
     symbolize_failure(&output);
     assert!(
         output.status.success(),
