@@ -1,4 +1,5 @@
 import {
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -6,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { pressEnter } from "./test-form-enter";
 import { danger, expectTone, neutral } from "./test-action-tone";
 import { LocalWorkerAction, LocalWorkerState } from "./local-worker-controls";
 import { newRequestId } from "@delinoio/delidev-api-client";
@@ -825,4 +827,292 @@ it("marks the Removing-state retry opener Danger because it retries the retained
     screen.getByRole("button", { name: "Inspect removal state later" }),
     neutral,
   );
+});
+
+// Enter submission: Rename and Add server are semantic forms whose inline primary
+// is the only submit control. Pointer, Enter and form submission share one
+// guarded owner callback per form.
+const nameInput = () =>
+  screen.getByLabelText("Connection name") as HTMLInputElement;
+const grantInput = () =>
+  screen.getByLabelText("Private client pairing document") as HTMLInputElement;
+const newNameInput = () =>
+  screen.getByLabelText("New connection name") as HTMLInputElement;
+const formOf = (control: HTMLElement) =>
+  control.closest("form") as HTMLFormElement;
+const submitters = (form: HTMLFormElement) =>
+  [...form.querySelectorAll("button")].filter(
+    (button) => button.type === "submit",
+  );
+async function renderAdd(value: ReturnType<typeof fixture>) {
+  render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  await screen.findByRole("button", { name: "Open Saved server" });
+}
+function fillAdd(value: ReturnType<typeof fixture>) {
+  fireEvent.change(nameInput(), { target: { value: "New server" } });
+  fireEvent.change(grantInput(), { target: { value: value.grant } });
+}
+async function openRename(value: ReturnType<typeof fixture>) {
+  render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Rename Saved server" }),
+  );
+}
+
+it("owns Add server as one semantic form with a single inline submit control", async () => {
+  const value = fixture();
+  await renderAdd(value);
+  fillAdd(value);
+  const form = formOf(nameInput());
+  expect(form.id).not.toBe("");
+  expect(form.noValidate).toBe(true);
+  expect(form.querySelector("form")).toBeNull();
+  expect(formOf(grantInput())).toBe(form);
+  const primary = screen.getByRole("button", {
+    name: "Pair this server",
+  }) as HTMLButtonElement;
+  expect(primary.form).toBe(form);
+  expect(submitters(form)).toEqual([primary]);
+  for (const button of form.querySelectorAll("button"))
+    if (button !== primary) expect(button.type).toBe("button");
+});
+
+it.each([
+  ["Connection name", nameInput],
+  ["Private client pairing document", grantInput],
+])(
+  "pairs a server once with Enter from %s using the pointer payload",
+  async (_label, field) => {
+    const clicked = fixture();
+    await renderAdd(clicked);
+    fillAdd(clicked);
+    fireEvent.click(screen.getByRole("button", { name: "Pair this server" }));
+    await waitFor(() => expect(clicked.pair).toHaveBeenCalledTimes(1));
+    await screen.findByText(/client pairing is saved/);
+    const expected = clicked.pair.mock.calls[0];
+    cleanup();
+
+    const value = fixture();
+    await renderAdd(value);
+    fillAdd(value);
+    expect(pressEnter(field())).toBe(1);
+    await waitFor(() => expect(value.pair).toHaveBeenCalledTimes(1));
+    await screen.findByText(/client pairing is saved/);
+    const call = value.pair.mock.calls[0];
+    // The fixture grant embeds random identifiers, so compare each against its own.
+    expect(expected[1]).toBe("New server");
+    expect(expected[2]).toBe(clicked.grant);
+    expect(call[1]).toBe(expected[1]);
+    expect(call[2]).toBe(value.grant);
+    // Every submission allocates its own request identity.
+    expect(call[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(call[0]).not.toBe(expected[0]);
+    expect(value.retry).not.toHaveBeenCalled();
+    expect(value.open).not.toHaveBeenCalled();
+    expect(value.rename).not.toHaveBeenCalled();
+    expect(value.remove).not.toHaveBeenCalled();
+  },
+);
+
+it("does not pair with Enter while the draft is incomplete or invalid", async () => {
+  const value = fixture();
+  await renderAdd(value);
+  const primary = screen.getByRole("button", {
+    name: "Pair this server",
+  }) as HTMLButtonElement;
+  expect(primary.disabled).toBe(true);
+  expect(pressEnter(nameInput())).toBe(0);
+  fireEvent.change(nameInput(), { target: { value: "New server" } });
+  expect(pressEnter(nameInput())).toBe(0);
+  fireEvent.change(grantInput(), { target: { value: "{not-json" } });
+  expect(pressEnter(grantInput())).toBe(0);
+  // A script-initiated submission reaches the same guarded callback.
+  fireEvent.submit(formOf(nameInput()));
+  fireEvent.change(nameInput(), { target: { value: "   " } });
+  fireEvent.change(grantInput(), { target: { value: value.grant } });
+  expect(pressEnter(grantInput())).toBe(0);
+  fireEvent.submit(formOf(grantInput()));
+  expect(value.pair).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["composition", { composing: true }],
+  ["legacy composition key code", { keyCode: 229 }],
+  ["held Enter", { repeat: true }],
+  ["Shift+Enter", { shiftKey: true }],
+  ["Control+Enter", { ctrlKey: true }],
+  ["Alt+Enter", { altKey: true }],
+  ["Meta+Enter", { metaKey: true }],
+])("does not pair on %s", async (_label, press) => {
+  const value = fixture();
+  await renderAdd(value);
+  fillAdd(value);
+  expect(pressEnter(nameInput(), press)).toBe(0);
+  expect(pressEnter(grantInput(), press)).toBe(0);
+  expect(value.pair).not.toHaveBeenCalled();
+  expect(nameInput().value).toBe("New server");
+  expect(grantInput().value).toBe(value.grant);
+});
+
+it("does not pair with Enter while a rename or removal blocks the primary control", async () => {
+  const value = fixture();
+  render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Rename Saved server" }),
+  );
+  fillAdd(value);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Pair this server",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(pressEnter(nameInput())).toBe(0);
+  fireEvent.submit(formOf(nameInput()));
+  expect(value.pair).not.toHaveBeenCalled();
+});
+
+it("keeps the exact uncertain pairing retry through form submission and never replaces it", async () => {
+  const value = fixture();
+  value.pair.mockRejectedValueOnce("timed-out");
+  await renderAdd(value);
+  fillAdd(value);
+  expect(pressEnter(grantInput())).toBe(1);
+  await screen.findByText(/operation has not been confirmed/);
+  expect(nameInput().disabled).toBe(true);
+  expect(grantInput().disabled).toBe(true);
+  // The retained attempt changes the primary into an exact retry. Submitting the
+  // form again re-sends the original identity, name and private grant.
+  const retry = screen.getByRole("button", {
+    name: "Retry original server pairing",
+  }) as HTMLButtonElement;
+  expect(retry.type).toBe("submit");
+  fireEvent.submit(formOf(nameInput()));
+  await screen.findByText(/client pairing is saved/);
+  expect(value.pair).toHaveBeenCalledTimes(2);
+  expect(value.pair.mock.calls[0]).toEqual(value.pair.mock.calls[1]);
+  expect(value.pair.mock.calls[1][2]).toBe(value.grant);
+});
+
+it("does not pair twice when the primary is submitted again while pairing is pending", async () => {
+  const value = fixture();
+  let release: () => void = () => {};
+  value.pair.mockImplementationOnce(
+    (id) =>
+      new Promise((resolve) => {
+        release = () => resolve({ ...value.profile, id });
+      }),
+  );
+  await renderAdd(value);
+  fillAdd(value);
+  expect(pressEnter(nameInput())).toBe(1);
+  await waitFor(() => expect(value.pair).toHaveBeenCalledTimes(1));
+  expect(pressEnter(nameInput())).toBe(0);
+  fireEvent.submit(formOf(nameInput()));
+  release();
+  await screen.findByText(/client pairing is saved/);
+  expect(value.pair).toHaveBeenCalledTimes(1);
+});
+
+it("owns Rename as one semantic form whose Discard control stays a plain button", async () => {
+  const value = fixture();
+  await openRename(value);
+  const form = formOf(newNameInput());
+  expect(form.id).not.toBe("");
+  expect(form.noValidate).toBe(true);
+  expect(form.querySelector("form")).toBeNull();
+  const save = screen.getByRole("button", {
+    name: "Save connection name",
+  }) as HTMLButtonElement;
+  expect(save.form).toBe(form);
+  expect(submitters(form)).toEqual([save]);
+  const discard = screen.getByRole("button", {
+    name: "Discard name edit",
+  }) as HTMLButtonElement;
+  expect(discard.form).toBe(form);
+  expect(discard.type).toBe("button");
+  fireEvent.click(discard);
+  expect(value.rename).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText("New connection name")).toBeNull();
+});
+
+it("renames once with Enter using the pointer payload", async () => {
+  const clicked = fixture();
+  await openRename(clicked);
+  fireEvent.change(newNameInput(), { target: { value: "Renamed server" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save connection name" }));
+  await waitFor(() => expect(clicked.rename).toHaveBeenCalledTimes(1));
+  await screen.findByText(/Current connection name: Renamed server/);
+  const expected = clicked.rename.mock.calls[0];
+  cleanup();
+
+  const value = fixture();
+  await openRename(value);
+  fireEvent.change(newNameInput(), { target: { value: "Renamed server" } });
+  expect(pressEnter(newNameInput())).toBe(1);
+  await waitFor(() => expect(value.rename).toHaveBeenCalledTimes(1));
+  await screen.findByText(/Current connection name: Renamed server/);
+  const call = value.rename.mock.calls[0];
+  expect(call).toEqual([
+    value.profile.id,
+    expect.stringMatching(/^[0-9a-f-]{36}$/),
+    1,
+    "Renamed server",
+  ]);
+  expect(call.slice(2)).toEqual(expected.slice(2));
+  expect(call[1]).not.toBe(expected[1]);
+  expect(value.pair).not.toHaveBeenCalled();
+  expect(value.remove).not.toHaveBeenCalled();
+});
+
+it("does not rename with Enter for a blank, oversized or stale name", async () => {
+  const value = fixture();
+  await openRename(value);
+  fireEvent.change(newNameInput(), { target: { value: "   " } });
+  expect(pressEnter(newNameInput())).toBe(0);
+  fireEvent.submit(formOf(newNameInput()));
+  fireEvent.change(newNameInput(), { target: { value: "é".repeat(129) } });
+  expect(pressEnter(newNameInput())).toBe(0);
+  fireEvent.submit(formOf(newNameInput()));
+  fireEvent.change(newNameInput(), { target: { value: "My draft" } });
+  value.list.mockResolvedValue([
+    { ...value.profile, revision: 2, name: "Peer edit" },
+  ]);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh saved servers" }),
+  );
+  await screen.findByText(/This connection changed while you were editing/);
+  expect(pressEnter(newNameInput())).toBe(0);
+  fireEvent.submit(formOf(newNameInput()));
+  expect(value.rename).not.toHaveBeenCalled();
+  expect(newNameInput().value).toBe("My draft");
+});
+
+it.each([
+  ["composition", { composing: true }],
+  ["legacy composition key code", { keyCode: 229 }],
+  ["held Enter", { repeat: true }],
+  ["Shift+Enter", { shiftKey: true }],
+])("does not rename on %s", async (_label, press) => {
+  const value = fixture();
+  await openRename(value);
+  fireEvent.change(newNameInput(), { target: { value: "Renamed server" } });
+  expect(pressEnter(newNameInput(), press)).toBe(0);
+  expect(value.rename).not.toHaveBeenCalled();
+  expect(newNameInput().value).toBe("Renamed server");
+});
+
+it("keeps the exact uncertain rename retry through form submission", async () => {
+  const value = fixture();
+  value.rename.mockRejectedValueOnce("timed-out");
+  await openRename(value);
+  fireEvent.change(newNameInput(), { target: { value: "First edit" } });
+  expect(pressEnter(newNameInput())).toBe(1);
+  await screen.findByText(/operation has not been confirmed/);
+  expect(newNameInput().disabled).toBe(true);
+  fireEvent.submit(formOf(newNameInput()));
+  await screen.findByText(/Current connection name: First edit/);
+  expect(value.rename).toHaveBeenCalledTimes(2);
+  expect(value.rename.mock.calls[0]).toEqual(value.rename.mock.calls[1]);
 });

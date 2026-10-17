@@ -8,10 +8,12 @@ import {
 import {
   createContext,
   useContext,
+  useId,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useSettingsTaskDismiss } from "./settings-task-context";
 import type { PairingAuthority } from "./pairing-grant";
 import { useSettingsOpening } from "./settings-lifetime";
@@ -146,6 +148,15 @@ export function WorkerNetworkNative({
       if (!opening?.disposed) setBusy(false);
     }
   };
+  // The encrypted import is one semantic form. Pointer, Enter in the digest
+  // input and form submission reach this callback, which rechecks the exact
+  // disabled conditions of the Import button (busy, or not yet confirmed
+  // without a retained original). The textarea keeps Enter as a newline.
+  const importFormId = useId();
+  const submitImport = () => {
+    if (busy || (!originalImport && !confirm)) return;
+    void run(WorkerNetworkAction.Import);
+  };
   return (
     <section
       aria-label={copy(
@@ -164,6 +175,7 @@ export function WorkerNetworkNative({
         <>
           <SettingsActionButton
             icon={SettingsActionIcon.Inspect}
+            type="button"
             disabled={busy || unconfirmed}
             onClick={() => void run(WorkerNetworkAction.Prepare)}
           >
@@ -171,6 +183,7 @@ export function WorkerNetworkNative({
           </SettingsActionButton>
           <SettingsActionButton
             icon={SettingsActionIcon.Retry}
+            type="button"
             disabled={busy}
             onClick={() => void run(WorkerNetworkAction.Status)}
           >
@@ -178,56 +191,69 @@ export function WorkerNetworkNative({
               "worker-network-native.inspectOriginalPublicRecipient_579cd7",
             )}
           </SettingsActionButton>
-          <label>
-            {copy("worker-network-native.encryptedBundleToImportBase64_db23d6")}
-            <textarea
-              rows={4}
-              maxLength={131072}
-              spellCheck={false}
-              disabled={busy || Boolean(originalImport)}
-              value={ciphertext}
-              onChange={(event) => {
-                setCiphertext(event.target.value);
-                setConfirm(false);
-              }}
-            />
-          </label>
-          <label>
-            {copy("worker-network-native.separatelyAuthenticatedDigest_be070a")}
-            <input
-              maxLength={64}
-              disabled={busy || Boolean(originalImport)}
-              value={digest}
-              onChange={(event) => {
-                setDigest(event.target.value);
-                setConfirm(false);
-              }}
-            />
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              disabled={busy || Boolean(originalImport)}
-              checked={confirm}
-              onChange={(event) => setConfirm(event.target.checked)}
-            />
-            {copy(
-              "worker-network-native.iVerifiedThisDigestIndependentlyAnd_638722",
-            )}
-          </label>
-          <SettingsActionButton
-            icon={SettingsActionIcon.Retry}
-            disabled={busy || (!originalImport && !confirm)}
-            onClick={() => void run(WorkerNetworkAction.Import)}
+          <form
+            id={importFormId}
+            noValidate
+            onKeyDown={guardEnterSubmission}
+            onSubmit={(event) => {
+              if (consumeFormSubmit(event)) submitImport();
+            }}
           >
-            {originalImport
-              ? copy(
-                  "worker-network-native.retryOriginalEncryptedImport_46c8e9",
-                )
-              : copy(
-                  "worker-network-native.importConfirmedEncryptedConfiguration_30d15e",
-                )}
-          </SettingsActionButton>
+            <label>
+              {copy(
+                "worker-network-native.encryptedBundleToImportBase64_db23d6",
+              )}
+              <textarea
+                rows={4}
+                maxLength={131072}
+                spellCheck={false}
+                disabled={busy || Boolean(originalImport)}
+                value={ciphertext}
+                onChange={(event) => {
+                  setCiphertext(event.target.value);
+                  setConfirm(false);
+                }}
+              />
+            </label>
+            <label>
+              {copy(
+                "worker-network-native.separatelyAuthenticatedDigest_be070a",
+              )}
+              <input
+                maxLength={64}
+                disabled={busy || Boolean(originalImport)}
+                value={digest}
+                onChange={(event) => {
+                  setDigest(event.target.value);
+                  setConfirm(false);
+                }}
+              />
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                disabled={busy || Boolean(originalImport)}
+                checked={confirm}
+                onChange={(event) => setConfirm(event.target.checked)}
+              />
+              {copy(
+                "worker-network-native.iVerifiedThisDigestIndependentlyAnd_638722",
+              )}
+            </label>
+            <SettingsActionButton
+              icon={SettingsActionIcon.Retry}
+              type="submit"
+              disabled={busy || (!originalImport && !confirm)}
+            >
+              {originalImport
+                ? copy(
+                    "worker-network-native.retryOriginalEncryptedImport_46c8e9",
+                  )
+                : copy(
+                    "worker-network-native.importConfirmedEncryptedConfiguration_30d15e",
+                  )}
+            </SettingsActionButton>
+          </form>
         </>
       )}
       {outcome ? <p role="status">{outcome}</p> : null}
