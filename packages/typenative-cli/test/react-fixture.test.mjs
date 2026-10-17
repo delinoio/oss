@@ -62,3 +62,17 @@ test("React fixture rejects clones that lose type or children", () => {
     );
   }
 });
+
+test("React fixture rejects constant element validation", () => {
+  for (const valid of [true, false]) {
+    assert.throws(
+      () =>
+        runInNewContext(source, {
+          ...React,
+          console: { log() {} },
+          isValidElement: () => valid,
+        }),
+      /React core probe failed/,
+    );
+  }
+});
