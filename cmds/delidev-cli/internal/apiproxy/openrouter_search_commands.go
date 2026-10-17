@@ -39,7 +39,9 @@ func validNativeSearchCommands(commands map[string]json.RawMessage) bool {
 		"sports":     {"tool": searchText(false, "sports"), "fn": searchText(true, "schedule", "standings"), "league": searchText(true, "nba", "wnba", "nfl", "nhl", "mlb", "epl", "ncaamb", "ncaawb", "ipl"), "team": searchText(false), "opponent": searchText(false), "date_from": searchText(false), "date_to": searchText(false), "num_games": {kind: searchUnsigned}, "locale": searchText(false)},
 		"time":       {"utc_offset": searchText(true)},
 	}
-	if len(commands) == 0 || len(commands) > len(schemas)+1 {
+	// The pinned native client serializes default SearchCommands as an empty
+	// object, so an empty non-nil map is valid. A nil map (missing or null) stays invalid.
+	if commands == nil || len(commands) > len(schemas)+1 {
 		return false
 	}
 	for command, raw := range commands {
