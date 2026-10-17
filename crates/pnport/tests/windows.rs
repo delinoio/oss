@@ -786,21 +786,21 @@ fn completion_port_directory_queries(root: &Path) {
     let directory = open(root, true);
     let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, std::ptr::null_mut(), 1, 0) };
     assert!(!port.is_null(), "create replacement port");
+    // `FileReplaceCompletionInformation` is available on every supported
+    // Windows baseline, so a failed install is a hook, ABI, or access
+    // regression and must fail the test instead of skipping the assertions.
     let installed = replace_completion_port(directory, port);
-    if installed >= 0 {
-        for api in apis {
-            let status = query(directory, api, Some(port));
-            assert!(status < 0, "{api:?} replaced association {status:#x}");
-        }
-        assert_no_packet(port);
-        let removed = replace_completion_port(directory, std::ptr::null_mut());
-        assert!(removed >= 0, "remove association status {removed:#x}");
-        for api in apis {
-            let status = query(directory, api, None);
-            assert!(status >= 0, "{api:?} removed association {status:#x}");
-        }
-    } else {
-        eprintln!("FileReplaceCompletionInformation is unavailable: {installed:#x}");
+    assert!(installed >= 0, "replacement install status {installed:#x}");
+    for api in apis {
+        let status = query(directory, api, Some(port));
+        assert!(status < 0, "{api:?} replaced association {status:#x}");
+    }
+    assert_no_packet(port);
+    let removed = replace_completion_port(directory, std::ptr::null_mut());
+    assert!(removed >= 0, "remove association status {removed:#x}");
+    for api in apis {
+        let status = query(directory, api, None);
+        assert!(status >= 0, "{api:?} removed association {status:#x}");
     }
     // An unreadable replacement payload must surface the native failure
     // instead of faulting the detour, and must not change the recorded state.
