@@ -1748,15 +1748,22 @@ fn judge_function(
     if symbol.is_nil() {
         return false;
     }
-    // Exported bindings are reached by importers, which run after this
-    // module unless a cycle lets them run code during its initialization.
+    // Exported bindings are reached by importers, through names or through
+    // the namespace object. Importers run after this module finished unless
+    // one shares its import cycle, so an exported function needs a module
+    // that is alone in its component.
+    let statement = if function.kind() == SyntaxKind::FunctionDeclaration {
+        function
+    } else {
+        function.parent().parent().parent()
+    };
     let exported = ctx
         .refs(symbol)
         .iter()
         .any(|r| r.kind == RefKind::Alias && r.file == file)
-        || function.parent().kind() == SyntaxKind::SourceFile
-            && has_syntactic_modifier(function, ModifierFlags::Export);
-    if exported && !facts.cycle_safe(ctx, file) {
+        || (statement.parent().kind() == SyntaxKind::SourceFile
+            && has_syntactic_modifier(statement, ModifierFlags::Export));
+    if exported && !facts.alone_in_component(ctx, file) {
         return false;
     }
     let references: Vec<_> = ctx

@@ -336,6 +336,74 @@ console.log(attempt(N.run));
 }
 
 #[test]
+fn keeps_exported_functions_reachable_early_through_an_import_cycle() {
+    let temp = project(&[
+        (
+            "main.ts",
+            r#"import { start } from "./a.ts";
+start();
+"#,
+        ),
+        (
+            "a.ts",
+            r#"import { invoke } from "./b.ts";
+export const run = () => target(2);
+invoke();
+const target = (value: number) => value * 2;
+export function start() {
+  console.log(run());
+}
+"#,
+        ),
+        (
+            "b.ts",
+            r#"import * as ns from "./a.ts";
+export function invoke() {
+  try {
+    console.log((ns as any)["run"]());
+  } catch {
+    console.log("early");
+  }
+}
+"#,
+        ),
+    ]);
+    optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    let module = emitted(temp.path(), "a.ts");
+    assert!(module.contains("target("), "{module}");
+    same_behavior(temp.path());
+}
+
+#[test]
+fn keeps_exported_functions_in_an_import_cycle_that_run_before_the_declaration() {
+    let temp = project(&[
+        (
+            "main.ts",
+            r#"import * as ns from "./cycle.ts";
+export const run = () => late(1);
+try {
+  console.log(ns.call());
+} catch (error) {
+  console.log("early", (error as Error).name);
+}
+const late = (value: number) => value * 2;
+console.log(ns.call());
+"#,
+        ),
+        (
+            "cycle.ts",
+            r#"import * as main from "./main.ts";
+export const call = () => (main as any)["run"]();
+"#,
+        ),
+    ]);
+    optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    let main = emitted(temp.path(), "main.ts");
+    assert!(main.contains("late("), "{main}");
+    same_behavior(temp.path());
+}
+
+#[test]
 fn inlines_top_level_declarations_at_sites_that_run_after_them() {
     let temp = project(&[
         (

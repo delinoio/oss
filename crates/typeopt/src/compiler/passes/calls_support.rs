@@ -178,6 +178,17 @@ impl Facts {
         components[a] == components[b]
     }
 
+    /// Whether no other module shares `index`'s import cycle, so every
+    /// importer starts evaluating after the module finished.
+    pub fn alone_in_component(&mut self, ctx: &mut Ctx, index: usize) -> bool {
+        if self.components.is_none() {
+            let edges = self.edges(ctx).clone();
+            self.components = Some(components(&edges));
+        }
+        let components = self.components.as_ref().unwrap();
+        (0..components.len()).all(|m| m == index || components[m] != components[index])
+    }
+
     fn first_impure(&mut self, ctx: &mut Ctx, index: usize) -> usize {
         if let Some(&first) = self.first_impure.get(&index) {
             return first;
