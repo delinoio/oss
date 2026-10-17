@@ -18,7 +18,9 @@ Expose typed Connect interfaces for user discovery, tenants, memberships, invita
 
 Occurrence timestamps use PostgreSQL microsecond precision. The service normalizes timestamps before hashing, storing and matching corrections. Prorated included quantities use a 0.000001 quantum; monetary products retain exact decimal precision until currency rounding.
 
-Deletion and withdrawal return a failed precondition while a previously attempted subscription intent remains incomplete. Unattempted subscription intents are stopped atomically when deletion starts.
+Deletion and withdrawal return a failed precondition while a previously attempted subscription intent remains incomplete. Unattempted subscription intents, and intents that the provider definitively rejected without creating a subscription, are stopped atomically when deletion starts. A stopped rejected intent keeps its rejection category and cannot be retried.
+
+Disabling automatic top-ups clears the settings and stops queued charges that never reached the provider in the same request. Charges that may have reached the provider, including a rejected charge that an operator retried, continue. Accepting a subscription cancellation stops the same unattempted charges.
 
 Negative postpaid corrections carry forward against usage charges. Operators refund any remainder in Paddle on cancellation. Confirmed usage-line refunds clear the corresponding settlement balance; fixed subscription refunds do not clear usage debt.
 
