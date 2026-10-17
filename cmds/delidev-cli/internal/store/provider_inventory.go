@@ -218,7 +218,7 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 		for _, record := range custom {
 			provider, err := Decode[domain.Provider](record)
 			if err != nil {
-				return err
+				return inventoryRecordInvalid("A saved provider record is unreadable.", "Preserve the server data and repair or remove the unreadable provider before listing provider inventory.", "provider decode failed", err, "provider_id", record.ID)
 			}
 			entry := ProviderInventoryItem{Provider: &record, ProviderID: record.ID, DisplayName: provider.Name, Enabled: provider.EnabledValue(), key: "custom:" + provider.Name + ":" + string(record.ID)}
 			candidates = append(candidates, entry)
@@ -234,18 +234,39 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 	return result, more, epoch, err
 }
 
+// inventoryRecordInvalid is the single fail-closed outcome of the compatible
+// account filter for a stored record it cannot trust: an undecodable or invalid
+// record, or a reference to a record that does not exist. Eligibility is
+// decided from stored state, so such a record can never be taken as proof that
+// a provider has no selectable account; the read fails with recovery_required
+// instead. The cause is logged because the safe error carries no record data.
+func inventoryRecordInvalid(message, remedy, reason string, cause error, attrs ...any) error {
+	attrs = append(attrs, "reason", reason)
+	if cause != nil {
+		attrs = append(attrs, "error", cause)
+	}
+	slog.Error("provider inventory filter cannot trust a saved record", attrs...)
+	return domain.Fail(domain.RecoveryRequired, message, remedy)
+}
+
 // selectableAccountProviders returns every provider ID that owns at least one
 // API account selectable for protocol. It scans every stored account in bounded
-// id-ordered batches and decodes each record before any eligibility test, so an
-// account with a wrong-typed field fails the read instead of being silently
-// discarded by a SQL approximation. The shared Go predicate then matches the
-// account picker and ResolveAccountProfile.
+// id-ordered batches and decodes and validates each record before any
+// eligibility test, so an account with a wrong-typed or invalid field fails the
+// read instead of being silently discarded by a SQL approximation. The shared Go
+// predicate then matches the account picker and ResolveAccountProfile.
+//
+// Every record or reference that decides compatibility fails closed with
+// recovery_required: an undecodable or invalid account, the provider of a
+// selectable-state account when that provider row is missing, undecodable or
+// invalid. Only a well-formed "not selectable" answer (disconnected, removed,
+// expired, an undeclared or mismatched format) is absence.
 func selectableAccountProviders(tx *Tx, protocol domain.APIProtocol) (map[domain.ID]bool, error) {
 	const batch = 256
 	const accountQuery = "SELECT " + recordColumns + " FROM entities WHERE kind='account' AND id>? ORDER BY id LIMIT ?"
 	eligible := map[domain.ID]bool{}
-	// A nil entry records a provider that does not exist, so each is read once.
-	known := map[domain.ID]*domain.Provider{}
+	// Each referenced provider is loaded, decoded and validated once.
+	known := map[domain.ID]domain.Provider{}
 	after := domain.ID("")
 	for {
 		records, err := tx.modelRecords(accountQuery, after, batch)
@@ -256,15 +277,14 @@ func selectableAccountProviders(tx *Tx, protocol domain.APIProtocol) (map[domain
 			after = record.ID
 			account, err := Decode[domain.Account](record)
 			if err != nil {
-				return nil, err
+				return nil, inventoryRecordInvalid("A saved account record is unreadable.", "Preserve the server data and repair or remove the unreadable account before filtering by API format.", "account decode failed", err, "account_id", record.ID)
 			}
 			// JSON that decodes can still violate the account contract (unknown
 			// health or type, malformed provider ID). The boolean predicates below
 			// would collapse that into "not selectable" and report a false absence,
 			// so an invalid saved account fails the read instead.
 			if err := account.Validate(); err != nil {
-				slog.Error("provider inventory filter found an invalid saved account", "account_id", record.ID, "error", err)
-				return nil, domain.Fail(domain.RecoveryRequired, "A saved account record is invalid.", "Preserve the server data and repair or remove the invalid account before filtering by API format.")
+				return nil, inventoryRecordInvalid("A saved account record is invalid.", "Preserve the server data and repair or remove the invalid account before filtering by API format.", "account validation failed", err, "account_id", record.ID)
 			}
 			// Cheap account-only checks run first so a provider is loaded only for
 			// accounts that could be selectable; every record was already decoded.
@@ -277,24 +297,27 @@ func selectableAccountProviders(tx *Tx, protocol domain.APIProtocol) (map[domain
 				if err != nil {
 					return nil, err
 				}
-				if len(rows) == 1 {
-					decoded, err := Decode[domain.Provider](rows[0])
-					if err != nil {
-						return nil, err
-					}
-					// A provider that decodes but fails validation is an unreadable
-					// record: fail the read instead of letting the boolean predicate
-					// collapse the validation error into "not selectable", which
-					// would report a false absence for its connected accounts.
-					if err := decoded.Validate(); err != nil {
-						slog.Error("provider inventory filter found an invalid saved provider", "provider_id", account.ProviderID, "error", err)
-						return nil, domain.Fail(domain.RecoveryRequired, "A saved provider record is invalid.", "Preserve the server data and repair or remove the invalid provider before filtering by API format.")
-					}
-					provider = &decoded
+				// A ready or unverified connected account whose provider row is
+				// gone (database corruption, a faulty restore) cannot be resolved,
+				// so absence of the provider is not evidence of incompatibility.
+				if len(rows) != 1 {
+					return nil, inventoryRecordInvalid("A saved account references a missing provider.", "Preserve the server data and restore or remove the account whose provider is missing before filtering by API format.", "account provider is missing", nil, "account_id", record.ID, "provider_id", account.ProviderID)
 				}
+				decoded, err := Decode[domain.Provider](rows[0])
+				if err != nil {
+					return nil, inventoryRecordInvalid("A saved provider record is unreadable.", "Preserve the server data and repair or remove the unreadable provider before filtering by API format.", "provider decode failed", err, "provider_id", account.ProviderID)
+				}
+				// A provider that decodes but fails validation is an unreadable
+				// record: fail the read instead of letting the boolean predicate
+				// collapse the validation error into "not selectable", which
+				// would report a false absence for its connected accounts.
+				if err := decoded.Validate(); err != nil {
+					return nil, inventoryRecordInvalid("A saved provider record is invalid.", "Preserve the server data and repair or remove the invalid provider before filtering by API format.", "provider validation failed", err, "provider_id", account.ProviderID)
+				}
+				provider = decoded
 				known[account.ProviderID] = provider
 			}
-			if provider != nil && providers.AccountSelectableForProtocol(*provider, account, protocol) {
+			if providers.AccountSelectableForProtocol(provider, account, protocol) {
 				eligible[account.ProviderID] = true
 			}
 		}

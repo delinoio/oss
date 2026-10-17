@@ -245,7 +245,7 @@ func TestProviderInventoryAPIProtocolFilterFailsClosedOnCorruptAccount(t *testin
 		t.Fatal(err)
 	}
 	page, _, _, err := s.ProviderInventoryPage(ctx, providers.Presets(), ProviderInventorySearch{Limit: 10, APIProtocol: domain.OpenAIChat})
-	if err == nil || len(page) != 0 {
+	if domain.SafeError(err).Code != domain.RecoveryRequired || len(page) != 0 {
 		t.Fatalf("an unreadable account must not prove absence or return a partial page: page=%+v err=%v", page, err)
 	}
 }
@@ -278,7 +278,7 @@ func TestProviderInventoryAPIProtocolFilterFailsClosedOnWrongTypedPrefilteredAcc
 				t.Fatal(err)
 			}
 			page, _, _, err := s.ProviderInventoryPage(ctx, providers.Presets(), ProviderInventorySearch{Limit: 10, APIProtocol: domain.OpenAIChat})
-			if err == nil || len(page) != 0 {
+			if domain.SafeError(err).Code != domain.RecoveryRequired || len(page) != 0 {
 				t.Fatalf("a wrong-typed %s must fail the filtered read: page=%+v err=%v", tc.name, page, err)
 			}
 			// The unfiltered inventory does not read account bodies for eligibility.
@@ -360,5 +360,168 @@ func TestProviderInventoryAPIProtocolFilterFailsClosedOnInvalidDecodableAccount(
 				t.Fatalf("unfiltered inventory must be unchanged: %v", err)
 			}
 		})
+	}
+}
+
+// filterFailClosedFixture saves a healthy chat provider with a ready account plus
+// a second provider whose connected account is the subject of a corruption test.
+func filterFailClosedFixture(t *testing.T, s *Store, health domain.AccountHealth) (healthy, subject domain.ID) {
+	t.Helper()
+	healthy, subject = domain.NewID(), domain.NewID()
+	_, err := s.Mutate(context.Background(), domain.NewID(), "provider-inventory.filter-fail-closed", nil, func(tx *Tx) (any, error) {
+		if _, err := tx.Put(domain.ProviderKind, healthy, 0, "", "", filterTestProvider("A healthy", domain.OpenAIChat)); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Put(domain.AccountKind, domain.NewID(), 0, "", "", filterTestAccount(healthy, "", domain.AccountReady)); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Put(domain.ProviderKind, subject, 0, "", "", filterTestProvider("B subject", domain.OpenAIChat)); err != nil {
+			return nil, err
+		}
+		_, err := tx.Put(domain.AccountKind, domain.NewID(), 0, "", "", filterTestAccount(subject, "", health))
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return healthy, subject
+}
+
+func TestProviderInventoryAPIProtocolFilterFailsClosedOnMissingAccountProvider(t *testing.T) {
+	// A ready or unverified connected account whose provider row is gone cannot be
+	// resolved, so the provider must not be treated as absent. The failure aborts
+	// the whole read even though other providers qualify.
+	for _, health := range []domain.AccountHealth{domain.AccountReady, domain.AccountUnverified} {
+		t.Run(string(health), func(t *testing.T) {
+			s, _ := openTest(t)
+			ctx := context.Background()
+			_, subject := filterFailClosedFixture(t, s, health)
+			if res, err := s.db.Exec(`DELETE FROM entities WHERE kind='provider' AND id=?`, string(subject)); err != nil {
+				t.Fatal(err)
+			} else if n, _ := res.RowsAffected(); n != 1 {
+				t.Fatalf("fixture removed %d provider rows", n)
+			}
+			for _, protocol := range []domain.APIProtocol{domain.OpenAIChat, domain.AnthropicMessages} {
+				page, _, _, err := s.ProviderInventoryPage(ctx, providers.Presets(), ProviderInventorySearch{Limit: 10, APIProtocol: protocol})
+				if domain.SafeError(err).Code != domain.RecoveryRequired || len(page) != 0 {
+					t.Fatalf("a missing provider must fail the %s filtered read: page=%+v err=%v", protocol, page, err)
+				}
+			}
+			// The unfiltered inventory does not evaluate account eligibility.
+			if _, _, _, err := s.ProviderInventoryPage(ctx, providers.Presets(), ProviderInventorySearch{Limit: 10}); err != nil {
+				t.Fatalf("unfiltered inventory must be unchanged: %v", err)
+			}
+		})
+	}
+}
+
+func TestProviderInventoryAPIProtocolFilterFailsClosedOnMissingManagedProvider(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := context.Background()
+	page, _, _, err := s.ProviderInventoryPage(ctx, providers.Presets(), ProviderInventorySearch{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var managed domain.ID
+	for _, entry := range page {
+		if entry.DisplayName == "OpenAI" {
+			managed = entry.ProviderID
+		}
+	}
+	_, err = s.Mutate(ctx, domain.NewID(), "provider-inventory.filter-missing-managed", nil, func(tx *Tx) (any, error) {
+		_, err := tx.Put(domain.AccountKind, domain.NewID(), 0, "", "", filterTestAccount(managed, domain.OpenAIChat, domain.AccountReady))
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM entities WHERE kind='provider' AND id=?`, string(managed)); err != nil {
+		t.Fatal(err)
+	}
+	page, _, _, err = s.ProviderInventoryPage(ctx, providers.Presets(), ProviderInventorySearch{Limit: 10, APIProtocol: domain.OpenAIChat})
+	if domain.SafeError(err).Code != domain.RecoveryRequired || len(page) != 0 {
+		t.Fatalf("a missing managed provider must fail the filtered read: page=%+v err=%v", page, err)
+	}
+}
+
+func TestProviderInventoryAPIProtocolFilterIgnoresMissingProviderOfUnselectableAccounts(t *testing.T) {
+	// Only a reference that decides compatibility fails closed. A disconnected,
+	// expired or pending-removal account is never selectable whatever its
+	// provider is, so its provider row is irrelevant to the filter.
+	for _, health := range []domain.AccountHealth{domain.AccountDisconnected, domain.AccountExpired} {
+		t.Run(string(health), func(t *testing.T) {
+			s, _ := openTest(t)
+			ctx := context.Background()
+			healthy, subject := filterFailClosedFixture(t, s, health)
+			if _, err := s.db.Exec(`DELETE FROM entities WHERE kind='provider' AND id=?`, string(subject)); err != nil {
+				t.Fatal(err)
+			}
+			page, _, _, err := s.ProviderInventoryPage(ctx, providers.Presets(), ProviderInventorySearch{Limit: 10, APIProtocol: domain.OpenAIChat})
+			if err != nil || len(page) != 1 || page[0].ProviderID != healthy {
+				t.Fatalf("an unselectable dangling account must not affect the filter: page=%+v err=%v", page, err)
+			}
+		})
+	}
+}
+
+func TestProviderInventoryAPIProtocolFilterFindsMissingProviderAcrossAccountBatches(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := context.Background()
+	_, err := s.Mutate(ctx, domain.NewID(), "provider-inventory.filter-batches", nil, func(tx *Tx) (any, error) {
+		id := domain.NewID()
+		if _, err := tx.Put(domain.ProviderKind, id, 0, "", "", filterTestProvider("Healthy", domain.OpenAIChat)); err != nil {
+			return nil, err
+		}
+		// More than two scan batches of accounts, one of which dangles.
+		for i := 0; i < 600; i++ {
+			if _, err := tx.Put(domain.AccountKind, domain.NewID(), 0, "", "", filterTestAccount(id, "", domain.AccountReady)); err != nil {
+				return nil, err
+			}
+		}
+		_, err := tx.Put(domain.AccountKind, domain.NewID(), 0, "", "", filterTestAccount(domain.NewID(), "", domain.AccountReady))
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, _, _, err := s.ProviderInventoryPage(ctx, providers.Presets(), ProviderInventorySearch{Limit: 10, APIProtocol: domain.OpenAIChat})
+	if domain.SafeError(err).Code != domain.RecoveryRequired || len(page) != 0 {
+		t.Fatalf("a dangling account in a later batch must fail the read: page=%+v err=%v", page, err)
+	}
+}
+
+func TestProviderInventoryAPIProtocolFilterFailsClosedOnUndecodableProvider(t *testing.T) {
+	for _, tc := range []struct{ name, path, value string }{
+		{"endpoint type", "$.endpoint", "json('[1]')"},
+		{"unknown field", "$.unexpected_field", "1"},
+		{"preset id type", "$.preset_id", "1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := openTest(t)
+			ctx := context.Background()
+			_, subject := filterFailClosedFixture(t, s, domain.AccountReady)
+			if _, err := s.db.Exec(`UPDATE entities SET body=CAST(json_set(CAST(body AS TEXT),'`+tc.path+`',`+tc.value+`) AS BLOB) WHERE kind='provider' AND id=?`, string(subject)); err != nil {
+				t.Fatal(err)
+			}
+			page, _, _, err := s.ProviderInventoryPage(ctx, providers.Presets(), ProviderInventorySearch{Limit: 10, APIProtocol: domain.OpenAIChat})
+			if domain.SafeError(err).Code != domain.RecoveryRequired || len(page) != 0 {
+				t.Fatalf("an undecodable saved provider must fail the filtered read: page=%+v err=%v", page, err)
+			}
+		})
+	}
+}
+
+func TestProviderInventoryFailsClosedOnUndecodableCustomProvider(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := context.Background()
+	_, subject := filterFailClosedFixture(t, s, domain.AccountReady)
+	if _, err := s.db.Exec(`UPDATE entities SET body=CAST(json_set(CAST(body AS TEXT),'$.endpoint',json('[1]')) AS BLOB) WHERE kind='provider' AND id=?`, string(subject)); err != nil {
+		t.Fatal(err)
+	}
+	for _, protocol := range []domain.APIProtocol{"", domain.OpenAIChat} {
+		page, _, _, err := s.ProviderInventoryPage(ctx, providers.Presets(), ProviderInventorySearch{Limit: 200, APIProtocol: protocol})
+		if domain.SafeError(err).Code != domain.RecoveryRequired || len(page) != 0 {
+			t.Fatalf("protocol %q: an unreadable custom provider must fail with recovery_required: page=%+v err=%v", protocol, page, err)
+		}
 	}
 }
