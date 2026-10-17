@@ -2975,7 +2975,7 @@ func TestExpiredPeriodQueuesBlockingNotice(t *testing.T) {
 	notice := func(reason string) (bool, int) {
 		t.Helper()
 		var active bool
-		if e := f.db.Pool.QueryRow(ctx, "SELECT COALESCE((SELECT active FROM billing_notices WHERE tenant_id=$1 AND reason=$2),false)", f.tenant, reason).Scan(&active); e != nil {
+		if e := f.db.Pool.QueryRow(ctx, "SELECT COALESCE((SELECT bool_or(active) FROM billing_notices WHERE tenant_id=$1 AND (reason=$2 OR starts_with(reason,$2||':'))),false)", f.tenant, reason).Scan(&active); e != nil {
 			t.Fatal(e)
 		}
 		var sent int
@@ -3037,6 +3037,48 @@ func TestExpiredPeriodQueuesBlockingNotice(t *testing.T) {
 	maintain(end.AddDate(0, 1, 0).Add(time.Hour))
 	if active, sent := notice("period_expired"); !active || sent != 2 {
 		t.Fatal("later expiry did not notify again", active, sent)
+	}
+}
+
+func expiryRenewal(f *subscriptionOrderFixture, end time.Time) provider.Transaction {
+	renewal := f.transaction
+	renewal.ID = "txn_renewal"
+	renewal.Origin = "subscription_recurring"
+	renewal.BillingPeriod.StartsAt = end
+	renewal.BillingPeriod.EndsAt = end.AddDate(0, 1, 0)
+	return renewal
+}
+
+func TestExpiryNoticeRepeatsWhenRenewalWasNotObservedByMaintenance(t *testing.T) {
+	f := newSubscriptionOrderFixture(t)
+	ctx := context.Background()
+	f.pay(t)
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE users SET email='owner@example.test' WHERE id=$1", f.userID); e != nil {
+		t.Fatal(e)
+	}
+	end := time.Now().UTC().Truncate(time.Microsecond).Add(24 * time.Hour)
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE tenants SET period_start=$2,period_end=$3 WHERE id=$1", f.tenant, end.AddDate(0, -1, 0), end); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.w.Maintain(ctx, end.Add(time.Hour)); e != nil {
+		t.Fatal(e)
+	}
+	// A renewal advances the period, and maintenance does not run again until the
+	// renewed period has also expired.
+	if e := f.w.ApplyTransaction(ctx, expiryRenewal(f, end), end.Add(2*time.Hour)); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.w.Maintain(ctx, end.AddDate(0, 1, 0).Add(time.Hour)); e != nil {
+		t.Fatal(e)
+	}
+	var total, pending, active int
+	if e := f.db.Pool.QueryRow(ctx, `SELECT count(*),count(*) FILTER (WHERE state='pending'),
+ (SELECT count(*) FROM billing_notices WHERE tenant_id=$1 AND active AND starts_with(reason,'period_expired:'))
+ FROM jobs WHERE tenant_id=$1 AND kind='email' AND dedup_key LIKE 'notice:%:period_expired:%'`, f.tenant).Scan(&total, &pending, &active); e != nil {
+		t.Fatal(e)
+	}
+	if total != 2 || pending != 2 || active != 1 {
+		t.Fatal("second expiry did not notify again", total, pending, active)
 	}
 }
 
