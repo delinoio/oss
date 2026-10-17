@@ -4,7 +4,12 @@ import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { RetainedImages } from "./image-attachments";
 import { acknowledgeImages, retainedImages } from "./image-input";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  AnchoredPopupAlign,
+  AnchoredPopupWidth,
+  useAnchoredPopup,
+} from "./anchored-popup";
 import {
   SessionQuery,
   newRequestId,
@@ -65,6 +70,7 @@ export function QueuedInput({
   useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const moreButton = useRef<HTMLButtonElement>(null);
+  const moreMenu = useRef<HTMLDivElement>(null);
   const [accepted, setAccepted] = useState<Resource>();
   const current =
     accepted && accepted.revision > resource.revision ? accepted : resource;
@@ -116,6 +122,27 @@ export function QueuedInput({
     expectedRevision: current.revision,
     requestId: newRequestId(),
   });
+  // The More menu is a top-layer popup anchored to its button, so opening or
+  // dismissing it never moves the neighboring rows or the composer and is not
+  // clipped by the scrolling compact list. Selection, focus and dismissal stay
+  // in this component; the hook only presents and positions the popup.
+  useAnchoredPopup({
+    open: menuOpen,
+    anchor: moreButton,
+    popup: moreMenu,
+    onInvalid: () => setMenuOpen(false),
+    width: AnchoredPopupWidth.Content,
+    align: AnchoredPopupAlign.End,
+  });
+  // The popup is hidden until the hook shows it in its layout effect, and a
+  // hidden element cannot take focus, so the first item is focused here (after
+  // the hook's effect) instead of through autoFocus.
+  useLayoutEffect(() => {
+    if (menuOpen)
+      moreMenu.current
+        ?.querySelector<HTMLElement>('[role="menuitem"]')
+        ?.focus({ preventScroll: true });
+  }, [menuOpen]);
   const beginEdit = () => {
     setMenuOpen(false);
     explicitEdit.current = true;
@@ -231,8 +258,14 @@ export function QueuedInput({
                 …
               </button>
               {menuOpen ? (
-                <div role="menu" aria-label={copy("queue.more")}>
-                  <button autoFocus role="menuitem" onClick={beginEdit}>
+                <div
+                  ref={moreMenu}
+                  role="menu"
+                  popover="manual"
+                  className="anchored-popup queue-more-popup"
+                  aria-label={copy("queue.more")}
+                >
+                  <button role="menuitem" onClick={beginEdit}>
                     {copy("queue.editInput_f7680c")}
                   </button>
                   {movement ? (

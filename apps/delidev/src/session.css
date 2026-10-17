@@ -1318,11 +1318,31 @@
 .queue-more {
   position: relative;
 }
-.queue-more [role="menu"] {
-  position: relative;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: 8px;
+/* The More menu is an anchored top-layer popup (see anchored-popup.css): its
+   position, width and max-height come from useAnchoredPopup, so it never takes
+   part in the compact row, the scrolling list or the composer layout. */
+.queue-more-popup[role="menu"] {
+  min-width: 0;
+  padding: 4px;
+}
+.queue-more-popup[role="menu"]:popover-open {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.queue-compact-actions .queue-more-popup button {
+  justify-content: flex-start;
+  text-align: start;
+  white-space: nowrap;
+  color: var(--text);
+}
+.queue-compact-actions .queue-more-popup button:disabled {
+  color: var(--muted);
+}
+.queue-compact-actions .queue-more-popup button:not(:disabled):hover,
+.queue-compact-actions .queue-more-popup button:not(:disabled):focus-visible {
+  background: var(--surface-hover);
 }
 .queue-compact-item > form {
   padding-bottom: 8px;

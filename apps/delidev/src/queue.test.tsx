@@ -11,7 +11,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { danger, expectTone } from "./test-action-tone";
 import {
   EntityKind,
@@ -907,4 +907,142 @@ it("shows a stored Markdown link collapsed and saves the canonical Markdown", as
   expect(value.edit.mock.calls[0]![0]).toMatchObject({
     prompt: `${canonical} [https://example.org/x](https://example.org/x)`,
   });
+});
+
+afterEach(() => {
+  delete (HTMLElement.prototype as { showPopover?: unknown }).showPopover;
+  delete (HTMLElement.prototype as { hidePopover?: unknown }).hidePopover;
+});
+function stubPopover() {
+  const show = vi.fn(),
+    hide = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "showPopover", {
+    configurable: true,
+    value: show,
+  });
+  Object.defineProperty(HTMLElement.prototype, "hidePopover", {
+    configurable: true,
+    value: hide,
+  });
+  return { show, hide };
+}
+// Everything outside the popup is the surrounding layout. Opening and closing
+// the More menu must leave it byte-for-byte equal apart from the trigger state.
+function surrounding(container: HTMLElement) {
+  const clone = container.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll(".queue-more-popup").forEach((node) => node.remove());
+  return clone.innerHTML.replace(/ aria-expanded="[^"]*"/g, "");
+}
+
+it("presents the compact More menu as an anchored top-layer popup that reserves no layout", () => {
+  const { show, hide } = stubPopover();
+  const first = fixture("First queued input"),
+    second = fixture("Second queued input");
+  const view = render(
+    <>
+      {first.view(first.resource, true)}
+      {second.view(second.resource, true)}
+      <button>Composer</button>
+    </>,
+  );
+  const closed = surrounding(view.container);
+  const [more] = screen.getAllByRole("button", { name: "More input actions" });
+  fireEvent.click(more!);
+  const menu = screen.getByRole("menu", { name: "More input actions" });
+  // Original DOM owner, native manual popover, shared anchored-popup chrome.
+  expect(menu.closest(".queue-more")).toBe(more!.closest(".queue-more"));
+  expect(menu.getAttribute("popover")).toBe("manual");
+  expect(menu.classList.contains("anchored-popup")).toBe(true);
+  expect(show).toHaveBeenCalledOnce();
+  expect(hide).not.toHaveBeenCalled();
+  expect(screen.getAllByRole("menu")).toHaveLength(1);
+  expect(surrounding(view.container)).toBe(closed);
+  // The menu keeps its own focus semantics.
+  expect(document.activeElement).toBe(
+    screen.getByRole("menuitem", { name: "Edit input" }),
+  );
+  fireEvent.click(more!);
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(hide).toHaveBeenCalledOnce();
+  expect(surrounding(view.container)).toBe(closed);
+  for (const value of [first, second]) {
+    expect(value.edit).not.toHaveBeenCalled();
+    expect(value.steer).not.toHaveBeenCalled();
+    expect(value.remove).not.toHaveBeenCalled();
+  }
+});
+
+it("dismisses the More popup when focus leaves it and keeps it while focus moves between items", () => {
+  const { hide } = stubPopover();
+  const value = fixture();
+  render(
+    <>
+      <TransportProvider transport={value.transport}>
+        <QueryClientProvider client={value.client}>
+          <MutationIntents>
+            <QueuedInput
+              compact
+              resource={value.resource}
+              session={value.session}
+              refresh={() => {}}
+              movement={{
+                disabled: false,
+                up: () => {},
+                down: () => {},
+                start: () => {},
+                end: () => {},
+              }}
+            />
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>
+      <button>Outside</button>
+    </>,
+  );
+  const more = screen.getByRole("button", { name: "More input actions" });
+  fireEvent.click(more);
+  const edit = screen.getByRole("menuitem", { name: "Edit input" }),
+    up = screen.getByRole("menuitem", { name: "Move up" });
+  fireEvent.blur(edit, { relatedTarget: up });
+  expect(screen.getByRole("menu")).toBeTruthy();
+  expect(hide).not.toHaveBeenCalled();
+  // Outside pointer and Tab both move focus outside the menu owner.
+  fireEvent.blur(up, { relatedTarget: screen.getByText("Outside") });
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(hide).toHaveBeenCalledOnce();
+  fireEvent.click(more);
+  fireEvent.blur(screen.getByRole("menuitem", { name: "Edit input" }), {
+    relatedTarget: null,
+  });
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(value.edit).not.toHaveBeenCalled();
+  expect(value.steer).not.toHaveBeenCalled();
+  expect(value.remove).not.toHaveBeenCalled();
+});
+
+it("hides the More popup when the row unmounts while it is open", () => {
+  const { hide } = stubPopover();
+  const value = fixture();
+  const view = render(value.view(value.resource, true));
+  fireEvent.click(screen.getByRole("button", { name: "More input actions" }));
+  expect(screen.getByRole("menu")).toBeTruthy();
+  view.unmount();
+  expect(hide).toHaveBeenCalledOnce();
+});
+
+it("selects Edit from the popup without any mutation and closes it", () => {
+  const { hide } = stubPopover();
+  const value = fixture("Complete queued input");
+  render(value.view(value.resource, true));
+  fireEvent.click(screen.getByRole("button", { name: "More input actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Edit input" }));
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(hide).toHaveBeenCalledOnce();
+  expect(screen.getByRole("textbox", { name: "Edited input" })).toHaveProperty(
+    "value",
+    "Complete queued input",
+  );
+  expect(value.edit).not.toHaveBeenCalled();
+  expect(value.steer).not.toHaveBeenCalled();
+  expect(value.remove).not.toHaveBeenCalled();
 });
