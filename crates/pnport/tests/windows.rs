@@ -142,37 +142,6 @@ fn launch_worker(
     Ok((cwd, image))
 }
 
-/// Symbolize only repository code locations from a failed native probe. No
-/// application memory or native payload is read or retained.
-fn symbolize_failure(output: &std::process::Output) {
-    if output.status.success() {
-        return;
-    }
-    let image = PathBuf::from(env!("CARGO_BIN_EXE_pnport")).with_file_name("pnport_preload.dll");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    for line in stderr.lines().filter(|line| {
-        line.contains("windows_exception_frame") && line.contains("module=pnport_preload.dll")
-    }) {
-        let Some(offset) = line
-            .split_whitespace()
-            .find_map(|field| field.strip_prefix("offset=0x"))
-        else {
-            continue;
-        };
-        if !offset.chars().all(|value| value.is_ascii_hexdigit()) {
-            continue;
-        }
-        if let Ok(symbols) = Command::new("llvm-symbolizer.exe")
-            .arg("--relative-address")
-            .arg(format!("--obj={}", image.display()))
-            .arg(format!("0x{offset}"))
-            .output()
-        {
-            eprintln!("{}", String::from_utf8_lossy(&symbols.stdout));
-        }
-    }
-}
-
 /// Diagnostic replay uses an external debugger, so a corrupted target stack
 /// or loader lock cannot prevent reporting its faulting code location. Normal
 /// validation never sets this opt-in; replay cannot turn its first failure
@@ -265,6 +234,7 @@ fn node_output(command: &mut Command) -> std::process::Output {
                     disposition = DBG_EXCEPTION_NOT_HANDLED;
                 }
                 if code == 0xc0000005u32 as i32 {
+                    #[allow(unused_mut, reason = "ARM64 replay also inspects the link register")]
                     let mut addresses = vec![exception.ExceptionRecord.ExceptionAddress as usize];
                     #[cfg(target_arch = "aarch64")]
                     if let Some(thread) = threads.get(&event.dwThreadId) {
@@ -1273,7 +1243,6 @@ fn relative_applications_resolve_against_the_caller_directory() {
         .env(WORK, &work)
         .output()
         .unwrap();
-    symbolize_failure(&output);
     assert!(
         output.status.success(),
         "application resolution failed {:?}: {} {}",
@@ -1434,7 +1403,6 @@ server.listen(0, '127.0.0.1', () => {
             .arg(&root)
             .current_dir(&root),
     );
-    symbolize_failure(&output);
     assert!(
         output.status.success(),
         "Node native fixture failed {:?}: {} {}",

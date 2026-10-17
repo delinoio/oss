@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { developmentMatrix } from "../../packages/pnport/scripts/native-matrix.mjs";
 
 const include = developmentMatrix.include.filter(({ target }) =>

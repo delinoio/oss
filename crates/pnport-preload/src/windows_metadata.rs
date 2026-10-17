@@ -23,9 +23,6 @@ fn volume_relative(path: &Path) -> Vec<u16> {
 hook!(INFO, ntapi::ntioapi::NtQueryInformationFile, c"NtQueryInformationFile", (file: HANDLE, ios: PIO_STATUS_BLOCK, buffer: PVOID, length: ULONG, class: FILE_INFORMATION_CLASS) -> NTSTATUS, {
     let Some(_guard) = Guard::enter() else { return (INFO.real())(file,ios,buffer,length,class); };
     let Some(owned) = handle(file) else { return (INFO.real())(file,ios,buffer,length,class); };
-    if owned.translation.logical != owned.translation.physical {
-        tracing::debug!(action = "windows_managed_information", class, length, "Querying translated file information");
-    }
     if owned.translation.logical == owned.translation.physical || !matches!(class, FileNameInformation | FileNormalizedNameInformation | FileAllInformation) { return (INFO.real())(file,ios,buffer,length,class); }
     let offset = if class == FileAllInformation { 96 } else { 0 };
     if ios.is_null() || buffer.is_null() || (length as usize) < offset + 4 { return INVALID; }
