@@ -93,8 +93,13 @@ export function ReasoningEffortField({
     anchor: input,
     popup: overlay,
     onInvalid: close,
+    // Dialog hosts are bounded by the task body and page hosts by the Settings
+    // content column, never the wider scrolling pane that also holds the
+    // column's margins and the space below a short page.
     boundary: (anchor) =>
-      anchor.closest<HTMLElement>(".settings-task-body, .settings-content"),
+      anchor.closest<HTMLElement>(
+        ".settings-task-body, .settings-content-column",
+      ),
   });
   useEffect(() => {
     if (activeIndex >= 0)

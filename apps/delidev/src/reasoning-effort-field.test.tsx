@@ -457,7 +457,7 @@ const hosts: Array<[string, (children: ReactNode) => ReactNode]> = [
     "a page host",
     (children) => (
       <main className="settings-content">
-        <div className="settings-task-body">{children}</div>
+        <div className="settings-content-column">{children}</div>
       </main>
     ),
   ],
@@ -529,3 +529,81 @@ it("closes the popup when its Settings task dialog closes while open", async () 
   container.querySelector("dialog")!.removeAttribute("open");
   await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
 });
+
+it.each([
+  ["a page host", "settings-content-column", "settings-content"],
+  ["a Settings task dialog host", "settings-task-body", "settings-task-dialog"],
+])(
+  "bounds the popup by the content column or task body, not the wider pane, in %s",
+  (_name, boundaryClass, paneClass) => {
+    stubPopover();
+    const rects: Record<string, [number, number, number, number]> = {
+      [paneClass]: [0, 0, 1000, 800],
+      [boundaryClass]: [100, 50, 300, 400],
+      "reasoning-effort-popup": [0, 0, 200, 120],
+      "reasoning-effort-input": [20, 100, 200, 40],
+    };
+    const rectOf = (key: string) => {
+      const [left, top, width, height] = rects[key];
+      return {
+        left,
+        top,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        x: left,
+        y: top,
+        toJSON: () => ({}),
+      } as DOMRect;
+    };
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        const key = Object.keys(rects).find((name) =>
+          name === "reasoning-effort-input"
+            ? this.getAttribute("role") === "combobox"
+            : this.classList.contains(name),
+        );
+        return key
+          ? rectOf(key)
+          : ({
+              left: 0,
+              top: 0,
+              width: 0,
+              height: 0,
+              right: 0,
+              bottom: 0,
+            } as DOMRect);
+      },
+    );
+    const dialogPane = paneClass === "settings-task-dialog";
+    const field = (
+      <ReasoningEffortField
+        label="Reasoning effort"
+        value=""
+        suggestions={codexEffortSuggestions}
+        change={() => {}}
+      />
+    );
+    const { container } = render(
+      dialogPane ? (
+        <dialog open className={paneClass}>
+          <div className={boundaryClass}>{field}</div>
+        </dialog>
+      ) : (
+        <main className={paneClass}>
+          <div className={boundaryClass}>{field}</div>
+        </main>
+      ),
+    );
+    act(() => screen.getByRole("combobox").focus());
+    const popup = container.querySelector<HTMLElement>(
+      ".reasoning-effort-popup",
+    )!;
+    // The input starts left of the column, so only the column boundary moves
+    // the popup to its 8px inset; the pane would leave it at the input edge.
+    expect(Number.parseFloat(popup.style.left)).toBe(108);
+    expect(Number.parseFloat(popup.style.width)).toBe(200);
+    vi.restoreAllMocks();
+  },
+);

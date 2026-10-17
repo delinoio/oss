@@ -3881,8 +3881,8 @@ Focus or the list button opens the suggestion list as an anchored top-layer
 popup (`popover="manual"`, `useAnchoredPopup`), capped at 280px with scrolling.
 The popup is rendered inside the field's DOM subtree, anchored 4px below the
 input at the input's width, inset 8px from the owning surface (the Settings task
-body, or the Settings content column for page hosts, otherwise the visual
-viewport), flips above and clamps when the space below is smaller, and
+body, or the Settings content column for page hosts and never the wider
+scrolling content pane around it, otherwise the visual viewport), flips above and clamps when the space below is smaller, and
 repositions on owner scroll and resize. The listbox and the no-match status
 (`role="status"`) both live inside the popup, so opening, filtering to no
 matches, selecting or dismissing never moves the label, the persistent help
@@ -3893,10 +3893,10 @@ the input, option and scrollbar pointer presses never move focus, and Enter
 consumes an active suggestion before any owning form submits. The same behavior
 applies to the primary field and the Codex Subagent effort field, in a page host
 and inside a Settings task dialog (`showModal` host), where the popup is closed
-if the dialog closes. `scripts/test-reasoning-effort-layout.mjs` is the explicit
-real-Chromium geometry check (page and dialog hosts, primary and Subagent fields,
-open, filtered, empty, Escape, Tab, outside pointer and owner scroll, English and
-Korean, light and dark, narrow and half-size viewports for effective 200% zoom);
+if the dialog closes. `scripts/test-reasoning-effort-layout.mjs` is the explicit real-Chromium
+geometry check (tall and short page hosts, where the short page leaves pane space
+below the content column, and dialog hosts, primary and Subagent fields, open,
+filtered, empty, Escape, Tab, outside pointer, owner scroll, English and Korean, light and dark, narrow and half-size viewports for effective 200% zoom);
 it is not packaged CEF or native acceptance.
 Filter hints by a case-insensitive prefix; trim only the search comparison, never
 the stored input. Use native default remains the first option and explicitly

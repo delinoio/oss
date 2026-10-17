@@ -26,7 +26,14 @@ let browser,
   cases = 0,
   checks = 0;
 const errors = [];
-const hosts = ["page", "dialog"];
+// The short page leaves the scrolling content pane taller than the content
+// column, so a popup bounded by the pane instead of the column would extend
+// below the column.
+const hosts = [
+  ["page", "tall"],
+  ["page", "short"],
+  ["dialog", "tall"],
+];
 const fields = ["primary", "subagent"];
 const viewports = [
   [1280, 800],
@@ -104,14 +111,14 @@ try {
     if (message.type() === "error") errors.push(message.text());
   });
   const origin = `http://127.0.0.1:${server.address().port}`;
-  for (const host of hosts)
+  for (const [host, layout] of hosts)
     for (const language of ["en", "ko"])
       for (const theme of ["light", "dark"])
         for (const [width, height] of viewports) {
           await page.setViewportSize({ width, height });
           await page.emulateMedia({ colorScheme: theme });
           await page.goto(
-            `${origin}/?host=${host}&language=${language}&theme=${theme}`,
+            `${origin}/?host=${host}&layout=${layout}&language=${language}&theme=${theme}`,
           );
           await page.locator(".reasoning-effort-field").nth(1).waitFor();
           // The subagent field is enabled once the capability query resolves.
@@ -121,7 +128,7 @@ try {
             .locator("input:enabled")
             .waitFor();
           for (const [fieldIndex, field] of fields.entries()) {
-            const state = `${host}/${language}/${theme}/${width}x${height}/${field}`;
+            const state = `${host}-${layout}/${language}/${theme}/${width}x${height}/${field}`;
             const root = page
               .locator(".reasoning-effort-field")
               .nth(fieldIndex);
@@ -213,8 +220,12 @@ try {
                   popup = field.querySelector(".reasoning-effort-popup"),
                   box = popup.getBoundingClientRect(),
                   anchor = node.getBoundingClientRect(),
-                  owner = node
-                    .closest(".settings-task-body, .settings-content")
+                  boundary = node.closest(
+                    ".settings-task-body, .settings-content-column",
+                  ),
+                  owner = boundary.getBoundingClientRect(),
+                  pane = node
+                    .closest(".settings-content")
                     .getBoundingClientRect(),
                   center = document.elementFromPoint(
                     box.left + box.width / 2,
@@ -238,6 +249,8 @@ try {
                   boundTop: Math.max(0, owner.top),
                   boundRight: Math.min(innerWidth, owner.right),
                   boundBottom: Math.min(innerHeight, owner.bottom),
+                  paneBottom: Math.min(innerHeight, pane.bottom),
+                  boundaryClass: boundary.className,
                   onTop: popup.contains(center),
                   inDialog: Boolean(field.closest("dialog")),
                   focused: node === document.activeElement,
@@ -269,6 +282,19 @@ try {
               assert(popupBox.right <= popupBox.boundRight - 7.5, detail);
               assert(popupBox.top >= popupBox.boundTop + 7.5, detail);
               assert(popupBox.bottom <= popupBox.boundBottom - 7.5, detail);
+              // The boundary is the dialog's task body or the page's content
+              // column, never the wider scrolling pane around it.
+              assert(
+                host === "dialog"
+                  ? popupBox.boundaryClass.includes("settings-task-body")
+                  : popupBox.boundaryClass.includes("settings-content-column"),
+                detail,
+              );
+              if (layout === "short" && height >= 800)
+                assert(
+                  popupBox.paneBottom - popupBox.boundBottom > 40,
+                  `${detail}: the short page must leave pane space below the column`,
+                );
               const below = popupBox.top - popupBox.anchorBottom,
                 above = popupBox.anchorTop - popupBox.bottom;
               assert(below >= 3.5 || above >= 3.5, detail);
@@ -431,7 +457,11 @@ try {
               }
               return false;
             });
-            assert(moved, `${state}: a scroll owner with room exists`);
+            // The short page has no scrolling room by design.
+            assert(
+              moved || layout === "short",
+              `${state}: a scroll owner with room exists`,
+            );
             await frames(page);
             await assertPlacement("owner scrolled");
             await restoreScroll("owner restored");
@@ -482,6 +512,7 @@ try {
               JSON.stringify({
                 event: "reasoning_effort_layout_case",
                 host,
+                layout,
                 language,
                 theme,
                 width,

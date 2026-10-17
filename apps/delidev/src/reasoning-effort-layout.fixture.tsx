@@ -24,6 +24,9 @@ await i18n.changeLanguage(args.get("language") === "ko" ? "ko" : "en");
 document.documentElement.dataset.theme =
   args.get("theme") === "dark" ? "dark" : "light";
 const host = args.get("host") === "dialog" ? "dialog" : "page";
+// A short page leaves the scrolling content pane taller than the content
+// column, so the column and the pane report different bottom edges.
+const short = args.get("layout") === "short";
 const transport = createRouterTransport((router) =>
   router.service(SystemService, {
     getStatus: () => ({
@@ -67,11 +70,13 @@ function Form() {
           setOptions((previous) => ({ ...previous, [key]: value }))
         }
       />
-      <label>
-        Trailing control
-        <input defaultValue="Trailing value" />
-      </label>
-      <div style={{ height: 480 }} data-filler />
+      {short ? null : (
+        <label>
+          Trailing control
+          <input defaultValue="Trailing value" />
+        </label>
+      )}
+      {short ? null : <div style={{ height: 480 }} data-filler />}
     </form>
   );
 }
